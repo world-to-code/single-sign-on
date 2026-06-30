@@ -81,6 +81,8 @@ sso:
     enabled: true                                    # local-testing OIDC client (known secret); false in prod
     access-token-ttl-minutes: 30
     refresh-token-ttl-days: 7
+  integration-test:
+    enabled: true                                    # seed oauth2-proxy (OIDC) + SimpleSAMLphp (SAML) test RPs; false in prod
   admin-console:
     # first-party OIDC client for the admin console; redirect URIs = the SPA origin(s) + /admin/callback
     redirect-uris: http://localhost:9000/admin/callback,http://127.0.0.1:9000/admin/callback,http://localhost:5173/admin/callback

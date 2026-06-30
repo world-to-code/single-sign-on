@@ -170,18 +170,28 @@ public class AuthorizationServerConfig {
                         context.getClaims().claim("amr", amr);
                         context.getClaims().claim("acr", factorCount >= 2 ? "mfa" : "sfa");
                     }
+                    // Emit time claims as String (epoch seconds), NOT Long/Instant: the JDBC authorization
+                    // store re-serializes token claims through a locked-down Jackson mapper that REJECTS a
+                    // bare java.lang.Long (PolymorphicTypeValidator) AND cannot reflectively serialize a
+                    // java.time.Instant (JPMS InaccessibleObjectException) — both surface as a token-endpoint
+                    // 500 on read-back. A String round-trips cleanly (like acr/azp). The marker already holds
+                    // the epoch-seconds string, so we emit it verbatim; the admin gate parses it back.
                     auth.stream().filter(a -> a.startsWith(Factors.AUTH_TIME_PREFIX)).findFirst()
                             .ifPresent(a -> context.getClaims().claim("auth_time",
-                                    Long.parseLong(a.substring(Factors.AUTH_TIME_PREFIX.length()))));
+                                    a.substring(Factors.AUTH_TIME_PREFIX.length())));
                     // stepup_time: present only after a DELIBERATE /reauth step-up (not a plain login),
                     // so the admin elevation gate can require a recent re-authentication.
                     auth.stream().filter(a -> a.startsWith(Factors.STEPUP_TIME_PREFIX)).findFirst()
                             .ifPresent(a -> context.getClaims().claim("stepup_time",
-                                    Long.parseLong(a.substring(Factors.STEPUP_TIME_PREFIX.length()))));
+                                    a.substring(Factors.STEPUP_TIME_PREFIX.length())));
                 }
                 if (accessToken) {
+                    // Use a mutable ArrayList, NOT Stream.toList()/List.of(): the JDBC authorization store
+                    // re-serializes token claims with Jackson polymorphic typing, and its security
+                    // PolymorphicTypeValidator rejects ImmutableCollections$ListN on read-back (token
+                    // endpoint 500). ArrayList is on Spring Security's Jackson allow-list.
                     context.getClaims().claim("roles",
-                            user.getRoles().stream().map(Role::getName).toList());
+                            new ArrayList<>(user.getRoles().stream().map(Role::getName).toList()));
                     // Bind the bearer to the issuing client so the admin gate can pin it to admin-console.
                     context.getClaims().claim("azp", context.getRegisteredClient().getClientId());
                 }

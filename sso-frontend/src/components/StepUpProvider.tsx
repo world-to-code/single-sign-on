@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Fingerprint, Loader2, Lock, Smartphone } from "lucide-react";
+import { ChevronLeft, Fingerprint, Loader2, Lock, Smartphone } from "lucide-react";
 import { ApiError, registerStepUpHandler } from "@/api";
 import type { StepUpReason } from "@/api";
 import { reauthPrepare, reauthVerify } from "@/auth";
@@ -10,25 +10,31 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { OtpInput } from "@/components/auth/OtpInput";
 
+type Method = "choose" | "totp";
+
 /**
- * Renders a step-up re-authentication modal and registers it with the API layer, so any sensitive
- * (mutating) request that the server rejects with X-Step-Up-Required prompts for a fresh factor
- * (authenticator code or passkey) and is then retried automatically.
+ * Step-up re-authentication modal. First lets the user PICK an available factor (passkey / authenticator),
+ * then shows that factor's input. Registered with the API layer so any sensitive request the server
+ * rejects with X-Step-Up-Required prompts for a fresh factor and is retried automatically.
  */
 export function StepUpProvider({ session, children }: { session: SessionView; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState<StepUpReason>("action");
+  const [method, setMethod] = useState<Method>("choose");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const resolver = useRef<((ok: boolean) => void) | null>(null);
   const pending = useRef<Promise<boolean> | null>(null);
 
+  const passkeyAvailable = session.fido2Enrolled && webAuthnSupported();
+  const totpAvailable = session.totpEnrolled;
+
   const prompt = useCallback((why: StepUpReason) => {
     if (pending.current) {
       return pending.current; // a modal is already open — reuse it instead of clobbering the resolver
     }
-    setReason(why); setCode(""); setError(null); setBusy(false); setOpen(true);
+    setReason(why); setMethod("choose"); setCode(""); setError(null); setBusy(false); setOpen(true);
     pending.current = new Promise<boolean>((resolve) => { resolver.current = resolve; });
     return pending.current;
   }, []);
@@ -70,6 +76,8 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
     }
   }
 
+  const noMethods = !passkeyAvailable && !totpAvailable;
+
   return (
     <>
       {children}
@@ -93,13 +101,34 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
 
           {error && <p className="text-sm text-destructive">{error}</p>}
 
-          {session.fido2Enrolled && webAuthnSupported() && (
-            <Button type="button" variant="outline" className="w-full" onClick={verifyPasskey} disabled={busy}>
-              {busy ? <Loader2 className="animate-spin" /> : <Fingerprint />} Use your passkey
-            </Button>
+          {/* Step 1: pick an available method */}
+          {method === "choose" && !noMethods && (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">Choose how to verify:</p>
+              {passkeyAvailable && (
+                <Button type="button" variant="outline" className="h-12 w-full justify-start gap-3" onClick={verifyPasskey} disabled={busy}>
+                  {busy ? <Loader2 className="animate-spin" /> : <Fingerprint className="text-primary" />}
+                  <span className="flex flex-col items-start">
+                    <span className="font-medium">Use your passkey</span>
+                    <span className="text-xs text-muted-foreground">Fingerprint, PIN, or security key</span>
+                  </span>
+                </Button>
+              )}
+              {totpAvailable && (
+                <Button type="button" variant="outline" className="h-12 w-full justify-start gap-3"
+                        onClick={() => { setError(null); setMethod("totp"); }} disabled={busy}>
+                  <Smartphone className="text-primary" />
+                  <span className="flex flex-col items-start">
+                    <span className="font-medium">Authenticator app</span>
+                    <span className="text-xs text-muted-foreground">Enter a 6-digit TOTP code</span>
+                  </span>
+                </Button>
+              )}
+            </div>
           )}
 
-          {session.totpEnrolled && (
+          {/* Step 2a: TOTP code entry */}
+          {method === "totp" && (
             <form onSubmit={verifyTotp} className="space-y-3">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Smartphone className="size-4" /> Enter the code from your authenticator
@@ -111,13 +140,19 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
             </form>
           )}
 
-          {!session.totpEnrolled && !session.fido2Enrolled && (
+          {noMethods && (
             <p className="text-sm text-muted-foreground">
-              No re-authentication factor is enrolled. Set up an authenticator or passkey first.
+              No re-authentication factor is enrolled. Set up an authenticator or passkey in your profile first.
             </p>
           )}
 
-          <Button type="button" variant="ghost" className="w-full" onClick={() => finish(false)}>Cancel</Button>
+          {method === "totp" && passkeyAvailable ? (
+            <Button type="button" variant="ghost" className="w-full" onClick={() => { setError(null); setCode(""); setMethod("choose"); }} disabled={busy}>
+              <ChevronLeft /> Use a different method
+            </Button>
+          ) : null}
+
+          <Button type="button" variant="ghost" className="w-full" onClick={() => finish(false)} disabled={busy}>Cancel</Button>
         </DialogContent>
       </Dialog>
     </>

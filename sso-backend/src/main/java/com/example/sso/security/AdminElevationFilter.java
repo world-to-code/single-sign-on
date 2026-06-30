@@ -143,9 +143,16 @@ public class AdminElevationFilter extends OncePerRequestFilter {
         return value instanceof List<?> list ? list.stream().map(String::valueOf).toList() : Collections.emptyList();
     }
 
-    /** A time claim, encoded as a number or (per Nimbus date handling) a temporal/Instant. */
+    /** A time claim (epoch seconds), encoded as a String, a number, or a temporal/Instant. */
     private Long epochSeconds(Jwt jwt, String name) {
         Object value = jwt.getClaim(name);
+        if (value instanceof String s) {
+            try {
+                return Long.parseLong(s.trim());
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
         if (value instanceof Number n) {
             return n.longValue();
         }

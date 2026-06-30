@@ -222,6 +222,39 @@ public class AuthApiController {
         return ResponseEntity.noContent().build();
     }
 
+    // --- Self-service authenticator (TOTP) enrollment for an already-signed-in user ---
+
+    /** Starts TOTP setup from "My Profile": returns the secret + scannable QR (stored pending in session). */
+    @PostMapping("/factors/totp/setup")
+    public FactorChallenge setupTotp(HttpServletRequest request) {
+        AppUser user = requireMfaComplete();
+        if (factorHandlers.isEnrolled(AuthFactor.TOTP, user)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "An authenticator is already set up. Remove it first to re-enroll.");
+        }
+        return factorHandlers.get(AuthFactor.TOTP).prepare(user, request);
+    }
+
+    /** Confirms TOTP setup by verifying a code against the freshly scanned secret; persists on success. */
+    @PostMapping("/factors/totp/setup/confirm")
+    public ResponseEntity<Void> confirmTotpSetup(@RequestBody FactorVerificationRequest verification,
+                                                 HttpServletRequest request) {
+        AppUser user = requireMfaComplete();
+        if (factorHandlers.get(AuthFactor.TOTP).verify(user, verification, request)) {
+            audit.record("TOTP_ENROLLED", user.getUsername(), true);
+            return ResponseEntity.ok().build();
+        }
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+    }
+
+    /** Removes the signed-in user's TOTP authenticator (so it can be re-enrolled). */
+    @DeleteMapping("/factors/totp")
+    public ResponseEntity<Void> disableTotp() {
+        AppUser user = requireMfaComplete();
+        mfaService.resetMfa(user.getId());
+        audit.record("TOTP_REMOVED", user.getUsername(), true);
+        return ResponseEntity.noContent().build();
+    }
+
     // --- Self-service "My Profile": account summary, active sessions, revoke ---
 
     /** Roll-up of the signed-in user's own identity + security factors. */

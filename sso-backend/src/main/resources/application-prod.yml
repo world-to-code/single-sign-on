@@ -50,6 +50,8 @@ sso:
     salt: ${SSO_CRYPTO_SALT}   # no default in prod: fail fast; use a unique per-deployment salt
   demo-client:
     enabled: ${SSO_DEMO_CLIENT_ENABLED:false}   # do not seed the known-secret demo client in prod
+  integration-test:
+    enabled: ${SSO_INTEGRATION_TEST_ENABLED:false}   # never seed federation test RPs in prod
   admin-console:
     redirect-uris: ${SSO_ADMIN_CONSOLE_REDIRECT_URIS}   # the prod SPA origin + /admin/callback
 

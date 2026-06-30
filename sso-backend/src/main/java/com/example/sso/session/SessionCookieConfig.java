@@ -1,6 +1,7 @@
 package com.example.sso.session;
 
 import com.example.sso.audit.AuditService;
+import com.example.sso.audit.ServerErrorAuditFilter;
 import org.springframework.boot.web.server.Cookie;
 import org.springframework.boot.web.server.servlet.CookieSameSiteSupplier;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
@@ -32,10 +33,20 @@ public class SessionCookieConfig {
         };
     }
 
+    /** Outermost filter: turns any unhandled 500 into an admin-audited entry + a clean, reference-carrying response. */
+    @Bean
+    public FilterRegistrationBean<ServerErrorAuditFilter> serverErrorAuditFilterRegistration(AuditService audit) {
+        FilterRegistrationBean<ServerErrorAuditFilter> registration =
+                new FilterRegistrationBean<>(new ServerErrorAuditFilter(audit));
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE); // wrap everything, including IP access + security chains
+        registration.addUrlPatterns("/*");
+        return registration;
+    }
+
     @Bean
     public FilterRegistrationBean<IpAccessFilter> ipAccessFilterRegistration(IpRuleService ipRules, AuditService audit) {
         FilterRegistrationBean<IpAccessFilter> registration = new FilterRegistrationBean<>(new IpAccessFilter(ipRules, audit));
-        registration.setOrder(Ordered.HIGHEST_PRECEDENCE); // run before the security filter chain
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 10); // just inside the error-audit filter, before security
         registration.addUrlPatterns("/*");
         return registration;
     }
