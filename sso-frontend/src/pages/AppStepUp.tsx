@@ -1,0 +1,73 @@
+import { useCallback, useEffect, useState } from "react";
+import { Fingerprint, Loader2, Lock, Mail } from "lucide-react";
+import { getStepUp } from "../portal";
+import type { StepUpInfo } from "../portal";
+import { webAuthnSupported } from "../webauthn";
+import { factorMeta } from "../factors";
+import { useFactorVerification } from "../hooks/useFactorVerification";
+import AuthLayout from "../components/layout/AuthLayout";
+import { FactorChooser } from "../components/auth/FactorChooser";
+import { OtpInput } from "../components/auth/OtpInput";
+import { Alert, AlertDescription } from "../components/ui/alert";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+
+/**
+ * Per-app step-up: the app the user is launching requires extra factors. Collect the missing factor
+ * (which grants it into the session) and resume the original request.
+ */
+export default function AppStepUp() {
+  const [info, setInfo] = useState<StepUpInfo | null>(null);
+  const {
+    factor, setFactor, code, setCode, password, setPassword, emailSent,
+    error, setError, busy, submitCode, submitPassword, sendEmail, fido2,
+  } = useFactorVerification({ initialFactor: "", onSuccess: () => refresh() });
+
+  // After loading (and after each grant) check whether step-up is satisfied: if so resume the
+  // original request, otherwise show the next pending factor.
+  const refresh = useCallback(async () => {
+    const i = await getStepUp();
+    if (i.ready) { window.location.href = i.returnUrl || "/"; return; }
+    setInfo(i);
+    setFactor((f) => (i.pendingFactors.includes(f) ? f : i.pendingFactors[0]));
+  }, [setFactor]);
+
+  useEffect(() => { refresh().catch(() => setError("Could not load the required verification.")); }, [refresh, setError]);
+
+  if (!info) {
+    return <AuthLayout step="Additional verification" title="Checking requirements…"><div className="flex justify-center py-4"><Loader2 className="animate-spin" /></div></AuthLayout>;
+  }
+
+  const Icon = factorMeta(factor).icon;
+  return (
+    <AuthLayout step="Additional verification" title="Extra security required"
+                description="This application requires an additional verification step before you can continue.">
+      <FactorChooser factors={info.pendingFactors} value={factor} onSelect={setFactor} />
+
+      {error && <Alert variant="destructive" className="mb-4"><AlertDescription>{error}</AlertDescription></Alert>}
+
+      {factor === "FIDO2" && (
+        <Button type="button" className="w-full" onClick={fido2} disabled={busy || !webAuthnSupported()}>
+          {busy ? <Loader2 className="animate-spin" /> : <Fingerprint />} Use your passkey
+        </Button>
+      )}
+      {factor === "PASSWORD" && (
+        <form onSubmit={submitPassword} className="space-y-3">
+          <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" autoFocus required />
+          <Button type="submit" className="w-full" disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : <Lock />} Verify</Button>
+        </form>
+      )}
+      {factor === "EMAIL" && !emailSent && (
+        <Button type="button" className="w-full" onClick={sendEmail}><Mail /> Email me a code</Button>
+      )}
+      {(factor === "TOTP" || (factor === "EMAIL" && emailSent)) && (
+        <form onSubmit={submitCode} className="space-y-3">
+          <OtpInput value={code} onChange={(e) => setCode(e.target.value)} />
+          <Button type="submit" className="w-full" disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : <Icon />} Verify</Button>
+        </form>
+      )}
+
+      <a href={info.returnUrl || "/"} className="mt-4 block text-center text-sm text-muted-foreground hover:text-foreground">Cancel</a>
+    </AuthLayout>
+  );
+}

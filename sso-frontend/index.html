@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Mini SSO — central Identity Provider (OIDC, SAML, SCIM, MFA)." />
+    <meta name="theme-color" content="#4f46e5" />
+    <title>Mini SSO — Identity Provider</title>
+  </head>
+  <body>
+    <div id="root">
+      <!-- Instant boot splash (shown before JS/CSS load; React replaces #root's children on mount). -->
+      <style>
+        @keyframes mss-spin { to { transform: rotate(360deg); } }
+        #mss-boot { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+          background: #ffffff; }
+        #mss-boot .ring { width: 30px; height: 30px; border-radius: 9999px;
+          border: 3px solid #e5e7eb; border-top-color: #4f46e5; animation: mss-spin .7s linear infinite; }
+        @media (prefers-color-scheme: dark) {
+          #mss-boot { background: #0a0a0a; }
+          #mss-boot .ring { border-color: #27272a; border-top-color: #6366f1; }
+        }
+      </style>
+      <div id="mss-boot"><div class="ring"></div></div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

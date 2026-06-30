@@ -1,0 +1,24 @@
+# Build context = repo root (multi-stage Dockerfile builds both services).
+.git
+README.md
+docker-compose.yml
+scripts
+test-client
+
+# Gradle outputs (rebuilt in-image)
+sso-backend/.gradle
+sso-backend/build
+sso-backend/data
+# Generated SPA bundle (rebuilt from sso-frontend in-image)
+sso-backend/src/main/resources/static
+
+# Node outputs (rebuilt in-image)
+sso-frontend/node_modules
+sso-frontend/dist
+
+# Secrets
+*.p12
+*.jks
+*.pem
+.env
+**/__pycache__

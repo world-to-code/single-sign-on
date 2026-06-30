@@ -1,0 +1,18 @@
+[versions]
+opensaml = "5.1.4"
+scim = "1.33.0"
+
+[libraries]
+# SAML2 IdP — OpenSAML 5 (core split into -api/-impl in v5; resolved via Shibboleth repo)
+opensaml-core-api  = { module = "org.opensaml:opensaml-core-api",  version.ref = "opensaml" }
+opensaml-core-impl = { module = "org.opensaml:opensaml-core-impl", version.ref = "opensaml" }
+opensaml-saml-api  = { module = "org.opensaml:opensaml-saml-api",  version.ref = "opensaml" }
+opensaml-saml-impl = { module = "org.opensaml:opensaml-saml-impl", version.ref = "opensaml" }
+# XML security + trust: assertion encryption (Encrypter) + SP signature verification (SignatureValidator,
+# trust engines). Declared explicitly now that the IdP signs/encrypts/verifies, not just transitively.
+opensaml-xmlsec-impl   = { module = "org.opensaml:opensaml-xmlsec-impl",   version.ref = "opensaml" }
+opensaml-security-impl = { module = "org.opensaml:opensaml-security-impl", version.ref = "opensaml" }
+
+# SCIM 2.0 server — framework-agnostic, exposed via a Spring MVC @RestController
+scim-sdk-server = { module = "de.captaingoldfish:scim-sdk-server", version.ref = "scim" }
+scim-sdk-common = { module = "de.captaingoldfish:scim-sdk-common", version.ref = "scim" }

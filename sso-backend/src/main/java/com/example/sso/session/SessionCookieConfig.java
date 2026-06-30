@@ -1,0 +1,42 @@
+package com.example.sso.session;
+
+import com.example.sso.audit.AuditService;
+import org.springframework.boot.web.server.Cookie;
+import org.springframework.boot.web.server.servlet.CookieSameSiteSupplier;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
+
+import java.util.Locale;
+
+/**
+ * Session/network infrastructure beans: the dynamic session-cookie SameSite supplier (so policy
+ * changes take effect without a restart; the Secure attribute is driven by
+ * {@code server.servlet.session.cookie.secure}), and the highest-precedence {@link IpAccessFilter}
+ * registration so IP rules are enforced before any other filter.
+ */
+@Configuration
+public class SessionCookieConfig {
+
+    @Bean
+    public CookieSameSiteSupplier sessionCookieSameSiteSupplier(SessionPolicyService policyService) {
+        return cookie -> {
+            if (!"JSESSIONID".equals(cookie.getName())) {
+                return null; // leave other cookies untouched
+            }
+            // Cookie attributes are GLOBAL: the session cookie is issued before the user (and hence
+            // their per-user policy) is known, so only the Default policy's cookie settings apply.
+            String value = policyService.defaultPolicy().getCookieSameSite();
+            return Cookie.SameSite.valueOf(value.toUpperCase(Locale.ROOT));
+        };
+    }
+
+    @Bean
+    public FilterRegistrationBean<IpAccessFilter> ipAccessFilterRegistration(IpRuleService ipRules, AuditService audit) {
+        FilterRegistrationBean<IpAccessFilter> registration = new FilterRegistrationBean<>(new IpAccessFilter(ipRules, audit));
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE); // run before the security filter chain
+        registration.addUrlPatterns("/*");
+        return registration;
+    }
+}

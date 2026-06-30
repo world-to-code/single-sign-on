@@ -1,0 +1,64 @@
+# Production profile: all secrets come from the environment; required secrets have no
+# default so the app fails fast if they are missing.
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://postgres:5432/sso}
+    username: ${DB_USERNAME:sso}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+
+server:
+  port: ${SERVER_PORT:9000}
+  # Trust X-Forwarded-* ONLY from the configured trusted proxy CIDR(s) — Tomcat's RemoteIpValve
+  # ignores XFF from any other peer, so external clients can't spoof the client IP (which the rate
+  # limiter + IP access list rely on). MUST set SSO_TRUSTED_PROXIES to your load-balancer CIDR;
+  # the safe default trusts only loopback (so behind an LB the real client IP won't resolve until set).
+  forward-headers-strategy: native
+  tomcat:
+    remoteip:
+      internal-proxies: ${SSO_TRUSTED_PROXIES:127\.0\.0\.1}
+  servlet:
+    session:
+      cookie:
+        secure: true   # HTTPS-only session cookie in production
+
+sso:
+  issuer: ${SSO_ISSUER}
+  admin:
+    username: ${SSO_ADMIN_USERNAME:admin}
+    email: ${SSO_ADMIN_EMAIL:admin@example.com}
+    password: ${SSO_ADMIN_PASSWORD}
+  saml:
+    entity-id: ${SSO_SAML_ENTITY_ID}
+    sso-location: ${SSO_SAML_SSO_LOCATION}
+    keystore-path: ${SSO_SAML_KEYSTORE_PATH:/data/saml-idp.p12}
+    keystore-password: ${SSO_SAML_KEYSTORE_PASSWORD}
+  cors:
+    allowed-origins: ${SSO_CORS_ORIGINS:http://localhost:5173}
+  scim:
+    dev-token: ${SSO_SCIM_DEV_TOKEN:}   # blank -> no seeded token; issue via the admin API
+  ratelimit:
+    attempts: ${SSO_RATELIMIT_ATTEMPTS:10}
+    window-seconds: ${SSO_RATELIMIT_WINDOW:60}
+  crypto:
+    master-password: ${SSO_CRYPTO_MASTER_PASSWORD}
+    salt: ${SSO_CRYPTO_SALT}   # no default in prod: fail fast; use a unique per-deployment salt
+  demo-client:
+    enabled: ${SSO_DEMO_CLIENT_ENABLED:false}   # do not seed the known-secret demo client in prod
+  admin-console:
+    redirect-uris: ${SSO_ADMIN_CONSOLE_REDIRECT_URIS}   # the prod SPA origin + /admin/callback
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    org.springframework.security: INFO

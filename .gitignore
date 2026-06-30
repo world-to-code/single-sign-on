@@ -1,0 +1,35 @@
+# ---- Java / Gradle (sso-backend) ----
+sso-backend/.gradle/
+sso-backend/build/
+.gradle/
+build/
+
+# ---- Node / Vite (sso-frontend) ----
+sso-frontend/node_modules/
+sso-frontend/dist/
+
+# Generated SPA bundle (built by the frontend into the backend's static resources)
+sso-backend/src/main/resources/static/
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+
+# ---- Secrets & keystores ----
+*.p12
+*.jks
+*.pem
+.env
+.env.*
+
+# ---- Runtime data (SAML keystore, etc.) ----
+data/
+sso-backend/data/
+
+# ---- Logs / misc ----
+*.log
+**/__pycache__/

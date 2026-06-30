@@ -1,0 +1,79 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '4.0.7'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.example'
+version = '0.0.1-SNAPSHOT'
+description = 'Mini SSO System — Central Identity Provider (OIDC + SAML2 + SCIM + MFA)'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)   // Boot 4 LTS target
+    }
+}
+
+repositories {
+    mavenCentral()
+    // OpenSAML and its net.shibboleth.* transitives are NOT (all) on Maven Central
+    maven { url = uri('https://build.shibboleth.net/maven/releases/') }
+}
+
+dependencies {
+    // --- Spring (all versions managed by the Boot 4 BOM; do not pin) ---
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'          // was -web in Boot 3
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-authorization-server'
+    implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'       // server-rendered login/MFA ceremony pages
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-starter-mail'            // OTT (one-time-token) email delivery
+
+    // --- Persistence ---
+    // Boot 4 modularized auto-config: Flyway integration lives in its own module and is
+    // NOT pulled transitively by the Flyway library, so add it explicitly.
+    implementation 'org.springframework.boot:spring-boot-flyway'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+    runtimeOnly    'org.postgresql:postgresql'
+
+    // --- SAML2 IdP (OpenSAML 5) ---
+    implementation libs.opensaml.core.api
+    implementation libs.opensaml.core.impl
+    implementation libs.opensaml.saml.api
+    implementation libs.opensaml.saml.impl
+    implementation libs.opensaml.xmlsec.impl
+    implementation libs.opensaml.security.impl
+
+    // --- SCIM 2.0 server ---
+    implementation libs.scim.sdk.server
+    implementation libs.scim.sdk.common
+
+    // --- QR codes for TOTP enrollment ---
+    implementation 'com.google.zxing:core:3.5.3'
+    implementation 'com.google.zxing:javase:3.5.3'
+
+    // Spring Security's WebAuthn module for PRIMARY passwordless passkey login (BOM-managed).
+    implementation 'org.springframework.security:spring-security-webauthn'
+
+    // --- Dev ---
+    developmentOnly 'org.springframework.boot:spring-boot-devtools'
+    compileOnly        'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    testCompileOnly      'org.projectlombok:lombok'
+    testAnnotationProcessor 'org.projectlombok:lombok'
+
+    // --- Test ---
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-webmvc-test'   // MockMvc slice (separate module in Boot 4)
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.springframework.security:spring-security-test'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'  // TC 2.x renamed: was :junit-jupiter
+    testImplementation 'org.testcontainers:testcontainers-postgresql'     // TC 2.x renamed: was :postgresql
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
