@@ -20,9 +20,19 @@ repositories {
     maven { url = uri('https://build.shibboleth.net/maven/releases/') }
 }
 
+dependencyManagement {
+    imports {
+        // Spring Modulith 2.0.x aligns with the Spring Boot 4.0 line.
+        mavenBom 'org.springframework.modulith:spring-modulith-bom:2.0.7'
+    }
+}
+
 dependencies {
     // --- Spring (all versions managed by the Boot 4 BOM; do not pin) ---
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'          // was -web in Boot 3
+    // Modular monolith: module model + boundary verification (see ModularityTests).
+    implementation 'org.springframework.modulith:spring-modulith-starter-core'
+    testImplementation 'org.springframework.modulith:spring-modulith-starter-test'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-authorization-server'
     implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'

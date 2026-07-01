@@ -1,17 +1,12 @@
 package com.example.sso.portal;
 
-import com.example.sso.admin.ClientAdminService;
-import com.example.sso.admin.ClientView;
 import com.example.sso.authpolicy.AuthFactor;
 import com.example.sso.authpolicy.AuthPolicy;
 import com.example.sso.authpolicy.AuthPolicyEvaluator;
 import com.example.sso.authpolicy.AuthPolicyRepository;
 import com.example.sso.authpolicy.AuthPolicyStep;
-import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.portal.AppAssignment.AppType;
 import com.example.sso.portal.AppAssignment.SubjectType;
-import com.example.sso.saml.SamlRelyingParty;
-import com.example.sso.saml.SamlRelyingPartyRepository;
 import com.example.sso.shared.IdName;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
@@ -20,8 +15,6 @@ import com.example.sso.user.AppUserRepository;
 import com.example.sso.user.Role;
 import com.example.sso.user.RoleRepository;
 import com.example.sso.user.UserGroupRepository;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -37,18 +30,17 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import org.springframework.beans.factory.annotation.Value;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
-import org.springframework.web.util.UriUtils;
 
 /** Unifies OIDC clients + SAML SPs as launchable "applications" and resolves portal assignments. */
 @Service
+@RequiredArgsConstructor
 public class ApplicationService {
 
-    private final ClientAdminService clients;
-    private final SamlRelyingPartyRepository samlRelyingParties;
+    /** Each protocol module contributes its launchable apps here (OIDC in admin, SAML in saml). */
+    private final List<ApplicationSource> applicationSources;
     private final AppAssignmentRepository assignments;
     private final AppPolicyRepository appPolicies;
     private final AppUserRepository users;
@@ -56,24 +48,6 @@ public class ApplicationService {
     private final UserGroupRepository userGroups;
     private final AuthPolicyRepository policies;
     private final AuthPolicyEvaluator evaluator;
-    private final String issuer;
-
-    public ApplicationService(ClientAdminService clients, SamlRelyingPartyRepository samlRelyingParties,
-                              AppAssignmentRepository assignments, AppPolicyRepository appPolicies,
-                              AppUserRepository users, RoleRepository roles, UserGroupRepository userGroups,
-                              AuthPolicyRepository policies, AuthPolicyEvaluator evaluator,
-                              @Value("${sso.issuer}") String issuer) {
-        this.clients = clients;
-        this.samlRelyingParties = samlRelyingParties;
-        this.assignments = assignments;
-        this.appPolicies = appPolicies;
-        this.users = users;
-        this.roles = roles;
-        this.userGroups = userGroups;
-        this.policies = policies;
-        this.evaluator = evaluator;
-        this.issuer = issuer;
-    }
 
     /**
      * Evaluates whether {@code user} may launch the app. Beyond holding the required factors, a policy
@@ -245,64 +219,24 @@ public class ApplicationService {
                 .collect(Collectors.toMap(IdName::getId, IdName::getName));
 
         Map<String, ApplicationView> index = new LinkedHashMap<>();
-        for (ClientView c : clients.listClients()) {
-            boolean system = AdminPortalSeeder.CLIENT_ID.equals(c.clientId());
-            String name = system ? "Admin Portal"
-                    : (c.clientName() == null || c.clientName().isBlank() ? c.clientId() : c.clientName());
-            String launchUrl = system ? "/admin" : oidcLaunchUrl(c);
-            index.put(key(AppType.OIDC, c.id()), appView(c.id(), "OIDC", name, launchUrl, system, appPolicyByKey, policyNames));
-        }
-        for (SamlRelyingParty rp : samlRelyingParties.findAll()) {
-            index.put(key(AppType.SAML, rp.getId().toString()),
-                    appView(rp.getId().toString(), "SAML", rp.getEntityId(), samlLaunchUrl(rp), false, appPolicyByKey, policyNames));
+        for (ApplicationSource source : applicationSources) {
+            for (ApplicationDescriptor app : source.applications()) {
+                index.put(key(app.type(), app.id()), appView(app, appPolicyByKey, policyNames));
+            }
         }
         return index;
     }
 
-    private ApplicationView appView(String id, String type, String name, String launchUrl, boolean system,
-                                    Map<String, UUID> appPolicyByKey, Map<UUID, String> policyNames) {
-        UUID policyId = appPolicyByKey.get(type + ":" + id);
-        return new ApplicationView(id, type, name, launchUrl, system,
+    private ApplicationView appView(ApplicationDescriptor app, Map<String, UUID> appPolicyByKey,
+                                    Map<UUID, String> policyNames) {
+        UUID policyId = appPolicyByKey.get(key(app.type(), app.id()));
+        return new ApplicationView(app.id(), app.type().name(), app.name(), app.launchUrl(), app.system(),
                 policyId == null ? null : policyId.toString(),
                 policyId == null ? null : policyNames.get(policyId));
     }
 
     private static String key(AppType type, String id) {
         return type + ":" + id;
-    }
-
-    /**
-     * OIDC launch: prefer the RP's {@code initiate_login_uri} (OIDC Core §4 third-party-initiated
-     * login) with the required {@code iss} parameter, so the RP starts its own RP-initiated flow.
-     * Falls back to the app's origin (derived from its first redirect URI) when none is configured.
-     */
-    private String oidcLaunchUrl(ClientView client) {
-        if (StringUtils.hasText(client.initiateLoginUri())) {
-            String uri = client.initiateLoginUri().trim();
-            String sep = uri.contains("?") ? "&" : "?";
-            return uri + sep + "iss=" + UriUtils.encodeQueryParam(issuer, StandardCharsets.UTF_8);
-        }
-        String first = client.redirectUris() == null ? "" : client.redirectUris().split("[,\\s]+")[0].trim();
-        if (first.isEmpty()) {
-            return null;
-        }
-        try {
-            URI uri = URI.create(first);
-            return uri.getScheme() + "://" + uri.getAuthority();
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
-    }
-
-    /**
-     * SAML launch: prefer the SP's own SP-initiated login start URL (the SP then sends us an
-     * AuthnRequest — the standard, secure flow). Falls back to IdP-initiated (unsolicited) SSO.
-     */
-    private static String samlLaunchUrl(SamlRelyingParty rp) {
-        if (StringUtils.hasText(rp.getSpLoginUrl())) {
-            return rp.getSpLoginUrl().trim();
-        }
-        return "/saml2/idp/sso/init?sp=" + UriUtils.encodeQueryParam(rp.getEntityId(), StandardCharsets.UTF_8);
     }
 
     /** Resolves subject (user/role) display names for a batch of assignments in two queries, not per-row. */
