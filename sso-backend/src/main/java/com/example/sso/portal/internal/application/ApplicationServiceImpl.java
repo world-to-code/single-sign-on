@@ -22,6 +22,7 @@ import com.example.sso.portal.internal.domain.AppPolicyRepository;
 import com.example.sso.shared.IdName;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.user.Roles;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
 import com.example.sso.user.RoleRef;
@@ -170,7 +171,7 @@ public class ApplicationServiceImpl implements ApplicationService {
                 .toList());
 
         // The admin console is auto-granted to any admin — no explicit assignment needed.
-        if (user.getRoles().stream().anyMatch(r -> "ROLE_ADMIN".equals(r.getName()))) {
+        if (user.getRoles().stream().anyMatch(r -> Roles.ADMIN.equals(r.getName()))) {
             index.values().stream().filter(ApplicationView::system)
                     .filter(app -> !apps.contains(app))
                     .forEach(apps::add);

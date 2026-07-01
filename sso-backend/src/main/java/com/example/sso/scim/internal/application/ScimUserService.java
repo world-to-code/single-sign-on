@@ -1,5 +1,6 @@
 package com.example.sso.scim.internal.application;
 
+import com.example.sso.user.Roles;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
@@ -42,7 +43,7 @@ public class ScimUserService {
                 .orElse(resource.getName().flatMap(Name::getFormatted).orElse(null));
 
         UserAccount created = userService.createUser(new NewUser(userName, email, displayName, null,
-                Set.of("ROLE_USER")));
+                Set.of(Roles.USER)));
         resource.getExternalId().ifPresent(ext -> userService.assignExternalId(created.getId(), ext));
         if (!resource.isActive().orElse(Boolean.TRUE)) {
             userService.disable(created.getId());
@@ -95,7 +96,7 @@ public class ScimUserService {
 
     /** Admin-bearing accounts can't be deleted/disabled via SCIM (machine credentials must not lock out admins). */
     private static void ensureNotPrivileged(UserAccount user, String action) {
-        boolean admin = user.getRoles().stream().anyMatch(r -> "ROLE_ADMIN".equals(r.getName()));
+        boolean admin = user.getRoles().stream().anyMatch(r -> Roles.ADMIN.equals(r.getName()));
         if (admin) {
             throw new BadRequestException("a privileged (admin) account cannot be " + action + " via SCIM");
         }

@@ -1,5 +1,6 @@
 package com.example.sso.scim.internal.application;
 
+import com.example.sso.user.Roles;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.RoleService;
 import com.example.sso.user.UserAccount;
@@ -38,7 +39,7 @@ public class ScimGroupService {
      * roles are ever introduced (privileges attached to a role), switch this to protect by effective
      * privilege rather than by role name.
      */
-    private static final Set<String> PROTECTED_ROLES = Set.of("ROLE_ADMIN", "ROLE_GROUP_ADMIN");
+    private static final Set<String> PROTECTED_ROLES = Set.of(Roles.ADMIN, Roles.GROUP_ADMIN);
 
     private static void ensureManageable(String roleName) {
         if (PROTECTED_ROLES.contains(roleName)) {

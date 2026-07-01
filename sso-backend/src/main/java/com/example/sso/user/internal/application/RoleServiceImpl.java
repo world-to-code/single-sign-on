@@ -4,6 +4,7 @@ import com.example.sso.shared.IdName;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.user.Roles;
 import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.internal.domain.Permission;
@@ -39,7 +40,7 @@ import java.util.stream.Collectors;
 public class RoleServiceImpl implements RoleService {
 
     /** ROLE_ADMIN's permissions are self-healed to the full catalog and thus not editable here. */
-    private static final String ADMIN_ROLE = "ROLE_ADMIN";
+    private static final String ADMIN_ROLE = Roles.ADMIN;
     private static final Set<String> CATALOG = Set.copyOf(Permissions.ALL);
 
     // A role's name is emitted verbatim as a granted authority (see SsoUserDetailsService), so it shares
@@ -47,7 +48,7 @@ public class RoleServiceImpl implements RoleService {
     // security-significant authority, else a role could grant MFA_COMPLETE, a factor, SCIM access or a
     // permission without going through the proper flow. These mirror authpolicy.Factors / SCIM authorities
     // as protocol constants (the user module must not depend on those modules).
-    private static final Set<String> RESERVED_AUTHORITY_NAMES = Set.of("MFA_COMPLETE", "ROLE_SCIM");
+    private static final Set<String> RESERVED_AUTHORITY_NAMES = Set.of("MFA_COMPLETE", Roles.SCIM);
     private static final Set<String> RESERVED_AUTHORITY_PREFIXES = Set.of("FACTOR_", "AUTH_TIME_", "STEPUP_TIME_");
 
     private final RoleRepository roles;

@@ -1,5 +1,6 @@
 package com.example.sso.user.internal.application;
 
+import com.example.sso.user.Roles;
 import com.example.sso.user.internal.domain.Permission;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.RbacService;
@@ -32,7 +33,7 @@ public class RbacServiceImpl implements RbacService {
     @Override
     @Transactional
     public void grantAllPermissionsToAdmin() {
-        Role admin = roles.findByName("ROLE_ADMIN")
+        Role admin = roles.findByName(Roles.ADMIN)
                 .orElseThrow(() -> new IllegalStateException("ROLE_ADMIN must exist before granting permissions"));
 
         ALL_PERMISSIONS.forEach(name -> admin.addPermission(getOrCreatePermission(name)));
@@ -42,7 +43,7 @@ public class RbacServiceImpl implements RbacService {
     @Override
     @Transactional
     public void grantGroupAdminPermissions() {
-        Role groupAdmin = roles.findByName("ROLE_GROUP_ADMIN")
+        Role groupAdmin = roles.findByName(Roles.GROUP_ADMIN)
                 .orElseThrow(() -> new IllegalStateException("ROLE_GROUP_ADMIN must exist before granting permissions"));
 
         GROUP_ADMIN_PERMISSIONS.forEach(name -> groupAdmin.addPermission(getOrCreatePermission(name)));

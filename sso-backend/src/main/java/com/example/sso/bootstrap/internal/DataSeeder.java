@@ -1,6 +1,7 @@
 package com.example.sso.bootstrap.internal;
 
 import com.example.sso.authpolicy.AuthPolicyAdminService;
+import com.example.sso.user.Roles;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.RbacService;
 import com.example.sso.user.RoleService;
@@ -49,16 +50,16 @@ public class DataSeeder implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        roleService.getOrCreateSystem("ROLE_USER");
-        roleService.getOrCreateSystem("ROLE_ADMIN");
-        roleService.getOrCreateSystem("ROLE_GROUP_ADMIN");
+        roleService.getOrCreateSystem(Roles.USER);
+        roleService.getOrCreateSystem(Roles.ADMIN);
+        roleService.getOrCreateSystem(Roles.GROUP_ADMIN);
         rbacService.grantAllPermissionsToAdmin();
         rbacService.grantGroupAdminPermissions();
         authPolicyService.seedDefault();
 
         if (!userService.existsByUsername(adminUsername)) {
             userService.createUser(new NewUser(adminUsername, adminEmail, "Administrator",
-                    adminPassword, Set.of("ROLE_ADMIN", "ROLE_USER")));
+                    adminPassword, Set.of(Roles.ADMIN, Roles.USER)));
             log.warn("Seeded default admin user '{}'. CHANGE THIS PASSWORD before any real use.",
                     adminUsername);
         }

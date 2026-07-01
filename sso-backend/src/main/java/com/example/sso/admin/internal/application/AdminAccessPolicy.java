@@ -1,5 +1,6 @@
 package com.example.sso.admin.internal.application;
 
+import com.example.sso.user.Roles;
 import com.example.sso.user.UserGroupService;
 import com.example.sso.user.UserService;
 import java.util.Collection;
@@ -28,10 +29,10 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class AdminAccessPolicy {
 
-    static final String ADMIN_ROLE = "ROLE_ADMIN";
+    static final String ADMIN_ROLE = Roles.ADMIN;
 
     /** Roles that grant admin-console reach; only a super admin may assign them. */
-    private static final Set<String> PRIVILEGED_ROLES = Set.of("ROLE_ADMIN", "ROLE_GROUP_ADMIN");
+    private static final Set<String> PRIVILEGED_ROLES = Set.of(Roles.ADMIN, Roles.GROUP_ADMIN);
 
     private final UserService userService;
     private final UserGroupService userGroups;

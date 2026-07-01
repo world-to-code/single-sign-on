@@ -9,6 +9,7 @@ import com.example.sso.security.AdminElevationFilter;
 import com.example.sso.security.SessionIntegrityFilter;
 import com.example.sso.security.SessionMetadataCleanupListener;
 import com.example.sso.session.SessionMetadataStore;
+import com.example.sso.user.Roles;
 import jakarta.servlet.http.HttpSessionListener;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.ServletListenerRegistrationBean;
@@ -143,8 +144,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/**")
                         .access(AuthorizationManagers.allOf(
                                 AuthorizationManagers.anyOf(
-                                        AuthorityAuthorizationManager.hasRole("ADMIN"),
-                                        AuthorityAuthorizationManager.hasRole("GROUP_ADMIN")),
+                                        AuthorityAuthorizationManager.hasAuthority(Roles.ADMIN),
+                                        AuthorityAuthorizationManager.hasAuthority(Roles.GROUP_ADMIN)),
                                 AuthorityAuthorizationManager.hasAuthority(Factors.MFA_COMPLETE)))
                         .requestMatchers("/api/me", "/api/portal/**")
                         .access(AuthorityAuthorizationManager.hasAuthority(Factors.MFA_COMPLETE))

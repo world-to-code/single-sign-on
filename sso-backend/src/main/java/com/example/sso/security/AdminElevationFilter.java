@@ -1,5 +1,6 @@
 package com.example.sso.security;
 
+import com.example.sso.user.Roles;
 import com.example.sso.admin.AdminPortalSettingsData;
 import com.example.sso.admin.AdminPortalSettingsService;
 import com.example.sso.audit.AuditType;
@@ -55,7 +56,7 @@ public class AdminElevationFilter extends OncePerRequestFilter {
     static final String REQUIRED_SCOPE = AdminPortalSeeder.ADMIN_SCOPE;
     static final String REQUIRED_ACR = "mfa";
     /** Admin-tier roles that may elevate: the super admin and the scoped (group) admin. */
-    static final Set<String> ADMIN_TIER_ROLES = Set.of("ROLE_ADMIN", "ROLE_GROUP_ADMIN");
+    static final Set<String> ADMIN_TIER_ROLES = Set.of(Roles.ADMIN, Roles.GROUP_ADMIN);
 
     private static final String INSUFFICIENT = "insufficient_user_authentication";
     private static final String CHALLENGE =

@@ -1,5 +1,6 @@
 package com.example.sso.scim;
 
+import com.example.sso.user.Roles;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -33,7 +34,7 @@ public class ScimBearerTokenFilter extends OncePerRequestFilter {
             String token = header.substring(BEARER_PREFIX.length());
             if (tokenService.isValid(token)) {
                 var authentication = new UsernamePasswordAuthenticationToken(
-                        "scim-client", null, List.of(new SimpleGrantedAuthority("ROLE_SCIM")));
+                        "scim-client", null, List.of(new SimpleGrantedAuthority(Roles.SCIM)));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
         }

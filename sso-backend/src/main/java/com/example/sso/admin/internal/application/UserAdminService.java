@@ -4,6 +4,7 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.mfa.MfaService;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.user.Roles;
 import com.example.sso.user.GroupMembership;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.Permissions;
@@ -36,7 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class UserAdminService {
 
-    private static final String ADMIN_ROLE = "ROLE_ADMIN";
+    private static final String ADMIN_ROLE = Roles.ADMIN;
 
     private final UserService userService;
     private final RoleService roleService;
@@ -76,7 +77,7 @@ public class UserAdminService {
     @Transactional
     public AdminUserView createUser(CreateUserRequest request) {
         Set<String> roleNames = (request.roles() == null || request.roles().isEmpty())
-                ? Set.of("ROLE_USER") : request.roles();
+                ? Set.of(Roles.USER) : request.roles();
 
         try {
             AdminUserView created = AdminUserView.of(userService.createUser(new NewUser(request.username(),
