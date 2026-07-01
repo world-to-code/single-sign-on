@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ScrollText } from "lucide-react";
 import { useApiData } from "../useApiData";
 import { PageHeader } from "@/components/PageHeader";
@@ -10,31 +11,57 @@ interface AuditEvent {
   occurredAt: string;
   principal: string | null;
   type: string;
+  category: string;
   success: boolean;
   detail: string | null;
 }
 
+const CATEGORIES = [
+  "AUTHENTICATION", "AUTHORIZATION", "SESSION", "ACCESS", "APP_ACCESS", "USER_ACTION", "ADMIN", "SYSTEM",
+] as const;
+
+const label = (c: string) => c.replace(/_/g, " ").toLowerCase();
+
 export default function Audit() {
-  const { data, error } = useApiData<AuditEvent[]>("/api/admin/audit");
+  const [category, setCategory] = useState<string>("ALL");
+  const path = category === "ALL" ? "/api/admin/audit" : `/api/admin/audit?category=${category}`;
+  const { data, error } = useApiData<AuditEvent[]>(path);
 
   return (
     <>
       <PageHeader
         title="Audit Log"
-        description={data ? `Showing the latest ${data.length} security events.` : "Recent security events."}
+        description={data ? `Showing the latest ${data.length} events${category === "ALL" ? "" : ` in ${label(category)}`}.` : "Recent security events."}
       />
+
+      <div className="mb-4 flex flex-wrap gap-1 border-b">
+        {(["ALL", ...CATEGORIES] as string[]).map((c) => (
+          <button
+            key={c}
+            onClick={() => setCategory(c)}
+            className={`-mb-px whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium capitalize ${
+              category === c
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {c === "ALL" ? "All" : label(c)}
+          </button>
+        ))}
+      </div>
 
       <DataList
         data={data}
         error={error}
         isEmpty={(events) => events.length === 0}
-        empty={<EmptyState icon={<ScrollText className="size-8" />} title="No audit events yet" />}
+        empty={<EmptyState icon={<ScrollText className="size-8" />} title="No audit events" hint="No events in this category yet." />}
       >
         {(events) => (
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Time</TableHead>
+                <TableHead>Category</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Principal</TableHead>
                 <TableHead>Result</TableHead>
@@ -45,6 +72,7 @@ export default function Audit() {
               {events.map((e) => (
                 <TableRow key={e.id}>
                   <TableCell className="whitespace-nowrap text-muted-foreground">{new Date(e.occurredAt).toLocaleString()}</TableCell>
+                  <TableCell><Badge variant="muted" className="text-xs">{label(e.category ?? "system")}</Badge></TableCell>
                   <TableCell className="font-medium">{e.type}</TableCell>
                   <TableCell>{e.principal ?? <span className="text-muted-foreground">—</span>}</TableCell>
                   <TableCell><Badge variant={e.success ? "success" : "destructive"}>{e.success ? "ok" : "fail"}</Badge></TableCell>

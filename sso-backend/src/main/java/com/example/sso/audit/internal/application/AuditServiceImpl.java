@@ -1,5 +1,6 @@
 package com.example.sso.audit.internal.application;
 
+import com.example.sso.audit.AuditCategory;
 import com.example.sso.audit.AuditEntry;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
@@ -48,8 +49,15 @@ public class AuditServiceImpl implements AuditService {
                 .map(AuditServiceImpl::toEntry).toList();
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<AuditEntry> recentByCategory(AuditCategory category) {
+        return repository.findTop100ByCategoryOrderByOccurredAtDesc(category).stream()
+                .map(AuditServiceImpl::toEntry).toList();
+    }
+
     private static AuditEntry toEntry(AuditEvent event) {
         return new AuditEntry(event.getId(), event.getOccurredAt(), event.getPrincipal(),
-                event.getType(), event.isSuccess(), event.getDetail());
+                event.getType(), event.getCategory(), event.isSuccess(), event.getDetail());
     }
 }

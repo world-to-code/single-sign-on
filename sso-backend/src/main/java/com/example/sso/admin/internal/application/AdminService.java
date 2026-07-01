@@ -1,5 +1,6 @@
 package com.example.sso.admin.internal.application;
 
+import com.example.sso.audit.AuditCategory;
 import com.example.sso.audit.AuditEntry;
 import com.example.sso.audit.AuditService;
 import com.example.sso.crypto.RsaKeyService;
@@ -27,8 +28,9 @@ public class AdminService {
     private final RsaKeyService rsaKeyService;
     private final SamlCredentialService samlCredentialService;
 
-    public List<AuditEntry> recentAudit() {
-        return auditService.recent();
+    /** Recent audit events, optionally filtered to a single category (null = all categories). */
+    public List<AuditEntry> recentAudit(AuditCategory category) {
+        return category == null ? auditService.recent() : auditService.recentByCategory(category);
     }
 
     public ScimTokenIssued issueScimToken(IssueScimTokenRequest request) {

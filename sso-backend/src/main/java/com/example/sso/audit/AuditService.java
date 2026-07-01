@@ -16,4 +16,7 @@ public interface AuditService {
 
     /** The most recent events recorded for a single principal (username), newest first. */
     List<AuditEntry> recentForPrincipal(String principal);
+
+    /** The most recent events in a single category, newest first. */
+    List<AuditEntry> recentByCategory(AuditCategory category);
 }

@@ -43,6 +43,7 @@ public class UserAdminService {
     private final MfaService mfaService;
     private final UserGroupService userGroups;
     private final AdminAccessPolicy accessPolicy;
+    private final AdminAuditLogger auditLogger;
 
     @Transactional(readOnly = true)
     public List<AdminUserView> listUsers() {
@@ -77,8 +78,10 @@ public class UserAdminService {
                 ? Set.of("ROLE_USER") : request.roles();
 
         try {
-            return AdminUserView.of(userService.createUser(new NewUser(request.username(), request.email(),
-                    request.displayName(), request.password(), roleNames)));
+            AdminUserView created = AdminUserView.of(userService.createUser(new NewUser(request.username(),
+                    request.email(), request.displayName(), request.password(), roleNames)));
+            auditLogger.log("USER_CREATED", "username=" + created.username() + " roles=" + roleNames);
+            return created;
         } catch (IllegalArgumentException e) {
             throw new ConflictException(e.getMessage());
         }
@@ -89,20 +92,25 @@ public class UserAdminService {
         boolean remainsEnabledAdmin = request.enabled()
                 && request.roles() != null && request.roles().contains(ADMIN_ROLE);
         ensureNotLastAdmin(id, remainsEnabledAdmin);
-        return AdminUserView.of(userService.updateUser(id, new UserUpdate(request.displayName(), request.email(),
-                request.enabled(), request.roles())));
+        AdminUserView updated = AdminUserView.of(userService.updateUser(id, new UserUpdate(request.displayName(),
+                request.email(), request.enabled(), request.roles())));
+        auditLogger.log("USER_UPDATED", "user=" + id + " enabled=" + request.enabled() + " roles=" + request.roles());
+        return updated;
     }
 
     @Transactional
     public AdminUserView setEnabled(UUID id, boolean enabled) {
         ensureNotLastAdmin(id, enabled);
-        return AdminUserView.of(userService.setEnabled(id, enabled));
+        AdminUserView view = AdminUserView.of(userService.setEnabled(id, enabled));
+        auditLogger.log(enabled ? "USER_ENABLED" : "USER_DISABLED", "user=" + id);
+        return view;
     }
 
     @Transactional
     public void deleteUser(UUID id) {
         ensureNotLastAdmin(id, false);
         userService.delete(id);
+        auditLogger.log("USER_DELETED", "user=" + id);
     }
 
     /**
@@ -138,6 +146,7 @@ public class UserAdminService {
             throw new NotFoundException("User not found");
         }
         mfaService.resetMfa(id);
+        auditLogger.log("USER_MFA_RESET", "user=" + id);
     }
 
     @Transactional(readOnly = true)
@@ -147,17 +156,22 @@ public class UserAdminService {
 
     @Transactional
     public RoleView createRole(String name, Set<String> permissions) {
-        return RoleView.of(roleService.create(name, permissions));
+        RoleView view = RoleView.of(roleService.create(name, permissions));
+        auditLogger.log("ROLE_CREATED", "role=" + name + " permissions=" + permissions);
+        return view;
     }
 
     @Transactional
     public RoleView updateRole(UUID id, String name, Set<String> permissions) {
-        return RoleView.of(roleService.updateRole(id, name, permissions));
+        RoleView view = RoleView.of(roleService.updateRole(id, name, permissions));
+        auditLogger.log("ROLE_UPDATED", "role=" + id + " name=" + name + " permissions=" + permissions);
+        return view;
     }
 
     @Transactional
     public void deleteRole(UUID id) {
         roleService.deleteRole(id);
+        auditLogger.log("ROLE_DELETED", "role=" + id);
     }
 
     @Transactional(readOnly = true)
@@ -167,7 +181,9 @@ public class UserAdminService {
 
     @Transactional
     public AdminUserView setUserPermissions(UUID id, Set<String> permissionNames) {
-        return AdminUserView.of(userService.setDirectPermissions(id, permissionNames));
+        AdminUserView view = AdminUserView.of(userService.setDirectPermissions(id, permissionNames));
+        auditLogger.log("USER_PERMISSIONS_UPDATED", "user=" + id + " permissions=" + permissionNames);
+        return view;
     }
 
     /** Full detail for a single user, with roles attributed to their source and effective permissions. */

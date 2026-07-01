@@ -1,6 +1,7 @@
 package com.example.sso.admin.internal.api;
 
 import com.example.sso.admin.internal.application.AdminPortalSettingsRequest;
+import com.example.sso.admin.internal.application.AdminAuditLogger;
 import com.example.sso.admin.internal.application.AdminService;
 import com.example.sso.admin.internal.application.AdminUserView;
 import com.example.sso.admin.internal.application.ClientAdminService;
@@ -18,6 +19,7 @@ import com.example.sso.admin.internal.application.UserDevicesView;
 import com.example.sso.admin.internal.application.UserSessionView;
 
 import com.example.sso.admin.AdminPortalSettingsService;
+import com.example.sso.audit.AuditCategory;
 import com.example.sso.audit.AuditEntry;
 import com.example.sso.portal.AppType;
 import com.example.sso.portal.AppAssignmentView;
@@ -76,6 +78,7 @@ public class AdminController {
 
     private final UserAdminService userAdminService;
     private final UserDetailAdminService userDetailAdminService;
+    private final AdminAuditLogger auditLogger;
     private final ClientAdminService clientAdminService;
     private final SamlRelyingPartyAdminService samlRelyingParties;
     private final SessionPolicyService sessionPolicy;
@@ -236,14 +239,19 @@ public class AdminController {
     @PutMapping("/groups/{id}/roles")
     @PreAuthorize("hasAuthority('" + Permissions.GROUP_UPDATE + "')")
     public GroupView setGroupRoles(@PathVariable UUID id, @RequestBody SetGroupRolesRequest request) {
-        return userGroups.setRoles(id, request.roleNames() == null ? Set.of() : request.roleNames());
+        Set<String> roleNames = request.roleNames() == null ? Set.of() : request.roleNames();
+        GroupView view = userGroups.setRoles(id, roleNames);
+        auditLogger.log("GROUP_ROLES_UPDATED", "group=" + id + " roles=" + roleNames);
+        return view;
     }
 
     /** Replaces the group's managers (scoped admins allowed to manage its members). */
     @PutMapping("/groups/{id}/managers")
     @PreAuthorize("hasAuthority('" + Permissions.GROUP_UPDATE + "')")
     public GroupView setGroupManagers(@PathVariable UUID id, @RequestBody SetGroupManagersRequest request) {
-        return userGroups.setManagers(id, groupIds(request.managerUserIds()));
+        GroupView view = userGroups.setManagers(id, groupIds(request.managerUserIds()));
+        auditLogger.log("GROUP_MANAGERS_UPDATED", "group=" + id + " managers=" + request.managerUserIds());
+        return view;
     }
 
     // --- Group detail page (members paginated + assigned apps) ---
@@ -335,8 +343,8 @@ public class AdminController {
 
     @GetMapping("/audit")
     @PreAuthorize("hasAuthority('" + Permissions.AUDIT_READ + "')")
-    public List<AuditEntry> audit() {
-        return adminService.recentAudit();
+    public List<AuditEntry> audit(@RequestParam(name = "category", required = false) AuditCategory category) {
+        return adminService.recentAudit(category);
     }
 
     @PostMapping("/scim/tokens")
