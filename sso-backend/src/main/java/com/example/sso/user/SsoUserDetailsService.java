@@ -1,5 +1,6 @@
 package com.example.sso.user;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -21,13 +22,10 @@ import java.util.stream.Stream;
  * needed, keeping the persisted principal minimal.
  */
 @Service
+@RequiredArgsConstructor
 public class SsoUserDetailsService implements UserDetailsService {
 
     private final AppUserRepository users;
-
-    public SsoUserDetailsService(AppUserRepository users) {
-        this.users = users;
-    }
 
     @Override
     @Transactional(readOnly = true)

@@ -2,6 +2,7 @@ package com.example.sso.webauthn;
 
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.AppUser;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.web.webauthn.api.CredentialRecord;
 import org.springframework.security.web.webauthn.api.PublicKeyCredentialUserEntity;
 import org.springframework.security.web.webauthn.management.PublicKeyCredentialUserEntityRepository;
@@ -17,16 +18,10 @@ import java.util.List;
  * the FIDO2 second factor.
  */
 @Service
+@RequiredArgsConstructor
 public class PasskeyService {
-
     private final UserCredentialRepository credentials;
     private final PublicKeyCredentialUserEntityRepository userEntities;
-
-    public PasskeyService(UserCredentialRepository credentials,
-                          PublicKeyCredentialUserEntityRepository userEntities) {
-        this.credentials = credentials;
-        this.userEntities = userEntities;
-    }
 
     @Transactional(readOnly = true)
     public List<PasskeyView> list(AppUser user) {

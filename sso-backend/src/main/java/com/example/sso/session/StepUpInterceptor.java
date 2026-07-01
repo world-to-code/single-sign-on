@@ -3,6 +3,7 @@ package com.example.sso.session;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
@@ -21,18 +22,14 @@ import java.util.stream.Collectors;
  * then prompts for a fresh factor (TOTP/passkey) and retries.
  */
 @Component
+@RequiredArgsConstructor
 public class StepUpInterceptor implements HandlerInterceptor {
-
     /** Session attribute holding the epoch-millis of the last full/step-up authentication. */
     public static final String AUTH_TIME = "SSO_AUTH_TIME";
 
     private static final Set<String> MUTATING = Set.of("POST", "PUT", "DELETE", "PATCH");
 
     private final SessionPolicyService policyService;
-
-    public StepUpInterceptor(SessionPolicyService policyService) {
-        this.policyService = policyService;
-    }
 
     /** Records the time of a successful (re-)authentication on the session. */
     public static void stamp(HttpSession session) {

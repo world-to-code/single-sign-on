@@ -2,12 +2,12 @@ package com.example.sso.portal;
 
 import com.example.sso.admin.ClientAdminService;
 import com.example.sso.admin.ClientView;
-import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.authpolicy.AuthFactor;
 import com.example.sso.authpolicy.AuthPolicy;
 import com.example.sso.authpolicy.AuthPolicyEvaluator;
 import com.example.sso.authpolicy.AuthPolicyRepository;
 import com.example.sso.authpolicy.AuthPolicyStep;
+import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.portal.AppAssignment.AppType;
 import com.example.sso.portal.AppAssignment.SubjectType;
 import com.example.sso.saml.SamlRelyingParty;
@@ -19,10 +19,7 @@ import com.example.sso.user.AppUser;
 import com.example.sso.user.AppUserRepository;
 import com.example.sso.user.Role;
 import com.example.sso.user.RoleRepository;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.util.UriUtils;
-
+import com.example.sso.user.UserGroupRepository;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -31,6 +28,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +37,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.util.UriUtils;
 
 /** Unifies OIDC clients + SAML SPs as launchable "applications" and resolves portal assignments. */
 @Service
@@ -50,21 +53,26 @@ public class ApplicationService {
     private final AppPolicyRepository appPolicies;
     private final AppUserRepository users;
     private final RoleRepository roles;
+    private final UserGroupRepository userGroups;
     private final AuthPolicyRepository policies;
     private final AuthPolicyEvaluator evaluator;
+    private final String issuer;
 
     public ApplicationService(ClientAdminService clients, SamlRelyingPartyRepository samlRelyingParties,
                               AppAssignmentRepository assignments, AppPolicyRepository appPolicies,
-                              AppUserRepository users, RoleRepository roles,
-                              AuthPolicyRepository policies, AuthPolicyEvaluator evaluator) {
+                              AppUserRepository users, RoleRepository roles, UserGroupRepository userGroups,
+                              AuthPolicyRepository policies, AuthPolicyEvaluator evaluator,
+                              @Value("${sso.issuer}") String issuer) {
         this.clients = clients;
         this.samlRelyingParties = samlRelyingParties;
         this.assignments = assignments;
         this.appPolicies = appPolicies;
         this.users = users;
         this.roles = roles;
+        this.userGroups = userGroups;
         this.policies = policies;
         this.evaluator = evaluator;
+        this.issuer = issuer;
     }
 
     /**
@@ -110,11 +118,11 @@ public class ApplicationService {
      */
     private Optional<AuthPolicy> resolveAppPolicy(AppUser user, AppType appType, String appId) {
         Set<UUID> roleIds = user.getRoles().stream().map(Role::getId).collect(Collectors.toSet());
+        Set<UUID> groupIds = new HashSet<>(userGroups.findGroupIdsByMember(user.getId()));
         List<UUID> candidateIds = new ArrayList<>();
         assignments.findByAppTypeAndAppId(appType, appId).stream()
                 .filter(a -> a.getRequiredPolicyId() != null)
-                .filter(a -> (a.getSubjectType() == SubjectType.USER && a.getSubjectId().equals(user.getId()))
-                        || (a.getSubjectType() == SubjectType.ROLE && roleIds.contains(a.getSubjectId())))
+                .filter(a -> subjectMatches(a, user.getId(), roleIds, groupIds))
                 .forEach(a -> candidateIds.add(a.getRequiredPolicyId()));
         appPolicies.findByAppTypeAndAppId(appType, appId).ifPresent(ap -> candidateIds.add(ap.getRequiredPolicyId()));
         if (candidateIds.isEmpty()) {
@@ -123,6 +131,14 @@ public class ApplicationService {
         return policies.findAllById(candidateIds).stream() // one query (collections batch-fetched)
                 .filter(AuthPolicy::isEnabled)
                 .max(Comparator.comparingInt(AuthPolicy::getPriority));
+    }
+
+    private static boolean subjectMatches(AppAssignment a, UUID userId, Set<UUID> roleIds, Set<UUID> groupIds) {
+        return switch (a.getSubjectType()) {
+            case USER -> a.getSubjectId().equals(userId);
+            case ROLE -> roleIds.contains(a.getSubjectId());
+            case GROUP -> groupIds.contains(a.getSubjectId());
+        };
     }
 
     /** Sets (or clears, when {@code requiredPolicyId} is blank/null) the app-level sign-on policy. */
@@ -148,10 +164,14 @@ public class ApplicationService {
     @Transactional(readOnly = true)
     public List<ApplicationView> appsForUser(AppUser user) {
         Set<UUID> roleIds = user.getRoles().stream().map(Role::getId).collect(Collectors.toSet());
+        Set<UUID> groupIds = new HashSet<>(userGroups.findGroupIdsByMember(user.getId()));
         List<AppAssignment> matched = new ArrayList<>(
                 assignments.findBySubjectTypeAndSubjectId(SubjectType.USER, user.getId()));
         if (!roleIds.isEmpty()) {
             matched.addAll(assignments.findBySubjectTypeAndSubjectIdIn(SubjectType.ROLE, roleIds));
+        }
+        if (!groupIds.isEmpty()) {
+            matched.addAll(assignments.findBySubjectTypeAndSubjectIdIn(SubjectType.GROUP, groupIds));
         }
         Map<String, ApplicationView> index = indexApplications();
         List<ApplicationView> apps = new ArrayList<>(matched.stream()
@@ -166,6 +186,18 @@ public class ApplicationService {
                     .forEach(apps::add);
         }
         return apps.stream()
+                .sorted(Comparator.comparing(ApplicationView::name, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+    }
+
+    /** Applications assigned directly to a group (for the group detail page). */
+    @Transactional(readOnly = true)
+    public List<ApplicationView> appsForGroup(UUID groupId) {
+        Map<String, ApplicationView> index = indexApplications();
+        return assignments.findBySubjectTypeAndSubjectId(SubjectType.GROUP, groupId).stream()
+                .map(a -> index.get(key(a.getAppType(), a.getAppId())))
+                .filter(Objects::nonNull)
+                .distinct()
                 .sorted(Comparator.comparing(ApplicationView::name, String.CASE_INSENSITIVE_ORDER))
                 .toList();
     }
@@ -239,8 +271,17 @@ public class ApplicationService {
         return type + ":" + id;
     }
 
-    /** OIDC: the app's own origin (derived from its first redirect URI); it redirects back to us to sign in. */
-    private static String oidcLaunchUrl(ClientView client) {
+    /**
+     * OIDC launch: prefer the RP's {@code initiate_login_uri} (OIDC Core §4 third-party-initiated
+     * login) with the required {@code iss} parameter, so the RP starts its own RP-initiated flow.
+     * Falls back to the app's origin (derived from its first redirect URI) when none is configured.
+     */
+    private String oidcLaunchUrl(ClientView client) {
+        if (StringUtils.hasText(client.initiateLoginUri())) {
+            String uri = client.initiateLoginUri().trim();
+            String sep = uri.contains("?") ? "&" : "?";
+            return uri + sep + "iss=" + UriUtils.encodeQueryParam(issuer, StandardCharsets.UTF_8);
+        }
         String first = client.redirectUris() == null ? "" : client.redirectUris().split("[,\\s]+")[0].trim();
         if (first.isEmpty()) {
             return null;
@@ -253,17 +294,22 @@ public class ApplicationService {
         }
     }
 
-    /** SAML: IdP-initiated SSO into the SP. */
+    /**
+     * SAML launch: prefer the SP's own SP-initiated login start URL (the SP then sends us an
+     * AuthnRequest — the standard, secure flow). Falls back to IdP-initiated (unsolicited) SSO.
+     */
     private static String samlLaunchUrl(SamlRelyingParty rp) {
+        if (StringUtils.hasText(rp.getSpLoginUrl())) {
+            return rp.getSpLoginUrl().trim();
+        }
         return "/saml2/idp/sso/init?sp=" + UriUtils.encodeQueryParam(rp.getEntityId(), StandardCharsets.UTF_8);
     }
 
     /** Resolves subject (user/role) display names for a batch of assignments in two queries, not per-row. */
     private Map<UUID, String> subjectNames(Collection<AppAssignment> list) {
-        Set<UUID> userIds = list.stream().filter(a -> a.getSubjectType() == SubjectType.USER)
-                .map(AppAssignment::getSubjectId).collect(Collectors.toSet());
-        Set<UUID> roleIds = list.stream().filter(a -> a.getSubjectType() == SubjectType.ROLE)
-                .map(AppAssignment::getSubjectId).collect(Collectors.toSet());
+        Set<UUID> userIds = subjectIds(list, SubjectType.USER);
+        Set<UUID> roleIds = subjectIds(list, SubjectType.ROLE);
+        Set<UUID> groupIds = subjectIds(list, SubjectType.GROUP);
         Map<UUID, String> names = new HashMap<>();
         if (!userIds.isEmpty()) {
             users.findIdNames(userIds).forEach(p -> names.put(p.getId(), p.getName()));
@@ -271,7 +317,15 @@ public class ApplicationService {
         if (!roleIds.isEmpty()) {
             roles.findIdNames(roleIds).forEach(p -> names.put(p.getId(), p.getName()));
         }
+        if (!groupIds.isEmpty()) {
+            userGroups.findIdNames(groupIds).forEach(p -> names.put(p.getId(), p.getName()));
+        }
         return names;
+    }
+
+    private static Set<UUID> subjectIds(Collection<AppAssignment> list, SubjectType type) {
+        return list.stream().filter(a -> a.getSubjectType() == type)
+                .map(AppAssignment::getSubjectId).collect(Collectors.toSet());
     }
 
     private AppAssignmentView toView(AppAssignment a, String appName, Map<UUID, String> subjectNames) {

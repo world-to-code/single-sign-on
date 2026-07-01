@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Lock, Pencil, Plus, Trash2 } from "lucide-react";
 import { apiGet } from "../api";
 import { createGroup, updateGroup, type Group, type GroupRequest } from "@/groups";
 import { PageHeader } from "@/components/PageHeader";
@@ -113,17 +114,26 @@ export default function Groups() {
             <TableBody>
               {items.map((g) => (
                 <TableRow key={g.id}>
-                  <TableCell className="font-medium">{g.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <span className="inline-flex items-center gap-2">
+                      <Link to={`/admin/groups/${g.id}`} className="text-primary hover:underline">{g.name}</Link>
+                      {g.system && <Badge variant="secondary"><Lock className="size-3" /> System</Badge>}
+                    </span>
+                  </TableCell>
                   <TableCell className="text-muted-foreground">{g.description || "—"}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {g.externalId ? <Badge variant="outline">{g.externalId}</Badge> : "—"}
                   </TableCell>
                   <TableCell><Badge variant="muted">{g.memberCount}</Badge></TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => editGroup(g)}><Pencil /></Button>
-                      <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" onClick={() => remove(g)}><Trash2 /></Button>
-                    </div>
+                    {g.system ? (
+                      <span className="text-xs text-muted-foreground">managed</span>
+                    ) : (
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => editGroup(g)}><Pencil /></Button>
+                        <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" onClick={() => remove(g)}><Trash2 /></Button>
+                      </div>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

@@ -1,7 +1,6 @@
 package com.example.sso.admin;
 
 import jakarta.validation.constraints.NotBlank;
-
 import java.util.Set;
 
 /**
@@ -32,5 +31,6 @@ public record CreateClientRequest(
         String jwkSetUrl,                         // for private_key_jwt
         String x509SubjectDn,                     // for tls_client_auth
         boolean x509BoundAccessTokens,            // certificate-bound (mTLS) access tokens
-        Integer clientSecretDays) {               // secret expiry; null = never
+        Integer clientSecretDays,                 // secret expiry; null = never
+        String initiateLoginUri) {                // OIDC third-party (portal-launch) initiated login URI
 }

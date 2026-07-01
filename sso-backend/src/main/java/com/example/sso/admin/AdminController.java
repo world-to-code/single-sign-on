@@ -1,30 +1,36 @@
 package com.example.sso.admin;
 
+import com.example.sso.portal.AppAssignment;
+import com.example.sso.portal.AppAssignmentView;
+import com.example.sso.portal.AppPolicyRequest;
+import com.example.sso.portal.ApplicationService;
+import com.example.sso.portal.ApplicationView;
+import com.example.sso.portal.AssignAppRequest;
 import com.example.sso.saml.RelyingPartyRequest;
 import com.example.sso.saml.RelyingPartyView;
 import com.example.sso.saml.SamlRelyingPartyAdminService;
 import com.example.sso.scim.IssueScimTokenRequest;
 import com.example.sso.scim.ScimTokenIssued;
-import com.example.sso.portal.AppAssignment;
-import com.example.sso.portal.AppAssignmentView;
-import com.example.sso.portal.ApplicationService;
-import com.example.sso.portal.ApplicationView;
-import com.example.sso.portal.AppPolicyRequest;
-import com.example.sso.portal.AssignAppRequest;
 import com.example.sso.session.IpRuleRequest;
 import com.example.sso.session.IpRuleService;
 import com.example.sso.session.IpRuleView;
 import com.example.sso.session.SessionPolicyRequest;
 import com.example.sso.session.SessionPolicyService;
 import com.example.sso.session.SessionPolicyView;
+import com.example.sso.user.GroupMembersPage;
 import com.example.sso.user.GroupRequest;
 import com.example.sso.user.GroupView;
 import com.example.sso.user.Permissions;
+import com.example.sso.user.Suggestion;
 import com.example.sso.user.UserGroup;
 import com.example.sso.user.UserGroupService;
-
 import jakarta.validation.Valid;
-
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -35,13 +41,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
  * Admin REST API. URL access requires ROLE_ADMIN (RBAC, see SecurityConfig); each method
@@ -49,6 +50,7 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api/admin")
+@RequiredArgsConstructor
 public class AdminController {
 
     private final UserAdminService userAdminService;
@@ -60,21 +62,6 @@ public class AdminController {
     private final UserGroupService userGroups;
     private final AdminService adminService;
     private final AdminPortalSettingsService adminPortalSettings;
-
-    public AdminController(UserAdminService userAdminService, ClientAdminService clientAdminService,
-                          SamlRelyingPartyAdminService samlRelyingParties, SessionPolicyService sessionPolicy,
-                          IpRuleService ipRules, ApplicationService applications, UserGroupService userGroups,
-                          AdminService adminService, AdminPortalSettingsService adminPortalSettings) {
-        this.userAdminService = userAdminService;
-        this.clientAdminService = clientAdminService;
-        this.samlRelyingParties = samlRelyingParties;
-        this.sessionPolicy = sessionPolicy;
-        this.ipRules = ipRules;
-        this.applications = applications;
-        this.userGroups = userGroups;
-        this.adminService = adminService;
-        this.adminPortalSettings = adminPortalSettings;
-    }
 
     // --- Users ---
 
@@ -166,6 +153,42 @@ public class AdminController {
         return ResponseEntity.noContent().build();
     }
 
+    // --- Group detail page (members paginated + assigned apps) ---
+    @GetMapping("/groups/{id}")
+    @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "')")
+    public GroupView group(@PathVariable UUID id) {
+        return toView(userGroups.get(id));
+    }
+
+    @GetMapping("/groups/{id}/members")
+    @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "')")
+    public GroupMembersPage groupMembers(@PathVariable UUID id,
+                                         @RequestParam(defaultValue = "0") int page,
+                                         @RequestParam(defaultValue = "20") int size) {
+        return userGroups.members(id, page, size);
+    }
+
+    @GetMapping("/groups/{id}/applications")
+    @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "')")
+    public List<ApplicationView> groupApplications(@PathVariable UUID id) {
+        return applications.appsForGroup(id);
+    }
+
+    // --- Typeahead search for the app-assignment pickers ---
+    @GetMapping("/groups/search")
+    @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "')")
+    public List<Suggestion> searchGroups(@RequestParam(name = "q", defaultValue = "") String q,
+                                         @RequestParam(defaultValue = "20") int limit) {
+        return userGroups.search(q, limit);
+    }
+
+    @GetMapping("/users/search")
+    @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "')")
+    public List<Suggestion> searchUsers(@RequestParam(name = "q", defaultValue = "") String q,
+                                        @RequestParam(defaultValue = "20") int limit) {
+        return userAdminService.searchUsers(q, limit);
+    }
+
     private static Set<UUID> groupIds(List<String> values) {
         return values == null ? Set.of()
                 : values.stream().map(UUID::fromString).collect(Collectors.toSet());
@@ -174,7 +197,7 @@ public class AdminController {
     private static GroupView toView(UserGroup group) {
         List<String> memberIds = group.getMemberUserIds().stream().map(UUID::toString).toList();
         return new GroupView(group.getId().toString(), group.getName(), group.getDescription(),
-                group.getExternalId(), memberIds, memberIds.size());
+                group.getExternalId(), memberIds, memberIds.size(), group.isSystem());
     }
 
     // --- Clients / SAML / audit / tokens / keys ---

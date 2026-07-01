@@ -8,6 +8,11 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import java.io.IOException;
+import java.time.Instant;
+import java.util.Set;
+import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -16,16 +21,12 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-import java.io.IOException;
-import java.time.Instant;
-import java.util.Set;
-import java.util.stream.Collectors;
-
 /**
  * Enforces a per-application authentication policy at the OIDC authorization endpoint: a fully
  * signed-in user whose requested client requires extra (step-up) factors is redirected to the SPA
  * {@code /stepup} page, which collects the missing factor and resumes the saved authorize request.
  */
+@RequiredArgsConstructor
 public class AppStepUpFilter extends OncePerRequestFilter {
 
     public static final String RETURN = "APP_STEPUP_RETURN";
@@ -49,12 +50,6 @@ public class AppStepUpFilter extends OncePerRequestFilter {
     private final RegisteredClientRepository registeredClients;
     private final UserService users;
     private final ApplicationService applications;
-
-    public AppStepUpFilter(RegisteredClientRepository registeredClients, UserService users, ApplicationService applications) {
-        this.registeredClients = registeredClients;
-        this.users = users;
-        this.applications = applications;
-    }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {

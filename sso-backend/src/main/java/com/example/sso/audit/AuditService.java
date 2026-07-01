@@ -1,5 +1,6 @@
 package com.example.sso.audit;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -9,13 +10,9 @@ import org.springframework.transaction.annotation.Transactional;
  * rolls back (or is rolled back by) the surrounding business transaction.
  */
 @Service
+@RequiredArgsConstructor
 public class AuditService {
-
     private final AuditEventRepository repository;
-
-    public AuditService(AuditEventRepository repository) {
-        this.repository = repository;
-    }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(String type, String principal, boolean success, String detail, String remoteIp) {

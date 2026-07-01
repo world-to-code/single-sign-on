@@ -4,6 +4,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -26,17 +27,13 @@ import java.util.UUID;
  * Only triggers on exceptions that escape the entire chain (i.e. would have been a raw 500); normal
  * OAuth2/validation error responses are produced inside the chain and pass through untouched.
  */
+@RequiredArgsConstructor
 public class ServerErrorAuditFilter extends OncePerRequestFilter {
-
     private static final Logger log = LoggerFactory.getLogger(ServerErrorAuditFilter.class);
     private static final int MAX_DETAIL = 2000;
     private static final int STACK_FRAMES = 8;
 
     private final AuditService audit;
-
-    public ServerErrorAuditFilter(AuditService audit) {
-        this.audit = audit;
-    }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {

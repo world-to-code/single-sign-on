@@ -1,13 +1,19 @@
 package com.example.sso.portal;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import java.time.Instant;
+import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
-
-import java.time.Instant;
-import java.util.UUID;
 
 /** Assigns an application (OIDC client / SAML SP) to a subject (a user or a role/group). */
 @Entity
@@ -17,7 +23,7 @@ import java.util.UUID;
 public class AppAssignment {
 
     public enum AppType { OIDC, SAML }
-    public enum SubjectType { USER, ROLE }
+    public enum SubjectType { USER, ROLE, GROUP }
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

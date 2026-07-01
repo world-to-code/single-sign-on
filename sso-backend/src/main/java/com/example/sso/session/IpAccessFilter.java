@@ -5,6 +5,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -15,15 +16,10 @@ import java.io.IOException;
  * set (block-list, or allow-list when any ALLOW rule exists) before authentication runs. Health
  * checks are exempt so liveness probes survive a misconfiguration.
  */
+@RequiredArgsConstructor
 public class IpAccessFilter extends OncePerRequestFilter {
-
     private final IpRuleService ipRules;
     private final AuditService audit;
-
-    public IpAccessFilter(IpRuleService ipRules, AuditService audit) {
-        this.ipRules = ipRules;
-        this.audit = audit;
-    }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {

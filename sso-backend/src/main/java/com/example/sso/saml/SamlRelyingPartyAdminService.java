@@ -2,6 +2,7 @@ package com.example.sso.saml;
 
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -11,13 +12,10 @@ import java.util.UUID;
 
 /** Admin CRUD for SAML relying parties and their per-RP security configuration. */
 @Service
+@RequiredArgsConstructor
 public class SamlRelyingPartyAdminService {
 
     private final SamlRelyingPartyRepository relyingParties;
-
-    public SamlRelyingPartyAdminService(SamlRelyingPartyRepository relyingParties) {
-        this.relyingParties = relyingParties;
-    }
 
     @Transactional(readOnly = true)
     public List<RelyingPartyView> list() {
@@ -31,7 +29,8 @@ public class SamlRelyingPartyAdminService {
         }
         SamlRelyingParty rp = new SamlRelyingParty(request.entityId(), request.acsUrl(), nameIdFormat(request));
         rp.update(request.acsUrl(), nameIdFormat(request), settings(request),
-                trimToNull(request.signingCertificate()), trimToNull(request.encryptionCertificate()));
+                trimToNull(request.signingCertificate()), trimToNull(request.encryptionCertificate()),
+                trimToNull(request.spLoginUrl()));
         return toView(relyingParties.save(rp));
     }
 
@@ -40,7 +39,8 @@ public class SamlRelyingPartyAdminService {
         SamlRelyingParty rp = relyingParties.findById(id)
                 .orElseThrow(() -> new NotFoundException("relying party not found"));
         rp.update(request.acsUrl(), nameIdFormat(request), settings(request),
-                trimToNull(request.signingCertificate()), trimToNull(request.encryptionCertificate()));
+                trimToNull(request.signingCertificate()), trimToNull(request.encryptionCertificate()),
+                trimToNull(request.spLoginUrl()));
         return toView(relyingParties.save(rp));
     }
 
@@ -77,6 +77,6 @@ public class SamlRelyingPartyAdminService {
                 rp.isSignAssertion(), rp.isSignResponse(), rp.isEncryptAssertion(),
                 rp.getSignatureAlgorithm(), rp.getDataEncryptionAlgorithm(), rp.getKeyTransportAlgorithm(),
                 rp.isWantAuthnRequestsSigned(), rp.isAllowIdpInitiated(),
-                rp.getSigningCertificate(), rp.getEncryptionCertificate());
+                rp.getSigningCertificate(), rp.getEncryptionCertificate(), rp.getSpLoginUrl());
     }
 }

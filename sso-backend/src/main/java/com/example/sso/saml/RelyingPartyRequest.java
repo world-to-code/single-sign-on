@@ -12,5 +12,5 @@ public record RelyingPartyRequest(@NotBlank String entityId, @NotBlank String ac
                                   String signatureAlgorithm, String dataEncryptionAlgorithm,
                                   String keyTransportAlgorithm, boolean wantAuthnRequestsSigned,
                                   boolean allowIdpInitiated, String signingCertificate,
-                                  String encryptionCertificate) {
+                                  String encryptionCertificate, String spLoginUrl) {
 }

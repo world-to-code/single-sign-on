@@ -7,6 +7,7 @@ import de.captaingoldfish.scim.sdk.server.endpoints.Context;
 import de.captaingoldfish.scim.sdk.server.endpoints.ResourceHandler;
 import de.captaingoldfish.scim.sdk.server.filter.FilterNode;
 import de.captaingoldfish.scim.sdk.server.response.PartialListResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -16,13 +17,10 @@ import java.util.List;
  * delegates persistence to {@link ScimUserService}.
  */
 @Component
+@RequiredArgsConstructor
 public class UserResourceHandler extends ResourceHandler<User> {
 
     private final ScimUserService service;
-
-    public UserResourceHandler(ScimUserService service) {
-        this.service = service;
-    }
 
     @Override
     public User createResource(User resource, Context context) {

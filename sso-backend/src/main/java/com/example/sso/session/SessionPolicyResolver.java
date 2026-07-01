@@ -3,6 +3,7 @@ package com.example.sso.session;
 import com.example.sso.user.AppUser;
 import com.example.sso.user.AppUserRepository;
 import com.example.sso.user.Role;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,17 +21,12 @@ import java.util.stream.Collectors;
  * {@link SessionPolicyService} instead; this DB-backed resolver is the canonical read path.
  */
 @Service
+@RequiredArgsConstructor
 public class SessionPolicyResolver {
-
     public static final String DEFAULT_NAME = "Default";
 
     private final SessionPolicyRepository repository;
     private final AppUserRepository users;
-
-    public SessionPolicyResolver(SessionPolicyRepository repository, AppUserRepository users) {
-        this.repository = repository;
-        this.users = users;
-    }
 
     @Transactional(readOnly = true)
     public SessionPolicy resolveForUser(AppUser user) {

@@ -1,6 +1,7 @@
 package com.example.sso.security;
 
 import com.example.sso.audit.AuditService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
 import org.springframework.security.authorization.event.AuthorizationDeniedEvent;
 import org.springframework.security.core.Authentication;
@@ -14,13 +15,10 @@ import java.util.function.Supplier;
  * {@code AuthorizationEventPublisher} bean to be registered (see SecurityConfig).
  */
 @Component
+@RequiredArgsConstructor
 public class AuthorizationAuditListener {
 
     private final AuditService audit;
-
-    public AuthorizationAuditListener(AuditService audit) {
-        this.audit = audit;
-    }
 
     @EventListener
     public void onDenied(AuthorizationDeniedEvent<?> event) {

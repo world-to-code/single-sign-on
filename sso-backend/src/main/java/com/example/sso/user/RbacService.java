@@ -1,5 +1,6 @@
 package com.example.sso.user;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -9,6 +10,7 @@ import java.util.List;
  * Manages the permission catalog (PBAC) and its assignment to roles (RBAC).
  */
 @Service
+@RequiredArgsConstructor
 public class RbacService {
 
     /** The fine-grained permissions used by method-level {@code @PreAuthorize} policies (see {@link Permissions}). */
@@ -16,11 +18,6 @@ public class RbacService {
 
     private final PermissionRepository permissions;
     private final RoleRepository roles;
-
-    public RbacService(PermissionRepository permissions, RoleRepository roles) {
-        this.permissions = permissions;
-        this.roles = roles;
-    }
 
     @Transactional
     public Permission getOrCreatePermission(String name) {

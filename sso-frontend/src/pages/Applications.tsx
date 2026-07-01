@@ -14,6 +14,8 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DataList, EmptyState } from "@/components/states";
+import { SearchSelect } from "@/components/SearchSelect";
+import { searchGroups, searchUsers } from "@/groups";
 
 interface Application { id: string; type: "OIDC" | "SAML"; name: string; launchUrl: string | null; system: boolean; requiredPolicyId: string | null; requiredPolicyName: string | null; }
 interface PortalSettings { reauthIntervalMinutes: number; elevationTokenTtlMinutes: number; sessionIdleTimeoutMinutes: number; sessionAbsoluteLifetimeMinutes: number; }
@@ -25,22 +27,19 @@ const settingFields: { key: keyof PortalSettings; label: string; hint: string }[
   { key: "sessionAbsoluteLifetimeMinutes", label: "Admin session absolute lifetime (min)", hint: "The admin session ends this long after it first elevated, regardless of activity." },
 ];
 interface Assignment { id: string; subjectType: string; subjectName: string; requiredPolicyId: string | null; }
-interface Role { id: string; name: string; }
-interface User { id: string; username: string; }
 interface Policy { id: string; name: string; appliesToLogin: boolean; }
 
 export default function Applications() {
   const confirmDelete = useDeleteConfirm();
   const [apps, setApps] = useState<Application[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [roles, setRoles] = useState<Role[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
   const [policies, setPolicies] = useState<Policy[]>([]);
 
   const [active, setActive] = useState<Application | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [subjectType, setSubjectType] = useState<"USER" | "ROLE">("ROLE");
+  const [subjectType, setSubjectType] = useState<"USER" | "GROUP">("GROUP");
   const [subjectId, setSubjectId] = useState("");
+  const [pickerKey, setPickerKey] = useState(0); // bump to reset the SearchSelect after add/type change
   const [requiredPolicyId, setRequiredPolicyId] = useState("");
   const [appPolicyId, setAppPolicyId] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -58,8 +57,6 @@ export default function Applications() {
   }
   useEffect(() => {
     loadApps();
-    apiGet<Role[]>("/api/admin/roles").then(setRoles).catch(() => undefined);
-    apiGet<User[]>("/api/admin/users").then(setUsers).catch(() => undefined);
     apiGet<Policy[]>("/api/admin/auth-policies").then(setPolicies).catch(() => undefined);
   }, []);
 
@@ -71,8 +68,8 @@ export default function Applications() {
     apiGet<Assignment[]>(`/api/admin/applications/${app.type}/${app.id}/assignments`).then(setAssignments).catch(() => setAssignments([]));
   }
   function manage(app: Application) {
-    setFormError(null); setActive(app); setSubjectType("ROLE"); setSubjectId(""); setRequiredPolicyId("");
-    setAppPolicyId(app.requiredPolicyId ?? ""); setAssignments([]);
+    setFormError(null); setActive(app); setSubjectType("GROUP"); setSubjectId(""); setRequiredPolicyId("");
+    setAppPolicyId(app.requiredPolicyId ?? ""); setAssignments([]); setPickerKey((k) => k + 1);
     loadAssignments(app);
   }
 
@@ -111,7 +108,7 @@ export default function Applications() {
         appType: active.type, appId: active.id, subjectType, subjectId,
         requiredPolicyId: requiredPolicyId || null,
       });
-      setSubjectId(""); setRequiredPolicyId("");
+      setSubjectId(""); setRequiredPolicyId(""); setPickerKey((k) => k + 1);
       loadAssignments(active);
     } catch (e) {
       setFormError(String(e));
@@ -127,10 +124,6 @@ export default function Applications() {
       onDeleted: () => { if (active) loadAssignments(active); },
     });
   }
-
-  const options = subjectType === "ROLE"
-    ? roles.map((r) => ({ id: r.id, label: r.name }))
-    : users.map((u) => ({ id: u.id, label: u.username }));
 
   return (
     <>
@@ -204,7 +197,7 @@ export default function Applications() {
             ) : assignments.map((a) => (
               <div key={a.id} className="flex items-center justify-between border-b p-3 last:border-0">
                 <span className="flex flex-wrap items-center gap-2 text-sm">
-                  <Badge variant={a.subjectType === "ROLE" ? "secondary" : "outline"}>{a.subjectType === "ROLE" ? "Group" : "User"}</Badge>
+                  <Badge variant={a.subjectType === "USER" ? "outline" : "secondary"}>{a.subjectType === "USER" ? "User" : "Group"}</Badge>
                   {a.subjectName}
                   {a.requiredPolicyId && <Badge variant="default">+ {policyName(a.requiredPolicyId)}</Badge>}
                 </span>
@@ -216,13 +209,16 @@ export default function Applications() {
           <div className="space-y-2">
             <Label>Assign to</Label>
             <div className="flex gap-2">
-              <Select value={subjectType} onChange={(e) => { setSubjectType(e.target.value as "USER" | "ROLE"); setSubjectId(""); }} className="w-32">
-                <option value="ROLE">Group</option><option value="USER">User</option>
+              <Select value={subjectType} className="w-32"
+                      onChange={(e) => { setSubjectType(e.target.value as "USER" | "GROUP"); setSubjectId(""); setPickerKey((k) => k + 1); }}>
+                <option value="GROUP">Group</option><option value="USER">User</option>
               </Select>
-              <Select value={subjectId} onChange={(e) => setSubjectId(e.target.value)} className="flex-1">
-                <option value="">Select…</option>
-                {options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-              </Select>
+              <SearchSelect
+                resetKey={`${subjectType}:${pickerKey}`}
+                placeholder={subjectType === "GROUP" ? "Search groups…" : "Search users…"}
+                fetcher={(q) => (subjectType === "GROUP" ? searchGroups(q) : searchUsers(q))}
+                onSelect={(s) => setSubjectId(s?.id ?? "")}
+              />
             </div>
             <Label>Extra authentication <span className="text-muted-foreground">(optional)</span></Label>
             <div className="flex gap-2">

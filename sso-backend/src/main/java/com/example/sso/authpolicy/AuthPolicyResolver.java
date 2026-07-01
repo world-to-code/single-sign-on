@@ -2,6 +2,7 @@ package com.example.sso.authpolicy;
 
 import com.example.sso.user.AppUser;
 import com.example.sso.user.Role;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,15 +18,11 @@ import java.util.stream.Collectors;
  * (highest-priority assigned policy, else the seeded default). Used by the login/MFA flow.
  */
 @Service
+@RequiredArgsConstructor
 public class AuthPolicyResolver {
-
     public static final String DEFAULT_NAME = "Default";
 
     private final AuthPolicyRepository repository;
-
-    public AuthPolicyResolver(AuthPolicyRepository repository) {
-        this.repository = repository;
-    }
 
     @Transactional(readOnly = true)
     public AuthPolicy resolveForUser(AppUser user) {

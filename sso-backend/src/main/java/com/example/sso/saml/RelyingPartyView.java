@@ -6,5 +6,5 @@ public record RelyingPartyView(String id, String entityId, String acsUrl, String
                                String signatureAlgorithm, String dataEncryptionAlgorithm,
                                String keyTransportAlgorithm, boolean wantAuthnRequestsSigned,
                                boolean allowIdpInitiated, String signingCertificate,
-                               String encryptionCertificate) {
+                               String encryptionCertificate, String spLoginUrl) {
 }

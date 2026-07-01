@@ -1,5 +1,6 @@
 package com.example.sso.scim;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,15 +18,12 @@ import java.util.HexFormat;
  * issuance; only its SHA-256 hash is stored.
  */
 @Service
+@RequiredArgsConstructor
 public class ScimTokenService {
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final ScimTokenRepository tokens;
-
-    public ScimTokenService(ScimTokenRepository tokens) {
-        this.tokens = tokens;
-    }
 
     /** Issues a new token and returns its plaintext value (store it now — it is not recoverable). */
     @Transactional

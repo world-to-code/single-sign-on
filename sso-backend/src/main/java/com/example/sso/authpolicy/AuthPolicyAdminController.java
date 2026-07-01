@@ -4,6 +4,8 @@ import com.example.sso.user.Permissions;
 
 import jakarta.validation.Valid;
 
+import lombok.RequiredArgsConstructor;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -26,13 +28,9 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api/admin/auth-policies")
+@RequiredArgsConstructor
 public class AuthPolicyAdminController {
-
     private final AuthPolicyAdminService service;
-
-    public AuthPolicyAdminController(AuthPolicyAdminService service) {
-        this.service = service;
-    }
 
     @GetMapping
     @PreAuthorize("hasAuthority('" + Permissions.POLICY_MANAGE + "')")

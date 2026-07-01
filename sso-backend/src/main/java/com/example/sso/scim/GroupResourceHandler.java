@@ -7,6 +7,7 @@ import de.captaingoldfish.scim.sdk.server.endpoints.Context;
 import de.captaingoldfish.scim.sdk.server.endpoints.ResourceHandler;
 import de.captaingoldfish.scim.sdk.server.filter.FilterNode;
 import de.captaingoldfish.scim.sdk.server.response.PartialListResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -16,13 +17,10 @@ import java.util.List;
  * {@link ScimGroupService}.
  */
 @Component
+@RequiredArgsConstructor
 public class GroupResourceHandler extends ResourceHandler<Group> {
 
     private final ScimGroupService service;
-
-    public GroupResourceHandler(ScimGroupService service) {
-        this.service = service;
-    }
 
     @Override
     public Group createResource(Group resource, Context context) {

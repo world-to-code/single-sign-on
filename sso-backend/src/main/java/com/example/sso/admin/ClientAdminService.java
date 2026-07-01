@@ -4,6 +4,15 @@ import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import java.security.SecureRandom;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Base64;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
@@ -20,41 +29,27 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.security.SecureRandom;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.Base64;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
-
 /**
  * OAuth2/OIDC client (RegisteredClient) administration: registration with full Authorization
  * Server settings, listing, and deletion. These are AS-side concerns, isolated from user admin.
  */
 @Service
+@RequiredArgsConstructor
 public class ClientAdminService {
 
     private final RegisteredClientRepository registeredClients;
     private final PasswordEncoder passwordEncoder;
     private final JdbcTemplate jdbcTemplate;
 
-    public ClientAdminService(RegisteredClientRepository registeredClients, PasswordEncoder passwordEncoder,
-                              JdbcTemplate jdbcTemplate) {
-        this.registeredClients = registeredClients;
-        this.passwordEncoder = passwordEncoder;
-        this.jdbcTemplate = jdbcTemplate;
-    }
-
     @Transactional(readOnly = true)
     public List<ClientView> listClients() {
         return jdbcTemplate.query(
-                "SELECT id, client_id, client_name, scopes, authorization_grant_types, redirect_uris "
-                        + "FROM oauth2_registered_client",
+                "SELECT id, client_id, client_name, scopes, authorization_grant_types, redirect_uris, "
+                        + "initiate_login_uri FROM oauth2_registered_client",
                 (rs, rowNum) -> new ClientView(rs.getString("id"), rs.getString("client_id"),
                         rs.getString("client_name"), rs.getString("scopes"),
-                        rs.getString("authorization_grant_types"), rs.getString("redirect_uris")));
+                        rs.getString("authorization_grant_types"), rs.getString("redirect_uris"),
+                        rs.getString("initiate_login_uri")));
     }
 
     /** Registers a new OAuth2/OIDC client with full AS settings. Returns the secret once (confidential). */
@@ -108,6 +103,12 @@ public class ClientAdminService {
 
         builder.clientSettings(clientSettings(request)).tokenSettings(tokenSettings(request));
         registeredClients.save(builder.build());
+        // initiate_login_uri is our launch metadata (not a Spring RegisteredClient field); persist it
+        // on the same row after Spring's save.
+        if (StringUtils.hasText(request.initiateLoginUri())) {
+            jdbcTemplate.update("UPDATE oauth2_registered_client SET initiate_login_uri = ? WHERE client_id = ?",
+                    request.initiateLoginUri().trim(), request.clientId());
+        }
         return new ClientCreated(request.clientId(), secret);
     }
 

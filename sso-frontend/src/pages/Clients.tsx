@@ -62,6 +62,7 @@ const empty = {
   x509SubjectDn: "",
   x509BoundAccessTokens: false,
   clientSecretDays: "",
+  initiateLoginUri: "",
 };
 
 export default function Clients() {
@@ -108,6 +109,7 @@ export default function Clients() {
         x509SubjectDn: form.x509SubjectDn || null,
         x509BoundAccessTokens: form.x509BoundAccessTokens,
         clientSecretDays: num(form.clientSecretDays),
+        initiateLoginUri: form.initiateLoginUri || null,
       });
       setCreatedSecret(result);
       setForm({ ...empty });
@@ -150,6 +152,11 @@ export default function Clients() {
           <Field label="Redirect URIs" hint="Space or comma separated.">
             <Textarea rows={2} value={form.redirectUris} onChange={(e) => set({ redirectUris: e.target.value })}
                       placeholder="https://app.example.com/callback" />
+          </Field>
+          <Field label="Initiate login URI"
+                 hint="OIDC third-party-initiated login: the portal 'launch' redirects here (with ?iss=), then the app starts its own OIDC flow. Optional — falls back to the app origin.">
+            <Input value={form.initiateLoginUri} onChange={(e) => set({ initiateLoginUri: e.target.value })}
+                   placeholder="https://app.example.com/login/oidc/start" />
           </Field>
           <Field label="Scopes">
             <Input value={form.scopes} onChange={(e) => set({ scopes: e.target.value })} />

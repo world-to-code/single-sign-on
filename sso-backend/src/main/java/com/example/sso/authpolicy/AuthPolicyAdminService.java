@@ -3,6 +3,7 @@ package com.example.sso.authpolicy;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,13 +18,9 @@ import java.util.UUID;
  * non-editable Default fallback policy.
  */
 @Service
+@RequiredArgsConstructor
 public class AuthPolicyAdminService {
-
     private final AuthPolicyRepository repository;
-
-    public AuthPolicyAdminService(AuthPolicyRepository repository) {
-        this.repository = repository;
-    }
 
     /**
      * Ensures the fallback policy exists and is canonical (password then TOTP). Runs on every

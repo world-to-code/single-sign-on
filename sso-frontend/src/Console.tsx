@@ -7,6 +7,7 @@ import { AdminGuard, AdminCallback } from "./components/AdminPortal";
 import Dashboard from "./pages/Dashboard";
 import Users from "./pages/Users";
 import Groups from "./pages/Groups";
+import GroupDetail from "./pages/GroupDetail";
 import Clients from "./pages/Clients";
 import RelyingParties from "./pages/RelyingParties";
 import Audit from "./pages/Audit";
@@ -43,6 +44,7 @@ export default function Console({ session }: { session: SessionView }) {
                   <Route index element={<Navigate to="users" replace />} />
                   <Route path="users" element={<Users />} />
                   <Route path="groups" element={<Groups />} />
+                  <Route path="groups/:id" element={<GroupDetail />} />
                   <Route path="applications" element={<Applications />} />
                   <Route path="clients" element={<Clients />} />
                   <Route path="relying-parties" element={<RelyingParties />} />

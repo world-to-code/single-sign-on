@@ -1,10 +1,9 @@
 package com.example.sso.portal;
 
-import org.springframework.data.jpa.repository.JpaRepository;
-
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface AppAssignmentRepository extends JpaRepository<AppAssignment, UUID> {
 

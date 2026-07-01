@@ -28,6 +28,9 @@ import java.util.UUID;
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
 public class UserGroup {
 
+    /** The system group every user belongs to; auto-managed, cannot be renamed/deleted. */
+    public static final String ALL_USERS = "All Users";
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
@@ -37,6 +40,10 @@ public class UserGroup {
 
     @Column(length = 255)
     private String description;
+
+    /** System groups are platform-managed (e.g. "All Users") and cannot be edited or deleted. */
+    @Column(nullable = false)
+    private boolean system = false;
 
     /** Source id for a future LDAP/SCIM sync (nullable, unique when present). */
     @Column(name = "external_id", length = 255)
@@ -55,6 +62,16 @@ public class UserGroup {
         this.name = name;
         this.description = description;
         this.externalId = externalId;
+    }
+
+    /** Marks this as a platform-managed system group (auto-managed membership, locked from edits). */
+    public void markSystem() {
+        this.system = true;
+    }
+
+    /** Adds a single member (used for auto-join into the default group). */
+    public void addMember(UUID userId) {
+        this.memberUserIds.add(userId);
     }
 
     public void rename(String name) {

@@ -5,6 +5,7 @@ import de.captaingoldfish.scim.sdk.common.response.ScimResponse;
 import de.captaingoldfish.scim.sdk.server.endpoints.Context;
 import de.captaingoldfish.scim.sdk.server.endpoints.ResourceEndpoint;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -21,13 +22,10 @@ import java.util.Map;
  * the registered {@link UserResourceHandler} / {@link GroupResourceHandler}.
  */
 @RestController
+@RequiredArgsConstructor
 public class ScimController {
 
     private final ResourceEndpoint resourceEndpoint;
-
-    public ScimController(ResourceEndpoint resourceEndpoint) {
-        this.resourceEndpoint = resourceEndpoint;
-    }
 
     @RequestMapping("/scim/v2/**")
     public ResponseEntity<String> handle(HttpServletRequest request,

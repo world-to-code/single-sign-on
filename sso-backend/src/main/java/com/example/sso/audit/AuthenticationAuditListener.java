@@ -1,5 +1,6 @@
 package com.example.sso.audit;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
 import org.springframework.security.authentication.event.AbstractAuthenticationFailureEvent;
 import org.springframework.security.authentication.event.AuthenticationSuccessEvent;
@@ -10,13 +11,9 @@ import org.springframework.stereotype.Component;
  * complementing the MFA/SAML/SCIM events recorded elsewhere.
  */
 @Component
+@RequiredArgsConstructor
 public class AuthenticationAuditListener {
-
     private final AuditService audit;
-
-    public AuthenticationAuditListener(AuditService audit) {
-        this.audit = audit;
-    }
 
     @EventListener
     public void onSuccess(AuthenticationSuccessEvent event) {

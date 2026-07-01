@@ -10,6 +10,7 @@ import com.example.sso.user.AppUser;
 import com.example.sso.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import lombok.RequiredArgsConstructor;
 import org.opensaml.saml.saml2.core.AuthnRequest;
 import org.opensaml.saml.saml2.core.Response;
 import org.springframework.http.HttpStatus;
@@ -40,6 +41,7 @@ import java.util.stream.Collectors;
  */
 @RequestMapping("/saml2/idp/sso")
 @Controller
+@RequiredArgsConstructor
 public class SamlSsoController {
 
     private final SamlBindingCodec codec;
@@ -49,22 +51,6 @@ public class SamlSsoController {
     private final UserService users;
     private final ApplicationService applications;
     private final AuditService audit;
-
-    public SamlSsoController(SamlBindingCodec codec,
-                            SamlRelyingPartyRepository relyingParties,
-                            SamlResponseBuilder responseBuilder,
-                            SamlSignatureValidator signatureValidator,
-                            UserService users,
-                            ApplicationService applications,
-                            AuditService audit) {
-        this.codec = codec;
-        this.relyingParties = relyingParties;
-        this.responseBuilder = responseBuilder;
-        this.signatureValidator = signatureValidator;
-        this.users = users;
-        this.applications = applications;
-        this.audit = audit;
-    }
 
     @GetMapping
     public ResponseEntity<String> ssoRedirect(@RequestParam("SAMLRequest") String samlRequest,

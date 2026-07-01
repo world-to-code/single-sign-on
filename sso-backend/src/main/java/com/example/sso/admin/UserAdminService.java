@@ -9,17 +9,20 @@ import com.example.sso.user.Permission;
 import com.example.sso.user.RbacService;
 import com.example.sso.user.Role;
 import com.example.sso.user.RoleRepository;
+import com.example.sso.user.Suggestion;
 import com.example.sso.user.UserService;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /** Admin operations for users, roles, and per-user permissions (RBAC + PBAC). */
 @Service
+@RequiredArgsConstructor
 public class UserAdminService {
 
     private final AppUserRepository users;
@@ -28,18 +31,17 @@ public class UserAdminService {
     private final RbacService rbacService;
     private final MfaService mfaService;
 
-    public UserAdminService(AppUserRepository users, RoleRepository roles, UserService userService,
-                            RbacService rbacService, MfaService mfaService) {
-        this.users = users;
-        this.roles = roles;
-        this.userService = userService;
-        this.rbacService = rbacService;
-        this.mfaService = mfaService;
-    }
-
     @Transactional(readOnly = true)
     public List<AdminUserView> listUsers() {
         return users.findAll().stream().map(UserAdminService::toView).toList();
+    }
+
+    /** Typeahead user search for the assignment picker. */
+    @Transactional(readOnly = true)
+    public List<Suggestion> searchUsers(String q, int limit) {
+        int safeLimit = limit <= 0 ? 20 : Math.min(limit, 50);
+        return users.search(q == null ? "" : q, PageRequest.of(0, safeLimit)).stream()
+                .map(p -> new Suggestion(p.getId().toString(), p.getName())).toList();
     }
 
     @Transactional

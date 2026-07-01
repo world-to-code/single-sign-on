@@ -1,5 +1,6 @@
 package com.example.sso.saml;
 
+import lombok.RequiredArgsConstructor;
 import net.shibboleth.shared.xml.ParserPool;
 import net.shibboleth.shared.xml.SerializeSupport;
 import org.opensaml.core.xml.config.XMLObjectProviderRegistrySupport;
@@ -25,13 +26,10 @@ import java.util.zip.InflaterInputStream;
  * HTTP-POST binding (base64(xml) in an auto-submitting form) — never deflated.
  */
 @Component
+@RequiredArgsConstructor
 public class SamlBindingCodec {
 
     private final ParserPool parserPool;
-
-    public SamlBindingCodec(ParserPool parserPool) {
-        this.parserPool = parserPool;
-    }
 
     /** Decodes a {@code SAMLRequest} carried over the HTTP-Redirect binding. */
     public AuthnRequest decodeRedirect(String samlRequest) {

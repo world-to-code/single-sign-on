@@ -8,6 +8,7 @@ import com.example.sso.user.AppUser;
 import com.example.sso.user.AppUserRepository;
 import com.example.sso.user.Role;
 import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,18 +28,13 @@ import java.util.stream.Collectors;
  * and seeding/self-healing of the non-editable {@code Default} fallback.
  */
 @Service
+@RequiredArgsConstructor
 public class SessionPolicyService {
-
     public static final String DEFAULT_NAME = SessionPolicyResolver.DEFAULT_NAME;
 
     private final SessionPolicyRepository repository;
     private final AppUserRepository users;
     private volatile List<SessionPolicy> cached = List.of();
-
-    public SessionPolicyService(SessionPolicyRepository repository, AppUserRepository users) {
-        this.repository = repository;
-        this.users = users;
-    }
 
     @PostConstruct
     @Transactional(readOnly = true)

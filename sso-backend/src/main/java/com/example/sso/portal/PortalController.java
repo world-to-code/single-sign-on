@@ -6,6 +6,12 @@ import com.example.sso.user.AppUser;
 import com.example.sso.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -14,26 +20,15 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
-
 /** End-user portal API: the applications the signed-in user may launch via SSO, and step-up state. */
 @RestController
 @RequestMapping("/api/portal")
+@RequiredArgsConstructor
 public class PortalController {
 
     private final ApplicationService applications;
     private final UserService users;
     private final SessionPolicyService sessionPolicy;
-
-    public PortalController(ApplicationService applications, UserService users, SessionPolicyService sessionPolicy) {
-        this.applications = applications;
-        this.users = users;
-        this.sessionPolicy = sessionPolicy;
-    }
 
     /** Session timers for the SPA to enforce client-side: idle logout + periodic re-authentication. */
     @GetMapping("/session-config")

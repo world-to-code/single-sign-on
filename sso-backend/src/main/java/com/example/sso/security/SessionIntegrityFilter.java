@@ -8,6 +8,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -36,6 +37,7 @@ import java.io.IOException;
  * rejected.
  */
 @Component
+@RequiredArgsConstructor
 public class SessionIntegrityFilter extends OncePerRequestFilter {
 
     private static final String CLIENT_BINDING = "ZT_CLIENT_BINDING";
@@ -46,14 +48,6 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
     private final SessionPolicyService policyService;
     private final SessionRegistry sessionRegistry;
     private final SessionMetadataStore sessionMetadata;
-
-    public SessionIntegrityFilter(AuditService audit, SessionPolicyService policyService,
-                                  SessionRegistry sessionRegistry, SessionMetadataStore sessionMetadata) {
-        this.audit = audit;
-        this.policyService = policyService;
-        this.sessionRegistry = sessionRegistry;
-        this.sessionMetadata = sessionMetadata;
-    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)

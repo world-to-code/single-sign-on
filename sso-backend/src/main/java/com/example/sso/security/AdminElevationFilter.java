@@ -8,6 +8,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -44,6 +45,7 @@ import java.util.List;
  * Any failure yields a {@code 401} with the RFC 9470 {@code WWW-Authenticate: Bearer
  * error="insufficient_user_authentication", acr_values="mfa"} challenge so the SPA can re-elevate.
  */
+@RequiredArgsConstructor
 public class AdminElevationFilter extends OncePerRequestFilter {
 
     static final String REQUIRED_SCOPE = AdminPortalSeeder.ADMIN_SCOPE;
@@ -64,14 +66,6 @@ public class AdminElevationFilter extends OncePerRequestFilter {
     private final String clientId;
     /** Runtime-editable admin-portal knobs (freshness window + session idle/absolute lifetimes). */
     private final AdminPortalSettingsService settingsService;
-
-    public AdminElevationFilter(JwtDecoder jwtDecoder, String issuer, String clientId,
-                                AdminPortalSettingsService settingsService) {
-        this.jwtDecoder = jwtDecoder;
-        this.issuer = issuer;
-        this.clientId = clientId;
-        this.settingsService = settingsService;
-    }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {

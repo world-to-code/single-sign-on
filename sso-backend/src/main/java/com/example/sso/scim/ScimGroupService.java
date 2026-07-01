@@ -10,6 +10,7 @@ import de.captaingoldfish.scim.sdk.common.exceptions.ResourceNotFoundException;
 import de.captaingoldfish.scim.sdk.common.resources.Group;
 import de.captaingoldfish.scim.sdk.common.resources.multicomplex.Member;
 import de.captaingoldfish.scim.sdk.server.response.PartialListResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,15 +28,11 @@ import java.util.stream.Collectors;
  * (membership = users' role assignments).
  */
 @Service
+@RequiredArgsConstructor
 public class ScimGroupService {
 
     private final RoleRepository roles;
     private final AppUserRepository users;
-
-    public ScimGroupService(RoleRepository roles, AppUserRepository users) {
-        this.roles = roles;
-        this.users = users;
-    }
 
     /**
      * Roles that confer elevated privilege and must never be created/assigned/deleted via SCIM. This

@@ -66,6 +66,11 @@ public class SamlRelyingParty {
     @Column(name = "encryption_certificate", columnDefinition = "text")
     private String encryptionCertificate;
 
+    /** The SP's SP-initiated login start URL; portal launch redirects here so the SP sends us an
+     *  AuthnRequest (SP-initiated). Null => fall back to IdP-initiated (unsolicited) SSO. */
+    @Column(name = "sp_login_url", length = 1024)
+    private String spLoginUrl;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -78,7 +83,7 @@ public class SamlRelyingParty {
 
     /** Admin edit of the endpoint, security policy, and SP certificates (entityId is immutable). */
     public void update(String acsUrl, String nameIdFormat, SamlSecuritySettings settings,
-                       String signingCertificate, String encryptionCertificate) {
+                       String signingCertificate, String encryptionCertificate, String spLoginUrl) {
         this.acsUrl = acsUrl;
         this.nameIdFormat = nameIdFormat;
         this.signAssertion = settings.signAssertion();
@@ -91,5 +96,6 @@ public class SamlRelyingParty {
         this.allowIdpInitiated = settings.allowIdpInitiated();
         this.signingCertificate = signingCertificate;
         this.encryptionCertificate = encryptionCertificate;
+        this.spLoginUrl = spLoginUrl == null || spLoginUrl.isBlank() ? null : spLoginUrl.trim();
     }
 }

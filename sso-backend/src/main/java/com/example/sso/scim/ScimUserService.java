@@ -10,6 +10,7 @@ import de.captaingoldfish.scim.sdk.common.resources.User;
 import de.captaingoldfish.scim.sdk.common.resources.complex.Name;
 import de.captaingoldfish.scim.sdk.common.resources.multicomplex.Email;
 import de.captaingoldfish.scim.sdk.server.response.PartialListResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,15 +23,11 @@ import java.util.UUID;
  * separate from the SCIM {@code ResourceHandler} so the handler needs no proxying.
  */
 @Service
+@RequiredArgsConstructor
 public class ScimUserService {
 
     private final AppUserRepository users;
     private final UserService userService;
-
-    public ScimUserService(AppUserRepository users, UserService userService) {
-        this.users = users;
-        this.userService = userService;
-    }
 
     @Transactional
     public User create(User resource) {
@@ -49,7 +46,9 @@ public class ScimUserService {
         if (!resource.isActive().orElse(Boolean.TRUE)) {
             user.disable();
         }
-        return ScimUserMapper.toScim(users.save(user));
+        AppUser saved = users.save(user);
+        userService.addToDefaultGroup(saved.getId());
+        return ScimUserMapper.toScim(saved);
     }
 
     @Transactional(readOnly = true)

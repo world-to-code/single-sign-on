@@ -1,28 +1,26 @@
 package com.example.sso.user;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Application service for the identity core: user creation, lookup, role/get-or-create,
  * and password management. Used by base auth, MFA, OIDC, SAML and SCIM layers.
  */
 @Service
+@RequiredArgsConstructor
 public class UserService {
 
     private final AppUserRepository users;
     private final RoleRepository roles;
+    private final UserGroupRepository groups;
     private final PasswordEncoder passwordEncoder;
-
-    public UserService(AppUserRepository users, RoleRepository roles, PasswordEncoder passwordEncoder) {
-        this.users = users;
-        this.roles = roles;
-        this.passwordEncoder = passwordEncoder;
-    }
 
     @Transactional(readOnly = true)
     public Optional<AppUser> findByUsername(String username) {
@@ -52,7 +50,18 @@ public class UserService {
         String encodedPassword = rawPassword == null ? null : passwordEncoder.encode(rawPassword);
         AppUser user = new AppUser(username, email, displayName, encodedPassword);
         roleNames.forEach(name -> user.addRole(getOrCreateRole(name)));
-        return users.save(user);
+        AppUser saved = users.save(user);
+        addToDefaultGroup(saved.getId());
+        return saved;
+    }
+
+    /** Adds a user to the platform "All Users" group so every user always belongs to a group. */
+    @Transactional
+    public void addToDefaultGroup(UUID userId) {
+        groups.findByName(UserGroup.ALL_USERS).ifPresent(group -> {
+            group.addMember(userId);
+            groups.save(group);
+        });
     }
 
     @Transactional

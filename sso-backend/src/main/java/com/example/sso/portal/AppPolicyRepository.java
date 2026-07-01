@@ -1,10 +1,9 @@
 package com.example.sso.portal;
 
 import com.example.sso.portal.AppAssignment.AppType;
-import org.springframework.data.jpa.repository.JpaRepository;
-
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface AppPolicyRepository extends JpaRepository<AppPolicy, UUID> {
 

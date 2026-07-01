@@ -2,13 +2,13 @@ package com.example.sso.admin;
 
 import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.shared.error.NotFoundException;
+import java.time.Duration;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.Duration;
 
 /**
  * Reads and updates the single-row {@link AdminPortalSettings}. On update it also propagates the
@@ -16,16 +16,11 @@ import java.time.Duration;
  * elevation tokens honour the new lifetime without a restart.
  */
 @Service
+@RequiredArgsConstructor
 public class AdminPortalSettingsService {
 
     private final AdminPortalSettingsRepository repository;
     private final RegisteredClientRepository registeredClients;
-
-    public AdminPortalSettingsService(AdminPortalSettingsRepository repository,
-                                      RegisteredClientRepository registeredClients) {
-        this.repository = repository;
-        this.registeredClients = registeredClients;
-    }
 
     @Transactional(readOnly = true)
     public AdminPortalSettings get() {

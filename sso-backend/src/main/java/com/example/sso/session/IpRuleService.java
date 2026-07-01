@@ -3,6 +3,7 @@ package com.example.sso.session;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.NotFoundException;
 import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.web.util.matcher.IpAddressMatcher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,18 +18,14 @@ import java.util.UUID;
  * (allow-list mode); otherwise the request is allowed.
  */
 @Service
+@RequiredArgsConstructor
 public class IpRuleService {
-
     private record Compiled(IpAddressMatcher matcher, IpRule.Action action) {
     }
 
     private final IpRuleRepository repository;
     private volatile List<Compiled> compiled = List.of();
     private volatile boolean hasAllow = false;
-
-    public IpRuleService(IpRuleRepository repository) {
-        this.repository = repository;
-    }
 
     @PostConstruct
     @Transactional(readOnly = true)

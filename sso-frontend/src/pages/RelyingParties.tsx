@@ -34,6 +34,7 @@ interface RelyingParty {
   allowIdpInitiated: boolean;
   signingCertificate: string | null;
   encryptionCertificate: string | null;
+  spLoginUrl: string | null;
 }
 
 const blank = {
@@ -42,7 +43,7 @@ const blank = {
   signAssertion: true, signResponse: false, encryptAssertion: false,
   signatureAlgorithm: "RSA_SHA256", dataEncryptionAlgorithm: "AES256_GCM", keyTransportAlgorithm: "RSA_OAEP",
   wantAuthnRequestsSigned: false, allowIdpInitiated: true,
-  signingCertificate: "", encryptionCertificate: "",
+  signingCertificate: "", encryptionCertificate: "", spLoginUrl: "",
 };
 type Editor = typeof blank;
 
@@ -66,7 +67,7 @@ export default function RelyingParties() {
   useEffect(reload, []);
 
   function edit(rp: RelyingParty) {
-    openEdit({ ...rp, signingCertificate: rp.signingCertificate ?? "", encryptionCertificate: rp.encryptionCertificate ?? "" });
+    openEdit({ ...rp, signingCertificate: rp.signingCertificate ?? "", encryptionCertificate: rp.encryptionCertificate ?? "", spLoginUrl: rp.spLoginUrl ?? "" });
   }
 
   async function remove(rp: RelyingParty) {
@@ -177,6 +178,15 @@ export default function RelyingParties() {
               <div className="space-y-2">
                 <Label htmlFor="rp-nameid">NameID format</Label>
                 <Input id="rp-nameid" value={editor.nameIdFormat} onChange={(e) => set({ nameIdFormat: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="rp-sp-login">SP-initiated login URL</Label>
+                <Input id="rp-sp-login" value={editor.spLoginUrl} placeholder="https://sp.example.com/login (blank = IdP-initiated)"
+                       onChange={(e) => set({ spLoginUrl: e.target.value })} />
+                <p className="text-xs text-muted-foreground">
+                  Portal “launch” redirects here so the SP starts SP-initiated SSO (sends us an AuthnRequest).
+                  Leave blank to fall back to IdP-initiated (unsolicited) SSO.
+                </p>
               </div>
             </section>
 
