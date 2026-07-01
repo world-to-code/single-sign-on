@@ -1,7 +1,4 @@
-package com.example.sso.scim.internal.application;
-
-import com.example.sso.scim.internal.api.GroupResourceHandler;
-import com.example.sso.scim.internal.api.UserResourceHandler;
+package com.example.sso.scim.internal.api;
 
 import de.captaingoldfish.scim.sdk.common.resources.ServiceProvider;
 import de.captaingoldfish.scim.sdk.common.resources.complex.BulkConfig;
@@ -54,6 +51,7 @@ public class ScimConfig {
         ResourceEndpoint resourceEndpoint = new ResourceEndpoint(serviceProvider);
         resourceEndpoint.registerEndpoint(new UserEndpointDefinition(userHandler));
         resourceEndpoint.registerEndpoint(new GroupEndpointDefinition(groupHandler));
+
         return resourceEndpoint;
     }
 }
