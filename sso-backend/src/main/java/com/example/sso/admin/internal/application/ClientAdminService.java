@@ -1,5 +1,7 @@
 package com.example.sso.admin.internal.application;
 
+import com.example.sso.admin.internal.domain.OAuth2RegisteredClientEntity;
+import com.example.sso.admin.internal.domain.OAuth2RegisteredClientRepository;
 import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
@@ -13,7 +15,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
@@ -39,17 +40,14 @@ public class ClientAdminService {
 
     private final RegisteredClientRepository registeredClients;
     private final PasswordEncoder passwordEncoder;
-    private final JdbcTemplate jdbcTemplate;
+    private final OAuth2RegisteredClientRepository clientRows;
 
     @Transactional(readOnly = true)
     public List<ClientView> listClients() {
-        return jdbcTemplate.query(
-                "SELECT id, client_id, client_name, scopes, authorization_grant_types, redirect_uris, "
-                        + "initiate_login_uri FROM oauth2_registered_client",
-                (rs, rowNum) -> new ClientView(rs.getString("id"), rs.getString("client_id"),
-                        rs.getString("client_name"), rs.getString("scopes"),
-                        rs.getString("authorization_grant_types"), rs.getString("redirect_uris"),
-                        rs.getString("initiate_login_uri")));
+        return clientRows.findAll().stream()
+                .map(c -> new ClientView(c.getId(), c.getClientId(), c.getClientName(), c.getScopes(),
+                        c.getAuthorizationGrantTypes(), c.getRedirectUris(), c.getInitiateLoginUri()))
+                .toList();
     }
 
     /** Registers a new OAuth2/OIDC client with full AS settings. Returns the secret once (confidential). */
@@ -106,25 +104,21 @@ public class ClientAdminService {
         // initiate_login_uri is our launch metadata (not a Spring RegisteredClient field); persist it
         // on the same row after Spring's save.
         if (StringUtils.hasText(request.initiateLoginUri())) {
-            jdbcTemplate.update("UPDATE oauth2_registered_client SET initiate_login_uri = ? WHERE client_id = ?",
-                    request.initiateLoginUri().trim(), request.clientId());
+            clientRows.updateInitiateLoginUri(request.clientId(), request.initiateLoginUri().trim());
         }
         return new ClientCreated(request.clientId(), secret);
     }
 
     @Transactional
     public void deleteClient(String id) {
-        String clientId = jdbcTemplate.query("SELECT client_id FROM oauth2_registered_client WHERE id = ?",
-                rs -> rs.next() ? rs.getString(1) : null, id);
-        if (clientId == null) {
-            throw new NotFoundException("Client not found");
-        }
+        OAuth2RegisteredClientEntity client = clientRows.findById(id)
+                .orElseThrow(() -> new NotFoundException("Client not found"));
         // The first-party admin console is a fixed part of the platform (auto-assigned to admins,
         // launches /admin); it is protected from deletion so the admin entry point can't be removed.
-        if (AdminPortalSeeder.CLIENT_ID.equals(clientId)) {
+        if (AdminPortalSeeder.CLIENT_ID.equals(client.getClientId())) {
             throw new ConflictException("the admin console client is protected and cannot be deleted");
         }
-        jdbcTemplate.update("DELETE FROM oauth2_registered_client WHERE id = ?", id);
+        clientRows.deleteById(id);
     }
 
     private ClientSettings clientSettings(CreateClientRequest request) {
