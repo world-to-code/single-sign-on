@@ -2,6 +2,8 @@ package com.example.sso.security;
 
 import com.example.sso.admin.AdminPortalSettingsData;
 import com.example.sso.admin.AdminPortalSettingsService;
+import com.example.sso.audit.AuditRecord;
+import com.example.sso.audit.AuditService;
 import com.example.sso.oidc.AdminPortalSeeder;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -68,6 +70,7 @@ public class AdminElevationFilter extends OncePerRequestFilter {
     private final String clientId;
     /** Runtime-editable admin-portal knobs (freshness window + session idle/absolute lifetimes). */
     private final AdminPortalSettingsService settingsService;
+    private final AuditService audit;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -97,6 +100,8 @@ public class AdminElevationFilter extends OncePerRequestFilter {
         // reverse proxy that does not preserve the client IP, allowlist the proxy's address. An operator
         // who allowlists a range excluding their own network locks the console out (recover via DB).
         if (!settings.ipAllowed(request.getRemoteAddr())) {
+            audit.record(new AuditRecord("ADMIN_IP_BLOCKED", jwt.getSubject(), false,
+                    "uri=" + request.getRequestURI(), request.getRemoteAddr()));
             forbidNetwork(response);
             return;
         }

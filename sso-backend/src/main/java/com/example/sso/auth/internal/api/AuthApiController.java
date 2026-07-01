@@ -493,6 +493,7 @@ public class AuthApiController {
                     UsernamePasswordAuthenticationToken.authenticated(principal, null, authorities));
             StepUpInterceptor.stamp(request.getSession(false)); // fresh auth time for step-up
             enforceMaxConcurrentSessions(request, principal.getUsername());
+            audit.record(new AuditRecord("SESSION_CREATED", principal.getUsername(), true, null, clientIp(request)));
         }
 
         return authState.describe(currentAuthentication());

@@ -41,7 +41,7 @@ public enum AuditCategory {
         if (t.startsWith("SAML") || t.startsWith("OIDC") || t.contains("SSO") || t.contains("APP_")) {
             return APP_ACCESS;
         }
-        if (t.equals("IP_BLOCKED") || t.equals("RATE_LIMITED")) {
+        if (t.contains("IP_BLOCKED") || t.equals("RATE_LIMITED")) {
             return ACCESS;
         }
         if (t.startsWith("AUTH") || t.startsWith("MFA") || t.startsWith("TOTP") || t.startsWith("REAUTH")

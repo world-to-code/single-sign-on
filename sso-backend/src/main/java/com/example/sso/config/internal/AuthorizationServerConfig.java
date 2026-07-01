@@ -1,5 +1,6 @@
 package com.example.sso.config.internal;
 
+import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.crypto.RsaKeyService;
 import com.example.sso.portal.AppStepUpFilter;
@@ -65,7 +66,8 @@ public class AuthorizationServerConfig {
     @Order(Ordered.HIGHEST_PRECEDENCE)
     SecurityFilterChain authorizationServerSecurityFilterChain(
             HttpSecurity http, JWKSource<SecurityContext> jwkSource,
-            RegisteredClientRepository registeredClients, UserService users, ApplicationService applications)
+            RegisteredClientRepository registeredClients, UserService users, ApplicationService applications,
+            AuditService audit)
             throws Exception {
 
         OAuth2AuthorizationServerConfigurer authorizationServer = new OAuth2AuthorizationServerConfigurer();
@@ -94,7 +96,7 @@ public class AuthorizationServerConfig {
                 .oauth2ResourceServer(rs -> rs.jwt(Customizer.withDefaults()))
                 // Per-app step-up: redirect to /stepup when the client requires extra factors. Anchored
                 // after the context filter (a registered-order filter) so it runs once the session is loaded.
-                .addFilterAfter(new AppStepUpFilter(registeredClients, users, applications),
+                .addFilterAfter(new AppStepUpFilter(registeredClients, users, applications, audit),
                         SecurityContextHolderFilter.class);
         return http.build();
     }

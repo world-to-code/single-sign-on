@@ -1,5 +1,7 @@
 package com.example.sso.portal;
 
+import com.example.sso.audit.AuditRecord;
+import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
@@ -50,6 +52,7 @@ public class AppStepUpFilter extends OncePerRequestFilter {
     private final RegisteredClientRepository registeredClients;
     private final UserService users;
     private final ApplicationService applications;
+    private final AuditService audit;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -78,6 +81,8 @@ public class AppStepUpFilter extends OncePerRequestFilter {
         AppAccess access = applications.appAccess(new AppAccessQuery(user, AppType.OIDC, client.getId(), granted,
                 lastAppStepUp(request.getSession(false), AppType.OIDC, client.getId())));
         if (access.ready()) {
+            audit.record(new AuditRecord("OIDC_APP_ACCESS", user.getUsername(), true,
+                    "client=" + client.getId(), request.getRemoteAddr()));
             chain.doFilter(request, response);
             return;
         }

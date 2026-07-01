@@ -1,6 +1,7 @@
 package com.example.sso.config.internal;
 
 import com.example.sso.admin.AdminPortalSettingsService;
+import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.ratelimit.AuthRateLimitFilter;
 import com.example.sso.oidc.AdminPortalSeeder;
@@ -102,7 +103,7 @@ public class SecurityConfig {
     SecurityFilterChain appSecurityFilterChain(
             HttpSecurity http, AuthRateLimitFilter authRateLimitFilter,
             SessionIntegrityFilter sessionIntegrityFilter, JwtDecoder jwtDecoder,
-            AdminPortalSettingsService adminPortalSettingsService,
+            AdminPortalSettingsService adminPortalSettingsService, AuditService audit,
             @Value("${sso.issuer}") String issuer,
             @Value("${sso.webauthn.rp-id:localhost}") String rpId,
             @Value("${sso.webauthn.rp-name:Mini SSO}") String rpName,
@@ -161,7 +162,7 @@ public class SecurityConfig {
                 // Anchored AFTER the authorization filter so the session ROLE_ADMIN + MFA_COMPLETE check
                 // (and @PreAuthorize) still run first — a non-admin gets 403 there, never the 401 challenge.
                 .addFilterAfter(new AdminElevationFilter(jwtDecoder, issuer, AdminPortalSeeder.CLIENT_ID,
-                        adminPortalSettingsService), AuthorizationFilter.class)
+                        adminPortalSettingsService, audit), AuthorizationFilter.class)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .exceptionHandling(ex -> ex
                         .defaultAuthenticationEntryPointFor(
