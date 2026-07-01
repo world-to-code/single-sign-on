@@ -1,9 +1,7 @@
 package com.example.sso.shared.web;
 
-import com.example.sso.shared.error.BadRequestException;
-import com.example.sso.shared.error.ConflictException;
-import com.example.sso.shared.error.NotFoundException;
-import org.springframework.http.HttpStatus;
+import com.example.sso.shared.error.ApiException;
+import com.example.sso.shared.error.ErrorCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -15,27 +13,16 @@ import java.net.URI;
 import java.util.stream.Collectors;
 
 /**
- * Translates domain and validation exceptions into RFC 7807 {@link ProblemDetail} responses so
- * the SPA gets one consistent error shape. Services throw domain exceptions
- * ({@link NotFoundException}/{@link ConflictException}/{@link BadRequestException}) and stay free
- * of web-layer (HTTP status) concerns.
+ * Translates domain and validation exceptions into a single RFC 7807 {@link ProblemDetail} response
+ * shape, augmented with a machine-readable {@code code} from {@link ErrorCode}. Services throw
+ * {@link ApiException} subtypes and stay free of web-layer (HTTP status) concerns.
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(NotFoundException.class)
-    ProblemDetail handleNotFound(NotFoundException ex, WebRequest request) {
-        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), request);
-    }
-
-    @ExceptionHandler(ConflictException.class)
-    ProblemDetail handleConflict(ConflictException ex, WebRequest request) {
-        return problem(HttpStatus.CONFLICT, ex.getMessage(), request);
-    }
-
-    @ExceptionHandler(BadRequestException.class)
-    ProblemDetail handleBadRequest(BadRequestException ex, WebRequest request) {
-        return problem(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    @ExceptionHandler(ApiException.class)
+    ProblemDetail handleApiException(ApiException ex, WebRequest request) {
+        return problem(ex.getCode(), ex.getMessage(), request);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -43,16 +30,17 @@ public class GlobalExceptionHandler {
         String detail = ex.getBindingResult().getFieldErrors().stream()
                 .map(error -> error.getField() + ": " + error.getDefaultMessage())
                 .collect(Collectors.joining("; "));
-        return problem(HttpStatus.BAD_REQUEST, detail.isBlank() ? "Validation failed" : detail, request);
+        return problem(ErrorCode.VALIDATION_FAILED, detail.isBlank() ? "Validation failed" : detail, request);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     ProblemDetail handleIllegalArgument(IllegalArgumentException ex, WebRequest request) {
-        return problem(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+        return problem(ErrorCode.BAD_REQUEST, ex.getMessage(), request);
     }
 
-    private ProblemDetail problem(HttpStatus status, String detail, WebRequest request) {
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
+    private ProblemDetail problem(ErrorCode code, String detail, WebRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(code.getStatus(), detail);
+        problem.setProperty("code", code.name());
         if (request instanceof ServletWebRequest servletRequest) {
             problem.setInstance(URI.create(servletRequest.getRequest().getRequestURI()));
         }
