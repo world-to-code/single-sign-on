@@ -1,0 +1,40 @@
+package com.example.sso.session;
+
+import java.util.Set;
+import java.util.UUID;
+
+/**
+ * Read-only view of a session policy — the session module's public projection, consumed by the login
+ * flow (auth), the session-integrity filter (security), the portal and the admin console. The backing
+ * {@code SessionPolicy} entity stays module-internal.
+ */
+public interface SessionPolicyDetails {
+
+    UUID getId();
+
+    String getName();
+
+    int getPriority();
+
+    boolean isEnabled();
+
+    int getAbsoluteTimeoutMinutes();
+
+    int getIdleTimeoutMinutes();
+
+    int getReauthIntervalMinutes();
+
+    String getReauthFactors();
+
+    boolean isBindClient();
+
+    int getMaxConcurrentSessions();
+
+    boolean isRotateOnReauth();
+
+    String getCookieSameSite();
+
+    Set<UUID> getAssignedUserIds();
+
+    Set<UUID> getAssignedRoleIds();
+}

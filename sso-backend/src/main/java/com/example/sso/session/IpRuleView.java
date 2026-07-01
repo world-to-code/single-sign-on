@@ -1,5 +1,7 @@
 package com.example.sso.session;
 
+import com.example.sso.session.internal.domain.IpRule;
+
 /** Admin view of an IP access rule. */
 public record IpRuleView(String id, String cidr, String action, String description,
                          boolean enabled, int priority) {

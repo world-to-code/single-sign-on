@@ -1,6 +1,7 @@
 package com.example.sso.user;
 
 import com.example.sso.shared.IdName;
+import com.example.sso.user.internal.domain.UserGroup;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;

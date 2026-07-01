@@ -45,7 +45,7 @@ public class StepUpInterceptor implements HandlerInterceptor {
             return true; // reads are not sensitive
         }
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        SessionPolicy policy = authentication == null
+        SessionPolicyDetails policy = authentication == null
                 ? policyService.defaultPolicy()
                 : policyService.resolveForUsername(authentication.getName());
         HttpSession session = request.getSession(false);

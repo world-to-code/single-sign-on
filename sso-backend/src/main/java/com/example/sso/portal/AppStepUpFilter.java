@@ -1,7 +1,7 @@
 package com.example.sso.portal;
 
 import com.example.sso.authpolicy.Factors;
-import com.example.sso.user.AppUser;
+import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -37,12 +37,12 @@ public class AppStepUpFilter extends OncePerRequestFilter {
     private static final String STEPUP_TIME_PREFIX = "APP_STEPUP_TIME::";
 
     /** Session attribute key holding the last deliberate step-up time for a specific app. */
-    public static String stepUpTimeKey(AppAssignment.AppType type, String appId) {
+    public static String stepUpTimeKey(AppType type, String appId) {
         return STEPUP_TIME_PREFIX + type + ":" + appId;
     }
 
     /** The last deliberate step-up recorded for this specific app, or null if none. */
-    public static Instant lastAppStepUp(HttpSession session, AppAssignment.AppType type, String appId) {
+    public static Instant lastAppStepUp(HttpSession session, AppType type, String appId) {
         Object value = session == null ? null : session.getAttribute(stepUpTimeKey(type, appId));
         return value instanceof Long millis ? Instant.ofEpochMilli(millis) : null;
     }
@@ -66,15 +66,15 @@ public class AppStepUpFilter extends OncePerRequestFilter {
             return;
         }
         RegisteredClient client = registeredClients.findByClientId(clientId);
-        AppUser user = users.findByUsername(auth.getName()).orElse(null);
+        UserAccount user = users.findByUsername(auth.getName()).orElse(null);
         if (client == null || user == null) {
             chain.doFilter(request, response);
             return;
         }
         Set<String> granted = auth.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority).filter(a -> a.startsWith("FACTOR_")).collect(Collectors.toSet());
-        AppAccess access = applications.appAccess(user, AppAssignment.AppType.OIDC, client.getId(), granted,
-                lastAppStepUp(request.getSession(false), AppAssignment.AppType.OIDC, client.getId()));
+        AppAccess access = applications.appAccess(user, AppType.OIDC, client.getId(), granted,
+                lastAppStepUp(request.getSession(false), AppType.OIDC, client.getId()));
         if (access.ready()) {
             chain.doFilter(request, response);
             return;

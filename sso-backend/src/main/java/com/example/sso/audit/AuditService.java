@@ -1,26 +1,16 @@
 package com.example.sso.audit;
 
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
+import java.util.List;
 
 /**
- * Records audit events. Writes run in their own transaction so that an audit write never
- * rolls back (or is rolled back by) the surrounding business transaction.
+ * Audit module's public contract: records security-relevant events and exposes recent events as the
+ * public {@link AuditEntry} projection. The implementation and the backing entity stay module-internal.
  */
-@Service
-@RequiredArgsConstructor
-public class AuditService {
-    private final AuditEventRepository repository;
+public interface AuditService {
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void record(String type, String principal, boolean success, String detail, String remoteIp) {
-        repository.save(new AuditEvent(type, principal, success, detail, remoteIp));
-    }
+    void record(String type, String principal, boolean success, String detail, String remoteIp);
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void record(String type, String principal, boolean success) {
-        record(type, principal, success, null, null);
-    }
+    void record(String type, String principal, boolean success);
+
+    List<AuditEntry> recent();
 }

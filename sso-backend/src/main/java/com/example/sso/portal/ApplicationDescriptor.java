@@ -1,6 +1,6 @@
 package com.example.sso.portal;
 
-import com.example.sso.portal.AppAssignment.AppType;
+import com.example.sso.portal.AppType;
 
 /**
  * A launchable application contributed by a protocol module (OIDC/SAML) to the portal. Each module

@@ -1,7 +1,7 @@
 package com.example.sso.security;
 
 import com.example.sso.audit.AuditService;
-import com.example.sso.session.SessionPolicy;
+import com.example.sso.session.SessionPolicyDetails;
 import com.example.sso.session.SessionPolicyService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -56,7 +56,7 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
         Authentication authentication = contextHolder.getContext().getAuthentication();
         if (session != null && isAuthenticated(authentication)) {
             String username = authentication.getName();
-            SessionPolicy policy = policyService.resolveForUsername(username);
+            SessionPolicyDetails policy = policyService.resolveForUsername(username);
             long now = System.currentTimeMillis();
 
             // Concurrent-session control: AuthApiController evicts the oldest overflow sessions by

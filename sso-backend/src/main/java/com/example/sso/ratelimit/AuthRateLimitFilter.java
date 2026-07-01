@@ -1,6 +1,7 @@
 package com.example.sso.ratelimit;
 
 import com.example.sso.audit.AuditService;
+import com.example.sso.ratelimit.internal.InMemoryRateLimiter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

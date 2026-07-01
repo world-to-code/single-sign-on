@@ -1,6 +1,6 @@
 package com.example.sso.security;
 
-import com.example.sso.admin.AdminPortalSettings;
+import com.example.sso.admin.AdminPortalSettingsData;
 import com.example.sso.admin.AdminPortalSettingsService;
 import com.example.sso.oidc.AdminPortalSeeder;
 import jakarta.servlet.FilterChain;
@@ -88,7 +88,7 @@ public class AdminElevationFilter extends OncePerRequestFilter {
             challenge(response);
             return;
         }
-        AdminPortalSettings settings = settingsService.get();
+        AdminPortalSettingsData settings = settingsService.get();
         if (!isElevated(jwt, settings.reauthInterval()) || !boundToSession(jwt)) {
             challenge(response);
             return;
@@ -105,7 +105,7 @@ public class AdminElevationFilter extends OncePerRequestFilter {
      * When either window is exceeded the admin timestamps are cleared and the request is challenged, so
      * the SPA re-elevates (a fresh step-up) which restarts the windows.
      */
-    private boolean withinSessionWindow(HttpServletRequest request, AdminPortalSettings settings) {
+    private boolean withinSessionWindow(HttpServletRequest request, AdminPortalSettingsData settings) {
         HttpSession session = request.getSession(false);
         if (session == null) {
             return false; // an authenticated admin request always carries a session

@@ -1,7 +1,8 @@
 package com.example.sso.mfa;
 
+import com.example.sso.mfa.internal.application.TotpService;
 import com.example.sso.support.AbstractIntegrationTest;
-import com.example.sso.user.AppUser;
+import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,7 +49,7 @@ class MfaFlowIT extends AbstractIntegrationTest {
 
     @Test
     void completingTotpReachesFullyAuthenticated() throws Exception {
-        AppUser user = userService.createUser("mfa-ok", "mfa-ok@example.com", "Ok", "pw-ok-12!", Set.of("ROLE_USER"));
+        UserAccount user = userService.createUser("mfa-ok", "mfa-ok@example.com", "Ok", "pw-ok-12!", Set.of("ROLE_USER"));
         TotpEnrollment enrollment = mfaService.newEnrollment(user);
         mfaService.confirmEnrollment(user, enrollment.secret(),
                 totpService.generateCodeAt(enrollment.secret(), System.currentTimeMillis() - 30_000));

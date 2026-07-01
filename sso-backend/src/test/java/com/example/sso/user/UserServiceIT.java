@@ -11,26 +11,23 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Verifies the identity core end-to-end against a real PostgreSQL (Flyway migrations +
- * Hibernate {@code validate}).
+ * Hibernate {@code validate}), through the public {@link UserService} contract only.
  */
 class UserServiceIT extends AbstractIntegrationTest {
 
     @Autowired
     UserService userService;
 
-    @Autowired
-    AppUserRepository users;
-
     @Test
     void createsAndLoadsUserWithRole() {
         userService.createUser("alice", "alice@example.com", "Alice", "S3cret!pw", Set.of("ROLE_USER"));
 
-        AppUser loaded = users.findByUsername("alice").orElseThrow();
+        UserAccount loaded = userService.findByUsername("alice").orElseThrow();
         assertThat(loaded.getId()).isNotNull();
         assertThat(loaded.getEmail()).isEqualTo("alice@example.com");
-        assertThat(loaded.getPasswordHash()).isNotBlank();
-        assertThat(loaded.getPasswordHash()).doesNotContain("S3cret!pw"); // stored as a hash
-        assertThat(loaded.getRoles()).extracting(Role::getName).contains("ROLE_USER");
+        assertThat(userService.verifyPassword("alice", "S3cret!pw")).isTrue();  // stored as a verifiable hash
+        assertThat(userService.verifyPassword("alice", "wrong-pw")).isFalse();
+        assertThat(loaded.getRoles()).extracting(RoleRef::getName).contains("ROLE_USER");
     }
 
     @Test
@@ -43,6 +40,6 @@ class UserServiceIT extends AbstractIntegrationTest {
 
     @Test
     void seedsDefaultAdminOnStartup() {
-        assertThat(users.findByUsername("admin")).isPresent();
+        assertThat(userService.findByUsername("admin")).isPresent();
     }
 }

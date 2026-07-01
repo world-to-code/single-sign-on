@@ -11,7 +11,7 @@ public record SessionPolicyView(String id, String name, int priority, boolean en
                                 String cookieSameSite,
                                 List<String> assignedUserIds, List<String> assignedRoleIds) {
 
-    public static SessionPolicyView of(SessionPolicy p) {
+    public static SessionPolicyView of(SessionPolicyDetails p) {
         return new SessionPolicyView(p.getId().toString(), p.getName(), p.getPriority(), p.isEnabled(),
                 p.getAbsoluteTimeoutMinutes(), p.getIdleTimeoutMinutes(), p.getReauthIntervalMinutes(),
                 p.getReauthFactors(), p.isBindClient(), p.getMaxConcurrentSessions(), p.isRotateOnReauth(),

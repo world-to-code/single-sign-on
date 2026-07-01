@@ -1,83 +1,78 @@
 package com.example.sso.user;
 
-import lombok.RequiredArgsConstructor;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import com.example.sso.shared.IdName;
 
+import java.time.Duration;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
 /**
- * Application service for the identity core: user creation, lookup, role/get-or-create,
- * and password management. Used by base auth, MFA, OIDC, SAML and SCIM layers.
+ * Identity-core contract: user lookup/creation and all user state changes (profile, roles, direct
+ * permissions, enable/disable, password, lockout). Returns the public {@link UserAccount} projection;
+ * callers never touch the {@code AppUser} entity. The implementation stays module-internal.
  */
-@Service
-@RequiredArgsConstructor
-public class UserService {
+public interface UserService {
 
-    private final AppUserRepository users;
-    private final RoleRepository roles;
-    private final UserGroupRepository groups;
-    private final PasswordEncoder passwordEncoder;
+    // --- reads ---
 
-    @Transactional(readOnly = true)
-    public Optional<AppUser> findByUsername(String username) {
-        return users.findByUsername(username);
-    }
-
-    @Transactional(readOnly = true)
-    public Optional<AppUser> findByEmail(String email) {
-        return users.findByEmail(email);
-    }
+    Optional<UserAccount> findByUsername(String username);
 
     /** Resolves a login identifier (email preferred, falling back to username). */
-    @Transactional(readOnly = true)
-    public Optional<AppUser> findByLogin(String identifier) {
-        return users.findByEmail(identifier).or(() -> users.findByUsername(identifier));
-    }
+    Optional<UserAccount> findByLogin(String identifier);
 
-    @Transactional
-    public AppUser createUser(String username, String email, String displayName,
-                              String rawPassword, Set<String> roleNames) {
-        if (users.existsByUsername(username)) {
-            throw new IllegalArgumentException("username already exists: " + username);
-        }
-        if (users.existsByEmail(email)) {
-            throw new IllegalArgumentException("email already exists: " + email);
-        }
-        String encodedPassword = rawPassword == null ? null : passwordEncoder.encode(rawPassword);
-        AppUser user = new AppUser(username, email, displayName, encodedPassword);
-        roleNames.forEach(name -> user.addRole(getOrCreateRole(name)));
-        AppUser saved = users.save(user);
-        addToDefaultGroup(saved.getId());
-        return saved;
-    }
+    Optional<UserAccount> findById(UUID id);
 
-    /** Adds a user to the platform "All Users" group so every user always belongs to a group. */
-    @Transactional
-    public void addToDefaultGroup(UUID userId) {
-        groups.findByName(UserGroup.ALL_USERS).ifPresent(group -> {
-            group.addMember(userId);
-            groups.save(group);
-        });
-    }
+    List<UserAccount> findAll();
 
-    @Transactional
-    public void changePassword(AppUser user, String rawPassword) {
-        user.changePassword(passwordEncoder.encode(rawPassword));
-        users.save(user);
-    }
+    /** A page of users (SCIM 1-based startIndex). */
+    List<UserAccount> page(long startIndex, int count);
 
-    @Transactional
-    public void markEmailVerified(AppUser user) {
-        user.verifyEmail();
-        users.save(user);
-    }
+    long count();
 
-    @Transactional
-    public Role getOrCreateRole(String name) {
-        return roles.findByName(name).orElseGet(() -> roles.save(new Role(name)));
-    }
+    boolean existsByUsername(String username);
+
+    boolean hasPassword(UUID id);
+
+    /** Typeahead (id, username) suggestions for assignment pickers. */
+    List<Suggestion> searchUsers(String q, int limit);
+
+    /** (id, username) for the given user ids — display-name resolution without exposing the entity. */
+    List<IdName> idNames(Collection<UUID> ids);
+
+    // --- create / update (intention-revealing; no entity leaves the module) ---
+
+    UserAccount createUser(String username, String email, String displayName,
+                           String rawPassword, Set<String> roleNames);
+
+    /** Admin full update: profile, enabled state, and (when non-null) the exact role-name set. */
+    UserAccount updateUser(UUID id, String displayName, String email, boolean enabled, Set<String> roleNames);
+
+    UserAccount setEnabled(UUID id, boolean enabled);
+
+    void enable(UUID id);
+
+    void disable(UUID id);
+
+    /** Replaces the user's directly-granted permissions with the given permission names. */
+    UserAccount setDirectPermissions(UUID id, Set<String> permissionNames);
+
+    void updateProfile(UUID id, String displayName, String email);
+
+    void assignExternalId(UUID id, String externalId);
+
+    void delete(UUID id);
+
+    void markEmailVerified(UUID id);
+
+    // --- authentication helpers ---
+
+    boolean verifyPassword(String username, String rawPassword);
+
+    /** Records a failed login for the account; locks it for {@code lockFor} once {@code maxAttempts} is hit. */
+    void recordFailedLogin(String username, int maxAttempts, Duration lockFor);
+
+    void recordSuccessfulLogin(String username);
 }

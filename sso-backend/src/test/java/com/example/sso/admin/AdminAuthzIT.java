@@ -2,9 +2,9 @@ package com.example.sso.admin;
 
 import com.example.sso.mfa.MfaService;
 import com.example.sso.mfa.TotpEnrollment;
-import com.example.sso.mfa.TotpService;
+import com.example.sso.mfa.internal.application.TotpService;
 import com.example.sso.support.AbstractIntegrationTest;
-import com.example.sso.user.AppUser;
+import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,8 +38,8 @@ class AdminAuthzIT extends AbstractIntegrationTest {
 
     @Test
     void nonAdminIsForbiddenFromAdminApi() throws Exception {
-        AppUser user = userService.createUser("plainuser", "plain@example.com", "Plain", "pw-plain-1!", Set.of("ROLE_USER"));
-        userService.markEmailVerified(user);
+        UserAccount user = userService.createUser("plainuser", "plain@example.com", "Plain", "pw-plain-1!", Set.of("ROLE_USER"));
+        userService.markEmailVerified(user.getId());
         TotpEnrollment enrollment = mfaService.newEnrollment(user);
         mfaService.confirmEnrollment(user, enrollment.secret(),
                 totpService.generateCodeAt(enrollment.secret(), System.currentTimeMillis() - 30_000));
