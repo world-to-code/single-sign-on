@@ -59,7 +59,7 @@ public class ServerErrorAuditFilter extends OncePerRequestFilter {
             String detail = truncate(request.getMethod() + " " + request.getRequestURI() + " [" + ref + "] "
                     + root.getClass().getName() + ": " + (root.getMessage() == null ? "" : root.getMessage())
                     + topFrames(root));
-            audit.record("SERVER_ERROR", currentPrincipal(), false, detail, request.getRemoteAddr());
+            audit.record(new AuditRecord("SERVER_ERROR", currentPrincipal(), false, detail, request.getRemoteAddr()));
         } catch (RuntimeException auditFailure) {
             log.error("Failed to audit server error ref={}", ref, auditFailure);
         }

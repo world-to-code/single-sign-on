@@ -4,6 +4,7 @@ import com.example.sso.admin.internal.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.application.UserAdminService;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.support.AbstractIntegrationTest;
+import com.example.sso.user.NewUser;
 import com.example.sso.user.UserService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -81,7 +82,8 @@ class AbacAuthorizationIT extends AbstractIntegrationTest {
     }
 
     private UUID create(String username, Set<String> roles) {
-        UUID id = userService.createUser(username, username + "@example.com", username, "S3cret!pw9", roles).getId();
+        UUID id = userService.createUser(new NewUser(username, username + "@example.com", username,
+                "S3cret!pw9", roles)).getId();
         created.add(id);
         return id;
     }

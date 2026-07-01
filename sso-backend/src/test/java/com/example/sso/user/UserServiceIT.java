@@ -20,7 +20,7 @@ class UserServiceIT extends AbstractIntegrationTest {
 
     @Test
     void createsAndLoadsUserWithRole() {
-        userService.createUser("alice", "alice@example.com", "Alice", "S3cret!pw", Set.of("ROLE_USER"));
+        userService.createUser(new NewUser("alice", "alice@example.com", "Alice", "S3cret!pw", Set.of("ROLE_USER")));
 
         UserAccount loaded = userService.findByUsername("alice").orElseThrow();
         assertThat(loaded.getId()).isNotNull();
@@ -32,9 +32,10 @@ class UserServiceIT extends AbstractIntegrationTest {
 
     @Test
     void rejectsDuplicateUsername() {
-        userService.createUser("bob", "bob@example.com", "Bob", "pw-one-2!", Set.of("ROLE_USER"));
+        userService.createUser(new NewUser("bob", "bob@example.com", "Bob", "pw-one-2!", Set.of("ROLE_USER")));
         assertThatThrownBy(() ->
-                userService.createUser("bob", "bob2@example.com", "Bob2", "pw-two-2!", Set.of("ROLE_USER")))
+                userService.createUser(new NewUser("bob", "bob2@example.com", "Bob2", "pw-two-2!",
+                        Set.of("ROLE_USER"))))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 

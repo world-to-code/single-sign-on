@@ -7,8 +7,10 @@ import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.internal.domain.Permission;
 import com.example.sso.user.internal.domain.Role;
 import com.example.sso.user.internal.domain.RoleRepository;
+import com.example.sso.user.NewUser;
 import com.example.sso.user.Suggestion;
 import com.example.sso.user.UserAccount;
+import com.example.sso.user.UserUpdate;
 import com.example.sso.user.UserGroupRepository;
 import com.example.sso.user.internal.domain.UserGroup;
 import com.example.sso.user.UserService;
@@ -120,17 +122,19 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    public UserAccount createUser(String username, String email, String displayName,
-                                  String rawPassword, Set<String> roleNames) {
+    public UserAccount createUser(NewUser newUser) {
+        String username = newUser.username();
+        String email = newUser.email();
         if (users.existsByUsername(username)) {
             throw new IllegalArgumentException("username already exists: " + username);
         }
         if (users.existsByEmail(email)) {
             throw new IllegalArgumentException("email already exists: " + email);
         }
+        String rawPassword = newUser.rawPassword();
         String encodedPassword = rawPassword == null ? null : passwordEncoder.encode(rawPassword);
-        AppUser user = new AppUser(username, email, displayName, encodedPassword);
-        roleNames.forEach(name -> user.addRole(getOrCreateRole(name)));
+        AppUser user = new AppUser(username, email, newUser.displayName(), encodedPassword);
+        newUser.roleNames().forEach(name -> user.addRole(getOrCreateRole(name)));
         AppUser saved = users.save(user);
         addToDefaultGroup(saved.getId());
         return saved;
@@ -146,14 +150,15 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    public UserAccount updateUser(UUID id, String displayName, String email, boolean enabled, Set<String> roleNames) {
+    public UserAccount updateUser(UUID id, UserUpdate update) {
         AppUser user = require(id);
-        user.updateProfile(displayName, email);
-        if (enabled) {
+        user.updateProfile(update.displayName(), update.email());
+        if (update.enabled()) {
             user.enable();
         } else {
             user.disable();
         }
+        Set<String> roleNames = update.roleNames();
         if (roleNames != null) {
             user.assignRoles(roleNames.stream().map(this::getOrCreateRole).collect(Collectors.toSet()));
         }

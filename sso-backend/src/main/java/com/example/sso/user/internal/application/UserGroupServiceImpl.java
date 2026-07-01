@@ -7,6 +7,7 @@ import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.GroupMembersPage;
 import com.example.sso.user.GroupMembership;
+import com.example.sso.user.GroupSpec;
 import com.example.sso.user.GroupView;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.Suggestion;
@@ -70,29 +71,29 @@ public class UserGroupServiceImpl implements UserGroupService {
 
     @Override
     @Transactional
-    public GroupView create(String name, String description, String externalId, Set<UUID> memberIds) {
-        if (repository.findByName(name).isPresent()) {
+    public GroupView create(GroupSpec spec) {
+        if (repository.findByName(spec.name()).isPresent()) {
             throw new ConflictException("group name already exists");
         }
-        UserGroup group = new UserGroup(name, description, externalId);
-        group.setMembers(existingUserIds(memberIds));
+        UserGroup group = new UserGroup(spec.name(), spec.description(), spec.externalId());
+        group.setMembers(existingUserIds(spec.memberIds()));
         return toView(repository.save(group));
     }
 
     @Override
     @Transactional
-    public GroupView update(UUID id, String name, String description, String externalId, Set<UUID> memberIds) {
+    public GroupView update(UUID id, GroupSpec spec) {
         UserGroup group = require(id);
         if (group.isSystem()) {
             throw new ConflictException("the '" + group.getName() + "' system group cannot be edited");
         }
-        repository.findByName(name)
+        repository.findByName(spec.name())
                 .filter(other -> !other.getId().equals(id))
                 .ifPresent(other -> { throw new ConflictException("group name already exists"); });
-        group.rename(name);
-        group.describe(description);
-        group.assignExternalId(externalId);
-        group.setMembers(existingUserIds(memberIds));
+        group.rename(spec.name());
+        group.describe(spec.description());
+        group.assignExternalId(spec.externalId());
+        group.setMembers(existingUserIds(spec.memberIds()));
         return toView(repository.save(group));
     }
 

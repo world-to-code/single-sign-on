@@ -2,6 +2,8 @@ package com.example.sso.authpolicy.internal.api;
 
 import com.example.sso.authpolicy.AuthFactor;
 import com.example.sso.authpolicy.AuthPolicyAdminService;
+import com.example.sso.authpolicy.AuthPolicySpec;
+import com.example.sso.authpolicy.AuthPolicyUpdate;
 import com.example.sso.authpolicy.AuthPolicyView;
 import com.example.sso.user.Permissions;
 
@@ -44,22 +46,22 @@ public class AuthPolicyAdminController {
     @PostMapping
     @PreAuthorize("hasAuthority('" + Permissions.POLICY_CREATE + "')")
     public ResponseEntity<PolicyView> create(@Valid @RequestBody PolicyRequest request) {
-        PolicyView created = toView(service.create(request.name(), request.priority(), request.enabled(),
-                request.appliesToLogin() == null || request.appliesToLogin(),
+        PolicyView created = toView(service.create(new AuthPolicySpec(request.name(), request.priority(),
+                request.enabled(), request.appliesToLogin() == null || request.appliesToLogin(),
                 request.allowEnrollmentAtLogin() == null || request.allowEnrollmentAtLogin(),
                 steps(request), ids(request.assignedUserIds()), ids(request.assignedRoleIds()),
-                freshness(request)));
+                freshness(request))));
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('" + Permissions.POLICY_UPDATE + "')")
     public PolicyView update(@PathVariable UUID id, @Valid @RequestBody PolicyRequest request) {
-        return toView(service.update(id, request.priority(), request.enabled(),
+        return toView(service.update(id, new AuthPolicyUpdate(request.priority(), request.enabled(),
                 request.appliesToLogin() == null || request.appliesToLogin(),
                 request.allowEnrollmentAtLogin() == null || request.allowEnrollmentAtLogin(),
                 steps(request), ids(request.assignedUserIds()), ids(request.assignedRoleIds()),
-                freshness(request)));
+                freshness(request))));
     }
 
     @DeleteMapping("/{id}")

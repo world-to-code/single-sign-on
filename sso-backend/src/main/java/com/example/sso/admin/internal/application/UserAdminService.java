@@ -4,6 +4,7 @@ import com.example.sso.mfa.MfaService;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.GroupMembership;
+import com.example.sso.user.NewUser;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.RbacService;
 import com.example.sso.user.RoleRef;
@@ -12,6 +13,7 @@ import com.example.sso.user.Suggestion;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserGroupService;
 import com.example.sso.user.UserService;
+import com.example.sso.user.UserUpdate;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -57,8 +59,8 @@ public class UserAdminService {
         Set<String> roleNames = (request.roles() == null || request.roles().isEmpty())
                 ? Set.of("ROLE_USER") : request.roles();
         try {
-            return AdminUserView.of(userService.createUser(request.username(), request.email(),
-                    request.displayName(), request.password(), roleNames));
+            return AdminUserView.of(userService.createUser(new NewUser(request.username(), request.email(),
+                    request.displayName(), request.password(), roleNames)));
         } catch (IllegalArgumentException e) {
             throw new ConflictException(e.getMessage());
         }
@@ -69,8 +71,8 @@ public class UserAdminService {
         boolean remainsEnabledAdmin = request.enabled()
                 && request.roles() != null && request.roles().contains(ADMIN_ROLE);
         ensureNotLastAdmin(id, remainsEnabledAdmin);
-        return AdminUserView.of(userService.updateUser(id, request.displayName(), request.email(),
-                request.enabled(), request.roles()));
+        return AdminUserView.of(userService.updateUser(id, new UserUpdate(request.displayName(), request.email(),
+                request.enabled(), request.roles())));
     }
 
     @Transactional

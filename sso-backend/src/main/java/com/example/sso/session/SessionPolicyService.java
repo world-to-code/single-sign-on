@@ -3,7 +3,6 @@ package com.example.sso.session;
 import com.example.sso.user.UserAccount;
 
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -30,15 +29,9 @@ public interface SessionPolicyService {
 
     List<SessionPolicyDetails> listAll();
 
-    SessionPolicyDetails create(String name, int priority, boolean enabled, int absoluteTimeoutMinutes,
-                         int idleTimeoutMinutes, int reauthIntervalMinutes, String reauthFactors,
-                         boolean bindClient, int maxConcurrentSessions, boolean rotateOnReauth,
-                         String cookieSameSite, Set<UUID> userIds, Set<UUID> roleIds);
+    SessionPolicyDetails create(SessionPolicySpec spec);
 
-    SessionPolicyDetails update(UUID id, int priority, boolean enabled, int absoluteTimeoutMinutes,
-                         int idleTimeoutMinutes, int reauthIntervalMinutes, String reauthFactors,
-                         boolean bindClient, int maxConcurrentSessions, boolean rotateOnReauth,
-                         String cookieSameSite, Set<UUID> userIds, Set<UUID> roleIds);
+    SessionPolicyDetails update(UUID id, SessionPolicyUpdate update);
 
     void delete(UUID id);
 }

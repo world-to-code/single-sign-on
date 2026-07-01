@@ -1,7 +1,9 @@
 package com.example.sso.saml.internal.api;
 
+import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.portal.AppAccess;
+import com.example.sso.portal.AppAccessQuery;
 import com.example.sso.portal.AppType;
 import com.example.sso.portal.AppStepUpFilter;
 import com.example.sso.portal.ApplicationService;
@@ -121,9 +123,9 @@ public class SamlSsoController {
         // Per-app step-up: this app may require extra factors beyond the base login.
         Set<String> granted = authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority).filter(a -> a.startsWith("FACTOR_")).collect(Collectors.toSet());
-        AppAccess access = applications.appAccess(user, AppType.SAML, relyingParty.getId().toString(),
-                granted, AppStepUpFilter.lastAppStepUp(httpRequest.getSession(false),
-                        AppType.SAML, relyingParty.getId().toString()));
+        AppAccess access = applications.appAccess(new AppAccessQuery(user, AppType.SAML,
+                relyingParty.getId().toString(), granted, AppStepUpFilter.lastAppStepUp(
+                        httpRequest.getSession(false), AppType.SAML, relyingParty.getId().toString())));
         if (!access.ready()) {
             if ("GET".equalsIgnoreCase(httpRequest.getMethod())) {
                 HttpSession session = httpRequest.getSession(true);
@@ -133,7 +135,8 @@ public class SamlSsoController {
                 session.setAttribute(AppStepUpFilter.APP_ID, relyingParty.getId().toString());
                 return ResponseEntity.status(HttpStatus.FOUND).location(URI.create("/stepup")).build();
             }
-            audit.record("SAML_STEPUP_REQUIRED", user.getUsername(), false, "sp=" + relyingParty.getEntityId(), null);
+            audit.record(new AuditRecord("SAML_STEPUP_REQUIRED", user.getUsername(), false,
+                    "sp=" + relyingParty.getEntityId(), null));
             return ResponseEntity.status(HttpStatus.FORBIDDEN).contentType(MediaType.TEXT_PLAIN)
                     .body("Additional authentication is required for this application.");
         }
@@ -142,7 +145,8 @@ public class SamlSsoController {
                 relyingParty, inResponseTo, user.getEmail(), user.getDisplayName());
         String encoded = codec.encode(response);
         String flow = inResponseTo == null ? " (idp-initiated)" : "";
-        audit.record("SAML_SSO_ISSUED", user.getUsername(), true, "sp=" + relyingParty.getEntityId() + flow, null);
+        audit.record(new AuditRecord("SAML_SSO_ISSUED", user.getUsername(), true,
+                "sp=" + relyingParty.getEntityId() + flow, null));
 
         // The auto-submit page needs an inline script; serve it under a per-response CSP that allows ONLY
         // that nonce'd script (overriding the app's strict default-src 'self', which blocks inline JS).

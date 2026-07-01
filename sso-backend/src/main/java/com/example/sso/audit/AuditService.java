@@ -8,7 +8,7 @@ import java.util.List;
  */
 public interface AuditService {
 
-    void record(String type, String principal, boolean success, String detail, String remoteIp);
+    void record(AuditRecord record);
 
     void record(String type, String principal, boolean success);
 

@@ -21,9 +21,9 @@ public interface UserGroupService {
     /** Typeahead group search for the assignment picker. */
     List<Suggestion> search(String q, int limit);
 
-    GroupView create(String name, String description, String externalId, Set<UUID> memberIds);
+    GroupView create(GroupSpec spec);
 
-    GroupView update(UUID id, String name, String description, String externalId, Set<UUID> memberIds);
+    GroupView update(UUID id, GroupSpec spec);
 
     void delete(UUID id);
 

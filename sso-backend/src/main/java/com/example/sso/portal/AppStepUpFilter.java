@@ -73,8 +73,8 @@ public class AppStepUpFilter extends OncePerRequestFilter {
         }
         Set<String> granted = auth.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority).filter(a -> a.startsWith("FACTOR_")).collect(Collectors.toSet());
-        AppAccess access = applications.appAccess(user, AppType.OIDC, client.getId(), granted,
-                lastAppStepUp(request.getSession(false), AppType.OIDC, client.getId()));
+        AppAccess access = applications.appAccess(new AppAccessQuery(user, AppType.OIDC, client.getId(), granted,
+                lastAppStepUp(request.getSession(false), AppType.OIDC, client.getId())));
         if (access.ready()) {
             chain.doFilter(request, response);
             return;

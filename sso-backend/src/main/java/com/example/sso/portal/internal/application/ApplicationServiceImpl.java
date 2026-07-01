@@ -6,6 +6,7 @@ import com.example.sso.authpolicy.AuthPolicyResolver;
 import com.example.sso.authpolicy.AuthPolicyStepView;
 import com.example.sso.authpolicy.AuthPolicyView;
 import com.example.sso.portal.AppAccess;
+import com.example.sso.portal.AppAccessQuery;
 import com.example.sso.portal.internal.domain.AppAssignment;
 import com.example.sso.portal.AppType;
 import com.example.sso.portal.internal.domain.AppAssignment.SubjectType;
@@ -63,20 +64,21 @@ public class ApplicationServiceImpl implements ApplicationService {
 
     @Override
     @Transactional(readOnly = true)
-    public AppAccess appAccess(UserAccount user, AppType appType, String appId, Set<String> grantedFactors,
-                               Instant lastAppStepUp) {
-        Optional<AuthPolicyView> resolved = resolveAppPolicy(user, appType, appId);
+    public AppAccess appAccess(AppAccessQuery query) {
+        UserAccount user = query.user();
+        Optional<AuthPolicyView> resolved = resolveAppPolicy(user, query.appType(), query.appId());
         if (resolved.isEmpty()) {
             return new AppAccess(true, List.of());
         }
         AuthPolicyView policy = resolved.get();
         // 1) Acquire any factor the user does not yet hold.
-        Optional<AuthPolicyStepView> missing = evaluator.currentStep(policy, grantedFactors);
+        Optional<AuthPolicyStepView> missing = evaluator.currentStep(policy, query.grantedFactors());
         if (missing.isPresent()) {
             return new AppAccess(false, factorNames(missing.get()));
         }
         // 2) All factors held — require a fresh deliberate step-up for this app.
         Duration window = Duration.ofMinutes(policy.getStepUpFreshnessMinutes());
+        Instant lastAppStepUp = query.lastAppStepUp();
         boolean fresh = lastAppStepUp != null && !Duration.between(lastAppStepUp, Instant.now()).minus(window).isPositive();
         if (fresh || policy.getSteps().isEmpty()) {
             return new AppAccess(true, List.of());

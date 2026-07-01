@@ -1,6 +1,7 @@
 package com.example.sso.audit.internal.application;
 
 import com.example.sso.audit.AuditEntry;
+import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.internal.domain.AuditEvent;
 import com.example.sso.audit.internal.domain.AuditEventRepository;
@@ -23,14 +24,15 @@ public class AuditServiceImpl implements AuditService {
 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void record(String type, String principal, boolean success, String detail, String remoteIp) {
-        repository.save(new AuditEvent(type, principal, success, detail, remoteIp));
+    public void record(AuditRecord record) {
+        repository.save(new AuditEvent(record.type(), record.principal(), record.success(),
+                record.detail(), record.remoteIp()));
     }
 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(String type, String principal, boolean success) {
-        record(type, principal, success, null, null);
+        record(new AuditRecord(type, principal, success, null, null));
     }
 
     @Override

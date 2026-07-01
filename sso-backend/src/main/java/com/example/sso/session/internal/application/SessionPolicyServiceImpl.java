@@ -4,6 +4,8 @@ import com.example.sso.authpolicy.AuthFactor;
 import com.example.sso.session.internal.domain.SessionPolicy;
 import com.example.sso.session.SessionPolicyDetails;
 import com.example.sso.session.SessionPolicyService;
+import com.example.sso.session.SessionPolicySpec;
+import com.example.sso.session.SessionPolicyUpdate;
 import com.example.sso.session.internal.domain.SessionPolicyRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
@@ -123,22 +125,20 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
 
     @Override
     @Transactional
-    public SessionPolicyDetails create(String name, int priority, boolean enabled, int absoluteTimeoutMinutes,
-                                       int idleTimeoutMinutes, int reauthIntervalMinutes, String reauthFactors,
-                                       boolean bindClient, int maxConcurrentSessions, boolean rotateOnReauth,
-                                       String cookieSameSite, Set<UUID> userIds, Set<UUID> roleIds) {
-        if (repository.findByName(name).isPresent()) {
+    public SessionPolicyDetails create(SessionPolicySpec spec) {
+        if (repository.findByName(spec.name()).isPresent()) {
             throw new ConflictException("policy name already exists");
         }
-        reauthFactors = validateReauthFactors(reauthFactors);
-        SessionPolicy policy = new SessionPolicy(name, priority);
-        if (!enabled) {
+        String reauthFactors = validateReauthFactors(spec.reauthFactors());
+        SessionPolicy policy = new SessionPolicy(spec.name(), spec.priority());
+        if (!spec.enabled()) {
             policy.disable();
         }
-        policy.update(absoluteTimeoutMinutes, idleTimeoutMinutes, reauthIntervalMinutes, reauthFactors,
-                bindClient, maxConcurrentSessions, rotateOnReauth, cookieSameSite);
-        policy.assignUsers(userIds == null ? Set.of() : userIds);
-        policy.assignRoles(roleIds == null ? Set.of() : roleIds);
+        policy.update(spec.absoluteTimeoutMinutes(), spec.idleTimeoutMinutes(), spec.reauthIntervalMinutes(),
+                reauthFactors, spec.bindClient(), spec.maxConcurrentSessions(), spec.rotateOnReauth(),
+                spec.cookieSameSite());
+        policy.assignUsers(spec.userIds() == null ? Set.of() : spec.userIds());
+        policy.assignRoles(spec.roleIds() == null ? Set.of() : spec.roleIds());
         SessionPolicy saved = repository.save(policy);
         refresh();
         return saved;
@@ -146,30 +146,29 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
 
     @Override
     @Transactional
-    public SessionPolicyDetails update(UUID id, int priority, boolean enabled, int absoluteTimeoutMinutes,
-                                       int idleTimeoutMinutes, int reauthIntervalMinutes, String reauthFactors,
-                                       boolean bindClient, int maxConcurrentSessions, boolean rotateOnReauth,
-                                       String cookieSameSite, Set<UUID> userIds, Set<UUID> roleIds) {
+    public SessionPolicyDetails update(UUID id, SessionPolicyUpdate update) {
         SessionPolicy policy = repository.findById(id)
                 .orElseThrow(() -> new NotFoundException("policy not found"));
-        reauthFactors = validateReauthFactors(reauthFactors);
+        String reauthFactors = validateReauthFactors(update.reauthFactors());
         boolean isDefault = DEFAULT_NAME.equals(policy.getName());
         if (isDefault) {
             // The Default is not assignable/reprioritisable, but it DOES carry the global cookie
             // settings + the baseline timeouts, so allow editing those (priority/assignment fixed).
-            policy.update(absoluteTimeoutMinutes, idleTimeoutMinutes, reauthIntervalMinutes, reauthFactors,
-                    bindClient, maxConcurrentSessions, rotateOnReauth, cookieSameSite);
+            policy.update(update.absoluteTimeoutMinutes(), update.idleTimeoutMinutes(),
+                    update.reauthIntervalMinutes(), reauthFactors, update.bindClient(),
+                    update.maxConcurrentSessions(), update.rotateOnReauth(), update.cookieSameSite());
         } else {
-            policy.updatePriority(priority);
-            if (enabled) {
+            policy.updatePriority(update.priority());
+            if (update.enabled()) {
                 policy.enable();
             } else {
                 policy.disable();
             }
-            policy.update(absoluteTimeoutMinutes, idleTimeoutMinutes, reauthIntervalMinutes, reauthFactors,
-                    bindClient, maxConcurrentSessions, rotateOnReauth, cookieSameSite);
-            policy.assignUsers(userIds == null ? Set.of() : userIds);
-            policy.assignRoles(roleIds == null ? Set.of() : roleIds);
+            policy.update(update.absoluteTimeoutMinutes(), update.idleTimeoutMinutes(),
+                    update.reauthIntervalMinutes(), reauthFactors, update.bindClient(),
+                    update.maxConcurrentSessions(), update.rotateOnReauth(), update.cookieSameSite());
+            policy.assignUsers(update.userIds() == null ? Set.of() : update.userIds());
+            policy.assignRoles(update.roleIds() == null ? Set.of() : update.roleIds());
         }
         SessionPolicy saved = repository.save(policy);
         refresh();

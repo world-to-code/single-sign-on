@@ -34,9 +34,9 @@ class RbacDelegationIT extends AbstractIntegrationTest {
     @Test
     void memberInheritsGroupRolePermissionsWithImpliedRead() {
         roleService.create("APP_MANAGER", Set.of(Permissions.CLIENT_CREATE));
-        UUID carol = userService.createUser("carol", "carol@example.com", "Carol", "S3cret!pw",
-                Set.of("ROLE_USER")).getId();
-        userGroups.create("Managers", "app managers", null, Set.of(carol));
+        UUID carol = userService.createUser(new NewUser("carol", "carol@example.com", "Carol", "S3cret!pw",
+                Set.of("ROLE_USER"))).getId();
+        userGroups.create(new GroupSpec("Managers", "app managers", null, Set.of(carol)));
         UUID groupId = UUID.fromString(userGroups.search("Managers", 1).getFirst().id());
         userGroups.setRoles(groupId, Set.of("APP_MANAGER"));
 
@@ -48,9 +48,9 @@ class RbacDelegationIT extends AbstractIntegrationTest {
 
     @Test
     void groupDelegatedAdminRoleGrantsAdminAuthority() {
-        UUID dave = userService.createUser("dave", "dave@example.com", "Dave", "S3cret!pw",
-                Set.of("ROLE_USER")).getId();
-        userGroups.create("Admins", "delegated admins", null, Set.of(dave));
+        UUID dave = userService.createUser(new NewUser("dave", "dave@example.com", "Dave", "S3cret!pw",
+                Set.of("ROLE_USER"))).getId();
+        userGroups.create(new GroupSpec("Admins", "delegated admins", null, Set.of(dave)));
         UUID groupId = UUID.fromString(userGroups.search("Admins", 1).getFirst().id());
         userGroups.setRoles(groupId, Set.of("ROLE_ADMIN"));
 

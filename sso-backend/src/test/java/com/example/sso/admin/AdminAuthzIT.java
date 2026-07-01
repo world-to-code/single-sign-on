@@ -4,6 +4,7 @@ import com.example.sso.mfa.MfaService;
 import com.example.sso.mfa.TotpEnrollment;
 import com.example.sso.mfa.internal.application.TotpService;
 import com.example.sso.support.AbstractIntegrationTest;
+import com.example.sso.user.NewUser;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
 import org.junit.jupiter.api.Test;
@@ -38,7 +39,8 @@ class AdminAuthzIT extends AbstractIntegrationTest {
 
     @Test
     void nonAdminIsForbiddenFromAdminApi() throws Exception {
-        UserAccount user = userService.createUser("plainuser", "plain@example.com", "Plain", "pw-plain-1!", Set.of("ROLE_USER"));
+        UserAccount user = userService.createUser(new NewUser("plainuser", "plain@example.com", "Plain",
+                "pw-plain-1!", Set.of("ROLE_USER")));
         userService.markEmailVerified(user.getId());
         TotpEnrollment enrollment = mfaService.newEnrollment(user);
         mfaService.confirmEnrollment(user, enrollment.secret(),

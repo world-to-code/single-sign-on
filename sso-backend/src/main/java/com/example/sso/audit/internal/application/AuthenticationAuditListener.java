@@ -1,5 +1,6 @@
 package com.example.sso.audit.internal.application;
 
+import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
@@ -23,7 +24,7 @@ public class AuthenticationAuditListener {
 
     @EventListener
     public void onFailure(AbstractAuthenticationFailureEvent event) {
-        audit.record("AUTH_FAILURE", event.getAuthentication().getName(), false,
-                event.getException().getMessage(), null);
+        audit.record(new AuditRecord("AUTH_FAILURE", event.getAuthentication().getName(), false,
+                event.getException().getMessage(), null));
     }
 }

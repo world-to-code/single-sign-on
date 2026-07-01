@@ -1,5 +1,6 @@
 package com.example.sso.ratelimit;
 
+import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.ratelimit.internal.InMemoryRateLimiter;
 import jakarta.servlet.FilterChain;
@@ -54,7 +55,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             String ip = request.getRemoteAddr();
             String key = request.getServletPath() + ":" + ip;
             if (!rateLimiter.tryAcquire(key, maxAttempts, windowMillis, System.currentTimeMillis())) {
-                audit.record("RATE_LIMITED", ip, false, request.getServletPath(), ip);
+                audit.record(new AuditRecord("RATE_LIMITED", ip, false, request.getServletPath(), ip));
                 response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
                 response.getWriter().write("Too many requests. Please retry later.");
                 return;

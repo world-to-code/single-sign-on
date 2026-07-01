@@ -1,5 +1,6 @@
 package com.example.sso.scim.internal.application;
 
+import com.example.sso.user.NewUser;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
 import de.captaingoldfish.scim.sdk.common.exceptions.BadRequestException;
@@ -40,7 +41,8 @@ public class ScimUserService {
         String displayName = resource.getDisplayName()
                 .orElse(resource.getName().flatMap(Name::getFormatted).orElse(null));
 
-        UserAccount created = userService.createUser(userName, email, displayName, null, Set.of("ROLE_USER"));
+        UserAccount created = userService.createUser(new NewUser(userName, email, displayName, null,
+                Set.of("ROLE_USER")));
         resource.getExternalId().ifPresent(ext -> userService.assignExternalId(created.getId(), ext));
         if (!resource.isActive().orElse(Boolean.TRUE)) {
             userService.disable(created.getId());

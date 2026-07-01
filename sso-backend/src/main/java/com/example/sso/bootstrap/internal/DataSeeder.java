@@ -1,6 +1,7 @@
 package com.example.sso.bootstrap.internal;
 
 import com.example.sso.authpolicy.AuthPolicyAdminService;
+import com.example.sso.user.NewUser;
 import com.example.sso.user.RbacService;
 import com.example.sso.user.RoleService;
 import com.example.sso.user.UserService;
@@ -54,8 +55,8 @@ public class DataSeeder implements ApplicationRunner {
         authPolicyService.seedDefault();
 
         if (!userService.existsByUsername(adminUsername)) {
-            userService.createUser(adminUsername, adminEmail, "Administrator",
-                    adminPassword, Set.of("ROLE_ADMIN", "ROLE_USER"));
+            userService.createUser(new NewUser(adminUsername, adminEmail, "Administrator",
+                    adminPassword, Set.of("ROLE_ADMIN", "ROLE_USER")));
             log.warn("Seeded default admin user '{}'. CHANGE THIS PASSWORD before any real use.",
                     adminUsername);
         }

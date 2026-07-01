@@ -2,6 +2,7 @@ package com.example.sso.mfa;
 
 import com.example.sso.mfa.internal.application.TotpService;
 import com.example.sso.support.AbstractIntegrationTest;
+import com.example.sso.user.NewUser;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
 import org.junit.jupiter.api.Test;
@@ -39,7 +40,8 @@ class MfaFlowIT extends AbstractIntegrationTest {
 
     @Test
     void defaultPolicyRequiresTotpAfterPassword() throws Exception {
-        userService.createUser("mfa-new", "mfa-new@example.com", "New", "pw-new-12!", Set.of("ROLE_USER"));
+        userService.createUser(new NewUser("mfa-new", "mfa-new@example.com", "New", "pw-new-12!",
+                Set.of("ROLE_USER")));
 
         mvc.perform(login("mfa-new", "pw-new-12!"))
                 .andExpect(status().isOk())
@@ -49,7 +51,8 @@ class MfaFlowIT extends AbstractIntegrationTest {
 
     @Test
     void completingTotpReachesFullyAuthenticated() throws Exception {
-        UserAccount user = userService.createUser("mfa-ok", "mfa-ok@example.com", "Ok", "pw-ok-12!", Set.of("ROLE_USER"));
+        UserAccount user = userService.createUser(new NewUser("mfa-ok", "mfa-ok@example.com", "Ok", "pw-ok-12!",
+                Set.of("ROLE_USER")));
         TotpEnrollment enrollment = mfaService.newEnrollment(user);
         mfaService.confirmEnrollment(user, enrollment.secret(),
                 totpService.generateCodeAt(enrollment.secret(), System.currentTimeMillis() - 30_000));

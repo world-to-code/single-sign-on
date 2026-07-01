@@ -3,9 +3,7 @@ package com.example.sso.portal;
 import com.example.sso.portal.AppType;
 import com.example.sso.user.UserAccount;
 
-import java.time.Instant;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -19,8 +17,7 @@ public interface ApplicationService {
      * attached policy requires a deliberate, recent step-up ({@code lastAppStepUp} within the policy's
      * freshness window), so it always challenges on entry and again once the window lapses.
      */
-    AppAccess appAccess(UserAccount user, AppType appType, String appId, Set<String> grantedFactors,
-                        Instant lastAppStepUp);
+    AppAccess appAccess(AppAccessQuery query);
 
     /** Sets (or clears, when {@code requiredPolicyId} is blank/null) the app-level sign-on policy. */
     void setAppPolicy(AppType appType, String appId, String requiredPolicyId);

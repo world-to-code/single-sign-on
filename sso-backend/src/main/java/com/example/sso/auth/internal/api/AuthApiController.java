@@ -4,6 +4,7 @@ import com.example.sso.auth.internal.application.AuthSessionView;
 import com.example.sso.auth.internal.application.AuthStateService;
 import com.example.sso.auth.internal.application.LoginAttemptService;
 
+import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.auth.internal.application.FactorChallenge;
 import com.example.sso.auth.internal.application.FactorHandlers;
@@ -136,7 +137,7 @@ public class AuthApiController {
                                                     HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
         UserAccount user = users.findByLogin(request.email()).filter(UserAccount::isEnabled).orElse(null);
         if (user == null) {
-            audit.record("AUTH_IDENTIFY", request.email(), false, "no active account", null);
+            audit.record(new AuditRecord("AUTH_IDENTIFY", request.email(), false, "no active account", null));
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "No active account for that email. Contact your administrator.");
         }
@@ -159,7 +160,7 @@ public class AuthApiController {
             return ResponseEntity.ok(completeIfSatisfied(httpRequest, httpResponse));
         } catch (AuthenticationException e) {
             loginAttempts.onFailure(request.username());
-            audit.record("AUTH_FAILURE", request.username(), false, e.getMessage(), null);
+            audit.record(new AuditRecord("AUTH_FAILURE", request.username(), false, e.getMessage(), null));
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
     }
@@ -315,7 +316,7 @@ public class AuthApiController {
             info.expireNow(); // SessionIntegrityFilter rejects + invalidates it on the next request
         }
         sessionMetadata.remove(target.sessionId());
-        audit.record("SESSION_REVOKED", user.getUsername(), true, "handle=" + target.handle(), null);
+        audit.record(new AuditRecord("SESSION_REVOKED", user.getUsername(), true, "handle=" + target.handle(), null));
         return ResponseEntity.noContent().build();
     }
 
@@ -407,10 +408,10 @@ public class AuthApiController {
             // Re-stamp the session Authentication's auth-time marker so an admin elevation token minted
             // from the OIDC flow right after this step-up carries a FRESH auth_time (RFC 9470 step-up).
             factorAuth.restampAuthTime(request, response);
-            audit.record("REAUTH_SUCCESS", user.getUsername(), true, "factor=" + factor, null);
+            audit.record(new AuditRecord("REAUTH_SUCCESS", user.getUsername(), true, "factor=" + factor, null));
             return ResponseEntity.ok().build();
         }
-        audit.record("REAUTH_FAILURE", user.getUsername(), false, "factor=" + factor, null);
+        audit.record(new AuditRecord("REAUTH_FAILURE", user.getUsername(), false, "factor=" + factor, null));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
     }
 

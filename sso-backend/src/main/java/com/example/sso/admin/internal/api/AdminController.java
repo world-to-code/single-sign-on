@@ -32,9 +32,12 @@ import com.example.sso.session.IpRuleService;
 import com.example.sso.session.IpRuleView;
 import com.example.sso.session.SessionPolicyRequest;
 import com.example.sso.session.SessionPolicyService;
+import com.example.sso.session.SessionPolicySpec;
+import com.example.sso.session.SessionPolicyUpdate;
 import com.example.sso.session.SessionPolicyView;
 import com.example.sso.user.GroupMembersPage;
 import com.example.sso.user.GroupRequest;
+import com.example.sso.user.GroupSpec;
 import com.example.sso.user.GroupView;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.Suggestion;
@@ -177,16 +180,16 @@ public class AdminController {
     @PostMapping("/groups")
     @PreAuthorize("hasAuthority('" + Permissions.GROUP_CREATE + "')")
     public ResponseEntity<GroupView> createGroup(@Valid @RequestBody GroupRequest request) {
-        GroupView created = userGroups.create(request.name(), request.description(),
-                request.externalId(), groupIds(request.memberUserIds()));
+        GroupView created = userGroups.create(new GroupSpec(request.name(), request.description(),
+                request.externalId(), groupIds(request.memberUserIds())));
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
     @PutMapping("/groups/{id}")
     @PreAuthorize("hasAuthority('" + Permissions.GROUP_UPDATE + "')")
     public GroupView updateGroup(@PathVariable UUID id, @Valid @RequestBody GroupRequest request) {
-        return userGroups.update(id, request.name(), request.description(),
-                request.externalId(), groupIds(request.memberUserIds()));
+        return userGroups.update(id, new GroupSpec(request.name(), request.description(),
+                request.externalId(), groupIds(request.memberUserIds())));
     }
 
     @DeleteMapping("/groups/{id}")
@@ -325,11 +328,11 @@ public class AdminController {
     @PostMapping("/session-policies")
     @PreAuthorize("hasAuthority('" + Permissions.SESSION_POLICY_CREATE + "')")
     public ResponseEntity<SessionPolicyView> createSessionPolicy(@Valid @RequestBody SessionPolicyRequest request) {
-        SessionPolicyView created = SessionPolicyView.of(sessionPolicy.create(request.name(), request.priority(),
-                request.enabled(), request.absoluteTimeoutMinutes(), request.idleTimeoutMinutes(),
+        SessionPolicyView created = SessionPolicyView.of(sessionPolicy.create(new SessionPolicySpec(request.name(),
+                request.priority(), request.enabled(), request.absoluteTimeoutMinutes(), request.idleTimeoutMinutes(),
                 request.reauthIntervalMinutes(), request.reauthFactors(), request.bindClient(),
                 request.maxConcurrentSessions(), request.rotateOnReauth(), request.cookieSameSite(),
-                policyIds(request.assignedUserIds()), policyIds(request.assignedRoleIds())));
+                policyIds(request.assignedUserIds()), policyIds(request.assignedRoleIds()))));
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
@@ -337,11 +340,11 @@ public class AdminController {
     @PreAuthorize("hasAuthority('" + Permissions.SESSION_POLICY_UPDATE + "')")
     public SessionPolicyView updateSessionPolicy(@PathVariable UUID id,
                                                  @Valid @RequestBody SessionPolicyRequest request) {
-        return SessionPolicyView.of(sessionPolicy.update(id, request.priority(), request.enabled(),
-                request.absoluteTimeoutMinutes(), request.idleTimeoutMinutes(), request.reauthIntervalMinutes(),
-                request.reauthFactors(), request.bindClient(), request.maxConcurrentSessions(),
-                request.rotateOnReauth(), request.cookieSameSite(),
-                policyIds(request.assignedUserIds()), policyIds(request.assignedRoleIds())));
+        return SessionPolicyView.of(sessionPolicy.update(id, new SessionPolicyUpdate(request.priority(),
+                request.enabled(), request.absoluteTimeoutMinutes(), request.idleTimeoutMinutes(),
+                request.reauthIntervalMinutes(), request.reauthFactors(), request.bindClient(),
+                request.maxConcurrentSessions(), request.rotateOnReauth(), request.cookieSameSite(),
+                policyIds(request.assignedUserIds()), policyIds(request.assignedRoleIds()))));
     }
 
     @DeleteMapping("/session-policies/{id}")

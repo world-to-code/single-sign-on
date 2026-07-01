@@ -3,6 +3,8 @@ package com.example.sso.authpolicy.internal.application;
 import com.example.sso.authpolicy.AuthFactor;
 import com.example.sso.authpolicy.AuthPolicyAdminService;
 import com.example.sso.authpolicy.AuthPolicyResolver;
+import com.example.sso.authpolicy.AuthPolicySpec;
+import com.example.sso.authpolicy.AuthPolicyUpdate;
 import com.example.sso.authpolicy.AuthPolicyView;
 import com.example.sso.authpolicy.internal.domain.AuthPolicy;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyRepository;
@@ -52,47 +54,43 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
 
     @Override
     @Transactional
-    public AuthPolicyView create(String name, int priority, boolean enabled, boolean appliesToLogin,
-                             boolean allowEnrollmentAtLogin, List<? extends Set<AuthFactor>> steps,
-                             Set<UUID> userIds, Set<UUID> roleIds, int stepUpFreshnessMinutes) {
-        if (repository.findByName(name).isPresent()) {
+    public AuthPolicyView create(AuthPolicySpec spec) {
+        if (repository.findByName(spec.name()).isPresent()) {
             throw new ConflictException("policy name already exists");
         }
-        AuthPolicy policy = new AuthPolicy(name, priority);
-        if (!enabled) {
+        AuthPolicy policy = new AuthPolicy(spec.name(), spec.priority());
+        if (!spec.enabled()) {
             policy.disable();
         }
-        policy.useForLogin(appliesToLogin);
-        policy.allowEnrollmentAtLogin(allowEnrollmentAtLogin);
-        policy.updateStepUpFreshnessMinutes(stepUpFreshnessMinutes);
-        applySteps(policy, steps);
-        policy.assignUsers(userIds == null ? Set.of() : userIds);
-        policy.assignRoles(roleIds == null ? Set.of() : roleIds);
+        policy.useForLogin(spec.appliesToLogin());
+        policy.allowEnrollmentAtLogin(spec.allowEnrollmentAtLogin());
+        policy.updateStepUpFreshnessMinutes(spec.stepUpFreshnessMinutes());
+        applySteps(policy, spec.steps());
+        policy.assignUsers(spec.userIds() == null ? Set.of() : spec.userIds());
+        policy.assignRoles(spec.roleIds() == null ? Set.of() : spec.roleIds());
         return repository.save(policy);
     }
 
     @Override
     @Transactional
-    public AuthPolicyView update(UUID id, int priority, boolean enabled, boolean appliesToLogin,
-                             boolean allowEnrollmentAtLogin, List<? extends Set<AuthFactor>> steps,
-                             Set<UUID> userIds, Set<UUID> roleIds, int stepUpFreshnessMinutes) {
+    public AuthPolicyView update(UUID id, AuthPolicyUpdate update) {
         AuthPolicy policy = repository.findById(id)
                 .orElseThrow(() -> new NotFoundException("policy not found"));
         if (AuthPolicyResolver.DEFAULT_NAME.equals(policy.getName())) {
             throw new BadRequestException("the Default fallback policy cannot be edited");
         }
-        policy.updatePriority(priority);
-        if (enabled) {
+        policy.updatePriority(update.priority());
+        if (update.enabled()) {
             policy.enable();
         } else {
             policy.disable();
         }
-        policy.useForLogin(appliesToLogin);
-        policy.allowEnrollmentAtLogin(allowEnrollmentAtLogin);
-        policy.updateStepUpFreshnessMinutes(stepUpFreshnessMinutes);
-        applySteps(policy, steps);
-        policy.assignUsers(userIds == null ? Set.of() : userIds);
-        policy.assignRoles(roleIds == null ? Set.of() : roleIds);
+        policy.useForLogin(update.appliesToLogin());
+        policy.allowEnrollmentAtLogin(update.allowEnrollmentAtLogin());
+        policy.updateStepUpFreshnessMinutes(update.stepUpFreshnessMinutes());
+        applySteps(policy, update.steps());
+        policy.assignUsers(update.userIds() == null ? Set.of() : update.userIds());
+        policy.assignRoles(update.roleIds() == null ? Set.of() : update.roleIds());
         return repository.save(policy);
     }
 

@@ -1,7 +1,6 @@
 package com.example.sso.authpolicy;
 
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -19,13 +18,9 @@ public interface AuthPolicyAdminService {
 
     List<AuthPolicyView> listAll();
 
-    AuthPolicyView create(String name, int priority, boolean enabled, boolean appliesToLogin,
-                          boolean allowEnrollmentAtLogin, List<? extends Set<AuthFactor>> steps,
-                          Set<UUID> userIds, Set<UUID> roleIds, int stepUpFreshnessMinutes);
+    AuthPolicyView create(AuthPolicySpec spec);
 
-    AuthPolicyView update(UUID id, int priority, boolean enabled, boolean appliesToLogin,
-                          boolean allowEnrollmentAtLogin, List<? extends Set<AuthFactor>> steps,
-                          Set<UUID> userIds, Set<UUID> roleIds, int stepUpFreshnessMinutes);
+    AuthPolicyView update(UUID id, AuthPolicyUpdate update);
 
     void delete(UUID id);
 }

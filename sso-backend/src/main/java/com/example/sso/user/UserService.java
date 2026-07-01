@@ -47,11 +47,10 @@ public interface UserService {
 
     // --- create / update (intention-revealing; no entity leaves the module) ---
 
-    UserAccount createUser(String username, String email, String displayName,
-                           String rawPassword, Set<String> roleNames);
+    UserAccount createUser(NewUser newUser);
 
     /** Admin full update: profile, enabled state, and (when non-null) the exact role-name set. */
-    UserAccount updateUser(UUID id, String displayName, String email, boolean enabled, Set<String> roleNames);
+    UserAccount updateUser(UUID id, UserUpdate update);
 
     UserAccount setEnabled(UUID id, boolean enabled);
 

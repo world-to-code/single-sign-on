@@ -1,6 +1,7 @@
 package com.example.sso.portal.internal.api;
 
 import com.example.sso.portal.AppAccess;
+import com.example.sso.portal.AppAccessQuery;
 import com.example.sso.portal.AppType;
 import com.example.sso.portal.AppStepUpFilter;
 import com.example.sso.portal.ApplicationService;
@@ -69,8 +70,8 @@ public class PortalController {
         Set<String> granted = authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority).filter(a -> a.startsWith("FACTOR_")).collect(Collectors.toSet());
         AppType appType = AppType.valueOf(type);
-        AppAccess access = applications.appAccess(requireUser(authentication), appType, appId, granted,
-                AppStepUpFilter.lastAppStepUp(session, appType, appId));
+        AppAccess access = applications.appAccess(new AppAccessQuery(requireUser(authentication), appType, appId,
+                granted, AppStepUpFilter.lastAppStepUp(session, appType, appId)));
         if (access.ready()) {
             // Clear the pending step-up so a later /stepup visit doesn't auto-redirect into a prior app.
             session.removeAttribute(AppStepUpFilter.RETURN);
