@@ -82,12 +82,33 @@ export async function apiDelete(path: string): Promise<void> {
 export type StepUpReason = "action" | "session";
 
 let stepUpHandler: ((reason: StepUpReason) => Promise<boolean>) | null = null;
+const stepUpWaiters: Array<() => void> = [];
 export function registerStepUpHandler(handler: ((reason: StepUpReason) => Promise<boolean>) | null): void {
   stepUpHandler = handler;
+  if (handler) {
+    stepUpWaiters.splice(0).forEach((notify) => notify()); // release anyone who asked before we registered
+  }
 }
-/** Invoke the registered step-up modal (e.g. on a re-auth-interval timer); false if none registered. */
+/**
+ * Invoke the registered step-up modal. If the handler is not registered YET, WAIT for it rather than
+ * resolving false — the StepUpProvider is a parent whose effect runs AFTER a child route's effect
+ * (React runs child effects first), so AdminGuard on a fresh /admin load would otherwise see no
+ * handler, get false, and bounce the user out. Times out to false if no modal ever appears.
+ */
 export function triggerStepUp(reason: StepUpReason = "session"): Promise<boolean> {
-  return stepUpHandler ? stepUpHandler(reason) : Promise.resolve(false);
+  if (stepUpHandler) {
+    return stepUpHandler(reason);
+  }
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const run = () => {
+      if (settled) return;
+      settled = true;
+      resolve(stepUpHandler ? stepUpHandler(reason) : false);
+    };
+    stepUpWaiters.push(run);
+    setTimeout(run, 3000);
+  });
 }
 
 async function send<T>(method: string, path: string, body?: unknown, retried = false): Promise<T> {

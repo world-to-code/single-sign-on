@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { ExternalLink, Plus, Trash2 } from "lucide-react";
+import { ExternalLink, Lock, Plus, Trash2 } from "lucide-react";
 import { apiGet, apiPost } from "../api";
 import { PageHeader } from "@/components/PageHeader";
 import { DataList, EmptyState } from "@/components/states";
@@ -295,8 +295,14 @@ export default function Clients() {
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => remove(c)}
-                              className="text-muted-foreground hover:text-destructive"><Trash2 /></Button>
+                      {c.clientId === "admin-console" ? (
+                        <Badge variant="secondary" title="First-party admin console — protected from deletion">
+                          <Lock className="size-3" /> Protected
+                        </Badge>
+                      ) : (
+                        <Button variant="ghost" size="icon" onClick={() => remove(c)}
+                                className="text-muted-foreground hover:text-destructive"><Trash2 /></Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

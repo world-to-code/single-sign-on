@@ -26,6 +26,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -150,7 +151,22 @@ public class SamlSsoController {
         String flow = inResponseTo == null ? " (idp-initiated)" : "";
         audit.record("SAML_SSO_ISSUED", user.getUsername(), true, "sp=" + relyingParty.getEntityId() + flow, null);
 
-        String html = codec.postBindingHtml(relyingParty.getAcsUrl(), encoded, relayState);
-        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
+        // The auto-submit page needs an inline script; serve it under a per-response CSP that allows ONLY
+        // that nonce'd script (overriding the app's strict default-src 'self', which blocks inline JS).
+        // Spring Security's CSP writer skips when the header is already set, so this per-response CSP wins.
+        String nonce = newNonce();
+        String html = codec.postBindingHtml(relyingParty.getAcsUrl(), encoded, relayState, nonce);
+        return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_HTML)
+                .header("Content-Security-Policy", "default-src 'self'; script-src 'nonce-" + nonce + "'")
+                .body(html);
+    }
+
+    private static final SecureRandom NONCE_RANDOM = new SecureRandom();
+
+    private static String newNonce() {
+        byte[] bytes = new byte[16];
+        NONCE_RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 }

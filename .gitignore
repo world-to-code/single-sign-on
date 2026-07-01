@@ -30,6 +30,9 @@ sso-backend/src/main/resources/static/
 data/
 sso-backend/data/
 
+# ---- Generated SAML SP test config (per-deployment IdP cert; run scripts/setup_saml_test.py) ----
+scripts/saml-sp/
+
 # ---- Logs / misc ----
 *.log
 **/__pycache__/

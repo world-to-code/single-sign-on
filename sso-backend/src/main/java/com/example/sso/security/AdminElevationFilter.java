@@ -1,10 +1,13 @@
 package com.example.sso.security;
 
+import com.example.sso.admin.AdminPortalSettings;
+import com.example.sso.admin.AdminPortalSettingsService;
 import com.example.sso.oidc.AdminPortalSeeder;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -51,18 +54,23 @@ public class AdminElevationFilter extends OncePerRequestFilter {
     private static final String CHALLENGE =
             "Bearer error=\"" + INSUFFICIENT + "\", acr_values=\"" + REQUIRED_ACR + "\"";
 
+    /** Session attributes tracking the admin-elevation session's start and last-activity (epoch seconds). */
+    private static final String ADMIN_FIRST_SEEN = AdminElevationFilter.class.getName() + ".firstSeen";
+    private static final String ADMIN_LAST_SEEN = AdminElevationFilter.class.getName() + ".lastSeen";
+
     private final SecurityContextHolderStrategy contextHolder = SecurityContextHolder.getContextHolderStrategy();
     private final JwtDecoder jwtDecoder;
     private final String issuer;
     private final String clientId;
-    /** How recent the token's {@code stepup_time} (the deliberate re-auth) must be. */
-    private final Duration freshnessWindow;
+    /** Runtime-editable admin-portal knobs (freshness window + session idle/absolute lifetimes). */
+    private final AdminPortalSettingsService settingsService;
 
-    public AdminElevationFilter(JwtDecoder jwtDecoder, String issuer, String clientId, Duration freshnessWindow) {
+    public AdminElevationFilter(JwtDecoder jwtDecoder, String issuer, String clientId,
+                                AdminPortalSettingsService settingsService) {
         this.jwtDecoder = jwtDecoder;
         this.issuer = issuer;
         this.clientId = clientId;
-        this.freshnessWindow = freshnessWindow;
+        this.settingsService = settingsService;
     }
 
     @Override
@@ -86,15 +94,53 @@ public class AdminElevationFilter extends OncePerRequestFilter {
             challenge(response);
             return;
         }
-        if (!isElevated(jwt) || !boundToSession(jwt)) {
+        AdminPortalSettings settings = settingsService.get();
+        if (!isElevated(jwt, settings.reauthInterval()) || !boundToSession(jwt)) {
+            challenge(response);
+            return;
+        }
+        if (!withinSessionWindow(request, settings)) {
             challenge(response);
             return;
         }
         chain.doFilter(request, response);
     }
 
+    /**
+     * Bounds the admin-elevation session by idle and absolute lifetime, tracked in the HTTP session.
+     * When either window is exceeded the admin timestamps are cleared and the request is challenged, so
+     * the SPA re-elevates (a fresh step-up) which restarts the windows.
+     */
+    private boolean withinSessionWindow(HttpServletRequest request, AdminPortalSettings settings) {
+        HttpSession session = request.getSession(false);
+        if (session == null) {
+            return false; // an authenticated admin request always carries a session
+        }
+        long now = Instant.now().getEpochSecond();
+        Long firstSeen = (Long) session.getAttribute(ADMIN_FIRST_SEEN);
+        Long lastSeen = (Long) session.getAttribute(ADMIN_LAST_SEEN);
+        if (firstSeen != null && now - firstSeen > settings.sessionAbsoluteLifetime().toSeconds()) {
+            clearAdminSession(session);
+            return false;
+        }
+        if (lastSeen != null && now - lastSeen > settings.sessionIdleTimeout().toSeconds()) {
+            clearAdminSession(session);
+            return false;
+        }
+        if (firstSeen == null) {
+            session.setAttribute(ADMIN_FIRST_SEEN, now);
+        }
+        session.setAttribute(ADMIN_LAST_SEEN, now);
+        return true;
+    }
+
+    private void clearAdminSession(HttpSession session) {
+        session.removeAttribute(ADMIN_FIRST_SEEN);
+        session.removeAttribute(ADMIN_LAST_SEEN);
+    }
+
     /** Issued by this IdP for admin-console, scope=admin, ROLE_ADMIN, acr=mfa, and a fresh step-up. */
-    private boolean isElevated(Jwt jwt) {
+    private boolean isElevated(Jwt jwt, Duration freshnessWindow) {
         if (jwt.getIssuer() == null || !issuer.equals(jwt.getIssuer().toString())) {
             return false;
         }

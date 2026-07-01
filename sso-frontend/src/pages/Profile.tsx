@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { KeyRound, Loader2, Mail, MonitorSmartphone, Plus, ShieldCheck, Smartphone, LogOut, Trash2 } from "lucide-react";
@@ -46,18 +46,18 @@ function TotpSetupDialog({ open, onOpenChange, onEnrolled }: { open: boolean; on
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Reset and (re)start enrollment whenever the dialog opens; clear state when it closes.
-  function handleOpenChange(next: boolean) {
-    onOpenChange(next);
-    if (next) {
-      setSetup(null); setCode(""); setError(null); setBusy(false);
-      setupTotp()
-        .then(setSetup)
-        .catch((e) => setError(e instanceof ApiError && e.status === 409
-          ? "An authenticator is already enrolled."
-          : "Could not start enrollment. Please try again."));
-    }
-  }
+  // (Re)start enrollment whenever the dialog opens. Driven by the `open` prop (the dialog is opened
+  // programmatically by the "Set up" button), NOT by the Radix onOpenChange callback — which only
+  // fires on user-driven open/close, so it never ran for an externally-controlled open.
+  useEffect(() => {
+    if (!open) return;
+    setSetup(null); setCode(""); setError(null); setBusy(false);
+    setupTotp()
+      .then(setSetup)
+      .catch((e) => setError(e instanceof ApiError && e.status === 409
+        ? "An authenticator is already enrolled."
+        : "Could not start enrollment. Please try again."));
+  }, [open]);
 
   async function verify(event: React.FormEvent) {
     event.preventDefault();
@@ -73,7 +73,7 @@ function TotpSetupDialog({ open, onOpenChange, onEnrolled }: { open: boolean; on
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Set up authenticator app</DialogTitle>

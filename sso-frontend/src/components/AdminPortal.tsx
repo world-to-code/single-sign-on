@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
 import { Loader2, ShieldAlert } from "lucide-react";
@@ -18,9 +18,11 @@ import { Button } from "@/components/ui/button";
 export function AdminGuard({ session, children }: { session: SessionView; children: ReactNode }) {
   const isAdmin = session.roles.includes("ROLE_ADMIN");
   const unlocked = isAdminUnlocked();
+  const started = useRef(false); // guard against React StrictMode running the effect twice (double OIDC flow)
 
   useEffect(() => {
-    if (isAdmin && !unlocked) {
+    if (isAdmin && !unlocked && !started.current) {
+      started.current = true;
       // Force a FRESH step-up re-auth FIRST (re-stamps the session auth_time), THEN run the OIDC flow
       // so the minted elevation token carries a fresh auth_time (RFC 9470). Bounce home if declined.
       void (async () => {
@@ -49,8 +51,13 @@ export function AdminGuard({ session, children }: { session: SessionView; childr
  */
 export function AdminCallback() {
   const [error, setError] = useState<string | null>(null);
+  const ran = useRef(false); // the authorization code is single-use — never exchange it twice (StrictMode)
 
   useEffect(() => {
+    if (ran.current) {
+      return;
+    }
+    ran.current = true;
     handleAdminCallback()
       .then(() => {
         window.location.replace("/admin");

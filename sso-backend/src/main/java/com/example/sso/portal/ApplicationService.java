@@ -2,6 +2,7 @@ package com.example.sso.portal;
 
 import com.example.sso.admin.ClientAdminService;
 import com.example.sso.admin.ClientView;
+import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.authpolicy.AuthFactor;
 import com.example.sso.authpolicy.AuthPolicy;
 import com.example.sso.authpolicy.AuthPolicyEvaluator;
@@ -41,17 +42,20 @@ public class ApplicationService {
     private final ClientAdminService clients;
     private final SamlRelyingPartyRepository samlRelyingParties;
     private final AppAssignmentRepository assignments;
+    private final AppPolicyRepository appPolicies;
     private final AppUserRepository users;
     private final RoleRepository roles;
     private final AuthPolicyRepository policies;
     private final AuthPolicyEvaluator evaluator;
 
     public ApplicationService(ClientAdminService clients, SamlRelyingPartyRepository samlRelyingParties,
-                              AppAssignmentRepository assignments, AppUserRepository users, RoleRepository roles,
+                              AppAssignmentRepository assignments, AppPolicyRepository appPolicies,
+                              AppUserRepository users, RoleRepository roles,
                               AuthPolicyRepository policies, AuthPolicyEvaluator evaluator) {
         this.clients = clients;
         this.samlRelyingParties = samlRelyingParties;
         this.assignments = assignments;
+        this.appPolicies = appPolicies;
         this.users = users;
         this.roles = roles;
         this.policies = policies;
@@ -78,17 +82,37 @@ public class ApplicationService {
         return new AppAccess(false, pending);
     }
 
-    /** The highest-priority enabled per-app policy assigned to the user (directly or via a role). */
+    /**
+     * The highest-priority enabled policy required to access this app: the app-level sign-on policy
+     * (applies to everyone) plus any per-subject assignment policy matching the user (directly/via role).
+     */
     private Optional<AuthPolicy> resolveAppPolicy(AppUser user, AppType appType, String appId) {
         Set<UUID> roleIds = user.getRoles().stream().map(Role::getId).collect(Collectors.toSet());
-        return assignments.findByAppTypeAndAppId(appType, appId).stream()
+        List<UUID> candidateIds = new ArrayList<>();
+        assignments.findByAppTypeAndAppId(appType, appId).stream()
                 .filter(a -> a.getRequiredPolicyId() != null)
                 .filter(a -> (a.getSubjectType() == SubjectType.USER && a.getSubjectId().equals(user.getId()))
                         || (a.getSubjectType() == SubjectType.ROLE && roleIds.contains(a.getSubjectId())))
-                .map(a -> policies.findById(a.getRequiredPolicyId()))
+                .forEach(a -> candidateIds.add(a.getRequiredPolicyId()));
+        appPolicies.findByAppTypeAndAppId(appType, appId).ifPresent(ap -> candidateIds.add(ap.getRequiredPolicyId()));
+        return candidateIds.stream()
+                .map(policies::findById)
                 .flatMap(Optional::stream)
                 .filter(AuthPolicy::isEnabled)
                 .max(Comparator.comparingInt(AuthPolicy::getPriority));
+    }
+
+    /** Sets (or clears, when {@code requiredPolicyId} is blank/null) the app-level sign-on policy. */
+    @Transactional
+    public void setAppPolicy(AppType appType, String appId, String requiredPolicyId) {
+        appPolicies.deleteByAppTypeAndAppId(appType, appId); // one policy per app: replace any existing
+        if (requiredPolicyId != null && !requiredPolicyId.isBlank()) {
+            UUID policyId = UUID.fromString(requiredPolicyId);
+            if (policies.findById(policyId).isEmpty()) {
+                throw new NotFoundException("policy not found");
+            }
+            appPolicies.save(new AppPolicy(appType, appId, policyId));
+        }
     }
 
     /** All registered applications (OIDC + SAML), for the admin dashboard. */
@@ -107,10 +131,18 @@ public class ApplicationService {
             matched.addAll(assignments.findBySubjectTypeAndSubjectIdIn(SubjectType.ROLE, roleIds));
         }
         Map<String, ApplicationView> index = indexApplications();
-        return matched.stream()
+        List<ApplicationView> apps = new ArrayList<>(matched.stream()
                 .map(a -> index.get(key(a.getAppType(), a.getAppId())))
                 .filter(Objects::nonNull)
                 .distinct()
+                .toList());
+        // The admin console is auto-granted to any admin — no explicit assignment needed.
+        if (user.getRoles().stream().anyMatch(r -> "ROLE_ADMIN".equals(r.getName()))) {
+            index.values().stream().filter(ApplicationView::system)
+                    .filter(app -> !apps.contains(app))
+                    .forEach(apps::add);
+        }
+        return apps.stream()
                 .sorted(Comparator.comparing(ApplicationView::name, String.CASE_INSENSITIVE_ORDER))
                 .toList();
     }
@@ -151,16 +183,33 @@ public class ApplicationService {
     // --- internals ---
 
     private Map<String, ApplicationView> indexApplications() {
+        // app-level sign-on policy per app + policy-id -> name (one lookup pass, not per-app queries)
+        Map<String, UUID> appPolicyByKey = appPolicies.findAll().stream()
+                .collect(Collectors.toMap(ap -> key(ap.getAppType(), ap.getAppId()), AppPolicy::getRequiredPolicyId, (a, b) -> a));
+        Map<UUID, String> policyNames = policies.findAll().stream()
+                .collect(Collectors.toMap(AuthPolicy::getId, AuthPolicy::getName));
+
         Map<String, ApplicationView> index = new LinkedHashMap<>();
         for (ClientView c : clients.listClients()) {
-            String name = c.clientName() == null || c.clientName().isBlank() ? c.clientId() : c.clientName();
-            index.put(key(AppType.OIDC, c.id()), new ApplicationView(c.id(), "OIDC", name, oidcLaunchUrl(c)));
+            boolean system = AdminPortalSeeder.CLIENT_ID.equals(c.clientId());
+            String name = system ? "Admin Portal"
+                    : (c.clientName() == null || c.clientName().isBlank() ? c.clientId() : c.clientName());
+            String launchUrl = system ? "/admin" : oidcLaunchUrl(c);
+            index.put(key(AppType.OIDC, c.id()), appView(c.id(), "OIDC", name, launchUrl, system, appPolicyByKey, policyNames));
         }
         for (SamlRelyingParty rp : samlRelyingParties.findAll()) {
             index.put(key(AppType.SAML, rp.getId().toString()),
-                    new ApplicationView(rp.getId().toString(), "SAML", rp.getEntityId(), samlLaunchUrl(rp)));
+                    appView(rp.getId().toString(), "SAML", rp.getEntityId(), samlLaunchUrl(rp), false, appPolicyByKey, policyNames));
         }
         return index;
+    }
+
+    private ApplicationView appView(String id, String type, String name, String launchUrl, boolean system,
+                                    Map<String, UUID> appPolicyByKey, Map<UUID, String> policyNames) {
+        UUID policyId = appPolicyByKey.get(type + ":" + id);
+        return new ApplicationView(id, type, name, launchUrl, system,
+                policyId == null ? null : policyId.toString(),
+                policyId == null ? null : policyNames.get(policyId));
     }
 
     private static String key(AppType type, String id) {

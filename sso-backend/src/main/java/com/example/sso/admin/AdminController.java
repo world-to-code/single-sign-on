@@ -9,6 +9,7 @@ import com.example.sso.portal.AppAssignment;
 import com.example.sso.portal.AppAssignmentView;
 import com.example.sso.portal.ApplicationService;
 import com.example.sso.portal.ApplicationView;
+import com.example.sso.portal.AppPolicyRequest;
 import com.example.sso.portal.AssignAppRequest;
 import com.example.sso.session.IpRuleRequest;
 import com.example.sso.session.IpRuleService;
@@ -58,11 +59,12 @@ public class AdminController {
     private final ApplicationService applications;
     private final UserGroupService userGroups;
     private final AdminService adminService;
+    private final AdminPortalSettingsService adminPortalSettings;
 
     public AdminController(UserAdminService userAdminService, ClientAdminService clientAdminService,
                           SamlRelyingPartyAdminService samlRelyingParties, SessionPolicyService sessionPolicy,
                           IpRuleService ipRules, ApplicationService applications, UserGroupService userGroups,
-                          AdminService adminService) {
+                          AdminService adminService, AdminPortalSettingsService adminPortalSettings) {
         this.userAdminService = userAdminService;
         this.clientAdminService = clientAdminService;
         this.samlRelyingParties = samlRelyingParties;
@@ -71,6 +73,7 @@ public class AdminController {
         this.applications = applications;
         this.userGroups = userGroups;
         this.adminService = adminService;
+        this.adminPortalSettings = adminPortalSettings;
     }
 
     // --- Users ---
@@ -286,6 +289,19 @@ public class AdminController {
                 : values.stream().map(UUID::fromString).collect(Collectors.toSet());
     }
 
+    // --- Admin portal security (elevation freshness + admin session lifetimes) ---
+    @GetMapping("/portal-settings")
+    @PreAuthorize("hasAuthority('" + Permissions.SESSION_MANAGE + "')")
+    public AdminPortalSettingsView portalSettings() {
+        return AdminPortalSettingsView.of(adminPortalSettings.get());
+    }
+
+    @PutMapping("/portal-settings")
+    @PreAuthorize("hasAuthority('" + Permissions.SESSION_MANAGE + "')")
+    public AdminPortalSettingsView updatePortalSettings(@Valid @RequestBody AdminPortalSettingsRequest request) {
+        return AdminPortalSettingsView.of(adminPortalSettings.update(request));
+    }
+
     @GetMapping("/ip-rules")
     @PreAuthorize("hasAuthority('" + Permissions.SESSION_MANAGE + "')")
     public List<IpRuleView> ipRules() {
@@ -335,6 +351,15 @@ public class AdminController {
     @PreAuthorize("hasAuthority('" + Permissions.APP_ASSIGN + "')")
     public ResponseEntity<Void> unassignApp(@PathVariable UUID id) {
         applications.unassign(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Sets (or clears, when requiredPolicyId is blank) the app-level sign-on policy for an application. */
+    @PutMapping("/applications/{type}/{id}/policy")
+    @PreAuthorize("hasAuthority('" + Permissions.APP_ASSIGN + "')")
+    public ResponseEntity<Void> setAppPolicy(@PathVariable AppAssignment.AppType type, @PathVariable String id,
+                                             @RequestBody AppPolicyRequest request) {
+        applications.setAppPolicy(type, id, request.requiredPolicyId());
         return ResponseEntity.noContent().build();
     }
 }

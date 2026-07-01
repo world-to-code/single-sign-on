@@ -77,20 +77,27 @@ public class SamlBindingCodec {
         return Base64.getEncoder().encodeToString(xml.getBytes(StandardCharsets.UTF_8));
     }
 
-    /** Renders an auto-submitting HTML form that POSTs the response to the SP's ACS URL. */
-    public String postBindingHtml(String acsUrl, String base64Response, String relayState) {
+    /**
+     * Renders an auto-submitting HTML form that POSTs the response to the SP's ACS URL. The auto-submit
+     * uses a nonce'd {@code <script>} (NOT an inline {@code onload} attribute), so it works under a strict
+     * Content-Security-Policy — the caller must serve this page with {@code script-src 'nonce-<nonce>'}.
+     * A visible Continue button is the fallback if the script does not run.
+     */
+    public String postBindingHtml(String acsUrl, String base64Response, String relayState, String scriptNonce) {
         String relayStateField = relayState == null ? "" :
                 "<input type=\"hidden\" name=\"RelayState\" value=\""
                         + HtmlUtils.htmlEscape(relayState) + "\"/>";
         return """
-                <!DOCTYPE html><html><body onload="document.forms[0].submit()">
+                <!DOCTYPE html><html><head><meta charset="utf-8"><title>Signing in…</title></head>
+                <body>
                   <form method="POST" action="%s">
                     <input type="hidden" name="SAMLResponse" value="%s"/>
                     %s
-                    <noscript><input type="submit" value="Continue"/></noscript>
+                    <input type="submit" value="Continue"/>
                   </form>
+                  <script nonce="%s">document.forms[0].submit();</script>
                 </body></html>
                 """.formatted(HtmlUtils.htmlEscape(acsUrl),
-                HtmlUtils.htmlEscape(base64Response), relayStateField);
+                HtmlUtils.htmlEscape(base64Response), relayStateField, HtmlUtils.htmlEscape(scriptNonce));
     }
 }

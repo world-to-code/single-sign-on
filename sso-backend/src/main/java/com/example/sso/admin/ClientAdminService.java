@@ -113,10 +113,17 @@ public class ClientAdminService {
 
     @Transactional
     public void deleteClient(String id) {
-        int deleted = jdbcTemplate.update("DELETE FROM oauth2_registered_client WHERE id = ?", id);
-        if (deleted == 0) {
+        String clientId = jdbcTemplate.query("SELECT client_id FROM oauth2_registered_client WHERE id = ?",
+                rs -> rs.next() ? rs.getString(1) : null, id);
+        if (clientId == null) {
             throw new NotFoundException("Client not found");
         }
+        // The first-party admin console is a fixed part of the platform (auto-assigned to admins,
+        // launches /admin); it is protected from deletion so the admin entry point can't be removed.
+        if (AdminPortalSeeder.CLIENT_ID.equals(clientId)) {
+            throw new ConflictException("the admin console client is protected and cannot be deleted");
+        }
+        jdbcTemplate.update("DELETE FROM oauth2_registered_client WHERE id = ?", id);
     }
 
     private ClientSettings clientSettings(CreateClientRequest request) {

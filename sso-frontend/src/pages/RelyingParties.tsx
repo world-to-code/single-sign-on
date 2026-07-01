@@ -86,6 +86,20 @@ export default function RelyingParties() {
         actions={<Button onClick={openCreate}><Plus /> New relying party</Button>}
       />
 
+      <Alert variant="info" className="mb-4">
+        <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+          <span>
+            <strong>This IdP's SAML metadata</strong> — import it into your SP to establish trust. It carries the IdP
+            entityID, the SSO endpoint, and the <strong>signing certificate</strong> the SP verifies assertions with.
+            The SP's own certificate (for signed AuthnRequests / assertion encryption) goes in the relying party below.
+          </span>
+          <a className="inline-flex shrink-0 items-center gap-1.5 font-medium underline"
+             href="/saml2/idp/metadata" target="_blank" rel="noreferrer">
+            <ExternalLink className="size-4" /> View / download IdP metadata
+          </a>
+        </AlertDescription>
+      </Alert>
+
       <DataList
         data={rps}
         error={error}
