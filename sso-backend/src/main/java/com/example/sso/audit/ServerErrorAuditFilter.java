@@ -1,5 +1,6 @@
 package com.example.sso.audit;
 
+import com.example.sso.audit.AuditType;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -61,7 +62,7 @@ public class ServerErrorAuditFilter extends OncePerRequestFilter {
                     + root.getClass().getName() + ": " + (root.getMessage() == null ? "" : root.getMessage())
                     + topFrames(root));
 
-            audit.record(new AuditRecord("SERVER_ERROR", currentPrincipal(), false, detail, request.getRemoteAddr()));
+            audit.record(new AuditRecord(AuditType.SERVER_ERROR, currentPrincipal(), false, detail, request.getRemoteAddr()));
         } catch (RuntimeException auditFailure) {
             log.error("Failed to audit server error ref={}", ref, auditFailure);
         }

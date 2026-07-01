@@ -4,6 +4,7 @@ import com.example.sso.auth.internal.application.AuthSessionView;
 import com.example.sso.auth.internal.application.AuthStateService;
 import com.example.sso.auth.internal.application.LoginAttemptService;
 
+import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.auth.internal.application.FactorChallenge;
@@ -137,7 +138,7 @@ public class AuthApiController {
                                                     HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
         UserAccount user = users.findByLogin(request.email()).filter(UserAccount::isEnabled).orElse(null);
         if (user == null) {
-            audit.record(new AuditRecord("AUTH_IDENTIFY", request.email(), false, "no active account", null));
+            audit.record(new AuditRecord(AuditType.AUTH_IDENTIFY, request.email(), false, "no active account", null));
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "No active account for that email. Contact your administrator.");
         }
@@ -145,7 +146,7 @@ public class AuthApiController {
         Authentication preAuth = UsernamePasswordAuthenticationToken.authenticated(
                 user.getUsername(), null, List.of()); // identified, no factors yet
         factorAuth.establish(httpRequest, httpResponse, preAuth);
-        audit.record("AUTH_IDENTIFY", user.getUsername(), true);
+        audit.record(AuditType.AUTH_IDENTIFY, user.getUsername(), true);
         return ResponseEntity.ok(completeIfSatisfied(httpRequest, httpResponse));
     }
 
@@ -158,11 +159,11 @@ public class AuthApiController {
             factorAuth.establish(httpRequest, httpResponse, authentication); // password factor granted by provider
 
             loginAttempts.onSuccess(request.username());
-            audit.record("AUTH_SUCCESS", request.username(), true);
+            audit.record(AuditType.AUTH_SUCCESS, request.username(), true);
             return ResponseEntity.ok(completeIfSatisfied(httpRequest, httpResponse));
         } catch (AuthenticationException e) {
             loginAttempts.onFailure(request.username());
-            audit.record(new AuditRecord("AUTH_FAILURE", request.username(), false, e.getMessage(), null));
+            audit.record(new AuditRecord(AuditType.AUTH_FAILURE, request.username(), false, e.getMessage(), null));
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
     }
@@ -207,7 +208,7 @@ public class AuthApiController {
 
         // Account lockout applies to every factor (password is now verified here too, not just /login).
         if (user.isTemporarilyLocked(Instant.now()) || !user.isAccountNonLocked()) {
-            audit.record("MFA_" + factor.name() + "_LOCKED", user.getUsername(), false);
+            audit.record(new AuditRecord(AuditType.MFA_LOCKED, user.getUsername(), false, "factor=" + factor.name(), null));
             return ResponseEntity.status(HttpStatus.LOCKED).build();
         }
 
@@ -215,12 +216,12 @@ public class AuthApiController {
             loginAttempts.onSuccess(user.getUsername());
             factorAuth.grantFactor(httpRequest, httpResponse, factor.authority());
             stampAppStepUp(httpRequest); // if this verify is part of an app step-up, refresh its freshness clock
-            audit.record("MFA_" + factor.name() + "_SUCCESS", user.getUsername(), true);
+            audit.record(new AuditRecord(AuditType.MFA_SUCCESS, user.getUsername(), true, "factor=" + factor.name(), null));
             return ResponseEntity.ok(completeIfSatisfied(httpRequest, httpResponse));
         }
 
         loginAttempts.onFailure(user.getUsername());
-        audit.record("MFA_" + factor.name() + "_FAILURE", user.getUsername(), false);
+        audit.record(new AuditRecord(AuditType.MFA_FAILURE, user.getUsername(), false, "factor=" + factor.name(), null));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
     }
 
@@ -256,7 +257,7 @@ public class AuthApiController {
                                                  HttpServletRequest request) {
         UserAccount user = requireMfaComplete();
         if (factorHandlers.get(AuthFactor.TOTP).verify(user, verification, request)) {
-            audit.record("TOTP_ENROLLED", user.getUsername(), true);
+            audit.record(AuditType.TOTP_ENROLLED, user.getUsername(), true);
             return ResponseEntity.ok().build();
         }
 
@@ -268,7 +269,7 @@ public class AuthApiController {
     public ResponseEntity<Void> disableTotp() {
         UserAccount user = requireMfaComplete();
         mfaService.resetMfa(user.getId());
-        audit.record("TOTP_REMOVED", user.getUsername(), true);
+        audit.record(AuditType.TOTP_REMOVED, user.getUsername(), true);
         return ResponseEntity.noContent().build();
     }
 
@@ -330,7 +331,7 @@ public class AuthApiController {
         }
 
         sessionMetadata.remove(target.sessionId());
-        audit.record(new AuditRecord("SESSION_REVOKED", user.getUsername(), true, "handle=" + target.handle(), null));
+        audit.record(new AuditRecord(AuditType.SESSION_REVOKED, user.getUsername(), true, "handle=" + target.handle(), null));
         return ResponseEntity.noContent().build();
     }
 
@@ -427,11 +428,11 @@ public class AuthApiController {
             // Re-stamp the session Authentication's auth-time marker so an admin elevation token minted
             // from the OIDC flow right after this step-up carries a FRESH auth_time (RFC 9470 step-up).
             factorAuth.restampAuthTime(request, response);
-            audit.record(new AuditRecord("REAUTH_SUCCESS", user.getUsername(), true, "factor=" + factor, null));
+            audit.record(new AuditRecord(AuditType.REAUTH_SUCCESS, user.getUsername(), true, "factor=" + factor, null));
             return ResponseEntity.ok().build();
         }
 
-        audit.record(new AuditRecord("REAUTH_FAILURE", user.getUsername(), false, "factor=" + factor, null));
+        audit.record(new AuditRecord(AuditType.REAUTH_FAILURE, user.getUsername(), false, "factor=" + factor, null));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
     }
 
@@ -493,7 +494,7 @@ public class AuthApiController {
                     UsernamePasswordAuthenticationToken.authenticated(principal, null, authorities));
             StepUpInterceptor.stamp(request.getSession(false)); // fresh auth time for step-up
             enforceMaxConcurrentSessions(request, principal.getUsername());
-            audit.record(new AuditRecord("SESSION_CREATED", principal.getUsername(), true, null, clientIp(request)));
+            audit.record(new AuditRecord(AuditType.SESSION_CREATED, principal.getUsername(), true, null, clientIp(request)));
         }
 
         return authState.describe(currentAuthentication());

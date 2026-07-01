@@ -1,5 +1,6 @@
 package com.example.sso.security;
 
+import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditService;
 import com.example.sso.session.SessionMetadataStore;
 import com.example.sso.session.SessionPolicyDetails;
@@ -67,20 +68,20 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
             SessionInformation info = sessionRegistry.getSessionInformation(session.getId());
             if (info != null) {
                 if (info.isExpired()) {
-                    reject(session, response, "SESSION_CONCURRENT_EXPIRED", username);
+                    reject(session, response, AuditType.SESSION_CONCURRENT_EXPIRED, username);
                     return;
                 }
                 info.refreshLastRequest();
             }
 
             if (now - session.getCreationTime() > policy.getAbsoluteTimeoutMinutes() * 60_000L) {
-                reject(session, response, "SESSION_EXPIRED_ABSOLUTE", username);
+                reject(session, response, AuditType.SESSION_EXPIRED_ABSOLUTE, username);
                 return;
             }
 
             Object last = session.getAttribute(LAST_ACTIVITY);
             if (last instanceof Long lastMillis && now - lastMillis > policy.getIdleTimeoutMinutes() * 60_000L) {
-                reject(session, response, "SESSION_EXPIRED_IDLE", username);
+                reject(session, response, AuditType.SESSION_EXPIRED_IDLE, username);
                 return;
             }
             session.setAttribute(LAST_ACTIVITY, now);
@@ -92,7 +93,7 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
                 if (bound == null) {
                     session.setAttribute(CLIENT_BINDING, current);
                 } else if (!bound.equals(current)) {
-                    reject(session, response, "SESSION_CONTEXT_MISMATCH", username);
+                    reject(session, response, AuditType.SESSION_CONTEXT_MISMATCH, username);
                     return;
                 }
             }
@@ -101,7 +102,7 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
         chain.doFilter(request, response);
     }
 
-    private void reject(HttpSession session, HttpServletResponse response, String reason, String username)
+    private void reject(HttpSession session, HttpServletResponse response, AuditType reason, String username)
             throws IOException {
         audit.record(reason, username, false);
         session.invalidate();

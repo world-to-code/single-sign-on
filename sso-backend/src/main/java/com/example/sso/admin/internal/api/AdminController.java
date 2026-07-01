@@ -19,6 +19,7 @@ import com.example.sso.admin.internal.application.UserDevicesView;
 import com.example.sso.admin.internal.application.UserSessionView;
 
 import com.example.sso.admin.AdminPortalSettingsService;
+import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditCategory;
 import com.example.sso.audit.AuditEntry;
 import com.example.sso.portal.AppType;
@@ -242,7 +243,7 @@ public class AdminController {
     public GroupView setGroupRoles(@PathVariable UUID id, @RequestBody SetGroupRolesRequest request) {
         Set<String> roleNames = request.roleNames() == null ? Set.of() : request.roleNames();
         GroupView view = userGroups.setRoles(id, roleNames);
-        auditLogger.log("GROUP_ROLES_UPDATED", "group=" + id + " roles=" + roleNames);
+        auditLogger.log(AuditType.GROUP_ROLES_UPDATED, "group=" + id + " roles=" + roleNames);
         return view;
     }
 
@@ -251,7 +252,7 @@ public class AdminController {
     @PreAuthorize("hasAuthority('" + Permissions.GROUP_UPDATE + "')")
     public GroupView setGroupManagers(@PathVariable UUID id, @RequestBody SetGroupManagersRequest request) {
         GroupView view = userGroups.setManagers(id, groupIds(request.managerUserIds()));
-        auditLogger.log("GROUP_MANAGERS_UPDATED", "group=" + id + " managers=" + request.managerUserIds());
+        auditLogger.log(AuditType.GROUP_MANAGERS_UPDATED, "group=" + id + " managers=" + request.managerUserIds());
         return view;
     }
 

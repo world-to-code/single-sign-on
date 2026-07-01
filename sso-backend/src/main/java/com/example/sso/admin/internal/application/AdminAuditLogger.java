@@ -2,6 +2,7 @@ package com.example.sso.admin.internal.application;
 
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
+import com.example.sso.audit.AuditType;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
@@ -19,7 +20,7 @@ public class AdminAuditLogger {
 
     private final AuditService audit;
 
-    public void log(String type, String detail) {
+    public void log(AuditType type, String detail) {
         audit.record(new AuditRecord(type, actor(), true, detail, null));
     }
 

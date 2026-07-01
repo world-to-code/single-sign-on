@@ -1,5 +1,6 @@
 package com.example.sso.saml.internal.api;
 
+import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.portal.AppAccess;
@@ -144,7 +145,7 @@ public class SamlSsoController {
                 session.setAttribute(AppStepUpFilter.APP_ID, relyingParty.getId().toString());
                 return ResponseEntity.status(HttpStatus.FOUND).location(URI.create("/stepup")).build();
             }
-            audit.record(new AuditRecord("SAML_STEPUP_REQUIRED", user.getUsername(), false,
+            audit.record(new AuditRecord(AuditType.SAML_STEPUP_REQUIRED, user.getUsername(), false,
                     "sp=" + relyingParty.getEntityId(), null));
             return ResponseEntity.status(HttpStatus.FORBIDDEN).contentType(MediaType.TEXT_PLAIN)
                     .body("Additional authentication is required for this application.");
@@ -154,7 +155,7 @@ public class SamlSsoController {
                 relyingParty, inResponseTo, user.getEmail(), user.getDisplayName());
         String encoded = codec.encode(response);
         String flow = inResponseTo == null ? " (idp-initiated)" : "";
-        audit.record(new AuditRecord("SAML_SSO_ISSUED", user.getUsername(), true,
+        audit.record(new AuditRecord(AuditType.SAML_SSO_ISSUED, user.getUsername(), true,
                 "sp=" + relyingParty.getEntityId() + flow, null));
 
         // The auto-submit page needs an inline script; serve it under a per-response CSP that allows ONLY

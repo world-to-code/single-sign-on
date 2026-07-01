@@ -1,6 +1,7 @@
 package com.example.sso.audit.internal.domain;
 
 import com.example.sso.audit.AuditCategory;
+import com.example.sso.audit.AuditType;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -47,12 +48,12 @@ public class AuditEvent {
     @Column(nullable = false, length = 32)
     private AuditCategory category;
 
-    public AuditEvent(String type, String principal, boolean success, String detail, String remoteIp) {
-        this.type = type;
+    public AuditEvent(AuditType type, String principal, boolean success, String detail, String remoteIp) {
+        this.type = type.name();
         this.principal = principal;
         this.success = success;
         this.detail = detail;
         this.remoteIp = remoteIp;
-        this.category = AuditCategory.of(type);
+        this.category = type.getCategory();
     }
 }

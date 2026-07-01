@@ -1,5 +1,6 @@
 package com.example.sso.audit.internal.application;
 
+import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import lombok.RequiredArgsConstructor;
@@ -19,12 +20,12 @@ public class AuthenticationAuditListener {
 
     @EventListener
     public void onSuccess(AuthenticationSuccessEvent event) {
-        audit.record("AUTH_SUCCESS", event.getAuthentication().getName(), true);
+        audit.record(AuditType.AUTH_SUCCESS, event.getAuthentication().getName(), true);
     }
 
     @EventListener
     public void onFailure(AbstractAuthenticationFailureEvent event) {
-        audit.record(new AuditRecord("AUTH_FAILURE", event.getAuthentication().getName(), false,
+        audit.record(new AuditRecord(AuditType.AUTH_FAILURE, event.getAuthentication().getName(), false,
                 event.getException().getMessage(), null));
     }
 }

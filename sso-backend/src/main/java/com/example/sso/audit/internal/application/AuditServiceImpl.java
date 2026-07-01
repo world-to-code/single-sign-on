@@ -4,6 +4,7 @@ import com.example.sso.audit.AuditCategory;
 import com.example.sso.audit.AuditEntry;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
+import com.example.sso.audit.AuditType;
 import com.example.sso.audit.internal.domain.AuditEvent;
 import com.example.sso.audit.internal.domain.AuditEventRepository;
 import lombok.RequiredArgsConstructor;
@@ -32,7 +33,7 @@ public class AuditServiceImpl implements AuditService {
 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void record(String type, String principal, boolean success) {
+    public void record(AuditType type, String principal, boolean success) {
         record(new AuditRecord(type, principal, success, null, null));
     }
 

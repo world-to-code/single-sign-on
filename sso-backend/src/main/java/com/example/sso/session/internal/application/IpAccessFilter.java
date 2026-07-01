@@ -1,5 +1,6 @@
 package com.example.sso.session.internal.application;
 
+import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.session.IpRuleService;
@@ -33,7 +34,7 @@ public class IpAccessFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String ip = request.getRemoteAddr();
         if (!ipRules.isAllowed(ip)) {
-            audit.record(new AuditRecord("IP_BLOCKED", "anonymous", false,
+            audit.record(new AuditRecord(AuditType.IP_BLOCKED, "anonymous", false,
                     "ip=" + ip + " uri=" + request.getRequestURI(), null));
             response.setStatus(HttpStatus.FORBIDDEN.value());
             response.getWriter().write("Access from your network is not permitted.");

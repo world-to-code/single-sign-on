@@ -10,7 +10,7 @@ public interface AuditService {
 
     void record(AuditRecord record);
 
-    void record(String type, String principal, boolean success);
+    void record(AuditType type, String principal, boolean success);
 
     List<AuditEntry> recent();
 

@@ -1,5 +1,6 @@
 package com.example.sso.admin.internal.application;
 
+import com.example.sso.audit.AuditType;
 import com.example.sso.mfa.MfaService;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
@@ -80,7 +81,7 @@ public class UserAdminService {
         try {
             AdminUserView created = AdminUserView.of(userService.createUser(new NewUser(request.username(),
                     request.email(), request.displayName(), request.password(), roleNames)));
-            auditLogger.log("USER_CREATED", "username=" + created.username() + " roles=" + roleNames);
+            auditLogger.log(AuditType.USER_CREATED, "username=" + created.username() + " roles=" + roleNames);
             return created;
         } catch (IllegalArgumentException e) {
             throw new ConflictException(e.getMessage());
@@ -94,7 +95,7 @@ public class UserAdminService {
         ensureNotLastAdmin(id, remainsEnabledAdmin);
         AdminUserView updated = AdminUserView.of(userService.updateUser(id, new UserUpdate(request.displayName(),
                 request.email(), request.enabled(), request.roles())));
-        auditLogger.log("USER_UPDATED", "user=" + id + " enabled=" + request.enabled() + " roles=" + request.roles());
+        auditLogger.log(AuditType.USER_UPDATED, "user=" + id + " enabled=" + request.enabled() + " roles=" + request.roles());
         return updated;
     }
 
@@ -102,7 +103,7 @@ public class UserAdminService {
     public AdminUserView setEnabled(UUID id, boolean enabled) {
         ensureNotLastAdmin(id, enabled);
         AdminUserView view = AdminUserView.of(userService.setEnabled(id, enabled));
-        auditLogger.log(enabled ? "USER_ENABLED" : "USER_DISABLED", "user=" + id);
+        auditLogger.log(enabled ? AuditType.USER_ENABLED : AuditType.USER_DISABLED, "user=" + id);
         return view;
     }
 
@@ -110,7 +111,7 @@ public class UserAdminService {
     public void deleteUser(UUID id) {
         ensureNotLastAdmin(id, false);
         userService.delete(id);
-        auditLogger.log("USER_DELETED", "user=" + id);
+        auditLogger.log(AuditType.USER_DELETED, "user=" + id);
     }
 
     /**
@@ -146,7 +147,7 @@ public class UserAdminService {
             throw new NotFoundException("User not found");
         }
         mfaService.resetMfa(id);
-        auditLogger.log("USER_MFA_RESET", "user=" + id);
+        auditLogger.log(AuditType.USER_MFA_RESET, "user=" + id);
     }
 
     @Transactional(readOnly = true)
@@ -157,21 +158,21 @@ public class UserAdminService {
     @Transactional
     public RoleView createRole(String name, Set<String> permissions) {
         RoleView view = RoleView.of(roleService.create(name, permissions));
-        auditLogger.log("ROLE_CREATED", "role=" + name + " permissions=" + permissions);
+        auditLogger.log(AuditType.ROLE_CREATED, "role=" + name + " permissions=" + permissions);
         return view;
     }
 
     @Transactional
     public RoleView updateRole(UUID id, String name, Set<String> permissions) {
         RoleView view = RoleView.of(roleService.updateRole(id, name, permissions));
-        auditLogger.log("ROLE_UPDATED", "role=" + id + " name=" + name + " permissions=" + permissions);
+        auditLogger.log(AuditType.ROLE_UPDATED, "role=" + id + " name=" + name + " permissions=" + permissions);
         return view;
     }
 
     @Transactional
     public void deleteRole(UUID id) {
         roleService.deleteRole(id);
-        auditLogger.log("ROLE_DELETED", "role=" + id);
+        auditLogger.log(AuditType.ROLE_DELETED, "role=" + id);
     }
 
     @Transactional(readOnly = true)
@@ -182,7 +183,7 @@ public class UserAdminService {
     @Transactional
     public AdminUserView setUserPermissions(UUID id, Set<String> permissionNames) {
         AdminUserView view = AdminUserView.of(userService.setDirectPermissions(id, permissionNames));
-        auditLogger.log("USER_PERMISSIONS_UPDATED", "user=" + id + " permissions=" + permissionNames);
+        auditLogger.log(AuditType.USER_PERMISSIONS_UPDATED, "user=" + id + " permissions=" + permissionNames);
         return view;
     }
 

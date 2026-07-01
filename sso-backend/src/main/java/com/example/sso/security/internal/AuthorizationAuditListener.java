@@ -1,5 +1,6 @@
 package com.example.sso.security.internal;
 
+import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditService;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,6 @@ public class AuthorizationAuditListener {
         Authentication authentication = supplier == null ? null : supplier.get();
         String principal = authentication == null ? "anonymous" : authentication.getName();
 
-        audit.record("AUTHORIZATION_DENIED", principal, false);
+        audit.record(AuditType.AUTHORIZATION_DENIED, principal, false);
     }
 }
