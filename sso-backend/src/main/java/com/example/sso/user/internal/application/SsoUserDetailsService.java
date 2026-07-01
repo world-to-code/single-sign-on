@@ -68,6 +68,7 @@ public class SsoUserDetailsService implements UserDetailsService {
 
     private UserDetails principal(AppUser user, List<SimpleGrantedAuthority> authorities) {
         boolean locked = !user.isAccountNonLocked() || user.isTemporarilyLocked(Instant.now());
+
         return User.withUsername(user.getUsername())
                 .password(user.getPasswordHash() == null ? "" : user.getPasswordHash())
                 .disabled(!user.isEnabled())

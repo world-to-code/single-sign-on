@@ -70,12 +70,14 @@ public class ApplicationServiceImpl implements ApplicationService {
         if (resolved.isEmpty()) {
             return new AppAccess(true, List.of());
         }
+
         AuthPolicyView policy = resolved.get();
         // 1) Acquire any factor the user does not yet hold.
         Optional<AuthPolicyStepView> missing = evaluator.currentStep(policy, query.grantedFactors());
         if (missing.isPresent()) {
             return new AppAccess(false, factorNames(missing.get()));
         }
+
         // 2) All factors held — require a fresh deliberate step-up for this app.
         Duration window = Duration.ofMinutes(policy.getStepUpFreshnessMinutes());
         Instant lastAppStepUp = query.lastAppStepUp();
@@ -83,6 +85,7 @@ public class ApplicationServiceImpl implements ApplicationService {
         if (fresh || policy.getSteps().isEmpty()) {
             return new AppAccess(true, List.of());
         }
+
         // Re-prove the final (strongest) step to refresh the window.
         AuthPolicyStepView last = policy.getSteps().get(policy.getSteps().size() - 1);
         return new AppAccess(false, factorNames(last));
@@ -102,14 +105,17 @@ public class ApplicationServiceImpl implements ApplicationService {
         Set<UUID> roleIds = user.getRoles().stream().map(RoleRef::getId).collect(Collectors.toSet());
         Set<UUID> groupIds = new HashSet<>(userGroups.findGroupIdsByMember(user.getId()));
         List<UUID> candidateIds = new ArrayList<>();
+
         assignments.findByAppTypeAndAppId(appType, appId).stream()
                 .filter(a -> a.getRequiredPolicyId() != null)
                 .filter(a -> subjectMatches(a, user.getId(), roleIds, groupIds))
                 .forEach(a -> candidateIds.add(a.getRequiredPolicyId()));
         appPolicies.findByAppTypeAndAppId(appType, appId).ifPresent(ap -> candidateIds.add(ap.getRequiredPolicyId()));
+
         if (candidateIds.isEmpty()) {
             return Optional.empty();
         }
+
         return authPolicies.highestPriorityEnabled(candidateIds);
     }
 
@@ -125,11 +131,13 @@ public class ApplicationServiceImpl implements ApplicationService {
     @Transactional
     public void setAppPolicy(AppType appType, String appId, String requiredPolicyId) {
         appPolicies.deleteByAppTypeAndAppId(appType, appId); // one policy per app: replace any existing
+
         if (requiredPolicyId != null && !requiredPolicyId.isBlank()) {
             UUID policyId = UUID.fromString(requiredPolicyId);
             if (!authPolicies.exists(policyId)) {
                 throw new NotFoundException("policy not found");
             }
+
             appPolicies.save(new AppPolicy(appType, appId, policyId));
         }
     }
@@ -153,18 +161,21 @@ public class ApplicationServiceImpl implements ApplicationService {
         if (!groupIds.isEmpty()) {
             matched.addAll(assignments.findBySubjectTypeAndSubjectIdIn(SubjectType.GROUP, groupIds));
         }
+
         Map<String, ApplicationView> index = indexApplications();
         List<ApplicationView> apps = new ArrayList<>(matched.stream()
                 .map(a -> index.get(key(a.getAppType(), a.getAppId())))
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList());
+
         // The admin console is auto-granted to any admin — no explicit assignment needed.
         if (user.getRoles().stream().anyMatch(r -> "ROLE_ADMIN".equals(r.getName()))) {
             index.values().stream().filter(ApplicationView::system)
                     .filter(app -> !apps.contains(app))
                     .forEach(apps::add);
         }
+
         return apps.stream()
                 .sorted(Comparator.comparing(ApplicationView::name, String.CASE_INSENSITIVE_ORDER))
                 .toList();
@@ -190,6 +201,7 @@ public class ApplicationServiceImpl implements ApplicationService {
         String appName = app == null ? appId : app.name();
         List<AppAssignment> list = assignments.findByAppTypeAndAppId(appType, appId);
         Map<UUID, String> names = subjectNames(list);
+
         return list.stream().map(a -> toView(a, appName, names)).toList();
     }
 
@@ -202,10 +214,12 @@ public class ApplicationServiceImpl implements ApplicationService {
         if (assignments.existsByAppTypeAndAppIdAndSubjectTypeAndSubjectId(appType, request.appId(), subjectType, subjectId)) {
             throw new ConflictException("application is already assigned to that subject");
         }
+
         UUID policyId = request.requiredPolicyId() == null || request.requiredPolicyId().isBlank()
                 ? null : UUID.fromString(request.requiredPolicyId());
         AppAssignment saved = assignments.save(new AppAssignment(appType, request.appId(), subjectType, subjectId, policyId));
         ApplicationView app = indexApplications().get(key(appType, request.appId()));
+
         return toView(saved, app == null ? request.appId() : app.name(), subjectNames(List.of(saved)));
     }
 
@@ -233,6 +247,7 @@ public class ApplicationServiceImpl implements ApplicationService {
                 index.put(key(app.type(), app.id()), appView(app, appPolicyByKey, policyNames));
             }
         }
+
         return index;
     }
 
@@ -254,6 +269,7 @@ public class ApplicationServiceImpl implements ApplicationService {
         Set<UUID> roleIds = subjectIds(list, SubjectType.ROLE);
         Set<UUID> groupIds = subjectIds(list, SubjectType.GROUP);
         Map<UUID, String> names = new HashMap<>();
+
         if (!userIds.isEmpty()) {
             users.idNames(userIds).forEach(p -> names.put(p.getId(), p.getName()));
         }
@@ -263,6 +279,7 @@ public class ApplicationServiceImpl implements ApplicationService {
         if (!groupIds.isEmpty()) {
             userGroups.findIdNames(groupIds).forEach(p -> names.put(p.getId(), p.getName()));
         }
+
         return names;
     }
 
@@ -273,6 +290,7 @@ public class ApplicationServiceImpl implements ApplicationService {
 
     private AppAssignmentView toView(AppAssignment a, String appName, Map<UUID, String> subjectNames) {
         String subjectName = subjectNames.getOrDefault(a.getSubjectId(), a.getSubjectId().toString());
+
         return new AppAssignmentView(a.getId().toString(), a.getAppType().name(), a.getAppId(), appName,
                 a.getSubjectType().name(), a.getSubjectId().toString(), subjectName,
                 a.getRequiredPolicyId() == null ? null : a.getRequiredPolicyId().toString());

@@ -25,6 +25,7 @@ public class FactorHandlers {
         if (handler == null) {
             throw new BadRequestException("unsupported factor: " + factor);
         }
+
         return handler;
     }
 

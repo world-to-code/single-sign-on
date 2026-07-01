@@ -51,6 +51,7 @@ public class AuthPolicyAdminController {
                 request.allowEnrollmentAtLogin() == null || request.allowEnrollmentAtLogin(),
                 steps(request), ids(request.assignedUserIds()), ids(request.assignedRoleIds()),
                 freshness(request))));
+
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
@@ -90,6 +91,7 @@ public class AuthPolicyAdminController {
         List<List<String>> steps = policy.getSteps().stream()
                 .map(step -> step.getAllowedFactors().stream().map(AuthFactor::name).sorted().toList())
                 .toList();
+
         return new PolicyView(policy.getId().toString(), policy.getName(), policy.getPriority(), policy.isEnabled(),
                 policy.isAppliesToLogin(), policy.isAllowEnrollmentAtLogin(), steps,
                 policy.getAssignedUserIds().stream().map(UUID::toString).toList(),

@@ -61,6 +61,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
                 return;
             }
         }
+
         chain.doFilter(request, response);
     }
 

@@ -27,6 +27,7 @@ public class SamlSignatureValidator {
         if (signature == null) {
             throw new BadRequestException("AuthnRequest is not signed but the relying party requires it");
         }
+
         BasicX509Credential credential = new BasicX509Credential(requireCertificate(relyingParty));
         try {
             new SAMLSignatureProfileValidator().validate(signature);
@@ -53,6 +54,7 @@ public class SamlSignatureValidator {
         if (relyingParty.getSigningCertificate() == null) {
             throw new BadRequestException("relying party requires signed AuthnRequests but has no signing certificate");
         }
+
         return SamlCertificates.parse(relyingParty.getSigningCertificate());
     }
 }

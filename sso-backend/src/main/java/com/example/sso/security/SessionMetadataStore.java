@@ -51,6 +51,7 @@ public class SessionMetadataStore {
         if (old == null || oldId.equals(newId)) {
             return;
         }
+
         // Carry the original public handle so the rotated session keeps the same identity in the UI.
         SessionMetadata moved = new SessionMetadata(old.handle(), newId, old.username(), old.userAgent(),
                 old.ip(), old.createdAt());

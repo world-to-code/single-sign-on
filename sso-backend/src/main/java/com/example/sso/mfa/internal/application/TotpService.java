@@ -37,6 +37,7 @@ public class TotpService {
     public String provisioningUri(String base32Secret, String accountName, String issuer) {
         String label = URLEncoder.encode(issuer + ":" + accountName, StandardCharsets.UTF_8);
         String enc = URLEncoder.encode(issuer, StandardCharsets.UTF_8);
+
         return "otpauth://totp/" + label
                 + "?secret=" + base32Secret
                 + "&issuer=" + enc
@@ -66,10 +67,12 @@ public class TotpService {
         if (code == null) {
             return -1;
         }
+
         String trimmed = code.trim();
         if (!trimmed.matches("\\d{" + DIGITS + "}")) {
             return -1;
         }
+
         byte[] key = base32Decode(base32Secret);
         long counter = epochMillis / 1000L / PERIOD_SECONDS;
         for (int offset = -WINDOW; offset <= WINDOW; offset++) {
@@ -79,6 +82,7 @@ public class TotpService {
                 return counter + offset;
             }
         }
+
         return -1;
     }
 
@@ -100,6 +104,7 @@ public class TotpService {
             data[i] = (byte) (value & 0xFF);
             value >>>= 8;
         }
+
         try {
             Mac mac = Mac.getInstance(ALGORITHM);
             mac.init(new SecretKeySpec(key, ALGORITHM));
@@ -132,10 +137,12 @@ public class TotpService {
                 sb.append(BASE32_ALPHABET.charAt(index));
             }
         }
+
         if (bitsLeft > 0) {
             int index = (buffer << (5 - bitsLeft)) & 0x1F;
             sb.append(BASE32_ALPHABET.charAt(index));
         }
+
         return sb.toString();
     }
 
@@ -143,6 +150,7 @@ public class TotpService {
         String clean = s.trim().replace("=", "").toUpperCase(Locale.ROOT);
         int buffer = 0, bitsLeft = 0, count = 0;
         byte[] result = new byte[clean.length() * 5 / 8];
+
         for (int i = 0; i < clean.length(); i++) {
             int val = BASE32_ALPHABET.indexOf(clean.charAt(i));
             if (val < 0) {
@@ -155,6 +163,7 @@ public class TotpService {
                 bitsLeft -= 8;
             }
         }
+
         return result;
     }
 }

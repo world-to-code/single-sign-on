@@ -36,12 +36,14 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
     public void seedDefault() {
         AuthPolicy policy = repository.findByName(AuthPolicyResolver.DEFAULT_NAME)
                 .orElseGet(() -> new AuthPolicy(AuthPolicyResolver.DEFAULT_NAME, 0));
+
         policy.enable();
         policy.useForLogin(true);
         policy.allowEnrollmentAtLogin(true); // the fallback must let users bootstrap a required factor
         policy.replaceSteps(List.of(
                 new AuthPolicyStep(1, Set.of(AuthFactor.PASSWORD)),
                 new AuthPolicyStep(2, Set.of(AuthFactor.TOTP))));
+
         repository.save(policy);
     }
 
@@ -58,6 +60,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         if (repository.findByName(spec.name()).isPresent()) {
             throw new ConflictException("policy name already exists");
         }
+
         AuthPolicy policy = new AuthPolicy(spec.name(), spec.priority());
         if (!spec.enabled()) {
             policy.disable();
@@ -68,6 +71,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         applySteps(policy, spec.steps());
         policy.assignUsers(spec.userIds() == null ? Set.of() : spec.userIds());
         policy.assignRoles(spec.roleIds() == null ? Set.of() : spec.roleIds());
+
         return repository.save(policy);
     }
 
@@ -79,6 +83,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         if (AuthPolicyResolver.DEFAULT_NAME.equals(policy.getName())) {
             throw new BadRequestException("the Default fallback policy cannot be edited");
         }
+
         policy.updatePriority(update.priority());
         if (update.enabled()) {
             policy.enable();
@@ -91,6 +96,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         applySteps(policy, update.steps());
         policy.assignUsers(update.userIds() == null ? Set.of() : update.userIds());
         policy.assignRoles(update.roleIds() == null ? Set.of() : update.roleIds());
+
         return repository.save(policy);
     }
 
@@ -102,6 +108,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         if (AuthPolicyResolver.DEFAULT_NAME.equals(policy.getName())) {
             throw new BadRequestException("the Default policy cannot be deleted");
         }
+
         repository.delete(policy);
     }
 
@@ -114,6 +121,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
             }
             built.add(new AuthPolicyStep(order++, new HashSet<>(factors)));
         }
+
         policy.replaceSteps(built);
     }
 }

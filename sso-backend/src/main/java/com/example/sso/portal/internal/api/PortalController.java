@@ -43,6 +43,7 @@ public class PortalController {
         SessionPolicyDetails p = sessionPolicy.resolveForUsername(authentication.getName());
         List<String> reauthFactors = Arrays.stream(p.getReauthFactors().split(","))
                 .map(String::trim).filter(s -> !s.isEmpty()).toList();
+
         return Map.of(
                 "idleTimeoutMinutes", p.getIdleTimeoutMinutes(),
                 "reauthIntervalMinutes", p.getReauthIntervalMinutes(),
@@ -67,6 +68,7 @@ public class PortalController {
         if (type == null || appId == null) {
             return new StepUpInfo(true, List.of(), returnUrl);
         }
+
         Set<String> granted = authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority).filter(a -> a.startsWith("FACTOR_")).collect(Collectors.toSet());
         AppType appType = AppType.valueOf(type);
@@ -78,6 +80,7 @@ public class PortalController {
             session.removeAttribute(AppStepUpFilter.APP_TYPE);
             session.removeAttribute(AppStepUpFilter.APP_ID);
         }
+
         return new StepUpInfo(access.ready(), access.pendingFactors(), returnUrl);
     }
 

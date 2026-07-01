@@ -79,6 +79,7 @@ public class RoleServiceImpl implements RoleService {
         if (!role.isSystem()) {
             role.markSystem();
         }
+
         return roles.save(role);
     }
 
@@ -96,8 +97,10 @@ public class RoleServiceImpl implements RoleService {
         roles.findByName(name).ifPresent(existing -> {
             throw new ConflictException("role '" + name + "' already exists");
         });
+
         Role role = new Role(name);
         role.replacePermissions(resolvePermissions(permissionNames));
+
         return roles.save(role);
     }
 
@@ -108,6 +111,7 @@ public class RoleServiceImpl implements RoleService {
         if (ADMIN_ROLE.equals(role.getName())) {
             throw new ConflictException("ROLE_ADMIN is managed automatically and cannot be edited");
         }
+
         if (!role.getName().equals(name)) {
             if (role.isSystem()) {
                 throw new ConflictException("system role '" + role.getName() + "' cannot be renamed");
@@ -118,7 +122,9 @@ public class RoleServiceImpl implements RoleService {
             });
             role.rename(name);
         }
+
         role.replacePermissions(resolvePermissions(permissionNames));
+
         return role;
     }
 
@@ -129,6 +135,7 @@ public class RoleServiceImpl implements RoleService {
         if (role.isSystem()) {
             throw new ConflictException("system role '" + role.getName() + "' cannot be deleted");
         }
+
         roles.delete(role);
     }
 
@@ -148,6 +155,7 @@ public class RoleServiceImpl implements RoleService {
         boolean reserved = candidate.indexOf(':') >= 0
                 || RESERVED_AUTHORITY_NAMES.contains(candidate)
                 || RESERVED_AUTHORITY_PREFIXES.stream().anyMatch(candidate::startsWith);
+
         if (reserved) {
             throw new BadRequestException("role name '" + name + "' collides with a reserved authority");
         }
@@ -158,6 +166,7 @@ public class RoleServiceImpl implements RoleService {
         if (names == null || names.isEmpty()) {
             return Set.of();
         }
+
         return names.stream().map(name -> {
             if (!CATALOG.contains(name)) {
                 throw new BadRequestException("unknown permission: " + name);
@@ -190,8 +199,10 @@ public class RoleServiceImpl implements RoleService {
         if (count <= 0) {
             return List.of();
         }
+
         long zeroBased = Math.max(startIndex - 1, 0);
         int pageNumber = (int) (zeroBased / count);
+
         return roles.findAll(PageRequest.of(pageNumber, count)).stream().map(RoleRef.class::cast).toList();
     }
 
@@ -207,10 +218,12 @@ public class RoleServiceImpl implements RoleService {
         if (roleIds.isEmpty()) {
             return Map.of();
         }
+
         Map<UUID, List<UserAccount>> byRole = new HashMap<>();
         for (Object[] row : users.findMembersByRoleIdIn(roleIds)) {
             byRole.computeIfAbsent((UUID) row[0], k -> new ArrayList<>()).add((AppUser) row[1]);
         }
+
         return byRole;
     }
 
@@ -220,6 +233,7 @@ public class RoleServiceImpl implements RoleService {
         Role role = roles.findById(roleId).orElseThrow(() -> new NotFoundException("role not found"));
         List<AppUser> current = users.findByRoles_Id(roleId);
         Set<UUID> currentIds = current.stream().map(AppUser::getId).collect(Collectors.toSet());
+
         // Managed entities inside this @Transactional method — dirty checking flushes; no explicit saves.
         current.stream().filter(u -> !userIds.contains(u.getId())).forEach(u -> u.removeRole(role));
         Set<UUID> toAdd = userIds.stream().filter(id -> !currentIds.contains(id)).collect(Collectors.toSet());

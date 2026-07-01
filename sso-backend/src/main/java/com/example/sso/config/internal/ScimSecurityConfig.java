@@ -28,6 +28,7 @@ public class ScimSecurityConfig {
         // Instantiated here (NOT a @Component) so it runs only on this /scim/v2/** chain — a @Component
         // Filter would also be auto-registered on the main app chain, letting a SCIM token authenticate there.
         ScimBearerTokenFilter scimBearerTokenFilter = new ScimBearerTokenFilter(scimTokenService);
+
         http
                 .securityMatcher("/scim/v2/**")
                 .csrf(csrf -> csrf.disable())

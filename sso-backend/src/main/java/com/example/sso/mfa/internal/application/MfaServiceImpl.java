@@ -51,16 +51,19 @@ public class MfaServiceImpl implements MfaService {
         if (secret == null) {
             return false;
         }
+
         long step = totpService.matchingCounter(secret, code);
         if (step < 0) {
             return false;
         }
+
         MfaFactor factor = factors.findByUserIdAndType(user.getId(), MfaType.TOTP)
                 .orElseGet(() -> new MfaFactor(user.getId(), MfaType.TOTP, "Authenticator app"));
         factor.assignSecret(secretCipher.encrypt(secret)); // encrypted at rest
         factor.recordUsedStep(step); // the enrollment code itself can't be replayed to log in
         factor.enable();
         factors.save(factor);
+
         return true;
     }
 
@@ -72,13 +75,16 @@ public class MfaServiceImpl implements MfaService {
         if (factor == null) {
             return false;
         }
+
         long step = totpService.matchingCounter(secretCipher.decrypt(factor.getSecret()), code);
         if (step < 0) {
             return false;
         }
+
         if (factor.getLastUsedStep() != null && step <= factor.getLastUsedStep()) {
             return false; // already used this (or a later) code — replay
         }
+
         factor.recordUsedStep(step);
         factors.save(factor);
         return true;

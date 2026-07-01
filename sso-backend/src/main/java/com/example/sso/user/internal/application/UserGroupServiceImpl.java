@@ -56,8 +56,10 @@ public class UserGroupServiceImpl implements UserGroupService {
     public GroupMembersPage members(UUID id, int page, int size) {
         int safeSize = size <= 0 ? 20 : Math.min(size, 100);
         int safePage = Math.max(page, 0);
+
         List<Suggestion> items = users.findGroupMembers(id, PageRequest.of(safePage, safeSize)).stream()
                 .map(p -> new Suggestion(p.getId().toString(), p.getName())).toList();
+
         return new GroupMembersPage(repository.countMembers(id), safePage, safeSize, items);
     }
 
@@ -75,8 +77,10 @@ public class UserGroupServiceImpl implements UserGroupService {
         if (repository.findByName(spec.name()).isPresent()) {
             throw new ConflictException("group name already exists");
         }
+
         UserGroup group = new UserGroup(spec.name(), spec.description(), spec.externalId());
         group.setMembers(existingUserIds(spec.memberIds()));
+
         return toView(repository.save(group));
     }
 
@@ -87,13 +91,16 @@ public class UserGroupServiceImpl implements UserGroupService {
         if (group.isSystem()) {
             throw new ConflictException("the '" + group.getName() + "' system group cannot be edited");
         }
+
         repository.findByName(spec.name())
                 .filter(other -> !other.getId().equals(id))
                 .ifPresent(other -> { throw new ConflictException("group name already exists"); });
+
         group.rename(spec.name());
         group.describe(spec.description());
         group.assignExternalId(spec.externalId());
         group.setMembers(existingUserIds(spec.memberIds()));
+
         return toView(repository.save(group));
     }
 
@@ -104,6 +111,7 @@ public class UserGroupServiceImpl implements UserGroupService {
         if (group.isSystem()) {
             throw new ConflictException("the '" + group.getName() + "' system group cannot be deleted");
         }
+
         repository.delete(group);
     }
 
@@ -114,7 +122,9 @@ public class UserGroupServiceImpl implements UserGroupService {
         if (group.isSystem()) {
             throw new ConflictException("membership of the '" + group.getName() + "' system group is managed automatically");
         }
+
         group.setMembers(existingUserIds(memberIds));
+
         return toView(repository.save(group));
     }
 
@@ -125,7 +135,9 @@ public class UserGroupServiceImpl implements UserGroupService {
         if (group.isSystem()) {
             throw new ConflictException("roles of the '" + group.getName() + "' system group cannot be edited");
         }
+
         group.replaceRoles(resolveRoles(roleNames));
+
         return toView(repository.save(group));
     }
 
@@ -147,6 +159,7 @@ public class UserGroupServiceImpl implements UserGroupService {
         if (roleNames == null || roleNames.isEmpty()) {
             return Set.of();
         }
+
         return roleNames.stream()
                 .map(name -> roles.findByName(name)
                         .orElseThrow(() -> new BadRequestException("unknown role: " + name)))
@@ -158,12 +171,14 @@ public class UserGroupServiceImpl implements UserGroupService {
         if (memberIds == null || memberIds.isEmpty()) {
             return Set.of();
         }
+
         return users.findAllById(memberIds).stream().map(AppUser::getId).collect(Collectors.toSet());
     }
 
     private static GroupView toView(UserGroup group) {
         List<String> memberIds = group.getMemberUserIds().stream().map(UUID::toString).toList();
         List<String> roleNames = group.getRoles().stream().map(Role::getName).sorted().toList();
+
         return new GroupView(group.getId().toString(), group.getName(), group.getDescription(),
                 group.getExternalId(), memberIds, memberIds.size(), group.isSystem(), roleNames);
     }

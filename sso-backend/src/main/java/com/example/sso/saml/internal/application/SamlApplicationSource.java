@@ -36,6 +36,7 @@ public class SamlApplicationSource implements ApplicationSource {
         if (StringUtils.hasText(rp.getSpLoginUrl())) {
             return rp.getSpLoginUrl().trim();
         }
+
         return "/saml2/idp/sso/init?sp=" + UriUtils.encodeQueryParam(rp.getEntityId(), StandardCharsets.UTF_8);
     }
 }

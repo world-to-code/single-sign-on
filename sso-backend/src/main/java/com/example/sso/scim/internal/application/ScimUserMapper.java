@@ -38,6 +38,7 @@ public final class ScimUserMapper {
             builder.displayName(user.getDisplayName())
                     .name(Name.builder().formatted(user.getDisplayName()).build());
         }
+
         return builder.build();
     }
 }

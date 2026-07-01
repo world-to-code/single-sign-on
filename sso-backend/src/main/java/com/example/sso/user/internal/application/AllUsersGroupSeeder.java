@@ -44,10 +44,12 @@ public class AllUsersGroupSeeder implements ApplicationRunner {
         if (!group.isSystem()) {
             group.markSystem();
         }
+
         Set<UUID> current = group.getMemberUserIds();
         Set<UUID> missing = users.findAll().stream().map(AppUser::getId)
                 .filter(id -> !current.contains(id)).collect(Collectors.toSet());
         missing.forEach(group::addMember);
+
         groups.save(group);
     }
 }

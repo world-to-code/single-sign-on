@@ -70,6 +70,7 @@ public class Fido2FactorHandler implements FactorHandler {
     public FactorChallenge prepare(UserAccount user, HttpServletRequest request) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         HttpSession session = request.getSession(true);
+
         // Options objects aren't Jackson-deserializable, so we keep the OBJECT in the session and
         // only serialize JSON for the browser (a round-trip would fail on verify).
         if (isEnrolled(user)) {
@@ -79,6 +80,7 @@ public class Fido2FactorHandler implements FactorHandler {
             session.setAttribute(OPTIONS_ATTR, options);
             return FactorChallenge.publicKey(json.writeValueAsString(options));
         }
+
         // No passkey yet -> registration (enroll-at-login). Reachable only when the policy allows it.
         PublicKeyCredentialCreationOptions options = operations.createPublicKeyCredentialCreationOptions(
                 new ImmutablePublicKeyCredentialCreationOptionsRequest(authentication));
@@ -92,10 +94,12 @@ public class Fido2FactorHandler implements FactorHandler {
         if (verification.credential() == null) {
             return false;
         }
+
         HttpSession session = request.getSession(false);
         if (session == null) {
             return false;
         }
+
         if (session.getAttribute(CREATION_OPTIONS_ATTR) instanceof PublicKeyCredentialCreationOptions creation) {
             return register(user, creation, verification, session);
         }

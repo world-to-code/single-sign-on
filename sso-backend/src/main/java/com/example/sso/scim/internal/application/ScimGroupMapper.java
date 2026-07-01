@@ -22,6 +22,7 @@ public final class ScimGroupMapper {
                         .display(user.getUsername())
                         .build())
                 .toList();
+
         return Group.builder()
                 .id(role.getId().toString())
                 .displayName(role.getName())

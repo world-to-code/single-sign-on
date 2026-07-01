@@ -38,6 +38,7 @@ public class TotpFactorHandler implements FactorHandler {
         if (mfa.hasEnabledTotp(user.getId())) {
             return FactorChallenge.none(); // already enrolled -> a code challenge needs no QR
         }
+
         HttpSession session = request.getSession(true);
         String pending = (String) session.getAttribute(PENDING_SECRET);
         TotpEnrollment enrollment = pending != null ? mfa.enrollmentFor(user, pending) : mfa.newEnrollment(user);
@@ -50,9 +51,11 @@ public class TotpFactorHandler implements FactorHandler {
         if (verification.code() == null) {
             return false;
         }
+
         if (mfa.hasEnabledTotp(user.getId())) {
             return mfa.verifyTotp(user.getId(), verification.code());
         }
+
         HttpSession session = request.getSession(false);
         String secret = session == null ? null : (String) session.getAttribute(PENDING_SECRET);
         boolean confirmed = mfa.confirmEnrollment(user, secret, verification.code());

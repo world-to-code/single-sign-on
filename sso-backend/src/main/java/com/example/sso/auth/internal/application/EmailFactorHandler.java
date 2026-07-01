@@ -45,6 +45,7 @@ public class EmailFactorHandler implements FactorHandler {
         session.setAttribute(CODE, code);
         session.setAttribute(EXPIRES_AT, Instant.now().plus(ttl).toEpochMilli());
         session.setAttribute(ATTEMPTS, 0); // fresh code -> reset the guess counter
+
         emails.sendCode(user.getEmail(), code);
         return FactorChallenge.sent();
     }
@@ -54,21 +55,25 @@ public class EmailFactorHandler implements FactorHandler {
         if (verification.code() == null) {
             return false;
         }
+
         HttpSession session = request.getSession(false);
         if (session == null) {
             return false;
         }
+
         String expected = (String) session.getAttribute(CODE);
         Object expiresAt = session.getAttribute(EXPIRES_AT);
         if (expected == null || !(expiresAt instanceof Long expiry) || System.currentTimeMillis() > expiry) {
             return false;
         }
+
         // Constant-time compare so a near-miss code can't be distinguished by response timing.
         if (MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8),
                 verification.code().trim().getBytes(StandardCharsets.UTF_8))) {
             clear(session);
             return true;
         }
+
         // Wrong code: count the attempt and burn the code after too many guesses (force a re-send).
         int attempts = (session.getAttribute(ATTEMPTS) instanceof Integer a ? a : 0) + 1;
         if (attempts >= maxAttempts) {
@@ -76,6 +81,7 @@ public class EmailFactorHandler implements FactorHandler {
         } else {
             session.setAttribute(ATTEMPTS, attempts);
         }
+
         return false;
     }
 

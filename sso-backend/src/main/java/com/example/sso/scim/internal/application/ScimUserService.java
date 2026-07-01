@@ -47,6 +47,7 @@ public class ScimUserService {
         if (!resource.isActive().orElse(Boolean.TRUE)) {
             userService.disable(created.getId());
         }
+
         return ScimUserMapper.toScim(reload(created.getId()));
     }
 
@@ -61,6 +62,7 @@ public class ScimUserService {
     public PartialListResponse<User> list(long startIndex, int count) {
         long total = userService.count();
         List<User> page = userService.page(startIndex, count).stream().map(ScimUserMapper::toScim).toList();
+
         return PartialListResponse.<User>builder().resources(page).totalResults(total).build();
     }
 
@@ -70,6 +72,7 @@ public class ScimUserService {
                 .orElseThrow(() -> new ResourceNotFoundException("missing id on update"))));
         String email = primaryEmail(resource).orElse(user.getEmail());
         String displayName = resource.getDisplayName().orElse(user.getDisplayName());
+
         userService.updateProfile(user.getId(), displayName, email);
         resource.getExternalId().ifPresent(ext -> userService.assignExternalId(user.getId(), ext));
         if (resource.isActive().orElse(Boolean.TRUE)) {
@@ -78,6 +81,7 @@ public class ScimUserService {
             ensureNotPrivileged(user, "disabled"); // don't let a SCIM token lock out an admin
             userService.disable(user.getId());
         }
+
         return ScimUserMapper.toScim(reload(user.getId()));
     }
 
@@ -85,6 +89,7 @@ public class ScimUserService {
     public void delete(String id) {
         UserAccount user = reload(parseId(id));
         ensureNotPrivileged(user, "deleted");
+
         userService.delete(user.getId());
     }
 

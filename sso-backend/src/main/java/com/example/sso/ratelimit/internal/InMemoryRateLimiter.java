@@ -21,10 +21,12 @@ public class InMemoryRateLimiter {
         if (windows.size() > MAX_TRACKED_KEYS) {
             windows.values().removeIf(w -> now - w.start() >= windowMillis);
         }
+
         Window window = windows.compute(key, (k, current) ->
                 (current == null || now - current.start() >= windowMillis)
                         ? new Window(now, 1)
                         : new Window(current.start(), current.count() + 1));
+
         return window.count() <= limit;
     }
 

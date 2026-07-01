@@ -81,6 +81,7 @@ public class AdminElevationFilter extends OncePerRequestFilter {
             challenge(response);
             return;
         }
+
         Jwt jwt;
         try {
             jwt = jwtDecoder.decode(header.substring(7).trim()); // validates signature + expiry
@@ -88,6 +89,7 @@ public class AdminElevationFilter extends OncePerRequestFilter {
             challenge(response);
             return;
         }
+
         AdminPortalSettingsData settings = settingsService.get();
         if (!isElevated(jwt, settings.reauthInterval()) || !boundToSession(jwt)) {
             challenge(response);
@@ -97,6 +99,7 @@ public class AdminElevationFilter extends OncePerRequestFilter {
             challenge(response);
             return;
         }
+
         chain.doFilter(request, response);
     }
 
@@ -110,6 +113,7 @@ public class AdminElevationFilter extends OncePerRequestFilter {
         if (session == null) {
             return false; // an authenticated admin request always carries a session
         }
+
         long now = Instant.now().getEpochSecond();
         Long firstSeen = (Long) session.getAttribute(ADMIN_FIRST_SEEN);
         Long lastSeen = (Long) session.getAttribute(ADMIN_LAST_SEEN);
@@ -121,10 +125,12 @@ public class AdminElevationFilter extends OncePerRequestFilter {
             clearAdminSession(session);
             return false;
         }
+
         if (firstSeen == null) {
             session.setAttribute(ADMIN_FIRST_SEEN, now);
         }
         session.setAttribute(ADMIN_LAST_SEEN, now);
+
         return true;
     }
 
@@ -150,10 +156,12 @@ public class AdminElevationFilter extends OncePerRequestFilter {
         if (!REQUIRED_ACR.equals(jwt.getClaimAsString("acr"))) {
             return false;
         }
+
         Long stepUp = epochSeconds(jwt, "stepup_time"); // null => no deliberate re-auth => reject
         if (stepUp == null) {
             return false;
         }
+
         long age = Instant.now().getEpochSecond() - stepUp;
         return age >= 0 && age <= freshnessWindow.toSeconds();
     }

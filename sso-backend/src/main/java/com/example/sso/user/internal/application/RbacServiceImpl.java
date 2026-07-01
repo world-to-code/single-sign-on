@@ -28,6 +28,7 @@ public class RbacServiceImpl implements RbacService {
     public void grantAllPermissionsToAdmin() {
         Role admin = roles.findByName("ROLE_ADMIN")
                 .orElseThrow(() -> new IllegalStateException("ROLE_ADMIN must exist before granting permissions"));
+
         ALL_PERMISSIONS.forEach(name -> admin.addPermission(getOrCreatePermission(name)));
         roles.save(admin);
     }

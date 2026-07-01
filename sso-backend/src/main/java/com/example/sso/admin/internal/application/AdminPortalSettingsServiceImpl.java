@@ -41,7 +41,9 @@ public class AdminPortalSettingsServiceImpl implements AdminPortalSettingsServic
         settings.update(request.reauthIntervalMinutes(), request.elevationTokenTtlMinutes(),
                 request.sessionIdleTimeoutMinutes(), request.sessionAbsoluteLifetimeMinutes());
         AdminPortalSettings saved = repository.save(settings);
+
         syncElevationTokenTtl(saved.getElevationTokenTtlMinutes());
+
         return toData(saved);
     }
 
@@ -61,10 +63,12 @@ public class AdminPortalSettingsServiceImpl implements AdminPortalSettingsServic
         if (client == null) {
             return;
         }
+
         TokenSettings tokenSettings = TokenSettings.builder()
                 .settings(s -> s.putAll(client.getTokenSettings().getSettings()))
                 .accessTokenTimeToLive(Duration.ofMinutes(minutes))
                 .build();
+
         registeredClients.save(RegisteredClient.from(client).tokenSettings(tokenSettings).build());
     }
 }

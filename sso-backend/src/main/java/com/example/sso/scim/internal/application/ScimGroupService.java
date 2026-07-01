@@ -54,8 +54,10 @@ public class ScimGroupService {
         if (roleService.findByName(displayName).isPresent()) {
             throw new ConflictException("group already exists: " + displayName);
         }
+
         RoleRef role = roleService.create(displayName);
         roleService.setMembers(role.getId(), desiredMembers(resource));
+
         return ScimGroupMapper.toScim(role, roleService.members(role.getId()));
     }
 
@@ -72,9 +74,11 @@ public class ScimGroupService {
         List<RoleRef> rolePage = roleService.page(startIndex, count);
         Map<UUID, List<UserAccount>> membersByRole = roleService.membersByRoleIds(
                 rolePage.stream().map(RoleRef::getId).collect(Collectors.toSet()));
+
         List<Group> page = rolePage.stream()
                 .map(role -> ScimGroupMapper.toScim(role, membersByRole.getOrDefault(role.getId(), List.of())))
                 .toList();
+
         return PartialListResponse.<Group>builder().resources(page).totalResults(total).build();
     }
 
@@ -85,6 +89,7 @@ public class ScimGroupService {
                 .orElseThrow(() -> new ResourceNotFoundException("Group not found"));
         ensureManageable(role.getName());
         roleService.setMembers(role.getId(), desiredMembers(resource));
+
         return ScimGroupMapper.toScim(role, roleService.members(role.getId()));
     }
 
@@ -93,6 +98,7 @@ public class ScimGroupService {
         RoleRef role = roleService.findById(parseId(id))
                 .orElseThrow(() -> new ResourceNotFoundException("Group not found: " + id));
         ensureManageable(role.getName());
+
         roleService.delete(role.getId());
     }
 

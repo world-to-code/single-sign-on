@@ -35,6 +35,7 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
         if (relyingParties.existsByEntityId(request.entityId())) {
             throw new ConflictException("a relying party with that entityId already exists");
         }
+
         SamlRelyingParty rp = new SamlRelyingParty(request.entityId(), request.acsUrl(), nameIdFormat(request));
         rp.update(request.acsUrl(), nameIdFormat(request), settings(request),
                 trimToNull(request.signingCertificate()), trimToNull(request.encryptionCertificate()),
@@ -47,6 +48,7 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
     public RelyingPartyView update(UUID id, RelyingPartyRequest request) {
         SamlRelyingParty rp = relyingParties.findById(id)
                 .orElseThrow(() -> new NotFoundException("relying party not found"));
+
         rp.update(request.acsUrl(), nameIdFormat(request), settings(request),
                 trimToNull(request.signingCertificate()), trimToNull(request.encryptionCertificate()),
                 trimToNull(request.spLoginUrl()));
@@ -59,6 +61,7 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
         if (!relyingParties.existsById(id)) {
             throw new NotFoundException("relying party not found");
         }
+
         relyingParties.deleteById(id);
     }
 
@@ -68,6 +71,7 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
         if (relyingParties.existsByEntityId(entityId)) {
             return;
         }
+
         relyingParties.save(new SamlRelyingParty(entityId, acsUrl, SamlRelyingParty.NAMEID_EMAIL));
     }
 

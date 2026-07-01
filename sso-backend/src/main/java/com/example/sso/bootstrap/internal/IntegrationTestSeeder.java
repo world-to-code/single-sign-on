@@ -68,6 +68,7 @@ public class IntegrationTestSeeder implements ApplicationRunner {
         if (!enabled) {
             return;
         }
+
         seedOauth2ProxyClient();
         seedSimpleSamlPhpSp();
     }
@@ -76,6 +77,7 @@ public class IntegrationTestSeeder implements ApplicationRunner {
         if (clients.findByClientId(oidcClientId) != null) {
             return;
         }
+
         clients.save(RegisteredClient.withId(UUID.randomUUID().toString())
                 .clientId(oidcClientId)
                 .clientSecret(passwordEncoder.encode(oidcClientSecret))

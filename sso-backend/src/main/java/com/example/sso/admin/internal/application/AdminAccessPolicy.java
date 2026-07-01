@@ -64,6 +64,7 @@ public class AdminAccessPolicy {
         if (authentication == null || !authentication.isAuthenticated()) {
             return Optional.empty();
         }
+
         return userService.findByUsername(authentication.getName())
                 .map(user -> user.getId());
     }

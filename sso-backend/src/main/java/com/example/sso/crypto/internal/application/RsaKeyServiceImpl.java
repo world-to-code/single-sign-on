@@ -64,8 +64,10 @@ public class RsaKeyServiceImpl implements RsaKeyService, ApplicationRunner {
     @Transactional
     public String rotate() {
         repository.findFirstByActiveTrueOrderByCreatedAtDesc().ifPresent(SigningKey::deactivate);
+
         SigningKey rotated = generateAndStore();
         log.info("Rotated OIDC signing key; new active kid={}", rotated.getKid());
+
         return rotated.getKid();
     }
 
@@ -80,8 +82,10 @@ public class RsaKeyServiceImpl implements RsaKeyService, ApplicationRunner {
                     "RS256",
                     Base64.getEncoder().encodeToString(pair.getPublic().getEncoded()),
                     secretCipher.encrypt(Base64.getEncoder().encodeToString(pair.getPrivate().getEncoded())));
+
             SigningKey saved = repository.save(key);
             log.info("Generated new RSA signing key kid={}", saved.getKid());
+
             return saved;
         } catch (Exception e) {
             throw new IllegalStateException("Failed to generate RSA signing key", e);
@@ -101,6 +105,7 @@ public class RsaKeyServiceImpl implements RsaKeyService, ApplicationRunner {
                     new X509EncodedKeySpec(Base64.getDecoder().decode(key.getPublicKey())));
             RSAPrivateKey privateKey = (RSAPrivateKey) factory.generatePrivate(
                     new PKCS8EncodedKeySpec(Base64.getDecoder().decode(secretCipher.decrypt(key.getPrivateKey()))));
+
             return new RSAKey.Builder(publicKey)
                     .privateKey(privateKey)
                     .keyID(key.getKid())

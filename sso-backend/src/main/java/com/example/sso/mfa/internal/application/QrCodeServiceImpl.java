@@ -30,6 +30,7 @@ public class QrCodeServiceImpl implements QrCodeService {
             BitMatrix matrix = new QRCodeWriter().encode(content, BarcodeFormat.QR_CODE, size, size);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             MatrixToImageWriter.writeToStream(matrix, "PNG", out);
+
             return "data:image/png;base64," + Base64.getEncoder().encodeToString(out.toByteArray());
         } catch (Exception e) {
             throw new IllegalStateException("Failed to render QR code", e);

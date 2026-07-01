@@ -26,6 +26,7 @@ public final class SamlObjects {
         XMLObjectBuilderFactory factory = XMLObjectProviderRegistrySupport.getBuilderFactory();
         XMLObjectBuilder<?> builder = Objects.requireNonNull(
                 factory.getBuilder(elementName), () -> "No OpenSAML builder for " + elementName);
+
         return (T) builder.buildObject(elementName);
     }
 
@@ -41,6 +42,7 @@ public final class SamlObjects {
         XSString attributeValue = stringBuilder.buildObject(AttributeValue.DEFAULT_ELEMENT_NAME, XSString.TYPE_NAME);
         attributeValue.setValue(value);
         attribute.getAttributeValues().add(attributeValue);
+
         return attribute;
     }
 }

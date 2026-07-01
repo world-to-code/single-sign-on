@@ -22,6 +22,7 @@ public final class CsrfCookieFilter extends OncePerRequestFilter {
         if (csrfToken != null) {
             csrfToken.getToken(); // triggers cookie write
         }
+
         chain.doFilter(request, response);
     }
 }

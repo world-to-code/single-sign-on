@@ -34,6 +34,7 @@ public class ScimTokenSeeder implements ApplicationRunner {
         if (devToken == null || devToken.isBlank()) {
             return; // no dev token configured (e.g. production) — issue tokens via the admin API
         }
+
         tokenService.ensureToken(devToken, "Seeded dev token");
         log.info("Ensured dev SCIM bearer token (configure sso.scim.dev-token to change).");
     }

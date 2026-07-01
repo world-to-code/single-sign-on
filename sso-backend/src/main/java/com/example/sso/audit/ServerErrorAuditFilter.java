@@ -48,6 +48,7 @@ public class ServerErrorAuditFilter extends OncePerRequestFilter {
         } catch (Exception ex) {
             String ref = UUID.randomUUID().toString().substring(0, 8);
             log.error("Unhandled server error ref={} {} {}", ref, request.getMethod(), request.getRequestURI(), ex);
+
             recordSafely(ref, request, ex);
             writeCleanResponse(response, ref);
         }
@@ -59,6 +60,7 @@ public class ServerErrorAuditFilter extends OncePerRequestFilter {
             String detail = truncate(request.getMethod() + " " + request.getRequestURI() + " [" + ref + "] "
                     + root.getClass().getName() + ": " + (root.getMessage() == null ? "" : root.getMessage())
                     + topFrames(root));
+
             audit.record(new AuditRecord("SERVER_ERROR", currentPrincipal(), false, detail, request.getRemoteAddr()));
         } catch (RuntimeException auditFailure) {
             log.error("Failed to audit server error ref={}", ref, auditFailure);
@@ -79,6 +81,7 @@ public class ServerErrorAuditFilter extends OncePerRequestFilter {
         if (response.isCommitted()) {
             return; // the chain already started streaming a response; nothing safe to do
         }
+
         response.reset();
         response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);

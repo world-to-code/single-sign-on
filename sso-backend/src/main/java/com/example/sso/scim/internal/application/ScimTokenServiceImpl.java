@@ -34,6 +34,7 @@ public class ScimTokenServiceImpl implements ScimTokenService {
         String raw = randomToken();
         Instant expiresAt = ttl == null ? null : Instant.now().plus(ttl);
         tokens.save(new ScimToken(description, hash(raw), expiresAt));
+
         return raw;
     }
 

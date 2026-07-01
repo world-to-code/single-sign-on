@@ -66,6 +66,7 @@ public class AdminPortalSeeder implements ApplicationRunner {
             log.info("Seeded first-party OIDC client '{}' (public, PKCE) for the admin console.", CLIENT_ID);
             return;
         }
+
         // The client may pre-date the "admin" elevation scope (dev DB). Backfill it so the access token
         // can carry scope=admin without re-seeding.
         if (!existing.getScopes().contains(ADMIN_SCOPE)) {
@@ -92,6 +93,7 @@ public class AdminPortalSeeder implements ApplicationRunner {
                         .accessTokenTimeToLive(Duration.ofMinutes(accessTtlMinutes)) // short-lived admin proof
                         .refreshTokenTimeToLive(Duration.ofMinutes(refreshTtlMinutes))
                         .build());
+
         redirectUris.forEach(builder::redirectUri);
         return builder.build();
     }

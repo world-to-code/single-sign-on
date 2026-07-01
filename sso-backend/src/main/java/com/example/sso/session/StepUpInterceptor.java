@@ -44,10 +44,12 @@ public class StepUpInterceptor implements HandlerInterceptor {
         if (!MUTATING.contains(request.getMethod())) {
             return true; // reads are not sensitive
         }
+
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         SessionPolicyDetails policy = authentication == null
                 ? policyService.defaultPolicy()
                 : policyService.resolveForUsername(authentication.getName());
+
         HttpSession session = request.getSession(false);
         Object authTime = session == null ? null : session.getAttribute(AUTH_TIME);
         long elapsed = authTime instanceof Long t ? System.currentTimeMillis() - t : Long.MAX_VALUE;

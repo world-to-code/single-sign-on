@@ -62,6 +62,7 @@ public class AuthStateService {
         if (step.isEmpty()) {
             return new AuthSessionView(true, user.getUsername(), totpEnrolled, fido2Enrolled, factors, roles, "DONE", List.of(), enrollAllowed);
         }
+
         // Order by the factor's natural preference (PASSWORD, TOTP, EMAIL, FIDO2) so the SPA defaults
         // the choice to the most broadly usable method rather than alphabetically (which put FIDO2 first).
         List<String> pending = step.get().getAllowedFactors().stream()

@@ -40,6 +40,7 @@ public class SecretCipherImpl implements SecretCipher {
         if (stored.startsWith(CBC_PREFIX)) {
             return cbc.decrypt(stored.substring(CBC_PREFIX.length()));
         }
+
         return stored; // legacy plaintext
     }
 }

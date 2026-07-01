@@ -56,6 +56,7 @@ public class OidcClientSeeder implements ApplicationRunner {
         if (clients.findByClientId("demo-client") != null) {
             return;
         }
+
         RegisteredClient demoClient = RegisteredClient.withId(UUID.randomUUID().toString())
                 .clientId("demo-client")
                 .clientSecret(passwordEncoder.encode("demo-secret"))
@@ -80,6 +81,7 @@ public class OidcClientSeeder implements ApplicationRunner {
                         .refreshTokenTimeToLive(Duration.ofDays(refreshTtlDays))
                         .build())
                 .build();
+
         clients.save(demoClient);
         log.info("Seeded demo OIDC client 'demo-client' (secret: demo-secret) — change before real use.");
     }

@@ -47,10 +47,12 @@ public class OidcApplicationSource implements ApplicationSource {
             String sep = uri.contains("?") ? "&" : "?";
             return uri + sep + "iss=" + UriUtils.encodeQueryParam(issuer, StandardCharsets.UTF_8);
         }
+
         String first = client.redirectUris() == null ? "" : client.redirectUris().split("[,\\s]+")[0].trim();
         if (first.isEmpty()) {
             return null;
         }
+
         try {
             URI uri = URI.create(first);
             return uri.getScheme() + "://" + uri.getAuthority();

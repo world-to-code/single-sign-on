@@ -65,12 +65,14 @@ public class AppStepUpFilter extends OncePerRequestFilter {
             chain.doFilter(request, response); // unauthenticated -> normal login redirect handles it
             return;
         }
+
         RegisteredClient client = registeredClients.findByClientId(clientId);
         UserAccount user = users.findByUsername(auth.getName()).orElse(null);
         if (client == null || user == null) {
             chain.doFilter(request, response);
             return;
         }
+
         Set<String> granted = auth.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority).filter(a -> a.startsWith("FACTOR_")).collect(Collectors.toSet());
         AppAccess access = applications.appAccess(new AppAccessQuery(user, AppType.OIDC, client.getId(), granted,
@@ -79,6 +81,7 @@ public class AppStepUpFilter extends OncePerRequestFilter {
             chain.doFilter(request, response);
             return;
         }
+
         String query = request.getQueryString();
         HttpSession session = request.getSession(true);
         session.setAttribute(RETURN, request.getRequestURI() + (query != null ? "?" + query : ""));

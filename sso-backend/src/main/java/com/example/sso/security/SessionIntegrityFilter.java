@@ -76,6 +76,7 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
                 reject(session, response, "SESSION_EXPIRED_ABSOLUTE", username);
                 return;
             }
+
             Object last = session.getAttribute(LAST_ACTIVITY);
             if (last instanceof Long lastMillis && now - lastMillis > policy.getIdleTimeoutMinutes() * 60_000L) {
                 reject(session, response, "SESSION_EXPIRED_IDLE", username);
@@ -95,6 +96,7 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
                 }
             }
         }
+
         chain.doFilter(request, response);
     }
 
@@ -103,6 +105,7 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
         audit.record(reason, username, false);
         session.invalidate();
         contextHolder.clearContext();
+
         response.setStatus(HttpStatus.UNAUTHORIZED.value());
         response.getWriter().write("Session is no longer valid. Please sign in again.");
     }

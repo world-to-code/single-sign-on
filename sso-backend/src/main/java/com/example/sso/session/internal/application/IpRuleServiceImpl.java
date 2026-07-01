@@ -46,6 +46,7 @@ public class IpRuleServiceImpl implements IpRuleService {
         if (ip == null) {
             return true;
         }
+
         boolean matchedAllow = false;
         for (Compiled c : compiled) {
             boolean matches = safeMatches(c.matcher(), ip);
@@ -56,6 +57,7 @@ public class IpRuleServiceImpl implements IpRuleService {
                 matchedAllow = true;
             }
         }
+
         return !hasAllow || matchedAllow;
     }
 
@@ -77,10 +79,12 @@ public class IpRuleServiceImpl implements IpRuleService {
     @Transactional
     public IpRuleView create(IpRuleRequest request) {
         validateCidr(request.cidr());
+
         IpRule rule = new IpRule(request.cidr().trim(), IpRule.Action.valueOf(request.action()),
                 request.description(), request.enabled(), request.priority());
         IpRuleView view = IpRuleView.of(repository.save(rule));
         refresh();
+
         return view;
     }
 
@@ -88,11 +92,13 @@ public class IpRuleServiceImpl implements IpRuleService {
     @Transactional
     public IpRuleView update(UUID id, IpRuleRequest request) {
         validateCidr(request.cidr());
+
         IpRule rule = repository.findById(id).orElseThrow(() -> new NotFoundException("IP rule not found"));
         rule.update(request.cidr().trim(), IpRule.Action.valueOf(request.action()),
                 request.description(), request.enabled(), request.priority());
         IpRuleView view = IpRuleView.of(repository.save(rule));
         refresh();
+
         return view;
     }
 
@@ -102,6 +108,7 @@ public class IpRuleServiceImpl implements IpRuleService {
         if (!repository.existsById(id)) {
             throw new NotFoundException("IP rule not found");
         }
+
         repository.deleteById(id);
         refresh();
     }

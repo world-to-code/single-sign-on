@@ -88,6 +88,7 @@ public class SamlCredentialServiceImpl implements SamlCredentialService {
         } catch (Exception e) {
             throw new IllegalStateException("Failed to rotate SAML signing key", e);
         }
+
         log.info("Rotated SAML signing key (serial {})", currentKeyId());
         return currentKeyId();
     }
@@ -102,6 +103,7 @@ public class SamlCredentialServiceImpl implements SamlCredentialService {
         try (InputStream in = Files.newInputStream(keystorePath)) {
             keyStore.load(in, keystorePassword);
         }
+
         this.privateKey = (PrivateKey) keyStore.getKey(ALIAS, keystorePassword);
         this.certificate = (X509Certificate) keyStore.getCertificate(ALIAS);
     }
@@ -121,6 +123,7 @@ public class SamlCredentialServiceImpl implements SamlCredentialService {
         try (OutputStream out = Files.newOutputStream(keystorePath)) {
             keyStore.store(out, keystorePassword);
         }
+
         this.privateKey = keyPair.getPrivate();
         this.certificate = cert;
     }

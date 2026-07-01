@@ -57,6 +57,7 @@ public class SamlBindingCodec {
         Element root = document.getDocumentElement();
         Unmarshaller unmarshaller = XMLObjectProviderRegistrySupport
                 .getUnmarshallerFactory().getUnmarshaller(root);
+
         return (AuthnRequest) unmarshaller.unmarshall(root);
     }
 
@@ -71,6 +72,7 @@ public class SamlBindingCodec {
                 throw new IllegalStateException("Failed to marshall SAML response", e);
             }
         }
+
         String xml = SerializeSupport.nodeToString(element);
         return Base64.getEncoder().encodeToString(xml.getBytes(StandardCharsets.UTF_8));
     }
@@ -85,6 +87,7 @@ public class SamlBindingCodec {
         String relayStateField = relayState == null ? "" :
                 "<input type=\"hidden\" name=\"RelayState\" value=\""
                         + HtmlUtils.htmlEscape(relayState) + "\"/>";
+
         return """
                 <!DOCTYPE html><html><head><meta charset="utf-8"><title>Signing in…</title></head>
                 <body>

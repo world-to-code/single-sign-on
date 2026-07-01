@@ -23,6 +23,7 @@ public class SamlRelyingPartySeeder implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         String entityId = "urn:example:sp";
+
         if (!relyingParties.existsByEntityId(entityId)) {
             relyingParties.save(new SamlRelyingParty(
                     entityId,

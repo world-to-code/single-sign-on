@@ -58,6 +58,7 @@ public class UserAdminService {
     public AdminUserView createUser(CreateUserRequest request) {
         Set<String> roleNames = (request.roles() == null || request.roles().isEmpty())
                 ? Set.of("ROLE_USER") : request.roles();
+
         try {
             return AdminUserView.of(userService.createUser(new NewUser(request.username(), request.email(),
                     request.displayName(), request.password(), roleNames)));
@@ -101,11 +102,13 @@ public class UserAdminService {
         if (adminRole == null) {
             return;
         }
+
         List<UserAccount> admins = roleService.members(adminRole.getId());
         boolean targetIsEnabledAdmin = admins.stream()
                 .anyMatch(user -> user.getId().equals(targetId) && user.isEnabled());
         boolean anotherEnabledAdminExists = admins.stream()
                 .anyMatch(user -> user.isEnabled() && !user.getId().equals(targetId));
+
         if (targetIsEnabledAdmin && !anotherEnabledAdminExists) {
             throw new ConflictException("cannot remove the last administrator");
         }
@@ -155,6 +158,7 @@ public class UserAdminService {
     public UserDetailView getUser(UUID id) {
         UserAccount user = userService.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
         List<GroupMembership> memberships = userGroups.membershipsForUser(id);
+
         return new UserDetailView(user.getId().toString(), user.getUsername(), user.getEmail(),
                 user.getDisplayName(), user.isEnabled(), user.isEmailVerified(), user.isAccountNonLocked(),
                 user.getExternalId(), user.getCreatedAt(), user.getUpdatedAt(),
@@ -168,6 +172,7 @@ public class UserAdminService {
         Map<UUID, String> names = new LinkedHashMap<>();
         Set<UUID> directIds = new HashSet<>();
         Map<UUID, TreeSet<String>> viaGroups = new LinkedHashMap<>();
+
         for (RoleRef role : user.getRoles()) {
             names.put(role.getId(), role.getName());
             directIds.add(role.getId());
@@ -178,10 +183,12 @@ public class UserAdminService {
                 viaGroups.computeIfAbsent(role.getId(), k -> new TreeSet<>()).add(membership.groupName());
             }
         }
+
         List<RoleAssignmentView> assignments = new ArrayList<>();
         names.forEach((roleId, name) -> assignments.add(new RoleAssignmentView(roleId.toString(), name,
                 directIds.contains(roleId), List.copyOf(viaGroups.getOrDefault(roleId, new TreeSet<>())))));
         assignments.sort((a, b) -> a.roleName().compareToIgnoreCase(b.roleName()));
+
         return assignments;
     }
 
@@ -192,6 +199,7 @@ public class UserAdminService {
         memberships.forEach(membership -> membership.roles()
                 .forEach(role -> permissions.addAll(role.getPermissionNames())));
         permissions.addAll(user.getDirectPermissionNames());
+
         return Permissions.expandImplied(permissions).stream().sorted().toList();
     }
 }

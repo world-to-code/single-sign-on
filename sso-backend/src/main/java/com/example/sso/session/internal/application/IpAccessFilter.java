@@ -39,6 +39,7 @@ public class IpAccessFilter extends OncePerRequestFilter {
             response.getWriter().write("Access from your network is not permitted.");
             return;
         }
+
         chain.doFilter(request, response);
     }
 }

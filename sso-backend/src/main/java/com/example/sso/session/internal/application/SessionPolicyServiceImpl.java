@@ -55,6 +55,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
     @Override
     public SessionPolicyDetails resolveForUser(UserAccount user) {
         Set<UUID> roleIds = user.getRoles().stream().map(RoleRef::getId).collect(Collectors.toSet());
+
         return cached.stream()
                 .filter(SessionPolicy::isEnabled)
                 .filter(p -> appliesTo(p, user.getId(), roleIds))
@@ -82,6 +83,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         boolean assignedToUser = p.getAssignedUserIds().contains(userId);
         boolean assignedToRole = p.getAssignedRoleIds().stream().anyMatch(roleIds::contains);
         boolean global = p.getAssignedUserIds().isEmpty() && p.getAssignedRoleIds().isEmpty();
+
         return assignedToUser || assignedToRole || global;
     }
 
@@ -93,6 +95,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         if (repository.findByName(DEFAULT_NAME).isEmpty()) {
             repository.save(new SessionPolicy(DEFAULT_NAME, 0));
         }
+
         refresh();
     }
 
@@ -114,12 +117,14 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         if (tokens.isEmpty()) {
             throw new BadRequestException("at least one re-auth factor is required");
         }
+
         Set<String> valid = EnumSet.allOf(AuthFactor.class).stream().map(Enum::name).collect(Collectors.toSet());
         for (String token : tokens) {
             if (!valid.contains(token)) {
                 throw new BadRequestException("unknown re-auth factor: " + token);
             }
         }
+
         return String.join(",", tokens);
     }
 
@@ -129,6 +134,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         if (repository.findByName(spec.name()).isPresent()) {
             throw new ConflictException("policy name already exists");
         }
+
         String reauthFactors = validateReauthFactors(spec.reauthFactors());
         SessionPolicy policy = new SessionPolicy(spec.name(), spec.priority());
         if (!spec.enabled()) {
@@ -139,8 +145,10 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
                 spec.cookieSameSite());
         policy.assignUsers(spec.userIds() == null ? Set.of() : spec.userIds());
         policy.assignRoles(spec.roleIds() == null ? Set.of() : spec.roleIds());
+
         SessionPolicy saved = repository.save(policy);
         refresh();
+
         return saved;
     }
 
@@ -149,6 +157,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
     public SessionPolicyDetails update(UUID id, SessionPolicyUpdate update) {
         SessionPolicy policy = repository.findById(id)
                 .orElseThrow(() -> new NotFoundException("policy not found"));
+
         String reauthFactors = validateReauthFactors(update.reauthFactors());
         boolean isDefault = DEFAULT_NAME.equals(policy.getName());
         if (isDefault) {
@@ -170,8 +179,10 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
             policy.assignUsers(update.userIds() == null ? Set.of() : update.userIds());
             policy.assignRoles(update.roleIds() == null ? Set.of() : update.roleIds());
         }
+
         SessionPolicy saved = repository.save(policy);
         refresh();
+
         return saved;
     }
 
@@ -183,6 +194,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         if (DEFAULT_NAME.equals(policy.getName())) {
             throw new BadRequestException("the Default policy cannot be deleted");
         }
+
         repository.delete(policy);
         refresh();
     }

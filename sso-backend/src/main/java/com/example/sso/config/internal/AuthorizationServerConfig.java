@@ -149,14 +149,17 @@ public class AuthorizationServerConfig {
             users.findByUsername(username).ifPresent(user -> {
                 boolean idToken = OidcParameterNames.ID_TOKEN.equals(context.getTokenType().getValue());
                 boolean accessToken = OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType());
+
                 if (idToken && context.getAuthorizedScopes().contains(OidcScopes.PROFILE)) {
                     context.getClaims().claim("name",
                             user.getDisplayName() != null ? user.getDisplayName() : username);
                     context.getClaims().claim("preferred_username", username);
                 }
+
                 if (idToken && context.getAuthorizedScopes().contains(OidcScopes.EMAIL)) {
                     context.getClaims().claim("email", user.getEmail());
                 }
+
                 // Authentication-context claims so RPs (ID token) AND the admin elevation gate (access
                 // token) can verify HOW (and how strongly) the user authenticated — RFC 8176 amr, an acr
                 // level, and the OIDC auth_time. Emitted on both the ID token and the bearer access token:
@@ -185,6 +188,7 @@ public class AuthorizationServerConfig {
                             .ifPresent(a -> context.getClaims().claim("stepup_time",
                                     a.substring(Factors.STEPUP_TIME_PREFIX.length())));
                 }
+
                 if (accessToken) {
                     // Use a mutable ArrayList, NOT Stream.toList()/List.of(): the JDBC authorization store
                     // re-serializes token claims with Jackson polymorphic typing, and its security

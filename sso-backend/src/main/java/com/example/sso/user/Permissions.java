@@ -91,16 +91,19 @@ public final class Permissions {
      */
     public static Set<String> expandImplied(Collection<String> granted) {
         Set<String> result = new HashSet<>(granted);
+
         for (String perm : granted) {
             int sep = perm.indexOf(':');
             if (sep <= 0 || "read".equals(perm.substring(sep + 1))) {
                 continue; // no resource, or already a read permission
             }
+
             String read = perm.substring(0, sep) + ":read";
             if (CATALOG.contains(read)) {
                 result.add(read);
             }
         }
+
         return result;
     }
 

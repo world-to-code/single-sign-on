@@ -67,10 +67,12 @@ public class SamlSsoController {
                                               Authentication authentication, HttpServletRequest httpRequest) {
         AuthnRequest request = codec.decodeRedirect(samlRequest);
         SamlRelyingParty relyingParty = resolve(request);
+
         if (relyingParty.isWantAuthnRequestsSigned()) {
             if (signature == null || sigAlg == null) {
                 throw new BadRequestException("AuthnRequest must be signed (Redirect binding)");
             }
+
             // The signed octet string is the raw query up to (but excluding) "&Signature=".
             String query = httpRequest.getQueryString();
             int idx = query.indexOf("&Signature=");
@@ -78,6 +80,7 @@ public class SamlSsoController {
             signatureValidator.verifyRedirect(signedContent.getBytes(StandardCharsets.US_ASCII), sigAlg,
                     Base64.getDecoder().decode(signature), relyingParty);
         }
+
         return respond(relyingParty, request.getID(), relayState, authentication, httpRequest);
     }
 
@@ -87,9 +90,11 @@ public class SamlSsoController {
                                          Authentication authentication, HttpServletRequest httpRequest) {
         AuthnRequest request = codec.decodePost(samlRequest);
         SamlRelyingParty relyingParty = resolve(request);
+
         if (relyingParty.isWantAuthnRequestsSigned()) {
             signatureValidator.verifyEmbedded(request, relyingParty);
         }
+
         return respond(relyingParty, request.getID(), relayState, authentication, httpRequest);
     }
 
@@ -100,9 +105,11 @@ public class SamlSsoController {
                                                Authentication authentication, HttpServletRequest httpRequest) {
         SamlRelyingParty relyingParty = relyingParties.findByEntityId(spEntityId)
                 .orElseThrow(() -> new BadRequestException("Unknown SP: " + spEntityId));
+
         if (!relyingParty.isAllowIdpInitiated()) {
             throw new BadRequestException("IdP-initiated SSO is not allowed for " + spEntityId);
         }
+
         return respond(relyingParty, null, relayState, authentication, httpRequest); // null InResponseTo = unsolicited
     }
 
@@ -110,6 +117,7 @@ public class SamlSsoController {
         if (request.getIssuer() == null || request.getIssuer().getValue() == null || request.getID() == null) {
             throw new BadRequestException("AuthnRequest is missing Issuer or ID");
         }
+
         String spEntityId = request.getIssuer().getValue();
         return relyingParties.findByEntityId(spEntityId)
                 .orElseThrow(() -> new BadRequestException("Unknown SP: " + spEntityId));
@@ -126,6 +134,7 @@ public class SamlSsoController {
         AppAccess access = applications.appAccess(new AppAccessQuery(user, AppType.SAML,
                 relyingParty.getId().toString(), granted, AppStepUpFilter.lastAppStepUp(
                         httpRequest.getSession(false), AppType.SAML, relyingParty.getId().toString())));
+
         if (!access.ready()) {
             if ("GET".equalsIgnoreCase(httpRequest.getMethod())) {
                 HttpSession session = httpRequest.getSession(true);

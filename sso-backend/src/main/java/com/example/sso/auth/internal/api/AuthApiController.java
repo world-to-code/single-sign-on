@@ -141,6 +141,7 @@ public class AuthApiController {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "No active account for that email. Contact your administrator.");
         }
+
         Authentication preAuth = UsernamePasswordAuthenticationToken.authenticated(
                 user.getUsername(), null, List.of()); // identified, no factors yet
         factorAuth.establish(httpRequest, httpResponse, preAuth);
@@ -155,6 +156,7 @@ public class AuthApiController {
             Authentication authentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(request.username(), request.password()));
             factorAuth.establish(httpRequest, httpResponse, authentication); // password factor granted by provider
+
             loginAttempts.onSuccess(request.username());
             audit.record("AUTH_SUCCESS", request.username(), true);
             return ResponseEntity.ok(completeIfSatisfied(httpRequest, httpResponse));
@@ -182,6 +184,7 @@ public class AuthApiController {
     public FactorChallenge prepareFactor(@PathVariable AuthFactor factor, HttpServletRequest request) {
         UserAccount user = requireUser();
         requireCurrentStep(factor); // can only act on the factor the policy currently expects
+
         // Keycloak-style gate: setting up an un-enrolled factor (TOTP authenticator or a passkey)
         // during login is only allowed when the session policy permits enroll-at-login.
         boolean enrollable = factor == AuthFactor.TOTP || factor == AuthFactor.FIDO2;
@@ -190,6 +193,7 @@ public class AuthApiController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "Setting up a new authenticator during login is disabled. Contact your administrator.");
         }
+
         return factorHandlers.get(factor).prepare(user, request);
     }
 
@@ -200,11 +204,13 @@ public class AuthApiController {
                                                         HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
         UserAccount user = requireUser();
         requireCurrentStep(factor); // reject factors out of policy order (e.g. TOTP before password)
+
         // Account lockout applies to every factor (password is now verified here too, not just /login).
         if (user.isTemporarilyLocked(Instant.now()) || !user.isAccountNonLocked()) {
             audit.record("MFA_" + factor.name() + "_LOCKED", user.getUsername(), false);
             return ResponseEntity.status(HttpStatus.LOCKED).build();
         }
+
         if (factorHandlers.get(factor).verify(user, verification, httpRequest)) {
             loginAttempts.onSuccess(user.getUsername());
             factorAuth.grantFactor(httpRequest, httpResponse, factor.authority());
@@ -212,6 +218,7 @@ public class AuthApiController {
             audit.record("MFA_" + factor.name() + "_SUCCESS", user.getUsername(), true);
             return ResponseEntity.ok(completeIfSatisfied(httpRequest, httpResponse));
         }
+
         loginAttempts.onFailure(user.getUsername());
         audit.record("MFA_" + factor.name() + "_FAILURE", user.getUsername(), false);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
@@ -239,6 +246,7 @@ public class AuthApiController {
         if (factorHandlers.isEnrolled(AuthFactor.TOTP, user)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "An authenticator is already set up. Remove it first to re-enroll.");
         }
+
         return factorHandlers.get(AuthFactor.TOTP).prepare(user, request);
     }
 
@@ -251,6 +259,7 @@ public class AuthApiController {
             audit.record("TOTP_ENROLLED", user.getUsername(), true);
             return ResponseEntity.ok().build();
         }
+
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
     }
 
@@ -271,6 +280,7 @@ public class AuthApiController {
         UserAccount user = requireMfaComplete();
         int passkeyCount = passkeys.list(user).size();
         List<String> roles = user.getRoles().stream().map(RoleRef::getName).sorted().toList();
+
         return new ProfileView(user.getUsername(), user.getEmail(), user.getDisplayName(), user.isEmailVerified(),
                 mfaService.hasEnabledTotp(user.getId()), passkeyCount > 0, passkeyCount, roles);
     }
@@ -281,6 +291,7 @@ public class AuthApiController {
         UserAccount user = requireMfaComplete();
         HttpSession current = request.getSession(false);
         String currentId = current == null ? null : current.getId();
+
         // Guarantee the caller's CURRENT session is always tracked + shown: backfill the registry +
         // metadata if missing (e.g. an in-memory restart cleared the store, or it was never recorded).
         if (currentId != null) {
@@ -293,6 +304,7 @@ public class AuthApiController {
                 sessionMetadata.record(currentId, user.getUsername(), request.getHeader("User-Agent"), clientIp(request));
             }
         }
+
         return sessionMetadata.forUser(user.getUsername()).stream()
                 .filter(this::isLive) // hide sessions the registry has expired/forgotten
                 .map(m -> new SessionDeviceView(m.handle(), m.sessionId().equals(currentId),
@@ -311,10 +323,12 @@ public class AuthApiController {
         UserAccount user = requireMfaComplete();
         SessionMetadata target = sessionMetadata.findByUserAndHandle(user.getUsername(), id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "session not found"));
+
         SessionInformation info = sessionRegistry.getSessionInformation(target.sessionId());
         if (info != null) {
             info.expireNow(); // SessionIntegrityFilter rejects + invalidates it on the next request
         }
+
         sessionMetadata.remove(target.sessionId());
         audit.record(new AuditRecord("SESSION_REVOKED", user.getUsername(), true, "handle=" + target.handle(), null));
         return ResponseEntity.noContent().build();
@@ -339,6 +353,7 @@ public class AuthApiController {
         if (userAgent == null || userAgent.isBlank()) {
             return "Unknown device";
         }
+
         String ua = userAgent;
         String browser = ua.contains("Edg/") ? "Edge"
                 : ua.contains("OPR/") || ua.contains("Opera") ? "Opera"
@@ -352,6 +367,7 @@ public class AuthApiController {
                 : (ua.contains("iPhone") || ua.contains("iPad") || ua.contains("iOS")) ? "iOS"
                 : ua.contains("Linux") ? "Linux"
                 : "Unknown OS";
+
         return browser + " on " + os;
     }
 
@@ -371,6 +387,7 @@ public class AuthApiController {
                 factorAuth.grantFactor(request, response, Factors.FIDO2);
             }
         }
+
         return completeIfSatisfied(request, response);
     }
 
@@ -398,12 +415,14 @@ public class AuthApiController {
         UserAccount user = requireUser();
         SessionPolicyDetails policy = sessionPolicy.resolveForUser(user);
         requireReauthFactor(policy, factor);
+
         if (factorHandlers.get(factor).verify(user, verification, request)) {
             // Per-policy defence in depth: rotate the session id on a successful re-auth BEFORE the
             // response (and the step-up stamp) are written, keeping the SessionRegistry consistent.
             if (policy.isRotateOnReauth()) {
                 rotateSessionId(request, user.getUsername());
             }
+
             StepUpInterceptor.stamp(request.getSession(true));
             // Re-stamp the session Authentication's auth-time marker so an admin elevation token minted
             // from the OIDC flow right after this step-up carries a FRESH auth_time (RFC 9470 step-up).
@@ -411,6 +430,7 @@ public class AuthApiController {
             audit.record(new AuditRecord("REAUTH_SUCCESS", user.getUsername(), true, "factor=" + factor, null));
             return ResponseEntity.ok().build();
         }
+
         audit.record(new AuditRecord("REAUTH_FAILURE", user.getUsername(), false, "factor=" + factor, null));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
     }
@@ -429,6 +449,7 @@ public class AuthApiController {
         if (session == null) {
             return;
         }
+
         String oldId = session.getId();
         boolean tracked = sessionRegistry.getSessionInformation(oldId) != null;
         String newId = request.changeSessionId();
@@ -455,6 +476,7 @@ public class AuthApiController {
         if (authentication == null || !authentication.isAuthenticated()) {
             return authState.describe(authentication);
         }
+
         boolean alreadyComplete = authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority).collect(Collectors.toSet()).contains(Factors.MFA_COMPLETE);
         if (!alreadyComplete && authState.isPolicySatisfied(authentication)) {
@@ -472,6 +494,7 @@ public class AuthApiController {
             StepUpInterceptor.stamp(request.getSession(false)); // fresh auth time for step-up
             enforceMaxConcurrentSessions(request, principal.getUsername());
         }
+
         return authState.describe(currentAuthentication());
     }
 
@@ -487,9 +510,11 @@ public class AuthApiController {
         if (session == null) {
             return;
         }
+
         if (sessionRegistry.getSessionInformation(session.getId()) == null) {
             sessionRegistry.registerNewSession(session.getId(), username);
         }
+
         // Stamp device metadata for the self-service "My Profile" sessions list (single-node, in-memory).
         sessionMetadata.record(session.getId(), username, request.getHeader("User-Agent"), clientIp(request));
         SessionPolicyDetails policy = sessionPolicy.resolveForUsername(username);
@@ -497,10 +522,12 @@ public class AuthApiController {
         if (max <= 0) {
             return; // 0 = unlimited
         }
+
         List<SessionInformation> active = new ArrayList<>(sessionRegistry.getAllSessions(username, false));
         if (active.size() <= max) {
             return;
         }
+
         active.sort(Comparator.comparing(SessionInformation::getLastRequest)); // oldest first
         active.stream().limit(active.size() - (long) max).forEach(SessionInformation::expireNow);
     }
@@ -514,6 +541,7 @@ public class AuthApiController {
         if (authentication == null || !authentication.isAuthenticated()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
+
         return users.findByUsername(authentication.getName())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
     }
@@ -526,6 +554,7 @@ public class AuthApiController {
         if (!complete) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Finish signing in first.");
         }
+
         return user;
     }
 
@@ -540,6 +569,7 @@ public class AuthApiController {
         if ("DONE".equals(view.next())) {
             return; // fully authenticated -> step-up context, not initial login ordering
         }
+
         if (!view.pendingFactors().contains(factor.name())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Not the expected authentication step.");
         }
@@ -555,6 +585,7 @@ public class AuthApiController {
         if (session == null) {
             return;
         }
+
         Object type = session.getAttribute(AppStepUpFilter.APP_TYPE);
         Object appId = session.getAttribute(AppStepUpFilter.APP_ID);
         if (type instanceof String t && appId instanceof String id) {

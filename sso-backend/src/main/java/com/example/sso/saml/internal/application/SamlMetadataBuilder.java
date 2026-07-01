@@ -84,6 +84,7 @@ public class SamlMetadataBuilder {
         X509KeyInfoGeneratorFactory factory = new X509KeyInfoGeneratorFactory();
         factory.setEmitEntityCertificate(true);
         KeyInfoGenerator generator = factory.newInstance();
+
         return generator.generate(signingCredential);
     }
 }

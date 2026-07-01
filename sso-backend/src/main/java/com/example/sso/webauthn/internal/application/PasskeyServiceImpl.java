@@ -31,6 +31,7 @@ public class PasskeyServiceImpl implements PasskeyService {
         if (entity == null) {
             return List.of();
         }
+
         return credentials.findByUserId(entity.getId()).stream()
                 .map(c -> new PasskeyView(c.getCredentialId().toBase64UrlString(), c.getLabel(),
                         c.getCreated() == null ? null : c.getCreated().toString(),
@@ -48,6 +49,7 @@ public class PasskeyServiceImpl implements PasskeyService {
         if (owned == null) {
             throw new NotFoundException("passkey not found");
         }
+
         credentials.delete(owned.getCredentialId());
     }
 }

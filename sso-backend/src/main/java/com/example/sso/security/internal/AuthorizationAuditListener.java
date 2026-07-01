@@ -24,6 +24,7 @@ public class AuthorizationAuditListener {
         Supplier<Authentication> supplier = event.getAuthentication();
         Authentication authentication = supplier == null ? null : supplier.get();
         String principal = authentication == null ? "anonymous" : authentication.getName();
+
         audit.record("AUTHORIZATION_DENIED", principal, false);
     }
 }

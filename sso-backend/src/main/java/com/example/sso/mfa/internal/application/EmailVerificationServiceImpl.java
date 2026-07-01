@@ -38,6 +38,7 @@ public class EmailVerificationServiceImpl implements EmailVerificationService {
         message.setTo(email);
         message.setSubject("Verify your email for Mini SSO");
         message.setText("Your verification code is: " + code + "\n\nIt expires in " + ttlMinutes + " minutes.");
+
         mailSender.send(message);
     }
 }

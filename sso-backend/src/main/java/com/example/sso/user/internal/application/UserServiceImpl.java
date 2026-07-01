@@ -75,8 +75,10 @@ public class UserServiceImpl implements UserService {
         if (count <= 0) {
             return List.of();
         }
+
         long zeroBased = Math.max(startIndex - 1, 0);
         int pageNumber = (int) (zeroBased / count);
+
         return users.findAll(PageRequest.of(pageNumber, count)).stream().map(UserAccount.class::cast).toList();
     }
 
@@ -131,12 +133,15 @@ public class UserServiceImpl implements UserService {
         if (users.existsByEmail(email)) {
             throw new IllegalArgumentException("email already exists: " + email);
         }
+
         String rawPassword = newUser.rawPassword();
         String encodedPassword = rawPassword == null ? null : passwordEncoder.encode(rawPassword);
         AppUser user = new AppUser(username, email, newUser.displayName(), encodedPassword);
         newUser.roleNames().forEach(name -> user.addRole(getOrCreateRole(name)));
+
         AppUser saved = users.save(user);
         addToDefaultGroup(saved.getId());
+
         return saved;
     }
 
@@ -158,10 +163,12 @@ public class UserServiceImpl implements UserService {
         } else {
             user.disable();
         }
+
         Set<String> roleNames = update.roleNames();
         if (roleNames != null) {
             user.assignRoles(roleNames.stream().map(this::getOrCreateRole).collect(Collectors.toSet()));
         }
+
         return users.save(user);
     }
 
@@ -174,6 +181,7 @@ public class UserServiceImpl implements UserService {
         } else {
             user.disable();
         }
+
         return users.save(user);
     }
 
@@ -196,6 +204,7 @@ public class UserServiceImpl implements UserService {
         Set<Permission> resolved = permissionNames == null ? Set.of()
                 : permissionNames.stream().map(this::getOrCreatePermission).collect(Collectors.toSet());
         user.assignDirectPermissions(resolved);
+
         return users.save(user);
     }
 
@@ -217,6 +226,7 @@ public class UserServiceImpl implements UserService {
         if (!users.existsById(id)) {
             throw new NotFoundException("User not found");
         }
+
         users.deleteById(id);
     }
 

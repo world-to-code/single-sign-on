@@ -60,6 +60,7 @@ public class DataSeeder implements ApplicationRunner {
             log.warn("Seeded default admin user '{}'. CHANGE THIS PASSWORD before any real use.",
                     adminUsername);
         }
+
         // The bootstrap admin is a system account — pre-verify its email so it is never locked out.
         userService.findByUsername(adminUsername)
                 .filter(admin -> !admin.isEmailVerified())

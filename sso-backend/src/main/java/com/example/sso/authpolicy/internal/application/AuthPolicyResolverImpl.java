@@ -34,6 +34,7 @@ public class AuthPolicyResolverImpl implements AuthPolicyResolver {
     @Transactional(readOnly = true)
     public AuthPolicyView resolveForUser(UserAccount user) {
         Set<UUID> roleIds = user.getRoles().stream().map(RoleRef::getId).collect(Collectors.toSet());
+
         // Candidates = policies targeted at this user / their roles, PLUS "global" policies (no user and
         // no role assignment) which apply to everyone — the seeded Default is the lowest-priority global.
         // Highest priority wins (admin controls precedence; Default is priority 0).
@@ -42,6 +43,7 @@ public class AuthPolicyResolverImpl implements AuthPolicyResolver {
             candidates.addAll(repository.findEnabledAssignedToAnyRole(roleIds));
         }
         candidates.addAll(repository.findEnabledGlobal());
+
         return candidates.stream()
                 .max(Comparator.comparingInt(AuthPolicy::getPriority))
                 .<AuthPolicyView>map(p -> p)

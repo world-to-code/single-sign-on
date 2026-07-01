@@ -33,6 +33,7 @@ public class FactorAuthorizationServiceImpl implements FactorAuthorizationServic
     @Override
     public void establish(HttpServletRequest request, HttpServletResponse response, Authentication authentication) {
         sessionStrategy.onAuthentication(authentication, request, response);
+
         SecurityContext context = contextHolder.createEmptyContext();
         context.setAuthentication(authentication);
         contextHolder.setContext(context);
@@ -45,6 +46,7 @@ public class FactorAuthorizationServiceImpl implements FactorAuthorizationServic
         if (current == null || !current.isAuthenticated()) {
             return false;
         }
+
         Authentication upgraded = current.toBuilder()
                 .authorities(authorities -> {
                     boolean alreadyPresent = authorities.stream()
@@ -68,6 +70,7 @@ public class FactorAuthorizationServiceImpl implements FactorAuthorizationServic
         if (current == null || !current.isAuthenticated()) {
             return false;
         }
+
         long now = Instant.now().getEpochSecond();
         Authentication restamped = current.toBuilder()
                 .authorities(authorities -> {

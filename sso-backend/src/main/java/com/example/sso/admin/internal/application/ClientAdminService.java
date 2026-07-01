@@ -101,11 +101,13 @@ public class ClientAdminService {
 
         builder.clientSettings(clientSettings(request)).tokenSettings(tokenSettings(request));
         registeredClients.save(builder.build());
+
         // initiate_login_uri is our launch metadata (not a Spring RegisteredClient field); persist it
         // on the same row after Spring's save.
         if (StringUtils.hasText(request.initiateLoginUri())) {
             clientRows.updateInitiateLoginUri(request.clientId(), request.initiateLoginUri().trim());
         }
+
         return new ClientCreated(request.clientId(), secret);
     }
 
@@ -113,11 +115,13 @@ public class ClientAdminService {
     public void deleteClient(String id) {
         OAuth2RegisteredClientEntity client = clientRows.findById(id)
                 .orElseThrow(() -> new NotFoundException("Client not found"));
+
         // The first-party admin console is a fixed part of the platform (auto-assigned to admins,
         // launches /admin); it is protected from deletion so the admin entry point can't be removed.
         if (AdminPortalSeeder.CLIENT_ID.equals(client.getClientId())) {
             throw new ConflictException("the admin console client is protected and cannot be deleted");
         }
+
         clientRows.deleteById(id);
     }
 
@@ -134,6 +138,7 @@ public class ClientAdminService {
         if (StringUtils.hasText(request.x509SubjectDn())) {
             settings.x509CertificateSubjectDN(request.x509SubjectDn());
         }
+
         return settings.build();
     }
 
@@ -147,9 +152,11 @@ public class ClientAdminService {
                 .x509CertificateBoundAccessTokens(request.x509BoundAccessTokens())
                 .accessTokenFormat("REFERENCE".equalsIgnoreCase(request.accessTokenFormat())
                         ? OAuth2TokenFormat.REFERENCE : OAuth2TokenFormat.SELF_CONTAINED);
+
         SignatureAlgorithm idTokenAlg = SignatureAlgorithm.from(
                 StringUtils.hasText(request.idTokenSignatureAlgorithm()) ? request.idTokenSignatureAlgorithm() : "RS256");
         settings.idTokenSignatureAlgorithm(idTokenAlg == null ? SignatureAlgorithm.RS256 : idTokenAlg);
+
         return settings.build();
     }
 
