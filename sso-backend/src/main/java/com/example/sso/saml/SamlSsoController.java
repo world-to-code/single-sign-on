@@ -130,7 +130,9 @@ public class SamlSsoController {
         // Per-app step-up: this app may require extra factors beyond the base login.
         Set<String> granted = authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority).filter(a -> a.startsWith("FACTOR_")).collect(Collectors.toSet());
-        AppAccess access = applications.appAccess(user, AppAssignment.AppType.SAML, relyingParty.getId().toString(), granted);
+        AppAccess access = applications.appAccess(user, AppAssignment.AppType.SAML, relyingParty.getId().toString(),
+                granted, AppStepUpFilter.lastAppStepUp(httpRequest.getSession(false),
+                        AppAssignment.AppType.SAML, relyingParty.getId().toString()));
         if (!access.ready()) {
             if ("GET".equalsIgnoreCase(httpRequest.getMethod())) {
                 HttpSession session = httpRequest.getSession(true);

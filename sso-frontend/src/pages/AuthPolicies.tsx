@@ -31,6 +31,7 @@ interface Policy {
   steps: string[][];
   assignedUserIds: string[];
   assignedRoleIds: string[];
+  stepUpFreshnessMinutes: number;
 }
 interface Role { id: string; name: string }
 interface User { id: string; username: string }
@@ -45,9 +46,10 @@ interface Editor {
   steps: string[][];
   roleIds: string[];
   userIds: string[];
+  stepUpFreshnessMinutes: string;
 }
 
-const blankEditor: Editor = { id: null, name: "", priority: "10", enabled: true, appliesToLogin: true, allowEnrollmentAtLogin: true, steps: [["PASSWORD"], ["TOTP", "EMAIL"]], roleIds: [], userIds: [] };
+const blankEditor: Editor = { id: null, name: "", priority: "10", enabled: true, appliesToLogin: true, allowEnrollmentAtLogin: true, steps: [["PASSWORD"], ["TOTP", "EMAIL"]], roleIds: [], userIds: [], stepUpFreshnessMinutes: "15" };
 
 /** Visual factor-chain builder: ordered steps, each an "any one of" set of factors (Okta-style). */
 function StepsBuilder({ steps, onChange }: { steps: string[][]; onChange: (s: string[][]) => void }) {
@@ -158,6 +160,7 @@ export default function AuthPolicies() {
       steps: e.steps.map((s) => [...s]).filter((s) => s.length > 0),
       assignedRoleIds: e.roleIds,
       assignedUserIds: e.userIds,
+      stepUpFreshnessMinutes: Number(e.stepUpFreshnessMinutes) || 15,
     }),
     create: (body) => apiPost("/api/admin/auth-policies", body),
     update: (id, body) => apiPut(`/api/admin/auth-policies/${id}`, body),
@@ -182,6 +185,7 @@ export default function AuthPolicies() {
       id: p.id, name: p.name, priority: String(p.priority), enabled: p.enabled, appliesToLogin: p.appliesToLogin,
       allowEnrollmentAtLogin: p.allowEnrollmentAtLogin,
       steps: p.steps.map((s) => [...s]), roleIds: [...p.assignedRoleIds], userIds: [...p.assignedUserIds],
+      stepUpFreshnessMinutes: String(p.stepUpFreshnessMinutes ?? 15),
     });
   }
 
@@ -320,6 +324,21 @@ export default function AuthPolicies() {
               <Switch id="pol-login" checked={editor.appliesToLogin}
                       onCheckedChange={(v) => set({ appliesToLogin: v })} />
             </div>
+
+            {!editor.appliesToLogin && (
+              <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+                <div>
+                  <Label htmlFor="pol-freshness">Re-authentication window (minutes)</Label>
+                  <p className="text-xs text-muted-foreground">
+                    When this policy is attached to an app, the user must complete a step-up on entry; it
+                    stays valid this long before the app challenges again. Login alone never satisfies it.
+                  </p>
+                </div>
+                <Input id="pol-freshness" type="number" min={1} className="w-24"
+                       value={editor.stepUpFreshnessMinutes}
+                       onChange={(e) => set({ stepUpFreshnessMinutes: e.target.value })} />
+              </div>
+            )}
 
             <div className="flex items-center justify-between rounded-md border p-3">
               <div>

@@ -51,7 +51,7 @@ public class AuthPolicyAdminService {
     @Transactional
     public AuthPolicy create(String name, int priority, boolean enabled, boolean appliesToLogin,
                              boolean allowEnrollmentAtLogin, List<? extends Set<AuthFactor>> steps,
-                             Set<UUID> userIds, Set<UUID> roleIds) {
+                             Set<UUID> userIds, Set<UUID> roleIds, int stepUpFreshnessMinutes) {
         if (repository.findByName(name).isPresent()) {
             throw new ConflictException("policy name already exists");
         }
@@ -61,6 +61,7 @@ public class AuthPolicyAdminService {
         }
         policy.useForLogin(appliesToLogin);
         policy.allowEnrollmentAtLogin(allowEnrollmentAtLogin);
+        policy.updateStepUpFreshnessMinutes(stepUpFreshnessMinutes);
         applySteps(policy, steps);
         policy.assignUsers(userIds == null ? Set.of() : userIds);
         policy.assignRoles(roleIds == null ? Set.of() : roleIds);
@@ -70,7 +71,7 @@ public class AuthPolicyAdminService {
     @Transactional
     public AuthPolicy update(UUID id, int priority, boolean enabled, boolean appliesToLogin,
                              boolean allowEnrollmentAtLogin, List<? extends Set<AuthFactor>> steps,
-                             Set<UUID> userIds, Set<UUID> roleIds) {
+                             Set<UUID> userIds, Set<UUID> roleIds, int stepUpFreshnessMinutes) {
         AuthPolicy policy = repository.findById(id)
                 .orElseThrow(() -> new NotFoundException("policy not found"));
         if (AuthPolicyResolver.DEFAULT_NAME.equals(policy.getName())) {
@@ -84,6 +85,7 @@ public class AuthPolicyAdminService {
         }
         policy.useForLogin(appliesToLogin);
         policy.allowEnrollmentAtLogin(allowEnrollmentAtLogin);
+        policy.updateStepUpFreshnessMinutes(stepUpFreshnessMinutes);
         applySteps(policy, steps);
         policy.assignUsers(userIds == null ? Set.of() : userIds);
         policy.assignRoles(roleIds == null ? Set.of() : roleIds);

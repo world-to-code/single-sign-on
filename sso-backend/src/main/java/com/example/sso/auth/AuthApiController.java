@@ -9,6 +9,8 @@ import com.example.sso.authpolicy.AuthPolicyResolver;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.mfa.MfaService;
+import com.example.sso.portal.AppAssignment;
+import com.example.sso.portal.AppStepUpFilter;
 import com.example.sso.security.SessionMetadata;
 import com.example.sso.security.SessionMetadataStore;
 import com.example.sso.session.SessionPolicy;
@@ -201,6 +203,7 @@ public class AuthApiController {
         if (factorHandlers.get(factor).verify(user, verification, httpRequest)) {
             loginAttempts.onSuccess(user.getUsername());
             factorAuth.grantFactor(httpRequest, httpResponse, factor.authority());
+            stampAppStepUp(httpRequest); // if this verify is part of an app step-up, refresh its freshness clock
             audit.record("MFA_" + factor.name() + "_SUCCESS", user.getUsername(), true);
             return ResponseEntity.ok(completeIfSatisfied(httpRequest, httpResponse));
         }
@@ -534,6 +537,24 @@ public class AuthApiController {
         }
         if (!view.pendingFactors().contains(factor.name())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Not the expected authentication step.");
+        }
+    }
+
+    /**
+     * When this factor verification is part of an app step-up (an app launch is pending in the session),
+     * stamp the deliberate-step-up clock so the per-app policy freshness window is (re)started. Plain
+     * login verifications have no pending app and therefore never satisfy an app policy.
+     */
+    private void stampAppStepUp(HttpServletRequest request) {
+        HttpSession session = request.getSession(false);
+        if (session == null) {
+            return;
+        }
+        Object type = session.getAttribute(AppStepUpFilter.APP_TYPE);
+        Object appId = session.getAttribute(AppStepUpFilter.APP_ID);
+        if (type instanceof String t && appId instanceof String id) {
+            session.setAttribute(AppStepUpFilter.stepUpTimeKey(AppAssignment.AppType.valueOf(t), id),
+                    System.currentTimeMillis());
         }
     }
 }

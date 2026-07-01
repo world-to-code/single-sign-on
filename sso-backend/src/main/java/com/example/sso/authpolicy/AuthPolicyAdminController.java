@@ -46,7 +46,8 @@ public class AuthPolicyAdminController {
         PolicyView created = toView(service.create(request.name(), request.priority(), request.enabled(),
                 request.appliesToLogin() == null || request.appliesToLogin(),
                 request.allowEnrollmentAtLogin() == null || request.allowEnrollmentAtLogin(),
-                steps(request), ids(request.assignedUserIds()), ids(request.assignedRoleIds())));
+                steps(request), ids(request.assignedUserIds()), ids(request.assignedRoleIds()),
+                freshness(request)));
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
@@ -56,7 +57,8 @@ public class AuthPolicyAdminController {
         return toView(service.update(id, request.priority(), request.enabled(),
                 request.appliesToLogin() == null || request.appliesToLogin(),
                 request.allowEnrollmentAtLogin() == null || request.allowEnrollmentAtLogin(),
-                steps(request), ids(request.assignedUserIds()), ids(request.assignedRoleIds())));
+                steps(request), ids(request.assignedUserIds()), ids(request.assignedRoleIds()),
+                freshness(request)));
     }
 
     @DeleteMapping("/{id}")
@@ -76,6 +78,11 @@ public class AuthPolicyAdminController {
         return values == null ? Set.of() : values.stream().map(UUID::fromString).collect(Collectors.toSet());
     }
 
+    /** Default the step-up freshness to 15 minutes when omitted. */
+    private static int freshness(PolicyRequest request) {
+        return request.stepUpFreshnessMinutes() == null ? 15 : request.stepUpFreshnessMinutes();
+    }
+
     private static PolicyView toView(AuthPolicy policy) {
         List<List<String>> steps = policy.getSteps().stream()
                 .map(step -> step.getAllowedFactors().stream().map(AuthFactor::name).sorted().toList())
@@ -83,6 +90,7 @@ public class AuthPolicyAdminController {
         return new PolicyView(policy.getId().toString(), policy.getName(), policy.getPriority(), policy.isEnabled(),
                 policy.isAppliesToLogin(), policy.isAllowEnrollmentAtLogin(), steps,
                 policy.getAssignedUserIds().stream().map(UUID::toString).toList(),
-                policy.getAssignedRoleIds().stream().map(UUID::toString).toList());
+                policy.getAssignedRoleIds().stream().map(UUID::toString).toList(),
+                policy.getStepUpFreshnessMinutes());
     }
 }

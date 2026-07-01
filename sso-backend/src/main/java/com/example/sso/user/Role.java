@@ -25,7 +25,9 @@ public class Role {
     @Column(nullable = false, unique = true, length = 64)
     private String name;
 
-    @ManyToMany(fetch = FetchType.EAGER, cascade = {CascadeType.PERSIST, CascadeType.MERGE})
+    // LAZY: role permissions are needed only when building authorities (login) or in admin role/user
+    // views — all within a transaction; default_batch_fetch_size batches them across roles.
+    @ManyToMany(fetch = FetchType.LAZY, cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     @JoinTable(
             name = "role_permission",
             joinColumns = @JoinColumn(name = "role_id"),

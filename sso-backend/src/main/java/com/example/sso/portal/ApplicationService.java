@@ -12,6 +12,7 @@ import com.example.sso.portal.AppAssignment.AppType;
 import com.example.sso.portal.AppAssignment.SubjectType;
 import com.example.sso.saml.SamlRelyingParty;
 import com.example.sso.saml.SamlRelyingPartyRepository;
+import com.example.sso.shared.IdName;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.AppUser;
@@ -24,8 +25,12 @@ import org.springframework.web.util.UriUtils;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -63,23 +68,40 @@ public class ApplicationService {
     }
 
     /**
-     * Evaluates whether {@code user} (with the factors already satisfied this session) may launch the
-     * app, or must complete additional step-up factors required by the app's per-assignment policy.
+     * Evaluates whether {@code user} may launch the app. Beyond holding the required factors, a policy
+     * attached to an app requires a <b>deliberate, recent</b> step-up for that app: {@code lastAppStepUp}
+     * (stamped only when the user completes an app step-up, never at plain login) must fall within the
+     * policy's freshness window. So an attached policy always challenges on entry — and again once the
+     * window lapses — instead of silently passing on factors already held from login.
      */
     @Transactional(readOnly = true)
-    public AppAccess appAccess(AppUser user, AppType appType, String appId, Set<String> grantedFactors) {
-        Optional<AuthPolicy> required = resolveAppPolicy(user, appType, appId);
-        if (required.isEmpty()) {
+    public AppAccess appAccess(AppUser user, AppType appType, String appId, Set<String> grantedFactors,
+                               Instant lastAppStepUp) {
+        Optional<AuthPolicy> resolved = resolveAppPolicy(user, appType, appId);
+        if (resolved.isEmpty()) {
             return new AppAccess(true, List.of());
         }
-        Optional<AuthPolicyStep> step = evaluator.currentStep(required.get(), grantedFactors);
-        if (step.isEmpty()) {
+        AuthPolicy policy = resolved.get();
+        // 1) Acquire any factor the user does not yet hold.
+        Optional<AuthPolicyStep> missing = evaluator.currentStep(policy, grantedFactors);
+        if (missing.isPresent()) {
+            return new AppAccess(false, factorNames(missing.get()));
+        }
+        // 2) All factors held — require a fresh deliberate step-up for this app.
+        Duration window = Duration.ofMinutes(policy.getStepUpFreshnessMinutes());
+        boolean fresh = lastAppStepUp != null && !Duration.between(lastAppStepUp, Instant.now()).minus(window).isPositive();
+        if (fresh || policy.getSteps().isEmpty()) {
             return new AppAccess(true, List.of());
         }
-        List<String> pending = step.get().getAllowedFactors().stream()
+        // Re-prove the final (strongest) step to refresh the window.
+        AuthPolicyStep last = policy.getSteps().get(policy.getSteps().size() - 1);
+        return new AppAccess(false, factorNames(last));
+    }
+
+    private static List<String> factorNames(AuthPolicyStep step) {
+        return step.getAllowedFactors().stream()
                 .sorted(Comparator.comparingInt(Enum::ordinal))
                 .map(AuthFactor::name).toList();
-        return new AppAccess(false, pending);
     }
 
     /**
@@ -95,9 +117,10 @@ public class ApplicationService {
                         || (a.getSubjectType() == SubjectType.ROLE && roleIds.contains(a.getSubjectId())))
                 .forEach(a -> candidateIds.add(a.getRequiredPolicyId()));
         appPolicies.findByAppTypeAndAppId(appType, appId).ifPresent(ap -> candidateIds.add(ap.getRequiredPolicyId()));
-        return candidateIds.stream()
-                .map(policies::findById)
-                .flatMap(Optional::stream)
+        if (candidateIds.isEmpty()) {
+            return Optional.empty();
+        }
+        return policies.findAllById(candidateIds).stream() // one query (collections batch-fetched)
                 .filter(AuthPolicy::isEnabled)
                 .max(Comparator.comparingInt(AuthPolicy::getPriority));
     }
@@ -152,9 +175,9 @@ public class ApplicationService {
         Map<String, ApplicationView> index = indexApplications();
         ApplicationView app = index.get(key(appType, appId));
         String appName = app == null ? appId : app.name();
-        return assignments.findByAppTypeAndAppId(appType, appId).stream()
-                .map(a -> toView(a, appName))
-                .toList();
+        List<AppAssignment> list = assignments.findByAppTypeAndAppId(appType, appId);
+        Map<UUID, String> names = subjectNames(list);
+        return list.stream().map(a -> toView(a, appName, names)).toList();
     }
 
     @Transactional
@@ -169,7 +192,7 @@ public class ApplicationService {
                 ? null : UUID.fromString(request.requiredPolicyId());
         AppAssignment saved = assignments.save(new AppAssignment(appType, request.appId(), subjectType, subjectId, policyId));
         ApplicationView app = indexApplications().get(key(appType, request.appId()));
-        return toView(saved, app == null ? request.appId() : app.name());
+        return toView(saved, app == null ? request.appId() : app.name(), subjectNames(List.of(saved)));
     }
 
     @Transactional
@@ -186,8 +209,8 @@ public class ApplicationService {
         // app-level sign-on policy per app + policy-id -> name (one lookup pass, not per-app queries)
         Map<String, UUID> appPolicyByKey = appPolicies.findAll().stream()
                 .collect(Collectors.toMap(ap -> key(ap.getAppType(), ap.getAppId()), AppPolicy::getRequiredPolicyId, (a, b) -> a));
-        Map<UUID, String> policyNames = policies.findAll().stream()
-                .collect(Collectors.toMap(AuthPolicy::getId, AuthPolicy::getName));
+        Map<UUID, String> policyNames = policies.findIdNames().stream()
+                .collect(Collectors.toMap(IdName::getId, IdName::getName));
 
         Map<String, ApplicationView> index = new LinkedHashMap<>();
         for (ClientView c : clients.listClients()) {
@@ -235,10 +258,24 @@ public class ApplicationService {
         return "/saml2/idp/sso/init?sp=" + UriUtils.encodeQueryParam(rp.getEntityId(), StandardCharsets.UTF_8);
     }
 
-    private AppAssignmentView toView(AppAssignment a, String appName) {
-        String subjectName = a.getSubjectType() == SubjectType.USER
-                ? users.findById(a.getSubjectId()).map(AppUser::getUsername).orElse(a.getSubjectId().toString())
-                : roles.findById(a.getSubjectId()).map(Role::getName).orElse(a.getSubjectId().toString());
+    /** Resolves subject (user/role) display names for a batch of assignments in two queries, not per-row. */
+    private Map<UUID, String> subjectNames(Collection<AppAssignment> list) {
+        Set<UUID> userIds = list.stream().filter(a -> a.getSubjectType() == SubjectType.USER)
+                .map(AppAssignment::getSubjectId).collect(Collectors.toSet());
+        Set<UUID> roleIds = list.stream().filter(a -> a.getSubjectType() == SubjectType.ROLE)
+                .map(AppAssignment::getSubjectId).collect(Collectors.toSet());
+        Map<UUID, String> names = new HashMap<>();
+        if (!userIds.isEmpty()) {
+            users.findIdNames(userIds).forEach(p -> names.put(p.getId(), p.getName()));
+        }
+        if (!roleIds.isEmpty()) {
+            roles.findIdNames(roleIds).forEach(p -> names.put(p.getId(), p.getName()));
+        }
+        return names;
+    }
+
+    private AppAssignmentView toView(AppAssignment a, String appName, Map<UUID, String> subjectNames) {
+        String subjectName = subjectNames.getOrDefault(a.getSubjectId(), a.getSubjectId().toString());
         return new AppAssignmentView(a.getId().toString(), a.getAppType().name(), a.getAppId(), appName,
                 a.getSubjectType().name(), a.getSubjectId().toString(), subjectName,
                 a.getRequiredPolicyId() == null ? null : a.getRequiredPolicyId().toString());

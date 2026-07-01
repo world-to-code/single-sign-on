@@ -50,6 +50,10 @@ public class AuthPolicy {
     @Column(name = "allow_enrollment_at_login", nullable = false)
     private boolean allowEnrollmentAtLogin = true;
 
+    /** App step-up re-auth window (minutes): a deliberate per-app step-up stays valid this long. */
+    @Column(name = "step_up_freshness_minutes", nullable = false)
+    private int stepUpFreshnessMinutes = 15;
+
     @OneToMany(mappedBy = "policy", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @OrderBy("stepOrder ASC")
     private List<AuthPolicyStep> steps = new ArrayList<>();
@@ -95,6 +99,11 @@ public class AuthPolicy {
     /** Whether users governed by this policy may enroll a missing factor during login. */
     public void allowEnrollmentAtLogin(boolean allowEnrollmentAtLogin) {
         this.allowEnrollmentAtLogin = allowEnrollmentAtLogin;
+    }
+
+    /** The per-app step-up re-authentication window, in minutes. */
+    public void updateStepUpFreshnessMinutes(int minutes) {
+        this.stepUpFreshnessMinutes = minutes;
     }
 
     public void enable() {

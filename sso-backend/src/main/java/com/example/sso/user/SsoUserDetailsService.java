@@ -32,7 +32,7 @@ public class SsoUserDetailsService implements UserDetailsService {
     @Override
     @Transactional(readOnly = true)
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        AppUser user = users.findByUsername(username)
+        AppUser user = users.findWithAuthoritiesByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("Unknown user: " + username));
 
         // RBAC: role names (ROLE_*). PBAC: permissions from roles AND directly granted to the user.

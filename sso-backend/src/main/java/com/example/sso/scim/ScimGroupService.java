@@ -13,7 +13,10 @@ import de.captaingoldfish.scim.sdk.server.response.PartialListResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -72,11 +75,26 @@ public class ScimGroupService {
     @Transactional(readOnly = true)
     public PartialListResponse<Group> list(long startIndex, int count) {
         long total = roles.count();
-        List<Group> page = count <= 0 ? List.of()
-                : roles.findAll(ScimSupport.pageable(startIndex, count)).getContent().stream()
-                .map(role -> ScimGroupMapper.toScim(role, users.findByRoles_Id(role.getId())))
+        List<Role> rolePage = count <= 0 ? List.of()
+                : roles.findAll(ScimSupport.pageable(startIndex, count)).getContent();
+        Map<UUID, List<AppUser>> membersByRole = membersByRole(rolePage);
+        List<Group> page = rolePage.stream()
+                .map(role -> ScimGroupMapper.toScim(role, membersByRole.getOrDefault(role.getId(), List.of())))
                 .toList();
         return PartialListResponse.<Group>builder().resources(page).totalResults(total).build();
+    }
+
+    /** Members of every role on the page, resolved in a single query (avoids a user-query per group). */
+    private Map<UUID, List<AppUser>> membersByRole(List<Role> rolePage) {
+        if (rolePage.isEmpty()) {
+            return Map.of();
+        }
+        Set<UUID> roleIds = rolePage.stream().map(Role::getId).collect(Collectors.toSet());
+        Map<UUID, List<AppUser>> byRole = new HashMap<>();
+        for (Object[] row : users.findMembersByRoleIdIn(roleIds)) {
+            byRole.computeIfAbsent((UUID) row[0], k -> new ArrayList<>()).add((AppUser) row[1]);
+        }
+        return byRole;
     }
 
     @Transactional

@@ -67,8 +67,9 @@ public class PortalController {
         }
         Set<String> granted = authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority).filter(a -> a.startsWith("FACTOR_")).collect(Collectors.toSet());
-        AppAccess access = applications.appAccess(requireUser(authentication),
-                AppAssignment.AppType.valueOf(type), appId, granted);
+        AppAssignment.AppType appType = AppAssignment.AppType.valueOf(type);
+        AppAccess access = applications.appAccess(requireUser(authentication), appType, appId, granted,
+                AppStepUpFilter.lastAppStepUp(session, appType, appId));
         if (access.ready()) {
             // Clear the pending step-up so a later /stepup visit doesn't auto-redirect into a prior app.
             session.removeAttribute(AppStepUpFilter.RETURN);

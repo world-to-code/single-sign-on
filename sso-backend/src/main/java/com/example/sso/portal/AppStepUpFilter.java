@@ -17,6 +17,7 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -30,6 +31,20 @@ public class AppStepUpFilter extends OncePerRequestFilter {
     public static final String RETURN = "APP_STEPUP_RETURN";
     public static final String APP_TYPE = "APP_STEPUP_TYPE";
     public static final String APP_ID = "APP_STEPUP_ID";
+    /** Prefix for the per-app "last deliberate step-up" epoch-millis, keyed by app so a step-up for
+     *  one app never satisfies another app's freshness window. */
+    private static final String STEPUP_TIME_PREFIX = "APP_STEPUP_TIME::";
+
+    /** Session attribute key holding the last deliberate step-up time for a specific app. */
+    public static String stepUpTimeKey(AppAssignment.AppType type, String appId) {
+        return STEPUP_TIME_PREFIX + type + ":" + appId;
+    }
+
+    /** The last deliberate step-up recorded for this specific app, or null if none. */
+    public static Instant lastAppStepUp(HttpSession session, AppAssignment.AppType type, String appId) {
+        Object value = session == null ? null : session.getAttribute(stepUpTimeKey(type, appId));
+        return value instanceof Long millis ? Instant.ofEpochMilli(millis) : null;
+    }
 
     private final RegisteredClientRepository registeredClients;
     private final UserService users;
@@ -63,7 +78,8 @@ public class AppStepUpFilter extends OncePerRequestFilter {
         }
         Set<String> granted = auth.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority).filter(a -> a.startsWith("FACTOR_")).collect(Collectors.toSet());
-        AppAccess access = applications.appAccess(user, AppAssignment.AppType.OIDC, client.getId(), granted);
+        AppAccess access = applications.appAccess(user, AppAssignment.AppType.OIDC, client.getId(), granted,
+                lastAppStepUp(request.getSession(false), AppAssignment.AppType.OIDC, client.getId()));
         if (access.ready()) {
             chain.doFilter(request, response);
             return;

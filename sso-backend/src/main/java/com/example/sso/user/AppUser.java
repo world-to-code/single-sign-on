@@ -73,7 +73,9 @@ public class AppUser {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    @ManyToMany(fetch = FetchType.EAGER, cascade = {CascadeType.PERSIST, CascadeType.MERGE})
+    // LAZY: load roles explicitly (via @EntityGraph on the auth queries or within a tx) — never on
+    // every user fetch. default_batch_fetch_size batches the load when several users are read.
+    @ManyToMany(fetch = FetchType.LAZY, cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     @JoinTable(
             name = "app_user_role",
             joinColumns = @JoinColumn(name = "user_id"),
@@ -84,7 +86,8 @@ public class AppUser {
     private Set<MfaFactor> mfaFactors = new HashSet<>();
 
     /** Permissions granted directly to this user (Okta/AWS-style), in addition to role-derived ones. */
-    @ManyToMany(fetch = FetchType.EAGER, cascade = {CascadeType.PERSIST, CascadeType.MERGE})
+    // LAZY: only the authority-building login path and admin user views need these, both within a tx.
+    @ManyToMany(fetch = FetchType.LAZY, cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     @JoinTable(
             name = "app_user_permission",
             joinColumns = @JoinColumn(name = "user_id"),

@@ -1,5 +1,7 @@
 package com.example.sso.authpolicy;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 
@@ -13,5 +15,6 @@ import java.util.List;
 public record PolicyRequest(@NotBlank String name, int priority, boolean enabled, Boolean appliesToLogin,
                             Boolean allowEnrollmentAtLogin,
                             @NotEmpty List<List<String>> steps,
-                            List<String> assignedUserIds, List<String> assignedRoleIds) {
+                            List<String> assignedUserIds, List<String> assignedRoleIds,
+                            @Min(1) @Max(1440) Integer stepUpFreshnessMinutes) {
 }
