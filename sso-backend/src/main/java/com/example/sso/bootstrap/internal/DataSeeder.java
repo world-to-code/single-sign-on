@@ -48,8 +48,8 @@ public class DataSeeder implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        roleService.getOrCreate("ROLE_USER");
-        roleService.getOrCreate("ROLE_ADMIN");
+        roleService.getOrCreateSystem("ROLE_USER");
+        roleService.getOrCreateSystem("ROLE_ADMIN");
         rbacService.grantAllPermissionsToAdmin();
         authPolicyService.seedDefault();
 

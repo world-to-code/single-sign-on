@@ -1,14 +1,19 @@
 package com.example.sso.user.internal.application;
 
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.GroupMembersPage;
+import com.example.sso.user.GroupMembership;
 import com.example.sso.user.GroupView;
+import com.example.sso.user.RoleRef;
 import com.example.sso.user.Suggestion;
 import com.example.sso.user.UserGroupRepository;
 import com.example.sso.user.UserGroupService;
+import com.example.sso.user.internal.domain.Role;
+import com.example.sso.user.internal.domain.RoleRepository;
 import com.example.sso.user.internal.domain.UserGroup;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -31,6 +36,7 @@ public class UserGroupServiceImpl implements UserGroupService {
 
     private final UserGroupRepository repository;
     private final AppUserRepository users;
+    private final RoleRepository roles;
 
     @Override
     @Transactional(readOnly = true)
@@ -111,8 +117,39 @@ public class UserGroupServiceImpl implements UserGroupService {
         return toView(repository.save(group));
     }
 
+    @Override
+    @Transactional
+    public GroupView setRoles(UUID id, Set<String> roleNames) {
+        UserGroup group = require(id);
+        if (group.isSystem()) {
+            throw new ConflictException("roles of the '" + group.getName() + "' system group cannot be edited");
+        }
+        group.replaceRoles(resolveRoles(roleNames));
+        return toView(repository.save(group));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<GroupMembership> membershipsForUser(UUID userId) {
+        return repository.findByMember(userId).stream()
+                .map(group -> new GroupMembership(group.getId(), group.getName(),
+                        group.getRoles().stream().map(RoleRef.class::cast).toList()))
+                .toList();
+    }
+
     private UserGroup require(UUID id) {
         return repository.findById(id).orElseThrow(() -> new NotFoundException("group not found"));
+    }
+
+    /** Resolves role names to existing {@link Role} entities; rejects an unknown name (400). */
+    private Set<Role> resolveRoles(Set<String> roleNames) {
+        if (roleNames == null || roleNames.isEmpty()) {
+            return Set.of();
+        }
+        return roleNames.stream()
+                .map(name -> roles.findByName(name)
+                        .orElseThrow(() -> new BadRequestException("unknown role: " + name)))
+                .collect(Collectors.toSet());
     }
 
     /** Keeps only the ids that resolve to an existing user (unknown ids are dropped). */
@@ -125,7 +162,8 @@ public class UserGroupServiceImpl implements UserGroupService {
 
     private static GroupView toView(UserGroup group) {
         List<String> memberIds = group.getMemberUserIds().stream().map(UUID::toString).toList();
+        List<String> roleNames = group.getRoles().stream().map(Role::getName).sorted().toList();
         return new GroupView(group.getId().toString(), group.getName(), group.getDescription(),
-                group.getExternalId(), memberIds, memberIds.size(), group.isSystem());
+                group.getExternalId(), memberIds, memberIds.size(), group.isSystem(), roleNames);
     }
 }

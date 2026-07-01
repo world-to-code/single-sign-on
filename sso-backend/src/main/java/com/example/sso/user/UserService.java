@@ -36,6 +36,9 @@ public interface UserService {
 
     boolean hasPassword(UUID id);
 
+    /** Whether the user has the named role assigned DIRECTLY (not inherited via a group). */
+    boolean hasRole(UUID userId, String roleName);
+
     /** Typeahead (id, username) suggestions for assignment pickers. */
     List<Suggestion> searchUsers(String q, int limit);
 

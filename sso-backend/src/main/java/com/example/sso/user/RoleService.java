@@ -22,8 +22,26 @@ public interface RoleService {
     /** Returns the role, creating it if absent (idempotent). */
     RoleRef getOrCreate(String name);
 
+    /** Returns the role, creating it if absent and ensuring it is flagged as a system role (idempotent). */
+    RoleRef getOrCreateSystem(String name);
+
     /** Creates a new role (caller guards against duplicates / privilege). */
     RoleRef create(String name);
+
+    /**
+     * Admin role builder: creates a role composed of the given catalog permissions. Rejects a
+     * duplicate name (409) or an unknown permission (400).
+     */
+    RoleRef create(String name, Set<String> permissionNames);
+
+    /**
+     * Admin role builder: renames and/or replaces the permissions of a role. System roles cannot be
+     * renamed; ROLE_ADMIN's permissions are auto-managed and cannot be edited.
+     */
+    RoleRef updateRole(UUID roleId, String name, Set<String> permissionNames);
+
+    /** Admin role builder: deletes a non-system role (409 for system roles). */
+    void deleteRole(UUID roleId);
 
     void delete(UUID roleId);
 

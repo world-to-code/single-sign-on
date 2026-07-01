@@ -14,6 +14,11 @@ java {
     }
 }
 
+// Retain method parameter names so @PreAuthorize SpEL can bind arguments by name (e.g. #id).
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs << '-parameters'
+}
+
 repositories {
     mavenCentral()
     // OpenSAML and its net.shibboleth.* transitives are NOT (all) on Maven Central

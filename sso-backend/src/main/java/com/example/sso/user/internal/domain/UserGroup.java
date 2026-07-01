@@ -54,6 +54,15 @@ public class UserGroup {
     @Column(name = "user_id")
     private Set<UUID> memberUserIds = new HashSet<>();
 
+    // Roles delegated to the whole group: every member inherits these roles (and their permissions).
+    // LAZY: needed only when building a member's authorities or rendering the group/user detail views.
+    @ManyToMany(fetch = FetchType.LAZY, cascade = {CascadeType.PERSIST, CascadeType.MERGE})
+    @JoinTable(
+            name = "group_role",
+            joinColumns = @JoinColumn(name = "group_id"),
+            inverseJoinColumns = @JoinColumn(name = "role_id"))
+    private Set<Role> roles = new HashSet<>();
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -92,9 +101,19 @@ public class UserGroup {
         this.memberUserIds.addAll(memberUserIds);
     }
 
-    // Read-only view (overrides Lombok's @Getter); mutate via setMembers above.
+    /** Replaces the group's delegated roles wholesale (admin-driven update). */
+    public void replaceRoles(Collection<Role> newRoles) {
+        this.roles.clear();
+        this.roles.addAll(newRoles);
+    }
+
+    // Read-only views (override Lombok's @Getter); mutate via the domain methods above.
 
     public Set<UUID> getMemberUserIds() {
         return Collections.unmodifiableSet(memberUserIds);
+    }
+
+    public Set<Role> getRoles() {
+        return Collections.unmodifiableSet(roles);
     }
 }

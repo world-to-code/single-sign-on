@@ -1,6 +1,7 @@
 package com.example.sso.user;
 
 import com.example.sso.shared.IdName;
+import com.example.sso.user.internal.domain.Role;
 import com.example.sso.user.internal.domain.UserGroup;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -29,6 +30,14 @@ public interface UserGroupRepository extends JpaRepository<UserGroup, UUID> {
     /** Ids of the groups the given user belongs to. */
     @Query("select g.id from UserGroup g where :userId member of g.memberUserIds")
     List<UUID> findGroupIdsByMember(@Param("userId") UUID userId);
+
+    /**
+     * Distinct roles delegated to the user via any group they belong to, with permissions fetched —
+     * used when building the member's effective authorities at login.
+     */
+    @Query("select distinct r from UserGroup g join g.roles r left join fetch r.permissions "
+            + "where :userId member of g.memberUserIds")
+    List<Role> findRolesForMember(@Param("userId") UUID userId);
 
     /** (id, name) for the given groups — batch name lookup without loading membership. */
     @Query("select g.id as id, g.name as name from UserGroup g where g.id in :ids")

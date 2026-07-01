@@ -36,13 +36,13 @@ public class AuthPolicyAdminController {
     private final AuthPolicyAdminService service;
 
     @GetMapping
-    @PreAuthorize("hasAuthority('" + Permissions.POLICY_MANAGE + "')")
+    @PreAuthorize("hasAuthority('" + Permissions.POLICY_READ + "')")
     public List<PolicyView> list() {
         return service.listAll().stream().map(AuthPolicyAdminController::toView).toList();
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('" + Permissions.POLICY_MANAGE + "')")
+    @PreAuthorize("hasAuthority('" + Permissions.POLICY_CREATE + "')")
     public ResponseEntity<PolicyView> create(@Valid @RequestBody PolicyRequest request) {
         PolicyView created = toView(service.create(request.name(), request.priority(), request.enabled(),
                 request.appliesToLogin() == null || request.appliesToLogin(),
@@ -53,7 +53,7 @@ public class AuthPolicyAdminController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('" + Permissions.POLICY_MANAGE + "')")
+    @PreAuthorize("hasAuthority('" + Permissions.POLICY_UPDATE + "')")
     public PolicyView update(@PathVariable UUID id, @Valid @RequestBody PolicyRequest request) {
         return toView(service.update(id, request.priority(), request.enabled(),
                 request.appliesToLogin() == null || request.appliesToLogin(),
@@ -63,7 +63,7 @@ public class AuthPolicyAdminController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('" + Permissions.POLICY_MANAGE + "')")
+    @PreAuthorize("hasAuthority('" + Permissions.POLICY_DELETE + "')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return ResponseEntity.noContent().build();

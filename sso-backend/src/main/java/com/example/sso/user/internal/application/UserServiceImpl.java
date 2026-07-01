@@ -98,6 +98,14 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
+    public boolean hasRole(UUID userId, String roleName) {
+        return users.findById(userId)
+                .map(user -> user.getRoles().stream().anyMatch(role -> roleName.equals(role.getName())))
+                .orElse(false);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<Suggestion> searchUsers(String q, int limit) {
         int safeLimit = limit <= 0 ? 20 : Math.min(limit, 50);
         return users.search(q == null ? "" : q, PageRequest.of(0, safeLimit)).stream()

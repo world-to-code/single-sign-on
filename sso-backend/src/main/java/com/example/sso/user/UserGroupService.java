@@ -28,4 +28,10 @@ public interface UserGroupService {
     void delete(UUID id);
 
     GroupView setMembers(UUID id, Set<UUID> memberIds);
+
+    /** Replaces the roles delegated to the group; every member inherits them. Unknown role → 400. */
+    GroupView setRoles(UUID id, Set<String> roleNames);
+
+    /** The groups the given user belongs to, each with the roles that group delegates. */
+    List<GroupMembership> membershipsForUser(UUID userId);
 }

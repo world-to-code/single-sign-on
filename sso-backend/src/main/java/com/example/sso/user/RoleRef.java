@@ -14,5 +14,8 @@ public interface RoleRef {
 
     String getName();
 
+    /** Whether this is a protected system role (name/deletion locked; e.g. ROLE_ADMIN, ROLE_USER). */
+    boolean isSystem();
+
     Set<String> getPermissionNames();
 }

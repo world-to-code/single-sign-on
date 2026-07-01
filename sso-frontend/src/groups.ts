@@ -8,6 +8,7 @@ export interface Group {
   memberUserIds: string[];
   memberCount: number;
   system: boolean;
+  roleNames: string[];
 }
 
 export interface GroupRequest {
@@ -35,3 +36,7 @@ export const searchGroups = (q: string) =>
   apiGet<Suggestion[]>(`/api/admin/groups/search?q=${encodeURIComponent(q)}`);
 export const searchUsers = (q: string) =>
   apiGet<Suggestion[]>(`/api/admin/users/search?q=${encodeURIComponent(q)}`);
+
+/** Replaces the roles delegated to a group; its members inherit them. */
+export const setGroupRoles = (id: string, roleNames: string[]) =>
+  apiPut<Group>(`/api/admin/groups/${id}/roles`, { roleNames });

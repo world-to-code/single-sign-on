@@ -1,10 +1,16 @@
 package com.example.sso.user.internal.application;
 
+import com.example.sso.user.Permissions;
+import com.example.sso.user.UserGroupRepository;
 import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.internal.domain.Permission;
+import com.example.sso.user.internal.domain.Role;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -28,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class SsoUserDetailsService implements UserDetailsService {
 
     private final AppUserRepository users;
+    private final UserGroupRepository groups;
 
     @Override
     @Transactional(readOnly = true)
@@ -35,17 +42,31 @@ public class SsoUserDetailsService implements UserDetailsService {
         AppUser user = users.findWithAuthoritiesByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("Unknown user: " + username));
 
-        // RBAC: role names (ROLE_*). PBAC: permissions from roles AND directly granted to the user.
-        Stream<String> roleAuthorities = user.getRoles().stream()
-                .flatMap(role -> Stream.concat(
-                        Stream.of(role.getName()),
-                        role.getPermissions().stream().map(Permission::getName)));
+        // RBAC: role names (ROLE_*) from roles assigned directly AND delegated via the user's groups.
+        // PBAC: permissions carried by those roles AND granted directly to the user. Finally, each
+        // resource:action permission implies resource:read (see Permissions.expandImplied).
+        Stream<String> directRoleAuthorities = roleAuthorities(user.getRoles());
+        Stream<String> groupRoleAuthorities = roleAuthorities(groups.findRolesForMember(user.getId()));
         Stream<String> directPermissions = user.getDirectPermissions().stream().map(Permission::getName);
-        List<SimpleGrantedAuthority> authorities = Stream.concat(roleAuthorities, directPermissions)
-                .distinct()
+
+        Set<String> granted = Stream.of(directRoleAuthorities, groupRoleAuthorities, directPermissions)
+                .flatMap(s -> s)
+                .collect(Collectors.toSet());
+        List<SimpleGrantedAuthority> authorities = Permissions.expandImplied(granted).stream()
                 .map(SimpleGrantedAuthority::new)
                 .toList();
 
+        return principal(user, authorities);
+    }
+
+    /** Role name (ROLE_*) + each of the role's permission names, for every given role. */
+    private Stream<String> roleAuthorities(Collection<Role> roles) {
+        return roles.stream().flatMap(role -> Stream.concat(
+                Stream.of(role.getName()),
+                role.getPermissions().stream().map(Permission::getName)));
+    }
+
+    private UserDetails principal(AppUser user, List<SimpleGrantedAuthority> authorities) {
         boolean locked = !user.isAccountNonLocked() || user.isTemporarilyLocked(Instant.now());
         return User.withUsername(user.getUsername())
                 .password(user.getPasswordHash() == null ? "" : user.getPasswordHash())

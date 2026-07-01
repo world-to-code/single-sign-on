@@ -6,6 +6,8 @@ import { SessionTimers } from "./components/SessionTimers";
 import { AdminGuard, AdminCallback } from "./components/AdminPortal";
 import Dashboard from "./pages/Dashboard";
 import Users from "./pages/Users";
+import UserDetail from "./pages/UserDetail";
+import Roles from "./pages/Roles";
 import Groups from "./pages/Groups";
 import GroupDetail from "./pages/GroupDetail";
 import Clients from "./pages/Clients";
@@ -43,6 +45,8 @@ export default function Console({ session }: { session: SessionView }) {
                 <Routes>
                   <Route index element={<Navigate to="users" replace />} />
                   <Route path="users" element={<Users />} />
+                  <Route path="users/:id" element={<UserDetail session={session} />} />
+                  <Route path="roles" element={<Roles />} />
                   <Route path="groups" element={<Groups />} />
                   <Route path="groups/:id" element={<GroupDetail />} />
                   <Route path="applications" element={<Applications />} />
