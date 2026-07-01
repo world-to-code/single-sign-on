@@ -25,6 +25,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 /**
  * RFC 9470 step-up elevation gate for the admin API. The session cookie + {@code @PreAuthorize} PBAC
@@ -50,7 +51,8 @@ public class AdminElevationFilter extends OncePerRequestFilter {
 
     static final String REQUIRED_SCOPE = AdminPortalSeeder.ADMIN_SCOPE;
     static final String REQUIRED_ACR = "mfa";
-    static final String REQUIRED_ROLE = "ROLE_ADMIN";
+    /** Admin-tier roles that may elevate: the super admin and the scoped (group) admin. */
+    static final Set<String> ADMIN_TIER_ROLES = Set.of("ROLE_ADMIN", "ROLE_GROUP_ADMIN");
 
     private static final String INSUFFICIENT = "insufficient_user_authentication";
     private static final String CHALLENGE =
@@ -157,8 +159,8 @@ public class AdminElevationFilter extends OncePerRequestFilter {
         if (!scopes(jwt).contains(REQUIRED_SCOPE)) {
             return false;
         }
-        if (!claimList(jwt, "roles").contains(REQUIRED_ROLE)) {
-            return false; // the token itself must belong to an admin
+        if (claimList(jwt, "roles").stream().noneMatch(ADMIN_TIER_ROLES::contains)) {
+            return false; // the token itself must belong to an admin-tier role
         }
         if (!REQUIRED_ACR.equals(jwt.getClaimAsString("acr"))) {
             return false;

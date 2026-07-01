@@ -85,6 +85,20 @@ class RbacDelegationIT extends AbstractIntegrationTest {
                 .isEqualTo("ROLE_SUPPORT");
     }
 
+    @Test
+    void userRoleAssignmentRejectsUnknownRoleNames() {
+        // A user-management call must not mint a role whose name is a reserved authority (authority injection).
+        UUID erin = userService.createUser(new NewUser("erin", "erin@example.com", "Erin", "S3cret!pw",
+                Set.of("ROLE_USER"))).getId();
+
+        assertThatThrownBy(() -> userService.updateUser(erin,
+                new UserUpdate("Erin", "erin@example.com", true, Set.of("MFA_COMPLETE"))))
+                .isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> userService.createUser(new NewUser("mallory", "mallory@example.com", "M",
+                "S3cret!pw", Set.of("key:rotate"))))
+                .isInstanceOf(BadRequestException.class);
+    }
+
     private Set<String> authoritiesOf(String username) {
         UserDetails details = userDetailsService.loadUserByUsername(username);
         return details.getAuthorities().stream().map(GrantedAuthority::getAuthority)

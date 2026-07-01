@@ -237,7 +237,8 @@ public class AdminController {
 
     /** Replaces the roles delegated to a group; members inherit them. */
     @PutMapping("/groups/{id}/roles")
-    @PreAuthorize("hasAuthority('" + Permissions.GROUP_UPDATE + "')")
+    @PreAuthorize("hasAuthority('" + Permissions.GROUP_UPDATE
+            + "') and @adminAccessPolicy.mayAssignRoles(#request.roleNames())")
     public GroupView setGroupRoles(@PathVariable UUID id, @RequestBody SetGroupRolesRequest request) {
         Set<String> roleNames = request.roleNames() == null ? Set.of() : request.roleNames();
         GroupView view = userGroups.setRoles(id, roleNames);

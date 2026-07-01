@@ -1,7 +1,9 @@
 package com.example.sso.user.internal.application;
 
 import com.example.sso.shared.IdName;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.user.Permissions;
 import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.internal.domain.Permission;
@@ -137,7 +139,7 @@ public class UserServiceImpl implements UserService {
         String rawPassword = newUser.rawPassword();
         String encodedPassword = rawPassword == null ? null : passwordEncoder.encode(rawPassword);
         AppUser user = new AppUser(username, email, newUser.displayName(), encodedPassword);
-        newUser.roleNames().forEach(name -> user.addRole(getOrCreateRole(name)));
+        newUser.roleNames().forEach(name -> user.addRole(requireRole(name)));
 
         AppUser saved = users.save(user);
         addToDefaultGroup(saved.getId());
@@ -166,7 +168,7 @@ public class UserServiceImpl implements UserService {
 
         Set<String> roleNames = update.roleNames();
         if (roleNames != null) {
-            user.assignRoles(roleNames.stream().map(this::getOrCreateRole).collect(Collectors.toSet()));
+            user.assignRoles(roleNames.stream().map(this::requireRole).collect(Collectors.toSet()));
         }
 
         return users.save(user);
@@ -262,11 +264,21 @@ public class UserServiceImpl implements UserService {
         return users.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
     }
 
-    private Role getOrCreateRole(String name) {
-        return roles.findByName(name).orElseGet(() -> roles.save(new Role(name)));
+    /**
+     * Resolves an EXISTING role for assignment. Role minting happens only through the role builder
+     * (which validates the name); resolving here never creates a role, so a user-management call can
+     * never plant a role whose name collides with a reserved authority (e.g. MFA_COMPLETE, key:rotate).
+     */
+    private Role requireRole(String name) {
+        return roles.findByName(name).orElseThrow(() -> new BadRequestException("unknown role: " + name));
     }
 
+    /** Resolves a catalog permission for direct assignment; rejects anything outside the catalog. */
     private Permission getOrCreatePermission(String name) {
+        if (!Permissions.ALL.contains(name)) {
+            throw new BadRequestException("unknown permission: " + name);
+        }
+
         return permissions.findByName(name).orElseGet(() -> permissions.save(new Permission(name)));
     }
 }

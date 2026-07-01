@@ -56,6 +56,15 @@ public class AdminAccessPolicy {
         return currentUserId().map(this::isSuper).orElse(false);
     }
 
+    /**
+     * Only a super admin may assign a privileged role (ROLE_ADMIN/ROLE_GROUP_ADMIN) — e.g. by delegating
+     * it to a group. Otherwise a non-super admin with group management could grant admin to a group they
+     * belong to and escalate. A set with no privileged role is allowed for anyone.
+     */
+    public boolean mayAssignRoles(Collection<String> roleNames) {
+        return currentIsSuperAdmin() || !containsPrivilegedRole(roleNames);
+    }
+
     /** Whether the acting admin is unscoped (a super {@code ROLE_ADMIN}); used for list scoping. */
     public boolean currentIsSuperAdmin() {
         return currentUserId().map(this::isSuper).orElse(false);

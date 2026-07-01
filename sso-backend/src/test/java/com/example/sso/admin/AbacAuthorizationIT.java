@@ -129,6 +129,9 @@ class AbacAuthorizationIT extends AbstractIntegrationTest {
         assertThat(access.canUpdateUser(scopedAdmin, true, Set.of("ROLE_ADMIN", "ROLE_USER"))).isFalse(); // self-promote
         assertThat(access.canUpdateUser(managed, true, Set.of("ROLE_ADMIN"))).isFalse(); // grant admin to a member
         assertThat(access.canUpdateUser(managed, true, Set.of("ROLE_USER"))).isTrue();   // ordinary edit is fine
+        assertThat(access.mayAssignRoles(Set.of("ROLE_USER"))).isTrue();                 // group delegation of a plain role
+        assertThat(access.mayAssignRoles(Set.of("ROLE_ADMIN"))).isFalse();               // can't delegate admin to a group
+        assertThat(access.mayAssignRoles(Set.of("ROLE_GROUP_ADMIN"))).isFalse();
 
         actAs("admin"); // the seeded super admin is unscoped
         assertThat(access.currentIsSuperAdmin()).isTrue();
@@ -136,6 +139,7 @@ class AbacAuthorizationIT extends AbstractIntegrationTest {
         assertThat(access.canAccessUser(other)).isTrue();
         assertThat(access.canManagePermissions(managed)).isTrue();
         assertThat(access.canUpdateUser(managed, true, Set.of("ROLE_ADMIN"))).isTrue(); // super may grant admin
+        assertThat(access.mayAssignRoles(Set.of("ROLE_ADMIN"))).isTrue();               // super may delegate admin
 
         userGroups.delete(groupId);
     }
