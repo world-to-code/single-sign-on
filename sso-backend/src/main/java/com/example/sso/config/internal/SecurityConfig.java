@@ -141,7 +141,9 @@ public class SecurityConfig {
                         .access(AuthorityAuthorizationManager.hasAuthority(Factors.MFA_COMPLETE))
                         .requestMatchers("/api/admin/**")
                         .access(AuthorizationManagers.allOf(
-                                AuthorityAuthorizationManager.hasRole("ADMIN"),
+                                AuthorizationManagers.anyOf(
+                                        AuthorityAuthorizationManager.hasRole("ADMIN"),
+                                        AuthorityAuthorizationManager.hasRole("GROUP_ADMIN")),
                                 AuthorityAuthorizationManager.hasAuthority(Factors.MFA_COMPLETE)))
                         .requestMatchers("/api/me", "/api/portal/**")
                         .access(AuthorityAuthorizationManager.hasAuthority(Factors.MFA_COMPLETE))

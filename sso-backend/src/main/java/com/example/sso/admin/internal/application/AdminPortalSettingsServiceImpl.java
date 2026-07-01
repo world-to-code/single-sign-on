@@ -5,15 +5,18 @@ import com.example.sso.admin.AdminPortalSettingsService;
 import com.example.sso.admin.internal.domain.AdminPortalSettings;
 import com.example.sso.admin.internal.domain.AdminPortalSettingsRepository;
 import com.example.sso.oidc.AdminPortalSeeder;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
+import org.springframework.security.web.util.matcher.IpAddressMatcher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.util.List;
 
 /**
  * Default {@link AdminPortalSettingsService}. Maps the single-row {@code AdminPortalSettings} entity
@@ -39,7 +42,8 @@ public class AdminPortalSettingsServiceImpl implements AdminPortalSettingsServic
     public AdminPortalSettingsData update(AdminPortalSettingsRequest request) {
         AdminPortalSettings settings = load();
         settings.update(request.reauthIntervalMinutes(), request.elevationTokenTtlMinutes(),
-                request.sessionIdleTimeoutMinutes(), request.sessionAbsoluteLifetimeMinutes());
+                request.sessionIdleTimeoutMinutes(), request.sessionAbsoluteLifetimeMinutes(),
+                normalizeCidrs(request.adminAllowedCidrs()));
         AdminPortalSettings saved = repository.save(settings);
 
         syncElevationTokenTtl(saved.getElevationTokenTtlMinutes());
@@ -55,7 +59,35 @@ public class AdminPortalSettingsServiceImpl implements AdminPortalSettingsServic
     private static AdminPortalSettingsData toData(AdminPortalSettings settings) {
         return new AdminPortalSettingsData(settings.getReauthIntervalMinutes(),
                 settings.getElevationTokenTtlMinutes(), settings.getSessionIdleTimeoutMinutes(),
-                settings.getSessionAbsoluteLifetimeMinutes());
+                settings.getSessionAbsoluteLifetimeMinutes(), splitCidrs(settings.getAdminAllowedCidrs()));
+    }
+
+    /** Trims/validates each CIDR (rejecting an invalid one, 400) and joins them for storage; blank → null. */
+    private static String normalizeCidrs(List<String> cidrs) {
+        if (cidrs == null || cidrs.isEmpty()) {
+            return null;
+        }
+
+        List<String> cleaned = cidrs.stream().map(String::trim).filter(c -> !c.isEmpty()).toList();
+        cleaned.forEach(AdminPortalSettingsServiceImpl::validateCidr);
+
+        return cleaned.isEmpty() ? null : String.join(",", cleaned);
+    }
+
+    private static void validateCidr(String cidr) {
+        try {
+            new IpAddressMatcher(cidr);
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException("invalid CIDR: " + cidr);
+        }
+    }
+
+    private static List<String> splitCidrs(String stored) {
+        if (stored == null || stored.isBlank()) {
+            return List.of();
+        }
+
+        return List.of(stored.split(","));
     }
 
     private void syncElevationTokenTtl(int minutes) {

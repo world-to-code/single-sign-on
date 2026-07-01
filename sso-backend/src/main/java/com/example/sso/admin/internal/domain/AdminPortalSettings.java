@@ -39,6 +39,11 @@ public class AdminPortalSettings {
     @Column(name = "session_absolute_lifetime_minutes", nullable = false)
     private int sessionAbsoluteLifetimeMinutes;
 
+    /** Comma-separated CIDRs the admin console is reachable from; blank/null means "any network". */
+    @Getter
+    @Column(name = "admin_allowed_cidrs", columnDefinition = "text")
+    private String adminAllowedCidrs;
+
     @Getter
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt = Instant.now();
@@ -48,11 +53,13 @@ public class AdminPortalSettings {
 
     /** Domain mutation (intent-revealing, not a JavaBean setter): replace all knobs and re-stamp. */
     public void update(int reauthIntervalMinutes, int elevationTokenTtlMinutes,
-                       int sessionIdleTimeoutMinutes, int sessionAbsoluteLifetimeMinutes) {
+                       int sessionIdleTimeoutMinutes, int sessionAbsoluteLifetimeMinutes,
+                       String adminAllowedCidrs) {
         this.reauthIntervalMinutes = reauthIntervalMinutes;
         this.elevationTokenTtlMinutes = elevationTokenTtlMinutes;
         this.sessionIdleTimeoutMinutes = sessionIdleTimeoutMinutes;
         this.sessionAbsoluteLifetimeMinutes = sessionAbsoluteLifetimeMinutes;
+        this.adminAllowedCidrs = adminAllowedCidrs;
         this.updatedAt = Instant.now();
     }
 

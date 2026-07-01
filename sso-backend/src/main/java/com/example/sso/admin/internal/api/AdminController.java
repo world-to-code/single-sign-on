@@ -94,64 +94,68 @@ public class AdminController {
     }
 
     @GetMapping("/users/{id}")
-    @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "')")
+    @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "') and @adminAccessPolicy.canAccessUser(#id)")
     public UserDetailView userDetail(@PathVariable UUID id) {
         return userAdminService.getUser(id);
     }
 
     @GetMapping("/users/{id}/applications")
-    @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "')")
+    @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "') and @adminAccessPolicy.canAccessUser(#id)")
     public List<ApplicationView> userApplications(@PathVariable UUID id) {
         return userDetailAdminService.applications(id);
     }
 
     @GetMapping("/users/{id}/devices")
-    @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "')")
+    @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "') and @adminAccessPolicy.canAccessUser(#id)")
     public UserDevicesView userDevices(@PathVariable UUID id) {
         return userDetailAdminService.devices(id);
     }
 
     @GetMapping("/users/{id}/sessions")
-    @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "')")
+    @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "') and @adminAccessPolicy.canAccessUser(#id)")
     public List<UserSessionView> userSessions(@PathVariable UUID id) {
         return userDetailAdminService.sessions(id);
     }
 
     @GetMapping("/users/{id}/activity")
-    @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "')")
+    @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "') and @adminAccessPolicy.canAccessUser(#id)")
     public List<AuditEntry> userActivity(@PathVariable UUID id) {
         return userDetailAdminService.activity(id);
     }
 
     @PostMapping("/users")
-    @PreAuthorize("hasAuthority('" + Permissions.USER_CREATE + "')")
+    @PreAuthorize("hasAuthority('" + Permissions.USER_CREATE + "') and @adminAccessPolicy.canCreateUser()")
     public ResponseEntity<AdminUserView> createUser(@Valid @RequestBody CreateUserRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(userAdminService.createUser(request));
     }
 
     @PutMapping("/users/{id}")
     @PreAuthorize("hasAuthority('" + Permissions.USER_UPDATE
-            + "') and @adminAccessPolicy.canUpdateUser(#id, #request.enabled(), #request.roles())")
+            + "') and @adminAccessPolicy.canAccessUser(#id)"
+            + " and @adminAccessPolicy.canUpdateUser(#id, #request.enabled(), #request.roles())")
     public AdminUserView updateUser(@PathVariable UUID id, @Valid @RequestBody UpdateUserRequest request) {
         return userAdminService.updateUser(id, request);
     }
 
     @PostMapping("/users/{id}/enabled")
     @PreAuthorize("hasAuthority('" + Permissions.USER_UPDATE
-            + "') and @adminAccessPolicy.canSetEnabled(#id, #body.enabled())")
+            + "') and @adminAccessPolicy.canAccessUser(#id)"
+            + " and @adminAccessPolicy.canSetEnabled(#id, #body.enabled())")
     public AdminUserView setEnabled(@PathVariable UUID id, @Valid @RequestBody SetEnabledRequest body) {
         return userAdminService.setEnabled(id, body.enabled());
     }
 
     @DeleteMapping("/users/{id}")
-    @PreAuthorize("hasAuthority('" + Permissions.USER_DELETE + "') and @adminAccessPolicy.canDeleteUser(#id)")
+    @PreAuthorize("hasAuthority('" + Permissions.USER_DELETE
+            + "') and @adminAccessPolicy.canAccessUser(#id) and @adminAccessPolicy.canDeleteUser(#id)")
     public ResponseEntity<Void> deleteUser(@PathVariable UUID id) {
         userAdminService.deleteUser(id);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/users/{id}/reset-mfa")
-    @PreAuthorize("hasAuthority('" + Permissions.USER_UPDATE + "')")
+    @PreAuthorize("hasAuthority('" + Permissions.USER_UPDATE
+            + "') and @adminAccessPolicy.canAccessUser(#id) and @adminAccessPolicy.canResetMfa(#id)")
     public ResponseEntity<Void> resetMfa(@PathVariable UUID id) {
         userAdminService.resetUserMfa(id);
         return ResponseEntity.noContent().build();
@@ -192,7 +196,8 @@ public class AdminController {
     }
 
     @PutMapping("/users/{id}/permissions")
-    @PreAuthorize("hasAuthority('" + Permissions.USER_UPDATE + "')")
+    @PreAuthorize("hasAuthority('" + Permissions.USER_UPDATE
+            + "') and @adminAccessPolicy.canAccessUser(#id) and @adminAccessPolicy.canManagePermissions(#id)")
     public AdminUserView setUserPermissions(@PathVariable UUID id, @Valid @RequestBody SetPermissionsRequest body) {
         return userAdminService.setUserPermissions(id, body.permissions());
     }
@@ -232,6 +237,13 @@ public class AdminController {
     @PreAuthorize("hasAuthority('" + Permissions.GROUP_UPDATE + "')")
     public GroupView setGroupRoles(@PathVariable UUID id, @RequestBody SetGroupRolesRequest request) {
         return userGroups.setRoles(id, request.roleNames() == null ? Set.of() : request.roleNames());
+    }
+
+    /** Replaces the group's managers (scoped admins allowed to manage its members). */
+    @PutMapping("/groups/{id}/managers")
+    @PreAuthorize("hasAuthority('" + Permissions.GROUP_UPDATE + "')")
+    public GroupView setGroupManagers(@PathVariable UUID id, @RequestBody SetGroupManagersRequest request) {
+        return userGroups.setManagers(id, groupIds(request.managerUserIds()));
     }
 
     // --- Group detail page (members paginated + assigned apps) ---

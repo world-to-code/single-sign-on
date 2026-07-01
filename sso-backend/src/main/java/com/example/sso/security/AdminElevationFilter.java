@@ -91,6 +91,13 @@ public class AdminElevationFilter extends OncePerRequestFilter {
         }
 
         AdminPortalSettingsData settings = settingsService.get();
+        // Keyed on the direct peer address (getRemoteAddr), NOT the spoofable X-Forwarded-For. Behind a
+        // reverse proxy that does not preserve the client IP, allowlist the proxy's address. An operator
+        // who allowlists a range excluding their own network locks the console out (recover via DB).
+        if (!settings.ipAllowed(request.getRemoteAddr())) {
+            forbidNetwork(response);
+            return;
+        }
         if (!isElevated(jwt, settings.reauthInterval()) || !boundToSession(jwt)) {
             challenge(response);
             return;
@@ -215,5 +222,12 @@ public class AdminElevationFilter extends OncePerRequestFilter {
         response.setHeader(HttpHeaders.WWW_AUTHENTICATE, CHALLENGE);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.getWriter().write("{\"error\":\"" + INSUFFICIENT + "\"}");
+    }
+
+    /** A 403 (not a re-elevation challenge) when the admin console is barred from this network. */
+    private void forbidNetwork(HttpServletResponse response) throws IOException {
+        response.setStatus(HttpStatus.FORBIDDEN.value());
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.getWriter().write("{\"error\":\"admin console is not permitted from your network\"}");
     }
 }

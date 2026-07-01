@@ -142,6 +142,31 @@ public class UserGroupServiceImpl implements UserGroupService {
     }
 
     @Override
+    @Transactional
+    public GroupView setManagers(UUID id, Set<UUID> managerIds) {
+        UserGroup group = require(id);
+        if (group.isSystem()) {
+            throw new ConflictException("managers of the '" + group.getName() + "' system group cannot be set");
+        }
+
+        group.replaceManagers(existingUserIds(managerIds));
+
+        return toView(repository.save(group));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean managesUser(UUID adminId, UUID targetId) {
+        return repository.managesUser(adminId, targetId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Set<UUID> membersManagedBy(UUID adminId) {
+        return Set.copyOf(repository.memberIdsManagedBy(adminId));
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<GroupMembership> membershipsForUser(UUID userId) {
         return repository.findByMember(userId).stream()
@@ -178,8 +203,9 @@ public class UserGroupServiceImpl implements UserGroupService {
     private static GroupView toView(UserGroup group) {
         List<String> memberIds = group.getMemberUserIds().stream().map(UUID::toString).toList();
         List<String> roleNames = group.getRoles().stream().map(Role::getName).sorted().toList();
+        List<String> managerIds = group.getManagerUserIds().stream().map(UUID::toString).toList();
 
         return new GroupView(group.getId().toString(), group.getName(), group.getDescription(),
-                group.getExternalId(), memberIds, memberIds.size(), group.isSystem(), roleNames);
+                group.getExternalId(), memberIds, memberIds.size(), group.isSystem(), roleNames, managerIds);
     }
 }

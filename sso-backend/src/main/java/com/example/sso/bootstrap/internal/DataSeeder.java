@@ -51,7 +51,9 @@ public class DataSeeder implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         roleService.getOrCreateSystem("ROLE_USER");
         roleService.getOrCreateSystem("ROLE_ADMIN");
+        roleService.getOrCreateSystem("ROLE_GROUP_ADMIN");
         rbacService.grantAllPermissionsToAdmin();
+        rbacService.grantGroupAdminPermissions();
         authPolicyService.seedDefault();
 
         if (!userService.existsByUsername(adminUsername)) {

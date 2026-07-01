@@ -20,6 +20,12 @@ public class RbacServiceImpl implements RbacService {
     /** The fine-grained permissions used by method-level {@code @PreAuthorize} policies (see {@link Permissions}). */
     private static final List<String> ALL_PERMISSIONS = Permissions.ALL;
 
+    // Baseline permissions for the scoped ROLE_GROUP_ADMIN: read/update/delete the users they manage.
+    // Deliberately excludes user:create (super-only, see AdminAccessPolicy.canCreateUser) and group:read
+    // (which is unscoped and would let a scoped admin enumerate the whole directory).
+    private static final List<String> GROUP_ADMIN_PERMISSIONS = List.of(
+            Permissions.USER_READ, Permissions.USER_UPDATE, Permissions.USER_DELETE);
+
     private final PermissionRepository permissions;
     private final RoleRepository roles;
 
@@ -31,6 +37,16 @@ public class RbacServiceImpl implements RbacService {
 
         ALL_PERMISSIONS.forEach(name -> admin.addPermission(getOrCreatePermission(name)));
         roles.save(admin);
+    }
+
+    @Override
+    @Transactional
+    public void grantGroupAdminPermissions() {
+        Role groupAdmin = roles.findByName("ROLE_GROUP_ADMIN")
+                .orElseThrow(() -> new IllegalStateException("ROLE_GROUP_ADMIN must exist before granting permissions"));
+
+        GROUP_ADMIN_PERMISSIONS.forEach(name -> groupAdmin.addPermission(getOrCreatePermission(name)));
+        roles.save(groupAdmin);
     }
 
     @Override

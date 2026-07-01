@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DataList, EmptyState } from "@/components/states";
@@ -18,7 +19,7 @@ import { SearchSelect } from "@/components/SearchSelect";
 import { searchGroups, searchUsers } from "@/groups";
 
 interface Application { id: string; type: "OIDC" | "SAML"; name: string; launchUrl: string | null; system: boolean; requiredPolicyId: string | null; requiredPolicyName: string | null; }
-interface PortalSettings { reauthIntervalMinutes: number; elevationTokenTtlMinutes: number; sessionIdleTimeoutMinutes: number; sessionAbsoluteLifetimeMinutes: number; }
+interface PortalSettings { reauthIntervalMinutes: number; elevationTokenTtlMinutes: number; sessionIdleTimeoutMinutes: number; sessionAbsoluteLifetimeMinutes: number; adminAllowedCidrs: string[]; }
 
 const settingFields: { key: keyof PortalSettings; label: string; hint: string }[] = [
   { key: "reauthIntervalMinutes", label: "Re-authentication interval (min)", hint: "How recent the deliberate step-up must be to use the admin API. Older ⇒ re-prompt for a strong factor." },
@@ -26,6 +27,11 @@ const settingFields: { key: keyof PortalSettings; label: string; hint: string }[
   { key: "sessionIdleTimeoutMinutes", label: "Admin session idle timeout (min)", hint: "The admin session ends after this long with no admin activity." },
   { key: "sessionAbsoluteLifetimeMinutes", label: "Admin session absolute lifetime (min)", hint: "The admin session ends this long after it first elevated, regardless of activity." },
 ];
+/** Split a textarea of CIDRs (newline- or comma-separated) into trimmed, non-empty entries. */
+function splitCidrs(value: string): string[] {
+  return value.split(/[\n,]+/).map((c) => c.trim()).filter(Boolean);
+}
+
 interface Assignment { id: string; subjectType: string; subjectName: string; requiredPolicyId: string | null; }
 interface Policy { id: string; name: string; appliesToLogin: boolean; }
 
@@ -253,11 +259,20 @@ export default function Applications() {
               {settingFields.map((f) => (
                 <div key={f.key} className="space-y-1.5">
                   <Label htmlFor={f.key}>{f.label}</Label>
-                  <Input id={f.key} type="number" min={1} value={settings[f.key]}
+                  <Input id={f.key} type="number" min={1} value={settings[f.key] as number}
                          onChange={(e) => setSettings((s) => (s ? { ...s, [f.key]: Number(e.target.value) } : s))} />
                   <p className="text-xs text-muted-foreground">{f.hint}</p>
                 </div>
               ))}
+              <div className="space-y-1.5">
+                <Label htmlFor="admin-cidrs">Admin console IP allowlist</Label>
+                <Textarea id="admin-cidrs" rows={3} placeholder="e.g. 203.0.113.0/24&#10;10.0.0.0/8"
+                          value={settings.adminAllowedCidrs.join("\n")}
+                          onChange={(e) => setSettings((s) => (s ? { ...s, adminAllowedCidrs: splitCidrs(e.target.value) } : s))} />
+                <p className="text-xs text-muted-foreground">
+                  One CIDR per line. When set, the admin console (<code>/api/admin</code>) is reachable only from these networks. Leave empty to allow any network.
+                </p>
+              </div>
             </div>
           ) : !settingsError ? <p className="text-sm text-muted-foreground">Loading…</p> : null}
 

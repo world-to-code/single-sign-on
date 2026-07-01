@@ -42,16 +42,33 @@ public class UserAdminService {
     private final RbacService rbacService;
     private final MfaService mfaService;
     private final UserGroupService userGroups;
+    private final AdminAccessPolicy accessPolicy;
 
     @Transactional(readOnly = true)
     public List<AdminUserView> listUsers() {
-        return userService.findAll().stream().map(AdminUserView::of).toList();
+        if (accessPolicy.currentIsSuperAdmin()) {
+            return userService.findAll().stream().map(AdminUserView::of).toList();
+        }
+
+        Set<UUID> managed = accessPolicy.currentManagedUserIds();
+        return userService.findAll().stream()
+                .filter(user -> managed.contains(user.getId()))
+                .map(AdminUserView::of)
+                .toList();
     }
 
-    /** Typeahead user search for the assignment picker. */
+    /** Typeahead user search for the assignment picker (scoped admins see only users they manage). */
     @Transactional(readOnly = true)
     public List<Suggestion> searchUsers(String q, int limit) {
-        return userService.searchUsers(q, limit);
+        List<Suggestion> results = userService.searchUsers(q, limit);
+        if (accessPolicy.currentIsSuperAdmin()) {
+            return results;
+        }
+
+        Set<UUID> managed = accessPolicy.currentManagedUserIds();
+        return results.stream()
+                .filter(suggestion -> managed.contains(UUID.fromString(suggestion.id())))
+                .toList();
     }
 
     @Transactional
