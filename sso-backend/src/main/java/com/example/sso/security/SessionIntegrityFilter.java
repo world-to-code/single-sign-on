@@ -1,6 +1,7 @@
 package com.example.sso.security;
 
 import com.example.sso.audit.AuditService;
+import com.example.sso.session.SessionMetadataStore;
 import com.example.sso.session.SessionPolicyDetails;
 import com.example.sso.session.SessionPolicyService;
 import jakarta.servlet.FilterChain;

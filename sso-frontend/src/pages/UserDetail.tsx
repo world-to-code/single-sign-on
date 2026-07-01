@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft, KeyRound, Power, PowerOff, RotateCcw, ShieldCheck, Trash2,
+  Activity, AppWindow, ArrowLeft, Fingerprint, KeyRound, Monitor, Power, PowerOff, RotateCcw,
+  ShieldCheck, Smartphone, Trash2,
 } from "lucide-react";
 import type { SessionView } from "@/auth";
 import {
-  getUser, resetUserMfa, setUserEnabled, setUserPermissions, updateUser, type UserDetail as UserDetailData,
+  getUser, getUserActivity, getUserApplications, getUserDevices, getUserSessions, resetUserMfa,
+  setUserEnabled, setUserPermissions, updateUser,
+  type ActivityEntry, type UserApplication, type UserDetail as UserDetailData, type UserDevices,
+  type UserSession,
 } from "@/users";
 import { ADMIN_ROLE, listPermissions, listRoles, togglePermission, type Permission, type Role } from "@/roles";
 import { PageHeader } from "@/components/PageHeader";
@@ -21,14 +25,6 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 
-const PLACEHOLDERS = [
-  { title: "Provisioning (SCIM)", hint: "Source system and external identity for provisioned users." },
-  { title: "Custom attributes", hint: "Directory attributes and profile metadata." },
-  { title: "Assigned applications", hint: "Applications this user can launch from the portal." },
-  { title: "Sessions & activity", hint: "Active sessions and recent sign-in activity." },
-  { title: "Authentication devices", hint: "Enrolled factors and passkey management." },
-];
-
 export default function UserDetail({ session }: { session: SessionView }) {
   const { id = "" } = useParams();
   const navigate = useNavigate();
@@ -42,9 +38,19 @@ export default function UserDetail({ session }: { session: SessionView }) {
   const [roleSel, setRoleSel] = useState<string[]>([]);
   const [permsOpen, setPermsOpen] = useState(false);
   const [permSel, setPermSel] = useState<string[]>([]);
+  const [apps, setApps] = useState<UserApplication[]>([]);
+  const [devices, setDevices] = useState<UserDevices | null>(null);
+  const [sessions, setSessions] = useState<UserSession[]>([]);
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
 
   function load() { getUser(id).then(setUser).catch((e) => setError(String(e))); }
   useEffect(load, [id]);
+  useEffect(() => {
+    getUserApplications(id).then(setApps).catch(() => undefined);
+    getUserDevices(id).then(setDevices).catch(() => undefined);
+    getUserSessions(id).then(setSessions).catch(() => undefined);
+    getUserActivity(id).then(setActivity).catch(() => undefined);
+  }, [id]);
   useEffect(() => {
     listRoles().then(setAllRoles).catch(() => undefined);
     listPermissions().then(setCatalog).catch(() => undefined);
@@ -228,16 +234,125 @@ export default function UserDetail({ session }: { session: SessionView }) {
             </CardContent>
           </Card>
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {PLACEHOLDERS.map((card) => (
-              <Card key={card.title} className="opacity-60">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">{card.title}</CardTitle>
-                  <CardDescription>{card.hint}</CardDescription>
-                </CardHeader>
-                <CardContent><Badge variant="muted">Coming soon</Badge></CardContent>
-              </Card>
-            ))}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><AppWindow className="size-4" /> Assigned applications</CardTitle>
+              <CardDescription>Applications this user can launch from the portal.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {apps.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No applications assigned.</p>
+              ) : (
+                <div className="space-y-2">
+                  {apps.map((app) => (
+                    <div key={`${app.type}:${app.id}`} className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                      <span className="font-medium">{app.name}</span>
+                      <Badge variant="muted">{app.type}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Fingerprint className="size-4" /> Authentication devices</CardTitle>
+              <CardDescription>Enrolled multi-factor methods and registered passkeys.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">TOTP authenticator</span>
+                <Badge variant={devices?.totpEnabled ? "success" : "muted"}>
+                  {devices?.totpEnabled ? "enrolled" : "not enrolled"}
+                </Badge>
+              </div>
+              <div>
+                <p className="mb-2 text-sm font-medium">Passkeys</p>
+                {!devices || devices.passkeys.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No passkeys registered.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {devices.passkeys.map((pk) => (
+                      <div key={pk.id} className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm">
+                        <span className="inline-flex items-center gap-2"><KeyRound className="size-4 text-muted-foreground" />{pk.label}</span>
+                        <span className="text-muted-foreground">added {new Date(pk.createdAt).toLocaleDateString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Monitor className="size-4" /> Active sessions</CardTitle>
+              <CardDescription>Sessions currently tracked on this node ({sessions.length}).</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {sessions.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No active sessions.</p>
+              ) : (
+                <div className="space-y-2">
+                  {sessions.map((s) => (
+                    <div key={s.handle} className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm">
+                      <span className="inline-flex items-center gap-2">
+                        <Smartphone className="size-4 text-muted-foreground" />
+                        <span className="truncate" title={s.userAgent ?? undefined}>{s.userAgent || "Unknown device"}</span>
+                      </span>
+                      <span className="shrink-0 text-muted-foreground">{s.ip} · {new Date(s.lastSeenAt).toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Activity className="size-4" /> Recent activity</CardTitle>
+              <CardDescription>Recent audited events for this user.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {activity.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No recent activity.</p>
+              ) : (
+                <div className="space-y-1">
+                  {activity.map((a) => (
+                    <div key={a.id} className="flex items-center justify-between gap-3 border-b py-2 text-sm last:border-0">
+                      <span className="inline-flex items-center gap-2">
+                        <Badge variant={a.success ? "success" : "destructive"}>{a.success ? "ok" : "fail"}</Badge>
+                        <span className="font-mono text-xs">{a.type}</span>
+                      </span>
+                      <span className="shrink-0 text-muted-foreground">{new Date(a.occurredAt).toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Provisioning (SCIM)</CardTitle>
+                <CardDescription>How this account is sourced.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <Badge variant={user.externalId ? "default" : "muted"}>
+                  {user.externalId ? "Provisioned via SCIM" : "Locally managed"}
+                </Badge>
+                {user.externalId && <p className="font-mono text-xs text-muted-foreground">external id: {user.externalId}</p>}
+              </CardContent>
+            </Card>
+            <Card className="opacity-60">
+              <CardHeader>
+                <CardTitle className="text-base">Custom attributes</CardTitle>
+                <CardDescription>Directory attributes and profile metadata.</CardDescription>
+              </CardHeader>
+              <CardContent><Badge variant="muted">Coming soon</Badge></CardContent>
+            </Card>
           </div>
         </div>
       )}

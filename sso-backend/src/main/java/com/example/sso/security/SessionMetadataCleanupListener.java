@@ -1,5 +1,6 @@
 package com.example.sso.security;
 
+import com.example.sso.session.SessionMetadataStore;
 import jakarta.servlet.http.HttpSessionEvent;
 import jakarta.servlet.http.HttpSessionListener;
 import lombok.RequiredArgsConstructor;

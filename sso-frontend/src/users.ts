@@ -49,7 +49,47 @@ export interface UpdateUserRequest {
   roles: string[];
 }
 
+export interface UserApplication {
+  id: string;
+  type: string;
+  name: string;
+  launchUrl: string | null;
+}
+
+export interface Passkey {
+  id: string;
+  label: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+export interface UserDevices {
+  totpEnabled: boolean;
+  passkeys: Passkey[];
+}
+
+export interface UserSession {
+  handle: string;
+  userAgent: string | null;
+  ip: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+}
+
+export interface ActivityEntry {
+  id: number;
+  occurredAt: string;
+  principal: string;
+  type: string;
+  success: boolean;
+  detail: string | null;
+}
+
 export const listUsers = () => apiGet<AdminUser[]>("/api/admin/users");
+export const getUserApplications = (id: string) => apiGet<UserApplication[]>(`/api/admin/users/${id}/applications`);
+export const getUserDevices = (id: string) => apiGet<UserDevices>(`/api/admin/users/${id}/devices`);
+export const getUserSessions = (id: string) => apiGet<UserSession[]>(`/api/admin/users/${id}/sessions`);
+export const getUserActivity = (id: string) => apiGet<ActivityEntry[]>(`/api/admin/users/${id}/activity`);
 export const getUser = (id: string) => apiGet<UserDetail>(`/api/admin/users/${id}`);
 export const createUser = (body: CreateUserRequest) => apiPost<AdminUser>("/api/admin/users", body);
 export const updateUser = (id: string, body: UpdateUserRequest) =>

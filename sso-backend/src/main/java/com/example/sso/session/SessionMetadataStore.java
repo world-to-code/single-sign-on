@@ -1,4 +1,4 @@
-package com.example.sso.security;
+package com.example.sso.session;
 
 import org.springframework.stereotype.Component;
 

@@ -7,7 +7,7 @@ import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.security.AdminElevationFilter;
 import com.example.sso.security.SessionIntegrityFilter;
 import com.example.sso.security.SessionMetadataCleanupListener;
-import com.example.sso.security.SessionMetadataStore;
+import com.example.sso.session.SessionMetadataStore;
 import jakarta.servlet.http.HttpSessionListener;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.ServletListenerRegistrationBean;

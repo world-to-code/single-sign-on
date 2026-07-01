@@ -12,7 +12,10 @@ import com.example.sso.admin.internal.application.PermissionView;
 import com.example.sso.admin.internal.application.RoleView;
 import com.example.sso.admin.internal.application.UpdateUserRequest;
 import com.example.sso.admin.internal.application.UserAdminService;
+import com.example.sso.admin.internal.application.UserDetailAdminService;
 import com.example.sso.admin.internal.application.UserDetailView;
+import com.example.sso.admin.internal.application.UserDevicesView;
+import com.example.sso.admin.internal.application.UserSessionView;
 
 import com.example.sso.admin.AdminPortalSettingsService;
 import com.example.sso.audit.AuditEntry;
@@ -72,6 +75,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminController {
 
     private final UserAdminService userAdminService;
+    private final UserDetailAdminService userDetailAdminService;
     private final ClientAdminService clientAdminService;
     private final SamlRelyingPartyAdminService samlRelyingParties;
     private final SessionPolicyService sessionPolicy;
@@ -93,6 +97,30 @@ public class AdminController {
     @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "')")
     public UserDetailView userDetail(@PathVariable UUID id) {
         return userAdminService.getUser(id);
+    }
+
+    @GetMapping("/users/{id}/applications")
+    @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "')")
+    public List<ApplicationView> userApplications(@PathVariable UUID id) {
+        return userDetailAdminService.applications(id);
+    }
+
+    @GetMapping("/users/{id}/devices")
+    @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "')")
+    public UserDevicesView userDevices(@PathVariable UUID id) {
+        return userDetailAdminService.devices(id);
+    }
+
+    @GetMapping("/users/{id}/sessions")
+    @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "')")
+    public List<UserSessionView> userSessions(@PathVariable UUID id) {
+        return userDetailAdminService.sessions(id);
+    }
+
+    @GetMapping("/users/{id}/activity")
+    @PreAuthorize("hasAuthority('" + Permissions.USER_READ + "')")
+    public List<AuditEntry> userActivity(@PathVariable UUID id) {
+        return userDetailAdminService.activity(id);
     }
 
     @PostMapping("/users")

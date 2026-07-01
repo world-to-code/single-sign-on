@@ -13,4 +13,7 @@ public interface AuditService {
     void record(String type, String principal, boolean success);
 
     List<AuditEntry> recent();
+
+    /** The most recent events recorded for a single principal (username), newest first. */
+    List<AuditEntry> recentForPrincipal(String principal);
 }
