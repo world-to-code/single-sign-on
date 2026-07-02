@@ -8,6 +8,7 @@ import { triggerStepUp } from "@/api";
 import { Brand } from "@/components/Brand";
 import { NAV, titleFor } from "@/components/layout/nav";
 import type { NavItem } from "@/components/layout/nav";
+import { useAdminConsoleAccess } from "@/hooks/useAdminConsoleAccess";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,12 +21,13 @@ export default function AppShell(
   { session, variant = "user", children }:
   { session: SessionView; variant?: "user" | "admin"; children: React.ReactNode },
 ) {
-  const isAdmin = session.roles.includes("ROLE_ADMIN");
-  // A nav item is visible when the shell/role allows it AND (if it declares one) the user holds the
-  // required fine-grained permission. Backend expands create/update/delete into the implied :read,
-  // so an admin with only e.g. user:create still sees the Users tab.
-  const canSee = (i: NavItem) =>
-    (isAdmin || !i.admin) && (!i.permission || session.permissions.includes(i.permission));
+  // Console ENTRY is an app assignment (Model B), not a role; undefined while the check loads.
+  const canEnterAdmin = useAdminConsoleAccess();
+  // Within a shell, a nav item shows when the user holds its fine-grained permission (if it declares
+  // one). Backend expands create/update/delete into the implied :read, so an admin with only e.g.
+  // user:create still sees the Users tab. Whoever is in the admin shell already passed the assignment
+  // gate (AdminGuard), so no role is checked here.
+  const canSee = (i: NavItem) => !i.permission || session.permissions.includes(i.permission);
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -160,7 +162,7 @@ export default function AppShell(
           <button className="lg:hidden" onClick={() => setOpen(true)}><Menu className="size-5" /></button>
           <h1 className="text-lg font-semibold tracking-tight">{titleFor(location.pathname)}</h1>
           <div className="ml-auto flex items-center gap-3">
-            {variant === "user" && isAdmin && (
+            {variant === "user" && canEnterAdmin && (
               <Button variant="outline" size="sm" onClick={() => { void enterAdmin(); }}>
                 <ShieldCheck /> Admin console
               </Button>
@@ -175,7 +177,7 @@ export default function AppShell(
                 <Avatar><AvatarFallback>{initials}</AvatarFallback></Avatar>
                 <div className="hidden text-left sm:block">
                   <div className="text-sm font-medium leading-tight">{session.username}</div>
-                  <div className="text-[11px] text-muted-foreground">{isAdmin ? "Administrator" : "Member"}</div>
+                  <div className="text-[11px] text-muted-foreground">{canEnterAdmin ? "Administrator" : "Member"}</div>
                 </div>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">

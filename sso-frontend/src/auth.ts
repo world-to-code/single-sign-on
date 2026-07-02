@@ -28,6 +28,10 @@ export interface FactorVerification {
 }
 
 export const getSession = () => apiGet<SessionView>("/api/auth/session");
+
+/** Whether the signed-in user may ENTER the admin console (assignment-based; gates the entry affordance). */
+export const getAdminConsoleAccess = () =>
+  apiGet<{ allowed: boolean }>("/api/portal/admin-console/access");
 /** Identifier-first: submit the email; the response's policy drives which factor comes first. */
 export const identify = (email: string) =>
   apiPost<SessionView>("/api/auth/identify", { email });

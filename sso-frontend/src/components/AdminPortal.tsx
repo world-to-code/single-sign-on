@@ -2,26 +2,28 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
 import { Loader2, ShieldAlert } from "lucide-react";
-import type { SessionView } from "@/auth";
 import { handleAdminCallback, isAdminUnlocked, startAdminOidc } from "@/adminPortal";
 import { triggerStepUp } from "@/api";
+import { useAdminConsoleAccess } from "@/hooks/useAdminConsoleAccess";
 import LoadingScreen from "@/components/LoadingScreen";
 import AuthLayout from "@/components/layout/AuthLayout";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
 /**
- * Gate for /admin/*: only ROLE_ADMIN may enter, and only after completing the admin-console OIDC
- * step-up flow. If the admin is not yet unlocked, kick off the real authorization-code + PKCE flow
- * (which forces step-up at the IdP); non-admins are bounced back to the user portal.
+ * Gate for /admin/*: entry is an APP ASSIGNMENT (Model B), not a role — only a user assigned the
+ * admin-console app may enter, and only after completing the admin-console OIDC step-up flow. If not
+ * yet unlocked, kick off the real authorization-code + PKCE flow (which forces step-up at the IdP);
+ * unassigned users are bounced back to the user portal. (The backend independently enforces the same
+ * assignment at /oauth2/authorize, so this is UX, not the security boundary.)
  */
-export function AdminGuard({ session, children }: { session: SessionView; children: ReactNode }) {
-  const isAdmin = session.roles.includes("ROLE_ADMIN");
+export function AdminGuard({ children }: { children: ReactNode }) {
+  const canEnter = useAdminConsoleAccess(); // undefined while loading
   const unlocked = isAdminUnlocked();
   const started = useRef(false); // guard against React StrictMode running the effect twice (double OIDC flow)
 
   useEffect(() => {
-    if (isAdmin && !unlocked && !started.current) {
+    if (canEnter === true && !unlocked && !started.current) {
       started.current = true;
       // Force a FRESH step-up re-auth FIRST (re-stamps the session auth_time), THEN run the OIDC flow
       // so the minted elevation token carries a fresh auth_time (RFC 9470). Bounce home if declined.
@@ -33,9 +35,12 @@ export function AdminGuard({ session, children }: { session: SessionView; childr
         }
       })();
     }
-  }, [isAdmin, unlocked]);
+  }, [canEnter, unlocked]);
 
-  if (!isAdmin) {
+  if (canEnter === undefined) {
+    return <LoadingScreen />; // resolving assignment
+  }
+  if (!canEnter) {
     return <Navigate to="/" replace />;
   }
   if (!unlocked) {

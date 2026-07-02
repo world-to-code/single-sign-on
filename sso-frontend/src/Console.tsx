@@ -9,6 +9,7 @@ import Users from "./pages/Users";
 import UserDetail from "./pages/UserDetail";
 import Roles from "./pages/Roles";
 import Groups from "./pages/Groups";
+import Resources from "./pages/Resources";
 import GroupDetail from "./pages/GroupDetail";
 import Clients from "./pages/Clients";
 import RelyingParties from "./pages/RelyingParties";
@@ -40,7 +41,7 @@ export default function Console({ session }: { session: SessionView }) {
         <Route
           path="/admin/*"
           element={
-            <AdminGuard session={session}>
+            <AdminGuard>
               <AppShell session={session} variant="admin">
                 <Routes>
                   <Route index element={<Navigate to="users" replace />} />
@@ -49,6 +50,7 @@ export default function Console({ session }: { session: SessionView }) {
                   <Route path="roles" element={<Roles />} />
                   <Route path="groups" element={<Groups />} />
                   <Route path="groups/:id" element={<GroupDetail />} />
+                  <Route path="resources" element={<Resources />} />
                   <Route path="applications" element={<Applications />} />
                   <Route path="clients" element={<Clients />} />
                   <Route path="relying-parties" element={<RelyingParties />} />
