@@ -29,10 +29,12 @@ public class DeviceLabeler {
     }
 
     private String os(String ua) {
+        // iOS is checked BEFORE macOS: iPhone/iPad UAs contain "like Mac OS X", so the macOS check
+        // would otherwise claim them. Likewise Android UAs contain "Linux", so Android precedes Linux.
         return ua.contains("Windows") ? "Windows"
+                : (ua.contains("iPhone") || ua.contains("iPad") || ua.contains("iOS")) ? "iOS"
                 : (ua.contains("Mac OS X") || ua.contains("Macintosh")) ? "macOS"
                 : ua.contains("Android") ? "Android"
-                : (ua.contains("iPhone") || ua.contains("iPad") || ua.contains("iOS")) ? "iOS"
                 : ua.contains("Linux") ? "Linux"
                 : UNKNOWN_OS;
     }
