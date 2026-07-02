@@ -1,10 +1,10 @@
 package com.example.sso.user.internal.domain;
+import com.example.sso.shared.domain.AuditedEntity;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import com.example.sso.user.UserAccount;
@@ -14,7 +14,6 @@ import java.util.Collections;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -29,11 +28,7 @@ import java.util.stream.Collectors;
 @Table(name = "app_user")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
-public class AppUser implements UserAccount {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+public class AppUser extends AuditedEntity implements UserAccount {
 
     @Column(nullable = false, unique = true, length = 100)
     private String username;
@@ -53,12 +48,9 @@ public class AppUser implements UserAccount {
     @Column(name = "account_non_locked", nullable = false)
     private boolean accountNonLocked = true;
 
-    @Column(name = "failed_login_attempts", nullable = false)
-    private int failedLoginAttempts = 0;
-
-    /** When set and in the future, the account is temporarily locked out (brute-force defense). */
-    @Column(name = "locked_until")
-    private Instant lockedUntil;
+    /** Brute-force lockout state (failed-attempt count + temporary-lock deadline) as a value object. */
+    @Embedded
+    private AccountLockout lockout = AccountLockout.none();
 
     @Column(name = "email_verified", nullable = false)
     private boolean emailVerified = false;
@@ -66,10 +58,6 @@ public class AppUser implements UserAccount {
     /** SCIM externalId — set when provisioned by an external IdP/HR system. */
     @Column(name = "external_id", length = 255)
     private String externalId;
-
-    @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
 
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
@@ -143,21 +131,17 @@ public class AppUser implements UserAccount {
 
     /** Records a failed login; once {@code maxAttempts} is reached, locks the account until now+lockFor. */
     public void registerFailedLogin(int maxAttempts, Duration lockFor, Instant now) {
-        this.failedLoginAttempts++;
-        if (this.failedLoginAttempts >= maxAttempts) {
-            this.lockedUntil = now.plus(lockFor);
-        }
+        this.lockout = this.lockout.registerFailure(maxAttempts, lockFor, now);
     }
 
     /** Clears failed-login state after a successful authentication. */
     public void registerSuccessfulLogin() {
-        this.failedLoginAttempts = 0;
-        this.lockedUntil = null;
+        this.lockout = AccountLockout.none();
     }
 
     /** True while a temporary brute-force lockout is in effect. */
     public boolean isTemporarilyLocked(Instant now) {
-        return this.lockedUntil != null && now.isBefore(this.lockedUntil);
+        return this.lockout.isTemporarilyLocked(now);
     }
 
     // Read-only views — callers mutate aggregate state only through the behavior methods above,

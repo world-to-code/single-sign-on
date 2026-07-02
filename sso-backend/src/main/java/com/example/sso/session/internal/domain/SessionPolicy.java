@@ -1,25 +1,22 @@
 package com.example.sso.session.internal.domain;
 
+import com.example.sso.session.SessionPolicyDetails;
+import com.example.sso.shared.domain.AbstractEntity;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
-import lombok.AccessLevel;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-
-import com.example.sso.session.SessionPolicyDetails;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 /**
  * A named session-management policy: session lifetimes, step-up re-auth window, client binding,
@@ -37,11 +34,7 @@ import java.util.UUID;
 @Table(name = "session_policy")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
-public class SessionPolicy implements SessionPolicyDetails {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+public class SessionPolicy extends AbstractEntity implements SessionPolicyDetails {
 
     @Column(nullable = false, unique = true, length = 100)
     private String name;
@@ -53,38 +46,15 @@ public class SessionPolicy implements SessionPolicyDetails {
     @Column(nullable = false)
     private boolean enabled = true;
 
-    @Column(name = "absolute_timeout_minutes", nullable = false)
-    private int absoluteTimeoutMinutes = 480;
+    @Embedded
+    private SessionRules rules = SessionRules.defaults();
 
-    @Column(name = "idle_timeout_minutes", nullable = false)
-    private int idleTimeoutMinutes = 30;
-
-    @Column(name = "reauth_interval_minutes", nullable = false)
-    private int reauthIntervalMinutes = 5;
-
-    @Column(name = "reauth_factors", nullable = false, length = 128)
-    private String reauthFactors = "TOTP,FIDO2";
-
-    @Column(name = "bind_client", nullable = false)
-    private boolean bindClient = true;
-
-    /** Maximum simultaneous sessions per user; 0 = unlimited. Excess sessions evict the oldest. */
-    @Column(name = "max_concurrent_sessions", nullable = false)
-    private int maxConcurrentSessions = 0;
-
-    /** Rotate the session id after a successful step-up re-authentication (defence in depth). */
-    @Column(name = "rotate_on_reauth", nullable = false)
-    private boolean rotateOnReauth = true;
-
-    @Column(name = "cookie_same_site", nullable = false, length = 10)
-    private String cookieSameSite = "Lax";
-
-    @ElementCollection(fetch = FetchType.EAGER)
+    @ElementCollection
     @CollectionTable(name = "session_policy_user", joinColumns = @JoinColumn(name = "policy_id"))
     @Column(name = "user_id")
     private Set<UUID> assignedUserIds = new HashSet<>();
 
-    @ElementCollection(fetch = FetchType.EAGER)
+    @ElementCollection
     @CollectionTable(name = "session_policy_role", joinColumns = @JoinColumn(name = "policy_id"))
     @Column(name = "role_id")
     private Set<UUID> assignedRoleIds = new HashSet<>();
@@ -97,14 +67,8 @@ public class SessionPolicy implements SessionPolicyDetails {
     public void update(int absoluteTimeoutMinutes, int idleTimeoutMinutes, int reauthIntervalMinutes,
                        String reauthFactors, boolean bindClient, int maxConcurrentSessions,
                        boolean rotateOnReauth, String cookieSameSite) {
-        this.absoluteTimeoutMinutes = absoluteTimeoutMinutes;
-        this.idleTimeoutMinutes = idleTimeoutMinutes;
-        this.reauthIntervalMinutes = reauthIntervalMinutes;
-        this.reauthFactors = reauthFactors;
-        this.bindClient = bindClient;
-        this.maxConcurrentSessions = maxConcurrentSessions;
-        this.rotateOnReauth = rotateOnReauth;
-        this.cookieSameSite = cookieSameSite;
+        this.rules = new SessionRules(absoluteTimeoutMinutes, idleTimeoutMinutes, reauthIntervalMinutes,
+                reauthFactors, bindClient, maxConcurrentSessions, rotateOnReauth, cookieSameSite);
     }
 
     public void updatePriority(int priority) {
@@ -129,12 +93,55 @@ public class SessionPolicy implements SessionPolicyDetails {
         this.assignedRoleIds.addAll(roleIds);
     }
 
+    // The session rules live in the embedded value object; these delegate to satisfy SessionPolicyDetails.
+    @Override
+    public int getAbsoluteTimeoutMinutes() {
+        return rules.absoluteTimeoutMinutes();
+    }
+
+    @Override
+    public int getIdleTimeoutMinutes() {
+        return rules.idleTimeoutMinutes();
+    }
+
+    @Override
+    public int getReauthIntervalMinutes() {
+        return rules.reauthIntervalMinutes();
+    }
+
+    @Override
+    public String getReauthFactors() {
+        return rules.reauthFactors();
+    }
+
+    @Override
+    public boolean isBindClient() {
+        return rules.bindClient();
+    }
+
+    @Override
+    public int getMaxConcurrentSessions() {
+        return rules.maxConcurrentSessions();
+    }
+
+    @Override
+    public boolean isRotateOnReauth() {
+        return rules.rotateOnReauth();
+    }
+
+    @Override
+    public String getCookieSameSite() {
+        return rules.cookieSameSite();
+    }
+
     // Read-only views (override Lombok's @Getter); mutate via the behavior methods above.
 
+    @Override
     public Set<UUID> getAssignedUserIds() {
         return Collections.unmodifiableSet(assignedUserIds);
     }
 
+    @Override
     public Set<UUID> getAssignedRoleIds() {
         return Collections.unmodifiableSet(assignedRoleIds);
     }

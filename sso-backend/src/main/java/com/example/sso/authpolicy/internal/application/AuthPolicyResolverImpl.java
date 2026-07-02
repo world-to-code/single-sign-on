@@ -53,14 +53,14 @@ public class AuthPolicyResolverImpl implements AuthPolicyResolver {
     @Override
     @Transactional(readOnly = true)
     public AuthPolicyView defaultPolicy() {
-        return repository.findByName(DEFAULT_NAME)
+        return repository.findByNameFetchingSteps(DEFAULT_NAME)
                 .orElseThrow(() -> new IllegalStateException("Default auth policy is missing"));
     }
 
     @Override
     @Transactional(readOnly = true)
     public Optional<AuthPolicyView> highestPriorityEnabled(Collection<UUID> policyIds) {
-        return repository.findAllById(policyIds).stream() // one query (collections batch-fetched)
+        return repository.findAllByIdFetchingSteps(policyIds).stream() // steps fetched (read detached)
                 .filter(AuthPolicy::isEnabled)
                 .max(Comparator.comparingInt(AuthPolicy::getPriority))
                 .map(AuthPolicyView.class::cast);

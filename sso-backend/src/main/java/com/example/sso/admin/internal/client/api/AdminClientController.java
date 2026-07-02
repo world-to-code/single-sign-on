@@ -5,6 +5,7 @@ import com.example.sso.admin.internal.client.application.ClientCreated;
 import com.example.sso.admin.internal.client.application.ClientView;
 import com.example.sso.admin.internal.client.application.CreateClientRequest;
 import com.example.sso.shared.security.RequirePermission;
+import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.Permissions;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -35,12 +36,14 @@ public class AdminClientController {
 
     @PostMapping
     @RequirePermission(Permissions.CLIENT_CREATE)
+    @RequireStepUp
     public ResponseEntity<ClientCreated> createClient(@Valid @RequestBody CreateClientRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(clientAdminService.createClient(request));
     }
 
     @DeleteMapping("/{id}")
     @RequirePermission(Permissions.CLIENT_DELETE)
+    @RequireStepUp
     public ResponseEntity<Void> deleteClient(@PathVariable String id) {
         clientAdminService.deleteClient(id);
         return ResponseEntity.noContent().build();

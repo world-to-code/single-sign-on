@@ -27,9 +27,10 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Default {@link SessionPolicyService}. Holds an in-memory cache of all policies (assignments are
- * EAGER, so the cached detached entities are safe to read off the request path without a database
- * round-trip) and resolves the effective policy per user from that cache. The cache is refreshed on
+ * Default {@link SessionPolicyService}. Holds an in-memory cache of all policies whose LAZY assignment
+ * sets are fetch-joined at refresh time (before the entities detach), so the cached detached entities
+ * are safe to read off the request path without a database round-trip. Resolves the effective policy
+ * per user from that cache. The cache is refreshed on
  * every mutation. Also owns admin CRUD and seeding/self-healing of the non-editable Default fallback.
  */
 @Service
@@ -43,11 +44,12 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
     @PostConstruct
     @Transactional(readOnly = true)
     public void load() {
-        this.cached = List.copyOf(repository.findAllByOrderByPriorityDesc());
+        refresh();
     }
 
+    /** Reloads the cache with each policy's LAZY assignment sets fetch-joined BEFORE the entities detach. */
     private void refresh() {
-        this.cached = List.copyOf(repository.findAllByOrderByPriorityDesc());
+        this.cached = List.copyOf(repository.findAllWithAssignmentsByPriorityDesc());
     }
 
     // --- Read path (served from the cache) ---

@@ -7,6 +7,7 @@ import com.example.sso.portal.ApplicationService;
 import com.example.sso.portal.ApplicationView;
 import com.example.sso.portal.AssignAppRequest;
 import com.example.sso.shared.security.RequirePermission;
+import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.Permissions;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -45,12 +46,14 @@ public class AdminApplicationAssignmentController {
 
     @PostMapping("/assignments")
     @RequirePermission(Permissions.APP_ASSIGNMENT_ASSIGN)
+    @RequireStepUp
     public ResponseEntity<AppAssignmentView> assignApp(@Valid @RequestBody AssignAppRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(applications.assign(request));
     }
 
     @DeleteMapping("/assignments/{id}")
     @RequirePermission(Permissions.APP_ASSIGNMENT_UNASSIGN)
+    @RequireStepUp
     public ResponseEntity<Void> unassignApp(@PathVariable UUID id) {
         applications.unassign(id);
         return ResponseEntity.noContent().build();
@@ -59,6 +62,7 @@ public class AdminApplicationAssignmentController {
     /** Sets (or clears, when requiredPolicyId is blank) the app-level sign-on policy for an application. */
     @PutMapping("/{type}/{id}/policy")
     @RequirePermission(Permissions.APP_ASSIGNMENT_ASSIGN)
+    @RequireStepUp
     public ResponseEntity<Void> setAppPolicy(@PathVariable AppType type, @PathVariable String id,
                                              @RequestBody AppPolicyRequest request) {
         applications.setAppPolicy(type, id, request.requiredPolicyId());

@@ -1,0 +1,97 @@
+package com.example.sso.auth.internal.application;
+
+import com.example.sso.audit.AuditRecord;
+import com.example.sso.audit.AuditService;
+import com.example.sso.audit.AuditType;
+import com.example.sso.authpolicy.AuthFactor;
+import com.example.sso.authpolicy.AuthPolicyResolver;
+import com.example.sso.mfa.FactorAuthorizationService;
+import com.example.sso.portal.AppStepUp;
+import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.shared.error.ForbiddenException;
+import com.example.sso.shared.error.LockedException;
+import com.example.sso.user.UserAccount;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.time.Instant;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+/**
+ * Login-time factor stepping: issues a factor's pre-step data and verifies the user's response,
+ * enforcing policy step-order, the enroll-at-login gate, account lockout, and app step-up freshness.
+ * Grants the factor and advances the policy on success.
+ */
+@Service
+@RequiredArgsConstructor
+public class FactorStepService {
+
+    private final CurrentUserProvider currentUser;
+    private final AuthStateService authState;
+    private final FactorHandlers factorHandlers;
+    private final AuthPolicyResolver authPolicies;
+    private final LoginAttemptService loginAttempts;
+    private final FactorAuthorizationService factorAuth;
+    private final AuthenticationCompletionService completionService;
+    private final AppStepUp appStepUp;
+    private final AuditService audit;
+
+    /** Issues any pre-step data for the factor (TOTP QR, WebAuthn options, or sends an email code). */
+    public FactorChallenge prepare(AuthFactor factor, HttpServletRequest request) {
+        UserAccount user = currentUser.require();
+        requireCurrentStep(factor); // can only act on the factor the policy currently expects
+
+        // Keycloak-style gate: setting up an un-enrolled factor (which factors are enrollable is owned
+        // by the strategy) during login is only allowed when the session policy permits enroll-at-login.
+        FactorHandler handler = factorHandlers.get(factor);
+        if (handler.enrollableAtLogin() && !handler.isEnrolled(user)
+                && !authPolicies.resolveForUser(user).isAllowEnrollmentAtLogin()) {
+            throw new ForbiddenException(
+                    "Setting up a new authenticator during login is disabled. Contact your administrator.");
+        }
+
+        return handler.prepare(user, request);
+    }
+
+    /** Verifies the user's response; on success grants the factor and returns the (possibly completed) view. */
+    public AuthSessionView verify(AuthFactor factor, FactorVerificationRequest verification,
+                                  HttpServletRequest request, HttpServletResponse response) {
+        UserAccount user = currentUser.require();
+        requireCurrentStep(factor); // reject factors out of policy order (e.g. TOTP before password)
+
+        // Account lockout applies to every factor (password is verified here too, not just /login).
+        if (user.isTemporarilyLocked(Instant.now()) || !user.isAccountNonLocked()) {
+            audit.record(new AuditRecord(AuditType.MFA_LOCKED, user.getUsername(), false, "factor=" + factor.name(), null));
+            throw new LockedException("Account is temporarily locked. Try again later.");
+        }
+
+        if (factorHandlers.get(factor).verify(user, verification, request)) {
+            loginAttempts.onSuccess(user.getUsername());
+            factorAuth.grantFactor(request, response, factor.authority());
+            appStepUp.stampIfPending(request.getSession(false)); // refresh app step-up freshness if a launch is pending
+            audit.record(new AuditRecord(AuditType.MFA_SUCCESS, user.getUsername(), true, "factor=" + factor.name(), null));
+            return completionService.completeIfSatisfied(request, response);
+        }
+
+        loginAttempts.onFailure(user.getUsername());
+        audit.record(new AuditRecord(AuditType.MFA_FAILURE, user.getUsername(), false, "factor=" + factor.name(), null));
+        throw new BadRequestException("Incorrect code. Try again.");
+    }
+
+    /**
+     * During the initial (pre-MFA_COMPLETE) login, rejects acting on a factor that is not the policy's
+     * current step — preventing step-skipping or planting a factor before authentication. Once fully
+     * authenticated, the /factors endpoints are reused for per-app step-up, where login step-ordering no
+     * longer applies — so allow it.
+     */
+    private void requireCurrentStep(AuthFactor factor) {
+        AuthSessionView view = authState.describe(currentUser.authentication());
+        if (AuthSessionView.NEXT_DONE.equals(view.next())) {
+            return; // fully authenticated -> step-up context, not initial login ordering
+        }
+
+        if (!view.pendingFactors().contains(factor.name())) {
+            throw new BadRequestException("Not the expected authentication step.");
+        }
+    }
+}

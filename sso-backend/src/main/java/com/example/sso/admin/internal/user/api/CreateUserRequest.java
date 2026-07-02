@@ -1,5 +1,7 @@
-package com.example.sso.admin.internal.user.application;
+package com.example.sso.admin.internal.user.api;
 
+import com.example.sso.user.NewUser;
+import com.example.sso.user.Roles;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -11,4 +13,10 @@ public record CreateUserRequest(@NotBlank String username,
                                 String displayName,
                                 @NotBlank @Size(min = 8) String password,
                                 Set<String> roles) {
+
+    /** The create command, defaulting the role set to {@link Roles#USER} when none is given. */
+    public NewUser toNewUser() {
+        Set<String> roleNames = (roles == null || roles.isEmpty()) ? Set.of(Roles.USER) : roles;
+        return new NewUser(username, email, displayName, password, roleNames);
+    }
 }

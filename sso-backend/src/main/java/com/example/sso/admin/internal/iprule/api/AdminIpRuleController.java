@@ -4,6 +4,7 @@ import com.example.sso.session.IpRuleRequest;
 import com.example.sso.session.IpRuleService;
 import com.example.sso.session.IpRuleView;
 import com.example.sso.shared.security.RequirePermission;
+import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.Permissions;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -36,18 +37,21 @@ public class AdminIpRuleController {
 
     @PostMapping
     @RequirePermission(Permissions.IP_RULE_CREATE)
+    @RequireStepUp
     public ResponseEntity<IpRuleView> createIpRule(@Valid @RequestBody IpRuleRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(ipRules.create(request));
     }
 
     @PutMapping("/{id}")
     @RequirePermission(Permissions.IP_RULE_UPDATE)
+    @RequireStepUp
     public IpRuleView updateIpRule(@PathVariable UUID id, @Valid @RequestBody IpRuleRequest request) {
         return ipRules.update(id, request);
     }
 
     @DeleteMapping("/{id}")
     @RequirePermission(Permissions.IP_RULE_DELETE)
+    @RequireStepUp
     public ResponseEntity<Void> deleteIpRule(@PathVariable UUID id) {
         ipRules.delete(id);
         return ResponseEntity.noContent().build();

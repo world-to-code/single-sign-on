@@ -1,0 +1,75 @@
+package com.example.sso.auth.internal.application;
+
+import com.example.sso.audit.AuditRecord;
+import com.example.sso.audit.AuditService;
+import com.example.sso.audit.AuditType;
+import com.example.sso.authpolicy.Factors;
+import com.example.sso.mfa.FactorAuthorizationService;
+import com.example.sso.session.SessionLifecycle;
+import com.example.sso.session.StepUpInterceptor;
+import com.example.sso.shared.web.ClientIp;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.time.Instant;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.stereotype.Service;
+
+/**
+ * Upgrades a session to fully-authenticated once the user's authentication policy is satisfied: loads
+ * the user's real authorities, preserves the granted factor markers, adds {@code MFA_COMPLETE} and the
+ * {@code auth_time} marker, registers the session (enforcing the concurrent-session limit) and audits
+ * the completed sign-in. Extracted from the controller so the presentation layer stays thin.
+ */
+@Service
+@RequiredArgsConstructor
+public class AuthenticationCompletionService {
+
+    private final AuthStateService authState;
+    private final UserDetailsService userDetailsService;
+    private final FactorAuthorizationService factorAuth;
+    private final SessionLifecycle sessions;
+    private final AuditService audit;
+
+    /**
+     * If the policy is satisfied and the session is not already complete, promotes it and returns the
+     * refreshed view; otherwise returns the current view unchanged. Safe to call after any login step.
+     */
+    public AuthSessionView completeIfSatisfied(HttpServletRequest request, HttpServletResponse response) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return authState.describe(authentication);
+        }
+
+        boolean alreadyComplete = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority).collect(Collectors.toSet()).contains(Factors.MFA_COMPLETE);
+
+        if (!alreadyComplete && authState.isPolicySatisfied(authentication)) {
+            UserDetails principal = userDetailsService.loadUserByUsername(authentication.getName());
+            Set<GrantedAuthority> authorities = new LinkedHashSet<>(principal.getAuthorities());
+            authentication.getAuthorities().stream()
+                    .filter(a -> a.getAuthority().startsWith(Factors.FACTOR_PREFIX)).forEach(authorities::add);
+            authorities.add(new SimpleGrantedAuthority(Factors.MFA_COMPLETE));
+            // Carry the authentication time as a marker authority so the OIDC token customizer can emit
+            // the standard `auth_time` claim. (A details object would break JdbcOAuth2AuthorizationService,
+            // whose Jackson validator rejects arbitrary types; GrantedAuthority serializes fine.)
+            authorities.add(new SimpleGrantedAuthority(Factors.AUTH_TIME_PREFIX + Instant.now().getEpochSecond()));
+            factorAuth.establish(request, response,
+                    UsernamePasswordAuthenticationToken.authenticated(principal, null, authorities));
+            StepUpInterceptor.stamp(request.getSession(false)); // fresh auth time for step-up
+            sessions.registerAndEnforceLimit(request, principal.getUsername());
+            audit.record(new AuditRecord(AuditType.SESSION_CREATED, principal.getUsername(), true, null, ClientIp.of(request)));
+        }
+
+        return authState.describe(SecurityContextHolder.getContext().getAuthentication());
+    }
+}

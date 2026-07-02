@@ -4,14 +4,16 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
-
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
- * Create/update request for a named session policy. Timeouts in minutes; cookieSameSite is
- * Lax|Strict|None; maxConcurrentSessions = 0 means unlimited. Leave assignments empty for a global
- * policy. The cookieSameSite attribute only takes effect on the Default policy (it is global); the
- * cookie's Secure flag is not a policy field — it is enforced by deployment config in production.
+ * Create/update request for a named session policy. Timeouts in minutes; cookieSameSite is Lax|Strict|None;
+ * maxConcurrentSessions = 0 means unlimited. Leave assignments empty for a global policy. The cookieSameSite attribute
+ * only takes effect on the Default policy (it is global); the cookie's Secure flag is not a policy field — it is
+ * enforced by deployment config in production.
  */
 public record SessionPolicyRequest(
         @NotBlank String name,
@@ -27,4 +29,28 @@ public record SessionPolicyRequest(
         @Pattern(regexp = "Lax|Strict|None") String cookieSameSite,
         List<String> assignedUserIds,
         List<String> assignedRoleIds) {
+
+    /**
+     * The create command, resolving the assignment id strings to UUIDs.
+     */
+    public SessionPolicySpec toSpec() {
+        return new SessionPolicySpec(name, priority, enabled, absoluteTimeoutMinutes, idleTimeoutMinutes,
+                reauthIntervalMinutes, reauthFactors, bindClient, maxConcurrentSessions, rotateOnReauth,
+                cookieSameSite, uuids(assignedUserIds), uuids(assignedRoleIds));
+    }
+
+    /**
+     * The update command (no name), resolving the assignment id strings to UUIDs.
+     */
+    public SessionPolicyUpdate toUpdate() {
+        return new SessionPolicyUpdate(priority, enabled, absoluteTimeoutMinutes, idleTimeoutMinutes,
+                reauthIntervalMinutes, reauthFactors, bindClient, maxConcurrentSessions, rotateOnReauth,
+                cookieSameSite, uuids(assignedUserIds), uuids(assignedRoleIds));
+    }
+
+    private Set<UUID> uuids(List<String> values) {
+        return values == null ? Set.of() : values.stream()
+                .map(UUID::fromString)
+                .collect(Collectors.toSet());
+    }
 }

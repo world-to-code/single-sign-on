@@ -8,8 +8,6 @@ import com.example.sso.admin.internal.shared.security.CanSetUserEnabled;
 import com.example.sso.admin.internal.shared.security.CanUpdateUser;
 import com.example.sso.admin.internal.shared.security.CanViewUser;
 import com.example.sso.admin.internal.user.application.AdminUserView;
-import com.example.sso.admin.internal.user.application.CreateUserRequest;
-import com.example.sso.admin.internal.user.application.UpdateUserRequest;
 import com.example.sso.admin.internal.user.application.UserAdminService;
 import com.example.sso.admin.internal.user.application.UserDetailAdminService;
 import com.example.sso.admin.internal.user.application.UserDetailView;
@@ -18,6 +16,7 @@ import com.example.sso.admin.internal.user.application.UserSessionView;
 import com.example.sso.audit.AuditEntry;
 import com.example.sso.portal.ApplicationView;
 import com.example.sso.shared.security.RequirePermission;
+import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.Suggestion;
 import jakarta.validation.Valid;
@@ -94,14 +93,16 @@ public class AdminUserController {
 
     @PostMapping
     @CanCreateUser
+    @RequireStepUp
     public ResponseEntity<AdminUserView> createUser(@Valid @RequestBody CreateUserRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(userAdminService.createUser(request));
+        return ResponseEntity.status(HttpStatus.CREATED).body(userAdminService.createUser(request.toNewUser()));
     }
 
     @PutMapping("/{id}")
     @CanUpdateUser
+    @RequireStepUp
     public AdminUserView updateUser(@PathVariable UUID id, @Valid @RequestBody UpdateUserRequest request) {
-        return userAdminService.updateUser(id, request);
+        return userAdminService.updateUser(id, request.toUpdate());
     }
 
     @PostMapping("/{id}/enabled")
@@ -112,6 +113,7 @@ public class AdminUserController {
 
     @DeleteMapping("/{id}")
     @CanDeleteUser
+    @RequireStepUp
     public ResponseEntity<Void> deleteUser(@PathVariable UUID id) {
         userAdminService.deleteUser(id);
         return ResponseEntity.noContent().build();
@@ -119,6 +121,7 @@ public class AdminUserController {
 
     @PostMapping("/{id}/reset-mfa")
     @CanResetUserMfa
+    @RequireStepUp
     public ResponseEntity<Void> resetMfa(@PathVariable UUID id) {
         userAdminService.resetUserMfa(id);
         return ResponseEntity.noContent().build();
@@ -126,6 +129,7 @@ public class AdminUserController {
 
     @PutMapping("/{id}/permissions")
     @CanManageUserPermissions
+    @RequireStepUp
     public AdminUserView setUserPermissions(@PathVariable UUID id, @Valid @RequestBody SetPermissionsRequest body) {
         return userAdminService.setUserPermissions(id, body.permissions());
     }

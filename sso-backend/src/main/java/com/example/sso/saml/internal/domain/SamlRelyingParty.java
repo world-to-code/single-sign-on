@@ -1,14 +1,13 @@
 package com.example.sso.saml.internal.domain;
 
-import com.example.sso.saml.internal.domain.SamlSecuritySettings;
-import jakarta.persistence.*;
+import com.example.sso.shared.domain.AuditedEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.CreationTimestamp;
-
-import java.time.Instant;
-import java.util.UUID;
 
 /**
  * A SAML 2.0 service provider that trusts this IdP, with its per-RP security policy and (optional)
@@ -18,13 +17,9 @@ import java.util.UUID;
 @Table(name = "saml_relying_party")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
-public class SamlRelyingParty {
+public class SamlRelyingParty extends AuditedEntity {
 
     public static final String NAMEID_EMAIL = "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress";
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
 
     @Column(name = "entity_id", nullable = false, unique = true, length = 512)
     private String entityId;
@@ -35,29 +30,8 @@ public class SamlRelyingParty {
     @Column(name = "name_id_format", nullable = false, length = 256)
     private String nameIdFormat = NAMEID_EMAIL;
 
-    @Column(name = "sign_assertion", nullable = false)
-    private boolean signAssertion = true;
-
-    @Column(name = "sign_response", nullable = false)
-    private boolean signResponse = false;
-
-    @Column(name = "encrypt_assertion", nullable = false)
-    private boolean encryptAssertion = false;
-
-    @Column(name = "signature_algorithm", nullable = false, length = 64)
-    private String signatureAlgorithm = "RSA_SHA256";
-
-    @Column(name = "data_encryption_algorithm", nullable = false, length = 32)
-    private String dataEncryptionAlgorithm = "AES256_GCM";
-
-    @Column(name = "key_transport_algorithm", nullable = false, length = 32)
-    private String keyTransportAlgorithm = "RSA_OAEP";
-
-    @Column(name = "want_authn_requests_signed", nullable = false)
-    private boolean wantAuthnRequestsSigned = false;
-
-    @Column(name = "allow_idp_initiated", nullable = false)
-    private boolean allowIdpInitiated = true;
+    @Embedded
+    private SamlSecuritySettings security = SamlSecuritySettings.defaults();
 
     /** SP signing certificate (PEM) — used to verify SP-signed AuthnRequests. */
     @Column(name = "signing_certificate", columnDefinition = "text")
@@ -72,10 +46,6 @@ public class SamlRelyingParty {
     @Column(name = "sp_login_url", length = 1024)
     private String spLoginUrl;
 
-    @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
-
     public SamlRelyingParty(String entityId, String acsUrl, String nameIdFormat) {
         this.entityId = entityId;
         this.acsUrl = acsUrl;
@@ -87,16 +57,42 @@ public class SamlRelyingParty {
                        String signingCertificate, String encryptionCertificate, String spLoginUrl) {
         this.acsUrl = acsUrl;
         this.nameIdFormat = nameIdFormat;
-        this.signAssertion = settings.signAssertion();
-        this.signResponse = settings.signResponse();
-        this.encryptAssertion = settings.encryptAssertion();
-        this.signatureAlgorithm = settings.signatureAlgorithm();
-        this.dataEncryptionAlgorithm = settings.dataEncryptionAlgorithm();
-        this.keyTransportAlgorithm = settings.keyTransportAlgorithm();
-        this.wantAuthnRequestsSigned = settings.wantAuthnRequestsSigned();
-        this.allowIdpInitiated = settings.allowIdpInitiated();
+        this.security = settings;
         this.signingCertificate = signingCertificate;
         this.encryptionCertificate = encryptionCertificate;
         this.spLoginUrl = spLoginUrl == null || spLoginUrl.isBlank() ? null : spLoginUrl.trim();
+    }
+
+    // The per-RP security knobs live in the embedded value object; these delegate to preserve callers.
+    public boolean isSignAssertion() {
+        return security.signAssertion();
+    }
+
+    public boolean isSignResponse() {
+        return security.signResponse();
+    }
+
+    public boolean isEncryptAssertion() {
+        return security.encryptAssertion();
+    }
+
+    public String getSignatureAlgorithm() {
+        return security.signatureAlgorithm();
+    }
+
+    public String getDataEncryptionAlgorithm() {
+        return security.dataEncryptionAlgorithm();
+    }
+
+    public String getKeyTransportAlgorithm() {
+        return security.keyTransportAlgorithm();
+    }
+
+    public boolean isWantAuthnRequestsSigned() {
+        return security.wantAuthnRequestsSigned();
+    }
+
+    public boolean isAllowIdpInitiated() {
+        return security.allowIdpInitiated();
     }
 }

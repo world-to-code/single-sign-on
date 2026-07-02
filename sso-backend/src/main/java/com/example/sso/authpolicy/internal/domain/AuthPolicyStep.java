@@ -1,4 +1,5 @@
 package com.example.sso.authpolicy.internal.domain;
+import com.example.sso.shared.domain.AbstractEntity;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -10,7 +11,6 @@ import com.example.sso.authpolicy.AuthFactor;
 import com.example.sso.authpolicy.AuthPolicyStepView;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.UUID;
 
 /**
  * One step in an authentication policy. The user must satisfy ANY one of the step's
@@ -20,11 +20,7 @@ import java.util.UUID;
 @Table(name = "auth_policy_step")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
-public class AuthPolicyStep implements AuthPolicyStepView {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+public class AuthPolicyStep extends AbstractEntity implements AuthPolicyStepView {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "policy_id", nullable = false)
@@ -33,7 +29,7 @@ public class AuthPolicyStep implements AuthPolicyStepView {
     @Column(name = "step_order", nullable = false)
     private int stepOrder;
 
-    @ElementCollection(fetch = FetchType.EAGER)
+    @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "auth_policy_step_factor", joinColumns = @JoinColumn(name = "step_id"))
     @Column(name = "factor", length = 20)
     @Enumerated(EnumType.STRING)

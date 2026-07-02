@@ -1,13 +1,12 @@
 package com.example.sso.scim.internal.domain;
+import com.example.sso.shared.domain.AuditedEntity;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.Instant;
-import java.util.UUID;
 
 /**
  * A bearer token authorizing SCIM provisioning calls. Only the token's SHA-256 hash is
@@ -17,11 +16,7 @@ import java.util.UUID;
 @Table(name = "scim_token")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
-public class ScimToken {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+public class ScimToken extends AuditedEntity {
 
     @Column(length = 200)
     private String description;
@@ -31,10 +26,6 @@ public class ScimToken {
 
     @Column(nullable = false)
     private boolean enabled = true;
-
-    @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
 
     @Column(name = "expires_at")
     private Instant expiresAt;

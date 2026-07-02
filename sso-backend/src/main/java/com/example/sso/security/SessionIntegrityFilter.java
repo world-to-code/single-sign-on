@@ -61,7 +61,7 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
             SessionPolicyDetails policy = policyService.resolveForUsername(username);
             long now = System.currentTimeMillis();
 
-            // Concurrent-session control: AuthApiController evicts the oldest overflow sessions by
+            // Concurrent-session control: SessionLifecycle (SessionManagerImpl) evicts the oldest overflow sessions by
             // marking them expired in the SessionRegistry. Mirror Spring's ConcurrentSessionFilter —
             // reject + invalidate an expired session here, otherwise refresh its last-request stamp
             // (which orders sessions for oldest-first eviction).

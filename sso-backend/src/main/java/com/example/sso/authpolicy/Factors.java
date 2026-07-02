@@ -6,6 +6,9 @@ package com.example.sso.authpolicy;
  */
 public final class Factors {
 
+    /** Common prefix of every {@link AuthFactor} authority; used to select the granted-factor markers. */
+    public static final String FACTOR_PREFIX = "FACTOR_";
+
     public static final String PASSWORD = AuthFactor.PASSWORD.authority();
     public static final String TOTP = AuthFactor.TOTP.authority();
     public static final String EMAIL = AuthFactor.EMAIL.authority();

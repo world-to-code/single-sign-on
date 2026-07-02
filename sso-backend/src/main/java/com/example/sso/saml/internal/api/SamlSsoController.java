@@ -1,64 +1,49 @@
 package com.example.sso.saml.internal.api;
 
-import com.example.sso.audit.AuditType;
-import com.example.sso.audit.AuditRecord;
-import com.example.sso.audit.AuditService;
-import com.example.sso.portal.AppAccess;
-import com.example.sso.portal.AppAccessQuery;
-import com.example.sso.portal.AppType;
-import com.example.sso.portal.AppStepUpFilter;
-import com.example.sso.portal.ApplicationService;
+import com.example.sso.saml.internal.application.SamlBindingCodec;
+import com.example.sso.saml.internal.application.SamlSsoOutcome;
+import com.example.sso.saml.internal.application.SamlSsoService;
+import com.example.sso.saml.internal.application.SamlSignatureValidator;
 import com.example.sso.saml.internal.domain.SamlRelyingParty;
 import com.example.sso.saml.internal.domain.SamlRelyingPartyRepository;
-import com.example.sso.saml.internal.application.SamlBindingCodec;
-import com.example.sso.saml.internal.application.SamlResponseBuilder;
-import com.example.sso.saml.internal.application.SamlSignatureValidator;
 import com.example.sso.shared.error.BadRequestException;
-import com.example.sso.shared.error.UnauthorizedException;
-import com.example.sso.user.UserAccount;
-import com.example.sso.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpSession;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.util.Base64;
 import lombok.RequiredArgsConstructor;
 import org.opensaml.saml.saml2.core.AuthnRequest;
-import org.opensaml.saml.saml2.core.Response;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.security.SecureRandom;
-import java.util.Base64;
-import java.util.Set;
-import java.util.stream.Collectors;
-
 /**
- * SAML 2.0 IdP Single Sign-On endpoint. Reaching it requires a fully MFA-authenticated session
- * (enforced by the app security chain). Supports both <b>SP-initiated</b> SSO (parse the SP's
- * {@code AuthnRequest} at {@code /saml2/idp/sso}) and <b>IdP-initiated</b> (unsolicited) SSO at
- * {@code /saml2/idp/sso/init?sp=...}. Either way it issues a signed {@code Response} and returns
- * an auto-submitting POST form to the SP's ACS.
+ * SAML 2.0 IdP Single Sign-On endpoint (binding adapter). Reaching it requires a fully MFA-authenticated
+ * session (enforced by the app security chain). Handles the SP-initiated Redirect/POST bindings and the
+ * IdP-initiated launch, verifies the request signature, then delegates the SSO decision to
+ * {@link SamlSsoService} and renders its {@link SamlSsoOutcome}.
  */
 @RequestMapping("/saml2/idp/sso")
 @Controller
 @RequiredArgsConstructor
 public class SamlSsoController {
 
+    private static final String CSP_HEADER = "Content-Security-Policy";
+    private static final String STEPUP_PATH = "/stepup";
+    private static final String SIGNATURE_PARAM = "&Signature=";
+
     private final SamlBindingCodec codec;
     private final SamlRelyingPartyRepository relyingParties;
-    private final SamlResponseBuilder responseBuilder;
     private final SamlSignatureValidator signatureValidator;
-    private final UserService users;
-    private final ApplicationService applications;
-    private final AuditService audit;
+    private final SamlSsoService sso;
+    private final SecureRandom nonceRandom = new SecureRandom();
 
     @GetMapping
     public ResponseEntity<String> ssoRedirect(@RequestParam("SAMLRequest") String samlRequest,
@@ -76,13 +61,13 @@ public class SamlSsoController {
 
             // The signed octet string is the raw query up to (but excluding) "&Signature=".
             String query = httpRequest.getQueryString();
-            int idx = query.indexOf("&Signature=");
+            int idx = query.indexOf(SIGNATURE_PARAM);
             String signedContent = idx >= 0 ? query.substring(0, idx) : query;
             signatureValidator.verifyRedirect(signedContent.getBytes(StandardCharsets.US_ASCII), sigAlg,
                     Base64.getDecoder().decode(signature), relyingParty);
         }
 
-        return respond(relyingParty, request.getID(), relayState, authentication, httpRequest);
+        return render(sso.process(relyingParty, request.getID(), relayState, authentication, httpRequest));
     }
 
     @PostMapping
@@ -96,7 +81,7 @@ public class SamlSsoController {
             signatureValidator.verifyEmbedded(request, relyingParty);
         }
 
-        return respond(relyingParty, request.getID(), relayState, authentication, httpRequest);
+        return render(sso.process(relyingParty, request.getID(), relayState, authentication, httpRequest));
     }
 
     /** IdP-initiated (unsolicited) SSO: the user launches the app from the IdP, no AuthnRequest. */
@@ -111,7 +96,7 @@ public class SamlSsoController {
             throw new BadRequestException("IdP-initiated SSO is not allowed for " + spEntityId);
         }
 
-        return respond(relyingParty, null, relayState, authentication, httpRequest); // null InResponseTo = unsolicited
+        return render(sso.process(relyingParty, null, relayState, authentication, httpRequest)); // null InResponseTo = unsolicited
     }
 
     private SamlRelyingParty resolve(AuthnRequest request) {
@@ -124,56 +109,32 @@ public class SamlSsoController {
                 .orElseThrow(() -> new BadRequestException("Unknown SP: " + spEntityId));
     }
 
-    private ResponseEntity<String> respond(SamlRelyingParty relyingParty, String inResponseTo,
-                                           String relayState, Authentication authentication, HttpServletRequest httpRequest) {
-        UserAccount user = users.findByUsername(authentication.getName())
-                .orElseThrow(() -> new UnauthorizedException("Unknown user"));
+    private ResponseEntity<String> render(SamlSsoOutcome outcome) {
+        return switch (outcome) {
+            case SamlSsoOutcome.Issued issued -> renderPostForm(issued);
+            case SamlSsoOutcome.StepUpRedirect ignored ->
+                    ResponseEntity.status(HttpStatus.FOUND).location(URI.create(STEPUP_PATH)).build();
+            case SamlSsoOutcome.StepUpForbidden ignored ->
+                    ResponseEntity.status(HttpStatus.FORBIDDEN).contentType(MediaType.TEXT_PLAIN)
+                            .body("Additional authentication is required for this application.");
+        };
+    }
 
-        // Per-app step-up: this app may require extra factors beyond the base login.
-        Set<String> granted = authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority).filter(a -> a.startsWith("FACTOR_")).collect(Collectors.toSet());
-        AppAccess access = applications.appAccess(new AppAccessQuery(user, AppType.SAML,
-                relyingParty.getId().toString(), granted, AppStepUpFilter.lastAppStepUp(
-                        httpRequest.getSession(false), AppType.SAML, relyingParty.getId().toString())));
-
-        if (!access.ready()) {
-            if ("GET".equalsIgnoreCase(httpRequest.getMethod())) {
-                HttpSession session = httpRequest.getSession(true);
-                String query = httpRequest.getQueryString();
-                session.setAttribute(AppStepUpFilter.RETURN, httpRequest.getRequestURI() + (query != null ? "?" + query : ""));
-                session.setAttribute(AppStepUpFilter.APP_TYPE, "SAML");
-                session.setAttribute(AppStepUpFilter.APP_ID, relyingParty.getId().toString());
-                return ResponseEntity.status(HttpStatus.FOUND).location(URI.create("/stepup")).build();
-            }
-            audit.record(new AuditRecord(AuditType.SAML_STEPUP_REQUIRED, user.getUsername(), false,
-                    "sp=" + relyingParty.getEntityId(), null));
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).contentType(MediaType.TEXT_PLAIN)
-                    .body("Additional authentication is required for this application.");
-        }
-
-        Response response = responseBuilder.issueResponse(
-                relyingParty, inResponseTo, user.getEmail(), user.getDisplayName());
-        String encoded = codec.encode(response);
-        String flow = inResponseTo == null ? " (idp-initiated)" : "";
-        audit.record(new AuditRecord(AuditType.SAML_SSO_ISSUED, user.getUsername(), true,
-                "sp=" + relyingParty.getEntityId() + flow, null));
-
+    private ResponseEntity<String> renderPostForm(SamlSsoOutcome.Issued issued) {
         // The auto-submit page needs an inline script; serve it under a per-response CSP that allows ONLY
         // that nonce'd script (overriding the app's strict default-src 'self', which blocks inline JS).
         // Spring Security's CSP writer skips when the header is already set, so this per-response CSP wins.
         String nonce = newNonce();
-        String html = codec.postBindingHtml(relyingParty.getAcsUrl(), encoded, relayState, nonce);
+        String html = codec.postBindingHtml(issued.acsUrl(), issued.samlResponse(), issued.relayState(), nonce);
         return ResponseEntity.ok()
                 .contentType(MediaType.TEXT_HTML)
-                .header("Content-Security-Policy", "default-src 'self'; script-src 'nonce-" + nonce + "'")
+                .header(CSP_HEADER, "default-src 'self'; script-src 'nonce-" + nonce + "'")
                 .body(html);
     }
 
-    private static final SecureRandom NONCE_RANDOM = new SecureRandom();
-
     private String newNonce() {
         byte[] bytes = new byte[16];
-        NONCE_RANDOM.nextBytes(bytes);
+        nonceRandom.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 }

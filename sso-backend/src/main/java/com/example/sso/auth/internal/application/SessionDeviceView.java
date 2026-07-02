@@ -1,4 +1,4 @@
-package com.example.sso.auth.internal.api;
+package com.example.sso.auth.internal.application;
 
 import java.time.Instant;
 

@@ -34,6 +34,11 @@ public class TotpFactorHandler implements FactorHandler {
     }
 
     @Override
+    public boolean enrollableAtLogin() {
+        return true;
+    }
+
+    @Override
     public FactorChallenge prepare(UserAccount user, HttpServletRequest request) {
         if (mfa.hasEnabledTotp(user.getId())) {
             return FactorChallenge.none(); // already enrolled -> a code challenge needs no QR

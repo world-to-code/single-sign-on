@@ -67,6 +67,11 @@ public class Fido2FactorHandler implements FactorHandler {
     }
 
     @Override
+    public boolean enrollableAtLogin() {
+        return true;
+    }
+
+    @Override
     public FactorChallenge prepare(UserAccount user, HttpServletRequest request) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         HttpSession session = request.getSession(true);

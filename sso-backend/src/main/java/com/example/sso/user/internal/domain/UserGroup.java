@@ -1,12 +1,11 @@
 package com.example.sso.user.internal.domain;
+import com.example.sso.shared.domain.AuditedEntity;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.CreationTimestamp;
 
-import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -26,14 +25,10 @@ import java.util.UUID;
 @Table(name = "user_group")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
-public class UserGroup {
+public class UserGroup extends AuditedEntity {
 
     /** The system group every user belongs to; auto-managed, cannot be renamed/deleted. */
     public static final String ALL_USERS = "All Users";
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
 
     @Column(nullable = false, unique = true, length = 120)
     private String name;
@@ -49,14 +44,14 @@ public class UserGroup {
     @Column(name = "external_id", length = 255)
     private String externalId;
 
-    @ElementCollection(fetch = FetchType.EAGER)
+    @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "user_group_member", joinColumns = @JoinColumn(name = "group_id"))
     @Column(name = "user_id")
     private Set<UUID> memberUserIds = new HashSet<>();
 
     // Admins (scoped ROLE_GROUP_ADMIN users) who may manage the MEMBERS of this group. Separate from
     // membership: a manager need not be a member. Empowers group-scoped delegated administration.
-    @ElementCollection(fetch = FetchType.EAGER)
+    @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "user_group_manager", joinColumns = @JoinColumn(name = "group_id"))
     @Column(name = "user_id")
     private Set<UUID> managerUserIds = new HashSet<>();
@@ -69,10 +64,6 @@ public class UserGroup {
             joinColumns = @JoinColumn(name = "group_id"),
             inverseJoinColumns = @JoinColumn(name = "role_id"))
     private Set<Role> roles = new HashSet<>();
-
-    @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
 
     public UserGroup(String name, String description, String externalId) {
         this.name = name;

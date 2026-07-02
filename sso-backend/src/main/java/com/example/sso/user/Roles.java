@@ -9,6 +9,9 @@ package com.example.sso.user;
  */
 public final class Roles {
 
+    /** Common prefix of every role authority (Spring's role marker); roles surface as authorities verbatim. */
+    public static final String ROLE_PREFIX = "ROLE_";
+
     /** Super administrator: unscoped, self-heals to the full permission catalog. */
     public static final String ADMIN = "ROLE_ADMIN";
     /** Scoped delegated administrator: manages only the members of groups they manage. */

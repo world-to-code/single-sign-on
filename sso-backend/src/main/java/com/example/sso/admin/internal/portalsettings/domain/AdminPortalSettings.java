@@ -1,10 +1,10 @@
 package com.example.sso.admin.internal.portalsettings.domain;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import java.time.Duration;
 import java.time.Instant;
 import lombok.Getter;
 
@@ -23,26 +23,8 @@ public class AdminPortalSettings {
     @Id
     private int id;
 
-    @Getter
-    @Column(name = "reauth_interval_minutes", nullable = false)
-    private int reauthIntervalMinutes;
-
-    @Getter
-    @Column(name = "elevation_token_ttl_minutes", nullable = false)
-    private int elevationTokenTtlMinutes;
-
-    @Getter
-    @Column(name = "session_idle_timeout_minutes", nullable = false)
-    private int sessionIdleTimeoutMinutes;
-
-    @Getter
-    @Column(name = "session_absolute_lifetime_minutes", nullable = false)
-    private int sessionAbsoluteLifetimeMinutes;
-
-    /** Comma-separated CIDRs the admin console is reachable from; blank/null means "any network". */
-    @Getter
-    @Column(name = "admin_allowed_cidrs", columnDefinition = "text")
-    private String adminAllowedCidrs;
+    @Embedded
+    private PortalSecuritySettings settings;
 
     @Getter
     @Column(name = "updated_at", nullable = false)
@@ -55,23 +37,29 @@ public class AdminPortalSettings {
     public void update(int reauthIntervalMinutes, int elevationTokenTtlMinutes,
                        int sessionIdleTimeoutMinutes, int sessionAbsoluteLifetimeMinutes,
                        String adminAllowedCidrs) {
-        this.reauthIntervalMinutes = reauthIntervalMinutes;
-        this.elevationTokenTtlMinutes = elevationTokenTtlMinutes;
-        this.sessionIdleTimeoutMinutes = sessionIdleTimeoutMinutes;
-        this.sessionAbsoluteLifetimeMinutes = sessionAbsoluteLifetimeMinutes;
-        this.adminAllowedCidrs = adminAllowedCidrs;
+        this.settings = new PortalSecuritySettings(reauthIntervalMinutes, elevationTokenTtlMinutes,
+                sessionIdleTimeoutMinutes, sessionAbsoluteLifetimeMinutes, adminAllowedCidrs);
         this.updatedAt = Instant.now();
     }
 
-    public Duration reauthInterval() {
-        return Duration.ofMinutes(reauthIntervalMinutes);
+    // The security knobs live in the embedded value object; these delegate to preserve callers.
+    public int getReauthIntervalMinutes() {
+        return settings.reauthIntervalMinutes();
     }
 
-    public Duration sessionIdleTimeout() {
-        return Duration.ofMinutes(sessionIdleTimeoutMinutes);
+    public int getElevationTokenTtlMinutes() {
+        return settings.elevationTokenTtlMinutes();
     }
 
-    public Duration sessionAbsoluteLifetime() {
-        return Duration.ofMinutes(sessionAbsoluteLifetimeMinutes);
+    public int getSessionIdleTimeoutMinutes() {
+        return settings.sessionIdleTimeoutMinutes();
+    }
+
+    public int getSessionAbsoluteLifetimeMinutes() {
+        return settings.sessionAbsoluteLifetimeMinutes();
+    }
+
+    public String getAdminAllowedCidrs() {
+        return settings.adminAllowedCidrs();
     }
 }

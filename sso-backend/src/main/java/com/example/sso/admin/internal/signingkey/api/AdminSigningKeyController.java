@@ -2,6 +2,7 @@ package com.example.sso.admin.internal.signingkey.api;
 
 import com.example.sso.admin.internal.shared.application.AdminService;
 import com.example.sso.shared.security.RequirePermission;
+import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.Permissions;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -19,12 +20,14 @@ public class AdminSigningKeyController {
 
     @PostMapping("/keys/rotate")
     @RequirePermission(Permissions.KEY_ROTATE)
+    @RequireStepUp
     public Map<String, String> rotateSigningKey() {
         return Map.of("activeKid", adminService.rotateSigningKey());
     }
 
     @PostMapping("/saml/keys/rotate")
     @RequirePermission(Permissions.KEY_ROTATE)
+    @RequireStepUp
     public Map<String, String> rotateSamlSigningKey() {
         return Map.of("keyId", adminService.rotateSamlSigningKey());
     }

@@ -18,6 +18,11 @@ public interface FactorHandler {
         return true;
     }
 
+    /** Whether an un-enrolled user may set this factor up mid-login (gated further by the session policy). */
+    default boolean enrollableAtLogin() {
+        return false;
+    }
+
     /** Optional pre-step: issue an enrollment/challenge (QR, WebAuthn options) or send a code. */
     default FactorChallenge prepare(UserAccount user, HttpServletRequest request) {
         return FactorChallenge.none();

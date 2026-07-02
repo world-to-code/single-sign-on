@@ -72,7 +72,7 @@ public class SecurityConfig {
     /**
      * Tracks live sessions per principal for the per-policy "max concurrent sessions" control. Our
      * custom JSON login flow does not run Spring's {@code ConcurrentSessionControlAuthenticationStrategy},
-     * so {@code AuthApiController} registers sessions + expires the oldest overflow manually, and
+     * so {@code SessionLifecycle} (SessionManagerImpl) registers sessions + expires the oldest overflow manually, and
      * {@link SessionIntegrityFilter} enforces the resulting expiry on the next request.
      */
     @Bean

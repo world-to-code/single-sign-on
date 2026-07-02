@@ -4,6 +4,7 @@ import com.example.sso.saml.RelyingPartyRequest;
 import com.example.sso.saml.RelyingPartyView;
 import com.example.sso.saml.SamlRelyingPartyAdminService;
 import com.example.sso.shared.security.RequirePermission;
+import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.Permissions;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -36,18 +37,21 @@ public class AdminRelyingPartyController {
 
     @PostMapping
     @RequirePermission(Permissions.SAML_CREATE)
+    @RequireStepUp
     public ResponseEntity<RelyingPartyView> createRelyingParty(@Valid @RequestBody RelyingPartyRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(samlRelyingParties.create(request));
     }
 
     @PutMapping("/{id}")
     @RequirePermission(Permissions.SAML_UPDATE)
+    @RequireStepUp
     public RelyingPartyView updateRelyingParty(@PathVariable UUID id, @Valid @RequestBody RelyingPartyRequest request) {
         return samlRelyingParties.update(id, request);
     }
 
     @DeleteMapping("/{id}")
     @RequirePermission(Permissions.SAML_DELETE)
+    @RequireStepUp
     public ResponseEntity<Void> deleteRelyingParty(@PathVariable UUID id) {
         samlRelyingParties.delete(id);
         return ResponseEntity.noContent().build();

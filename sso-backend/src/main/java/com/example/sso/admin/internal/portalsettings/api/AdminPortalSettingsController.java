@@ -1,7 +1,6 @@
 package com.example.sso.admin.internal.portalsettings.api;
 
 import com.example.sso.admin.AdminPortalSettingsService;
-import com.example.sso.admin.internal.portalsettings.application.AdminPortalSettingsRequest;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.user.Permissions;
 import jakarta.validation.Valid;
@@ -29,6 +28,6 @@ public class AdminPortalSettingsController {
     @PutMapping
     @RequirePermission(Permissions.PORTAL_SETTINGS_UPDATE)
     public AdminPortalSettingsView updatePortalSettings(@Valid @RequestBody AdminPortalSettingsRequest request) {
-        return AdminPortalSettingsView.of(adminPortalSettings.update(request));
+        return AdminPortalSettingsView.of(adminPortalSettings.update(request.toData()));
     }
 }

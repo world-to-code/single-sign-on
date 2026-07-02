@@ -4,6 +4,7 @@ import com.example.sso.admin.internal.role.application.PermissionView;
 import com.example.sso.admin.internal.role.application.RoleView;
 import com.example.sso.admin.internal.user.application.UserAdminService;
 import com.example.sso.shared.security.RequirePermission;
+import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.Permissions;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -36,6 +37,7 @@ public class AdminRoleController {
 
     @PostMapping("/roles")
     @RequirePermission(Permissions.ROLE_CREATE)
+    @RequireStepUp
     public ResponseEntity<RoleView> createRole(@Valid @RequestBody RoleRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(userAdminService.createRole(request.name(), request.permissions()));
@@ -43,12 +45,14 @@ public class AdminRoleController {
 
     @PutMapping("/roles/{id}")
     @RequirePermission(Permissions.ROLE_UPDATE)
+    @RequireStepUp
     public RoleView updateRole(@PathVariable UUID id, @Valid @RequestBody RoleRequest request) {
         return userAdminService.updateRole(id, request.name(), request.permissions());
     }
 
     @DeleteMapping("/roles/{id}")
     @RequirePermission(Permissions.ROLE_DELETE)
+    @RequireStepUp
     public ResponseEntity<Void> deleteRole(@PathVariable UUID id) {
         userAdminService.deleteRole(id);
         return ResponseEntity.noContent().build();

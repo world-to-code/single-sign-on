@@ -46,6 +46,12 @@ server:
 
 sso:
   issuer: http://localhost:9000  # OIDC issuer + SAML IdP entityID base
+  security:
+    step-up:
+      # Sensitive admin actions (@RequireStepUp: deletes, policy edits, permission/role grants,
+      # key/secret rotation) require a re-authentication no older than this. Kept well under the
+      # session policy's general re-auth interval; the interceptor applies whichever is stricter.
+      sensitive-max-age: 2m
   admin:
     username: admin
     email: admin@example.com

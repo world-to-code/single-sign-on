@@ -1,13 +1,10 @@
 package com.example.sso.admin.internal.sessionpolicy.api;
 
-import com.example.sso.admin.internal.shared.api.RequestIds;
-
+import com.example.sso.admin.internal.sessionpolicy.application.SessionPolicyAdminService;
 import com.example.sso.session.SessionPolicyRequest;
-import com.example.sso.session.SessionPolicyService;
-import com.example.sso.session.SessionPolicySpec;
-import com.example.sso.session.SessionPolicyUpdate;
 import com.example.sso.session.SessionPolicyView;
 import com.example.sso.shared.security.RequirePermission;
+import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.Permissions;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -30,40 +27,34 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AdminSessionPolicyController {
 
-    private final SessionPolicyService sessionPolicy;
+    private final SessionPolicyAdminService sessionPolicies;
 
     @GetMapping
     @RequirePermission(Permissions.SESSION_POLICY_READ)
     public List<SessionPolicyView> sessionPolicies() {
-        return sessionPolicy.listAll().stream().map(SessionPolicyView::of).toList();
+        return sessionPolicies.list();
     }
 
     @PostMapping
     @RequirePermission(Permissions.SESSION_POLICY_CREATE)
+    @RequireStepUp
     public ResponseEntity<SessionPolicyView> createSessionPolicy(@Valid @RequestBody SessionPolicyRequest request) {
-        SessionPolicyView created = SessionPolicyView.of(sessionPolicy.create(new SessionPolicySpec(request.name(),
-                request.priority(), request.enabled(), request.absoluteTimeoutMinutes(), request.idleTimeoutMinutes(),
-                request.reauthIntervalMinutes(), request.reauthFactors(), request.bindClient(),
-                request.maxConcurrentSessions(), request.rotateOnReauth(), request.cookieSameSite(),
-                RequestIds.toUuidSet(request.assignedUserIds()), RequestIds.toUuidSet(request.assignedRoleIds()))));
-        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+        return ResponseEntity.status(HttpStatus.CREATED).body(sessionPolicies.create(request));
     }
 
     @PutMapping("/{id}")
     @RequirePermission(Permissions.SESSION_POLICY_UPDATE)
+    @RequireStepUp
     public SessionPolicyView updateSessionPolicy(@PathVariable UUID id,
                                                  @Valid @RequestBody SessionPolicyRequest request) {
-        return SessionPolicyView.of(sessionPolicy.update(id, new SessionPolicyUpdate(request.priority(),
-                request.enabled(), request.absoluteTimeoutMinutes(), request.idleTimeoutMinutes(),
-                request.reauthIntervalMinutes(), request.reauthFactors(), request.bindClient(),
-                request.maxConcurrentSessions(), request.rotateOnReauth(), request.cookieSameSite(),
-                RequestIds.toUuidSet(request.assignedUserIds()), RequestIds.toUuidSet(request.assignedRoleIds()))));
+        return sessionPolicies.update(id, request);
     }
 
     @DeleteMapping("/{id}")
     @RequirePermission(Permissions.SESSION_POLICY_DELETE)
+    @RequireStepUp
     public ResponseEntity<Void> deleteSessionPolicy(@PathVariable UUID id) {
-        sessionPolicy.delete(id);
+        sessionPolicies.delete(id);
         return ResponseEntity.noContent().build();
     }
 }

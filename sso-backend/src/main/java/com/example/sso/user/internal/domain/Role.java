@@ -1,4 +1,5 @@
 package com.example.sso.user.internal.domain;
+import com.example.sso.shared.domain.AbstractEntity;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -11,7 +12,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Entity
@@ -19,11 +19,7 @@ import java.util.stream.Collectors;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
 @EqualsAndHashCode(of = "name")
-public class Role implements RoleRef {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+public class Role extends AbstractEntity implements RoleRef {
 
     @Column(nullable = false, unique = true, length = 64)
     private String name;

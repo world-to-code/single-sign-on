@@ -79,14 +79,10 @@ public class UserAdminService {
     }
 
     @Transactional
-    public AdminUserView createUser(CreateUserRequest request) {
-        Set<String> roleNames = (request.roles() == null || request.roles().isEmpty())
-                ? Set.of(Roles.USER) : request.roles();
-
+    public AdminUserView createUser(NewUser newUser) {
         try {
-            AdminUserView created = AdminUserView.of(userService.createUser(new NewUser(request.username(),
-                    request.email(), request.displayName(), request.password(), roleNames)));
-            auditLogger.log(AuditType.USER_CREATED, "username=" + created.username() + " roles=" + roleNames);
+            AdminUserView created = AdminUserView.of(userService.createUser(newUser));
+            auditLogger.log(AuditType.USER_CREATED, "username=" + created.username() + " roles=" + newUser.roleNames());
             return created;
         } catch (IllegalArgumentException e) {
             throw new ConflictException(e.getMessage());
@@ -94,13 +90,12 @@ public class UserAdminService {
     }
 
     @Transactional
-    public AdminUserView updateUser(UUID id, UpdateUserRequest request) {
-        boolean remainsEnabledAdmin = request.enabled()
-                && request.roles() != null && request.roles().contains(ADMIN_ROLE);
+    public AdminUserView updateUser(UUID id, UserUpdate update) {
+        boolean remainsEnabledAdmin = update.enabled()
+                && update.roleNames() != null && update.roleNames().contains(ADMIN_ROLE);
         ensureNotLastAdmin(id, remainsEnabledAdmin);
-        AdminUserView updated = AdminUserView.of(userService.updateUser(id, new UserUpdate(request.displayName(),
-                request.email(), request.enabled(), request.roles())));
-        auditLogger.log(AuditType.USER_UPDATED, "user=" + id + " enabled=" + request.enabled() + " roles=" + request.roles());
+        AdminUserView updated = AdminUserView.of(userService.updateUser(id, update));
+        auditLogger.log(AuditType.USER_UPDATED, "user=" + id + " enabled=" + update.enabled() + " roles=" + update.roleNames());
         return updated;
     }
 
@@ -198,10 +193,7 @@ public class UserAdminService {
         UserAccount user = userService.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
         List<GroupMembership> memberships = userGroups.membershipsForUser(id);
 
-        return new UserDetailView(user.getId().toString(), user.getUsername(), user.getEmail(),
-                user.getDisplayName(), user.isEnabled(), user.isEmailVerified(), user.isAccountNonLocked(),
-                user.getExternalId(), user.getCreatedAt(), user.getUpdatedAt(),
-                roleAssignments(user, memberships),
+        return UserDetailView.of(user, roleAssignments(user, memberships),
                 user.getDirectPermissionNames().stream().sorted().toList(),
                 effectivePermissions(user, memberships));
     }

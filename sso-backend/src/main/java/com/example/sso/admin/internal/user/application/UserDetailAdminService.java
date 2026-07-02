@@ -49,7 +49,7 @@ public class UserDetailAdminService {
     public List<UserSessionView> sessions(UUID userId) {
         UserAccount user = require(userId);
         return sessionMetadata.forUser(user.getUsername()).stream()
-                .map(m -> new UserSessionView(m.handle(), m.userAgent(), m.ip(), m.createdAt(), m.lastSeenAt()))
+                .map(UserSessionView::of)
                 .toList();
     }
 

@@ -1,20 +1,16 @@
 package com.example.sso.portal.internal.domain;
+import com.example.sso.shared.domain.AuditedEntity;
 
 import com.example.sso.portal.AppType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import java.time.Instant;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.CreationTimestamp;
 
 /**
  * An application-level sign-on policy: the auth policy required to access an app (OIDC client / SAML SP)
@@ -24,11 +20,7 @@ import org.hibernate.annotations.CreationTimestamp;
 @Table(name = "app_policy")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class AppPolicy {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+public class AppPolicy extends AuditedEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "app_type", nullable = false, length = 8)
@@ -39,10 +31,6 @@ public class AppPolicy {
 
     @Column(name = "required_policy_id", nullable = false)
     private UUID requiredPolicyId;
-
-    @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
 
     public AppPolicy(AppType appType, String appId, UUID requiredPolicyId) {
         this.appType = appType;

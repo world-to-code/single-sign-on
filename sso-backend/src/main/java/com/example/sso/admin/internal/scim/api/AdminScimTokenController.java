@@ -4,6 +4,7 @@ import com.example.sso.admin.internal.shared.application.AdminService;
 import com.example.sso.scim.IssueScimTokenRequest;
 import com.example.sso.scim.ScimTokenIssued;
 import com.example.sso.shared.security.RequirePermission;
+import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.Permissions;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ public class AdminScimTokenController {
 
     @PostMapping
     @RequirePermission(Permissions.SCIM_MANAGE)
+    @RequireStepUp
     public ScimTokenIssued issueScimToken(@Valid @RequestBody IssueScimTokenRequest request) {
         return adminService.issueScimToken(request);
     }

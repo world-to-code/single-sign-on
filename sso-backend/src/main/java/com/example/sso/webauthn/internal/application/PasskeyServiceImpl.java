@@ -34,8 +34,8 @@ public class PasskeyServiceImpl implements PasskeyService {
 
         return credentials.findByUserId(entity.getId()).stream()
                 .map(c -> new PasskeyView(c.getCredentialId().toBase64UrlString(), c.getLabel(),
-                        c.getCreated() == null ? null : c.getCreated().toString(),
-                        c.getLastUsed() == null ? null : c.getLastUsed().toString()))
+                        c.getCreated().toString(),
+                        c.getLastUsed().toString()))
                 .toList();
     }
 

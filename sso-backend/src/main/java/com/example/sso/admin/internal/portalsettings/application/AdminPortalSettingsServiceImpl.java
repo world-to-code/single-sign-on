@@ -39,11 +39,11 @@ public class AdminPortalSettingsServiceImpl implements AdminPortalSettingsServic
 
     @Override
     @Transactional
-    public AdminPortalSettingsData update(AdminPortalSettingsRequest request) {
+    public AdminPortalSettingsData update(AdminPortalSettingsData command) {
         AdminPortalSettings settings = load();
-        settings.update(request.reauthIntervalMinutes(), request.elevationTokenTtlMinutes(),
-                request.sessionIdleTimeoutMinutes(), request.sessionAbsoluteLifetimeMinutes(),
-                normalizeCidrs(request.adminAllowedCidrs()));
+        settings.update(command.reauthIntervalMinutes(), command.elevationTokenTtlMinutes(),
+                command.sessionIdleTimeoutMinutes(), command.sessionAbsoluteLifetimeMinutes(),
+                normalizeCidrs(command.adminAllowedCidrs()));
         AdminPortalSettings saved = repository.save(settings);
 
         syncElevationTokenTtl(saved.getElevationTokenTtlMinutes());

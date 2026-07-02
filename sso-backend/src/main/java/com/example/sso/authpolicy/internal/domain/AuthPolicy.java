@@ -1,12 +1,11 @@
 package com.example.sso.authpolicy.internal.domain;
+import com.example.sso.shared.domain.AuditedEntity;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.CreationTimestamp;
 
-import java.time.Instant;
 import com.example.sso.authpolicy.AuthFactor;
 import com.example.sso.authpolicy.AuthPolicyStepView;
 import com.example.sso.authpolicy.AuthPolicyView;
@@ -27,11 +26,7 @@ import java.util.UUID;
 @Table(name = "auth_policy")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
-public class AuthPolicy implements AuthPolicyView {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+public class AuthPolicy extends AuditedEntity implements AuthPolicyView {
 
     @Column(nullable = false, unique = true, length = 100)
     private String name;
@@ -57,23 +52,19 @@ public class AuthPolicy implements AuthPolicyView {
     @Column(name = "step_up_freshness_minutes", nullable = false)
     private int stepUpFreshnessMinutes = 15;
 
-    @OneToMany(mappedBy = "policy", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @OneToMany(mappedBy = "policy", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @OrderBy("stepOrder ASC")
     private List<AuthPolicyStep> steps = new ArrayList<>();
 
-    @ElementCollection(fetch = FetchType.EAGER)
+    @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "auth_policy_user", joinColumns = @JoinColumn(name = "policy_id"))
     @Column(name = "user_id")
     private Set<UUID> assignedUserIds = new HashSet<>();
 
-    @ElementCollection(fetch = FetchType.EAGER)
+    @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "auth_policy_role", joinColumns = @JoinColumn(name = "policy_id"))
     @Column(name = "role_id")
     private Set<UUID> assignedRoleIds = new HashSet<>();
-
-    @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
 
     public AuthPolicy(String name, int priority) {
         this.name = name;

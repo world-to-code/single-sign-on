@@ -18,6 +18,7 @@ public enum ErrorCode {
     CONFLICT(HttpStatus.CONFLICT),
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED),
     FORBIDDEN(HttpStatus.FORBIDDEN),
+    LOCKED(HttpStatus.LOCKED),
     VALIDATION_FAILED(HttpStatus.BAD_REQUEST);
 
     private final HttpStatus status;

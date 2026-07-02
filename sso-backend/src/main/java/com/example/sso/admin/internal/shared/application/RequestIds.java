@@ -1,4 +1,4 @@
-package com.example.sso.admin.internal.shared.api;
+package com.example.sso.admin.internal.shared.application;
 
 import java.util.List;
 import java.util.Set;

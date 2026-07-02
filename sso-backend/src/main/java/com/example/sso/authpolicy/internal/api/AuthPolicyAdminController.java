@@ -1,17 +1,14 @@
 package com.example.sso.authpolicy.internal.api;
 
-import com.example.sso.authpolicy.AuthFactor;
-import com.example.sso.authpolicy.AuthPolicyAdminService;
-import com.example.sso.authpolicy.AuthPolicySpec;
-import com.example.sso.authpolicy.AuthPolicyUpdate;
-import com.example.sso.authpolicy.AuthPolicyView;
+import com.example.sso.authpolicy.internal.application.PolicyAdminService;
+import com.example.sso.authpolicy.internal.application.PolicyView;
 import com.example.sso.shared.security.RequirePermission;
+import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.Permissions;
-
 import jakarta.validation.Valid;
-
+import java.util.List;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -23,79 +20,39 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
-import java.util.stream.Collectors;
-
-/**
- * Admin CRUD for authentication policies (requires the {@code policy:manage} permission).
- */
+/** Admin CRUD for authentication policies (requires the {@code auth-policy:*} permissions). */
 @RestController
 @RequestMapping("/api/admin/auth-policies")
 @RequiredArgsConstructor
 public class AuthPolicyAdminController {
-    private final AuthPolicyAdminService service;
+
+    private final PolicyAdminService policies;
 
     @GetMapping
     @RequirePermission(Permissions.POLICY_READ)
     public List<PolicyView> list() {
-        return service.listAll().stream().map(this::toView).toList();
+        return policies.list();
     }
 
     @PostMapping
     @RequirePermission(Permissions.POLICY_CREATE)
+    @RequireStepUp
     public ResponseEntity<PolicyView> create(@Valid @RequestBody PolicyRequest request) {
-        PolicyView created = toView(service.create(new AuthPolicySpec(request.name(), request.priority(),
-                request.enabled(), request.appliesToLogin() == null || request.appliesToLogin(),
-                request.allowEnrollmentAtLogin() == null || request.allowEnrollmentAtLogin(),
-                steps(request), ids(request.assignedUserIds()), ids(request.assignedRoleIds()),
-                freshness(request))));
-
-        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+        return ResponseEntity.status(HttpStatus.CREATED).body(policies.create(request.toSpec()));
     }
 
     @PutMapping("/{id}")
     @RequirePermission(Permissions.POLICY_UPDATE)
+    @RequireStepUp
     public PolicyView update(@PathVariable UUID id, @Valid @RequestBody PolicyRequest request) {
-        return toView(service.update(id, new AuthPolicyUpdate(request.priority(), request.enabled(),
-                request.appliesToLogin() == null || request.appliesToLogin(),
-                request.allowEnrollmentAtLogin() == null || request.allowEnrollmentAtLogin(),
-                steps(request), ids(request.assignedUserIds()), ids(request.assignedRoleIds()),
-                freshness(request))));
+        return policies.update(id, request.toUpdate());
     }
 
     @DeleteMapping("/{id}")
     @RequirePermission(Permissions.POLICY_DELETE)
+    @RequireStepUp
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
-        service.delete(id);
+        policies.delete(id);
         return ResponseEntity.noContent().build();
-    }
-
-    private List<Set<AuthFactor>> steps(PolicyRequest request) {
-        return request.steps().stream()
-                .map(step -> step.stream().map(AuthFactor::valueOf).collect(Collectors.toSet()))
-                .toList();
-    }
-
-    private Set<UUID> ids(List<String> values) {
-        return values == null ? Set.of() : values.stream().map(UUID::fromString).collect(Collectors.toSet());
-    }
-
-    /** Default the step-up freshness to 15 minutes when omitted. */
-    private int freshness(PolicyRequest request) {
-        return request.stepUpFreshnessMinutes() == null ? 15 : request.stepUpFreshnessMinutes();
-    }
-
-    private PolicyView toView(AuthPolicyView policy) {
-        List<List<String>> steps = policy.getSteps().stream()
-                .map(step -> step.getAllowedFactors().stream().map(AuthFactor::name).sorted().toList())
-                .toList();
-
-        return new PolicyView(policy.getId().toString(), policy.getName(), policy.getPriority(), policy.isEnabled(),
-                policy.isAppliesToLogin(), policy.isAllowEnrollmentAtLogin(), steps,
-                policy.getAssignedUserIds().stream().map(UUID::toString).toList(),
-                policy.getAssignedRoleIds().stream().map(UUID::toString).toList(),
-                policy.getStepUpFreshnessMinutes());
     }
 }

@@ -1,12 +1,11 @@
 package com.example.sso.mfa.internal.domain;
+import com.example.sso.shared.domain.AuditedEntity;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.CreationTimestamp;
 
-import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -17,11 +16,7 @@ import java.util.UUID;
 @Table(name = "mfa_factor")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
-public class MfaFactor {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+public class MfaFactor extends AuditedEntity {
 
     @Column(name = "user_id", nullable = false)
     private UUID userId;
@@ -43,10 +38,6 @@ public class MfaFactor {
     /** Last accepted TOTP time-step counter; a code at this step (or earlier) is rejected as a replay. */
     @Column(name = "last_used_step")
     private Long lastUsedStep;
-
-    @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
 
     public MfaFactor(UUID userId, MfaType type, String label) {
         this.userId = userId;
