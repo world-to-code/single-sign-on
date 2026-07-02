@@ -3,8 +3,9 @@ import { Boxes, Plus, Trash2, Layers, ChevronRight } from "lucide-react";
 import {
   LEAF_MEMBER_TYPES, MEMBER_TYPES, assignResourceAdmin, attachChild, attachMember, createResource,
   createResourceType, deleteResource, detachChild, detachMember, listResourceTypes, listResources,
-  revokeResourceAdmin, type MemberType, type Resource, type ResourceType,
+  renameResource, revokeResourceAdmin, type MemberType, type Resource, type ResourceType,
 } from "@/resources";
+import { errorMessage } from "@/api";
 import { PageHeader } from "@/components/PageHeader";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 import { Field } from "@/components/form/fields";
@@ -37,7 +38,7 @@ export default function Resources() {
       // Keep the open detail panel in sync with the latest server state.
       setSelected((cur) => (cur ? rs.find((r) => r.id === cur.id) ?? null : null));
     } catch (e) {
-      setError(String(e));
+      setError(errorMessage(e));
     }
   }, []);
 
@@ -100,6 +101,7 @@ export default function Resources() {
       {selected && (
         <ResourceDetailDialog
           resource={selected}
+          types={types}
           allResources={resources ?? []}
           onClose={() => setSelected(null)}
           onChanged={reload}
@@ -129,7 +131,7 @@ function CreateResourceDialog(
       await createResource(name.trim(), typeName);
       onCreated();
     } catch (e) {
-      setError(String(e));
+      setError(errorMessage(e));
     }
   }
 
@@ -169,7 +171,7 @@ function CreateTypeDialog({ onClose, onCreated }: { onClose: () => void; onCreat
       await createResourceType(name.trim(), kinds);
       onCreated();
     } catch (e) {
-      setError(String(e));
+      setError(errorMessage(e));
     }
   }
 
@@ -199,14 +201,20 @@ function CreateTypeDialog({ onClose, onCreated }: { onClose: () => void; onCreat
 }
 
 function ResourceDetailDialog(
-  { resource, allResources, onClose, onChanged, onDelete }: {
-    resource: Resource; allResources: Resource[];
+  { resource, types, allResources, onClose, onChanged, onDelete }: {
+    resource: Resource; types: ResourceType[]; allResources: Resource[];
     onClose: () => void; onChanged: () => Promise<void>; onDelete: () => void;
   },
 ) {
+  // Constrain the pickers to what the resource's TYPE permits (the backend rejects the rest with a 400).
+  const allowed = types.find((t) => t.name === resource.typeName)?.allowedMemberTypes ?? [];
+  const allowedLeafTypes = LEAF_MEMBER_TYPES.filter((t) => allowed.includes(t));
+  const canHaveChildren = allowed.includes("RESOURCE");
+
   const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState(resource.name);
   const [childId, setChildId] = useState("");
-  const [memberType, setMemberType] = useState<MemberType>("GROUP");
+  const [memberType, setMemberType] = useState<MemberType>(allowedLeafTypes[0] ?? "GROUP");
   const [memberId, setMemberId] = useState("");
   const [adminUserId, setAdminUserId] = useState("");
 
@@ -216,7 +224,7 @@ function ResourceDetailDialog(
       await onChanged();
       setError(null);
     } catch (e) {
-      setError(String(e));
+      setError(errorMessage(e));
     }
   };
 
@@ -232,21 +240,34 @@ function ResourceDetailDialog(
         </DialogHeader>
         {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
 
-        <Section title="Child resources">
-          <ChipList items={resource.children.map((c) => ({ key: c.id, label: c.name }))}
-            onRemove={(id) => void run(() => detachChild(resource.id, id))} />
+        <Section title="Name">
           <div className="flex gap-2">
-            <Select className="flex-1" value={childId} onChange={(e) => setChildId(e.target.value)}>
-              <option value="">Attach a child…</option>
-              {attachable.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </Select>
-            <Button variant="outline" disabled={!childId}
-              onClick={() => void run(() => attachChild(resource.id, childId)).then(() => setChildId(""))}>
-              <Plus /> Attach
+            <Input className="flex-1" value={name} onChange={(e) => setName(e.target.value)} />
+            <Button variant="outline" disabled={!name.trim() || name.trim() === resource.name}
+              onClick={() => void run(() => renameResource(resource.id, name.trim()))}>
+              Rename
             </Button>
           </div>
         </Section>
 
+        {canHaveChildren && (
+          <Section title="Child resources">
+            <ChipList items={resource.children.map((c) => ({ key: c.id, label: c.name }))}
+              onRemove={(id) => void run(() => detachChild(resource.id, id))} />
+            <div className="flex gap-2">
+              <Select className="flex-1" value={childId} onChange={(e) => setChildId(e.target.value)}>
+                <option value="">Attach a child…</option>
+                {attachable.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </Select>
+              <Button variant="outline" disabled={!childId}
+                onClick={() => void run(() => attachChild(resource.id, childId)).then(() => setChildId(""))}>
+                <Plus /> Attach
+              </Button>
+            </div>
+          </Section>
+        )}
+
+        {allowedLeafTypes.length > 0 && (
         <Section title="Members">
           <ChipList items={resource.members.map((m) => ({ key: `${m.memberType}:${m.memberId}`,
             label: `${m.memberType} · ${m.memberId}` }))}
@@ -254,7 +275,7 @@ function ResourceDetailDialog(
           <div className="flex gap-2">
             <Select className="w-36" value={memberType}
               onChange={(e) => setMemberType(e.target.value as MemberType)}>
-              {LEAF_MEMBER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              {allowedLeafTypes.map((t) => <option key={t} value={t}>{t}</option>)}
             </Select>
             <Input className="flex-1" placeholder="member id (uuid or app id)" value={memberId}
               onChange={(e) => setMemberId(e.target.value)} />
@@ -264,6 +285,7 @@ function ResourceDetailDialog(
             </Button>
           </div>
         </Section>
+        )}
 
         <Section title="Delegated administrators">
           <ChipList items={resource.grants.map((g) => ({ key: g.userId, label: `${g.userId} · ${g.tier}` }))}

@@ -2,11 +2,15 @@ import { useEffect, useState } from "react";
 import { getAdminConsoleAccess } from "@/auth";
 
 // Shared in-flight promise: AppShell and AdminGuard both consult this hook while the admin shell
-// mounts, so a module-level cache collapses their two identical requests into one.
+// mounts, so a module-level cache collapses their two identical requests into one. A failure clears
+// the cache (returning false only for this attempt) so a transient error can't pin access off.
 let cached: Promise<boolean> | null = null;
 function fetchAccess(): Promise<boolean> {
   if (!cached) {
-    cached = getAdminConsoleAccess().then((r) => r.allowed).catch(() => false);
+    cached = getAdminConsoleAccess().then((r) => r.allowed).catch(() => {
+      cached = null;
+      return false;
+    });
   }
   return cached;
 }

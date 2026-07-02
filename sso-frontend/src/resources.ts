@@ -39,24 +39,24 @@ export const createResourceType = (name: string, allowedMemberTypes: string[]) =
   apiPost<ResourceType>("/api/admin/resources/types", { name, allowedMemberTypes });
 
 export const listResources = () => apiGet<Resource[]>("/api/admin/resources");
-export const getResource = (id: string) => apiGet<Resource>(`/api/admin/resources/${id}`);
 export const createResource = (name: string, typeName: string) =>
   apiPost<Resource>("/api/admin/resources", { name, typeName });
 export const renameResource = (id: string, name: string) =>
-  apiPut<Resource>(`/api/admin/resources/${id}`, { name });
-export const deleteResource = (id: string) => apiDelete(`/api/admin/resources/${id}`);
+  apiPut<Resource>(`/api/admin/resources/${encodeURIComponent(id)}`, { name });
+export const deleteResource = (id: string) => apiDelete(`/api/admin/resources/${encodeURIComponent(id)}`);
 
 export const attachChild = (id: string, childId: string) =>
-  apiPost<void>(`/api/admin/resources/${id}/children`, { childId });
+  apiPost<void>(`/api/admin/resources/${encodeURIComponent(id)}/children`, { childId });
 export const detachChild = (id: string, childId: string) =>
-  apiDelete(`/api/admin/resources/${id}/children/${childId}`);
+  apiDelete(`/api/admin/resources/${encodeURIComponent(id)}/children/${encodeURIComponent(childId)}`);
 
 export const attachMember = (id: string, memberType: string, memberId: string) =>
-  apiPost<Resource>(`/api/admin/resources/${id}/members`, { memberType, memberId });
+  apiPost<Resource>(`/api/admin/resources/${encodeURIComponent(id)}/members`, { memberType, memberId });
 export const detachMember = (id: string, memberType: string, memberId: string) =>
-  apiDelete(`/api/admin/resources/${id}/members/${memberType}/${memberId}`);
+  apiDelete(`/api/admin/resources/${encodeURIComponent(id)}/members/`
+    + `${encodeURIComponent(memberType)}/${encodeURIComponent(memberId)}`);
 
 export const assignResourceAdmin = (id: string, userId: string) =>
-  apiPost<Resource>(`/api/admin/resources/${id}/admins`, { userId });
+  apiPost<Resource>(`/api/admin/resources/${encodeURIComponent(id)}/admins`, { userId });
 export const revokeResourceAdmin = (id: string, userId: string) =>
-  apiDelete(`/api/admin/resources/${id}/admins/${userId}`);
+  apiDelete(`/api/admin/resources/${encodeURIComponent(id)}/admins/${encodeURIComponent(userId)}`);

@@ -7,6 +7,20 @@ export class ApiError extends Error {
   }
 }
 
+/** Human-friendly copy for a caught request error, mapping known statuses to plain language. */
+export function errorMessage(e: unknown): string {
+  if (e instanceof ApiError) {
+    switch (e.status) {
+      case 401: return "Re-authentication required — please retry.";
+      case 403: return "You don't have permission for this action.";
+      case 404: return "Not found — it may have been removed.";
+      case 409: return "Conflict — the change wasn't applied.";
+      default: return `Request failed (${e.status}).`;
+    }
+  }
+  return e instanceof Error ? e.message : String(e);
+}
+
 function csrfHeader(): Record<string, string> {
   const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
   return match ? { "X-XSRF-TOKEN": decodeURIComponent(match[1]) } : {};
