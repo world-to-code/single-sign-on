@@ -1,5 +1,6 @@
 package com.example.sso.user;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -43,4 +44,10 @@ public interface UserGroupService {
 
     /** The groups the given user belongs to, each with the roles that group delegates. */
     List<GroupMembership> membershipsForUser(UUID userId);
+
+    /** Ids of all users who are members of ANY of the given groups (bulk scope expansion). */
+    Set<UUID> memberIdsOf(Collection<UUID> groupIds);
+
+    /** Ids of the groups the user belongs to — no role/detail loading (authorization hot path). */
+    Set<UUID> groupIdsOf(UUID userId);
 }

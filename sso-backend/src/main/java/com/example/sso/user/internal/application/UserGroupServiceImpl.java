@@ -21,6 +21,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -173,6 +174,21 @@ public class UserGroupServiceImpl implements UserGroupService {
                 .map(group -> new GroupMembership(group.getId(), group.getName(),
                         group.getRoles().stream().map(RoleRef.class::cast).toList()))
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Set<UUID> memberIdsOf(Collection<UUID> groupIds) {
+        if (groupIds.isEmpty()) {
+            return Set.of();
+        }
+        return Set.copyOf(repository.findMemberIdsByGroupIds(groupIds));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Set<UUID> groupIdsOf(UUID userId) {
+        return Set.copyOf(repository.findGroupIdsByMember(userId));
     }
 
     private UserGroup require(UUID id) {
