@@ -1,5 +1,6 @@
 package com.example.sso.user;
 
+import com.example.sso.shared.error.ConflictException;
 import com.example.sso.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,7 +37,7 @@ class UserServiceIT extends AbstractIntegrationTest {
         assertThatThrownBy(() ->
                 userService.createUser(new NewUser("bob", "bob2@example.com", "Bob2", "pw-two-2!",
                         Set.of("ROLE_USER"))))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(ConflictException.class);
     }
 
     @Test

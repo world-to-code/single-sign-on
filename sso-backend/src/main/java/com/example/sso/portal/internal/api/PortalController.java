@@ -8,6 +8,7 @@ import com.example.sso.portal.ApplicationService;
 import com.example.sso.portal.internal.application.StepUpInfo;
 import com.example.sso.portal.ApplicationView;
 import com.example.sso.session.SessionPolicyDetails;
+import com.example.sso.shared.error.UnauthorizedException;
 import com.example.sso.session.SessionPolicyService;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
@@ -19,13 +20,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 
 /** End-user portal API: the applications the signed-in user may launch via SSO, and step-up state. */
 @RestController
@@ -86,10 +85,10 @@ public class PortalController {
 
     private UserAccount requireUser(Authentication authentication) {
         return users.findByUsername(authentication.getName())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
+                .orElseThrow(UnauthorizedException::new);
     }
 
-    private static String attr(HttpSession session, String name, String fallback) {
+    private String attr(HttpSession session, String name, String fallback) {
         if (session == null) {
             return fallback;
         }

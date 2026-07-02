@@ -51,6 +51,20 @@ Rules:
 - **Use Lombok maximally** — `@Getter`, `@RequiredArgsConstructor`, `@Slf4j`, `@Builder` — but
   **never `@Setter` or `@Data`** (Data pulls in setters).
 - One public type per file; avoid nested/inner classes unless truly necessary.
+- **No `private static` methods unless `static` is required.** A private helper is an instance method
+  by default; add `static` only when it is genuinely called from a static context (a `static`
+  factory/initializer or another `static` method). Do not mark a private method `static` merely
+  because it happens not to touch instance state. (`private static final` **constants** are fine.)
+- **Throw the shared `ApiException` subtypes for client-facing (4xx) errors** — `NotFoundException`,
+  `BadRequestException`, `ConflictException`, `ForbiddenException`, `UnauthorizedException` (in
+  `shared.error`) — never raw `IllegalArgumentException` or `ResponseStatusException` from
+  application/controller code. Reserve `IllegalStateException`/`IllegalArgumentException` for genuine
+  server-side invariant or infrastructure failures (500-class, surfaced by the server-error auditor).
+- **No magic strings.** Domain/protocol values and literal collections (scopes, grant types, factor
+  names, HTTP methods, well-known ids/paths) belong in an `enum`, a meaningful `static final`
+  constant, or a dedicated constants class — reuse the framework's own constants (`OidcScopes`,
+  `AuthorizationGrantType`, `ClientAuthenticationMethod`, `HttpMethod`, …) where they exist. If the
+  value is really a tunable, externalize it to config instead (see below).
 
 ## Persistence & config
 

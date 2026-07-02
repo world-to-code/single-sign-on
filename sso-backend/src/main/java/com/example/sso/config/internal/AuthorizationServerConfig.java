@@ -206,7 +206,7 @@ public class AuthorizationServerConfig {
     }
 
     /** Maps satisfied factor authorities to RFC 8176 Authentication Method References. */
-    private static List<String> amrValues(Set<String> authorities, long factorCount) {
+    private List<String> amrValues(Set<String> authorities, long factorCount) {
         List<String> amr = new ArrayList<>();
         if (authorities.contains(Factors.PASSWORD)) amr.add("pwd");
         if (authorities.contains(Factors.TOTP)) amr.add("otp");

@@ -42,7 +42,7 @@ public class UserGroupServiceImpl implements UserGroupService {
     @Override
     @Transactional(readOnly = true)
     public List<GroupView> listAll() {
-        return repository.findAllByOrderByNameAsc().stream().map(UserGroupServiceImpl::toView).toList();
+        return repository.findAllByOrderByNameAsc().stream().map(this::toView).toList();
     }
 
     @Override
@@ -200,7 +200,7 @@ public class UserGroupServiceImpl implements UserGroupService {
         return users.findAllById(memberIds).stream().map(AppUser::getId).collect(Collectors.toSet());
     }
 
-    private static GroupView toView(UserGroup group) {
+    private GroupView toView(UserGroup group) {
         List<String> memberIds = group.getMemberUserIds().stream().map(UUID::toString).toList();
         List<String> roleNames = group.getRoles().stream().map(Role::getName).sorted().toList();
         List<String> managerIds = group.getManagerUserIds().stream().map(UUID::toString).toList();

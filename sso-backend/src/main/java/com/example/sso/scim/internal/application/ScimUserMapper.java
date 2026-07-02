@@ -1,6 +1,7 @@
 package com.example.sso.scim.internal.application;
 
 import com.example.sso.user.UserAccount;
+import de.captaingoldfish.scim.sdk.common.constants.ResourceTypeNames;
 import de.captaingoldfish.scim.sdk.common.resources.User;
 import de.captaingoldfish.scim.sdk.common.resources.complex.Meta;
 import de.captaingoldfish.scim.sdk.common.resources.complex.Name;
@@ -25,7 +26,7 @@ public final class ScimUserMapper {
                         .primary(true)
                         .build()))
                 .meta(Meta.builder()
-                        .resourceType("User")
+                        .resourceType(ResourceTypeNames.USER)
                         .created(user.getCreatedAt())
                         .lastModified(user.getUpdatedAt())
                         .location("/scim/v2/Users/" + user.getId())

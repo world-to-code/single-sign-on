@@ -1,5 +1,6 @@
 package com.example.sso.saml.internal.application;
 
+import com.example.sso.shared.error.BadRequestException;
 import lombok.RequiredArgsConstructor;
 import net.shibboleth.shared.xml.ParserPool;
 import net.shibboleth.shared.xml.SerializeSupport;
@@ -38,7 +39,7 @@ public class SamlBindingCodec {
                      new InflaterInputStream(new ByteArrayInputStream(deflated), new Inflater(true))) {
             return parse(inflater);
         } catch (Exception e) {
-            throw new IllegalArgumentException("Invalid SAML redirect request", e);
+            throw new BadRequestException("Invalid SAML redirect request");
         }
     }
 
@@ -48,7 +49,7 @@ public class SamlBindingCodec {
         try {
             return parse(new ByteArrayInputStream(xml));
         } catch (Exception e) {
-            throw new IllegalArgumentException("Invalid SAML POST request", e);
+            throw new BadRequestException("Invalid SAML POST request");
         }
     }
 

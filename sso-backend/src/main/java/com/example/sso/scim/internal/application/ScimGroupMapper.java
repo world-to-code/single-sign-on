@@ -2,6 +2,7 @@ package com.example.sso.scim.internal.application;
 
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.RoleRef;
+import de.captaingoldfish.scim.sdk.common.constants.ResourceTypeNames;
 import de.captaingoldfish.scim.sdk.common.resources.Group;
 import de.captaingoldfish.scim.sdk.common.resources.complex.Meta;
 import de.captaingoldfish.scim.sdk.common.resources.multicomplex.Member;
@@ -18,7 +19,7 @@ public final class ScimGroupMapper {
         List<Member> scimMembers = members.stream()
                 .map(user -> Member.builder()
                         .value(user.getId().toString())
-                        .type("User")
+                        .type(ResourceTypeNames.USER)
                         .display(user.getUsername())
                         .build())
                 .toList();
@@ -28,7 +29,7 @@ public final class ScimGroupMapper {
                 .displayName(role.getName())
                 .members(scimMembers)
                 .meta(Meta.builder()
-                        .resourceType("Group")
+                        .resourceType(ResourceTypeNames.GROUPS)
                         .location("/scim/v2/Groups/" + role.getId())
                         .build())
                 .build();

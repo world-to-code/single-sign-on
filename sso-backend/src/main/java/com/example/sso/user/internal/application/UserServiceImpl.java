@@ -2,6 +2,7 @@ package com.example.sso.user.internal.application;
 
 import com.example.sso.shared.IdName;
 import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.internal.domain.AppUser;
@@ -130,10 +131,10 @@ public class UserServiceImpl implements UserService {
         String username = newUser.username();
         String email = newUser.email();
         if (users.existsByUsername(username)) {
-            throw new IllegalArgumentException("username already exists: " + username);
+            throw new ConflictException("username already exists: " + username);
         }
         if (users.existsByEmail(email)) {
-            throw new IllegalArgumentException("email already exists: " + email);
+            throw new ConflictException("email already exists: " + email);
         }
 
         String rawPassword = newUser.rawPassword();

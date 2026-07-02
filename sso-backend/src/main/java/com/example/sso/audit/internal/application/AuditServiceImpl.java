@@ -40,24 +40,24 @@ public class AuditServiceImpl implements AuditService {
     @Override
     @Transactional(readOnly = true)
     public List<AuditEntry> recent() {
-        return repository.findTop100ByOrderByOccurredAtDesc().stream().map(AuditServiceImpl::toEntry).toList();
+        return repository.findTop100ByOrderByOccurredAtDesc().stream().map(this::toEntry).toList();
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<AuditEntry> recentForPrincipal(String principal) {
         return repository.findTop50ByPrincipalOrderByOccurredAtDesc(principal).stream()
-                .map(AuditServiceImpl::toEntry).toList();
+                .map(this::toEntry).toList();
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<AuditEntry> recentByCategory(AuditCategory category) {
         return repository.findTop100ByCategoryOrderByOccurredAtDesc(category).stream()
-                .map(AuditServiceImpl::toEntry).toList();
+                .map(this::toEntry).toList();
     }
 
-    private static AuditEntry toEntry(AuditEvent event) {
+    private AuditEntry toEntry(AuditEvent event) {
         return new AuditEntry(event.getId(), event.getOccurredAt(), event.getPrincipal(),
                 event.getType(), event.getCategory(), event.isSuccess(), event.getDetail());
     }

@@ -20,6 +20,7 @@ import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -64,7 +65,7 @@ public class AppStepUpFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        String clientId = request.getParameter("client_id");
+        String clientId = request.getParameter(OAuth2ParameterNames.CLIENT_ID);
         if (!isFullyAuthenticated(auth) || clientId == null) {
             chain.doFilter(request, response); // unauthenticated -> normal login redirect handles it
             return;
@@ -91,7 +92,7 @@ public class AppStepUpFilter extends OncePerRequestFilter {
         String query = request.getQueryString();
         HttpSession session = request.getSession(true);
         session.setAttribute(RETURN, request.getRequestURI() + (query != null ? "?" + query : ""));
-        session.setAttribute(APP_TYPE, "OIDC");
+        session.setAttribute(APP_TYPE, AppType.OIDC.name());
         session.setAttribute(APP_ID, client.getId());
         response.sendRedirect(request.getContextPath() + "/stepup");
     }

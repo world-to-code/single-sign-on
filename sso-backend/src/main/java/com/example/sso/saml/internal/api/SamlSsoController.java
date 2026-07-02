@@ -14,6 +14,7 @@ import com.example.sso.saml.internal.application.SamlBindingCodec;
 import com.example.sso.saml.internal.application.SamlResponseBuilder;
 import com.example.sso.saml.internal.application.SamlSignatureValidator;
 import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.shared.error.UnauthorizedException;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,7 +32,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -127,7 +127,7 @@ public class SamlSsoController {
     private ResponseEntity<String> respond(SamlRelyingParty relyingParty, String inResponseTo,
                                            String relayState, Authentication authentication, HttpServletRequest httpRequest) {
         UserAccount user = users.findByUsername(authentication.getName())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unknown user"));
+                .orElseThrow(() -> new UnauthorizedException("Unknown user"));
 
         // Per-app step-up: this app may require extra factors beyond the base login.
         Set<String> granted = authentication.getAuthorities().stream()
@@ -171,7 +171,7 @@ public class SamlSsoController {
 
     private static final SecureRandom NONCE_RANDOM = new SecureRandom();
 
-    private static String newNonce() {
+    private String newNonce() {
         byte[] bytes = new byte[16];
         NONCE_RANDOM.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);

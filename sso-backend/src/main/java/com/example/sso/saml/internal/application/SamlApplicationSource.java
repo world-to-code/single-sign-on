@@ -32,7 +32,7 @@ public class SamlApplicationSource implements ApplicationSource {
                 .toList();
     }
 
-    private static String launchUrl(SamlRelyingParty rp) {
+    private String launchUrl(SamlRelyingParty rp) {
         if (StringUtils.hasText(rp.getSpLoginUrl())) {
             return rp.getSpLoginUrl().trim();
         }

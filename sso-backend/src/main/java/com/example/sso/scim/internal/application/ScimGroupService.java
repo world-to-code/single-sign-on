@@ -41,7 +41,7 @@ public class ScimGroupService {
      */
     private static final Set<String> PROTECTED_ROLES = Set.of(Roles.ADMIN, Roles.GROUP_ADMIN);
 
-    private static void ensureManageable(String roleName) {
+    private void ensureManageable(String roleName) {
         if (PROTECTED_ROLES.contains(roleName)) {
             throw new BadRequestException("group '" + roleName + "' is privileged and cannot be managed via SCIM");
         }
@@ -103,15 +103,15 @@ public class ScimGroupService {
         roleService.delete(role.getId());
     }
 
-    private static Set<UUID> desiredMembers(Group group) {
+    private Set<UUID> desiredMembers(Group group) {
         return group.getMembers().stream()
                 .map(Member::getValue)
                 .flatMap(Optional::stream)
-                .map(ScimGroupService::parseId)
+                .map(this::parseId)
                 .collect(Collectors.toSet());
     }
 
-    private static UUID parseId(String id) {
+    private UUID parseId(String id) {
         return ScimSupport.parseId(id);
     }
 }

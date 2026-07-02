@@ -50,7 +50,7 @@ public class SamlSignatureValidator {
         }
     }
 
-    private static X509Certificate requireCertificate(SamlRelyingParty relyingParty) {
+    private X509Certificate requireCertificate(SamlRelyingParty relyingParty) {
         if (relyingParty.getSigningCertificate() == null) {
             throw new BadRequestException("relying party requires signed AuthnRequests but has no signing certificate");
         }

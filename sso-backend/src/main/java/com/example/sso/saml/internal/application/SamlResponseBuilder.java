@@ -217,7 +217,7 @@ public class SamlResponseBuilder {
         return encrypter.encrypt(assertion);
     }
 
-    private static String signatureUri(String algorithm) {
+    private String signatureUri(String algorithm) {
         return switch (algorithm == null ? "RSA_SHA256" : algorithm) {
             case "RSA_SHA1" -> SignatureConstants.ALGO_ID_SIGNATURE_RSA_SHA1;       // legacy
             case "RSA_SHA512" -> SignatureConstants.ALGO_ID_SIGNATURE_RSA_SHA512;
@@ -225,7 +225,7 @@ public class SamlResponseBuilder {
         };
     }
 
-    private static String dataEncryptionUri(String algorithm) {
+    private String dataEncryptionUri(String algorithm) {
         return switch (algorithm == null ? "AES256_GCM" : algorithm) {
             case "AES128_GCM" -> EncryptionConstants.ALGO_ID_BLOCKCIPHER_AES128_GCM;
             case "AES256_CBC" -> EncryptionConstants.ALGO_ID_BLOCKCIPHER_AES256;     // legacy CBC
@@ -234,7 +234,7 @@ public class SamlResponseBuilder {
         };
     }
 
-    private static String keyTransportUri(String algorithm) {
+    private String keyTransportUri(String algorithm) {
         return switch (algorithm == null ? "RSA_OAEP" : algorithm) {
             case "RSA_1_5" -> EncryptionConstants.ALGO_ID_KEYTRANSPORT_RSA15;        // legacy
             default -> EncryptionConstants.ALGO_ID_KEYTRANSPORT_RSAOAEP;

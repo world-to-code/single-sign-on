@@ -79,7 +79,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
                 .orElseThrow(() -> new IllegalStateException("Default session policy is missing"));
     }
 
-    private static boolean appliesTo(SessionPolicy p, UUID userId, Set<UUID> roleIds) {
+    private boolean appliesTo(SessionPolicy p, UUID userId, Set<UUID> roleIds) {
         boolean assignedToUser = p.getAssignedUserIds().contains(userId);
         boolean assignedToRole = p.getAssignedRoleIds().stream().anyMatch(roleIds::contains);
         boolean global = p.getAssignedUserIds().isEmpty() && p.getAssignedRoleIds().isEmpty();
@@ -111,7 +111,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
      * (TOTP/FIDO2/PASSWORD/EMAIL) and the list may not be empty. This stops an admin saving garbage that
      * would leave step-up impossible (an effective lockout from sensitive operations).
      */
-    private static String validateReauthFactors(String reauthFactors) {
+    private String validateReauthFactors(String reauthFactors) {
         List<String> tokens = reauthFactors == null ? List.of()
                 : Arrays.stream(reauthFactors.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
         if (tokens.isEmpty()) {

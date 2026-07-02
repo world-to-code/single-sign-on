@@ -16,6 +16,8 @@ public enum ErrorCode {
     NOT_FOUND(HttpStatus.NOT_FOUND),
     BAD_REQUEST(HttpStatus.BAD_REQUEST),
     CONFLICT(HttpStatus.CONFLICT),
+    UNAUTHORIZED(HttpStatus.UNAUTHORIZED),
+    FORBIDDEN(HttpStatus.FORBIDDEN),
     VALIDATION_FAILED(HttpStatus.BAD_REQUEST);
 
     private final HttpStatus status;

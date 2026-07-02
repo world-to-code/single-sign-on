@@ -69,7 +69,7 @@ public class ServerErrorAuditFilter extends OncePerRequestFilter {
     }
 
     /** The top of the throwing stack so an admin can pinpoint the cause from the audit log alone. */
-    private static String topFrames(Throwable root) {
+    private String topFrames(Throwable root) {
         StringBuilder sb = new StringBuilder();
         StackTraceElement[] frames = root.getStackTrace();
         for (int i = 0; i < Math.min(STACK_FRAMES, frames.length); i++) {
@@ -91,12 +91,12 @@ public class ServerErrorAuditFilter extends OncePerRequestFilter {
                 + "\"reference\":\"" + ref + "\"}");
     }
 
-    private static String currentPrincipal() {
+    private String currentPrincipal() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         return authentication != null && authentication.isAuthenticated() ? authentication.getName() : "anonymous";
     }
 
-    private static Throwable rootCause(Throwable e) {
+    private Throwable rootCause(Throwable e) {
         Throwable cause = e;
         while (cause.getCause() != null && cause.getCause() != cause) {
             cause = cause.getCause();
@@ -104,7 +104,7 @@ public class ServerErrorAuditFilter extends OncePerRequestFilter {
         return cause;
     }
 
-    private static String truncate(String s) {
+    private String truncate(String s) {
         return s.length() <= MAX_DETAIL ? s : s.substring(0, MAX_DETAIL);
     }
 }

@@ -95,7 +95,7 @@ public class ScimUserService {
     }
 
     /** Admin-bearing accounts can't be deleted/disabled via SCIM (machine credentials must not lock out admins). */
-    private static void ensureNotPrivileged(UserAccount user, String action) {
+    private void ensureNotPrivileged(UserAccount user, String action) {
         boolean admin = user.getRoles().stream().anyMatch(r -> Roles.ADMIN.equals(r.getName()));
         if (admin) {
             throw new BadRequestException("a privileged (admin) account cannot be " + action + " via SCIM");
@@ -107,11 +107,11 @@ public class ScimUserService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + id));
     }
 
-    private static Optional<String> primaryEmail(User resource) {
+    private Optional<String> primaryEmail(User resource) {
         return resource.getEmails().stream().findFirst().flatMap(Email::getValue);
     }
 
-    private static UUID parseId(String id) {
+    private UUID parseId(String id) {
         return ScimSupport.parseId(id);
     }
 }

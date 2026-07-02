@@ -85,7 +85,7 @@ public class EmailFactorHandler implements FactorHandler {
         return false;
     }
 
-    private static void clear(HttpSession session) {
+    private void clear(HttpSession session) {
         session.removeAttribute(CODE);
         session.removeAttribute(EXPIRES_AT);
         session.removeAttribute(ATTEMPTS);

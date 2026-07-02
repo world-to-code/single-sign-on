@@ -60,7 +60,7 @@ public class AuthStateService {
         boolean enrollAllowed = policy.isAllowEnrollmentAtLogin(); // per the user's winning login policy
         Optional<AuthPolicyStepView> step = evaluator.currentStep(policy, granted);
         if (step.isEmpty()) {
-            return new AuthSessionView(true, user.getUsername(), totpEnrolled, fido2Enrolled, factors, roles, "DONE", List.of(), enrollAllowed);
+            return new AuthSessionView(true, user.getUsername(), totpEnrolled, fido2Enrolled, factors, roles, AuthSessionView.NEXT_DONE, List.of(), enrollAllowed);
         }
 
         // Order by the factor's natural preference (PASSWORD, TOTP, EMAIL, FIDO2) so the SPA defaults
@@ -68,18 +68,18 @@ public class AuthStateService {
         List<String> pending = step.get().getAllowedFactors().stream()
                 .sorted(Comparator.comparingInt(Enum::ordinal))
                 .map(AuthFactor::name).toList();
-        return new AuthSessionView(false, user.getUsername(), totpEnrolled, fido2Enrolled, factors, roles, "FACTOR", pending, enrollAllowed);
+        return new AuthSessionView(false, user.getUsername(), totpEnrolled, fido2Enrolled, factors, roles, AuthSessionView.NEXT_FACTOR, pending, enrollAllowed);
     }
 
     /** True once the user's policy is fully satisfied (used to grant the MFA-complete marker). */
     public boolean isPolicySatisfied(Authentication authentication) {
-        return "DONE".equals(describe(authentication).next());
+        return AuthSessionView.NEXT_DONE.equals(describe(authentication).next());
     }
 
     private AuthSessionView anonymous() {
         // Identifier-first: the SPA collects the email, then the policy drives the factors. No user yet,
         // so report the default policy's enroll-at-login flag.
-        return new AuthSessionView(false, null, false, false, List.of(), List.of(), "IDENTIFY", List.of(),
+        return new AuthSessionView(false, null, false, false, List.of(), List.of(), AuthSessionView.NEXT_IDENTIFY, List.of(),
                 policyService.defaultPolicy().isAllowEnrollmentAtLogin());
     }
 }

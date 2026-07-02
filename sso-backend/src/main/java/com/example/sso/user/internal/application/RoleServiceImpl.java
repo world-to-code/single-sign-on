@@ -151,7 +151,7 @@ public class RoleServiceImpl implements RoleService {
      * role name becomes a granted authority verbatim. Blocks permission-shaped names ({@code a:b}),
      * factor/time authorities, MFA_COMPLETE and the SCIM client role.
      */
-    private static void validateRoleName(String name) {
+    private void validateRoleName(String name) {
         String candidate = name == null ? "" : name.trim();
         boolean reserved = candidate.indexOf(':') >= 0
                 || RESERVED_AUTHORITY_NAMES.contains(candidate)

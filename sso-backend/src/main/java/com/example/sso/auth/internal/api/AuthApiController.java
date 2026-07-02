@@ -22,6 +22,11 @@ import com.example.sso.session.SessionMetadataStore;
 import com.example.sso.session.SessionPolicyDetails;
 import com.example.sso.session.SessionPolicyService;
 import com.example.sso.session.StepUpInterceptor;
+import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.shared.error.ConflictException;
+import com.example.sso.shared.error.ForbiddenException;
+import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.shared.error.UnauthorizedException;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.UserService;
@@ -55,7 +60,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 
 import jakarta.servlet.http.HttpSession;
 
@@ -139,8 +143,7 @@ public class AuthApiController {
         UserAccount user = users.findByLogin(request.email()).filter(UserAccount::isEnabled).orElse(null);
         if (user == null) {
             audit.record(new AuditRecord(AuditType.AUTH_IDENTIFY, request.email(), false, "no active account", null));
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                    "No active account for that email. Contact your administrator.");
+            throw new NotFoundException("No active account for that email. Contact your administrator.");
         }
 
         Authentication preAuth = UsernamePasswordAuthenticationToken.authenticated(
@@ -191,7 +194,7 @@ public class AuthApiController {
         boolean enrollable = factor == AuthFactor.TOTP || factor == AuthFactor.FIDO2;
         if (enrollable && !factorHandlers.isEnrolled(factor, user)
                 && !authPolicies.resolveForUser(user).isAllowEnrollmentAtLogin()) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+            throw new ForbiddenException(
                     "Setting up a new authenticator during login is disabled. Contact your administrator.");
         }
 
@@ -245,7 +248,7 @@ public class AuthApiController {
     public FactorChallenge setupTotp(HttpServletRequest request) {
         UserAccount user = requireMfaComplete();
         if (factorHandlers.isEnrolled(AuthFactor.TOTP, user)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "An authenticator is already set up. Remove it first to re-enroll.");
+            throw new ConflictException("An authenticator is already set up. Remove it first to re-enroll.");
         }
 
         return factorHandlers.get(AuthFactor.TOTP).prepare(user, request);
@@ -323,7 +326,7 @@ public class AuthApiController {
     public ResponseEntity<Void> revokeSession(@PathVariable String id) {
         UserAccount user = requireMfaComplete();
         SessionMetadata target = sessionMetadata.findByUserAndHandle(user.getUsername(), id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "session not found"));
+                .orElseThrow(() -> new NotFoundException("session not found"));
 
         SessionInformation info = sessionRegistry.getSessionInformation(target.sessionId());
         if (info != null) {
@@ -440,7 +443,7 @@ public class AuthApiController {
         boolean allowed = Arrays.stream(policy.getReauthFactors().split(","))
                 .map(String::trim).anyMatch(f -> f.equals(factor.name()));
         if (!allowed) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, factor + " is not an allowed re-auth factor");
+            throw new BadRequestException(factor + " is not an allowed re-auth factor");
         }
     }
 
@@ -541,11 +544,11 @@ public class AuthApiController {
     private UserAccount requireUser() {
         Authentication authentication = currentAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+            throw new UnauthorizedException();
         }
 
         return users.findByUsername(authentication.getName())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
+                .orElseThrow(UnauthorizedException::new);
     }
 
     /** Self-service management requires a fully-authenticated session, not just an identified one. */
@@ -554,7 +557,7 @@ public class AuthApiController {
         boolean complete = currentAuthentication().getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority).anyMatch(Factors.MFA_COMPLETE::equals);
         if (!complete) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Finish signing in first.");
+            throw new ForbiddenException("Finish signing in first.");
         }
 
         return user;
@@ -568,12 +571,12 @@ public class AuthApiController {
      */
     private void requireCurrentStep(AuthFactor factor) {
         AuthSessionView view = authState.describe(currentAuthentication());
-        if ("DONE".equals(view.next())) {
+        if (AuthSessionView.NEXT_DONE.equals(view.next())) {
             return; // fully authenticated -> step-up context, not initial login ordering
         }
 
         if (!view.pendingFactors().contains(factor.name())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Not the expected authentication step.");
+            throw new BadRequestException("Not the expected authentication step.");
         }
     }
 

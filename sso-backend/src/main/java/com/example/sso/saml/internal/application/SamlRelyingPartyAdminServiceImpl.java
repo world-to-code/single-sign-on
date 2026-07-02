@@ -26,7 +26,7 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
     @Override
     @Transactional(readOnly = true)
     public List<RelyingPartyView> list() {
-        return relyingParties.findAll().stream().map(SamlRelyingPartyAdminServiceImpl::toView).toList();
+        return relyingParties.findAll().stream().map(this::toView).toList();
     }
 
     @Override
@@ -75,7 +75,7 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
         relyingParties.save(new SamlRelyingParty(entityId, acsUrl, SamlRelyingParty.NAMEID_EMAIL));
     }
 
-    private static SamlSecuritySettings settings(RelyingPartyRequest r) {
+    private SamlSecuritySettings settings(RelyingPartyRequest r) {
         return new SamlSecuritySettings(r.signAssertion(), r.signResponse(), r.encryptAssertion(),
                 orDefault(r.signatureAlgorithm(), "RSA_SHA256"),
                 orDefault(r.dataEncryptionAlgorithm(), "AES256_GCM"),
@@ -83,19 +83,19 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
                 r.wantAuthnRequestsSigned(), r.allowIdpInitiated());
     }
 
-    private static String nameIdFormat(RelyingPartyRequest r) {
+    private String nameIdFormat(RelyingPartyRequest r) {
         return StringUtils.hasText(r.nameIdFormat()) ? r.nameIdFormat() : SamlRelyingParty.NAMEID_EMAIL;
     }
 
-    private static String orDefault(String value, String fallback) {
+    private String orDefault(String value, String fallback) {
         return StringUtils.hasText(value) ? value : fallback;
     }
 
-    private static String trimToNull(String value) {
+    private String trimToNull(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
     }
 
-    private static RelyingPartyView toView(SamlRelyingParty rp) {
+    private RelyingPartyView toView(SamlRelyingParty rp) {
         return new RelyingPartyView(rp.getId().toString(), rp.getEntityId(), rp.getAcsUrl(), rp.getNameIdFormat(),
                 rp.isSignAssertion(), rp.isSignResponse(), rp.isEncryptAssertion(),
                 rp.getSignatureAlgorithm(), rp.getDataEncryptionAlgorithm(), rp.getKeyTransportAlgorithm(),

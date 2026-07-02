@@ -92,7 +92,7 @@ public class ApplicationServiceImpl implements ApplicationService {
         return new AppAccess(false, factorNames(last));
     }
 
-    private static List<String> factorNames(AuthPolicyStepView step) {
+    private List<String> factorNames(AuthPolicyStepView step) {
         return step.getAllowedFactors().stream()
                 .sorted(Comparator.comparingInt(Enum::ordinal))
                 .map(AuthFactor::name).toList();
@@ -120,7 +120,7 @@ public class ApplicationServiceImpl implements ApplicationService {
         return authPolicies.highestPriorityEnabled(candidateIds);
     }
 
-    private static boolean subjectMatches(AppAssignment a, UUID userId, Set<UUID> roleIds, Set<UUID> groupIds) {
+    private boolean subjectMatches(AppAssignment a, UUID userId, Set<UUID> roleIds, Set<UUID> groupIds) {
         return switch (a.getSubjectType()) {
             case USER -> a.getSubjectId().equals(userId);
             case ROLE -> roleIds.contains(a.getSubjectId());
@@ -260,7 +260,7 @@ public class ApplicationServiceImpl implements ApplicationService {
                 policyId == null ? null : policyNames.get(policyId));
     }
 
-    private static String key(AppType type, String id) {
+    private String key(AppType type, String id) {
         return type + ":" + id;
     }
 
@@ -284,7 +284,7 @@ public class ApplicationServiceImpl implements ApplicationService {
         return names;
     }
 
-    private static Set<UUID> subjectIds(Collection<AppAssignment> list, SubjectType type) {
+    private Set<UUID> subjectIds(Collection<AppAssignment> list, SubjectType type) {
         return list.stream().filter(a -> a.getSubjectType() == type)
                 .map(AppAssignment::getSubjectId).collect(Collectors.toSet());
     }

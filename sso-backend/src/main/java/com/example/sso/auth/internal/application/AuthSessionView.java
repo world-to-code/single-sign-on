@@ -10,4 +10,11 @@ import java.util.List;
 public record AuthSessionView(boolean authenticated, String username, boolean totpEnrolled,
                               boolean fido2Enrolled, List<String> factors, List<String> roles,
                               String next, List<String> pendingFactors, boolean mfaEnrollmentAllowed) {
+
+    /** {@code next}: the SPA must collect the account identifier (email) before any factor. */
+    public static final String NEXT_IDENTIFY = "IDENTIFY";
+    /** {@code next}: the SPA must complete the current policy step (one of {@code pendingFactors}). */
+    public static final String NEXT_FACTOR = "FACTOR";
+    /** {@code next}: the authentication policy is fully satisfied. */
+    public static final String NEXT_DONE = "DONE";
 }
