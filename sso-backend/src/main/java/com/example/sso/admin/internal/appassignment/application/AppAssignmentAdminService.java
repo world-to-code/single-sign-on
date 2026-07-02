@@ -1,0 +1,65 @@
+package com.example.sso.admin.internal.appassignment.application;
+
+import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
+import com.example.sso.portal.AppAssignmentView;
+import com.example.sso.portal.AppType;
+import com.example.sso.portal.ApplicationService;
+import com.example.sso.portal.ApplicationView;
+import com.example.sso.portal.AssignAppRequest;
+import com.example.sso.shared.error.ForbiddenException;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+/**
+ * Scope-enforcing adapter over the portal {@link ApplicationService} for the admin app-assignment API:
+ * filters the app list and gates every by-app read/mutation to the acting admin's resource subtree
+ * (super admin bypasses). Two deliberate non-confinements: {@code assign} scopes the app but not the
+ * SUBJECT (an app owner may grant it to any principal), and {@code unassign} carries only the assignment
+ * id (gated by super-tier {@code app-assignment:unassign}) — per-assignment scoping awaits a portal
+ * assignment→app lookup.
+ */
+@Service
+@RequiredArgsConstructor
+public class AppAssignmentAdminService {
+
+    private final ApplicationService applications;
+    private final AdminAccessPolicy accessPolicy;
+
+    public List<ApplicationView> listApplications() {
+        List<ApplicationView> all = applications.listApplications();
+        if (accessPolicy.isCurrentActorUnscoped()) {
+            return all;
+        }
+
+        Set<String> scoped = accessPolicy.currentScopedAppIds();
+        return all.stream().filter(app -> scoped.contains(app.id())).toList();
+    }
+
+    public List<AppAssignmentView> assignmentsForApp(AppType appType, String appId) {
+        requireAccess(appId);
+        return applications.assignmentsForApp(appType, appId);
+    }
+
+    public AppAssignmentView assign(AssignAppRequest request) {
+        requireAccess(request.appId());
+        return applications.assign(request);
+    }
+
+    public void unassign(UUID assignmentId) {
+        applications.unassign(assignmentId);
+    }
+
+    public void setAppPolicy(AppType appType, String appId, String requiredPolicyId) {
+        requireAccess(appId);
+        applications.setAppPolicy(appType, appId, requiredPolicyId);
+    }
+
+    private void requireAccess(String appId) {
+        if (!accessPolicy.canAccessApp(appId)) {
+            throw new ForbiddenException("Outside your managed applications.");
+        }
+    }
+}

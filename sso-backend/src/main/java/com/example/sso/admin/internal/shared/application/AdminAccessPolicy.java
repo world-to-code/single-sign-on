@@ -1,10 +1,15 @@
 package com.example.sso.admin.internal.shared.application;
 
+import com.example.sso.resource.ApplicationAuthorization;
+import com.example.sso.resource.GroupAuthorization;
+import com.example.sso.resource.ResourceAuthorization;
+import com.example.sso.resource.UserAuthorization;
 import com.example.sso.user.Roles;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserGroupService;
 import com.example.sso.user.UserService;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -25,6 +30,9 @@ import org.springframework.stereotype.Component;
  * The actor-independent "last administrator" invariant lives in {@link UserAdminService} (a 409, not a
  * 403). When the acting user cannot be resolved the self-checks default to allowing (the operation is
  * still gated by the static permission), so a lookup miss never blocks a legitimate admin.
+ *
+ * <p>Scope unions the legacy group-manager set with the resource module's subtree ports — a delegate
+ * reaches a user/group/app if either grants it; a super admin bypasses (see {@link #isCurrentActorUnscoped()}).
  */
 @Component
 @RequiredArgsConstructor
@@ -37,11 +45,16 @@ public class AdminAccessPolicy {
 
     private final UserService userService;
     private final UserGroupService userGroups;
+    private final UserAuthorization userAuth;
+    private final GroupAuthorization groupAuth;
+    private final ApplicationAuthorization appAuth;
+    private final ResourceAuthorization resourceAuth;
 
     /**
-     * Group scope: whether the acting admin may act on {@code targetId} at all. A super admin
-     * ({@code ROLE_ADMIN}) may act on anyone; a scoped admin ({@code ROLE_GROUP_ADMIN} only) may act on
-     * themselves and on users who are members of a group they manage. Fails closed on an unresolved actor.
+     * User scope: whether the acting admin may act on {@code targetId} at all. A super admin
+     * ({@code ROLE_ADMIN}) may act on anyone; a scoped admin may act on themselves, on users who are
+     * members of a group they manage (legacy scope), and on users within their resource subtree (direct
+     * USER members or members of a scoped group). Fails closed on an unresolved actor.
      */
     public boolean canAccessUser(UUID targetId) {
         Optional<UUID> actor = currentUserId();
@@ -50,7 +63,10 @@ public class AdminAccessPolicy {
         }
 
         UUID actorId = actor.get();
-        return isSuper(actorId) || actorId.equals(targetId) || userGroups.managesUser(actorId, targetId);
+        return resourceAuth.isUnscoped(actorId)
+                || actorId.equals(targetId)
+                || userGroups.managesUser(actorId, targetId)
+                || userAuth.canManage(actorId, targetId);
     }
 
     /** Only a super admin may mint new user accounts (a scoped admin manages existing members only). */
@@ -67,14 +83,53 @@ public class AdminAccessPolicy {
         return currentIsSuperAdmin() || !containsPrivilegedRole(roleNames);
     }
 
-    /** Whether the acting admin is unscoped (a super {@code ROLE_ADMIN}); used for list scoping. */
+    /**
+     * Whether the acting admin holds {@code ROLE_ADMIN} DIRECTLY — gates super-only privileged grants
+     * (role/permission assignment); visibility scoping uses {@link #isCurrentActorUnscoped()} instead.
+     */
     public boolean currentIsSuperAdmin() {
         return currentUserId().map(this::isSuper).orElse(false);
     }
 
-    /** For a scoped acting admin, the ids of the users they may manage (members of their groups). */
+    /**
+     * Whether the acting admin is a super {@code ROLE_ADMIN} (direct or group-delegated). List filtering
+     * must branch on this first: the {@code scoped*}/{@code managed*} sets are empty for a super admin.
+     */
+    public boolean isCurrentActorUnscoped() {
+        return currentUserId().map(resourceAuth::isUnscoped).orElse(false);
+    }
+
+    /** Users a scoped admin may manage: legacy group-manager set ∪ resource-subtree users. */
     public Set<UUID> currentManagedUserIds() {
-        return currentUserId().map(userGroups::membersManagedBy).orElse(Set.of());
+        Optional<UUID> actor = currentUserId();
+        if (actor.isEmpty()) {
+            return Set.of();
+        }
+
+        UUID actorId = actor.get();
+        Set<UUID> managed = new HashSet<>(userGroups.membersManagedBy(actorId));
+        managed.addAll(userAuth.scopedUserIds(actorId));
+        return managed;
+    }
+
+    /** Group scope: whether the acting admin may manage {@code groupId} (resource subtree; super bypasses). */
+    public boolean canAccessGroup(UUID groupId) {
+        return currentUserId().map(actorId -> groupAuth.canManage(actorId, groupId)).orElse(false);
+    }
+
+    /** For a scoped acting admin, the ids of the groups inside their resource subtree. */
+    public Set<UUID> currentScopedGroupIds() {
+        return currentUserId().map(groupAuth::scopedGroupIds).orElse(Set.of());
+    }
+
+    /** Application scope: whether the acting admin may manage {@code appId} (resource subtree; super bypasses). */
+    public boolean canAccessApp(String appId) {
+        return currentUserId().map(actorId -> appAuth.canManage(actorId, appId)).orElse(false);
+    }
+
+    /** For a scoped acting admin, the ids of the applications inside their resource subtree. */
+    public Set<String> currentScopedAppIds() {
+        return currentUserId().map(appAuth::scopedAppIds).orElse(Set.of());
     }
 
     /** Blocks disabling one's own account or any administrator's account; enabling is always allowed. */

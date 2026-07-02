@@ -1,9 +1,9 @@
 package com.example.sso.admin.internal.appassignment.api;
 
+import com.example.sso.admin.internal.appassignment.application.AppAssignmentAdminService;
 import com.example.sso.portal.AppAssignmentView;
 import com.example.sso.portal.AppPolicyRequest;
 import com.example.sso.portal.AppType;
-import com.example.sso.portal.ApplicationService;
 import com.example.sso.portal.ApplicationView;
 import com.example.sso.portal.AssignAppRequest;
 import com.example.sso.shared.security.RequirePermission;
@@ -30,7 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AdminApplicationAssignmentController {
 
-    private final ApplicationService applications;
+    private final AppAssignmentAdminService applications;
 
     @GetMapping
     @RequirePermission(Permissions.APP_ASSIGNMENT_READ)

@@ -53,7 +53,7 @@ public class UserAdminService {
 
     @Transactional(readOnly = true)
     public List<AdminUserView> listUsers() {
-        if (accessPolicy.currentIsSuperAdmin()) {
+        if (accessPolicy.isCurrentActorUnscoped()) {
             return userService.findAll().stream().map(AdminUserView::of).toList();
         }
 
@@ -68,7 +68,7 @@ public class UserAdminService {
     @Transactional(readOnly = true)
     public List<Suggestion> searchUsers(String q, int limit) {
         List<Suggestion> results = userService.searchUsers(q, limit);
-        if (accessPolicy.currentIsSuperAdmin()) {
+        if (accessPolicy.isCurrentActorUnscoped()) {
             return results;
         }
 
@@ -116,8 +116,8 @@ public class UserAdminService {
 
     /**
      * Actor-independent invariant: the platform must retain at least one enabled administrator. Rejects
-     * (409) an operation that would leave the target as the sole enabled {@code ROLE_ADMIN} holder no
-     * longer an enabled admin. {@code remainsEnabledAdmin} is whether the target stays an enabled admin
+     * (409) an operation that would make the target — currently the only enabled {@code ROLE_ADMIN} —
+     * no longer an enabled admin. {@code remainsEnabledAdmin} is whether the target stays an enabled admin
      * after the operation (then there is nothing to guard).
      */
     private void ensureNotLastAdmin(UUID targetId, boolean remainsEnabledAdmin) {
