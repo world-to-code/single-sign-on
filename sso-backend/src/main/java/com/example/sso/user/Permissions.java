@@ -62,6 +62,12 @@ public final class Permissions {
     public static final String APP_ASSIGNMENT_READ = "app-assignment:read";
     public static final String APP_ASSIGNMENT_ASSIGN = "app-assignment:assign";
     public static final String APP_ASSIGNMENT_UNASSIGN = "app-assignment:unassign";
+    // Organizational resources (DAG) + subtree-admin delegation
+    public static final String RESOURCE_READ = "resource:read";
+    public static final String RESOURCE_CREATE = "resource:create";
+    public static final String RESOURCE_UPDATE = "resource:update";
+    public static final String RESOURCE_DELETE = "resource:delete";
+    public static final String RESOURCE_ASSIGN_ADMIN = "resource:assign-admin";
     // Single-action resources
     public static final String AUDIT_READ = "audit:read";
     public static final String SCIM_MANAGE = "scim:manage";
@@ -79,6 +85,7 @@ public final class Permissions {
             IP_RULE_READ, IP_RULE_CREATE, IP_RULE_UPDATE, IP_RULE_DELETE,
             PORTAL_SETTINGS_READ, PORTAL_SETTINGS_UPDATE,
             APP_ASSIGNMENT_READ, APP_ASSIGNMENT_ASSIGN, APP_ASSIGNMENT_UNASSIGN,
+            RESOURCE_READ, RESOURCE_CREATE, RESOURCE_UPDATE, RESOURCE_DELETE, RESOURCE_ASSIGN_ADMIN,
             AUDIT_READ, SCIM_MANAGE, KEY_ROTATE);
 
     private static final Set<String> CATALOG = Set.copyOf(ALL);

@@ -1,5 +1,6 @@
 package com.example.sso.resource.internal.domain;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,4 +15,8 @@ public interface ResourceTypeRepository extends JpaRepository<ResourceType, UUID
      */
     @Query("select t from ResourceType t left join fetch t.allowedMemberTypes where t.name = :name")
     Optional<ResourceType> findByNameFetchingKinds(@Param("name") String name);
+
+    /** All types with their member-kind sets fetched (the admin view reads them). */
+    @Query("select distinct t from ResourceType t left join fetch t.allowedMemberTypes order by t.name")
+    List<ResourceType> findAllWithKinds();
 }

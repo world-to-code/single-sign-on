@@ -1,6 +1,8 @@
 package com.example.sso.resource.internal.domain;
 
 import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -8,6 +10,25 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface ResourceRepository extends JpaRepository<Resource, UUID> {
+
+    /**
+     * All resources with everything the admin view projects fetch-joined (type + the three LAZY
+     * {@code Set} collections — sets may share one query; the per-resource row product stays small).
+     */
+    @Query("select distinct r from Resource r join fetch r.type "
+            + "left join fetch r.children left join fetch r.members left join fetch r.grants "
+            + "order by r.name")
+    List<Resource> findAllForAdminView();
+
+    /** One resource with the admin-view graph fetched (see {@link #findAllForAdminView()}). */
+    @Query("select r from Resource r join fetch r.type "
+            + "left join fetch r.children left join fetch r.members left join fetch r.grants "
+            + "where r.id = :id")
+    Optional<Resource> findByIdForAdminView(@Param("id") UUID id);
+
+    /** One resource with its type's member-kind constraints fetched (attach validation reads them). */
+    @Query("select r from Resource r join fetch r.type t left join fetch t.allowedMemberTypes where r.id = :id")
+    Optional<Resource> findByIdWithTypeKinds(@Param("id") UUID id);
 
     /** Advisory-lock key (arbitrary but fixed) serializing resource-edge mutations. */
     String EDGE_MUTATION_LOCK_KEY = "4213370001";
