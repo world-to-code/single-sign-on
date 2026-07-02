@@ -1,0 +1,131 @@
+package com.example.sso.user.internal.domain;
+
+import org.junit.jupiter.api.Test;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Set;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+/**
+ * Unit test for {@link AppUser} behavior methods (no setters): enable/disable, email verification,
+ * profile edits, wholesale role/permission assignment, and the brute-force lockout delegated to the
+ * embedded {@link AccountLockout}. Pure aggregate rules — asserts on resulting state.
+ */
+class AppUserTest {
+
+    private static final Instant NOW = Instant.parse("2026-01-01T00:00:00Z");
+
+    private AppUser newUser() {
+        return new AppUser("alice", "alice@example.com", "Alice", "hash");
+    }
+
+    @Test
+    void newUserIsEnabledUnlockedAndUnverified() {
+        AppUser user = newUser();
+
+        assertThat(user.isEnabled()).isTrue();
+        assertThat(user.isAccountNonLocked()).isTrue();
+        assertThat(user.isEmailVerified()).isFalse();
+        assertThat(user.isTemporarilyLocked(NOW)).isFalse();
+    }
+
+    @Test
+    void disableThenEnableFlipsTheFlag() {
+        AppUser user = newUser();
+
+        user.disable();
+        assertThat(user.isEnabled()).isFalse();
+
+        user.enable();
+        assertThat(user.isEnabled()).isTrue();
+    }
+
+    @Test
+    void verifyEmailSetsTheFlag() {
+        AppUser user = newUser();
+
+        user.verifyEmail();
+
+        assertThat(user.isEmailVerified()).isTrue();
+    }
+
+    @Test
+    void updateProfileReplacesDisplayNameAndEmail() {
+        AppUser user = newUser();
+
+        user.updateProfile("Alice Smith", "alice.smith@example.com");
+
+        assertThat(user.getDisplayName()).isEqualTo("Alice Smith");
+        assertThat(user.getEmail()).isEqualTo("alice.smith@example.com");
+    }
+
+    @Test
+    void assignRolesReplacesTheSetWholesaleAndExposesAnUnmodifiableView() {
+        AppUser user = newUser();
+        Role admin = new Role("ROLE_ADMIN");
+        Role userRole = new Role("ROLE_USER");
+        user.addRole(admin);
+
+        user.assignRoles(List.of(userRole));
+
+        assertThat(user.getRoles()).containsExactly(userRole);
+        assertThatThrownBy(() -> user.getRoles().add(new Role("x")))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void removeRoleDropsASingleAssignment() {
+        AppUser user = newUser();
+        Role admin = new Role("ROLE_ADMIN");
+        user.addRole(admin);
+
+        user.removeRole(admin);
+
+        assertThat(user.getRoles()).isEmpty();
+    }
+
+    @Test
+    void assignDirectPermissionsExposesNamesView() {
+        AppUser user = newUser();
+
+        user.assignDirectPermissions(Set.of(new Permission("user:read"), new Permission("user:update")));
+
+        assertThat(user.getDirectPermissionNames()).containsExactlyInAnyOrder("user:read", "user:update");
+    }
+
+    @Test
+    void failedLoginsBelowThresholdDoNotLock() {
+        AppUser user = newUser();
+
+        user.registerFailedLogin(3, Duration.ofMinutes(15), NOW);
+        user.registerFailedLogin(3, Duration.ofMinutes(15), NOW);
+
+        assertThat(user.isTemporarilyLocked(NOW)).isFalse();
+    }
+
+    @Test
+    void reachingTheThresholdTemporarilyLocksTheAccount() {
+        AppUser user = newUser();
+
+        user.registerFailedLogin(2, Duration.ofMinutes(15), NOW);
+        user.registerFailedLogin(2, Duration.ofMinutes(15), NOW);
+
+        assertThat(user.isTemporarilyLocked(NOW)).isTrue();
+        assertThat(user.isTemporarilyLocked(NOW.plus(Duration.ofMinutes(16)))).isFalse();
+    }
+
+    @Test
+    void successfulLoginClearsPriorFailures() {
+        AppUser user = newUser();
+        user.registerFailedLogin(2, Duration.ofMinutes(15), NOW);
+        user.registerFailedLogin(2, Duration.ofMinutes(15), NOW);
+
+        user.registerSuccessfulLogin();
+
+        assertThat(user.isTemporarilyLocked(NOW)).isFalse();
+    }
+}

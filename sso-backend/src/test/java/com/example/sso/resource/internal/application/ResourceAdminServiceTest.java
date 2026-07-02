@@ -1,0 +1,129 @@
+package com.example.sso.resource.internal.application;
+
+import com.example.sso.portal.ApplicationService;
+import com.example.sso.resource.internal.domain.Resource;
+import com.example.sso.resource.internal.domain.ResourceRepository;
+import com.example.sso.resource.internal.domain.ResourceType;
+import com.example.sso.resource.internal.domain.ResourceTypeRepository;
+import com.example.sso.user.UserGroupService;
+import com.example.sso.user.UserService;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anySet;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * Unit tests for the resource-admin service's SCOPE enforcement and label assembly. Where the unit's
+ * job is an interaction (the edge guard checks BOTH endpoints; sub-resource creation checks only the
+ * parent; detail avoids the app registry when there are no app members) it asserts with {@code verify}.
+ */
+@ExtendWith(MockitoExtension.class)
+class ResourceAdminServiceTest {
+
+    @Mock
+    private ResourceRepository resources;
+    @Mock
+    private ResourceTypeRepository types;
+    @Mock
+    private ResourceGraphService graph;
+    @Mock
+    private ResourceAccessPolicy access;
+    @Mock
+    private UserService users;
+    @Mock
+    private UserGroupService groups;
+    @Mock
+    private ApplicationService applications;
+
+    @InjectMocks
+    private ResourceAdminService service;
+
+    /** Stubs a mock Resource so {@code ResourceView.of} can project it (all collections empty). */
+    private Resource viewable(UUID id) {
+        Resource resource = mock(Resource.class);
+        ResourceType type = mock(ResourceType.class);
+        lenient().when(type.getName()).thenReturn("TEAM");
+        lenient().when(resource.getId()).thenReturn(id);
+        lenient().when(resource.getName()).thenReturn("node-" + id);
+        lenient().when(resource.getType()).thenReturn(type);
+        lenient().when(resource.getChildren()).thenReturn(Set.of());
+        lenient().when(resource.getMembers()).thenReturn(Set.of());
+        lenient().when(resource.getGrants()).thenReturn(Set.of());
+        return resource;
+    }
+
+    @Test
+    void attachChildRequiresManagingBothEndpointsBeforeWiringTheEdge() {
+        UUID parentId = UUID.randomUUID();
+        UUID childId = UUID.randomUUID();
+
+        service.attachChild(parentId, childId);
+
+        verify(access).requireManage(parentId);
+        verify(access).requireManage(childId);
+        verify(graph).attachChild(parentId, childId);
+    }
+
+    @Test
+    void createSubResourceRequiresManagingOnlyTheParent() {
+        UUID parentId = UUID.randomUUID();
+        UUID childId = UUID.randomUUID();
+        Resource child = viewable(childId);
+        when(types.findByNameFetchingKinds("TEAM"))
+                .thenReturn(Optional.of(mock(ResourceType.class)));
+        when(resources.save(any(Resource.class))).thenReturn(child);
+        when(resources.findByIdForAdminView(childId)).thenReturn(Optional.of(child));
+
+        service.createSubResource(parentId, "Sub", "TEAM");
+
+        verify(access).requireManage(parentId);
+        verify(access, times(1)).requireManage(any());  // the child endpoint is NOT scope-checked
+        verify(graph).attachChild(parentId, childId);
+    }
+
+    @Test
+    void detailDoesNotQueryTheAppRegistryWhenThereAreNoApplicationMembers() {
+        UUID id = UUID.randomUUID();
+        Resource resource = viewable(id); // build (and stub) the mock BEFORE the outer when(...)
+        when(resources.findByIdForAdminView(id)).thenReturn(Optional.of(resource));
+        when(access.isUnscoped()).thenReturn(true);
+        when(resources.findParentIdNames(id)).thenReturn(List.of());
+        when(groups.idNames(anySet())).thenReturn(List.of());
+        when(users.idNames(anySet())).thenReturn(List.of());
+
+        service.detail(id);
+
+        verify(applications, never()).listApplications();
+    }
+
+    @Test
+    void listReturnsOnlyResourcesInsideTheScopedCallersManagedSet() {
+        UUID managedId = UUID.randomUUID();
+        UUID otherId = UUID.randomUUID();
+        Resource managed = viewable(managedId);
+        Resource other = viewable(otherId);
+        when(access.isUnscoped()).thenReturn(false);
+        when(access.managedResourceIds()).thenReturn(Set.of(managedId));
+        when(resources.findAllForAdminView()).thenReturn(List.of(managed, other));
+
+        List<ResourceView> result = service.list();
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).id()).isEqualTo(managedId.toString());
+    }
+}
