@@ -19,6 +19,10 @@ import org.springframework.web.context.request.RequestContextHolder;
  * listing; sharing a mutable set across authz decisions would invite poisoning). Outside a request
  * (tests, background work) it is computed directly. The memo is intentionally request-scoped-stale:
  * a grant changed mid-request becomes visible on the next request.
+ *
+ * <p><b>SECURITY INVARIANT:</b> never SHRINK an actor's scope then RE-CHECK it in the same request — the
+ * memo would serve the pre-shrink (larger) set and fail OPEN. Thin controllers hold this (one mutation
+ * per request); if that changes, evict the actor's memo after the write. Growing scope is stale-safe.
  */
 @Component
 @RequiredArgsConstructor

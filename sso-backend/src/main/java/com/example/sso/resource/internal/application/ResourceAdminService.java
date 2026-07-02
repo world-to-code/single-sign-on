@@ -87,6 +87,22 @@ public class ResourceAdminService {
         return ResourceView.of(saved);
     }
 
+    /**
+     * Creates a sub-resource UNDER a parent the caller manages, and attaches it — the only way a scoped
+     * (non-super) admin grows their subtree. Requires managing the PARENT only: the child is a fresh node
+     * the caller creates (no existing reach to smuggle), and being a descendant of the managed parent it
+     * lands inside the caller's scope. Cycle-safe (a brand-new node has no edges).
+     */
+    @Transactional
+    public ResourceView createSubResource(UUID parentId, String name, String typeName) {
+        access.requireManage(parentId);
+        ResourceType type = types.findByNameFetchingKinds(typeName)
+                .orElseThrow(() -> new NotFoundException("Resource type not found."));
+        Resource child = resources.save(new Resource(name, type));
+        graph.attachChild(parentId, child.getId());
+        return ResourceView.of(requireForView(child.getId()));
+    }
+
     @Transactional
     public ResourceView rename(UUID id, String name) {
         access.requireManage(id);

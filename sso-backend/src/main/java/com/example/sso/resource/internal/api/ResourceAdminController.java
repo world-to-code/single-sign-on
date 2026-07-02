@@ -23,8 +23,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Admin CRUD for the resource DAG (types, nodes, edges, members, delegation grants). Edge/member/
- * grant mutations change WHO IS IN SCOPE once subtree enforcement lands, so they are step-up gated
- * like the other privilege-escalating admin actions; plain create/rename are not.
+ * grant mutations change WHO IS IN SCOPE under subtree enforcement, so they are step-up gated like
+ * the other privilege-escalating admin actions; plain create/rename are not.
  */
 @RestController
 @RequestMapping("/api/admin/resources")
@@ -66,6 +66,16 @@ public class ResourceAdminController {
     @RequirePermission(Permissions.RESOURCE_CREATE)
     public ResponseEntity<ResourceView> create(@Valid @RequestBody ResourceRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.create(request.name(), request.typeName()));
+    }
+
+    /** Creates a sub-resource under a parent the caller manages (how a delegated admin grows their subtree). */
+    @PostMapping("/{parentId}/sub-resources")
+    @RequirePermission(Permissions.RESOURCE_CREATE)
+    @RequireStepUp
+    public ResponseEntity<ResourceView> createSubResource(@PathVariable UUID parentId,
+                                                          @Valid @RequestBody ResourceRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(service.createSubResource(parentId, request.name(), request.typeName()));
     }
 
     @PutMapping("/{id}")
