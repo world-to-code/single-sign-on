@@ -71,7 +71,7 @@ export default function Applications() {
   const policyName = (id: string | null) => (id ? policies.find((p) => p.id === id)?.name ?? "policy" : null);
 
   function loadAssignments(app: Application) {
-    apiGet<Assignment[]>(`/api/admin/applications/${app.type}/${app.id}/assignments`).then(setAssignments).catch(() => setAssignments([]));
+    apiGet<Assignment[]>(`/api/admin/applications/${app.type.toLowerCase()}/${app.id}/assignments`).then(setAssignments).catch(() => setAssignments([]));
   }
   function manage(app: Application) {
     setFormError(null); setActive(app); setSubjectType("GROUP"); setSubjectId(""); setRequiredPolicyId("");
@@ -99,7 +99,7 @@ export default function Applications() {
     if (!active) return;
     setFormError(null);
     try {
-      await apiPut(`/api/admin/applications/${active.type}/${active.id}/policy`, { requiredPolicyId: appPolicyId || null });
+      await apiPut(`/api/admin/applications/${active.type.toLowerCase()}/${active.id}/policy`, { requiredPolicyId: appPolicyId || null });
       loadApps();
     } catch (e) {
       setFormError(String(e));
