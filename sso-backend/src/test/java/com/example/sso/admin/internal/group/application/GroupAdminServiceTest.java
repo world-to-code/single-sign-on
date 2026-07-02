@@ -83,15 +83,6 @@ class GroupAdminServiceTest {
     }
 
     @Test
-    void setManagersOutsideScopeIsForbiddenAndDoesNotDelegate() {
-        when(accessPolicy.canAccessGroup(GROUP_ID)).thenReturn(false);
-
-        assertThatThrownBy(() -> service.setManagers(GROUP_ID, List.of()))
-                .isInstanceOf(ForbiddenException.class);
-        verify(userGroups, never()).setManagers(any(), any());
-    }
-
-    @Test
     void getInScopeDelegatesToUserGroupService() {
         when(accessPolicy.canAccessGroup(GROUP_ID)).thenReturn(true);
         GroupView view = group(GROUP_ID);
@@ -132,6 +123,6 @@ class GroupAdminServiceTest {
     }
 
     private GroupView group(UUID id) {
-        return new GroupView(id.toString(), "g-" + id, null, null, List.of(), 0, false, List.of(), List.of());
+        return new GroupView(id.toString(), "g-" + id, null, null, List.of(), 0, false, List.of());
     }
 }

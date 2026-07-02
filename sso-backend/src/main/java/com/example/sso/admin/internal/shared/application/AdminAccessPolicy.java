@@ -7,10 +7,8 @@ import com.example.sso.resource.ResourceAuthorization;
 import com.example.sso.resource.UserAuthorization;
 import com.example.sso.user.Roles;
 import com.example.sso.user.UserAccount;
-import com.example.sso.user.UserGroupService;
 import com.example.sso.user.UserService;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -32,8 +30,8 @@ import org.springframework.stereotype.Component;
  * 403). When the acting user cannot be resolved the self-checks default to allowing (the operation is
  * still gated by the static permission), so a lookup miss never blocks a legitimate admin.
  *
- * <p>Scope unions the legacy group-manager set with the resource module's subtree ports — a delegate
- * reaches a user/group/app if either grants it; a super admin bypasses (see {@link #isCurrentActorUnscoped()}).
+ * <p>Scope comes entirely from the resource module's subtree ports — a delegate reaches a user/group/app
+ * only if their subtree covers it; a super admin bypasses (see {@link #isCurrentActorUnscoped()}).
  */
 @Component
 @RequiredArgsConstructor
@@ -45,7 +43,6 @@ public class AdminAccessPolicy {
     private static final Set<String> PRIVILEGED_ROLES = Set.of(Roles.ADMIN, Roles.GROUP_ADMIN);
 
     private final UserService userService;
-    private final UserGroupService userGroups;
     private final UserAuthorization userAuth;
     private final GroupAuthorization groupAuth;
     private final ApplicationAuthorization appAuth;
@@ -53,9 +50,9 @@ public class AdminAccessPolicy {
 
     /**
      * User scope: whether the acting admin may act on {@code targetId} at all. A super admin
-     * ({@code ROLE_ADMIN}) may act on anyone; a scoped admin may act on themselves, on users who are
-     * members of a group they manage (legacy scope), and on users within their resource subtree (direct
-     * USER members or members of a scoped group). Fails closed on an unresolved actor.
+     * ({@code ROLE_ADMIN}) may act on anyone; a scoped admin may act on themselves and on users within
+     * their resource subtree (direct USER members or members of a scoped group). Fails closed on an
+     * unresolved actor.
      */
     public boolean canAccessUser(UUID targetId) {
         Optional<UUID> actor = currentUserId();
@@ -66,7 +63,6 @@ public class AdminAccessPolicy {
         UUID actorId = actor.get();
         return resourceAuth.isUnscoped(actorId)
                 || actorId.equals(targetId)
-                || userGroups.managesUser(actorId, targetId)
                 || userAuth.canManage(actorId, targetId);
     }
 
@@ -100,17 +96,9 @@ public class AdminAccessPolicy {
         return currentUserId().map(resourceAuth::isUnscoped).orElse(false);
     }
 
-    /** Users a scoped admin may manage: legacy group-manager set ∪ resource-subtree users. */
+    /** Users a scoped admin may manage: those inside their resource subtree. */
     public Set<UUID> currentManagedUserIds() {
-        Optional<UUID> actor = currentUserId();
-        if (actor.isEmpty()) {
-            return Set.of();
-        }
-
-        UUID actorId = actor.get();
-        Set<UUID> managed = new HashSet<>(userGroups.membersManagedBy(actorId));
-        managed.addAll(userAuth.scopedUserIds(actorId));
-        return managed;
+        return currentUserId().map(userAuth::scopedUserIds).orElse(Set.of());
     }
 
     /** Group scope: whether the acting admin may manage {@code groupId} (resource subtree; super bypasses). */

@@ -71,14 +71,6 @@ public class AdminGroupController {
         return groups.setRoles(id, request.roleNames());
     }
 
-    /** Replaces the group's managers (scoped admins allowed to manage its members). */
-    @PutMapping("/{id}/managers")
-    @RequirePermission(Permissions.GROUP_UPDATE)
-    @RequireStepUp
-    public GroupView setGroupManagers(@PathVariable UUID id, @RequestBody SetGroupManagersRequest request) {
-        return groups.setManagers(id, request.managerUserIds());
-    }
-
     @GetMapping("/{id}")
     @RequirePermission(Permissions.GROUP_READ)
     public GroupView group(@PathVariable UUID id) {

@@ -7,7 +7,6 @@ import com.example.sso.resource.ResourceAuthorization;
 import com.example.sso.resource.UserAuthorization;
 import com.example.sso.user.Roles;
 import com.example.sso.user.UserAccount;
-import com.example.sso.user.UserGroupService;
 import com.example.sso.user.UserService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,9 +26,9 @@ import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for the instance-level (ABAC) rules in {@link AdminAccessPolicy}. Adversarial focus: scope
- * unions (super-bypass OR self OR legacy group-manager OR resource subtree), privileged-role assignment
- * being super-only, the self-protection guards (no self-disable/-delete/-demotion), and fail-closed
- * behaviour when the acting user cannot be resolved from the security context.
+ * (super-bypass OR self OR resource subtree), privileged-role assignment being super-only, the
+ * self-protection guards (no self-disable/-delete/-demotion), and fail-closed behaviour when the acting
+ * user cannot be resolved from the security context.
  */
 class AdminAccessPolicyTest {
 
@@ -38,7 +37,6 @@ class AdminAccessPolicyTest {
     private static final UUID OTHER_ID = UUID.randomUUID();
 
     private UserService userService;
-    private UserGroupService userGroups;
     private UserAuthorization userAuth;
     private GroupAuthorization groupAuth;
     private ApplicationAuthorization appAuth;
@@ -48,12 +46,11 @@ class AdminAccessPolicyTest {
     @BeforeEach
     void setUp() {
         userService = mock(UserService.class);
-        userGroups = mock(UserGroupService.class);
         userAuth = mock(UserAuthorization.class);
         groupAuth = mock(GroupAuthorization.class);
         appAuth = mock(ApplicationAuthorization.class);
         resourceAuth = mock(ResourceAuthorization.class);
-        policy = new AdminAccessPolicy(userService, userGroups, userAuth, groupAuth, appAuth, resourceAuth);
+        policy = new AdminAccessPolicy(userService, userAuth, groupAuth, appAuth, resourceAuth);
 
         UserAccount actor = mock(UserAccount.class);
         when(actor.getId()).thenReturn(ACTOR_ID);
@@ -77,12 +74,6 @@ class AdminAccessPolicyTest {
     @Test
     void anyoneCanAccessThemselves() {
         assertThat(policy.canAccessUser(ACTOR_ID)).isTrue();
-    }
-
-    @Test
-    void legacyGroupManagerCanAccessManagedUser() {
-        when(userGroups.managesUser(ACTOR_ID, OTHER_ID)).thenReturn(true);
-        assertThat(policy.canAccessUser(OTHER_ID)).isTrue();
     }
 
     @Test
@@ -126,13 +117,11 @@ class AdminAccessPolicyTest {
     }
 
     @Test
-    void currentManagedUserIdsUnionsLegacyAndResourceScopes() {
-        UUID legacy = UUID.randomUUID();
+    void currentManagedUserIdsComeFromTheResourceSubtree() {
         UUID resource = UUID.randomUUID();
-        when(userGroups.membersManagedBy(ACTOR_ID)).thenReturn(Set.of(legacy));
         when(userAuth.scopedUserIds(ACTOR_ID)).thenReturn(Set.of(resource));
 
-        assertThat(policy.currentManagedUserIds()).containsExactlyInAnyOrder(legacy, resource);
+        assertThat(policy.currentManagedUserIds()).containsExactly(resource);
     }
 
     @Test
@@ -273,7 +262,6 @@ class AdminAccessPolicyTest {
         UUID group = UUID.randomUUID();
         UUID resource = UUID.randomUUID();
         when(resourceAuth.isUnscoped(ACTOR_ID)).thenReturn(false);
-        when(userGroups.membersManagedBy(ACTOR_ID)).thenReturn(Set.of());
         when(userAuth.scopedUserIds(ACTOR_ID)).thenReturn(Set.of(user));
         when(groupAuth.scopedGroupIds(ACTOR_ID)).thenReturn(Set.of(group));
         when(appAuth.scopedAppIds(ACTOR_ID)).thenReturn(Set.of("app-9"));

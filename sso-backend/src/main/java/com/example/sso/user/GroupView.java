@@ -8,5 +8,5 @@ import java.util.List;
  */
 public record GroupView(String id, String name, String description, String externalId,
                         List<String> memberUserIds, int memberCount, boolean system,
-                        List<String> roleNames, List<String> managerUserIds) {
+                        List<String> roleNames) {
 }

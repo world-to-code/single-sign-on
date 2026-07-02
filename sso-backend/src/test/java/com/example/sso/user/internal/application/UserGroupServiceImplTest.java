@@ -122,15 +122,6 @@ class UserGroupServiceImplTest {
     }
 
     @Test
-    void setManagersOnASystemGroupThrowsConflict() {
-        UUID id = UUID.randomUUID();
-        when(repository.findById(id)).thenReturn(Optional.of(systemGroup()));
-
-        assertThatThrownBy(() -> service.setManagers(id, Set.of(UUID.randomUUID())))
-                .isInstanceOf(ConflictException.class);
-    }
-
-    @Test
     void updateOfASystemGroupThrowsConflict() {
         UUID id = UUID.randomUUID();
         when(repository.findById(id)).thenReturn(Optional.of(systemGroup()));
@@ -139,13 +130,4 @@ class UserGroupServiceImplTest {
                 .isInstanceOf(ConflictException.class);
     }
 
-    @Test
-    void managesUserDelegatesToTheRepository() {
-        UUID admin = UUID.randomUUID();
-        UUID target = UUID.randomUUID();
-        when(repository.managesUser(admin, target)).thenReturn(true);
-
-        assertThat(service.managesUser(admin, target)).isTrue();
-        verify(repository).managesUser(admin, target);
-    }
 }

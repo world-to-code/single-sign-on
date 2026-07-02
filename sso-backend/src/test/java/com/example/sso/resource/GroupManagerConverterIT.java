@@ -16,6 +16,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -41,6 +42,8 @@ class GroupManagerConverterIT extends AbstractIntegrationTest {
     ResourceRepository resources;
     @Autowired
     ResourceTypeRepository types;
+    @Autowired
+    JdbcTemplate jdbc;
 
     private final List<UUID> createdUsers = new ArrayList<>();
     private final List<UUID> createdGroups = new ArrayList<>();
@@ -60,7 +63,7 @@ class GroupManagerConverterIT extends AbstractIntegrationTest {
         UUID manager = user("conv-manager");
         UUID member = user("conv-member");
         UUID group = group("Conv-Group", member);
-        userGroups.setManagers(group, Set.of(manager));
+        jdbc.update("INSERT INTO user_group_manager(group_id, user_id) VALUES (?, ?)", group, manager);
 
         // Before conversion: no resource scope at all.
         assertThat(groupAuth.scopedGroupIds(manager)).doesNotContain(group);
@@ -76,7 +79,7 @@ class GroupManagerConverterIT extends AbstractIntegrationTest {
     void conversionIsIdempotent() {
         UUID manager = user("conv-manager2");
         UUID group = group("Conv-Group2", manager);
-        userGroups.setManagers(group, Set.of(manager));
+        jdbc.update("INSERT INTO user_group_manager(group_id, user_id) VALUES (?, ?)", group, manager);
 
         converter.convert();
         converter.convert();

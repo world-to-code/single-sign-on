@@ -117,40 +117,37 @@ class AbacAuthorizationIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void groupScopedAdminSeesOnlyManagedUsers() {
+    void scopedNonSuperAdminIsConfinedAndCannotEscalate() {
+        // Scope now comes only from resource_role (covered by ScopedAdminSurfaceIsolationIT); here a
+        // scoped (non-super) admin with no resource grant reaches nobody but themselves, and — crucially —
+        // cannot escalate. A super admin is unscoped.
         UUID scopedAdmin = create("scopedadmin", Set.of("ROLE_GROUP_ADMIN", "ROLE_USER"));
-        UUID managed = create("scopedmember", Set.of("ROLE_USER"));
         UUID other = create("scopedstranger", Set.of("ROLE_USER"));
-        UUID groupId = UUID.fromString(userGroups.create(new GroupSpec("ScopeDept", null, null, Set.of(managed))).id());
-        userGroups.setManagers(groupId, Set.of(scopedAdmin));
 
         actAs("scopedadmin");
         assertThat(access.currentIsSuperAdmin()).isFalse();
         assertThat(access.canCreateUser()).isFalse();                 // scoped admins can't mint users
-        assertThat(access.canAccessUser(managed)).isTrue();           // member of a managed group
         assertThat(access.canAccessUser(scopedAdmin)).isTrue();       // self
-        assertThat(access.canAccessUser(other)).isFalse();            // outside managed groups
-        assertThat(access.currentManagedUserIds()).contains(managed).doesNotContain(other);
+        assertThat(access.canAccessUser(other)).isFalse();            // no resource scope → out of reach
+        assertThat(access.currentManagedUserIds()).doesNotContain(other);
 
         // A scoped admin cannot escalate: no permission granting, no privileged-role assignment.
         assertThat(access.canManagePermissions(scopedAdmin)).isFalse();   // can't self-grant permissions
-        assertThat(access.canManagePermissions(managed)).isFalse();       // scoped admins can't manage perms
+        assertThat(access.canManagePermissions(other)).isFalse();         // scoped admins can't manage perms
         assertThat(access.canUpdateUser(scopedAdmin, true, Set.of("ROLE_ADMIN", "ROLE_USER"))).isFalse(); // self-promote
-        assertThat(access.canUpdateUser(managed, true, Set.of("ROLE_ADMIN"))).isFalse(); // grant admin to a member
-        assertThat(access.canUpdateUser(managed, true, Set.of("ROLE_USER"))).isTrue();   // ordinary edit is fine
-        assertThat(access.mayAssignRoles(Set.of("ROLE_USER"))).isTrue();                 // group delegation of a plain role
-        assertThat(access.mayAssignRoles(Set.of("ROLE_ADMIN"))).isFalse();               // can't delegate admin to a group
+        assertThat(access.canUpdateUser(other, true, Set.of("ROLE_ADMIN"))).isFalse();   // grant admin to another
+        assertThat(access.canUpdateUser(other, true, Set.of("ROLE_USER"))).isTrue();     // ordinary edit is fine
+        assertThat(access.mayAssignRoles(Set.of("ROLE_USER"))).isTrue();                 // delegation of a plain role
+        assertThat(access.mayAssignRoles(Set.of("ROLE_ADMIN"))).isFalse();               // can't delegate admin
         assertThat(access.mayAssignRoles(Set.of("ROLE_GROUP_ADMIN"))).isFalse();
 
         actAs("admin"); // the seeded super admin is unscoped
         assertThat(access.currentIsSuperAdmin()).isTrue();
         assertThat(access.canCreateUser()).isTrue();
         assertThat(access.canAccessUser(other)).isTrue();
-        assertThat(access.canManagePermissions(managed)).isTrue();
-        assertThat(access.canUpdateUser(managed, true, Set.of("ROLE_ADMIN"))).isTrue(); // super may grant admin
-        assertThat(access.mayAssignRoles(Set.of("ROLE_ADMIN"))).isTrue();               // super may delegate admin
-
-        userGroups.delete(groupId);
+        assertThat(access.canManagePermissions(other)).isTrue();
+        assertThat(access.canUpdateUser(other, true, Set.of("ROLE_ADMIN"))).isTrue();    // super may grant admin
+        assertThat(access.mayAssignRoles(Set.of("ROLE_ADMIN"))).isTrue();                // super may delegate admin
     }
 
     /**

@@ -34,17 +34,8 @@ public interface UserGroupService {
     /** Replaces the roles delegated to the group; every member inherits them. Unknown role → 400. */
     GroupView setRoles(UUID id, Set<String> roleNames);
 
-    /** Replaces the group's managers (scoped admins allowed to manage its members). */
-    GroupView setManagers(UUID id, Set<UUID> managerIds);
-
     /** Every group that has at least one legacy manager — input to the one-time resource-role migration. */
     List<GroupManagers> groupsWithManagers();
-
-    /** Whether {@code adminId} manages a group that {@code targetId} is a member of (group scope). */
-    boolean managesUser(UUID adminId, UUID targetId);
-
-    /** Ids of all users who are members of a group managed by {@code adminId} (group scope). */
-    Set<UUID> membersManagedBy(UUID adminId);
 
     /** The groups the given user belongs to, each with the roles that group delegates. */
     List<GroupMembership> membershipsForUser(UUID userId);

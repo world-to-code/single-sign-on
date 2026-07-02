@@ -9,7 +9,6 @@ export interface Group {
   memberCount: number;
   system: boolean;
   roleNames: string[];
-  managerUserIds: string[];
 }
 
 export interface GroupRequest {
@@ -41,7 +40,3 @@ export const searchUsers = (q: string) =>
 /** Replaces the roles delegated to a group; its members inherit them. */
 export const setGroupRoles = (id: string, roleNames: string[]) =>
   apiPut<Group>(`/api/admin/groups/${id}/roles`, { roleNames });
-
-/** Replaces the group's managers (scoped admins allowed to manage its members). */
-export const setGroupManagers = (id: string, managerUserIds: string[]) =>
-  apiPut<Group>(`/api/admin/groups/${id}/managers`, { managerUserIds });

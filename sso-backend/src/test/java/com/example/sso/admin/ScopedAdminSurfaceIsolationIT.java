@@ -141,7 +141,6 @@ class ScopedAdminSurfaceIsolationIT extends AbstractIntegrationTest {
 
         assertForbidden(() -> groups.delete(frontendGroup));
         assertForbidden(() -> groups.setRoles(frontendGroup, Set.of()));
-        assertForbidden(() -> groups.setManagers(frontendGroup, List.of()));
     }
 
     @Test
