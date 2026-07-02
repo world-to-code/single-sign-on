@@ -13,12 +13,14 @@ import com.example.sso.user.internal.domain.RoleRepository;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.Suggestion;
 import com.example.sso.user.UserAccount;
+import com.example.sso.user.UserDeletedEvent;
 import com.example.sso.user.UserUpdate;
 import com.example.sso.user.UserGroupRepository;
 import com.example.sso.user.internal.domain.UserGroup;
 import com.example.sso.user.UserService;
 import com.example.sso.user.internal.domain.PermissionRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -47,6 +49,7 @@ public class UserServiceImpl implements UserService {
     private final PermissionRepository permissions;
     private final UserGroupRepository groups;
     private final PasswordEncoder passwordEncoder;
+    private final ApplicationEventPublisher events;
 
     @Override
     @Transactional(readOnly = true)
@@ -231,6 +234,7 @@ public class UserServiceImpl implements UserService {
         }
 
         users.deleteById(id);
+        events.publishEvent(new UserDeletedEvent(id));
     }
 
     @Override

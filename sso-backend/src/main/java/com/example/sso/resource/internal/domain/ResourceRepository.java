@@ -6,6 +6,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -79,4 +80,10 @@ public interface ResourceRepository extends JpaRepository<Resource, UUID> {
             """, nativeQuery = true)
     Set<String> findMemberIds(@Param("resourceIds") Collection<UUID> resourceIds,
                               @Param("memberType") String memberType);
+
+    /** Drops every membership of the given kind/id across all resources (its target was deleted elsewhere). */
+    @Modifying
+    @Query(value = "DELETE FROM resource_member WHERE member_type = :memberType AND member_id = :memberId",
+            nativeQuery = true)
+    void deleteMembersByTypeAndId(@Param("memberType") String memberType, @Param("memberId") String memberId);
 }

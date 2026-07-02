@@ -1,5 +1,6 @@
 package com.example.sso.saml.internal.application;
 
+import com.example.sso.portal.ApplicationDeletedEvent;
 import com.example.sso.saml.RelyingPartyRequest;
 import com.example.sso.saml.RelyingPartyView;
 import com.example.sso.saml.internal.domain.SamlRelyingParty;
@@ -9,6 +10,7 @@ import com.example.sso.saml.internal.domain.SamlSecuritySettings;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -22,6 +24,7 @@ import java.util.UUID;
 public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminService {
 
     private final SamlRelyingPartyRepository relyingParties;
+    private final ApplicationEventPublisher events;
 
     @Override
     @Transactional(readOnly = true)
@@ -63,6 +66,7 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
         }
 
         relyingParties.deleteById(id);
+        events.publishEvent(new ApplicationDeletedEvent(id.toString()));
     }
 
     @Override

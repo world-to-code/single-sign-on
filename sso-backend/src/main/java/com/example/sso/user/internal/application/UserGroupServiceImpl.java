@@ -5,6 +5,7 @@ import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
+import com.example.sso.user.GroupDeletedEvent;
 import com.example.sso.user.GroupMembersPage;
 import com.example.sso.user.GroupMembership;
 import com.example.sso.user.GroupSpec;
@@ -17,6 +18,7 @@ import com.example.sso.user.internal.domain.Role;
 import com.example.sso.user.internal.domain.RoleRepository;
 import com.example.sso.user.internal.domain.UserGroup;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +41,7 @@ public class UserGroupServiceImpl implements UserGroupService {
     private final UserGroupRepository repository;
     private final AppUserRepository users;
     private final RoleRepository roles;
+    private final ApplicationEventPublisher events;
 
     @Override
     @Transactional(readOnly = true)
@@ -114,6 +117,7 @@ public class UserGroupServiceImpl implements UserGroupService {
         }
 
         repository.delete(group);
+        events.publishEvent(new GroupDeletedEvent(id));
     }
 
     @Override

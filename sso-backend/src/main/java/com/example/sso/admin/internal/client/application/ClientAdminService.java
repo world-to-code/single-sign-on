@@ -12,6 +12,7 @@ import static org.springframework.security.oauth2.jose.jws.SignatureAlgorithm.RS
 import com.example.sso.admin.internal.client.domain.OAuth2RegisteredClientEntity;
 import com.example.sso.admin.internal.client.domain.OAuth2RegisteredClientRepository;
 import com.example.sso.oidc.AdminPortalSeeder;
+import com.example.sso.portal.ApplicationDeletedEvent;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
@@ -25,6 +26,7 @@ import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.NonNull;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
@@ -63,6 +65,7 @@ public class ClientAdminService {
     private final RegisteredClientRepository registeredClients;
     private final PasswordEncoder passwordEncoder;
     private final OAuth2RegisteredClientRepository clientRows;
+    private final ApplicationEventPublisher events;
 
     @Transactional(readOnly = true)
     public List<ClientView> listClients() {
@@ -151,6 +154,7 @@ public class ClientAdminService {
         }
 
         clientRows.deleteById(id);
+        events.publishEvent(new ApplicationDeletedEvent(id));
     }
 
     private @NonNull Set<String> extractScopes(CreateClientRequest request) {
