@@ -8,5 +8,6 @@ import java.time.Instant;
  * module-internal.
  */
 public record AuditEntry(Long id, Instant occurredAt, String principal,
-                         String type, AuditCategory category, boolean success, String detail) {
+                         String type, AuditCategory category, boolean success, String detail,
+                         AuditSubjectType subjectType, String subjectId) {
 }

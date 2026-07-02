@@ -28,7 +28,7 @@ public class AuditServiceImpl implements AuditService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(AuditRecord record) {
         repository.save(new AuditEvent(record.type(), record.principal(), record.success(),
-                record.detail(), record.remoteIp()));
+                record.detail(), record.remoteIp(), record.subjectType(), record.subjectId()));
     }
 
     @Override
@@ -59,6 +59,7 @@ public class AuditServiceImpl implements AuditService {
 
     private AuditEntry toEntry(AuditEvent event) {
         return new AuditEntry(event.getId(), event.getOccurredAt(), event.getPrincipal(),
-                event.getType(), event.getCategory(), event.isSuccess(), event.getDetail());
+                event.getType(), event.getCategory(), event.isSuccess(), event.getDetail(),
+                event.getSubjectType(), event.getSubjectId());
     }
 }

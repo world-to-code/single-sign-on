@@ -2,6 +2,7 @@ package com.example.sso.admin.internal.user.application;
 
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
+import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.mfa.MfaService;
 import com.example.sso.shared.error.ConflictException;
@@ -97,7 +98,7 @@ class UserAdminServiceTest {
 
         assertThatThrownBy(() -> service.deleteUser(targetId)).isInstanceOf(ConflictException.class);
         verify(userService, never()).delete(any());
-        verify(auditLogger, never()).log(any(), any());
+        verify(auditLogger, never()).log(any(), any(), any(), any());
     }
 
     @Test
@@ -116,7 +117,7 @@ class UserAdminServiceTest {
 
         service.createUser(newUser);
 
-        verify(auditLogger).log(eq(AuditType.USER_CREATED), any());
+        verify(auditLogger).log(eq(AuditType.USER_CREATED), eq(AuditSubjectType.USER), any(), any());
     }
 
     @Test
@@ -127,7 +128,7 @@ class UserAdminServiceTest {
         service.deleteUser(targetId);
 
         verify(userService).delete(targetId);
-        verify(auditLogger).log(eq(AuditType.USER_DELETED), any());
+        verify(auditLogger).log(eq(AuditType.USER_DELETED), eq(AuditSubjectType.USER), any(), any());
     }
 
     private UserAccount user(UUID id) {

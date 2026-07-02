@@ -1,5 +1,6 @@
 package com.example.sso.admin.internal.shared.application;
 
+import com.example.sso.admin.internal.audit.application.AuditScope;
 import com.example.sso.resource.ApplicationAuthorization;
 import com.example.sso.resource.GroupAuthorization;
 import com.example.sso.resource.ResourceAuthorization;
@@ -252,6 +253,53 @@ class AdminAccessPolicyTest {
     void mayUpdateSelfWhileKeepingOwnAdminRole() {
         makeActorSuper();
         assertThat(policy.canUpdateUser(ACTOR_ID, true, Set.of(Roles.ADMIN))).isTrue();
+    }
+
+    // --- currentAuditScope ---
+
+    @Test
+    void auditScopeForASuperAdminIsUnscoped() {
+        when(resourceAuth.isUnscoped(ACTOR_ID)).thenReturn(true);
+
+        AuditScope scope = policy.currentAuditScope();
+
+        assertThat(scope.unscoped()).isTrue();
+        assertThat(scope.actorUsername()).isEqualTo(ACTOR_NAME);
+    }
+
+    @Test
+    void auditScopeForADelegateUnionsTheirManagedIds() {
+        UUID user = UUID.randomUUID();
+        UUID group = UUID.randomUUID();
+        UUID resource = UUID.randomUUID();
+        when(resourceAuth.isUnscoped(ACTOR_ID)).thenReturn(false);
+        when(userGroups.membersManagedBy(ACTOR_ID)).thenReturn(Set.of());
+        when(userAuth.scopedUserIds(ACTOR_ID)).thenReturn(Set.of(user));
+        when(groupAuth.scopedGroupIds(ACTOR_ID)).thenReturn(Set.of(group));
+        when(appAuth.scopedAppIds(ACTOR_ID)).thenReturn(Set.of("app-9"));
+        when(resourceAuth.managedResourceIds(ACTOR_ID)).thenReturn(Set.of(resource));
+
+        AuditScope scope = policy.currentAuditScope();
+
+        assertThat(scope.unscoped()).isFalse();
+        assertThat(scope.actorUsername()).isEqualTo(ACTOR_NAME);
+        assertThat(scope.userIds()).containsExactly(user);
+        assertThat(scope.groupIds()).containsExactly(group);
+        assertThat(scope.appIds()).containsExactly("app-9");
+        assertThat(scope.resourceIds()).containsExactly(resource);
+    }
+
+    @Test
+    void auditScopeForAnUnresolvedActorIsEmptyAndNotUnscoped() {
+        when(userService.findByUsername(ACTOR_NAME)).thenReturn(Optional.empty());
+
+        AuditScope scope = policy.currentAuditScope();
+
+        assertThat(scope.unscoped()).isFalse();
+        assertThat(scope.userIds()).isEmpty();
+        assertThat(scope.groupIds()).isEmpty();
+        assertThat(scope.appIds()).isEmpty();
+        assertThat(scope.resourceIds()).isEmpty();
     }
 
     private void makeActorSuper() {

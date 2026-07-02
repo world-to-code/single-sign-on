@@ -4,6 +4,7 @@ import com.example.sso.admin.internal.role.application.PermissionView;
 import com.example.sso.admin.internal.role.application.RoleView;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
+import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.mfa.MfaService;
 import com.example.sso.shared.error.ConflictException;
@@ -82,7 +83,8 @@ public class UserAdminService {
     public AdminUserView createUser(NewUser newUser) {
         try {
             AdminUserView created = AdminUserView.of(userService.createUser(newUser));
-            auditLogger.log(AuditType.USER_CREATED, "username=" + created.username() + " roles=" + newUser.roleNames());
+            auditLogger.log(AuditType.USER_CREATED, AuditSubjectType.USER, created.id(),
+                    "username=" + created.username() + " roles=" + newUser.roleNames());
             return created;
         } catch (IllegalArgumentException e) {
             throw new ConflictException(e.getMessage());
@@ -95,7 +97,8 @@ public class UserAdminService {
                 && update.roleNames() != null && update.roleNames().contains(ADMIN_ROLE);
         ensureNotLastAdmin(id, remainsEnabledAdmin);
         AdminUserView updated = AdminUserView.of(userService.updateUser(id, update));
-        auditLogger.log(AuditType.USER_UPDATED, "user=" + id + " enabled=" + update.enabled() + " roles=" + update.roleNames());
+        auditLogger.log(AuditType.USER_UPDATED, AuditSubjectType.USER, id.toString(),
+                "user=" + id + " enabled=" + update.enabled() + " roles=" + update.roleNames());
         return updated;
     }
 
@@ -103,7 +106,8 @@ public class UserAdminService {
     public AdminUserView setEnabled(UUID id, boolean enabled) {
         ensureNotLastAdmin(id, enabled);
         AdminUserView view = AdminUserView.of(userService.setEnabled(id, enabled));
-        auditLogger.log(enabled ? AuditType.USER_ENABLED : AuditType.USER_DISABLED, "user=" + id);
+        auditLogger.log(enabled ? AuditType.USER_ENABLED : AuditType.USER_DISABLED,
+                AuditSubjectType.USER, id.toString(), "user=" + id);
         return view;
     }
 
@@ -111,7 +115,7 @@ public class UserAdminService {
     public void deleteUser(UUID id) {
         ensureNotLastAdmin(id, false);
         userService.delete(id);
-        auditLogger.log(AuditType.USER_DELETED, "user=" + id);
+        auditLogger.log(AuditType.USER_DELETED, AuditSubjectType.USER, id.toString(), "user=" + id);
     }
 
     /**
@@ -147,7 +151,7 @@ public class UserAdminService {
             throw new NotFoundException("User not found");
         }
         mfaService.resetMfa(id);
-        auditLogger.log(AuditType.USER_MFA_RESET, "user=" + id);
+        auditLogger.log(AuditType.USER_MFA_RESET, AuditSubjectType.USER, id.toString(), "user=" + id);
     }
 
     @Transactional(readOnly = true)
@@ -183,7 +187,8 @@ public class UserAdminService {
     @Transactional
     public AdminUserView setUserPermissions(UUID id, Set<String> permissionNames) {
         AdminUserView view = AdminUserView.of(userService.setDirectPermissions(id, permissionNames));
-        auditLogger.log(AuditType.USER_PERMISSIONS_UPDATED, "user=" + id + " permissions=" + permissionNames);
+        auditLogger.log(AuditType.USER_PERMISSIONS_UPDATED, AuditSubjectType.USER, id.toString(),
+                "user=" + id + " permissions=" + permissionNames);
         return view;
     }
 

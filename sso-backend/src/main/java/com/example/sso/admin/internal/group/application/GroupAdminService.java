@@ -3,6 +3,7 @@ package com.example.sso.admin.internal.group.application;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.shared.application.RequestIds;
+import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.portal.ApplicationService;
 import com.example.sso.portal.ApplicationView;
@@ -66,7 +67,8 @@ public class GroupAdminService {
         requireAccess(id);
         Set<String> roleNames = Objects.requireNonNullElseGet(requestedRoleNames, Set::of);
         GroupView view = userGroups.setRoles(id, roleNames);
-        auditLogger.log(AuditType.GROUP_ROLES_UPDATED, "group=" + id + " roles=" + roleNames);
+        auditLogger.log(AuditType.GROUP_ROLES_UPDATED, AuditSubjectType.GROUP, id.toString(),
+                "group=" + id + " roles=" + roleNames);
         return view;
     }
 
@@ -74,7 +76,8 @@ public class GroupAdminService {
     public GroupView setManagers(UUID id, List<String> managerUserIds) {
         requireAccess(id);
         GroupView view = userGroups.setManagers(id, RequestIds.toUuidSet(managerUserIds));
-        auditLogger.log(AuditType.GROUP_MANAGERS_UPDATED, "group=" + id + " managers=" + managerUserIds);
+        auditLogger.log(AuditType.GROUP_MANAGERS_UPDATED, AuditSubjectType.GROUP, id.toString(),
+                "group=" + id + " managers=" + managerUserIds);
         return view;
     }
 

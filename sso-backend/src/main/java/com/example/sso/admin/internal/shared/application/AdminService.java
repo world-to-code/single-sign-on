@@ -1,5 +1,6 @@
 package com.example.sso.admin.internal.shared.application;
 
+import com.example.sso.admin.internal.audit.application.AuditScope;
 import com.example.sso.audit.AuditCategory;
 import com.example.sso.audit.AuditEntry;
 import com.example.sso.audit.AuditService;
@@ -27,10 +28,17 @@ public class AdminService {
     private final ScimTokenService scimTokenService;
     private final RsaKeyService rsaKeyService;
     private final SamlCredentialService samlCredentialService;
+    private final AdminAccessPolicy accessPolicy;
 
-    /** Recent audit events, optionally filtered to a single category (null = all categories). */
+    /**
+     * Recent audit events, optionally filtered to a single category (null = all categories) and always
+     * scoped to the acting admin: a super admin sees everything; a delegate sees only entries whose
+     * subject is inside their subtree (and their own actions).
+     */
     public List<AuditEntry> recentAudit(AuditCategory category) {
-        return category == null ? auditService.recent() : auditService.recentByCategory(category);
+        List<AuditEntry> events = category == null ? auditService.recent() : auditService.recentByCategory(category);
+        AuditScope scope = accessPolicy.currentAuditScope();
+        return scope.unscoped() ? events : events.stream().filter(scope::permits).toList();
     }
 
     public ScimTokenIssued issueScimToken(IssueScimTokenRequest request) {

@@ -1,5 +1,6 @@
 package com.example.sso.admin.internal.shared.application;
 
+import com.example.sso.admin.internal.audit.application.AuditScope;
 import com.example.sso.resource.ApplicationAuthorization;
 import com.example.sso.resource.GroupAuthorization;
 import com.example.sso.resource.ResourceAuthorization;
@@ -130,6 +131,30 @@ public class AdminAccessPolicy {
     /** For a scoped acting admin, the ids of the applications inside their resource subtree. */
     public Set<String> currentScopedAppIds() {
         return currentUserId().map(appAuth::scopedAppIds).orElse(Set.of());
+    }
+
+    /**
+     * The acting admin's audit visibility: unscoped for a super admin, otherwise their union of scoped
+     * user/group/app/resource ids. The admin audit log filters entries through {@link AuditScope#permits}.
+     */
+    public AuditScope currentAuditScope() {
+        Optional<UUID> actor = currentUserId();
+        if (actor.isEmpty()) {
+            return new AuditScope(false, currentUsername(), Set.of(), Set.of(), Set.of(), Set.of());
+        }
+
+        UUID actorId = actor.get();
+        if (resourceAuth.isUnscoped(actorId)) {
+            return new AuditScope(true, currentUsername(), Set.of(), Set.of(), Set.of(), Set.of());
+        }
+        return new AuditScope(false, currentUsername(), currentManagedUserIds(),
+                groupAuth.scopedGroupIds(actorId), appAuth.scopedAppIds(actorId),
+                resourceAuth.managedResourceIds(actorId));
+    }
+
+    private String currentUsername() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication == null ? null : authentication.getName();
     }
 
     /** Blocks disabling one's own account or any administrator's account; enabling is always allowed. */

@@ -2,6 +2,7 @@ package com.example.sso.admin.internal.group.application;
 
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
+import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.portal.ApplicationService;
 import com.example.sso.shared.error.ForbiddenException;
@@ -107,7 +108,7 @@ class GroupAdminServiceTest {
         service.setRoles(GROUP_ID, Set.of("ROLE_SUPPORT"));
 
         verify(userGroups).setRoles(GROUP_ID, Set.of("ROLE_SUPPORT"));
-        verify(auditLogger).log(eq(AuditType.GROUP_ROLES_UPDATED), any());
+        verify(auditLogger).log(eq(AuditType.GROUP_ROLES_UPDATED), eq(AuditSubjectType.GROUP), any(), any());
     }
 
     @Test
