@@ -1,6 +1,7 @@
 package com.example.sso.portal.internal.application;
 
 import com.example.sso.authpolicy.Factors;
+import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.portal.AppAccess;
 import com.example.sso.portal.AppAccessQuery;
 import com.example.sso.portal.AppStepUpFilter;
@@ -21,6 +22,8 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.stereotype.Service;
 
 /**
@@ -37,6 +40,7 @@ public class PortalService {
     private final ApplicationService applications;
     private final UserService users;
     private final SessionPolicyService sessionPolicy;
+    private final RegisteredClientRepository registeredClients;
 
     public SessionConfigView sessionConfig(String username) {
         SessionPolicyDetails p = sessionPolicy.resolveForUsername(username);
@@ -47,6 +51,18 @@ public class PortalService {
 
     public List<ApplicationView> myApps(String username) {
         return applications.appsForUser(requireUser(username));
+    }
+
+    /**
+     * Whether the user may ENTER the admin console — an app assignment (direct/role/group), matching
+     * what {@code AppAssignmentFilter} enforces at {@code /oauth2/authorize}. The SPA gates its
+     * "Administration" affordance on this instead of a role.
+     */
+    public AdminConsoleAccessView adminConsoleAccess(String username) {
+        RegisteredClient console = registeredClients.findByClientId(AdminPortalSeeder.CLIENT_ID);
+        boolean allowed = console != null
+                && applications.hasAssignment(requireUser(username), AppType.OIDC, console.getId());
+        return new AdminConsoleAccessView(allowed);
     }
 
     /**

@@ -28,6 +28,9 @@ public interface ApplicationService {
     /** The applications a user may launch (assigned directly or via one of their roles/groups). */
     List<ApplicationView> appsForUser(UserAccount user);
 
+    /** Whether the user is assigned the app — directly or via one of their roles/groups. */
+    boolean hasAssignment(UserAccount user, AppType appType, String appId);
+
     /** Applications assigned directly to a group (for the group detail page). */
     List<ApplicationView> appsForGroup(UUID groupId);
 

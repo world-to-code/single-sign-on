@@ -58,7 +58,8 @@ public class AppStepUpFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !"/oauth2/authorize".equals(request.getRequestURI());
+        // servletPath (app-relative), not getRequestURI() which includes any context path.
+        return !"/oauth2/authorize".equals(request.getServletPath());
     }
 
     @Override

@@ -9,7 +9,6 @@ import com.example.sso.security.AdminElevationFilter;
 import com.example.sso.security.SessionIntegrityFilter;
 import com.example.sso.security.SessionMetadataCleanupListener;
 import com.example.sso.session.SessionMetadataStore;
-import com.example.sso.user.Roles;
 import jakarta.servlet.http.HttpSessionListener;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.ServletListenerRegistrationBean;
@@ -24,7 +23,6 @@ import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authorization.AuthorityAuthorizationManager;
 import org.springframework.security.authorization.AuthorizationEventPublisher;
-import org.springframework.security.authorization.AuthorizationManagers;
 import org.springframework.security.authorization.SpringAuthorizationEventPublisher;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -141,12 +139,12 @@ public class SecurityConfig {
                                 "/admin", "/admin/**").permitAll()
                         .requestMatchers("/saml2/idp/sso", "/saml2/idp/sso/init")
                         .access(AuthorityAuthorizationManager.hasAuthority(Factors.MFA_COMPLETE))
+                        // Console entry is an APP ASSIGNMENT, not a role: AppAssignmentFilter gates the
+                        // admin-console token at /oauth2/authorize, the elevation filter requires that
+                        // fresh token here, and every endpoint enforces its fine-grained
+                        // @RequirePermission. The URL level only demands a completed login.
                         .requestMatchers("/api/admin/**")
-                        .access(AuthorizationManagers.allOf(
-                                AuthorizationManagers.anyOf(
-                                        AuthorityAuthorizationManager.hasAuthority(Roles.ADMIN),
-                                        AuthorityAuthorizationManager.hasAuthority(Roles.GROUP_ADMIN)),
-                                AuthorityAuthorizationManager.hasAuthority(Factors.MFA_COMPLETE)))
+                        .access(AuthorityAuthorizationManager.hasAuthority(Factors.MFA_COMPLETE))
                         .requestMatchers("/api/me", "/api/portal/**")
                         .access(AuthorityAuthorizationManager.hasAuthority(Factors.MFA_COMPLETE))
                         // Fail-secure: anything not explicitly public requires authentication.

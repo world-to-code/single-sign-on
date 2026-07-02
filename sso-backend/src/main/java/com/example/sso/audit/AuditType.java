@@ -37,6 +37,7 @@ public enum AuditType {
     // Network / rate access
     IP_BLOCKED(AuditCategory.ACCESS),
     ADMIN_IP_BLOCKED(AuditCategory.ACCESS),
+    ADMIN_ELEVATION_DENIED(AuditCategory.ACCESS),
     RATE_LIMITED(AuditCategory.ACCESS),
 
     // Application sign-on

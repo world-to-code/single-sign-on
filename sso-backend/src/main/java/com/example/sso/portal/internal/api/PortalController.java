@@ -1,6 +1,7 @@
 package com.example.sso.portal.internal.api;
 
 import com.example.sso.portal.ApplicationView;
+import com.example.sso.portal.internal.application.AdminConsoleAccessView;
 import com.example.sso.portal.internal.application.PortalService;
 import com.example.sso.portal.internal.application.SessionConfigView;
 import com.example.sso.portal.internal.application.StepUpInfo;
@@ -28,6 +29,11 @@ public class PortalController {
     @GetMapping("/apps")
     public List<ApplicationView> myApps(Authentication authentication) {
         return portal.myApps(authentication.getName());
+    }
+
+    @GetMapping("/admin-console/access")
+    public AdminConsoleAccessView adminConsoleAccess(Authentication authentication) {
+        return portal.adminConsoleAccess(authentication.getName());
     }
 
     @GetMapping("/stepup")

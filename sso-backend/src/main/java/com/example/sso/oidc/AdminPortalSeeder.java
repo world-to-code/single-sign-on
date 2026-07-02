@@ -43,19 +43,22 @@ public class AdminPortalSeeder implements ApplicationRunner {
     /** Reserved privilege-elevation scope the admin elevation gate requires (only this client may hold it). */
     public static final String ADMIN_SCOPE = "admin";
 
+    /**
+     * Custom {@code ClientSettings} flag: this client's {@code /oauth2/authorize} additionally requires
+     * an app ASSIGNMENT (user/group/role) — console entry is granted by assignment, not by a role.
+     */
+    public static final String REQUIRES_ASSIGNMENT_SETTING = "sso.requires-assignment";
+
     private final RegisteredClientRepository clients;
     private final List<String> redirectUris;
     private final int accessTtlMinutes;
-    private final int refreshTtlMinutes;
 
     public AdminPortalSeeder(RegisteredClientRepository clients,
                              @Value("${sso.admin-console.redirect-uris}") List<String> redirectUris,
-                             @Value("${sso.admin-console.access-token-ttl-minutes:5}") int accessTtlMinutes,
-                             @Value("${sso.admin-console.refresh-token-ttl-minutes:30}") int refreshTtlMinutes) {
+                             @Value("${sso.admin-console.access-token-ttl-minutes:5}") int accessTtlMinutes) {
         this.clients = clients;
         this.redirectUris = redirectUris;
         this.accessTtlMinutes = accessTtlMinutes;
-        this.refreshTtlMinutes = refreshTtlMinutes;
     }
 
     @Override
@@ -67,11 +70,22 @@ public class AdminPortalSeeder implements ApplicationRunner {
             return;
         }
 
-        // The client may pre-date the "admin" elevation scope (dev DB). Backfill it so the access token
-        // can carry scope=admin without re-seeding.
+        // The client may pre-date the "admin" elevation scope or the requires-assignment flag (dev DB).
+        // Backfill both so elevation and the assignment gate work without re-seeding.
+        RegisteredClient.Builder updated = RegisteredClient.from(existing);
+        boolean changed = false;
         if (!existing.getScopes().contains(ADMIN_SCOPE)) {
-            clients.save(RegisteredClient.from(existing).scope(ADMIN_SCOPE).build());
-            log.info("Updated OIDC client '{}' to include the '{}' elevation scope.", CLIENT_ID, ADMIN_SCOPE);
+            updated.scope(ADMIN_SCOPE);
+            changed = true;
+        }
+        if (!Boolean.TRUE.equals(existing.getClientSettings().getSetting(REQUIRES_ASSIGNMENT_SETTING))) {
+            updated.clientSettings(ClientSettings.withSettings(existing.getClientSettings().getSettings())
+                    .setting(REQUIRES_ASSIGNMENT_SETTING, true).build());
+            changed = true;
+        }
+        if (changed) {
+            clients.save(updated.build());
+            log.info("Updated OIDC client '{}' with the elevation scope / requires-assignment flag.", CLIENT_ID);
         }
     }
 
@@ -81,17 +95,19 @@ public class AdminPortalSeeder implements ApplicationRunner {
                 .clientName("Admin Console")
                 .clientAuthenticationMethod(ClientAuthenticationMethod.NONE) // public client (PKCE)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
+                // NO refresh_token: refresh skips /oauth2/authorize (the assignment gate), so a revoked
+                // admin could keep minting elevation tokens. The SPA re-runs the authorize flow when the
+                // short-lived token expires, which re-checks assignment + step-up.
                 .scope(OidcScopes.OPENID)
                 .scope(OidcScopes.PROFILE)
                 .scope(ADMIN_SCOPE) // privilege-elevation scope required by the admin elevation gate
                 .clientSettings(ClientSettings.builder()
                         .requireProofKey(true)              // mandatory PKCE
                         .requireAuthorizationConsent(false) // first-party: no consent screen
+                        .setting(REQUIRES_ASSIGNMENT_SETTING, true) // console entry = app assignment
                         .build())
                 .tokenSettings(TokenSettings.builder()
                         .accessTokenTimeToLive(Duration.ofMinutes(accessTtlMinutes)) // short-lived admin proof
-                        .refreshTokenTimeToLive(Duration.ofMinutes(refreshTtlMinutes))
                         .build());
 
         redirectUris.forEach(builder::redirectUri);

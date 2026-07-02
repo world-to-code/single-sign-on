@@ -1,6 +1,5 @@
 package com.example.sso.security;
 
-import com.example.sso.user.Roles;
 import com.example.sso.admin.AdminPortalSettingsData;
 import com.example.sso.admin.AdminPortalSettingsService;
 import com.example.sso.audit.AuditType;
@@ -29,7 +28,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
-import java.util.Set;
 
 /**
  * RFC 9470 step-up elevation gate for the admin API. The session cookie + {@code @PreAuthorize} PBAC
@@ -41,7 +39,8 @@ import java.util.Set;
  * <ul>
  *   <li>be issued by THIS IdP ({@code iss}) for the {@code admin-console} client ({@code azp}) — so a
  *       token minted for another client (even for the same user) cannot elevate;</li>
- *   <li>carry the {@code admin} scope and {@code roles} containing {@code ROLE_ADMIN};</li>
+ *   <li>carry the {@code admin} scope (issuable only to a user the console app is ASSIGNED to —
+ *       {@code AppAssignmentFilter} gates {@code /oauth2/authorize}; no role check here);</li>
  *   <li>assert {@code acr=mfa} (a strong/multi factor); and</li>
  *   <li>carry a {@code stepup_time} (set only on a DELIBERATE {@code /reauth}, NOT on plain login)
  *       within {@link #FRESHNESS_WINDOW} — proving a recent re-authentication, not just a recent login;</li>
@@ -55,8 +54,6 @@ public class AdminElevationFilter extends OncePerRequestFilter {
 
     static final String REQUIRED_SCOPE = AdminPortalSeeder.ADMIN_SCOPE;
     static final String REQUIRED_ACR = "mfa";
-    /** Admin-tier roles that may elevate: the super admin and the scoped (group) admin. */
-    static final Set<String> ADMIN_TIER_ROLES = Set.of(Roles.ADMIN, Roles.GROUP_ADMIN);
 
     private static final String INSUFFICIENT = "insufficient_user_authentication";
     private static final String CHALLENGE =
@@ -108,6 +105,9 @@ public class AdminElevationFilter extends OncePerRequestFilter {
             return;
         }
         if (!isElevated(jwt, settings.reauthInterval()) || !boundToSession(jwt)) {
+            // A decoded token that fails elevation or session-binding is the forge/replay/stale signal — audit it.
+            audit.record(new AuditRecord(AuditType.ADMIN_ELEVATION_DENIED, jwt.getSubject(), false,
+                    "uri=" + request.getRequestURI(), request.getRemoteAddr()));
             challenge(response);
             return;
         }
@@ -155,7 +155,12 @@ public class AdminElevationFilter extends OncePerRequestFilter {
         session.removeAttribute(ADMIN_LAST_SEEN);
     }
 
-    /** Issued by this IdP for admin-console, scope=admin, ROLE_ADMIN, acr=mfa, and a fresh step-up. */
+    /**
+     * Issued by this IdP for admin-console, scope=admin, acr=mfa, and a fresh step-up. No role check:
+     * console entry is assignment-based — this token is only issuable to an ASSIGNED user
+     * ({@code AppAssignmentFilter} gates {@code /oauth2/authorize}), and what the caller may do is
+     * decided per endpoint by {@code @RequirePermission}.
+     */
     private boolean isElevated(Jwt jwt, Duration freshnessWindow) {
         if (jwt.getIssuer() == null || !issuer.equals(jwt.getIssuer().toString())) {
             return false;
@@ -165,9 +170,6 @@ public class AdminElevationFilter extends OncePerRequestFilter {
         }
         if (!scopes(jwt).contains(REQUIRED_SCOPE)) {
             return false;
-        }
-        if (claimList(jwt, "roles").stream().noneMatch(ADMIN_TIER_ROLES::contains)) {
-            return false; // the token itself must belong to an admin-tier role
         }
         if (!REQUIRED_ACR.equals(jwt.getClaimAsString("acr"))) {
             return false;
@@ -200,11 +202,6 @@ public class AdminElevationFilter extends OncePerRequestFilter {
             return List.of(s.split(" "));
         }
         return Collections.emptyList();
-    }
-
-    private List<String> claimList(Jwt jwt, String name) {
-        Object value = jwt.getClaim(name);
-        return value instanceof List<?> list ? list.stream().map(String::valueOf).toList() : Collections.emptyList();
     }
 
     /** A time claim (epoch seconds), encoded as a String, a number, or a temporal/Instant. */

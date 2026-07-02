@@ -22,7 +22,6 @@ import com.example.sso.portal.internal.domain.AppPolicyRepository;
 import com.example.sso.shared.IdName;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
-import com.example.sso.user.Roles;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
 import com.example.sso.user.RoleRef;
@@ -164,22 +163,28 @@ public class ApplicationServiceImpl implements ApplicationService {
         }
 
         Map<String, ApplicationView> index = indexApplications();
-        List<ApplicationView> apps = new ArrayList<>(matched.stream()
+        // The admin console is NOT special-cased here: a seeded ROLE_ADMIN assignment covers admins,
+        // and console entry itself is assignment-enforced at /oauth2/authorize (AppAssignmentFilter).
+        return matched.stream()
                 .map(a -> index.get(key(a.getAppType(), a.getAppId())))
                 .filter(Objects::nonNull)
                 .distinct()
-                .toList());
-
-        // The admin console is auto-granted to any admin — no explicit assignment needed.
-        if (user.getRoles().stream().anyMatch(r -> Roles.ADMIN.equals(r.getName()))) {
-            index.values().stream().filter(ApplicationView::system)
-                    .filter(app -> !apps.contains(app))
-                    .forEach(apps::add);
-        }
-
-        return apps.stream()
                 .sorted(Comparator.comparing(ApplicationView::name, String.CASE_INSENSITIVE_ORDER))
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean hasAssignment(UserAccount user, AppType appType, String appId) {
+        if (assignments.existsByAppTypeAndAppIdAndSubjectTypeAndSubjectId(
+                appType, appId, SubjectType.USER, user.getId())) {
+            return true;
+        }
+        Set<UUID> roleIds = user.getRoles().stream().map(RoleRef::getId).collect(Collectors.toSet());
+        Set<UUID> groupIds = new HashSet<>(userGroups.findGroupIdsByMember(user.getId()));
+        return assignments.findByAppTypeAndAppId(appType, appId).stream()
+                .anyMatch(a -> (a.getSubjectType() == SubjectType.ROLE && roleIds.contains(a.getSubjectId()))
+                        || (a.getSubjectType() == SubjectType.GROUP && groupIds.contains(a.getSubjectId())));
     }
 
     @Override

@@ -3,6 +3,7 @@ package com.example.sso.config.internal;
 import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.crypto.RsaKeyService;
+import com.example.sso.portal.AppAssignmentFilter;
 import com.example.sso.portal.AppStepUpFilter;
 import com.example.sso.portal.ApplicationService;
 import com.example.sso.user.RoleRef;
@@ -97,7 +98,12 @@ public class AuthorizationServerConfig {
                 // Per-app step-up: redirect to /stepup when the client requires extra factors. Anchored
                 // after the context filter (a registered-order filter) so it runs once the session is loaded.
                 .addFilterAfter(new AppStepUpFilter(registeredClients, users, applications, audit),
-                        SecurityContextHolderFilter.class);
+                        SecurityContextHolderFilter.class)
+                // Model B console entry: deny an UNASSIGNED user before step-up (no point acquiring
+                // factors for an app they cannot enter). MUST live in THIS chain — the authorize endpoint
+                // filter commits the response and never reaches the outer servlet chain.
+                .addFilterBefore(new AppAssignmentFilter(registeredClients, applications, users, audit),
+                        AppStepUpFilter.class);
         return http.build();
     }
 
