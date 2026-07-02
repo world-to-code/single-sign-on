@@ -21,6 +21,11 @@ export default function AppShell(
   { session: SessionView; variant?: "user" | "admin"; children: React.ReactNode },
 ) {
   const isAdmin = session.roles.includes("ROLE_ADMIN");
+  // A nav item is visible when the shell/role allows it AND (if it declares one) the user holds the
+  // required fine-grained permission. Backend expands create/update/delete into the implied :read,
+  // so an admin with only e.g. user:create still sees the Users tab.
+  const canSee = (i: NavItem) =>
+    (isAdmin || !i.admin) && (!i.permission || session.permissions.includes(i.permission));
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -84,7 +89,7 @@ export default function AppShell(
         {groups.map((group) => {
           // Flat group (e.g. Account).
           if (group.items) {
-            const items = group.items.filter((i) => isAdmin || !i.admin);
+            const items = group.items.filter(canSee);
             if (!items.length) return null;
             return (
               <div key={group.heading}>
@@ -97,7 +102,7 @@ export default function AppShell(
           }
           // Accordion group (e.g. Administration): collapsible sections by domain.
           const sections = (group.sections ?? [])
-            .map((s) => ({ heading: s.heading, items: s.items.filter((i) => isAdmin || !i.admin) }))
+            .map((s) => ({ heading: s.heading, items: s.items.filter(canSee) }))
             .filter((s) => s.items.length);
           if (!sections.length) return null;
           return (

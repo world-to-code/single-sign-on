@@ -31,7 +31,7 @@ export default function App() {
       // A failed probe must not hang on "Loading…" — fall back to the entry screen so the user can sign in.
       .catch(() => setSession({
         authenticated: false, username: null, totpEnrolled: false, fido2Enrolled: false,
-        factors: [], roles: [], next: "IDENTIFY", pendingFactors: [], mfaEnrollmentAllowed: true,
+        factors: [], roles: [], permissions: [], next: "IDENTIFY", pendingFactors: [], mfaEnrollmentAllowed: true,
       }))
       .finally(() => setLoading(false));
   }, [apply]);

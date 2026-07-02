@@ -9,7 +9,8 @@ import java.util.List;
  */
 public record AuthSessionView(boolean authenticated, String username, boolean totpEnrolled,
                               boolean fido2Enrolled, List<String> factors, List<String> roles,
-                              String next, List<String> pendingFactors, boolean mfaEnrollmentAllowed) {
+                              List<String> permissions, String next, List<String> pendingFactors,
+                              boolean mfaEnrollmentAllowed) {
 
     /** {@code next}: the SPA must collect the account identifier (email) before any factor. */
     public static final String NEXT_IDENTIFY = "IDENTIFY";
@@ -20,22 +21,23 @@ public record AuthSessionView(boolean authenticated, String username, boolean to
 
     /** No identified user yet — the SPA must collect the email. */
     public static AuthSessionView anonymous(boolean mfaEnrollmentAllowed) {
-        return new AuthSessionView(false, null, false, false, List.of(), List.of(),
+        return new AuthSessionView(false, null, false, false, List.of(), List.of(), List.of(),
                 NEXT_IDENTIFY, List.of(), mfaEnrollmentAllowed);
     }
 
     /** The policy is fully satisfied — the session is complete. */
     public static AuthSessionView complete(String username, boolean totpEnrolled, boolean fido2Enrolled,
-                                           List<String> factors, List<String> roles, boolean mfaEnrollmentAllowed) {
-        return new AuthSessionView(true, username, totpEnrolled, fido2Enrolled, factors, roles,
+                                           List<String> factors, List<String> roles, List<String> permissions,
+                                           boolean mfaEnrollmentAllowed) {
+        return new AuthSessionView(true, username, totpEnrolled, fido2Enrolled, factors, roles, permissions,
                 NEXT_DONE, List.of(), mfaEnrollmentAllowed);
     }
 
     /** A current policy step remains — the SPA completes one of {@code pendingFactors}. */
     public static AuthSessionView pending(String username, boolean totpEnrolled, boolean fido2Enrolled,
-                                          List<String> factors, List<String> roles, List<String> pendingFactors,
-                                          boolean mfaEnrollmentAllowed) {
-        return new AuthSessionView(false, username, totpEnrolled, fido2Enrolled, factors, roles,
+                                          List<String> factors, List<String> roles, List<String> permissions,
+                                          List<String> pendingFactors, boolean mfaEnrollmentAllowed) {
+        return new AuthSessionView(false, username, totpEnrolled, fido2Enrolled, factors, roles, permissions,
                 NEXT_FACTOR, pendingFactors, mfaEnrollmentAllowed);
     }
 }

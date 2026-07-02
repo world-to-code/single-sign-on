@@ -48,6 +48,8 @@ public class AuthStateService {
                 .map(GrantedAuthority::getAuthority).collect(Collectors.toSet());
         List<String> factors = granted.stream().filter(a -> a.startsWith(Factors.FACTOR_PREFIX)).sorted().toList();
         List<String> roles = granted.stream().filter(a -> a.startsWith(Roles.ROLE_PREFIX)).sorted().toList();
+        // Fine-grained permissions (resource:action) let the SPA gate admin nav by capability.
+        List<String> permissions = granted.stream().filter(a -> a.contains(":")).sorted().toList();
         boolean totpEnrolled = factorHandlers.isEnrolled(AuthFactor.TOTP, user);
         boolean fido2Enrolled = factorHandlers.isEnrolled(AuthFactor.FIDO2, user);
 
@@ -55,7 +57,7 @@ public class AuthStateService {
         boolean enrollAllowed = policy.isAllowEnrollmentAtLogin(); // per the user's winning login policy
         Optional<AuthPolicyStepView> step = evaluator.currentStep(policy, granted);
         if (step.isEmpty()) {
-            return AuthSessionView.complete(user.getUsername(), totpEnrolled, fido2Enrolled, factors, roles, enrollAllowed);
+            return AuthSessionView.complete(user.getUsername(), totpEnrolled, fido2Enrolled, factors, roles, permissions, enrollAllowed);
         }
 
         // Order by the factor's natural preference (PASSWORD, TOTP, EMAIL, FIDO2) so the SPA defaults
@@ -65,7 +67,7 @@ public class AuthStateService {
         List<String> pending = step.get().getAllowedFactors().stream()
                 .sorted(Comparator.comparingInt(Enum::ordinal))
                 .map(AuthFactor::name).toList();
-        return AuthSessionView.pending(user.getUsername(), totpEnrolled, fido2Enrolled, factors, roles, pending, enrollAllowed);
+        return AuthSessionView.pending(user.getUsername(), totpEnrolled, fido2Enrolled, factors, roles, permissions, pending, enrollAllowed);
     }
 
     /** True once the user's policy is fully satisfied (used to grant the MFA-complete marker). */

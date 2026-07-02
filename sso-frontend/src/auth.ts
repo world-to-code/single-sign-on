@@ -7,6 +7,7 @@ export interface SessionView {
   fido2Enrolled: boolean;
   factors: string[];
   roles: string[];
+  permissions: string[];
   next: "IDENTIFY" | "FACTOR" | "DONE";
   pendingFactors: string[];
   mfaEnrollmentAllowed: boolean;

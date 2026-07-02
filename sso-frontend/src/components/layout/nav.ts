@@ -9,6 +9,7 @@ export interface NavItem {
   label: string;
   icon: LucideIcon;
   admin?: boolean; // requires ROLE_ADMIN
+  permission?: string; // fine-grained permission (resource:read) required to see this item
 }
 
 export interface NavSection {
@@ -46,32 +47,32 @@ export const NAV: NavGroup[] = [
       {
         heading: "Directory",
         items: [
-          { to: "/admin/users", label: "Users", icon: Users, admin: true },
-          { to: "/admin/groups", label: "Groups", icon: UsersRound, admin: true },
+          { to: "/admin/users", label: "Users", icon: Users, admin: true, permission: "user:read" },
+          { to: "/admin/groups", label: "Groups", icon: UsersRound, admin: true, permission: "group:read" },
         ],
       },
       {
         heading: "Applications",
         items: [
-          { to: "/admin/applications", label: "Applications", icon: Boxes, admin: true },
-          { to: "/admin/clients", label: "OAuth2 Clients", icon: AppWindow, admin: true },
-          { to: "/admin/relying-parties", label: "SAML Providers", icon: Network, admin: true },
+          { to: "/admin/applications", label: "Applications", icon: Boxes, admin: true, permission: "app-assignment:read" },
+          { to: "/admin/clients", label: "OAuth2 Clients", icon: AppWindow, admin: true, permission: "oidc-client:read" },
+          { to: "/admin/relying-parties", label: "SAML Providers", icon: Network, admin: true, permission: "saml-rp:read" },
         ],
       },
       {
         heading: "Access & Security",
         items: [
-          { to: "/admin/roles", label: "Roles", icon: KeySquare, admin: true },
-          { to: "/admin/auth-policies", label: "Auth Policies", icon: ShieldCheck, admin: true },
-          { to: "/admin/session-policy", label: "Session Policy", icon: Clock, admin: true },
-          { to: "/admin/ip-ranges", label: "IP Ranges", icon: Globe, admin: true },
+          { to: "/admin/roles", label: "Roles", icon: KeySquare, admin: true, permission: "role:read" },
+          { to: "/admin/auth-policies", label: "Auth Policies", icon: ShieldCheck, admin: true, permission: "auth-policy:read" },
+          { to: "/admin/session-policy", label: "Session Policy", icon: Clock, admin: true, permission: "session-policy:read" },
+          { to: "/admin/ip-ranges", label: "IP Ranges", icon: Globe, admin: true, permission: "ip-rule:read" },
         ],
       },
       {
         heading: "System",
         items: [
-          { to: "/admin/scim-tokens", label: "SCIM Tokens", icon: Coins, admin: true },
-          { to: "/admin/audit", label: "Audit Log", icon: ScrollText, admin: true },
+          { to: "/admin/scim-tokens", label: "SCIM Tokens", icon: Coins, admin: true, permission: "scim:manage" },
+          { to: "/admin/audit", label: "Audit Log", icon: ScrollText, admin: true, permission: "audit:read" },
         ],
       },
     ],
