@@ -7,6 +7,7 @@ import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.shared.IdName;
 import com.example.sso.user.GroupDeletedEvent;
+import com.example.sso.user.GroupManagers;
 import com.example.sso.user.GroupMembersPage;
 import com.example.sso.user.GroupMembership;
 import com.example.sso.user.GroupSpec;
@@ -200,6 +201,15 @@ public class UserGroupServiceImpl implements UserGroupService {
     @Transactional(readOnly = true)
     public List<IdName> idNames(Collection<UUID> ids) {
         return ids.isEmpty() ? List.of() : repository.findIdNames(ids);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<GroupManagers> groupsWithManagers() {
+        return repository.findAll().stream()
+                .filter(group -> !group.getManagerUserIds().isEmpty())
+                .map(group -> new GroupManagers(group.getId(), group.getName(), Set.copyOf(group.getManagerUserIds())))
+                .toList();
     }
 
     private UserGroup require(UUID id) {

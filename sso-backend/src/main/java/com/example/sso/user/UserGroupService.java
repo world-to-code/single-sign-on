@@ -37,6 +37,9 @@ public interface UserGroupService {
     /** Replaces the group's managers (scoped admins allowed to manage its members). */
     GroupView setManagers(UUID id, Set<UUID> managerIds);
 
+    /** Every group that has at least one legacy manager — input to the one-time resource-role migration. */
+    List<GroupManagers> groupsWithManagers();
+
     /** Whether {@code adminId} manages a group that {@code targetId} is a member of (group scope). */
     boolean managesUser(UUID adminId, UUID targetId);
 
