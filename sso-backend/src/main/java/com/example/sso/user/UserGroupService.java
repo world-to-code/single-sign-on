@@ -1,5 +1,6 @@
 package com.example.sso.user;
 
+import com.example.sso.shared.IdName;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
@@ -47,6 +48,9 @@ public interface UserGroupService {
 
     /** Ids of all users who are members of ANY of the given groups (bulk scope expansion). */
     Set<UUID> memberIdsOf(Collection<UUID> groupIds);
+
+    /** (id, name) labels for the given group ids — resolve display names without loading groups. */
+    List<IdName> idNames(Collection<UUID> ids);
 
     /** Ids of the groups the user belongs to — no role/detail loading (authorization hot path). */
     Set<UUID> groupIdsOf(UUID userId);

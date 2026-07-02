@@ -1,5 +1,6 @@
 package com.example.sso.resource.internal.domain;
 
+import com.example.sso.shared.IdName;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -80,6 +81,10 @@ public interface ResourceRepository extends JpaRepository<Resource, UUID> {
             """, nativeQuery = true)
     Set<String> findMemberIds(@Param("resourceIds") Collection<UUID> resourceIds,
                               @Param("memberType") String memberType);
+
+    /** Direct parents of a resource (reverse {@code resource_edge}) as id+name labels. */
+    @Query("select p.id as id, p.name as name from Resource p join p.children c where c.id = :childId order by p.name")
+    List<IdName> findParentIdNames(@Param("childId") UUID childId);
 
     /** Drops every membership of the given kind/id across all resources (its target was deleted elsewhere). */
     @Modifying

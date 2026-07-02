@@ -38,7 +38,35 @@ export const listResourceTypes = () => apiGet<ResourceType[]>("/api/admin/resour
 export const createResourceType = (name: string, allowedMemberTypes: string[]) =>
   apiPost<ResourceType>("/api/admin/resources/types", { name, allowedMemberTypes });
 
+export interface ResourceNode {
+  id: string;
+  name: string;
+}
+export interface ResourceMemberDetail {
+  memberType: MemberType;
+  memberId: string;
+  label: string | null;
+}
+export interface ResourceGrantDetail {
+  userId: string;
+  username: string | null;
+  tier: string;
+}
+
+/** Full detail for the scoped console: parents/children for navigation + labelled members/grants. */
+export interface ResourceDetail {
+  id: string;
+  name: string;
+  typeName: string;
+  parents: ResourceNode[];
+  children: ResourceNode[];
+  members: ResourceMemberDetail[];
+  grants: ResourceGrantDetail[];
+}
+
 export const listResources = () => apiGet<Resource[]>("/api/admin/resources");
+export const getResourceDetail = (id: string) =>
+  apiGet<ResourceDetail>(`/api/admin/resources/${encodeURIComponent(id)}/detail`);
 export const createResource = (name: string, typeName: string) =>
   apiPost<Resource>("/api/admin/resources", { name, typeName });
 export const renameResource = (id: string, name: string) =>

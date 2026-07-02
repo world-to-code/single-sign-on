@@ -1,6 +1,7 @@
 package com.example.sso.resource.internal.api;
 
 import com.example.sso.resource.internal.application.ResourceAdminService;
+import com.example.sso.resource.internal.application.ResourceDetailView;
 import com.example.sso.resource.internal.application.ResourceTypeView;
 import com.example.sso.resource.internal.application.ResourceView;
 import com.example.sso.shared.security.RequirePermission;
@@ -60,6 +61,13 @@ public class ResourceAdminController {
     @RequirePermission(Permissions.RESOURCE_READ)
     public ResourceView get(@PathVariable UUID id) {
         return service.get(id);
+    }
+
+    /** Full detail for the scoped console: parents/children for DAG navigation + labelled members/grants. */
+    @GetMapping("/{id}/detail")
+    @RequirePermission(Permissions.RESOURCE_READ)
+    public ResourceDetailView detail(@PathVariable UUID id) {
+        return service.detail(id);
     }
 
     @PostMapping

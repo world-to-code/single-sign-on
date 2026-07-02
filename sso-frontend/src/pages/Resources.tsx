@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Boxes, Plus, Trash2, Layers, ChevronRight } from "lucide-react";
 import {
   LEAF_MEMBER_TYPES, MEMBER_TYPES, assignResourceAdmin, attachChild, attachMember, createResource,
-  createResourceType, deleteResource, detachChild, detachMember, listResourceTypes, listResources,
-  renameResource, revokeResourceAdmin, type MemberType, type Resource, type ResourceType,
+  createResourceType, deleteResource, detachChild, detachMember, getResourceDetail, listResourceTypes,
+  listResources, renameResource, revokeResourceAdmin,
+  type MemberType, type Resource, type ResourceDetail, type ResourceNode, type ResourceType,
 } from "@/resources";
 import { errorMessage } from "@/api";
 import { PageHeader } from "@/components/PageHeader";
@@ -24,7 +25,7 @@ export default function Resources() {
   const [resources, setResources] = useState<Resource[] | null>(null);
   const [types, setTypes] = useState<ResourceType[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Resource | null>(null);
+  const [selected, setSelected] = useState<ResourceNode | null>(null);
   const [creating, setCreating] = useState(false);
   const [typing, setTyping] = useState(false);
   const confirmDelete = useDeleteConfirm();
@@ -35,8 +36,6 @@ export default function Resources() {
       setResources(rs);
       setTypes(ts);
       setError(null);
-      // Keep the open detail panel in sync with the latest server state.
-      setSelected((cur) => (cur ? rs.find((r) => r.id === cur.id) ?? null : null));
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -69,7 +68,7 @@ export default function Resources() {
         {(rs) => (
           <div className="divide-y">
             {rs.map((r) => (
-              <button key={r.id} onClick={() => setSelected(r)}
+              <button key={r.id} onClick={() => setSelected({ id: r.id, name: r.name })}
                 className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-muted/50">
                 <div className="flex items-center gap-3">
                   <Boxes className="size-4 text-muted-foreground" />
@@ -100,11 +99,13 @@ export default function Resources() {
       )}
       {selected && (
         <ResourceDetailDialog
-          resource={selected}
+          key={selected.id}
+          resourceId={selected.id}
           types={types}
           allResources={resources ?? []}
           onClose={() => setSelected(null)}
           onChanged={reload}
+          onNavigate={setSelected}
           onDelete={() =>
             confirmDelete({
               title: `Delete "${selected.name}"?`,
@@ -201,66 +202,90 @@ function CreateTypeDialog({ onClose, onCreated }: { onClose: () => void; onCreat
 }
 
 function ResourceDetailDialog(
-  { resource, types, allResources, onClose, onChanged, onDelete }: {
-    resource: Resource; types: ResourceType[]; allResources: Resource[];
-    onClose: () => void; onChanged: () => Promise<void>; onDelete: () => void;
+  { resourceId, types, allResources, onClose, onChanged, onNavigate, onDelete }: {
+    resourceId: string; types: ResourceType[]; allResources: Resource[];
+    onClose: () => void; onChanged: () => Promise<void>;
+    onNavigate: (node: ResourceNode) => void; onDelete: () => void;
   },
 ) {
-  // Constrain the pickers to what the resource's TYPE permits (the backend rejects the rest with a 400).
-  const allowed = types.find((t) => t.name === resource.typeName)?.allowedMemberTypes ?? [];
-  const allowedLeafTypes = LEAF_MEMBER_TYPES.filter((t) => allowed.includes(t));
-  const canHaveChildren = allowed.includes("RESOURCE");
-
+  const [detail, setDetail] = useState<ResourceDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [name, setName] = useState(resource.name);
+  const [name, setName] = useState("");
   const [childId, setChildId] = useState("");
-  const [memberType, setMemberType] = useState<MemberType>(allowedLeafTypes[0] ?? "GROUP");
+  const [memberType, setMemberType] = useState<MemberType>("GROUP");
   const [memberId, setMemberId] = useState("");
   const [adminUserId, setAdminUserId] = useState("");
 
-  const run = async (op: () => Promise<unknown>) => {
+  const load = useCallback(async () => {
     try {
-      await op();
-      await onChanged();
+      const d = await getResourceDetail(resourceId);
+      setDetail(d);
+      setName(d.name);
       setError(null);
     } catch (e) {
       setError(errorMessage(e));
     }
+  }, [resourceId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  // Refresh both the detail panel and the parent list after any mutation; report success so callers
+  // clear their input only when the op actually succeeded (not on a rejected mutation).
+  const run = async (op: () => Promise<unknown>): Promise<boolean> => {
+    try {
+      await op();
+      await Promise.all([load(), onChanged()]);
+      setError(null);
+      return true;
+    } catch (e) {
+      setError(errorMessage(e));
+      return false;
+    }
   };
 
-  const attachable = allResources.filter((r) => r.id !== resource.id
-    && !resource.children.some((c) => c.id === r.id));
+  const allowed = detail ? types.find((t) => t.name === detail.typeName)?.allowedMemberTypes ?? [] : [];
+  const allowedLeafTypes: MemberType[] = LEAF_MEMBER_TYPES.filter((t) => allowed.includes(t));
+  const canHaveChildren = allowed.includes("RESOURCE");
+  const activeMemberType: MemberType = allowedLeafTypes.includes(memberType) ? memberType : (allowedLeafTypes[0] ?? "GROUP");
+  const attachable = allResources.filter((r) => r.id !== resourceId
+    && !(detail?.children ?? []).some((c) => c.id === r.id));
 
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Boxes className="size-4" /> {resource.name}</DialogTitle>
-          <DialogDescription>{resource.typeName}</DialogDescription>
+          <DialogTitle className="flex items-center gap-2"><Boxes className="size-4" /> {detail?.name ?? "…"}</DialogTitle>
+          <DialogDescription>{detail?.typeName}</DialogDescription>
         </DialogHeader>
         {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
 
+        {detail && (
+        <>
         <Section title="Name">
           <div className="flex gap-2">
             <Input className="flex-1" value={name} onChange={(e) => setName(e.target.value)} />
-            <Button variant="outline" disabled={!name.trim() || name.trim() === resource.name}
-              onClick={() => void run(() => renameResource(resource.id, name.trim()))}>
+            <Button variant="outline" disabled={!name.trim() || name.trim() === detail.name}
+              onClick={() => void run(() => renameResource(resourceId, name.trim()))}>
               Rename
             </Button>
           </div>
         </Section>
 
+        <Section title="Parents">
+          <NavChipList nodes={detail.parents} onNavigate={onNavigate} emptyLabel="None (a root resource)." />
+        </Section>
+
         {canHaveChildren && (
           <Section title="Child resources">
-            <ChipList items={resource.children.map((c) => ({ key: c.id, label: c.name }))}
-              onRemove={(id) => void run(() => detachChild(resource.id, id))} />
+            <NavChipList nodes={detail.children} onNavigate={onNavigate}
+              onRemove={(id) => void run(() => detachChild(resourceId, id))} emptyLabel="None." />
             <div className="flex gap-2">
               <Select className="flex-1" value={childId} onChange={(e) => setChildId(e.target.value)}>
                 <option value="">Attach a child…</option>
                 {attachable.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
               </Select>
               <Button variant="outline" disabled={!childId}
-                onClick={() => void run(() => attachChild(resource.id, childId)).then(() => setChildId(""))}>
+                onClick={() => void run(() => attachChild(resourceId, childId)).then((ok) => { if (ok) setChildId(""); })}>
                 <Plus /> Attach
               </Button>
             </div>
@@ -269,18 +294,18 @@ function ResourceDetailDialog(
 
         {allowedLeafTypes.length > 0 && (
         <Section title="Members">
-          <ChipList items={resource.members.map((m) => ({ key: `${m.memberType}:${m.memberId}`,
-            label: `${m.memberType} · ${m.memberId}` }))}
-            onRemove={(key) => { const [t, id] = key.split(/:(.+)/); void run(() => detachMember(resource.id, t, id)); }} />
+          <ChipList items={detail.members.map((m) => ({ key: `${m.memberType}:${m.memberId}`,
+            label: `${m.memberType} · ${m.label ?? m.memberId}` }))}
+            onRemove={(key) => { const [t, id] = key.split(/:(.+)/); void run(() => detachMember(resourceId, t, id)); }} />
           <div className="flex gap-2">
-            <Select className="w-36" value={memberType}
+            <Select className="w-36" value={activeMemberType}
               onChange={(e) => setMemberType(e.target.value as MemberType)}>
               {allowedLeafTypes.map((t) => <option key={t} value={t}>{t}</option>)}
             </Select>
             <Input className="flex-1" placeholder="member id (uuid or app id)" value={memberId}
               onChange={(e) => setMemberId(e.target.value)} />
             <Button variant="outline" disabled={!memberId.trim()}
-              onClick={() => void run(() => attachMember(resource.id, memberType, memberId.trim())).then(() => setMemberId(""))}>
+              onClick={() => void run(() => attachMember(resourceId, activeMemberType, memberId.trim())).then((ok) => { if (ok) setMemberId(""); })}>
               <Plus /> Add
             </Button>
           </div>
@@ -288,17 +313,19 @@ function ResourceDetailDialog(
         )}
 
         <Section title="Delegated administrators">
-          <ChipList items={resource.grants.map((g) => ({ key: g.userId, label: `${g.userId} · ${g.tier}` }))}
-            onRemove={(userId) => void run(() => revokeResourceAdmin(resource.id, userId))} />
+          <ChipList items={detail.grants.map((g) => ({ key: g.userId, label: `${g.username ?? g.userId} · ${g.tier}` }))}
+            onRemove={(userId) => void run(() => revokeResourceAdmin(resourceId, userId))} />
           <div className="flex gap-2">
             <Input className="flex-1" placeholder="user id (uuid)" value={adminUserId}
               onChange={(e) => setAdminUserId(e.target.value)} />
             <Button variant="outline" disabled={!adminUserId.trim()}
-              onClick={() => void run(() => assignResourceAdmin(resource.id, adminUserId.trim())).then(() => setAdminUserId(""))}>
+              onClick={() => void run(() => assignResourceAdmin(resourceId, adminUserId.trim())).then((ok) => { if (ok) setAdminUserId(""); })}>
               <Plus /> Assign admin
             </Button>
           </div>
         </Section>
+        </>
+        )}
 
         <DialogFooter className="justify-between">
           <Button variant="destructive" onClick={onDelete}><Trash2 /> Delete resource</Button>
@@ -306,6 +333,30 @@ function ResourceDetailDialog(
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Chips for resource nodes: clicking the name navigates to that resource; optional remove button. */
+function NavChipList(
+  { nodes, onNavigate, onRemove, emptyLabel }: {
+    nodes: ResourceNode[]; onNavigate: (node: ResourceNode) => void;
+    onRemove?: (id: string) => void; emptyLabel: string;
+  },
+) {
+  if (!nodes.length) return <p className="text-xs text-muted-foreground">{emptyLabel}</p>;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {nodes.map((n) => (
+        <Badge key={n.id} variant="muted" className="gap-1 text-xs">
+          <button onClick={() => onNavigate(n)} className="hover:underline">{n.name}</button>
+          {onRemove && (
+            <button onClick={() => onRemove(n.id)} className="ml-1 text-muted-foreground hover:text-destructive">
+              <Trash2 className="size-3" />
+            </button>
+          )}
+        </Badge>
+      ))}
+    </div>
   );
 }
 

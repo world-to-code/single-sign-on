@@ -9,14 +9,19 @@ import com.example.sso.resource.internal.domain.ResourceRepository;
 import com.example.sso.resource.internal.domain.ResourceRoleTier;
 import com.example.sso.resource.internal.domain.ResourceType;
 import com.example.sso.resource.internal.domain.ResourceTypeRepository;
+import com.example.sso.shared.IdName;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.UserGroupService;
 import com.example.sso.user.UserService;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -77,6 +82,87 @@ public class ResourceAdminService {
     public ResourceView get(UUID id) {
         access.requireManage(id);
         return ResourceView.of(requireForView(id));
+    }
+
+    /**
+     * Full detail for the scoped console: parents/children for DAG navigation plus members/grants with
+     * their display labels resolved (group/app name, username). Scope-gated like {@link #get}.
+     */
+    @Transactional(readOnly = true)
+    public ResourceDetailView detail(UUID id) {
+        access.requireManage(id);
+        Resource resource = requireForView(id);
+
+        // Parents are ANCESTORS — above the actor's grant. A scoped delegate must not learn about
+        // ancestors outside their subtree, so filter to the ones they manage (a super admin sees all).
+        boolean unscoped = access.isUnscoped();
+        Set<UUID> managed = unscoped ? Set.of() : access.managedResourceIds();
+        List<ResourceNodeView> parents = resources.findParentIdNames(id).stream()
+                .filter(node -> unscoped || managed.contains(node.getId()))
+                .map(node -> new ResourceNodeView(node.getId().toString(), node.getName()))
+                .toList();
+        List<ResourceNodeView> children = resource.getChildren().stream()
+                .map(child -> new ResourceNodeView(child.getId().toString(), child.getName()))
+                .sorted(Comparator.comparing(ResourceNodeView::name))
+                .toList();
+
+        Map<String, String> groupNames = labels(groups.idNames(memberUuids(resource, MemberType.GROUP)));
+        Map<String, String> userNames = labels(users.idNames(userIdsToResolve(resource)));
+        Map<String, String> appNames = appLabels(resource);
+
+        List<ResourceMemberDetailView> members = resource.getMembers().stream()
+                .map(member -> new ResourceMemberDetailView(member.memberType().name(), member.memberId(),
+                        memberLabel(member.memberType(), member.memberId(), groupNames, userNames, appNames)))
+                .sorted(Comparator.comparing(ResourceMemberDetailView::memberType)
+                        .thenComparing(ResourceMemberDetailView::memberId))
+                .toList();
+        List<ResourceGrantDetailView> grants = resource.getGrants().stream()
+                .map(grant -> new ResourceGrantDetailView(grant.userId().toString(),
+                        userNames.get(grant.userId().toString()), grant.tier().name()))
+                .sorted(Comparator.comparing(ResourceGrantDetailView::userId))
+                .toList();
+
+        return new ResourceDetailView(resource.getId().toString(), resource.getName(),
+                resource.getType().getName(), parents, children, members, grants);
+    }
+
+    private Map<String, String> labels(List<IdName> idNames) {
+        return idNames.stream().collect(Collectors.toMap(idName -> idName.getId().toString(), IdName::getName));
+    }
+
+    private Set<UUID> memberUuids(Resource resource, MemberType type) {
+        return resource.getMembers().stream()
+                .filter(member -> member.memberType() == type)
+                .map(member -> UUID.fromString(member.memberId()))
+                .collect(Collectors.toSet());
+    }
+
+    private Set<UUID> userIdsToResolve(Resource resource) {
+        Set<UUID> ids = memberUuids(resource, MemberType.USER);
+        resource.getGrants().forEach(grant -> ids.add(grant.userId()));
+        return ids;
+    }
+
+    private String memberLabel(MemberType type, String memberId, Map<String, String> groupNames,
+                               Map<String, String> userNames, Map<String, String> appNames) {
+        return switch (type) {
+            case GROUP -> groupNames.get(memberId);
+            case USER -> userNames.get(memberId);
+            case APPLICATION -> appNames.get(memberId);
+            case RESOURCE -> null;
+        };
+    }
+
+    /** App id→name labels, loaded only when the resource actually has APPLICATION members. */
+    private Map<String, String> appLabels(Resource resource) {
+        boolean hasApps = resource.getMembers().stream()
+                .anyMatch(member -> member.memberType() == MemberType.APPLICATION);
+        if (!hasApps) {
+            return Map.of();
+        }
+        Map<String, String> names = new HashMap<>(); // tolerate a null app name (HashMap allows null values)
+        applications.listApplications().forEach(app -> names.put(app.id(), app.name()));
+        return names;
     }
 
     @Transactional

@@ -5,6 +5,7 @@ import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
+import com.example.sso.shared.IdName;
 import com.example.sso.user.GroupDeletedEvent;
 import com.example.sso.user.GroupMembersPage;
 import com.example.sso.user.GroupMembership;
@@ -193,6 +194,12 @@ public class UserGroupServiceImpl implements UserGroupService {
     @Transactional(readOnly = true)
     public Set<UUID> groupIdsOf(UUID userId) {
         return Set.copyOf(repository.findGroupIdsByMember(userId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<IdName> idNames(Collection<UUID> ids) {
+        return ids.isEmpty() ? List.of() : repository.findIdNames(ids);
     }
 
     private UserGroup require(UUID id) {
