@@ -14,9 +14,10 @@ import org.springframework.transaction.annotation.Transactional;
  * and projects each result to {@link PolicyView}. Takes domain commands (the api request maps itself to
  * a command via {@code toSpec()}/{@code toUpdate()}), so the application layer never depends on the api.
  *
- * <p>Each mapping method is {@code @Transactional} so the domain read/write AND the {@link PolicyView}
- * projection run in ONE session: {@code PolicyView.of} navigates the policy's LAZY {@code steps}/factors
- * and assignment sets, which would otherwise fail on the detached entity ({@code LazyInitializationException}).
+ * <p>Each projecting method (list/create/update) is {@code @Transactional} so the domain read/write AND
+ * the {@link PolicyView} projection run in ONE session: {@code PolicyView.of} navigates the policy's LAZY
+ * {@code steps}/factors and assignment sets, which would otherwise fail on the detached entity
+ * ({@code LazyInitializationException}). {@code delete} does no projection, so it needs no transaction here.
  */
 @Service
 @RequiredArgsConstructor

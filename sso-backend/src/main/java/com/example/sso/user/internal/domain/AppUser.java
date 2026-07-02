@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
  *
  * <p>State is never mutated through setters: the entity is created fully-formed via its
  * constructor and changes only through intention-revealing domain methods
- * ({@link #changePassword}, {@link #enable}, {@link #lock}, …). Hibernate uses field
+ * ({@link #enable}, {@link #disable}, {@link #registerFailedLogin}, …). Hibernate uses field
  * access, so no setters are required for persistence.
  */
 @Entity

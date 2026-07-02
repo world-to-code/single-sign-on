@@ -10,7 +10,7 @@ import java.time.Instant;
 
 /**
  * A bearer token authorizing SCIM provisioning calls. Only the token's SHA-256 hash is
- * persisted. Created via constructor; revoked via {@link #disable()} — no setters.
+ * persisted. Created via constructor; immutable after creation — no setters.
  */
 @Entity
 @Table(name = "scim_token")

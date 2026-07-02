@@ -20,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Ensures the platform-managed "All Users" group exists and contains every user. Created once, then
  * backfilled idempotently on each boot (missing members are added). New users join via
- * {@link UserService#addToDefaultGroup(UUID)} at creation time.
+ * {@link UserService#createUser} at creation time.
  */
 @Component
 @Order(Ordered.LOWEST_PRECEDENCE)

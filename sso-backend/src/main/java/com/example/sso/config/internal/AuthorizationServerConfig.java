@@ -142,10 +142,6 @@ public class AuthorizationServerConfig {
     }
 
     /**
-     * Enriches the OIDC ID token with standard profile/email claims resolved from the
-     * domain user (the persisted principal only carries the username).
-     */
-    /**
      * Adds profile/email claims to the ID token and the user's roles to the access token
      * (so the admin API resource server can authorize). Resolved from the domain user;
      * skipped for client-credentials tokens (no associated user).

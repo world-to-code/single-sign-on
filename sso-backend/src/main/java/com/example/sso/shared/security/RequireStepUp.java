@@ -9,8 +9,8 @@ import java.lang.annotation.Target;
 /**
  * Marks a sensitive operation (destructive or privilege-escalating) that requires a FRESH step-up
  * re-authentication — a tighter freshness window than the session policy's general re-auth interval
- * that {@code StepUpInterceptor} applies to ordinary mutations. On top of the URL gate ({@code ROLE_ADMIN}
- * + {@code MFA_COMPLETE}), the fine-grained {@code @RequirePermission} PBAC, and the RFC 9470 admin-console
+ * that {@code StepUpInterceptor} applies to ordinary mutations. On top of the URL gate
+ * ({@code MFA_COMPLETE}), the fine-grained {@code @RequirePermission} PBAC, and the RFC 9470 admin-console
  * elevation, this forces a deliberate re-auth immediately before the action.
  *
  * <p>This is a pure MARKER: it declares WHICH operations are sensitive, while HOW fresh the re-auth must

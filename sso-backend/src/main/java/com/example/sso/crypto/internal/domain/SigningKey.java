@@ -28,7 +28,7 @@ public class SigningKey extends AuditedEntity {
     @Column(name = "public_key", nullable = false, columnDefinition = "text")
     private String publicKey;
 
-    /** Base64-encoded PKCS#8 private key. Encrypt at rest in production. */
+    /** Base64-encoded PKCS#8 private key, stored encrypted at rest via SecretCipher. */
     @Column(name = "private_key", nullable = false, columnDefinition = "text")
     private String privateKey;
 

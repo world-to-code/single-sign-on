@@ -9,7 +9,7 @@ import lombok.NoArgsConstructor;
 
 
 /**
- * A fine-grained permission (PBAC), e.g. {@code user:write}. Permissions are granted to
+ * A fine-grained permission (PBAC), e.g. {@code user:update}. Permissions are granted to
  * roles and surface as authorities for method-level {@code @PreAuthorize} policies.
  */
 @Entity

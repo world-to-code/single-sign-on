@@ -14,8 +14,8 @@ import java.util.Locale;
  * Self-contained RFC 6238 TOTP implementation (HMAC-SHA1, 6 digits, 30s step) plus
  * RFC 4648 Base32 for the shared secret. No external dependency.
  *
- * <p>Secrets are stored Base32-encoded (as carried in {@code otpauth://} URIs). QR
- * rendering of the provisioning URI is left to the client (the React console).
+ * <p>Secrets are Base32-encoded (as carried in {@code otpauth://} URIs) and encrypted at rest by the
+ * caller; the provisioning URI is rendered to a scannable QR image server-side by {@code QrCodeService}.
  */
 @Service
 public class TotpService {

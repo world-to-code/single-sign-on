@@ -99,7 +99,7 @@ public class ApplicationServiceImpl implements ApplicationService {
 
     /**
      * The highest-priority enabled policy required to access this app: the app-level sign-on policy
-     * (applies to everyone) plus any per-subject assignment policy matching the user (directly/via role).
+     * (applies to everyone) plus any per-subject assignment policy matching the user (directly/via role or group).
      */
     private Optional<AuthPolicyView> resolveAppPolicy(UserAccount user, AppType appType, String appId) {
         Set<UUID> roleIds = user.getRoles().stream().map(RoleRef::getId).collect(Collectors.toSet());

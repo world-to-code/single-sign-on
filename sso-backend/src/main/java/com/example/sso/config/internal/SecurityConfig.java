@@ -49,7 +49,8 @@ import java.util.Set;
  *
  * <p>"Fully authenticated" is policy-driven: the {@code MFA_COMPLETE} authority is granted
  * once the user's authentication policy is satisfied (see the auth API + policy engine), so
- * protected APIs require {@code MFA_COMPLETE} (admin endpoints also require ROLE_ADMIN).
+ * protected APIs require {@code MFA_COMPLETE} (admin endpoints additionally require a fresh
+ * admin-console elevation token and per-endpoint {@code @RequirePermission}).
  * Page routes are public; the SPA gates itself via {@code /api/auth/session}.
  */
 @Configuration
@@ -158,8 +159,8 @@ public class SecurityConfig {
                 // Zero-Trust: re-verify session integrity (client binding + absolute lifetime) on every request.
                 .addFilterAfter(sessionIntegrityFilter, CsrfFilter.class)
                 // RFC 9470 elevation gate: require a fresh admin-console bearer token on /api/admin/**.
-                // Anchored AFTER the authorization filter so the session ROLE_ADMIN + MFA_COMPLETE check
-                // (and @PreAuthorize) still run first — a non-admin gets 403 there, never the 401 challenge.
+                // Anchored AFTER the authorization filter so the session MFA_COMPLETE check
+                // (and @RequirePermission) still run first — a non-admin gets 403 there, never the 401 challenge.
                 .addFilterAfter(new AdminElevationFilter(jwtDecoder, issuer, AdminPortalSeeder.CLIENT_ID,
                         adminPortalSettingsService, audit), AuthorizationFilter.class)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))

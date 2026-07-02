@@ -35,8 +35,9 @@ public class ScimGroupService {
     /**
      * Roles that confer elevated privilege and must never be created/assigned/deleted via SCIM. This
      * guard is name-based, which is adequate today because privileges are granted per-user (not via
-     * roles), so {@code ROLE_ADMIN} is the only role carrying elevated reach. If privileged CUSTOM
-     * roles are ever introduced (privileges attached to a role), switch this to protect by effective
+     * roles), so {@code ROLE_ADMIN} and the delegated {@code ROLE_GROUP_ADMIN} are the only roles
+     * carrying elevated reach. If privileged CUSTOM roles are ever introduced (privileges attached to
+     * a role), switch this to protect by effective
      * privilege rather than by role name.
      */
     private static final Set<String> PROTECTED_ROLES = Set.of(Roles.ADMIN, Roles.GROUP_ADMIN);

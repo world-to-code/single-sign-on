@@ -7,7 +7,7 @@ import jakarta.persistence.Embeddable;
  * Per-relying-party SAML security knobs, as an embeddable value object. Algorithm fields are symbolic
  * names resolved to OpenSAML/XMLSec URIs at signing/encryption time (modern defaults; legacy values
  * supported for old SPs): signatureAlgorithm RSA_SHA256|RSA_SHA1|RSA_SHA512; dataEncryptionAlgorithm
- * AES256_GCM|AES128_GCM|AES256_CBC|AES128_CBC; keyTransportAlgorithm RSA_OAEP|RSA_OAEP_SHA256|RSA_1_5.
+ * AES256_GCM|AES128_GCM|AES256_CBC|AES128_CBC; keyTransportAlgorithm RSA_OAEP|RSA_1_5.
  */
 @Embeddable
 public record SamlSecuritySettings(

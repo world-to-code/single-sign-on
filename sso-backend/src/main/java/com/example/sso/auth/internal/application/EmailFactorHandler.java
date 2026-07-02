@@ -13,7 +13,7 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
 
-/** Email one-time-code factor: prepare() emails a code, verify() checks it (10-minute TTL). */
+/** Email one-time-code factor: prepare() emails a code, verify() checks it (validity per sso.email-otp.ttl-minutes). */
 @Component
 public class EmailFactorHandler implements FactorHandler {
 

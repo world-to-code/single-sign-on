@@ -36,9 +36,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Admin API for directory users and the user detail page. URL access requires ROLE_ADMIN + elevation
- * (SecurityConfig / AdminElevationFilter); each method enforces a fine-grained permission (PBAC) and,
- * for a scoped admin, the instance rules of {@code @adminAccessPolicy}.
+ * Admin API for directory users and the user detail page. URL access requires a completed MFA login
+ * plus a fresh admin-console elevation token (SecurityConfig / AdminElevationFilter); each method
+ * enforces a fine-grained permission (PBAC) and, for a scoped admin, the instance rules of
+ * {@code @adminAccessPolicy}.
  */
 @RestController
 @RequestMapping("/api/admin/users")
