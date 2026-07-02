@@ -5,6 +5,7 @@ import com.example.sso.authpolicy.AuthPolicyAdminService;
 import com.example.sso.authpolicy.AuthPolicySpec;
 import com.example.sso.authpolicy.AuthPolicyUpdate;
 import com.example.sso.authpolicy.AuthPolicyView;
+import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.user.Permissions;
 
 import jakarta.validation.Valid;
@@ -13,7 +14,6 @@ import lombok.RequiredArgsConstructor;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -38,13 +38,13 @@ public class AuthPolicyAdminController {
     private final AuthPolicyAdminService service;
 
     @GetMapping
-    @PreAuthorize("hasAuthority('" + Permissions.POLICY_READ + "')")
+    @RequirePermission(Permissions.POLICY_READ)
     public List<PolicyView> list() {
-        return service.listAll().stream().map(AuthPolicyAdminController::toView).toList();
+        return service.listAll().stream().map(this::toView).toList();
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('" + Permissions.POLICY_CREATE + "')")
+    @RequirePermission(Permissions.POLICY_CREATE)
     public ResponseEntity<PolicyView> create(@Valid @RequestBody PolicyRequest request) {
         PolicyView created = toView(service.create(new AuthPolicySpec(request.name(), request.priority(),
                 request.enabled(), request.appliesToLogin() == null || request.appliesToLogin(),
@@ -56,7 +56,7 @@ public class AuthPolicyAdminController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('" + Permissions.POLICY_UPDATE + "')")
+    @RequirePermission(Permissions.POLICY_UPDATE)
     public PolicyView update(@PathVariable UUID id, @Valid @RequestBody PolicyRequest request) {
         return toView(service.update(id, new AuthPolicyUpdate(request.priority(), request.enabled(),
                 request.appliesToLogin() == null || request.appliesToLogin(),
@@ -66,28 +66,28 @@ public class AuthPolicyAdminController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('" + Permissions.POLICY_DELETE + "')")
+    @RequirePermission(Permissions.POLICY_DELETE)
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return ResponseEntity.noContent().build();
     }
 
-    private static List<Set<AuthFactor>> steps(PolicyRequest request) {
+    private List<Set<AuthFactor>> steps(PolicyRequest request) {
         return request.steps().stream()
                 .map(step -> step.stream().map(AuthFactor::valueOf).collect(Collectors.toSet()))
                 .toList();
     }
 
-    private static Set<UUID> ids(List<String> values) {
+    private Set<UUID> ids(List<String> values) {
         return values == null ? Set.of() : values.stream().map(UUID::fromString).collect(Collectors.toSet());
     }
 
     /** Default the step-up freshness to 15 minutes when omitted. */
-    private static int freshness(PolicyRequest request) {
+    private int freshness(PolicyRequest request) {
         return request.stepUpFreshnessMinutes() == null ? 15 : request.stepUpFreshnessMinutes();
     }
 
-    private static PolicyView toView(AuthPolicyView policy) {
+    private PolicyView toView(AuthPolicyView policy) {
         List<List<String>> steps = policy.getSteps().stream()
                 .map(step -> step.getAllowedFactors().stream().map(AuthFactor::name).sorted().toList())
                 .toList();

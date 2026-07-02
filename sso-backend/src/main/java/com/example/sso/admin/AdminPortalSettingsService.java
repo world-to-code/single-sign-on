@@ -1,6 +1,6 @@
 package com.example.sso.admin;
 
-import com.example.sso.admin.internal.application.AdminPortalSettingsRequest;
+import com.example.sso.admin.internal.portalsettings.application.AdminPortalSettingsRequest;
 
 /**
  * Reads and updates the single-row admin-portal security settings (admin-console re-auth/elevation

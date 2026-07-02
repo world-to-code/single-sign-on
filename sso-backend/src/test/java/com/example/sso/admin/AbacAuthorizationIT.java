@@ -1,19 +1,26 @@
 package com.example.sso.admin;
 
-import com.example.sso.admin.internal.application.AdminAccessPolicy;
-import com.example.sso.admin.internal.application.UserAdminService;
+import com.example.sso.admin.internal.group.api.AdminGroupController;
+import com.example.sso.admin.internal.group.api.SetGroupRolesRequest;
+import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
+import com.example.sso.admin.internal.user.application.UserAdminService;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.GroupSpec;
+import com.example.sso.user.GroupView;
 import com.example.sso.user.NewUser;
+import com.example.sso.user.Permissions;
 import com.example.sso.user.UserGroupService;
 import com.example.sso.user.UserService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -38,6 +45,8 @@ class AbacAuthorizationIT extends AbstractIntegrationTest {
     UserService userService;
     @Autowired
     UserGroupService userGroups;
+    @Autowired
+    AdminGroupController groupController;
 
     private final List<UUID> created = new ArrayList<>();
 
@@ -144,6 +153,34 @@ class AbacAuthorizationIT extends AbstractIntegrationTest {
         userGroups.delete(groupId);
     }
 
+    /**
+     * Proves the composed security annotation actually binds the method's {@code #request} argument:
+     * {@code @CanAssignGroupRoles} = {@code hasAuthority('group:update') and
+     * @adminAccessPolicy.mayAssignRoles(#request.roleNames())}, evaluated via the method-security proxy
+     * (calling the controller bean directly triggers it; the HTTP elevation filter is not involved).
+     * If {@code #request} did not bind, {@code #request.roleNames()} would error and every call would be
+     * denied — so the passing positive case is the discriminator.
+     */
+    @Test
+    void assignGroupRolesAnnotationBindsRequestArgument() {
+        UUID groupId = UUID.fromString(userGroups.create(new GroupSpec("AnnBindDept", null, null, Set.of())).id());
+
+        // Positive: a super admin assigning a plain role succeeds — #request.roleNames() bound & evaluated.
+        actAsWithAuthorities("admin", Permissions.GROUP_UPDATE);
+        GroupView updated = groupController.setGroupRoles(groupId, new SetGroupRolesRequest(Set.of("ROLE_USER")));
+        assertThat(updated.roleNames()).contains("ROLE_USER");
+
+        // Negative: a scoped (non-super) admin assigning a privileged role is denied through the same binding.
+        create("annscoped", Set.of("ROLE_GROUP_ADMIN", "ROLE_USER"));
+        actAsWithAuthorities("annscoped", Permissions.GROUP_UPDATE);
+        assertThatThrownBy(() ->
+                groupController.setGroupRoles(groupId, new SetGroupRolesRequest(Set.of("ROLE_ADMIN"))))
+                .isInstanceOf(AccessDeniedException.class);
+
+        actAsWithAuthorities("admin", Permissions.GROUP_UPDATE);
+        userGroups.delete(groupId);
+    }
+
     private UUID create(String username, Set<String> roles) {
         UUID id = userService.createUser(new NewUser(username, username + "@example.com", username,
                 "S3cret!pw9", roles)).getId();
@@ -154,5 +191,11 @@ class AbacAuthorizationIT extends AbstractIntegrationTest {
     private void actAs(String username) {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(username, null, List.of()));
+    }
+
+    private void actAsWithAuthorities(String username, String... authorities) {
+        List<SimpleGrantedAuthority> granted = Arrays.stream(authorities).map(SimpleGrantedAuthority::new).toList();
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(username, null, granted));
     }
 }

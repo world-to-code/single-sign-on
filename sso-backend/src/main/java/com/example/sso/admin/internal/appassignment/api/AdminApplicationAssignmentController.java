@@ -1,0 +1,67 @@
+package com.example.sso.admin.internal.appassignment.api;
+
+import com.example.sso.portal.AppAssignmentView;
+import com.example.sso.portal.AppPolicyRequest;
+import com.example.sso.portal.AppType;
+import com.example.sso.portal.ApplicationService;
+import com.example.sso.portal.ApplicationView;
+import com.example.sso.portal.AssignAppRequest;
+import com.example.sso.shared.security.RequirePermission;
+import com.example.sso.user.Permissions;
+import jakarta.validation.Valid;
+import java.util.List;
+import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+/** Admin API for assigning applications to users/groups and setting per-app sign-on policy. */
+@RestController
+@RequestMapping("/api/admin/applications")
+@RequiredArgsConstructor
+public class AdminApplicationAssignmentController {
+
+    private final ApplicationService applications;
+
+    @GetMapping
+    @RequirePermission(Permissions.APP_ASSIGNMENT_READ)
+    public List<ApplicationView> applications() {
+        return applications.listApplications();
+    }
+
+    @GetMapping("/{type}/{id}/assignments")
+    @RequirePermission(Permissions.APP_ASSIGNMENT_READ)
+    public List<AppAssignmentView> appAssignments(@PathVariable AppType type, @PathVariable String id) {
+        return applications.assignmentsForApp(type, id);
+    }
+
+    @PostMapping("/assignments")
+    @RequirePermission(Permissions.APP_ASSIGNMENT_ASSIGN)
+    public ResponseEntity<AppAssignmentView> assignApp(@Valid @RequestBody AssignAppRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(applications.assign(request));
+    }
+
+    @DeleteMapping("/assignments/{id}")
+    @RequirePermission(Permissions.APP_ASSIGNMENT_UNASSIGN)
+    public ResponseEntity<Void> unassignApp(@PathVariable UUID id) {
+        applications.unassign(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Sets (or clears, when requiredPolicyId is blank) the app-level sign-on policy for an application. */
+    @PutMapping("/{type}/{id}/policy")
+    @RequirePermission(Permissions.APP_ASSIGNMENT_ASSIGN)
+    public ResponseEntity<Void> setAppPolicy(@PathVariable AppType type, @PathVariable String id,
+                                             @RequestBody AppPolicyRequest request) {
+        applications.setAppPolicy(type, id, request.requiredPolicyId());
+        return ResponseEntity.noContent().build();
+    }
+}

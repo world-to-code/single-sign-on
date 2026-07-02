@@ -39,7 +39,7 @@ public record AdminPortalSettingsData(int reauthIntervalMinutes, int elevationTo
         return adminAllowedCidrs.stream().anyMatch(cidr -> matches(cidr, ip));
     }
 
-    private static boolean matches(String cidr, String ip) {
+    private boolean matches(String cidr, String ip) {
         try {
             return new IpAddressMatcher(cidr).matches(ip);
         } catch (IllegalArgumentException e) {
