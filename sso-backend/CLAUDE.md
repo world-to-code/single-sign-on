@@ -1,85 +1,85 @@
 # CLAUDE.md — sso-backend
 
-Spring Boot **modular monolith** IdP. Read the root `../CLAUDE.md` first (git, security, general
-engineering). This file covers backend-specific architecture and rules; they OVERRIDE defaults.
+Spring Boot **modular monolith** IdP. Read the root `../CLAUDE.md` first; this file adds backend rules
+and OVERRIDES defaults.
 
 ## Stack
 
-Java 21 · Spring Boot 4.0.x · Spring Security 7 (OAuth2 Authorization Server + WebAuthn) ·
-Spring Modulith 2.0.x · OpenSAML 5 · scim-sdk · PostgreSQL + Flyway · Lombok · Gradle.
-Versions are pinned in `build.gradle` — check it, don't guess.
+Java 21 · Spring Boot 4.0.x · Spring Security 7 (OAuth2 Auth Server + WebAuthn) · Spring Modulith 2.0.x ·
+OpenSAML 5 · scim-sdk · PostgreSQL + Flyway · Lombok · Gradle. Versions are pinned in `build.gradle`.
 
-Run from `sso-backend/`: `./gradlew compileJava` · `./gradlew test` · `./gradlew bootRun`
+Run from `sso-backend/`: `./gradlew compileJava | test | bootRun`
 (`SPRING_DEVTOOLS_RESTART_ENABLED=false` when driving live scripts).
 
 ## Architecture — modular monolith (NON-NEGOTIABLE)
 
-Each direct sub-package of `com.example.sso` is a Spring Modulith `@ApplicationModule`
-(declared in `package-info.java`). `ModularityTests` fails the build on any illegal cross-module
-access or cycle — **keep it green**.
+Each direct sub-package of `com.example.sso` is a `@ApplicationModule` (declared in `package-info.java`).
+Keep `ModularityTests` green.
 
-Per feature module:
 ```
-<module>/                 ← PUBLIC API only: interfaces + DTOs/records + enums/constants
-  package-info.java        @ApplicationModule
-  internal/
-    api/                   presentation — @RestController/@Controller + controller-only HTTP DTOs
-    application/           business — service impls (…Impl), factor handlers, seeders, config
-    domain/                persistence — @Entity + Spring Data repositories
+<module>/                PUBLIC API only: interfaces + record DTOs + enums/constants
+  internal/api/          thin @RestController adapters (no logic)
+  internal/application/  service impls (…Impl), view DTOs, factor handlers, seeders, config
+  internal/domain/       @Entity + Spring Data repositories
 ```
-Infra modules (`config, security, ratelimit, bootstrap, web, shared`) are NOT 3-tiered.
+Infra modules (`config, security, ratelimit, bootstrap, web, shared`) are not 3-tiered.
 
-Rules:
-- **Public services are interfaces in the module root; impls are `internal/application/<Name>Impl`
-  (DIP).** Module-private services just live in `internal/application` (no interface).
-- **Never expose a JPA entity (or repository) across a module boundary.** Entities live in
-  `internal/domain`. Other modules consume ONLY: root **read-model interfaces** (e.g. `UserAccount`,
-  `RoleRef`, `AuthPolicyView`, `SessionPolicyDetails`), **record DTOs** (e.g. `AuditEntry`,
-  `GroupView`, `AdminPortalSettingsData`), or the owning module's **service methods**. Cross-module
-  writes go through behavioral service methods — never by handing out an entity. Prefer the
-  `shared.IdName` projection for id/name lookups.
+- **DIP:** public services are root interfaces; impls are `internal/application/<Name>Impl`. A
+  module-private service needs no interface.
+- **Thin controllers:** bind HTTP, call ONE service method, shape the response — nothing else (no
+  orchestration, try/catch on domain outcomes, mapping, auditing, session work). Extract a service if none fits.
+- **DTO placement** (`application` must NEVER depend on `api`): request DTOs with `@Valid` live in
+  `internal/api` and self-map to a *public* command via `toSpec()`/`toCommand()`; view/output DTOs live in
+  `internal/application`. Exception: genuine app I/O a non-controller consumes (e.g. `FactorVerificationRequest`)
+  stays in `application`.
+- **No HTTP-status branching on domain results** — services throw `ApiException` subtypes,
+  `GlobalExceptionHandler` maps them. Never `ResponseEntity.status(4xx)` for a domain outcome.
+- **4+ constructor params → factory/conversion at the layer boundary** (`request.toSpec()`,
+  `View.of(domain)`), never `new X(a,b,c,d,…)` at a call site. Genuine multi-source parameter objects
+  (`AppAccessQuery`, `AuditRecord`) stay constructors.
+- **Never expose a JPA entity/repository across a module.** Other modules consume only root read-model
+  interfaces (`UserAccount`, `AuthPolicyView`, …), record DTOs, or service methods; use `shared.IdName`
+  for id/name lookups.
 
-## Code style (STRICT — enforced on review)
+## Code style (STRICT)
 
-- **Never write a fully-qualified name inline — always `import`.** This includes `package-info.java`
-  annotations (`@ApplicationModule` + the import AFTER the `package` line, Spring-style).
-- **Never use setters** (`setX`), not on entities, not on DTOs. Mutate via intention-revealing
-  domain methods (`enable()`, `changePassword(...)`, `assignRoles(...)`) and fully-initializing
-  constructors; JPA uses field access + a `protected` no-arg ctor.
-- **Records for immutables** (DTOs, views, commands, results) — records are the default; use a class
-  only when a record genuinely can't express it (e.g. JPA entities).
-- **Use Lombok maximally** — `@Getter`, `@RequiredArgsConstructor`, `@Slf4j`, `@Builder` — but
-  **never `@Setter` or `@Data`** (Data pulls in setters).
-- One public type per file; avoid nested/inner classes unless truly necessary.
-- **No `private static` methods unless `static` is required.** A private helper is an instance method
-  by default; add `static` only when it is genuinely called from a static context (a `static`
-  factory/initializer or another `static` method). Do not mark a private method `static` merely
-  because it happens not to touch instance state. (`private static final` **constants** are fine.)
-- **Throw the shared `ApiException` subtypes for client-facing (4xx) errors** — `NotFoundException`,
-  `BadRequestException`, `ConflictException`, `ForbiddenException`, `UnauthorizedException` (in
-  `shared.error`) — never raw `IllegalArgumentException` or `ResponseStatusException` from
-  application/controller code. Reserve `IllegalStateException`/`IllegalArgumentException` for genuine
-  server-side invariant or infrastructure failures (500-class, surfaced by the server-error auditor).
-- **No magic strings.** Domain/protocol values and literal collections (scopes, grant types, factor
-  names, HTTP methods, well-known ids/paths) belong in an `enum`, a meaningful `static final`
-  constant, or a dedicated constants class — reuse the framework's own constants (`OidcScopes`,
-  `AuthorizationGrantType`, `ClientAuthenticationMethod`, `HttpMethod`, …) where they exist. If the
-  value is really a tunable, externalize it to config instead (see below).
+- **Import — never inline fully-qualified names** (incl. `package-info.java`).
+- **No setters** anywhere; mutate via intention-revealing methods + fully-initializing constructors
+  (JPA uses field access + a `protected` no-arg ctor).
+- **Records for immutables** (DTOs/views/commands); a class only when a record can't express it (entities).
+- **Lombok** `@Getter/@RequiredArgsConstructor/@Slf4j/@Builder` — never `@Setter`/`@Data`.
+- One public type per file; avoid nested classes.
+- **No `private static` unless `static` is required** (`private static final` constants are fine).
+- **4xx → shared `ApiException` subtypes** (`NotFound/BadRequest/Conflict/Forbidden/Unauthorized/Locked`
+  in `shared.error`); reserve `IllegalState/IllegalArgument` for 500-class invariants.
+- **No magic strings/numbers** — protocol values → enum/constant (reuse `OidcScopes`, `HttpMethod`, …);
+  tunables → config (below).
 
 ## Persistence & config
 
-- **Flyway owns the schema; `spring.jpa.hibernate.ddl-auto=validate`.** Any schema change =
-  a new `V<n>__*.sql` migration; entities map to it (subset mappings are fine for validate).
-- **Externalize tunables** — no hardcoded timeouts/sizes/URLs; use `application.yml` + `@Value`.
-  Genuine protocol constants (algorithm names, claim keys, `ROLE_`/`FACTOR_` strings) stay as constants.
-- Spring Boot 4 splits autoconfig: a feature integration needs its explicit `spring-boot-<feature>`
-  module on the classpath (e.g. Flyway). If autoconfig "silently" doesn't run, check for the module.
+- **Flyway owns the schema; `ddl-auto=validate`.** Schema change = a new `V<n>__*.sql`; keep physical
+  columns identical across mapping refactors (`validate` is the gate).
+- **Entities extend `shared.domain` bases:** `AbstractEntity` (UUID id) or `AuditedEntity` (+`created_at`).
+  Don't re-declare id/created-at.
+- **Group cohesive columns into an `@Embeddable`** value object carrying its own behaviour (e.g.
+  `AccountLockout` in `AppUser`).
+- **Collections are LAZY — never `EAGER`.** Load with `join fetch` (over `@EntityGraph`); 2+ `Set`s in one
+  query is fine, `List` bags are not (MultipleBagFetchException). QueryDSL when dynamic/complex.
+- **A detached read must have every needed collection fetch-joined.** An entity read after its tx (cached
+  policy, a resolve result read off the request path, or a view projected in a non-`@Transactional` adapter)
+  throws `LazyInitializationException`. Fix by fetch-joining, or run load+projection in one tx (make the
+  adapter `@Transactional`). Cover adapter projections with an IT that runs OUTSIDE a tx (an ambient tx masks it).
+- **Externalize tunables** to `application.yml` + `@Value` — including annotation defaults (make the
+  annotation a marker and read the value from config), never a hardcoded number. Protocol constants stay constants.
+- **Step-up for sensitive admin actions:** mark destructive/privilege-escalating endpoints (all `*:delete`,
+  policy create/update, role/permission grants, group role/manager delegation, key/secret rotation) with
+  `@RequireStepUp`; `StepUpInterceptor` enforces `sso.security.step-up.sensitive-max-age` (the stricter of it
+  and the session re-auth window) via the `X-Step-Up-Required` 401.
+- **Boot 4 splits autoconfig:** a feature needs its `spring-boot-<feature>` module on the classpath (e.g. Flyway).
 
-## Testing / verifying
+## Testing
 
-- Unit + Testcontainers ITs via `./gradlew test` (needs Docker). Context startup runs Hibernate
-  `validate`, so entity-mapping mistakes fail tests.
-- MockMvc misparses `/oauth2/authorize` & SAML query strings — verify those flows with the live
-  `scripts/*.py`, not MockMvc.
-- After any structural change: `compileJava` + `ModularityTests` + full `test` green, and
-  `rg` for zero inline FQNs / zero cross-module entity imports.
+- `./gradlew test` (Testcontainers, needs Docker); context startup runs Hibernate `validate`.
+- MockMvc misparses `/oauth2/authorize` & SAML query strings — verify those with `scripts/*.py`.
+- After structural changes: `compileJava` + `ModularityTests` + full `test` green; `rg` for zero inline
+  FQNs / cross-module entity imports.
