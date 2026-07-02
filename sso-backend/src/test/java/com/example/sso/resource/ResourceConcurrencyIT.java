@@ -8,6 +8,7 @@ import com.example.sso.resource.internal.domain.ResourceType;
 import com.example.sso.resource.internal.domain.ResourceTypeRepository;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.NewUser;
+import com.example.sso.user.Roles;
 import com.example.sso.user.UserService;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,6 +23,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -47,6 +51,7 @@ class ResourceConcurrencyIT extends AbstractIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        asSuperAdmin(); // main thread; the concurrency workers set their own thread-local context
         ResourceType any = types.save(new ResourceType("CONC-ANY",
                 Set.of(MemberType.GROUP, MemberType.USER, MemberType.APPLICATION)));
         resourceId = resources.save(new Resource("Conc-Res", any)).getId();
@@ -54,6 +59,7 @@ class ResourceConcurrencyIT extends AbstractIntegrationTest {
 
     @AfterEach
     void cleanup() {
+        SecurityContextHolder.clearContext();
         resources.deleteAll();
         types.deleteAll();
         createdUsers.forEach(users::delete);
@@ -133,6 +139,7 @@ class ResourceConcurrencyIT extends AbstractIntegrationTest {
             List<Callable<Object>> wrapped = new ArrayList<>();
             for (Callable<Object> task : tasks) {
                 wrapped.add(() -> {
+                    asSuperAdmin(); // SecurityContext is thread-local — each worker needs its own
                     barrier.await();
                     return task.call();
                 });
@@ -141,6 +148,11 @@ class ResourceConcurrencyIT extends AbstractIntegrationTest {
         } finally {
             pool.shutdown();
         }
+    }
+
+    private void asSuperAdmin() {
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                "admin", null, List.of(new SimpleGrantedAuthority(Roles.ADMIN))));
     }
 
     private UUID user(String username) {

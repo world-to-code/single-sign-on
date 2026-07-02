@@ -10,6 +10,7 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.NewUser;
+import com.example.sso.user.Roles;
 import com.example.sso.user.UserService;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,6 +20,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -43,6 +47,9 @@ class ResourceMemberValidationIT extends AbstractIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        // Run as a super admin (unscoped): this suite exercises validation, not subtree scope.
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                "admin", null, List.of(new SimpleGrantedAuthority(Roles.ADMIN))));
         ResourceType any = types.save(new ResourceType("VAL-ANY",
                 Set.of(MemberType.GROUP, MemberType.USER, MemberType.APPLICATION)));
         resourceId = resources.save(new Resource("Val-Res", any)).getId();
@@ -50,6 +57,7 @@ class ResourceMemberValidationIT extends AbstractIntegrationTest {
 
     @AfterEach
     void cleanup() {
+        SecurityContextHolder.clearContext();
         resources.deleteAll();
         types.deleteAll();
         createdUsers.forEach(users::delete);

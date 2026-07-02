@@ -25,8 +25,13 @@ import org.springframework.transaction.annotation.Transactional;
  * Admin management of the resource DAG: types, nodes, edges, members, and delegation grants. Every
  * referenced entity (member group/user/application, grantee) is validated to EXIST before it is
  * attached, so scope rows can never point at ids that were never real. Views are projected inside
- * the loading transaction (the collections are LAZY). Scope ENFORCEMENT (who may call this) stays
- * with {@code @RequirePermission} at the controller until the subtree-scoping phase.
+ * the loading transaction (the collections are LAZY).
+ *
+ * <p>Enforcement is layered: the controller's {@code @RequirePermission} gates PBAC, then THIS service
+ * enforces subtree SCOPE per method through {@link ResourceAccessPolicy} (a super admin bypasses; a
+ * delegated resource admin is confined to their subtree). Scope is checked imperatively here rather
+ * than via a {@code @Can*}/{@code @PreAuthorize} annotation because {@code list()} must FILTER results
+ * and the edge/pull-in guards read multiple arguments — so all resource-scope logic stays co-located.
  */
 @Service
 @RequiredArgsConstructor
@@ -35,6 +40,7 @@ public class ResourceAdminService {
     private final ResourceRepository resources;
     private final ResourceTypeRepository types;
     private final ResourceGraphService graph;
+    private final ResourceAccessPolicy access;
     private final UserService users;
     private final UserGroupService groups;
     private final ApplicationService applications;
@@ -46,6 +52,8 @@ public class ResourceAdminService {
         return types.findAllWithKinds().stream().map(ResourceTypeView::of).toList();
     }
 
+    // create/createType are intentionally unscoped: they mint a DETACHED node/type with no grants or
+    // edges, conferring no reach — a scoped admin can only wire it in later via the (both-endpoints) edge guard.
     @Transactional
     public ResourceTypeView createType(String name, Set<MemberType> allowedMemberTypes) {
         if (types.findByNameFetchingKinds(name).isPresent()) {
@@ -58,11 +66,16 @@ public class ResourceAdminService {
 
     @Transactional(readOnly = true)
     public List<ResourceView> list() {
-        return resources.findAllForAdminView().stream().map(ResourceView::of).toList();
+        boolean unscoped = access.isUnscoped();
+        Set<UUID> managed = unscoped ? Set.of() : access.managedResourceIds();
+        return resources.findAllForAdminView().stream()
+                .filter(resource -> unscoped || managed.contains(resource.getId()))
+                .map(ResourceView::of).toList();
     }
 
     @Transactional(readOnly = true)
     public ResourceView get(UUID id) {
+        access.requireManage(id);
         return ResourceView.of(requireForView(id));
     }
 
@@ -76,6 +89,7 @@ public class ResourceAdminService {
 
     @Transactional
     public ResourceView rename(UUID id, String name) {
+        access.requireManage(id);
         Resource resource = requireForView(id);
         resource.rename(name);
         return ResourceView.of(resource);
@@ -83,16 +97,25 @@ public class ResourceAdminService {
 
     @Transactional
     public void delete(UUID id) {
+        access.requireManage(id);
         resources.delete(require(id)); // edges/members/grants go with it (DB cascade)
     }
 
     // --- Edges (cycle-checked + serialized in ResourceGraphService) ---
 
+    @Transactional
     public void attachChild(UUID parentId, UUID childId) {
+        // Edge guard: must manage BOTH endpoints, or a scoped admin could graft an unmanaged subtree
+        // under theirs (to absorb it) or attach their subtree under a parent to inherit upward. One tx
+        // gives the scope check and the graph write a consistent snapshot (matches the other mutators, OSIV-off).
+        access.requireManage(parentId);
+        access.requireManage(childId);
         graph.attachChild(parentId, childId);
     }
 
+    @Transactional
     public void detachChild(UUID parentId, UUID childId) {
+        access.requireManage(parentId);
         graph.detachChild(parentId, childId);
     }
 
@@ -100,6 +123,8 @@ public class ResourceAdminService {
 
     @Transactional
     public ResourceView attachMember(UUID id, MemberType memberType, String memberId) {
+        access.requireManage(id);
+        access.requireManagesMember(memberType, memberId); // pull-in guard
         Resource resource = resources.findByIdWithTypeKinds(id)
                 .orElseThrow(() -> new NotFoundException("Resource not found."));
         requireMemberExists(memberType, memberId);
@@ -109,6 +134,7 @@ public class ResourceAdminService {
 
     @Transactional
     public ResourceView detachMember(UUID id, MemberType memberType, String memberId) {
+        access.requireManage(id);
         Resource resource = require(id);
         resource.detachMember(member(memberType, memberId));
         return ResourceView.of(requireForView(id));
@@ -117,7 +143,7 @@ public class ResourceAdminService {
     /** Builds a member value, turning a malformed GROUP/USER uuid into a 400 rather than a 500. */
     private ResourceMember member(MemberType memberType, String memberId) {
         if (memberType == MemberType.GROUP || memberType == MemberType.USER) {
-            requireUuid(memberId);
+            MemberIds.requireUuid(memberId);
         }
         return new ResourceMember(memberType, memberId);
     }
@@ -126,6 +152,7 @@ public class ResourceAdminService {
 
     @Transactional
     public ResourceView assignAdmin(UUID id, UUID userId) {
+        access.requireManage(id); // delegate admin only WITHIN your managed subtree
         users.findById(userId).orElseThrow(() -> new NotFoundException("User not found."));
         Resource resource = require(id);
         resource.grant(ResourceGrant.admin(userId));
@@ -134,6 +161,7 @@ public class ResourceAdminService {
 
     @Transactional
     public ResourceView revokeAdmin(UUID id, UUID userId) {
+        access.requireManage(id);
         Resource resource = require(id);
         resource.revoke(userId, ResourceRoleTier.ADMIN);
         return ResourceView.of(requireForView(id));
@@ -151,25 +179,16 @@ public class ResourceAdminService {
     private void requireMemberExists(MemberType memberType, String memberId) {
         boolean exists = switch (memberType) {
             case GROUP -> {
-                groups.get(requireUuid(memberId)); // throws NotFoundException when absent
+                groups.get(MemberIds.requireUuid(memberId)); // throws NotFoundException when absent
                 yield true;
             }
-            case USER -> users.findById(requireUuid(memberId)).isPresent();
+            case USER -> users.findById(MemberIds.requireUuid(memberId)).isPresent();
             case APPLICATION -> applications.listApplications().stream()
                     .anyMatch(app -> app.id().equals(memberId));
             case RESOURCE -> throw new BadRequestException("Child resources are attached as edges, not members.");
         };
         if (!exists) {
             throw new NotFoundException("Member " + memberType + " not found.");
-        }
-    }
-
-    /** A malformed uuid in the request body is the client's fault (400), not a server error (500). */
-    private UUID requireUuid(String value) {
-        try {
-            return UUID.fromString(value);
-        } catch (IllegalArgumentException e) {
-            throw new BadRequestException("Member id must be a UUID.");
         }
     }
 }

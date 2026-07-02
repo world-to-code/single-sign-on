@@ -26,7 +26,10 @@ public class ResourceGraphService {
     @Transactional
     public void attachChild(UUID parentId, UUID childId) {
         // Serialize edge mutations: the cycle check below is check-then-act, so two concurrent
-        // attaches could otherwise each pass it and insert the two halves of a cycle.
+        // attaches could otherwise each pass it and insert the two halves of a cycle. Correctness
+        // assumes READ COMMITTED (the default): reaches() re-snapshots per statement, so after the lock
+        // it sees the winner's committed edge. Under REPEATABLE READ/SERIALIZABLE the tx snapshot could
+        // predate the lock — re-read the edges after locking before raising isolation.
         resources.lockEdgeMutations();
         Resource parent = resources.findById(parentId)
                 .orElseThrow(() -> new NotFoundException("Resource not found."));
