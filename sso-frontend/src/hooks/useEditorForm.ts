@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Dispatch, FormEvent, SetStateAction } from "react";
+import { errorMessage } from "@/api";
 
 export interface EditorForm<E> {
   editor: E;
@@ -47,7 +48,8 @@ export function useEditorForm<E extends { id: string | null }>(opts: {
       setOpen(false);
       onSaved();
     } catch (e) {
-      setError(String(e));
+      // A cancelled step-up maps to "" (no message): the dialog stays open with the draft intact.
+      setError(errorMessage(e));
     }
   };
 

@@ -5,6 +5,7 @@ import {
   getGroup, getGroupApplications, getGroupMembers, setGroupRoles,
   type Group, type GroupApp, type GroupMembersPage,
 } from "@/groups";
+import { errorMessage } from "@/api";
 import { listRoles, type Role } from "@/roles";
 import { Pagination } from "@/components/Pagination";
 import { PageHeader } from "@/components/PageHeader";
@@ -32,13 +33,13 @@ export default function GroupDetail() {
   const [roleSel, setRoleSel] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  function loadGroup() { getGroup(id).then(setGroup).catch((e) => setError(String(e))); }
+  function loadGroup() { getGroup(id).then(setGroup).catch((e) => setError(errorMessage(e))); }
   useEffect(loadGroup, [id]);
   useEffect(() => {
-    if (tab === "members") getGroupMembers(id, page, SIZE).then(setMembers).catch((e) => setError(String(e)));
+    if (tab === "members") getGroupMembers(id, page, SIZE).then(setMembers).catch((e) => setError(errorMessage(e)));
   }, [id, tab, page]);
   useEffect(() => {
-    if (tab === "apps") getGroupApplications(id).then(setApps).catch((e) => setError(String(e)));
+    if (tab === "apps") getGroupApplications(id).then(setApps).catch((e) => setError(errorMessage(e)));
   }, [id, tab]);
   useEffect(() => {
     if (tab === "roles") listRoles().then(setAllRoles).catch(() => undefined);
@@ -57,7 +58,7 @@ export default function GroupDetail() {
       setGroup(updated);
       setRolesOpen(false);
     } catch (e) {
-      setError(String(e));
+      setError(errorMessage(e));
     }
   }
 

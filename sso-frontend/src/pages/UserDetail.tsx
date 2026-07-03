@@ -11,6 +11,7 @@ import {
   type ActivityEntry, type UserApplication, type UserDetail as UserDetailData, type UserDevices,
   type UserSession,
 } from "@/users";
+import { errorMessage } from "@/api";
 import { ADMIN_ROLE, listPermissions, listRoles, togglePermission, type Permission, type Role } from "@/roles";
 import { usePaginated } from "@/usePaginated";
 import { Pagination } from "@/components/Pagination";
@@ -48,7 +49,7 @@ export default function UserDetail({ session }: { session: SessionView }) {
   const [tab, setTab] = useState<Tab>("overview");
   const activityPage = usePaginated<ActivityEntry>(`/api/admin/users/${id}/activity`);
 
-  function load() { getUser(id).then(setUser).catch((e) => setError(String(e))); }
+  function load() { getUser(id).then(setUser).catch((e) => setError(errorMessage(e))); }
   useEffect(load, [id]);
   useEffect(() => {
     getUserApplications(id).then(setApps).catch(() => undefined);
@@ -103,7 +104,7 @@ export default function UserDetail({ session }: { session: SessionView }) {
       setRolesOpen(false);
       load();
     } catch (e) {
-      setError(String(e));
+      setError(errorMessage(e));
     }
   }
 
@@ -117,7 +118,7 @@ export default function UserDetail({ session }: { session: SessionView }) {
       setPermsOpen(false);
       load();
     } catch (e) {
-      setError(String(e));
+      setError(errorMessage(e));
     }
   }
 

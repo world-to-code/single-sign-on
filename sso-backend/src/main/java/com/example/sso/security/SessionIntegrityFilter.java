@@ -5,6 +5,7 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.session.SessionMetadataStore;
 import com.example.sso.session.SessionPolicyDetails;
 import com.example.sso.session.SessionPolicyService;
+import com.example.sso.session.StepUpInterceptor;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,6 +13,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -22,6 +24,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.stream.Collectors;
 
 /**
  * Zero-Trust session integrity: an authenticated session cookie is never trusted on its own.
@@ -61,6 +65,10 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
             SessionPolicyDetails policy = policyService.resolveForUsername(username);
             long now = System.currentTimeMillis();
 
+            // (Per-policy network/IP access is enforced separately by PolicyIpAccessFilter, which runs on
+            //  BOTH security chains — the OIDC authorization-server chain is a separate chain this filter
+            //  never sees.)
+
             // Drive the servlet container's idle timeout from the policy (a small grace so the precise
             // idle check below rejects first, with its audit); otherwise the fixed server.servlet.session
             // .timeout would silently cap any policy idle above it.
@@ -89,6 +97,23 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
                 reject(session, response, AuditType.SESSION_EXPIRED_IDLE, username);
                 return;
             }
+
+            // Idle-based MANDATORY re-authentication: after reauthIntervalMinutes with no (non-exempt) request,
+            // the session must be re-verified before it is used again. Unlike idle/absolute expiry this does
+            // NOT invalidate the session — it stays signed in but every protected request is refused with a
+            // step-up challenge until the user re-authenticates, so a dismissed client modal cannot bypass it.
+            // The auth/re-auth flow and the config the timers read are exempt (else lock-out); only a non-exempt
+            // request refreshes the re-auth clock (which login and each re-auth also stamp).
+            if (!isReauthExempt(request)) {
+                Object lastReauth = session.getAttribute(StepUpInterceptor.REAUTH_ACTIVITY);
+                long reauthGap = lastReauth instanceof Long r ? now - r : now - session.getCreationTime();
+                if (reauthGap > policy.getReauthIntervalMinutes() * 60_000L) {
+                    challengeReauth(session, response, policy.getReauthFactors());
+                    return;
+                }
+                session.setAttribute(StepUpInterceptor.REAUTH_ACTIVITY, now);
+            }
+
             session.setAttribute(LAST_ACTIVITY, now);
             sessionMetadata.touch(session.getId()); // refresh "last seen" for the My Profile sessions list
 
@@ -115,6 +140,39 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
 
         response.setStatus(HttpStatus.UNAUTHORIZED.value());
         response.getWriter().write("Session is no longer valid. Please sign in again.");
+    }
+
+    /**
+     * Only what is needed to (re-)authenticate or render the prompt stays reachable while re-auth is due:
+     * the re-auth flow, session bootstrap, logout, the timers' config read, and SPA/static GETs. Sensitive
+     * self-service (factor/passkey enrollment, session management) is intentionally NOT exempt, so a session
+     * idle past the interval must re-authenticate before it can be used for those. The login flow runs before
+     * the session is authenticated, so it is not subject to this gate.
+     */
+    private boolean isReauthExempt(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        if (!path.startsWith("/api/")) {
+            // SPA assets / non-API GETs must load so the modal can render — but the built-in /webauthn/register
+            // passkey enrollment (an authenticated, sensitive mutation) is gated.
+            return !path.startsWith("/webauthn/register");
+        }
+        return path.startsWith("/api/auth/reauth/")
+                || path.equals("/api/auth/session")
+                || path.equals("/api/auth/logout")
+                || path.equals("/api/portal/session-config");
+    }
+
+    /** Refuse the request with a step-up challenge WITHOUT invalidating — the session is alive, just stale. */
+    private void challengeReauth(HttpSession session, HttpServletResponse response, String reauthFactors)
+            throws IOException {
+        session.setAttribute(StepUpInterceptor.STEPUP_FACTORS, reauthFactors); // ReauthService verifies against this
+        String factors = Arrays.stream(reauthFactors.split(","))
+                .map(String::trim).filter(s -> !s.isEmpty())
+                .map(s -> "\"" + s + "\"").collect(Collectors.joining(","));
+        response.setStatus(HttpStatus.UNAUTHORIZED.value());
+        response.setHeader("X-Step-Up-Required", "true");
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.getWriter().write("{\"reauthRequired\":true,\"mandatory\":true,\"factors\":[" + factors + "]}");
     }
 
     private boolean isAuthenticated(Authentication authentication) {

@@ -15,8 +15,21 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Thrown when the user dismisses a step-up prompt (Cancel / X). It is NOT a failure: the pending action
+ * is simply abandoned, with no side effects and no error surfaced ({@link errorMessage} maps it to "").
+ */
+export class StepUpCancelledError extends Error {
+  constructor() {
+    super("Step-up re-authentication was cancelled");
+  }
+}
+
 /** Human-friendly copy for a caught request error, mapping known statuses to plain language. */
 export function errorMessage(e: unknown): string {
+  if (e instanceof StepUpCancelledError) {
+    return ""; // cancelled step-up: nothing went wrong, so show no message
+  }
   if (e instanceof ApiError) {
     switch (e.status) {
       case 401: return "Re-authentication required — please retry.";
@@ -103,9 +116,12 @@ export async function apiDelete(path: string): Promise<void> {
 /** Why a step-up prompt is shown — drives the modal copy. */
 export type StepUpReason = "action" | "session";
 
-let stepUpHandler: ((reason: StepUpReason) => Promise<boolean>) | null = null;
+/** The modal prompts for a fresh factor; `factors` (when known) limits the offered methods to those the policy allows. */
+export type StepUpHandler = (reason: StepUpReason, factors?: string[]) => Promise<boolean>;
+
+let stepUpHandler: StepUpHandler | null = null;
 const stepUpWaiters: Array<() => void> = [];
-export function registerStepUpHandler(handler: ((reason: StepUpReason) => Promise<boolean>) | null): void {
+export function registerStepUpHandler(handler: StepUpHandler | null): void {
   stepUpHandler = handler;
   if (handler) {
     stepUpWaiters.splice(0).forEach((notify) => notify()); // release anyone who asked before we registered
@@ -117,23 +133,30 @@ export function registerStepUpHandler(handler: ((reason: StepUpReason) => Promis
  * (React runs child effects first), so AdminGuard on a fresh /admin load would otherwise see no
  * handler, get false, and bounce the user out. Times out to false if no modal ever appears.
  */
-export function triggerStepUp(reason: StepUpReason = "session"): Promise<boolean> {
+export function triggerStepUp(reason: StepUpReason = "session", factors?: string[]): Promise<boolean> {
   if (stepUpHandler) {
-    return stepUpHandler(reason);
+    return stepUpHandler(reason, factors);
   }
   return new Promise<boolean>((resolve) => {
     let settled = false;
     const run = () => {
       if (settled) return;
       settled = true;
-      resolve(stepUpHandler ? stepUpHandler(reason) : false);
+      resolve(stepUpHandler ? stepUpHandler(reason, factors) : false);
     };
     stepUpWaiters.push(run);
     setTimeout(run, 3000);
   });
 }
 
+/** Wall-clock of the last API request — the client re-auth/idle timers measure inactivity from here. */
+let lastActivityAt = Date.now();
+export function lastActivityMillis(): number {
+  return lastActivityAt;
+}
+
 async function send<T>(method: string, path: string, body?: unknown, retried = false): Promise<T> {
+  lastActivityAt = Date.now(); // a request IS activity — resets the inactivity clocks the timers watch
   const res = await fetch(path, {
     method,
     credentials: "include",
@@ -141,10 +164,16 @@ async function send<T>(method: string, path: string, body?: unknown, retried = f
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (res.status === 401 && res.headers.get("X-Step-Up-Required") === "true" && !retried && stepUpHandler) {
-    const ok = await stepUpHandler("action"); // a sensitive request triggered this
+    const challenge = await res.json().catch(() => ({} as { factors?: string[]; mandatory?: boolean }));
+    const factors = Array.isArray(challenge.factors) ? challenge.factors : undefined;
+    // `mandatory` = the session's periodic re-auth is overdue (server-enforced, non-cancelable);
+    // otherwise a sensitive action triggered a step-up the user may still decline.
+    const ok = await stepUpHandler(challenge.mandatory ? "session" : "action", factors);
     if (ok) {
       return send<T>(method, path, body, true); // retry once after re-authentication
     }
+    // A declined action: abandon it with no side effects — NOT a logout, NOT a surfaced error.
+    throw new StepUpCancelledError();
   }
   if (handleElevationChallenge(path, res)) {
     return new Promise<T>(() => {}); // navigating away; never resolves

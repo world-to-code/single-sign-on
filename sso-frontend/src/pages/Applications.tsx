@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AppWindow, Lock, Network, Settings, Trash2, UserPlus, Users as UsersIcon } from "lucide-react";
-import { apiGet, apiPost, apiPut, type Page } from "../api";
+import { apiGet, apiPost, apiPut, errorMessage, type Page } from "../api";
 import { PageHeader } from "@/components/PageHeader";
 import { usePaginated } from "@/usePaginated";
 import { Pagination } from "@/components/Pagination";
@@ -76,7 +76,7 @@ export default function Applications() {
 
   function openSettings() {
     setSettingsError(null); setSettingsSaved(false); setSettings(null); setSettingsOpen(true);
-    apiGet<PortalSettings>("/api/admin/portal-settings").then(setSettings).catch((e) => setSettingsError(String(e)));
+    apiGet<PortalSettings>("/api/admin/portal-settings").then(setSettings).catch((e) => setSettingsError(errorMessage(e)));
   }
 
   async function saveSettings() {
@@ -86,7 +86,7 @@ export default function Applications() {
       const saved = await apiPut<PortalSettings>("/api/admin/portal-settings", settings);
       setSettings(saved); setSettingsSaved(true);
     } catch (e) {
-      setSettingsError(String(e));
+      setSettingsError(errorMessage(e));
     }
   }
 
@@ -97,7 +97,7 @@ export default function Applications() {
       await apiPut(`/api/admin/applications/${active.type.toLowerCase()}/${active.id}/policy`, { requiredPolicyId: appPolicyId || null });
       reload();
     } catch (e) {
-      setFormError(String(e));
+      setFormError(errorMessage(e));
     }
   }
 
@@ -112,7 +112,7 @@ export default function Applications() {
       setSubjectId(""); setRequiredPolicyId(""); setPickerKey((k) => k + 1);
       loadAssignments(active);
     } catch (e) {
-      setFormError(String(e));
+      setFormError(errorMessage(e));
     }
   }
 

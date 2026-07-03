@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Coins, KeyRound } from "lucide-react";
-import { apiPost } from "../api";
+import { apiPost, errorMessage } from "../api";
 import { PageHeader } from "@/components/PageHeader";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -31,7 +31,7 @@ export default function ScimTokens() {
       });
       setIssued(result);
     } catch (e) {
-      setError(String(e));
+      setError(errorMessage(e));
     }
   }
 

@@ -33,6 +33,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     private static final Set<String> LIMITED_PATHS =
             Set.of("/api/auth/identify", "/api/auth/login");
     private static final String FACTORS_PREFIX = "/api/auth/factors/"; // .../prepare and .../verify
+    private static final String REAUTH_PREFIX = "/api/auth/reauth/";   // step-up / re-auth .../prepare and .../verify
 
     private final InMemoryRateLimiter rateLimiter;
     private final AuditService audit;
@@ -67,6 +68,8 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     }
 
     private boolean isLimited(String path) {
-        return LIMITED_PATHS.contains(path) || path.startsWith(FACTORS_PREFIX);
+        return LIMITED_PATHS.contains(path)
+                || path.startsWith(FACTORS_PREFIX)
+                || path.startsWith(REAUTH_PREFIX);
     }
 }

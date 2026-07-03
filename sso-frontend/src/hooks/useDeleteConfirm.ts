@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { apiDelete } from "@/api";
+import { apiDelete, StepUpCancelledError } from "@/api";
 import { useConfirm } from "@/components/ConfirmProvider";
 
 export interface DeleteRequest {
@@ -27,8 +27,13 @@ export function useDeleteConfirm() {
       variant: "destructive",
     });
     if (!ok) return;
-    if (request.path) await apiDelete(request.path);
-    else if (request.run) await request.run();
+    try {
+      if (request.path) await apiDelete(request.path);
+      else if (request.run) await request.run();
+    } catch (e) {
+      if (e instanceof StepUpCancelledError) return; // cancelled step-up — abandon the delete, no side effect
+      throw e;
+    }
     request.onDeleted();
   }, [confirm]);
 }
