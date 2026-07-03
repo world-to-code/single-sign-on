@@ -40,7 +40,7 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
         }
 
         SamlRelyingParty rp = new SamlRelyingParty(request.entityId(), request.acsUrl(), nameIdFormat(request));
-        rp.update(request.acsUrl(), nameIdFormat(request), settings(request),
+        rp.update(request.displayName(), request.acsUrl(), nameIdFormat(request), settings(request),
                 trimToNull(request.signingCertificate()), trimToNull(request.encryptionCertificate()),
                 trimToNull(request.spLoginUrl()));
         return toView(relyingParties.save(rp));
@@ -52,7 +52,7 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
         SamlRelyingParty rp = relyingParties.findById(id)
                 .orElseThrow(() -> new NotFoundException("relying party not found"));
 
-        rp.update(request.acsUrl(), nameIdFormat(request), settings(request),
+        rp.update(request.displayName(), request.acsUrl(), nameIdFormat(request), settings(request),
                 trimToNull(request.signingCertificate()), trimToNull(request.encryptionCertificate()),
                 trimToNull(request.spLoginUrl()));
         return toView(relyingParties.save(rp));
@@ -100,7 +100,8 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
     }
 
     private RelyingPartyView toView(SamlRelyingParty rp) {
-        return new RelyingPartyView(rp.getId().toString(), rp.getEntityId(), rp.getAcsUrl(), rp.getNameIdFormat(),
+        return new RelyingPartyView(rp.getId().toString(), rp.getEntityId(), rp.getDisplayName(),
+                rp.getAcsUrl(), rp.getNameIdFormat(),
                 rp.isSignAssertion(), rp.isSignResponse(), rp.isEncryptAssertion(),
                 rp.getSignatureAlgorithm(), rp.getDataEncryptionAlgorithm(), rp.getKeyTransportAlgorithm(),
                 rp.isWantAuthnRequestsSigned(), rp.isAllowIdpInitiated(),

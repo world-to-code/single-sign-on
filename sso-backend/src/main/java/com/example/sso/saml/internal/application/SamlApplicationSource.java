@@ -27,7 +27,8 @@ public class SamlApplicationSource implements ApplicationSource {
     @Override
     public List<ApplicationDescriptor> applications() {
         return relyingParties.findAll().stream()
-                .map(rp -> new ApplicationDescriptor(AppType.SAML, rp.getId().toString(), rp.getEntityId(),
+                .map(rp -> new ApplicationDescriptor(AppType.SAML, rp.getId().toString(),
+                        StringUtils.hasText(rp.getDisplayName()) ? rp.getDisplayName() : rp.getEntityId(),
                         launchUrl(rp), false))
                 .toList();
     }

@@ -24,6 +24,10 @@ public class SamlRelyingParty extends AuditedEntity {
     @Column(name = "entity_id", nullable = false, unique = true, length = 512)
     private String entityId;
 
+    /** Friendly admin-set label shown in the app lists; falls back to {@code entityId} when unset. */
+    @Column(name = "display_name", length = 256)
+    private String displayName;
+
     @Column(name = "acs_url", nullable = false, length = 1024)
     private String acsUrl;
 
@@ -52,9 +56,10 @@ public class SamlRelyingParty extends AuditedEntity {
         this.nameIdFormat = nameIdFormat;
     }
 
-    /** Admin edit of the endpoint, security policy, and SP certificates (entityId is immutable). */
-    public void update(String acsUrl, String nameIdFormat, SamlSecuritySettings settings,
+    /** Admin edit of the display name, endpoint, security policy, and SP certificates (entityId is immutable). */
+    public void update(String displayName, String acsUrl, String nameIdFormat, SamlSecuritySettings settings,
                        String signingCertificate, String encryptionCertificate, String spLoginUrl) {
+        this.displayName = displayName == null || displayName.isBlank() ? null : displayName.trim();
         this.acsUrl = acsUrl;
         this.nameIdFormat = nameIdFormat;
         this.security = settings;

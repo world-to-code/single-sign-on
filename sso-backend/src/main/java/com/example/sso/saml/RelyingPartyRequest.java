@@ -7,7 +7,8 @@ import jakarta.validation.constraints.NotBlank;
  * update). Algorithm fields accept modern or legacy symbolic names; blank values fall back to secure
  * defaults. Certificates are PEM (blank = none).
  */
-public record RelyingPartyRequest(@NotBlank String entityId, @NotBlank String acsUrl, String nameIdFormat,
+public record RelyingPartyRequest(@NotBlank String entityId, String displayName, @NotBlank String acsUrl,
+                                  String nameIdFormat,
                                   boolean signAssertion, boolean signResponse, boolean encryptAssertion,
                                   String signatureAlgorithm, String dataEncryptionAlgorithm,
                                   String keyTransportAlgorithm, boolean wantAuthnRequestsSigned,

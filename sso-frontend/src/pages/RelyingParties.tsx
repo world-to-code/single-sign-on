@@ -22,6 +22,7 @@ import { useEditorForm } from "@/hooks/useEditorForm";
 interface RelyingParty {
   id: string;
   entityId: string;
+  displayName: string | null;
   acsUrl: string;
   nameIdFormat: string;
   signAssertion: boolean;
@@ -39,7 +40,7 @@ interface RelyingParty {
 
 const blank = {
   id: null as string | null,
-  entityId: "", acsUrl: "", nameIdFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+  entityId: "", displayName: "", acsUrl: "", nameIdFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
   signAssertion: true, signResponse: false, encryptAssertion: false,
   signatureAlgorithm: "RSA_SHA256", dataEncryptionAlgorithm: "AES256_GCM", keyTransportAlgorithm: "RSA_OAEP",
   wantAuthnRequestsSigned: false, allowIdpInitiated: true,
@@ -67,7 +68,7 @@ export default function RelyingParties() {
   useEffect(reload, []);
 
   function edit(rp: RelyingParty) {
-    openEdit({ ...rp, signingCertificate: rp.signingCertificate ?? "", encryptionCertificate: rp.encryptionCertificate ?? "", spLoginUrl: rp.spLoginUrl ?? "" });
+    openEdit({ ...rp, displayName: rp.displayName ?? "", signingCertificate: rp.signingCertificate ?? "", encryptionCertificate: rp.encryptionCertificate ?? "", spLoginUrl: rp.spLoginUrl ?? "" });
   }
 
   async function remove(rp: RelyingParty) {
@@ -121,7 +122,10 @@ export default function RelyingParties() {
             <TableBody>
               {items.map((rp) => (
                 <TableRow key={rp.id}>
-                  <TableCell className="font-medium">{rp.entityId}</TableCell>
+                  <TableCell className="font-medium">
+                    {rp.displayName || rp.entityId}
+                    {rp.displayName && <div className="text-xs font-normal text-muted-foreground">{rp.entityId}</div>}
+                  </TableCell>
                   <TableCell className="max-w-xs truncate text-muted-foreground" title={rp.acsUrl}>{rp.acsUrl}</TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
@@ -170,6 +174,11 @@ export default function RelyingParties() {
                 <Label htmlFor="rp-entity">Entity ID</Label>
                 <Input id="rp-entity" value={editor.entityId} disabled={!!editor.id} required
                        onChange={(e) => set({ entityId: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="rp-display">Display name</Label>
+                <Input id="rp-display" value={editor.displayName} placeholder="Friendly name shown in app lists (defaults to Entity ID)"
+                       onChange={(e) => set({ displayName: e.target.value })} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="rp-acs">ACS URL</Label>
