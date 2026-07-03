@@ -11,8 +11,6 @@ public interface NetworkZoneRepository extends JpaRepository<NetworkZone, UUID> 
 
     Optional<NetworkZone> findByName(String name);
 
-    List<NetworkZone> findAllByOrderByNameAsc();
-
     /** All zones with their CIDR sets fetch-joined, so the cache can hold them detached (a Set → no bag). */
     @Query("select distinct z from NetworkZone z left join fetch z.cidrs")
     List<NetworkZone> findAllWithCidrs();

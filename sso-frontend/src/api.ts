@@ -31,11 +31,15 @@ export function errorMessage(e: unknown): string {
     return ""; // cancelled step-up: nothing went wrong, so show no message
   }
   if (e instanceof ApiError) {
+    // The server's ProblemDetail `detail` (when parse() captured one) is more precise than a status
+    // line for input/conflict errors — e.g. "invalid CIDR: x" or "zone is referenced by a policy".
+    const detail = e.message.startsWith("HTTP ") ? null : e.message;
     switch (e.status) {
+      case 400: return detail ?? "Invalid input — please check the form.";
       case 401: return "Re-authentication required — please retry.";
       case 403: return "You don't have permission for this action.";
       case 404: return "Not found — it may have been removed.";
-      case 409: return "Conflict — the change wasn't applied.";
+      case 409: return detail ?? "Conflict — the change wasn't applied.";
       default: return `Request failed (${e.status}).`;
     }
   }
@@ -80,7 +84,16 @@ function handleElevationChallenge(path: string, res: Response): boolean {
 
 async function parse<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    throw new ApiError(res.status);
+    // The backend answers RFC 7807 ProblemDetail — carry its `detail` so errorMessage() can show
+    // the precise reason (e.g. "invalid CIDR: x") instead of a generic status line.
+    const body = await res.text().catch(() => "");
+    let detail: string | undefined;
+    try {
+      detail = body ? (JSON.parse(body) as { detail?: string }).detail : undefined;
+    } catch {
+      detail = undefined;
+    }
+    throw new ApiError(res.status, detail);
   }
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;

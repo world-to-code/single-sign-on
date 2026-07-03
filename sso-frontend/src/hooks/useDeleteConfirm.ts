@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { apiDelete, StepUpCancelledError } from "@/api";
+import { apiDelete, errorMessage, StepUpCancelledError } from "@/api";
 import { useConfirm } from "@/components/ConfirmProvider";
 
 export interface DeleteRequest {
@@ -11,6 +11,8 @@ export interface DeleteRequest {
   /** ...or run a custom deletion (e.g. a typed helper). */
   run?: () => Promise<void>;
   onDeleted: () => void;
+  /** Surface a failed deletion (e.g. a 409 "still referenced") to the page instead of an unhandled rejection. */
+  onError?: (message: string) => void;
 }
 
 /**
@@ -32,6 +34,10 @@ export function useDeleteConfirm() {
       else if (request.run) await request.run();
     } catch (e) {
       if (e instanceof StepUpCancelledError) return; // cancelled step-up — abandon the delete, no side effect
+      if (request.onError) {
+        request.onError(errorMessage(e));
+        return;
+      }
       throw e;
     }
     request.onDeleted();

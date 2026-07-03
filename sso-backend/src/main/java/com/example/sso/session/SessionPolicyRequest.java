@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
  */
 public record SessionPolicyRequest(
         @NotBlank String name,
-        int priority,
+        @Min(0) @Max(1000) int priority,
         boolean enabled,
         @Min(1) @Max(10080) int absoluteTimeoutMinutes,
         @Min(1) @Max(1440) int idleTimeoutMinutes,

@@ -15,6 +15,7 @@ import { Field } from "@/components/form/fields";
 import { usersByIds } from "@/groups";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 
+interface IpRuleWire { zoneId: string; action: string; priority: number }
 interface SessionPolicy {
   id: string;
   name: string;
@@ -32,6 +33,7 @@ interface SessionPolicy {
   cookieSameSite: string;
   assignedUserIds: string[];
   assignedRoleIds: string[];
+  ipRules: IpRuleWire[];
 }
 interface Role { id: string; name: string }
 
@@ -188,6 +190,9 @@ function CookieCard({ policy, onSaved }: { policy: SessionPolicy; onSaved: () =>
         cookieSameSite: sameSite,
         assignedRoleIds: policy.assignedRoleIds,
         assignedUserIds: policy.assignedUserIds,
+        // Echo the zone rules: the update endpoint REPLACES them, so omitting this would silently wipe
+        // the Default policy's network rules on every cookie save.
+        ipRules: policy.ipRules,
       });
       setStatus("Cookie settings saved.");
       onSaved();

@@ -17,8 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/utils";
-import { tokens } from "@/lib/utils";
+import { cn, tokens } from "@/lib/utils";
 import { Field } from "@/components/form/fields";
 import { UserMultiSelect } from "@/components/UserMultiSelect";
 
@@ -131,10 +130,26 @@ export default function SessionPolicyDetail() {
 
   const set = (patch: Partial<Editor>) => setEditor((e) => (e ? { ...e, ...patch } : e));
 
+  /** Client-side check with a jump to the offending tab — the tabbed layout hides other tabs' fields. */
+  function validate(e: Editor): { tab: Tab; message: string } | null {
+    const intOf = (v: string) => (/^\d+$/.test(v.trim()) ? Number(v) : NaN);
+    if (!e.name.trim()) return { tab: "general", message: "Name is required." };
+    if (Number.isNaN(intOf(e.priority))) return { tab: "general", message: "Priority must be a whole number." };
+    if (!(intOf(e.absoluteTimeoutMinutes) >= 1)) return { tab: "general", message: "Absolute timeout must be at least 1 minute." };
+    if (!(intOf(e.idleTimeoutMinutes) >= 1)) return { tab: "general", message: "Idle timeout must be at least 1 minute." };
+    if (Number.isNaN(intOf(e.maxConcurrentSessions))) return { tab: "general", message: "Max concurrent sessions must be a whole number (0 = unlimited)." };
+    if (!(intOf(e.reauthIntervalMinutes) >= 1)) return { tab: "reauth", message: "Re-auth interval must be at least 1 minute." };
+    if (!(intOf(e.sensitiveReauthWindowMinutes) >= 1)) return { tab: "reauth", message: "Step-up window must be at least 1 minute." };
+    if (tokens(e.reauthFactors, ",").length === 0) return { tab: "reauth", message: "Pick at least one re-auth factor." };
+    if (tokens(e.stepUpFactors, ",").length === 0) return { tab: "reauth", message: "Pick at least one step-up factor." };
+    return null;
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!editor) return;
-    if (!editor.name.trim()) { setError("Name is required."); setTab("general"); return; }
+    const invalid = validate(editor);
+    if (invalid) { setError(invalid.message); setTab(invalid.tab); return; }
     setError(null); setBusy(true);
     const body = {
       name: editor.name,
@@ -198,7 +213,11 @@ export default function SessionPolicyDetail() {
               <NetworkTab editor={editor} set={set} zoneNames={zoneNames} addKey={addKey}
                           onAdd={(zoneId, label) => {
                             setZoneNames((m) => ({ ...m, [zoneId]: label }));
-                            set({ ipRules: [...editor.ipRules, { zoneId, action: "BLOCK" }] });
+                            // One rule per zone: a duplicate row could never fire (first-match) yet would
+                            // display as a meaningful rule — skip instead.
+                            if (!editor.ipRules.some((r) => r.zoneId === zoneId)) {
+                              set({ ipRules: [...editor.ipRules, { zoneId, action: "BLOCK" }] });
+                            }
                             setAddKey((k) => k + 1);
                           }} />
             )}

@@ -36,8 +36,9 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
     private final SessionPolicyRepository policies;
     private volatile Map<UUID, List<String>> cache = Map.of();
 
+    // No @Transactional: lifecycle callbacks bypass the proxy anyway; findAllWithCidrs opens its own tx
+    // and fetch-joins the CIDRs, so the detached entities are fully initialized.
     @PostConstruct
-    @Transactional(readOnly = true)
     public void load() {
         refresh();
     }

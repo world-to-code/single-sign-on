@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { createZone, updateZone, type NetworkZone } from "@/zones";
 import { PageHeader } from "@/components/PageHeader";
@@ -28,6 +29,7 @@ const blank: Editor = { id: null, name: "", description: "", cidrs: [""] };
 export default function NetworkZones() {
   const { items, total, page, setPage, size, error, reload } = usePaginated<NetworkZone>("/api/admin/network-zones");
   const confirmDelete = useDeleteConfirm();
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const { editor, set, open, setOpen, error: formError, openCreate, openEdit, save } = useEditorForm<Editor>({
     blank,
@@ -47,13 +49,16 @@ export default function NetworkZones() {
   const addCidr = () => set({ cidrs: [...editor.cidrs, ""] });
   const removeCidr = (i: number) => set({ cidrs: editor.cidrs.filter((_, j) => j !== i) });
 
-  const remove = (z: NetworkZone) =>
-    confirmDelete({
+  const remove = (z: NetworkZone) => {
+    setActionError(null);
+    return confirmDelete({
       title: "Delete network zone?",
       description: `"${z.name}" will be removed. A zone in use by a session policy cannot be deleted.`,
       path: `/api/admin/network-zones/${z.id}`,
       onDeleted: reload,
+      onError: setActionError, // e.g. the designed 409 when a policy still references the zone
     });
+  };
 
   return (
     <>
@@ -69,6 +74,8 @@ export default function NetworkZones() {
           session policy. A zone that a policy references cannot be deleted.
         </AlertDescription>
       </Alert>
+
+      {actionError && <Alert variant="destructive" className="mb-4"><AlertDescription>{actionError}</AlertDescription></Alert>}
 
       <DataList
         data={items}
