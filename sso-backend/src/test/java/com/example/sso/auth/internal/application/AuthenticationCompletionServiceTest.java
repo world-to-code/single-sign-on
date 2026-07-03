@@ -14,7 +14,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.mockito.ArgumentCaptor;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.FactorGrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.User;
@@ -22,6 +24,7 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -95,5 +98,21 @@ class AuthenticationCompletionServiceTest {
         verify(factorAuth).establish(eq(request), eq(response), any());
         verify(sessions).registerAndEnforceLimit(request, "alice");
         verify(audit).record(any(AuditRecord.class));
+    }
+
+    @Test
+    void thePromotedAuthenticationCarriesAFactorGrantedAuthorityForOidcAuthTime() {
+        signIn(Factors.PASSWORD, Factors.TOTP);
+        when(authState.isPolicySatisfied(any())).thenReturn(true);
+        when(userDetailsService.loadUserByUsername("alice"))
+                .thenReturn(new User("alice", "", List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
+        when(authState.describe(any())).thenReturn(AuthSessionView.anonymous(true));
+
+        service.completeIfSatisfied(request, response);
+
+        // Spring AS derives the OIDC auth_time from a FactorGrantedAuthority; without one the token endpoint 500s.
+        ArgumentCaptor<Authentication> promoted = ArgumentCaptor.forClass(Authentication.class);
+        verify(factorAuth).establish(eq(request), eq(response), promoted.capture());
+        assertThat(promoted.getValue().getAuthorities()).anyMatch(FactorGrantedAuthority.class::isInstance);
     }
 }

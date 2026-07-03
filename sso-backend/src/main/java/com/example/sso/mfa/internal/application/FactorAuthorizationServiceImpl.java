@@ -5,6 +5,8 @@ import com.example.sso.mfa.FactorAuthorizationService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.FactorGrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -78,6 +80,13 @@ public class FactorAuthorizationServiceImpl implements FactorAuthorizationServic
                             || a.getAuthority().startsWith(Factors.STEPUP_TIME_PREFIX));
                     authorities.add(new SimpleGrantedAuthority(Factors.AUTH_TIME_PREFIX + now));
                     authorities.add(new SimpleGrantedAuthority(Factors.STEPUP_TIME_PREFIX + now));
+                    // Also refresh the FactorGrantedAuthority so Spring AS's OIDC `auth_time` (derived from
+                    // its issuedAt) is fresh — an admin elevation token minted right after this step-up
+                    // needs it, and its absence 500s the token endpoint. Reuse an existing factor label.
+                    String factor = authorities.stream().map(GrantedAuthority::getAuthority)
+                            .filter(a -> a.startsWith(Factors.FACTOR_PREFIX)).findFirst().orElse(Factors.PASSWORD);
+                    authorities.removeIf(FactorGrantedAuthority.class::isInstance);
+                    authorities.add(FactorGrantedAuthority.withAuthority(factor).issuedAt(Instant.ofEpochSecond(now)).build());
                 })
                 .build();
 

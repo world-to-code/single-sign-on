@@ -18,6 +18,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.FactorGrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -63,6 +64,12 @@ public class AuthenticationCompletionService {
             // the standard `auth_time` claim. (A details object would break JdbcOAuth2AuthorizationService,
             // whose Jackson validator rejects arbitrary types; GrantedAuthority serializes fine.)
             authorities.add(new SimpleGrantedAuthority(Factors.AUTH_TIME_PREFIX + Instant.now().getEpochSecond()));
+            // Spring Authorization Server derives the OIDC `auth_time` from a FactorGrantedAuthority's
+            // issuedAt (JwtGenerator asserts one is present, else the token endpoint 500s). Our custom
+            // flow uses string factor markers, so add one explicitly — reusing an existing factor
+            // authority so amr/acr (computed from the FACTOR_ set) are unaffected.
+            authorities.add(FactorGrantedAuthority.withAuthority(anyFactorAuthority(authorities))
+                    .issuedAt(Instant.now()).build());
             factorAuth.establish(request, response,
                     UsernamePasswordAuthenticationToken.authenticated(principal, null, authorities));
             StepUpInterceptor.stamp(request.getSession(false)); // fresh auth time for step-up
@@ -71,5 +78,12 @@ public class AuthenticationCompletionService {
         }
 
         return authState.describe(SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    /** An existing factor authority to label the FactorGrantedAuthority with, so amr/acr stay unchanged. */
+    private String anyFactorAuthority(Set<GrantedAuthority> authorities) {
+        return authorities.stream().map(GrantedAuthority::getAuthority)
+                .filter(a -> a.startsWith(Factors.FACTOR_PREFIX))
+                .findFirst().orElse(Factors.PASSWORD);
     }
 }
