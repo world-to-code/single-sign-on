@@ -10,6 +10,7 @@ import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.internal.domain.Permission;
 import com.example.sso.user.internal.domain.PermissionRepository;
 import com.example.sso.user.internal.domain.Role;
+import com.example.sso.user.internal.domain.RoleMemberRow;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.internal.domain.RoleRepository;
 import com.example.sso.user.Permissions;
@@ -20,9 +21,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -220,12 +219,9 @@ public class RoleServiceImpl implements RoleService {
             return Map.of();
         }
 
-        Map<UUID, List<UserAccount>> byRole = new HashMap<>();
-        for (Object[] row : users.findMembersByRoleIdIn(roleIds)) {
-            byRole.computeIfAbsent((UUID) row[0], k -> new ArrayList<>()).add((AppUser) row[1]);
-        }
-
-        return byRole;
+        return users.findMembersByRoleIdIn(roleIds).stream()
+                .collect(Collectors.groupingBy(RoleMemberRow::roleId,
+                        Collectors.mapping(row -> (UserAccount) row.member(), Collectors.toList())));
     }
 
     @Override
@@ -239,5 +235,21 @@ public class RoleServiceImpl implements RoleService {
         current.stream().filter(u -> !userIds.contains(u.getId())).forEach(u -> u.removeRole(role));
         Set<UUID> toAdd = userIds.stream().filter(id -> !currentIds.contains(id)).collect(Collectors.toSet());
         users.findAllById(toAdd).forEach(u -> u.addRole(role));
+    }
+
+    @Override
+    @Transactional
+    public void addMember(UUID roleId, UUID userId) {
+        Role role = roles.findById(roleId).orElseThrow(() -> new NotFoundException("role not found"));
+        AppUser user = users.findById(userId).orElseThrow(() -> new NotFoundException("user not found"));
+        user.addRole(role); // idempotent (Set); managed entity, dirty checking flushes
+    }
+
+    @Override
+    @Transactional
+    public void removeMember(UUID roleId, UUID userId) {
+        Role role = roles.findById(roleId).orElseThrow(() -> new NotFoundException("role not found"));
+        AppUser user = users.findById(userId).orElseThrow(() -> new NotFoundException("user not found"));
+        user.removeRole(role); // idempotent; managed entity, dirty checking flushes
     }
 }

@@ -4,6 +4,7 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.RoleRef;
+import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.internal.domain.PermissionRepository;
 import com.example.sso.user.internal.domain.Role;
@@ -21,6 +22,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -116,5 +118,54 @@ class RoleServiceImplTest {
 
         assertThat(result).isSameAs(existing);
         verify(roles, never()).save(any());
+    }
+
+    @Test
+    void addingAMemberGrantsTheRoleToThatUser() {
+        UUID roleId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Role role = new Role("ROLE_EDITOR");
+        AppUser user = mock(AppUser.class);
+        when(roles.findById(roleId)).thenReturn(Optional.of(role));
+        when(users.findById(userId)).thenReturn(Optional.of(user));
+
+        service.addMember(roleId, userId);
+
+        verify(user).addRole(role);
+    }
+
+    @Test
+    void removingAMemberRevokesTheRoleFromThatUser() {
+        UUID roleId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Role role = new Role("ROLE_EDITOR");
+        AppUser user = mock(AppUser.class);
+        when(roles.findById(roleId)).thenReturn(Optional.of(role));
+        when(users.findById(userId)).thenReturn(Optional.of(user));
+
+        service.removeMember(roleId, userId);
+
+        verify(user).removeRole(role);
+    }
+
+    @Test
+    void addingAMemberToAMissingRoleThrowsNotFound() {
+        UUID roleId = UUID.randomUUID();
+        when(roles.findById(roleId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.addMember(roleId, UUID.randomUUID()))
+                .isInstanceOf(NotFoundException.class);
+        verify(users, never()).findById(any());
+    }
+
+    @Test
+    void addingAMissingUserThrowsNotFound() {
+        UUID roleId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(roles.findById(roleId)).thenReturn(Optional.of(new Role("ROLE_EDITOR")));
+        when(users.findById(userId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.addMember(roleId, userId))
+                .isInstanceOf(NotFoundException.class);
     }
 }

@@ -63,4 +63,10 @@ public interface RoleService {
 
     /** Reconciles the role's membership to exactly {@code userIds} (adds/removes user-role links). */
     void setMembers(UUID roleId, Set<UUID> userIds);
+
+    /** Grants the role to a single user (idempotent). 404s if either the role or the user is missing. */
+    void addMember(UUID roleId, UUID userId);
+
+    /** Revokes the role from a single user (idempotent). 404s if either the role or the user is missing. */
+    void removeMember(UUID roleId, UUID userId);
 }

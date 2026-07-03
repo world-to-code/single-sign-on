@@ -5,6 +5,8 @@ import com.example.sso.resource.ApplicationAuthorization;
 import com.example.sso.resource.GroupAuthorization;
 import com.example.sso.resource.ResourceAuthorization;
 import com.example.sso.resource.UserAuthorization;
+import com.example.sso.user.RoleRef;
+import com.example.sso.user.RoleService;
 import com.example.sso.user.Roles;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
@@ -43,6 +45,7 @@ public class AdminAccessPolicy {
     private static final Set<String> PRIVILEGED_ROLES = Set.of(Roles.ADMIN, Roles.GROUP_ADMIN);
 
     private final UserService userService;
+    private final RoleService roleService;
     private final UserAuthorization userAuth;
     private final GroupAuthorization groupAuth;
     private final ApplicationAuthorization appAuth;
@@ -192,6 +195,41 @@ public class AdminAccessPolicy {
         return !targetIsAdmin || containsAdmin(roles); // must keep own admin role
     }
 
+    /**
+     * Whether the acting admin may GRANT role {@code roleId} to user {@code userId} from the role's member
+     * list. Requires user scope; and — unless a super admin — the role must be non-privileged and the target
+     * must not already be an administrator (a scoped admin may never touch admin accounts nor hand out
+     * {@code ROLE_ADMIN}/{@code ROLE_GROUP_ADMIN}, which would escalate the target or themselves).
+     */
+    public boolean canGrantRole(UUID userId, UUID roleId) {
+        return canManageRoleMembership(userId, roleName(roleId));
+    }
+
+    /**
+     * Whether the acting admin may REVOKE role {@code roleId} from user {@code userId}. Same scope/privilege
+     * rules as granting, plus an admin may not revoke their OWN {@code ROLE_ADMIN} (self-demotion — another
+     * admin must). The actor-independent "last administrator" invariant is a 409 in {@link UserAdminService}.
+     */
+    public boolean canRevokeRole(UUID userId, UUID roleId) {
+        String roleName = roleName(roleId);
+        if (isSelf(userId) && ADMIN_ROLE.equals(roleName)) {
+            return false;
+        }
+        return canManageRoleMembership(userId, roleName);
+    }
+
+    private boolean canManageRoleMembership(UUID userId, String roleName) {
+        if (!currentIsSuperAdmin() && (isAdmin(userId) || PRIVILEGED_ROLES.contains(roleName))) {
+            return false;
+        }
+        return canAccessUser(userId);
+    }
+
+    /** The role's name, or {@code null} if it no longer exists (the caller's service then 404s). */
+    private String roleName(UUID roleId) {
+        return roleService.findById(roleId).map(RoleRef::getName).orElse(null);
+    }
+
     private boolean isSelf(UUID targetId) {
         return currentUserId().map(id -> id.equals(targetId)).orElse(false);
     }
@@ -201,7 +239,11 @@ public class AdminAccessPolicy {
         return userService.hasRole(userId, ADMIN_ROLE);
     }
 
-    /** A super admin is an unscoped {@code ROLE_ADMIN} holder (vs. a scoped ROLE_GROUP_ADMIN). */
+    /**
+     * Whether the actor directly holds {@code ROLE_ADMIN} — the unscoped super-admin authority (a scoped
+     * delegate holds {@code ROLE_GROUP_ADMIN}, never this). Same underlying check as {@link #isAdmin};
+     * kept as a distinct name for the actor-side intent at privilege-gate call sites.
+     */
     private boolean isSuper(UUID userId) {
         return userService.hasRole(userId, ADMIN_ROLE);
     }

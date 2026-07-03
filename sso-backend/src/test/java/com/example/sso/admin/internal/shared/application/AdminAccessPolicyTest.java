@@ -5,6 +5,8 @@ import com.example.sso.resource.ApplicationAuthorization;
 import com.example.sso.resource.GroupAuthorization;
 import com.example.sso.resource.ResourceAuthorization;
 import com.example.sso.resource.UserAuthorization;
+import com.example.sso.user.RoleRef;
+import com.example.sso.user.RoleService;
 import com.example.sso.user.Roles;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
@@ -37,6 +39,7 @@ class AdminAccessPolicyTest {
     private static final UUID OTHER_ID = UUID.randomUUID();
 
     private UserService userService;
+    private RoleService roleService;
     private UserAuthorization userAuth;
     private GroupAuthorization groupAuth;
     private ApplicationAuthorization appAuth;
@@ -46,11 +49,12 @@ class AdminAccessPolicyTest {
     @BeforeEach
     void setUp() {
         userService = mock(UserService.class);
+        roleService = mock(RoleService.class);
         userAuth = mock(UserAuthorization.class);
         groupAuth = mock(GroupAuthorization.class);
         appAuth = mock(ApplicationAuthorization.class);
         resourceAuth = mock(ResourceAuthorization.class);
-        policy = new AdminAccessPolicy(userService, userAuth, groupAuth, appAuth, resourceAuth);
+        policy = new AdminAccessPolicy(userService, roleService, userAuth, groupAuth, appAuth, resourceAuth);
 
         UserAccount actor = mock(UserAccount.class);
         when(actor.getId()).thenReturn(ACTOR_ID);
@@ -288,6 +292,77 @@ class AdminAccessPolicyTest {
         assertThat(scope.groupIds()).isEmpty();
         assertThat(scope.appIds()).isEmpty();
         assertThat(scope.resourceIds()).isEmpty();
+    }
+
+    // --- role-membership grant/revoke (from a role's member list) ---
+
+    @Test
+    void scopedAdminMayGrantAnOrdinaryRoleToAManagedUser() {
+        UUID roleId = stubRole("ROLE_SUPPORT");
+        when(userAuth.canManage(ACTOR_ID, OTHER_ID)).thenReturn(true);
+
+        assertThat(policy.canGrantRole(OTHER_ID, roleId)).isTrue();
+    }
+
+    @Test
+    void scopedAdminMayNotGrantAPrivilegedRole() {
+        UUID roleId = stubRole(Roles.ADMIN);
+        when(userAuth.canManage(ACTOR_ID, OTHER_ID)).thenReturn(true);
+
+        assertThat(policy.canGrantRole(OTHER_ID, roleId)).isFalse();
+    }
+
+    @Test
+    void scopedAdminMayNotGrantAnyRoleToAnAdministrator() {
+        UUID roleId = stubRole("ROLE_SUPPORT");
+        makeAdmin(OTHER_ID);
+        when(userAuth.canManage(ACTOR_ID, OTHER_ID)).thenReturn(true);
+
+        assertThat(policy.canGrantRole(OTHER_ID, roleId)).isFalse();
+    }
+
+    @Test
+    void scopedAdminMayNotGrantAnOrdinaryRoleToAnOutOfScopeUser() {
+        UUID roleId = stubRole("ROLE_SUPPORT");
+
+        assertThat(policy.canGrantRole(OTHER_ID, roleId)).isFalse();
+    }
+
+    @Test
+    void superAdminMayGrantAPrivilegedRoleToAnyUser() {
+        makeActorSuper();
+        when(resourceAuth.isUnscoped(ACTOR_ID)).thenReturn(true);
+        UUID roleId = stubRole(Roles.ADMIN);
+
+        assertThat(policy.canGrantRole(OTHER_ID, roleId)).isTrue();
+    }
+
+    @Test
+    void adminMayNotRevokeTheirOwnAdminRole() {
+        makeActorSuper();
+        when(resourceAuth.isUnscoped(ACTOR_ID)).thenReturn(true);
+        UUID roleId = stubRole(Roles.ADMIN);
+
+        assertThat(policy.canRevokeRole(ACTOR_ID, roleId)).isFalse();
+    }
+
+    @Test
+    void superAdminMayRevokeAnotherAdministratorsAdminRole() {
+        makeActorSuper();
+        when(resourceAuth.isUnscoped(ACTOR_ID)).thenReturn(true);
+        makeAdmin(OTHER_ID);
+        UUID roleId = stubRole(Roles.ADMIN);
+
+        assertThat(policy.canRevokeRole(OTHER_ID, roleId)).isTrue();
+    }
+
+    /** Registers a role of the given name in the roleService mock and returns its id. */
+    private UUID stubRole(String name) {
+        UUID roleId = UUID.randomUUID();
+        RoleRef role = mock(RoleRef.class);
+        when(role.getName()).thenReturn(name);
+        when(roleService.findById(roleId)).thenReturn(Optional.of(role));
+        return roleId;
     }
 
     private void makeActorSuper() {

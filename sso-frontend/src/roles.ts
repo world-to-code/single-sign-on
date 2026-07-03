@@ -49,8 +49,22 @@ export function groupByResource(catalog: Permission[]): [string, Permission[]][]
   return [...groups.entries()];
 }
 
+/** A user who holds a role directly (a row in the role's member list). */
+export interface RoleMember {
+  id: string;
+  username: string;
+  displayName: string;
+  enabled: boolean;
+}
+
 export const listRoles = () => apiGet<Role[]>("/api/admin/roles");
 export const listPermissions = () => apiGet<Permission[]>("/api/admin/permissions");
 export const createRole = (body: RoleRequest) => apiPost<Role>("/api/admin/roles", body);
 export const updateRole = (id: string, body: RoleRequest) => apiPut<Role>(`/api/admin/roles/${id}`, body);
 export const deleteRole = (id: string) => apiDelete(`/api/admin/roles/${id}`);
+
+export const listRoleMembers = (id: string) => apiGet<RoleMember[]>(`/api/admin/roles/${id}/members`);
+export const addRoleMember = (id: string, userId: string) =>
+  apiPost<void>(`/api/admin/roles/${id}/members/${encodeURIComponent(userId)}`);
+export const removeRoleMember = (id: string, userId: string) =>
+  apiDelete(`/api/admin/roles/${id}/members/${encodeURIComponent(userId)}`);

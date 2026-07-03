@@ -1,8 +1,11 @@
 package com.example.sso.admin.internal.role.api;
 
 import com.example.sso.admin.internal.role.application.PermissionView;
+import com.example.sso.admin.internal.role.application.RoleAdminService;
+import com.example.sso.admin.internal.role.application.RoleMemberView;
 import com.example.sso.admin.internal.role.application.RoleView;
-import com.example.sso.admin.internal.user.application.UserAdminService;
+import com.example.sso.admin.internal.shared.security.CanGrantRole;
+import com.example.sso.admin.internal.shared.security.CanRevokeRole;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.Permissions;
@@ -21,18 +24,18 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Admin API for the role builder and the permission catalog it draws from. */
+/** Admin API for the role builder, its member assignments, and the permission catalog it draws from. */
 @RestController
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
 public class AdminRoleController {
 
-    private final UserAdminService userAdminService;
+    private final RoleAdminService roleAdminService;
 
     @GetMapping("/roles")
     @RequirePermission(Permissions.ROLE_READ)
     public List<RoleView> roles() {
-        return userAdminService.listRoles();
+        return roleAdminService.listRoles();
     }
 
     @PostMapping("/roles")
@@ -40,27 +43,49 @@ public class AdminRoleController {
     @RequireStepUp
     public ResponseEntity<RoleView> createRole(@Valid @RequestBody RoleRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(userAdminService.createRole(request.name(), request.permissions()));
+                .body(roleAdminService.createRole(request.name(), request.permissions()));
     }
 
     @PutMapping("/roles/{id}")
     @RequirePermission(Permissions.ROLE_UPDATE)
     @RequireStepUp
     public RoleView updateRole(@PathVariable UUID id, @Valid @RequestBody RoleRequest request) {
-        return userAdminService.updateRole(id, request.name(), request.permissions());
+        return roleAdminService.updateRole(id, request.name(), request.permissions());
     }
 
     @DeleteMapping("/roles/{id}")
     @RequirePermission(Permissions.ROLE_DELETE)
     @RequireStepUp
     public ResponseEntity<Void> deleteRole(@PathVariable UUID id) {
-        userAdminService.deleteRole(id);
+        roleAdminService.deleteRole(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/roles/{id}/members")
+    @RequirePermission(Permissions.ROLE_READ)
+    public List<RoleMemberView> roleMembers(@PathVariable UUID id) {
+        return roleAdminService.roleMembers(id);
+    }
+
+    @PostMapping("/roles/{id}/members/{userId}")
+    @CanGrantRole
+    @RequireStepUp
+    public ResponseEntity<Void> addRoleMember(@PathVariable UUID id, @PathVariable UUID userId) {
+        roleAdminService.addRoleMember(id, userId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/roles/{id}/members/{userId}")
+    @CanRevokeRole
+    @RequireStepUp
+    public ResponseEntity<Void> removeRoleMember(@PathVariable UUID id, @PathVariable UUID userId) {
+        roleAdminService.removeRoleMember(id, userId);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/permissions")
     @RequirePermission(Permissions.ROLE_READ)
     public List<PermissionView> permissions() {
-        return userAdminService.listPermissions();
+        return roleAdminService.listPermissions();
     }
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { ShieldCheck, Lock, Pencil, Plus, Trash2 } from "lucide-react";
 import {
   ADMIN_ROLE, createRole, deleteRole, listPermissions, listRoles, togglePermission, updateRole,
@@ -98,7 +99,7 @@ export default function Roles() {
                 <TableRow key={role.id}>
                   <TableCell className="font-medium">
                     <span className="inline-flex items-center gap-2">
-                      {role.name}
+                      <Link to={`/admin/roles/${role.id}`} className="text-primary hover:underline">{role.name}</Link>
                       {role.system && <Badge variant="secondary"><Lock className="size-3" /> System</Badge>}
                     </span>
                   </TableCell>
