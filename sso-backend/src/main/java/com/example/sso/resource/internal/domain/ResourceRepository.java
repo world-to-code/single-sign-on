@@ -86,6 +86,10 @@ public interface ResourceRepository extends JpaRepository<Resource, UUID> {
     @Query("select p.id as id, p.name as name from Resource p join p.children c where c.id = :childId order by p.name")
     List<IdName> findParentIdNames(@Param("childId") UUID childId);
 
+    /** Whether any resource is of the given type (guards type deletion). */
+    @Query("select count(r) > 0 from Resource r where r.type.id = :typeId")
+    boolean existsByTypeId(@Param("typeId") UUID typeId);
+
     /** Drops every membership of the given kind/id across all resources (its target was deleted elsewhere). */
     @Modifying
     @Query(value = "DELETE FROM resource_member WHERE member_type = :memberType AND member_id = :memberId",

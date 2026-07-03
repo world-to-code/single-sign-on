@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Boxes, Plus, Trash2, Layers, ChevronRight } from "lucide-react";
 import {
   LEAF_MEMBER_TYPES, MEMBER_TYPES, assignResourceAdmin, attachChild, attachMember, createResource,
-  createResourceType, deleteResource, detachChild, detachMember, getResourceDetail, listApplications,
-  listResourceTypes, listResources, renameResource, revokeResourceAdmin,
+  createResourceType, deleteResource, deleteResourceType, detachChild, detachMember, getResourceDetail,
+  listApplications, listResourceTypes, listResources, renameResource, revokeResourceAdmin,
   type AppOption, type MemberType, type Resource, type ResourceDetail, type ResourceNode, type ResourceType,
 } from "@/resources";
 import { searchGroups, searchUsers } from "@/groups";
@@ -40,6 +40,7 @@ export default function Resources() {
   const [selected, setSelected] = useState<ResourceNode | null>(null);
   const [creating, setCreating] = useState(false);
   const [typing, setTyping] = useState(false);
+  const [view, setView] = useState<"resources" | "types">("resources");
   const confirmDelete = useDeleteConfirm();
 
   const reload = useCallback(async () => {
@@ -71,6 +72,16 @@ export default function Resources() {
         }
       />
 
+      <div className="flex gap-1 border-b">
+        {(["resources", "types"] as const).map((t) => (
+          <button key={t} onClick={() => setView(t)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium capitalize ${view === t ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+            {t === "resources" ? `Resources${resources ? ` (${resources.length})` : ""}` : `Types (${types.length})`}
+          </button>
+        ))}
+      </div>
+
+      {view === "resources" && (
       <DataList
         data={resources}
         error={error}
@@ -103,6 +114,41 @@ export default function Resources() {
           </div>
         )}
       </DataList>
+      )}
+
+      {view === "types" && (
+        types.length === 0
+          ? <EmptyState icon={<Layers />} title="No types yet"
+              hint="A type defines which member kinds a resource can hold. Create one with “New type”." />
+          : <div className="divide-y rounded-md border">
+              {types.map((t) => (
+                <div key={t.id} className="flex items-center justify-between px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <Layers className="size-4 text-muted-foreground" />
+                    <div>
+                      <div className="font-medium">{t.name}</div>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {t.allowedMemberTypes.length === 0
+                          ? <span className="text-xs text-muted-foreground">No member kinds</span>
+                          : t.allowedMemberTypes.map((k) => (
+                              <Badge key={k} variant="muted" className="text-xs">{MEMBER_KIND_LABELS[k as MemberType]}</Badge>
+                            ))}
+                      </div>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive"
+                    onClick={() => { void confirmDelete({
+                      title: `Delete type “${t.name}”?`,
+                      description: "Only unused types can be deleted; a type still used by any resource is rejected.",
+                      run: () => deleteResourceType(t.id),
+                      onDeleted: reload,
+                    }).catch((e) => setError(errorMessage(e))); }}>
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+      )}
 
       {creating && (
         <CreateResourceDialog types={types} onClose={() => setCreating(false)}

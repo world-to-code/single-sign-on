@@ -37,6 +37,8 @@ export interface Resource {
 export const listResourceTypes = () => apiGet<ResourceType[]>("/api/admin/resources/types");
 export const createResourceType = (name: string, allowedMemberTypes: string[]) =>
   apiPost<ResourceType>("/api/admin/resources/types", { name, allowedMemberTypes });
+export const deleteResourceType = (id: string) =>
+  apiDelete(`/api/admin/resources/types/${encodeURIComponent(id)}`);
 
 export interface ResourceNode {
   id: string;

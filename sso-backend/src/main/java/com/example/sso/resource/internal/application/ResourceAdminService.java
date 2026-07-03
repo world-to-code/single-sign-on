@@ -67,6 +67,17 @@ public class ResourceAdminService {
         return ResourceTypeView.of(types.save(new ResourceType(name, allowedMemberTypes)));
     }
 
+    /** Deletes an unused resource type; rejects deletion while any resource still uses it (409). */
+    @Transactional
+    public void deleteType(UUID id) {
+        ResourceType type = types.findById(id)
+                .orElseThrow(() -> new NotFoundException("Resource type not found."));
+        if (resources.existsByTypeId(id)) {
+            throw new ConflictException("This type is still in use by one or more resources.");
+        }
+        types.delete(type);
+    }
+
     // --- Resources ---
 
     @Transactional(readOnly = true)

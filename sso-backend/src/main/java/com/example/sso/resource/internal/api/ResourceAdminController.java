@@ -49,6 +49,14 @@ public class ResourceAdminController {
                 .body(service.createType(request.name(), request.toMemberTypes()));
     }
 
+    @DeleteMapping("/types/{id}")
+    @RequirePermission(Permissions.RESOURCE_DELETE)
+    @RequireStepUp
+    public ResponseEntity<Void> deleteType(@PathVariable UUID id) {
+        service.deleteType(id);
+        return ResponseEntity.noContent().build();
+    }
+
     // --- Resources ---
 
     @GetMapping

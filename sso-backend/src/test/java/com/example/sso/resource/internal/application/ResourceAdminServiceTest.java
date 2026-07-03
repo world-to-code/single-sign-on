@@ -5,6 +5,8 @@ import com.example.sso.resource.internal.domain.Resource;
 import com.example.sso.resource.internal.domain.ResourceRepository;
 import com.example.sso.resource.internal.domain.ResourceType;
 import com.example.sso.resource.internal.domain.ResourceTypeRepository;
+import com.example.sso.shared.error.ConflictException;
+import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.UserGroupService;
 import com.example.sso.user.UserService;
 import java.util.List;
@@ -18,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.Mockito.lenient;
@@ -52,6 +55,36 @@ class ResourceAdminServiceTest {
 
     @InjectMocks
     private ResourceAdminService service;
+
+    @Test
+    void deleteTypeRejectsATypeStillInUse() {
+        UUID typeId = UUID.randomUUID();
+        when(types.findById(typeId)).thenReturn(Optional.of(mock(ResourceType.class)));
+        when(resources.existsByTypeId(typeId)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.deleteType(typeId)).isInstanceOf(ConflictException.class);
+        verify(types, never()).delete(any());
+    }
+
+    @Test
+    void deleteTypeRemovesAnUnusedType() {
+        UUID typeId = UUID.randomUUID();
+        ResourceType type = mock(ResourceType.class);
+        when(types.findById(typeId)).thenReturn(Optional.of(type));
+        when(resources.existsByTypeId(typeId)).thenReturn(false);
+
+        service.deleteType(typeId);
+
+        verify(types).delete(type);
+    }
+
+    @Test
+    void deleteTypeUnknownIsNotFound() {
+        UUID typeId = UUID.randomUUID();
+        when(types.findById(typeId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.deleteType(typeId)).isInstanceOf(NotFoundException.class);
+    }
 
     /** Stubs a mock Resource so {@code ResourceView.of} can project it (all collections empty). */
     private Resource viewable(UUID id) {
