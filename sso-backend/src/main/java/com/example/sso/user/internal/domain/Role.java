@@ -3,9 +3,9 @@ import com.example.sso.shared.domain.AbstractEntity;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;
-import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.Hibernate;
 
 import com.example.sso.user.RoleRef;
 import java.util.Collection;
@@ -18,7 +18,6 @@ import java.util.stream.Collectors;
 @Table(name = "role")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
-@EqualsAndHashCode(of = "name")
 public class Role extends AbstractEntity implements RoleRef {
 
     @Column(nullable = false, unique = true, length = 64)
@@ -70,5 +69,28 @@ public class Role extends AbstractEntity implements RoleRef {
     @Override
     public Set<String> getPermissionNames() {
         return permissions.stream().map(Permission::getName).collect(Collectors.toUnmodifiableSet());
+    }
+
+    /**
+     * Equality by the natural key ({@code name}), made Hibernate-proxy-safe: {@link Hibernate#getClass}
+     * unwraps a lazy proxy for the type check, and the {@code getName()} getter (not the raw field)
+     * forces proxy initialization. {@code hashCode} is a stable per-type constant so a rename never
+     * strands the entity in a hash-based collection.
+     */
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || Hibernate.getClass(this) != Hibernate.getClass(o)) {
+            return false;
+        }
+        Role other = (Role) o;
+        return getName() != null && getName().equals(other.getName());
+    }
+
+    @Override
+    public int hashCode() {
+        return Hibernate.getClass(this).hashCode();
     }
 }
