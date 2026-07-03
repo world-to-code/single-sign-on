@@ -35,10 +35,12 @@ import java.util.stream.Collectors;
  */
 @Component
 public class StepUpInterceptor implements HandlerInterceptor {
-    /** Session attribute holding the epoch-millis of the last full/step-up authentication. */
-    public static final String AUTH_TIME = "SSO_AUTH_TIME";
     /** Epoch-millis of the last activity, for the idle-based general re-auth clock. */
     public static final String REAUTH_ACTIVITY = "SSO_REAUTH_ACTIVITY";
+    /** Epoch-millis of the last DELIBERATE step-up (only a /reauth sets it — a plain login never does). */
+    public static final String STEPUP_TIME = "SSO_STEPUP_TIME";
+    /** The factor that satisfied that step-up — checked against the policy's stepUpFactors (strength floor). */
+    public static final String STEPUP_FACTOR = "SSO_STEPUP_FACTOR";
     /** The factor set a pending step-up must be satisfied with (set on challenge; enforced by ReauthService). */
     public static final String STEPUP_FACTORS = "SSO_STEPUP_FACTORS";
 
@@ -51,11 +53,22 @@ public class StepUpInterceptor implements HandlerInterceptor {
         this.policyService = policyService;
     }
 
-    /** Records a successful (re-)authentication: refreshes both the auth-freshness and activity clocks. */
+    /** Records general activity (login / any allowed request) on the idle-based re-auth clock — NOT a step-up. */
     public static void stamp(HttpSession session) {
         if (session != null) {
+            session.setAttribute(REAUTH_ACTIVITY, System.currentTimeMillis());
+        }
+    }
+
+    /**
+     * Records a DELIBERATE step-up re-auth with the factor that satisfied it (also counts as activity). Only
+     * this — never a plain login — makes a sensitive action pass, and only if {@code factor} is a step-up factor.
+     */
+    public static void stampStepUp(HttpSession session, String factor) {
+        if (session != null) {
             long now = System.currentTimeMillis();
-            session.setAttribute(AUTH_TIME, now);
+            session.setAttribute(STEPUP_TIME, now);
+            session.setAttribute(STEPUP_FACTOR, factor);
             session.setAttribute(REAUTH_ACTIVITY, now);
         }
     }
@@ -81,9 +94,12 @@ public class StepUpInterceptor implements HandlerInterceptor {
                 : policyService.resolveForUsername(authentication.getName());
 
         if (sensitive) {
-            // Fresh deliberate (re-)auth required within the policy's step-up window (null clock -> fail closed).
-            long sinceAuth = attr(session, AUTH_TIME) instanceof Long t ? now - t : Long.MAX_VALUE;
-            if (sinceAuth <= policy.getSensitiveReauthWindowMinutes() * 60_000L) {
+            // Requires a fresh DELIBERATE step-up (not a plain login) within the window AND that its factor
+            // is one of the policy's step-up factors — so stepUpFactors is a real strength floor, not advisory.
+            long sinceStepUp = attr(session, STEPUP_TIME) instanceof Long t ? now - t : Long.MAX_VALUE;
+            boolean strongEnough = attr(session, STEPUP_FACTOR) instanceof String f
+                    && csv(policy.getStepUpFactors()).contains(f);
+            if (strongEnough && sinceStepUp <= policy.getSensitiveReauthWindowMinutes() * 60_000L) {
                 touchActivity(session, now);
                 return true;
             }
@@ -91,8 +107,8 @@ public class StepUpInterceptor implements HandlerInterceptor {
         }
 
         // General mutation: idle-based. A challenged request does NOT refresh the clock (so it can't be
-        // bypassed by retrying); only allowed requests and re-auths do.
-        long idleGap = attr(session, REAUTH_ACTIVITY) instanceof Long t ? now - t : 0L;
+        // bypassed by retrying); only allowed requests and re-auths do. Null clock -> fail closed.
+        long idleGap = attr(session, REAUTH_ACTIVITY) instanceof Long t ? now - t : Long.MAX_VALUE;
         if (idleGap <= policy.getReauthIntervalMinutes() * 60_000L) {
             touchActivity(session, now);
             return true;
@@ -100,11 +116,15 @@ public class StepUpInterceptor implements HandlerInterceptor {
         return challenge(session, response, policy.getReauthFactors());
     }
 
-    private static Object attr(HttpSession session, String name) {
+    private Object attr(HttpSession session, String name) {
         return session == null ? null : session.getAttribute(name);
     }
 
-    private static void touchActivity(HttpSession session, long now) {
+    private Set<String> csv(String value) {
+        return Arrays.stream(value.split(",")).map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toSet());
+    }
+
+    private void touchActivity(HttpSession session, long now) {
         if (session != null) {
             session.setAttribute(REAUTH_ACTIVITY, now);
         }

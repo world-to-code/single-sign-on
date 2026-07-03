@@ -59,7 +59,7 @@ public class ReauthService {
             sessions.rotateSessionId(request, user.getUsername());
         }
 
-        StepUpInterceptor.stamp(request.getSession(true));
+        StepUpInterceptor.stampStepUp(request.getSession(true), factor.name()); // records WHICH factor stepped up
         request.getSession().removeAttribute(StepUpInterceptor.STEPUP_FACTORS); // pending step-up satisfied
         // Re-stamp the session Authentication's auth-time marker so an admin elevation token minted from
         // the OIDC flow right after this step-up carries a FRESH auth_time (RFC 9470 step-up).

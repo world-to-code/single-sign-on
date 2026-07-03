@@ -72,7 +72,7 @@ public class AuthenticationCompletionService {
                     .issuedAt(Instant.now()).build());
             factorAuth.establish(request, response,
                     UsernamePasswordAuthenticationToken.authenticated(principal, null, authorities));
-            StepUpInterceptor.stamp(request.getSession(false)); // fresh auth time for step-up
+            StepUpInterceptor.stamp(request.getSession(false)); // count login as activity (idle clock), NOT a step-up
             sessions.registerAndEnforceLimit(request, principal.getUsername());
             audit.record(new AuditRecord(AuditType.SESSION_CREATED, principal.getUsername(), true, null, ClientIp.of(request)));
         }

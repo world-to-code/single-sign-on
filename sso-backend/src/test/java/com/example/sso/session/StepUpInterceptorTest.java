@@ -75,21 +75,26 @@ class StepUpInterceptorTest {
         return request;
     }
 
-    private void authAge(MockHttpServletRequest request, long millis) {
-        request.getSession().setAttribute(StepUpInterceptor.AUTH_TIME, System.currentTimeMillis() - millis);
+    private MockHttpServletRequest requestWithoutSession(String httpMethod) {
+        return new MockHttpServletRequest(httpMethod, "/api/admin/auth-policies/x");
+    }
+
+    private void stepUp(MockHttpServletRequest request, long ageMillis, String factor) {
+        request.getSession().setAttribute(StepUpInterceptor.STEPUP_TIME, System.currentTimeMillis() - ageMillis);
+        request.getSession().setAttribute(StepUpInterceptor.STEPUP_FACTOR, factor);
     }
 
     private void activityAge(MockHttpServletRequest request, long millis) {
         request.getSession().setAttribute(StepUpInterceptor.REAUTH_ACTIVITY, System.currentTimeMillis() - millis);
     }
 
-    // --- sensitive (@RequireStepUp): fresh deliberate auth within the step-up window, stronger factors ---
+    // --- sensitive (@RequireStepUp): fresh deliberate step-up within the window, with a step-up factor ---
 
     @Test
-    void sensitiveWithStaleAuthIsChallengedWithStepUpFactors() throws Exception {
+    void sensitiveWithStaleStepUpIsChallengedWithStepUpFactors() throws Exception {
         MockHttpServletRequest request = request("DELETE");
-        authAge(request, 200_000);       // 200s > 120s step-up window
-        activityAge(request, 0);         // active — but sensitive uses auth-freshness, not activity
+        stepUp(request, 200_000, "FIDO2"); // strong factor but 200s > 120s window
+        activityAge(request, 0);           // active — but sensitive uses step-up freshness, not activity
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         assertThat(interceptor.preHandle(request, response, handler("sensitive"))).isFalse();
@@ -100,12 +105,57 @@ class StepUpInterceptorTest {
     }
 
     @Test
-    void sensitiveWithFreshAuthProceeds() throws Exception {
+    void sensitiveWithFreshStrongStepUpProceeds() throws Exception {
         MockHttpServletRequest request = request("DELETE");
-        authAge(request, 30_000);        // 30s < 120s
+        stepUp(request, 30_000, "FIDO2");  // 30s < 120s, and FIDO2 is a step-up factor
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         assertThat(interceptor.preHandle(request, response, handler("sensitive"))).isTrue();
+    }
+
+    @Test
+    void sensitiveWithAFreshButWeakFactorIsChallenged() throws Exception {
+        // The strength floor: a fresh step-up done with TOTP does NOT satisfy a FIDO2-only sensitive action.
+        MockHttpServletRequest request = request("DELETE");
+        stepUp(request, 30_000, "TOTP");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThat(interceptor.preHandle(request, response, handler("sensitive"))).isFalse();
+        assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+    }
+
+    @Test
+    void sensitiveWithNoStepUpIsChallenged() throws Exception {
+        // A plain login (no deliberate step-up recorded) never satisfies a sensitive action.
+        MockHttpServletRequest request = request("DELETE");
+        activityAge(request, 0); // freshly active, but no STEPUP_TIME
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThat(interceptor.preHandle(request, response, handler("sensitive"))).isFalse();
+        assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+    }
+
+    @Test
+    void theRealStamperWithAStrongFactorUnlocksASensitiveAction() throws Exception {
+        // Compose the ACTUAL production stamper (what ReauthService.verify calls) with the gate — not a
+        // hand-set attribute. Proves stampStepUp writes a FRESH time and the right factor end-to-end.
+        MockHttpServletRequest request = request("DELETE");
+        StepUpInterceptor.stampStepUp(request.getSession(), "FIDO2");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThat(interceptor.preHandle(request, response, handler("sensitive"))).isTrue();
+    }
+
+    @Test
+    void theRealStamperWithAWeakGeneralReauthFactorDoesNotUnlockAStrongerSensitiveAction() throws Exception {
+        // A general re-auth done with TOTP stamps STEPUP_FACTOR=TOTP via the same stamper; the FIDO2-only
+        // sensitive gate must still challenge. Closes the composed strength-floor path (stamper ↔ gate).
+        MockHttpServletRequest request = request("DELETE");
+        StepUpInterceptor.stampStepUp(request.getSession(), "TOTP");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThat(interceptor.preHandle(request, response, handler("sensitive"))).isFalse();
+        assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
     }
 
     // --- ordinary mutation: idle-based on the re-auth interval, general factors ---
@@ -131,14 +181,45 @@ class StepUpInterceptorTest {
     }
 
     @Test
-    void mutationIsIdleBasedNotAuthBased() throws Exception {
-        // Ancient last auth, but recent activity: an actively-used session is NOT re-challenged.
+    void mutationIsIdleBasedAndIgnoresTheStepUpClock() throws Exception {
+        // Ancient step-up, but recent activity: an actively-used session's ordinary mutation is NOT challenged.
         MockHttpServletRequest request = request("PUT");
-        authAge(request, 9_999_000);
+        stepUp(request, 9_999_000, "FIDO2");
         activityAge(request, 5_000);     // 5s ago — active
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         assertThat(interceptor.preHandle(request, response, handler("plain"))).isTrue();
+    }
+
+    @Test
+    void aChallengedMutationRecordsTheReauthFactorsAsThePendingSet() throws Exception {
+        // The challenge stamps exactly which factors ReauthService must accept for THIS pending step-up.
+        MockHttpServletRequest request = request("DELETE");
+        activityAge(request, 400_000); // idle too long -> challenged
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThat(interceptor.preHandle(request, response, handler("plain"))).isFalse();
+        assertThat(request.getSession().getAttribute(StepUpInterceptor.STEPUP_FACTORS)).isEqualTo("TOTP,FIDO2");
+    }
+
+    @Test
+    void aMutationWithNoSessionFailsClosed() throws Exception {
+        // Fail closed: a missing session has no activity clock, so the idle gap is treated as infinite.
+        MockHttpServletRequest request = requestWithoutSession("DELETE");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThat(interceptor.preHandle(request, response, handler("plain"))).isFalse();
+        assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+    }
+
+    @Test
+    void aSensitiveActionWithNoSessionFailsClosed() throws Exception {
+        MockHttpServletRequest request = requestWithoutSession("DELETE");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThat(interceptor.preHandle(request, response, handler("sensitive"))).isFalse();
+        assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+        assertThat(response.getContentAsString()).contains("\"FIDO2\"");
     }
 
     @Test
