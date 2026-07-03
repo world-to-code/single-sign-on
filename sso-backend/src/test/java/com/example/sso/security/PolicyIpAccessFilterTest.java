@@ -3,6 +3,7 @@ package com.example.sso.security;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
 import com.example.sso.session.IpRuleSpec;
+import com.example.sso.session.NetworkZoneService;
 import com.example.sso.session.SessionPolicyDetails;
 import com.example.sso.session.SessionPolicyService;
 import jakarta.servlet.FilterChain;
@@ -19,6 +20,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -30,15 +32,20 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit test for {@link PolicyIpAccessFilter} — per-policy, post-authentication network access. Proves a
- * denied network is 403'd (audited, chain not invoked), an allowed network proceeds, and an unauthenticated
- * request is passed straight through (no user ⇒ no policy). Registered on both security chains, so this is
- * the single point that gates OIDC /oauth2/authorize as well as /api/**.
+ * Unit test for {@link PolicyIpAccessFilter} — per-policy, post-authentication network access. The policy's
+ * IP rules reference network zones; the filter resolves each zone's CIDRs via {@link NetworkZoneService} and
+ * first-matches. Proves a denied network is 403'd (audited, chain not invoked), an allowed network proceeds,
+ * and an unauthenticated request passes straight through. Registered on both chains, so this also gates
+ * OIDC /oauth2/authorize.
  */
 @ExtendWith(MockitoExtension.class)
 class PolicyIpAccessFilterTest {
 
+    private static final UUID OFFICE = UUID.randomUUID();
+    private static final UUID EVERYWHERE = UUID.randomUUID();
+
     @Mock private SessionPolicyService policyService;
+    @Mock private NetworkZoneService networkZones;
     @Mock private AuditService audit;
     @Mock private SessionPolicyDetails policy;
 
@@ -46,8 +53,10 @@ class PolicyIpAccessFilterTest {
 
     @BeforeEach
     void setUp() {
-        filter = new PolicyIpAccessFilter(policyService, audit);
+        filter = new PolicyIpAccessFilter(policyService, networkZones, audit);
         lenient().when(policyService.resolveForUsername("alice")).thenReturn(policy);
+        lenient().when(networkZones.cidrsForZone(OFFICE)).thenReturn(List.of("10.0.0.0/8"));
+        lenient().when(networkZones.cidrsForZone(EVERYWHERE)).thenReturn(List.of("0.0.0.0/0"));
     }
 
     @AfterEach
@@ -69,7 +78,7 @@ class PolicyIpAccessFilterTest {
     @Test
     void aDeniedNetworkIsRefusedWith403AndAudited() throws Exception {
         authenticate();
-        when(policy.getIpRules()).thenReturn(List.of(new IpRuleSpec("203.0.113.0/24", "BLOCK", 0)));
+        when(policy.getIpRules()).thenReturn(List.of(new IpRuleSpec(EVERYWHERE.toString(), "BLOCK", 0)));
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
 
@@ -83,8 +92,8 @@ class PolicyIpAccessFilterTest {
     @Test
     void anAllowedNetworkProceeds() throws Exception {
         authenticate();
-        when(policy.getIpRules()).thenReturn(
-                List.of(new IpRuleSpec("10.0.0.0/8", "ALLOW", 0), new IpRuleSpec("0.0.0.0/0", "BLOCK", 1)));
+        when(policy.getIpRules()).thenReturn(List.of(
+                new IpRuleSpec(OFFICE.toString(), "ALLOW", 0), new IpRuleSpec(EVERYWHERE.toString(), "BLOCK", 1)));
         FilterChain chain = mock(FilterChain.class);
 
         filter.doFilter(request("10.2.3.4"), new MockHttpServletResponse(), chain);
@@ -100,6 +109,6 @@ class PolicyIpAccessFilterTest {
         filter.doFilter(request("203.0.113.9"), new MockHttpServletResponse(), chain);
 
         verify(chain).doFilter(any(), any());
-        verifyNoInteractions(policyService, audit);
+        verifyNoInteractions(policyService, networkZones, audit);
     }
 }

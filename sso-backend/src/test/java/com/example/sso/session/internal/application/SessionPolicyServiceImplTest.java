@@ -1,6 +1,7 @@
 package com.example.sso.session.internal.application;
 
 import com.example.sso.session.IpRuleSpec;
+import com.example.sso.session.NetworkZoneService;
 import com.example.sso.session.SessionPolicyDetails;
 import com.example.sso.session.SessionPolicyService;
 import com.example.sso.session.SessionPolicySpec;
@@ -49,6 +50,8 @@ class SessionPolicyServiceImplTest {
     private SessionPolicyRepository repository;
     @Mock
     private UserService users;
+    @Mock
+    private NetworkZoneService networkZones;
 
     @InjectMocks
     private SessionPolicyServiceImpl service;
@@ -207,10 +210,22 @@ class SessionPolicyServiceImplTest {
     }
 
     @Test
-    void createRejectsAnInvalidCidr() {
-        when(repository.findByName("BadCidr")).thenReturn(Optional.empty());
-        SessionPolicySpec spec = new SessionPolicySpec("BadCidr", 5, true, 480, 30, 15, "TOTP", 2, "TOTP",
-                false, 0, false, "Lax", Set.of(), Set.of(), List.of(new IpRuleSpec("not-a-cidr", "BLOCK", 0)));
+    void createRejectsAnUnknownZoneReference() {
+        when(repository.findByName("BadZone")).thenReturn(Optional.empty());
+        String ghost = UUID.randomUUID().toString();
+        when(networkZones.exists(UUID.fromString(ghost))).thenReturn(false);
+        SessionPolicySpec spec = new SessionPolicySpec("BadZone", 5, true, 480, 30, 15, "TOTP", 2, "TOTP",
+                false, 0, false, "Lax", Set.of(), Set.of(), List.of(new IpRuleSpec(ghost, "BLOCK", 0)));
+
+        assertThatThrownBy(() -> service.create(spec)).isInstanceOf(BadRequestException.class);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void createRejectsAMalformedZoneId() {
+        when(repository.findByName("BadId")).thenReturn(Optional.empty());
+        SessionPolicySpec spec = new SessionPolicySpec("BadId", 5, true, 480, 30, 15, "TOTP", 2, "TOTP",
+                false, 0, false, "Lax", Set.of(), Set.of(), List.of(new IpRuleSpec("not-a-uuid", "BLOCK", 0)));
 
         assertThatThrownBy(() -> service.create(spec)).isInstanceOf(BadRequestException.class);
         verify(repository, never()).save(any());
@@ -221,14 +236,17 @@ class SessionPolicyServiceImplTest {
         when(repository.findByName("Net")).thenReturn(Optional.empty());
         when(repository.save(any(SessionPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
         when(repository.findAllWithAssignmentsByPriorityDesc()).thenReturn(List.of());
+        String office = UUID.randomUUID().toString();
+        String everywhere = UUID.randomUUID().toString();
+        when(networkZones.exists(any(UUID.class))).thenReturn(true);
         SessionPolicySpec spec = new SessionPolicySpec("Net", 5, true, 480, 30, 15, "TOTP", 2, "TOTP",
                 false, 0, false, "Lax", Set.of(), Set.of(),
-                List.of(new IpRuleSpec("0.0.0.0/0", "BLOCK", 1), new IpRuleSpec("10.0.0.0/8", "ALLOW", 0)));
+                List.of(new IpRuleSpec(everywhere, "BLOCK", 1), new IpRuleSpec(office, "ALLOW", 0)));
 
         SessionPolicyDetails created = service.create(spec);
 
-        // getIpRules() returns them sorted by priority asc — ALLOW(0) before BLOCK(1) — regardless of input order.
-        assertThat(created.getIpRules()).extracting(IpRuleSpec::cidr).containsExactly("10.0.0.0/8", "0.0.0.0/0");
+        // getIpRules() returns them sorted by priority asc — the priority-0 rule (office) before priority-1.
+        assertThat(created.getIpRules()).extracting(IpRuleSpec::zoneId).containsExactly(office, everywhere);
     }
 
     // --- update ---

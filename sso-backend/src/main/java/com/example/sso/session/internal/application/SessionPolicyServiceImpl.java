@@ -2,6 +2,7 @@ package com.example.sso.session.internal.application;
 
 import com.example.sso.authpolicy.AuthFactor;
 import com.example.sso.session.IpRuleSpec;
+import com.example.sso.session.NetworkZoneService;
 import com.example.sso.session.internal.domain.IpAction;
 import com.example.sso.session.internal.domain.IpRuleEntry;
 import com.example.sso.session.internal.domain.SessionPolicy;
@@ -18,7 +19,6 @@ import com.example.sso.user.UserService;
 import com.example.sso.user.RoleRef;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.web.util.matcher.IpAddressMatcher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,6 +44,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
 
     private final SessionPolicyRepository repository;
     private final UserService users;
+    private final NetworkZoneService networkZones;
     private volatile List<SessionPolicy> cached = List.of();
 
     @PostConstruct
@@ -135,19 +136,23 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         return String.join(",", tokens);
     }
 
-    /** Validates each rule's CIDR (reusing Spring's parser) and maps to the embeddable rule entries. */
+    /** Resolves each rule's zone id (which must name an existing network zone) into the embeddable entries. */
     private Set<IpRuleEntry> toIpRules(List<IpRuleSpec> rules) {
         if (rules == null) {
             return Set.of();
         }
         Set<IpRuleEntry> entries = new LinkedHashSet<>();
         for (IpRuleSpec r : rules) {
+            UUID zoneId;
             try {
-                new IpAddressMatcher(r.cidr().trim());
+                zoneId = UUID.fromString(r.zoneId());
             } catch (IllegalArgumentException e) {
-                throw new BadRequestException("invalid CIDR: " + r.cidr());
+                throw new BadRequestException("invalid zone id: " + r.zoneId());
             }
-            entries.add(new IpRuleEntry(r.cidr().trim(), IpAction.valueOf(r.action()), r.priority()));
+            if (!networkZones.exists(zoneId)) {
+                throw new BadRequestException("unknown network zone: " + r.zoneId());
+            }
+            entries.add(new IpRuleEntry(zoneId, IpAction.valueOf(r.action()), r.priority()));
         }
         return entries;
     }

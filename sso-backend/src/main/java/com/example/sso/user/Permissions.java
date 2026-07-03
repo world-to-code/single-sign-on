@@ -50,6 +50,11 @@ public final class Permissions {
     public static final String SESSION_POLICY_CREATE = "session-policy:create";
     public static final String SESSION_POLICY_UPDATE = "session-policy:update";
     public static final String SESSION_POLICY_DELETE = "session-policy:delete";
+    // Network zones (reusable named IP ranges, referenced by session policies)
+    public static final String NETWORK_ZONE_READ = "network-zone:read";
+    public static final String NETWORK_ZONE_CREATE = "network-zone:create";
+    public static final String NETWORK_ZONE_UPDATE = "network-zone:update";
+    public static final String NETWORK_ZONE_DELETE = "network-zone:delete";
     // Admin-portal security settings (singleton)
     public static final String PORTAL_SETTINGS_READ = "portal-settings:read";
     public static final String PORTAL_SETTINGS_UPDATE = "portal-settings:update";
@@ -77,6 +82,7 @@ public final class Permissions {
             SAML_READ, SAML_CREATE, SAML_UPDATE, SAML_DELETE,
             POLICY_READ, POLICY_CREATE, POLICY_UPDATE, POLICY_DELETE,
             SESSION_POLICY_READ, SESSION_POLICY_CREATE, SESSION_POLICY_UPDATE, SESSION_POLICY_DELETE,
+            NETWORK_ZONE_READ, NETWORK_ZONE_CREATE, NETWORK_ZONE_UPDATE, NETWORK_ZONE_DELETE,
             PORTAL_SETTINGS_READ, PORTAL_SETTINGS_UPDATE,
             APP_ASSIGNMENT_READ, APP_ASSIGNMENT_ASSIGN, APP_ASSIGNMENT_UNASSIGN,
             RESOURCE_READ, RESOURCE_CREATE, RESOURCE_UPDATE, RESOURCE_DELETE, RESOURCE_ASSIGN_ADMIN,

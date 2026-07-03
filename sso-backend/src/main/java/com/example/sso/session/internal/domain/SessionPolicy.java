@@ -175,7 +175,7 @@ public class SessionPolicy extends AbstractEntity implements SessionPolicyDetail
     public List<IpRuleSpec> getIpRules() {
         return ipRules.stream()
                 .sorted(Comparator.comparingInt(IpRuleEntry::priority))
-                .map(r -> new IpRuleSpec(r.cidr(), r.action().name(), r.priority()))
+                .map(r -> new IpRuleSpec(r.zoneId().toString(), r.action().name(), r.priority()))
                 .toList();
     }
 }

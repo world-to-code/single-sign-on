@@ -3,6 +3,7 @@ package com.example.sso.security;
 import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditService;
 import com.example.sso.session.IpRules;
+import com.example.sso.session.NetworkZoneService;
 import com.example.sso.session.SessionPolicyDetails;
 import com.example.sso.session.SessionPolicyService;
 import jakarta.servlet.FilterChain;
@@ -34,6 +35,7 @@ public class PolicyIpAccessFilter extends OncePerRequestFilter {
 
     private final SecurityContextHolderStrategy contextHolder = SecurityContextHolder.getContextHolderStrategy();
     private final SessionPolicyService policyService;
+    private final NetworkZoneService networkZones;
     private final AuditService audit;
 
     @Override
@@ -42,7 +44,7 @@ public class PolicyIpAccessFilter extends OncePerRequestFilter {
         Authentication authentication = contextHolder.getContext().getAuthentication();
         if (isAuthenticated(authentication)) {
             SessionPolicyDetails policy = policyService.resolveForUsername(authentication.getName());
-            if (!IpRules.isAllowed(policy.getIpRules(), request.getRemoteAddr())) {
+            if (!IpRules.isAllowed(policy.getIpRules(), networkZones::cidrsForZone, request.getRemoteAddr())) {
                 audit.record(AuditType.IP_BLOCKED, authentication.getName(), false);
                 response.setStatus(HttpStatus.FORBIDDEN.value());
                 response.getWriter().write("Access from your network is not permitted.");

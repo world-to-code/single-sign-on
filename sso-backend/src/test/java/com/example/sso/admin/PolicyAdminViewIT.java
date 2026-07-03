@@ -6,6 +6,8 @@ import com.example.sso.authpolicy.AuthPolicySpec;
 import com.example.sso.authpolicy.internal.application.PolicyAdminService;
 import com.example.sso.authpolicy.internal.application.PolicyView;
 import com.example.sso.session.IpRuleSpec;
+import com.example.sso.session.NetworkZoneService;
+import com.example.sso.session.NetworkZoneSpec;
 import com.example.sso.session.SessionPolicyRequest;
 import com.example.sso.session.SessionPolicyView;
 import com.example.sso.support.AbstractIntegrationTest;
@@ -35,6 +37,8 @@ class PolicyAdminViewIT extends AbstractIntegrationTest {
     SessionPolicyAdminService sessionPolicyAdmin;
     @Autowired
     PolicyAdminService authPolicyAdmin;
+    @Autowired
+    NetworkZoneService networkZones;
 
     private final List<Runnable> cleanups = new ArrayList<>();
 
@@ -48,17 +52,23 @@ class PolicyAdminViewIT extends AbstractIntegrationTest {
     void sessionPolicyListAndCreateProjectAssignmentsWithoutLazyInit() {
         String user = UUID.randomUUID().toString();
         String role = UUID.randomUUID().toString();
+        String office = networkZones.create(new NetworkZoneSpec("IT-Office-" + suffix(), null, List.of("10.0.0.0/8"))).id();
+        String all = networkZones.create(new NetworkZoneSpec("IT-All-" + suffix(), null, List.of("0.0.0.0/0"))).id();
 
         SessionPolicyView created = sessionPolicyAdmin.create(new SessionPolicyRequest(
                 "IT-Session-" + suffix(), 50, true, 480, 30, 5, "TOTP,FIDO2", 2, "TOTP,FIDO2", true, 0, true, "Lax",
                 List.of(user), List.of(role),
-                List.of(new IpRuleSpec("10.0.0.0/8", "ALLOW", 0), new IpRuleSpec("0.0.0.0/0", "BLOCK", 1))));
-        cleanups.add(() -> sessionPolicyAdmin.delete(UUID.fromString(created.id())));
+                List.of(new IpRuleSpec(office, "ALLOW", 0), new IpRuleSpec(all, "BLOCK", 1))));
+        cleanups.add(() -> {
+            sessionPolicyAdmin.delete(UUID.fromString(created.id()));
+            networkZones.delete(UUID.fromString(office));
+            networkZones.delete(UUID.fromString(all));
+        });
 
         // create() projected the freshly-persisted entity...
         assertThat(created.assignedUserIds()).containsExactly(user);
         assertThat(created.assignedRoleIds()).containsExactly(role);
-        assertThat(created.ipRules()).extracting(IpRuleSpec::cidr).containsExactly("10.0.0.0/8", "0.0.0.0/0");
+        assertThat(created.ipRules()).extracting(IpRuleSpec::zoneId).containsExactly(office, all);
 
         // ...and list() projects entities re-read from the DB with their assignment sets + IP rules still LAZY.
         SessionPolicyView listed = sessionPolicyAdmin.list(0, 100).items().stream()

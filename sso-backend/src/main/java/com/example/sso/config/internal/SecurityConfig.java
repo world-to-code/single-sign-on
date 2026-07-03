@@ -9,6 +9,7 @@ import com.example.sso.security.AdminElevationFilter;
 import com.example.sso.security.PolicyIpAccessFilter;
 import com.example.sso.security.SessionIntegrityFilter;
 import com.example.sso.security.SessionMetadataCleanupListener;
+import com.example.sso.session.NetworkZoneService;
 import com.example.sso.session.SessionMetadataStore;
 import com.example.sso.session.SessionPolicyService;
 import jakarta.servlet.http.HttpSessionListener;
@@ -104,7 +105,8 @@ public class SecurityConfig {
     @Order(Ordered.LOWEST_PRECEDENCE)
     SecurityFilterChain appSecurityFilterChain(
             HttpSecurity http, AuthRateLimitFilter authRateLimitFilter,
-            SessionIntegrityFilter sessionIntegrityFilter, SessionPolicyService policyService, JwtDecoder jwtDecoder,
+            SessionIntegrityFilter sessionIntegrityFilter, SessionPolicyService policyService,
+            NetworkZoneService networkZones, JwtDecoder jwtDecoder,
             AdminPortalSettingsService adminPortalSettingsService, AuditService audit,
             @Value("${sso.issuer}") String issuer,
             @Value("${sso.webauthn.rp-id:localhost}") String rpId,
@@ -161,7 +163,7 @@ public class SecurityConfig {
                 // Zero-Trust: re-verify session integrity (client binding + absolute lifetime) on every request.
                 .addFilterAfter(sessionIntegrityFilter, CsrfFilter.class)
                 // Per-policy network (IP) access, post-authentication (also registered on the OIDC chain).
-                .addFilterAfter(new PolicyIpAccessFilter(policyService, audit), SessionIntegrityFilter.class)
+                .addFilterAfter(new PolicyIpAccessFilter(policyService, networkZones, audit), SessionIntegrityFilter.class)
                 // RFC 9470 elevation gate: require a fresh admin-console bearer token on /api/admin/**.
                 // Anchored AFTER the authorization filter so the session MFA_COMPLETE check
                 // (and @RequirePermission) still run first — a non-admin gets 403 there, never the 401 challenge.

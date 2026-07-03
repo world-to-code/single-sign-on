@@ -36,4 +36,8 @@ public interface SessionPolicyRepository extends JpaRepository<SessionPolicy, UU
     /** Enabled policies with NO user and NO role assignment — they apply to every user (incl. Default). */
     @Query("select p from SessionPolicy p where p.enabled = true and p.assignedUserIds is empty and p.assignedRoleIds is empty")
     List<SessionPolicy> findEnabledGlobal();
+
+    /** How many policy IP rules reference the given network zone — guards zone deletion. */
+    @Query("select count(r) from SessionPolicy p join p.ipRules r where r.zoneId = :zoneId")
+    long countReferencingZone(@Param("zoneId") UUID zoneId);
 }
