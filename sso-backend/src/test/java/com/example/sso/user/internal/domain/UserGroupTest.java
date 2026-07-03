@@ -54,16 +54,6 @@ class UserGroupTest {
     }
 
     @Test
-    void replaceManagersSwapsManagerSet() {
-        UserGroup group = newGroup();
-        UUID admin = UUID.randomUUID();
-
-        group.replaceManagers(Set.of(admin));
-
-        assertThat(group.getManagerUserIds()).containsExactly(admin);
-    }
-
-    @Test
     void renameAndDescribeMutateInPlace() {
         UserGroup group = newGroup();
 

@@ -34,9 +34,6 @@ public interface UserGroupService {
     /** Replaces the roles delegated to the group; every member inherits them. Unknown role → 400. */
     GroupView setRoles(UUID id, Set<String> roleNames);
 
-    /** Every group that has at least one legacy manager — input to the one-time resource-role migration. */
-    List<GroupManagers> groupsWithManagers();
-
     /** The groups the given user belongs to, each with the roles that group delegates. */
     List<GroupMembership> membershipsForUser(UUID userId);
 

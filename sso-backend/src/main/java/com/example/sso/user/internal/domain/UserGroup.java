@@ -49,13 +49,6 @@ public class UserGroup extends AuditedEntity {
     @Column(name = "user_id")
     private Set<UUID> memberUserIds = new HashSet<>();
 
-    // Admins (scoped ROLE_GROUP_ADMIN users) who may manage the MEMBERS of this group. Separate from
-    // membership: a manager need not be a member. Empowers group-scoped delegated administration.
-    @ElementCollection(fetch = FetchType.LAZY)
-    @CollectionTable(name = "user_group_manager", joinColumns = @JoinColumn(name = "group_id"))
-    @Column(name = "user_id")
-    private Set<UUID> managerUserIds = new HashSet<>();
-
     // Roles delegated to the whole group: every member inherits these roles (and their permissions).
     // LAZY: needed only when building a member's authorities or rendering the group/user detail views.
     @ManyToMany(fetch = FetchType.LAZY, cascade = {CascadeType.PERSIST, CascadeType.MERGE})
@@ -105,12 +98,6 @@ public class UserGroup extends AuditedEntity {
         this.roles.addAll(newRoles);
     }
 
-    /** Replaces the group's managers wholesale (admin-driven update). */
-    public void replaceManagers(Collection<UUID> newManagers) {
-        this.managerUserIds.clear();
-        this.managerUserIds.addAll(newManagers);
-    }
-
     // Read-only views (override Lombok's @Getter); mutate via the domain methods above.
 
     public Set<UUID> getMemberUserIds() {
@@ -119,9 +106,5 @@ public class UserGroup extends AuditedEntity {
 
     public Set<Role> getRoles() {
         return Collections.unmodifiableSet(roles);
-    }
-
-    public Set<UUID> getManagerUserIds() {
-        return Collections.unmodifiableSet(managerUserIds);
     }
 }

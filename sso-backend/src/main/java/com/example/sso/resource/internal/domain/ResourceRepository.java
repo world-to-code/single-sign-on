@@ -86,15 +86,6 @@ public interface ResourceRepository extends JpaRepository<Resource, UUID> {
     @Query("select p.id as id, p.name as name from Resource p join p.children c where c.id = :childId order by p.name")
     List<IdName> findParentIdNames(@Param("childId") UUID childId);
 
-    /** Whether a bridging resource of the given type already holds this group as a member (migration idempotency). */
-    @Query(value = """
-            SELECT EXISTS(SELECT 1 FROM resource_member rm
-                JOIN resource r ON r.id = rm.resource_id
-                JOIN resource_type t ON t.id = r.type_id
-                WHERE t.name = :typeName AND rm.member_type = 'GROUP' AND rm.member_id = :groupId)
-            """, nativeQuery = true)
-    boolean existsGroupResourceOfType(@Param("typeName") String typeName, @Param("groupId") String groupId);
-
     /** Drops every membership of the given kind/id across all resources (its target was deleted elsewhere). */
     @Modifying
     @Query(value = "DELETE FROM resource_member WHERE member_type = :memberType AND member_id = :memberId",
