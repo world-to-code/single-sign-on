@@ -1,10 +1,18 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { ExternalLink, Lock, Plus, Trash2 } from "lucide-react";
-import { apiGet, apiPost } from "../api";
+import { apiPost, errorMessage } from "../api";
+import { type ClientRow } from "@/clients";
+import { usePaginated } from "@/usePaginated";
+import { Pagination } from "@/components/Pagination";
 import { PageHeader } from "@/components/PageHeader";
 import { DataList, EmptyState } from "@/components/states";
 import { Field, Toggle } from "@/components/form/fields";
+import { CheckboxCards } from "@/components/form/CheckboxCards";
+import {
+  AUTH_METHOD_OPTIONS, GRANT_TYPE_OPTIONS, ID_TOKEN_SIG_ALGS, SCOPE_OPTIONS, TOKEN_ENDPOINT_SIG_ALGS,
+} from "@/lib/oidcOptions";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 import { tokens } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -19,17 +27,8 @@ import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 
-interface ClientView {
-  id: string;
-  clientId: string;
-  clientName: string;
-  scopes: string;
-  grantTypes: string;
-  redirectUris: string;
-}
-
 /** Derive the app's origin from its first redirect URI, to "launch" the application. */
-function launchUrl(client: ClientView): string | null {
+function launchUrl(client: ClientRow): string | null {
   const first = (client.redirectUris ?? "").split(",")[0]?.trim();
   if (!first) return null;
   try {
@@ -44,9 +43,10 @@ const empty = {
   clientName: "",
   redirectUris: "",
   postLogoutRedirectUris: "",
-  scopes: "openid profile email",
-  grantTypes: "authorization_code refresh_token",
-  clientAuthenticationMethods: "client_secret_basic client_secret_post",
+  scopes: ["openid", "profile", "email"] as string[],
+  customScopes: "",
+  grantTypes: ["authorization_code", "refresh_token"] as string[],
+  clientAuthenticationMethods: ["client_secret_basic", "client_secret_post"] as string[],
   publicClient: false,
   requireConsent: true,
   requireProofKey: false,
@@ -67,22 +67,19 @@ const empty = {
 
 export default function Clients() {
   const confirmDelete = useDeleteConfirm();
-  const [clients, setClients] = useState<ClientView[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { items: clients, total, page, setPage, size, error, reload } = usePaginated<ClientRow>("/api/admin/clients");
+  const [formError, setFormError] = useState<string | null>(null);
   const [form, setForm] = useState({ ...empty });
   const [createdSecret, setCreatedSecret] = useState<{ clientId: string; clientSecret: string | null } | null>(null);
   const [open, setOpen] = useState(false);
 
   const set = (patch: Partial<typeof empty>) => setForm((f) => ({ ...f, ...patch }));
-
-  function reload() {
-    apiGet<ClientView[]>("/api/admin/clients").then(setClients).catch((e) => setError(String(e)));
-  }
-  useEffect(reload, []);
+  const toggleIn = (list: string[], value: string): string[] =>
+    list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 
   async function create(event: FormEvent) {
     event.preventDefault();
-    setError(null);
+    setFormError(null);
     setCreatedSecret(null);
     try {
       const num = (v: string): number | null => (v.trim() ? Number(v) : null);
@@ -91,9 +88,9 @@ export default function Clients() {
         clientName: form.clientName || null,
         redirectUris: tokens(form.redirectUris),
         postLogoutRedirectUris: tokens(form.postLogoutRedirectUris),
-        scopes: tokens(form.scopes),
-        grantTypes: tokens(form.grantTypes),
-        clientAuthenticationMethods: tokens(form.clientAuthenticationMethods),
+        scopes: [...new Set([...form.scopes, ...tokens(form.customScopes)])],
+        grantTypes: form.grantTypes,
+        clientAuthenticationMethods: form.clientAuthenticationMethods,
         publicClient: form.publicClient,
         requireConsent: form.requireConsent,
         requireProofKey: form.requireProofKey,
@@ -116,11 +113,11 @@ export default function Clients() {
       setOpen(false);
       reload();
     } catch (e) {
-      setError(String(e));
+      setFormError(errorMessage(e));
     }
   }
 
-  async function remove(client: ClientView) {
+  async function remove(client: ClientRow) {
     await confirmDelete({
       title: "Delete client?",
       description: `OAuth2 client "${client.clientId}" will be removed and can no longer authenticate.`,
@@ -140,7 +137,7 @@ export default function Clients() {
           <DialogDescription>Confidential clients receive a secret shown once; public clients use PKCE.</DialogDescription>
         </DialogHeader>
 
-        {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
+        {formError && <Alert variant="destructive"><AlertDescription>{formError}</AlertDescription></Alert>}
 
         <form id="client-form" onSubmit={create} className="grid gap-4">
           <Field label="Client ID">
@@ -158,12 +155,22 @@ export default function Clients() {
             <Input value={form.initiateLoginUri} onChange={(e) => set({ initiateLoginUri: e.target.value })}
                    placeholder="https://app.example.com/login/oidc/start" />
           </Field>
-          <Field label="Scopes">
-            <Input value={form.scopes} onChange={(e) => set({ scopes: e.target.value })} />
+          <CheckboxCards
+            label="Scopes"
+            options={SCOPE_OPTIONS}
+            selected={form.scopes}
+            onToggle={(v) => set({ scopes: toggleIn(form.scopes, v) })}
+          />
+          <Field label="Additional scopes" hint="Custom/API scopes beyond the standard ones — space or comma separated.">
+            <Input value={form.customScopes} onChange={(e) => set({ customScopes: e.target.value })}
+                   placeholder="e.g. orders:read billing:write" />
           </Field>
-          <Field label="Grant types">
-            <Input value={form.grantTypes} onChange={(e) => set({ grantTypes: e.target.value })} />
-          </Field>
+          <CheckboxCards
+            label="Grant types"
+            options={GRANT_TYPE_OPTIONS}
+            selected={form.grantTypes}
+            onToggle={(v) => set({ grantTypes: toggleIn(form.grantTypes, v) })}
+          />
 
           <div className="grid gap-2">
             <Toggle label="Public client" hint="PKCE, no secret." checked={form.publicClient} onChange={(v) => set({ publicClient: v })} />
@@ -178,10 +185,13 @@ export default function Clients() {
               <Field label="Post-logout redirect URIs">
                 <Textarea rows={1} value={form.postLogoutRedirectUris} onChange={(e) => set({ postLogoutRedirectUris: e.target.value })} />
               </Field>
-              <Field label="Client authentication methods">
-                <Input value={form.clientAuthenticationMethods} onChange={(e) => set({ clientAuthenticationMethods: e.target.value })}
-                       placeholder="client_secret_basic client_secret_post private_key_jwt ..." />
-              </Field>
+              <CheckboxCards
+                label="Client authentication methods"
+                columns={1}
+                options={AUTH_METHOD_OPTIONS}
+                selected={form.clientAuthenticationMethods}
+                onToggle={(v) => set({ clientAuthenticationMethods: toggleIn(form.clientAuthenticationMethods, v) })}
+              />
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Access token TTL (min)">
                   <Input value={form.accessTokenMinutes} onChange={(e) => set({ accessTokenMinutes: e.target.value })} inputMode="numeric" />
@@ -202,12 +212,16 @@ export default function Clients() {
                 </Select>
               </Field>
               <Field label="ID token signature algorithm">
-                <Input value={form.idTokenSignatureAlgorithm} onChange={(e) => set({ idTokenSignatureAlgorithm: e.target.value })}
-                       placeholder="RS256 / ES256 / RS384 ..." />
+                <Select value={form.idTokenSignatureAlgorithm} onChange={(e) => set({ idTokenSignatureAlgorithm: e.target.value })}>
+                  {ID_TOKEN_SIG_ALGS.map((alg) => <option key={alg} value={alg}>{alg}</option>)}
+                </Select>
               </Field>
-              <Field label="Token-endpoint auth signing alg (JWT client auth)">
-                <Input value={form.tokenEndpointAuthSigningAlgorithm} onChange={(e) => set({ tokenEndpointAuthSigningAlgorithm: e.target.value })}
-                       placeholder="RS256 (private_key_jwt) / HS256 (client_secret_jwt)" />
+              <Field label="Token-endpoint auth signing alg (JWT client auth)"
+                     hint="For private_key_jwt (RS/ES/PS) or client_secret_jwt (HS). Leave as Default otherwise.">
+                <Select value={form.tokenEndpointAuthSigningAlgorithm} onChange={(e) => set({ tokenEndpointAuthSigningAlgorithm: e.target.value })}>
+                  <option value="">Default</option>
+                  {TOKEN_ENDPOINT_SIG_ALGS.map((alg) => <option key={alg} value={alg}>{alg}</option>)}
+                </Select>
               </Field>
               <Field label="JWK Set URL (private_key_jwt)">
                 <Input value={form.jwkSetUrl} onChange={(e) => set({ jwkSetUrl: e.target.value })}
@@ -283,12 +297,15 @@ export default function Clients() {
                 return (
                   <TableRow key={c.id}>
                     <TableCell className="font-medium">
-                      {url ? (
-                        <a href={url} target="_blank" rel="noreferrer" title={`Open ${url}`}
-                           className="inline-flex items-center gap-1.5 text-primary hover:underline">
-                          {c.clientId} <ExternalLink className="size-3.5" />
-                        </a>
-                      ) : c.clientId}
+                      <span className="inline-flex items-center gap-1.5">
+                        <Link to={`/admin/clients/${c.id}`} className="text-primary hover:underline">{c.clientId}</Link>
+                        {url && (
+                          <a href={url} target="_blank" rel="noreferrer" title={`Open ${url}`}
+                             className="text-muted-foreground hover:text-foreground">
+                            <ExternalLink className="size-3.5" />
+                          </a>
+                        )}
+                      </span>
                     </TableCell>
                     <TableCell>{c.clientName}</TableCell>
                     <TableCell>
@@ -318,6 +335,7 @@ export default function Clients() {
           </Table>
         )}
       </DataList>
+      <Pagination page={page} size={size} total={total} onPage={setPage} />
 
       <p className="mt-4 max-w-3xl text-sm text-muted-foreground">
         Keycloak: add this server as an OIDC Identity Provider using discovery{" "}
