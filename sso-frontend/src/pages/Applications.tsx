@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AppWindow, Lock, Network, Settings, Trash2, UserPlus, Users as UsersIcon } from "lucide-react";
-import { apiGet, apiPost, apiPut } from "../api";
+import { apiGet, apiPost, apiPut, type Page } from "../api";
 import { PageHeader } from "@/components/PageHeader";
 import { usePaginated } from "@/usePaginated";
 import { Pagination } from "@/components/Pagination";
@@ -58,7 +58,7 @@ export default function Applications() {
   const [settingsSaved, setSettingsSaved] = useState(false);
 
   useEffect(() => {
-    apiGet<Policy[]>("/api/admin/auth-policies").then(setPolicies).catch(() => undefined);
+    apiGet<Page<Policy>>("/api/admin/auth-policies?size=100").then((p) => setPolicies(p.items)).catch(() => undefined);
   }, []);
 
   // Only app-only policies (Applies-to-login = off) are valid as per-app step-up policies.

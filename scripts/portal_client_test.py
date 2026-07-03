@@ -51,7 +51,7 @@ try:
     # per-app step-up on this client
     admin.post(f"{BASE}/api/admin/auth-policies", json={"name": "client-extra", "priority": 5, "enabled": True,
                "steps": [["FIDO2"]], "assignedRoleIds": [], "assignedUserIds": []}, headers=H(admin))
-    polId = next(p for p in admin.get(f"{BASE}/api/admin/auth-policies").json() if p["name"] == "client-extra")["id"]
+    polId = next(p for p in admin.get(f"{BASE}/api/admin/auth-policies?size=100").json()["items"] if p["name"] == "client-extra")["id"]
     for asg in admin.get(f"{BASE}/api/admin/applications/OIDC/{app['id']}/assignments").json():
         admin.delete(f"{BASE}/api/admin/applications/assignments/{asg['id']}", headers=H(admin))
     admin.post(f"{BASE}/api/admin/applications/assignments", json={"appType": "OIDC", "appId": app["id"],
