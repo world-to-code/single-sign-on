@@ -21,21 +21,25 @@ export function AdminGuard({ children }: { children: ReactNode }) {
   const canEnter = useAdminConsoleAccess(); // undefined while loading
   const unlocked = isAdminUnlocked();
   const started = useRef(false); // guard against React StrictMode running the effect twice (double OIDC flow)
+  const [declined, setDeclined] = useState(false);
 
   useEffect(() => {
-    if (canEnter === true && !unlocked && !started.current) {
+    if (canEnter === true && !unlocked && !started.current && !declined) {
       started.current = true;
       // Force a FRESH step-up re-auth FIRST (re-stamps the session auth_time), THEN run the OIDC flow
-      // so the minted elevation token carries a fresh auth_time (RFC 9470). Bounce home if declined.
+      // so the minted elevation token carries a fresh auth_time (RFC 9470).
       void (async () => {
         if (await triggerStepUp("action")) {
           await startAdminOidc(); // navigates away to /oauth2/authorize
         } else {
-          window.location.replace("/");
+          // Declining re-elevation is NOT an authorization failure — it's just an unmet extra-auth
+          // requirement. Keep the user in the admin console context with a retry, rather than ejecting
+          // them to the user portal.
+          setDeclined(true);
         }
       })();
     }
-  }, [canEnter, unlocked]);
+  }, [canEnter, unlocked, declined]);
 
   if (canEnter === undefined) {
     return <LoadingScreen />; // resolving assignment
@@ -43,10 +47,32 @@ export function AdminGuard({ children }: { children: ReactNode }) {
   if (!canEnter) {
     return <Navigate to="/" replace />;
   }
+  if (declined) {
+    return <ReElevatePrompt onRetry={() => { started.current = false; setDeclined(false); }} />;
+  }
   if (!unlocked) {
     return <LoadingScreen />; // briefly shown while stepping up / redirecting to the IdP
   }
   return <>{children}</>;
+}
+
+/** Shown when the admin session needs a fresh re-elevation and the user declined — stay in context, offer retry. */
+function ReElevatePrompt({ onRetry }: { onRetry: () => void }) {
+  return (
+    <AuthLayout step="Admin console" title="Re-authentication required"
+                description="This admin session needs a fresh verification to continue.">
+      <Alert className="mb-4">
+        <ShieldAlert className="size-4" />
+        <AlertDescription>
+          Sensitive admin actions require you to re-verify it's you. You haven't been signed out — verify to continue.
+        </AlertDescription>
+      </Alert>
+      <Button className="w-full" onClick={onRetry}>Re-authenticate</Button>
+      <a href="/" className="mt-4 block text-center text-sm text-muted-foreground hover:text-foreground">
+        Back to portal
+      </a>
+    </AuthLayout>
+  );
 }
 
 /**
