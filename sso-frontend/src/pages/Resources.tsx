@@ -2,12 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { Boxes, Plus, Trash2, Layers, ChevronRight } from "lucide-react";
 import {
   LEAF_MEMBER_TYPES, MEMBER_TYPES, assignResourceAdmin, attachChild, attachMember, createResource,
-  createResourceType, deleteResource, detachChild, detachMember, getResourceDetail, listResourceTypes,
-  listResources, renameResource, revokeResourceAdmin,
-  type MemberType, type Resource, type ResourceDetail, type ResourceNode, type ResourceType,
+  createResourceType, deleteResource, detachChild, detachMember, getResourceDetail, listApplications,
+  listResourceTypes, listResources, renameResource, revokeResourceAdmin,
+  type AppOption, type MemberType, type Resource, type ResourceDetail, type ResourceNode, type ResourceType,
 } from "@/resources";
+import { searchGroups, searchUsers } from "@/groups";
 import { errorMessage } from "@/api";
 import { PageHeader } from "@/components/PageHeader";
+import { SearchSelect, type Suggestion } from "@/components/SearchSelect";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 import { Field } from "@/components/form/fields";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -20,6 +22,16 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DataList, EmptyState } from "@/components/states";
+
+const MEMBER_KIND_LABELS: Record<MemberType, string> = {
+  RESOURCE: "Child resources", GROUP: "Groups", APPLICATION: "Applications", USER: "Users",
+};
+const MEMBER_KIND_HINTS: Record<MemberType, string> = {
+  RESOURCE: "Nest other resources under this one (a sub-tree).",
+  GROUP: "User groups — every member inherits the delegated access.",
+  APPLICATION: "OIDC clients & SAML relying parties.",
+  USER: "Individual user accounts, attached directly.",
+};
 
 export default function Resources() {
   const [resources, setResources] = useState<Resource[] | null>(null);
@@ -53,7 +65,8 @@ export default function Resources() {
         actions={
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => setTyping(true)}><Layers /> New type</Button>
-            <Button onClick={() => setCreating(true)} disabled={!types.length}><Plus /> New resource</Button>
+            <Button onClick={() => setCreating(true)} disabled={!types.length}
+              title={types.length ? undefined : "Create a resource type first"}><Plus /> New resource</Button>
           </div>
         }
       />
@@ -63,7 +76,9 @@ export default function Resources() {
         error={error}
         isEmpty={(r) => r.length === 0}
         empty={<EmptyState icon={<Boxes />} title="No resources yet"
-          hint={types.length ? "Create one to start delegating administration." : "Create a resource type first."} />}
+          hint={types.length
+            ? "Click “New resource” to create one, then attach groups/apps/users and delegate admins."
+            : "Two steps: ① “New type” defines which member kinds a resource can hold, then ② “New resource”."} />}
       >
         {(rs) => (
           <div className="divide-y">
@@ -181,20 +196,28 @@ function CreateTypeDialog({ onClose, onCreated }: { onClose: () => void; onCreat
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New resource type</DialogTitle>
-          <DialogDescription>Which member kinds a resource of this type may contain.</DialogDescription>
+          <DialogDescription>
+            A type is a template for resources. It decides which kinds of members a resource of this type
+            can hold — e.g. a “Team” allows Groups + Applications, a “Department” allows child Resources.
+          </DialogDescription>
         </DialogHeader>
         {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-        <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} autoFocus /></Field>
-        <div className="space-y-2">
-          {MEMBER_TYPES.map((k) => (
-            <label key={k} className="flex items-center gap-2 text-sm">
-              <Checkbox checked={kinds.includes(k)} onCheckedChange={() => toggle(k)} /> {k}
-            </label>
-          ))}
-        </div>
+        <Field label="Type name"><Input value={name} placeholder="e.g. Team, Department"
+          onChange={(e) => setName(e.target.value)} autoFocus /></Field>
+        <Field label="Allowed member kinds">
+          <div className="space-y-1.5">
+            {MEMBER_TYPES.map((k) => (
+              <label key={k} className="flex items-start gap-2 rounded-md border p-2 text-sm has-[:checked]:border-primary has-[:checked]:bg-accent">
+                <Checkbox className="mt-0.5" checked={kinds.includes(k)} onCheckedChange={() => toggle(k)} />
+                <span><span className="font-medium">{MEMBER_KIND_LABELS[k]}</span>
+                  <span className="block text-xs text-muted-foreground">{MEMBER_KIND_HINTS[k]}</span></span>
+              </label>
+            ))}
+          </div>
+        </Field>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => void submit()} disabled={!name.trim() || !kinds.length}>Create</Button>
+          <Button onClick={() => void submit()} disabled={!name.trim() || !kinds.length}>Create type</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -213,8 +236,9 @@ function ResourceDetailDialog(
   const [name, setName] = useState("");
   const [childId, setChildId] = useState("");
   const [memberType, setMemberType] = useState<MemberType>("GROUP");
-  const [memberId, setMemberId] = useState("");
-  const [adminUserId, setAdminUserId] = useState("");
+  const [apps, setApps] = useState<AppOption[]>([]);
+  const [memberAddKey, setMemberAddKey] = useState(0);
+  const [adminAddKey, setAdminAddKey] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -246,9 +270,23 @@ function ResourceDetailDialog(
   const allowed = detail ? types.find((t) => t.name === detail.typeName)?.allowedMemberTypes ?? [] : [];
   const allowedLeafTypes: MemberType[] = LEAF_MEMBER_TYPES.filter((t) => allowed.includes(t));
   const canHaveChildren = allowed.includes("RESOURCE");
+  const canHaveApps = allowed.includes("APPLICATION");
   const activeMemberType: MemberType = allowedLeafTypes.includes(memberType) ? memberType : (allowedLeafTypes[0] ?? "GROUP");
   const attachable = allResources.filter((r) => r.id !== resourceId
     && !(detail?.children ?? []).some((c) => c.id === r.id));
+
+  // Applications aren't searchable server-side; load them once and filter the (small) list client-side.
+  useEffect(() => { if (canHaveApps) listApplications().then(setApps).catch(() => undefined); }, [canHaveApps]);
+
+  // A name typeahead for the active member kind — groups/users search server-side, apps filter locally.
+  const memberFetcher = (type: MemberType) => (q: string): Promise<Suggestion[]> => {
+    if (type === "GROUP") return searchGroups(q);
+    if (type === "USER") return searchUsers(q);
+    const needle = q.trim().toLowerCase();
+    return Promise.resolve(apps
+      .filter((a) => !needle || a.name.toLowerCase().includes(needle))
+      .map((a) => ({ id: a.id, label: `${a.name} · ${a.type}` })));
+  };
 
   return (
     <Dialog open onOpenChange={onClose}>
@@ -302,12 +340,13 @@ function ResourceDetailDialog(
               onChange={(e) => setMemberType(e.target.value as MemberType)}>
               {allowedLeafTypes.map((t) => <option key={t} value={t}>{t}</option>)}
             </Select>
-            <Input className="flex-1" placeholder="member id (uuid or app id)" value={memberId}
-              onChange={(e) => setMemberId(e.target.value)} />
-            <Button variant="outline" disabled={!memberId.trim()}
-              onClick={() => void run(() => attachMember(resourceId, activeMemberType, memberId.trim())).then((ok) => { if (ok) setMemberId(""); })}>
-              <Plus /> Add
-            </Button>
+            <div className="flex-1">
+              <SearchSelect key={activeMemberType} resetKey={memberAddKey}
+                placeholder={`Search ${activeMemberType.toLowerCase()}s by name…`}
+                fetcher={memberFetcher(activeMemberType)}
+                onSelect={(s) => { if (s) void run(() => attachMember(resourceId, activeMemberType, s.id))
+                  .then((ok) => { if (ok) setMemberAddKey((k) => k + 1); }); }} />
+            </div>
           </div>
         </Section>
         )}
@@ -315,14 +354,10 @@ function ResourceDetailDialog(
         <Section title="Delegated administrators">
           <ChipList items={detail.grants.map((g) => ({ key: g.userId, label: `${g.username ?? g.userId} · ${g.tier}` }))}
             onRemove={(userId) => void run(() => revokeResourceAdmin(resourceId, userId))} />
-          <div className="flex gap-2">
-            <Input className="flex-1" placeholder="user id (uuid)" value={adminUserId}
-              onChange={(e) => setAdminUserId(e.target.value)} />
-            <Button variant="outline" disabled={!adminUserId.trim()}
-              onClick={() => void run(() => assignResourceAdmin(resourceId, adminUserId.trim())).then((ok) => { if (ok) setAdminUserId(""); })}>
-              <Plus /> Assign admin
-            </Button>
-          </div>
+          <SearchSelect resetKey={adminAddKey} placeholder="Search users to grant admin…"
+            fetcher={searchUsers}
+            onSelect={(s) => { if (s) void run(() => assignResourceAdmin(resourceId, s.id))
+              .then((ok) => { if (ok) setAdminAddKey((k) => k + 1); }); }} />
         </Section>
         </>
         )}

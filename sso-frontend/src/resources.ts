@@ -64,6 +64,14 @@ export interface ResourceDetail {
   grants: ResourceGrantDetail[];
 }
 
+export interface AppOption {
+  id: string;
+  type: string;
+  name: string;
+}
+/** All registered applications (OIDC + SAML), for the member picker. */
+export const listApplications = () => apiGet<AppOption[]>("/api/admin/applications");
+
 export const listResources = () => apiGet<Resource[]>("/api/admin/resources");
 export const getResourceDetail = (id: string) =>
   apiGet<ResourceDetail>(`/api/admin/resources/${encodeURIComponent(id)}/detail`);
