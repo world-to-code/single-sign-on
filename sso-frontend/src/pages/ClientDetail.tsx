@@ -6,6 +6,7 @@ import { errorMessage } from "@/api";
 import { tokens } from "@/lib/utils";
 import { PageHeader } from "@/components/PageHeader";
 import { CopyField } from "@/components/CopyField";
+import { CodeBlock } from "@/components/CodeBlock";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +25,8 @@ export default function ClientDetail() {
   const redirectUris = client ? tokens(client.redirectUris) : [];
   const scopes = client ? tokens(client.scopes) : [];
   const grantTypes = client ? tokens(client.grantTypes) : [];
+  const redirect = redirectUris[0] ?? "https://your-app.example/callback";
+  const scopeParam = (scopes.length ? scopes : ["openid"]).join(" ");
 
   return (
     <>
@@ -118,6 +121,60 @@ export default function ClientDetail() {
               )}
             </CardContent>
           </Card>
+
+          {discovery && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Quick start</CardTitle>
+                <CardDescription>
+                  A standard OIDC library pointed at the issuer/discovery URL builds these requests for you —
+                  including <code className="font-mono text-xs">state</code>, <code className="font-mono text-xs">nonce</code> and PKCE.
+                  The snippets below (prefilled with this client) are for reference and manual testing.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="space-y-2">
+                  <CodeBlock
+                    wrap
+                    label="1. Authorization request (redirect the user here)"
+                    code={`${discovery.authorization_endpoint}?response_type=code`
+                      + `&client_id=${encodeURIComponent(client.clientId)}`
+                      + `&redirect_uri=${encodeURIComponent(redirect)}`
+                      + `&scope=${encodeURIComponent(scopeParam)}`
+                      + `&state=<STATE>&nonce=<NONCE>`
+                      + `&code_challenge=<PKCE_CHALLENGE>&code_challenge_method=S256`}
+                  />
+                  <ul className="space-y-0.5 text-xs text-muted-foreground">
+                    <li><code className="font-mono">response_type=code</code> — Authorization Code flow.</li>
+                    <li><code className="font-mono">client_id</code> / <code className="font-mono">redirect_uri</code> — this client and one of its registered URIs (must match exactly).</li>
+                    <li><code className="font-mono">scope</code> — must include <code className="font-mono">openid</code> to get an ID token.</li>
+                    <li><code className="font-mono">state</code> / <code className="font-mono">nonce</code> — random per request (CSRF / replay protection); verified on return.</li>
+                    <li><code className="font-mono">code_challenge</code> (+ <code className="font-mono">method=S256</code>) — PKCE; the library keeps the matching <code className="font-mono">code_verifier</code> for step&nbsp;2.</li>
+                  </ul>
+                </div>
+                <CodeBlock
+                  label="2. Exchange the returned code for tokens (server-side)"
+                  code={`curl -X POST '${discovery.token_endpoint}' \\\n`
+                    + `  -d grant_type=authorization_code \\\n`
+                    + `  -d code=<AUTH_CODE> \\\n`
+                    + `  -d redirect_uri='${redirect}' \\\n`
+                    + `  -d client_id='${client.clientId}' \\\n`
+                    + `  -d code_verifier=<PKCE_VERIFIER>\n`
+                    + `# confidential client: also send the secret, e.g. add  -u '${client.clientId}:<CLIENT_SECRET>'`}
+                  hint="Returns an id_token + access_token. Verify signatures against the JWKS URI above."
+                />
+                <CodeBlock
+                  label="Or configure a library from discovery (Spring Boot example)"
+                  code={`spring.security.oauth2.client.provider.mysso.issuer-uri=${discovery.issuer}\n`
+                    + `spring.security.oauth2.client.registration.mysso.client-id=${client.clientId}\n`
+                    + `spring.security.oauth2.client.registration.mysso.client-secret=<CLIENT_SECRET>\n`
+                    + `spring.security.oauth2.client.registration.mysso.scope=${scopeParam.replace(/ /g, ",")}\n`
+                    + `spring.security.oauth2.client.registration.mysso.redirect-uri=${redirect}`}
+                  hint="Any OIDC-certified library works the same way — give it the issuer, client id/secret, redirect URI and scopes."
+                />
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
     </>
