@@ -23,6 +23,8 @@ public record SessionPolicyRequest(
         @Min(1) @Max(1440) int idleTimeoutMinutes,
         @Min(1) @Max(1440) int reauthIntervalMinutes,
         @NotBlank String reauthFactors,
+        @Min(1) @Max(1440) int sensitiveReauthWindowMinutes,
+        @NotBlank String stepUpFactors,
         boolean bindClient,
         @Min(0) @Max(100) int maxConcurrentSessions,
         boolean rotateOnReauth,
@@ -35,7 +37,8 @@ public record SessionPolicyRequest(
      */
     public SessionPolicySpec toSpec() {
         return new SessionPolicySpec(name, priority, enabled, absoluteTimeoutMinutes, idleTimeoutMinutes,
-                reauthIntervalMinutes, reauthFactors, bindClient, maxConcurrentSessions, rotateOnReauth,
+                reauthIntervalMinutes, reauthFactors, sensitiveReauthWindowMinutes, stepUpFactors,
+                bindClient, maxConcurrentSessions, rotateOnReauth,
                 cookieSameSite, uuids(assignedUserIds), uuids(assignedRoleIds));
     }
 
@@ -44,7 +47,8 @@ public record SessionPolicyRequest(
      */
     public SessionPolicyUpdate toUpdate() {
         return new SessionPolicyUpdate(priority, enabled, absoluteTimeoutMinutes, idleTimeoutMinutes,
-                reauthIntervalMinutes, reauthFactors, bindClient, maxConcurrentSessions, rotateOnReauth,
+                reauthIntervalMinutes, reauthFactors, sensitiveReauthWindowMinutes, stepUpFactors,
+                bindClient, maxConcurrentSessions, rotateOnReauth,
                 cookieSameSite, uuids(assignedUserIds), uuids(assignedRoleIds));
     }
 

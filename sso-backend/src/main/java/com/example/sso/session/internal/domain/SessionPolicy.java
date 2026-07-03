@@ -65,10 +65,12 @@ public class SessionPolicy extends AbstractEntity implements SessionPolicyDetail
     }
 
     public void update(int absoluteTimeoutMinutes, int idleTimeoutMinutes, int reauthIntervalMinutes,
-                       String reauthFactors, boolean bindClient, int maxConcurrentSessions,
+                       String reauthFactors, int sensitiveReauthWindowMinutes, String stepUpFactors,
+                       boolean bindClient, int maxConcurrentSessions,
                        boolean rotateOnReauth, String cookieSameSite) {
         this.rules = new SessionRules(absoluteTimeoutMinutes, idleTimeoutMinutes, reauthIntervalMinutes,
-                reauthFactors, bindClient, maxConcurrentSessions, rotateOnReauth, cookieSameSite);
+                reauthFactors, sensitiveReauthWindowMinutes, stepUpFactors, bindClient, maxConcurrentSessions,
+                rotateOnReauth, cookieSameSite);
     }
 
     public void updatePriority(int priority) {
@@ -112,6 +114,16 @@ public class SessionPolicy extends AbstractEntity implements SessionPolicyDetail
     @Override
     public String getReauthFactors() {
         return rules.reauthFactors();
+    }
+
+    @Override
+    public int getSensitiveReauthWindowMinutes() {
+        return rules.sensitiveReauthWindowMinutes();
+    }
+
+    @Override
+    public String getStepUpFactors() {
+        return rules.stepUpFactors();
     }
 
     @Override

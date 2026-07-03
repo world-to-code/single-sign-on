@@ -14,6 +14,8 @@ public record SessionRules(
         @Column(name = "idle_timeout_minutes", nullable = false) int idleTimeoutMinutes,
         @Column(name = "reauth_interval_minutes", nullable = false) int reauthIntervalMinutes,
         @Column(name = "reauth_factors", nullable = false, length = 128) String reauthFactors,
+        @Column(name = "sensitive_reauth_window_minutes", nullable = false) int sensitiveReauthWindowMinutes,
+        @Column(name = "stepup_factors", nullable = false, length = 128) String stepUpFactors,
         @Column(name = "bind_client", nullable = false) boolean bindClient,
         @Column(name = "max_concurrent_sessions", nullable = false) int maxConcurrentSessions,
         @Column(name = "rotate_on_reauth", nullable = false) boolean rotateOnReauth,
@@ -21,6 +23,6 @@ public record SessionRules(
 
     /** The seeded Default policy's rules. */
     public static SessionRules defaults() {
-        return new SessionRules(480, 30, 5, "TOTP,FIDO2", true, 0, true, "Lax");
+        return new SessionRules(480, 30, 5, "TOTP,FIDO2", 2, "TOTP,FIDO2", true, 0, true, "Lax");
     }
 }

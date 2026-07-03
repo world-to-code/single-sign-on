@@ -61,6 +61,11 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
             SessionPolicyDetails policy = policyService.resolveForUsername(username);
             long now = System.currentTimeMillis();
 
+            // Drive the servlet container's idle timeout from the policy (a small grace so the precise
+            // idle check below rejects first, with its audit); otherwise the fixed server.servlet.session
+            // .timeout would silently cap any policy idle above it.
+            session.setMaxInactiveInterval((int) (policy.getIdleTimeoutMinutes() * 60L + 60));
+
             // Concurrent-session control: SessionLifecycle (SessionManagerImpl) evicts the oldest overflow sessions by
             // marking them expired in the SessionRegistry. Mirror Spring's ConcurrentSessionFilter —
             // reject + invalidate an expired session here, otherwise refresh its last-request stamp

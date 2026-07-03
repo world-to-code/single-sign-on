@@ -12,32 +12,29 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.method.HandlerMethod;
 
-import java.time.Duration;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /**
- * Unit test for the {@link StepUpInterceptor} freshness gate. Interceptors run in the MVC layer (not on
- * direct controller-bean calls), so this drives {@code preHandle} directly with a {@link HandlerMethod}
- * to prove the {@link RequireStepUp} enforcement: a sensitive method demands a re-auth within the
- * configured window (bounded by the stricter of it and the session policy) and challenges with the
- * {@code X-Step-Up-Required} 401 otherwise; ordinary reads are never gated, and ordinary mutations keep
- * using the looser policy window. The freshness window is injected (from config), never hardcoded.
+ * Unit test for {@link StepUpInterceptor}. Drives {@code preHandle} directly with a {@link HandlerMethod}
+ * (interceptors run in the MVC layer, not on direct bean calls) to prove:
+ * <ul>
+ *   <li>ordinary mutations are gated on an <b>idle</b> basis — activity keeps them fresh, an idle gap past
+ *       the policy re-auth interval challenges (with the general re-auth factors);</li>
+ *   <li>reads are never gated but refresh the activity clock;</li>
+ *   <li>sensitive ({@link RequireStepUp}) actions require a fresh deliberate auth within the policy's
+ *       step-up window and challenge with the (possibly stronger) step-up factors.</li>
+ * </ul>
  */
 class StepUpInterceptorTest {
-
-    /** The configured sensitive-op freshness window under test (mirrors {@code application.yml}). */
-    private static final Duration SENSITIVE_WINDOW = Duration.ofSeconds(120);
 
     private SessionPolicyService policyService;
     private StepUpInterceptor interceptor;
 
-    /** Sample handlers whose annotations the interceptor reads off the {@link HandlerMethod}. */
     @SuppressWarnings("unused")
     static class SampleController {
         @RequireStepUp
@@ -49,11 +46,13 @@ class StepUpInterceptorTest {
     @BeforeEach
     void setUp() {
         policyService = mock(SessionPolicyService.class);
-        interceptor = new StepUpInterceptor(policyService, SENSITIVE_WINDOW);
+        interceptor = new StepUpInterceptor(policyService);
 
         SessionPolicyDetails policy = mock(SessionPolicyDetails.class);
-        lenient().when(policy.getReauthIntervalMinutes()).thenReturn(5);       // 300s general window
+        lenient().when(policy.getReauthIntervalMinutes()).thenReturn(5);          // 300s idle window
         lenient().when(policy.getReauthFactors()).thenReturn("TOTP,FIDO2");
+        lenient().when(policy.getSensitiveReauthWindowMinutes()).thenReturn(2);   // 120s sensitive window
+        lenient().when(policy.getStepUpFactors()).thenReturn("FIDO2");            // stronger set for sensitive
         lenient().when(policyService.resolveForUsername(anyString())).thenReturn(policy);
         lenient().when(policyService.defaultPolicy()).thenReturn(policy);
 
@@ -70,66 +69,100 @@ class StepUpInterceptorTest {
         return new HandlerMethod(new SampleController(), SampleController.class.getMethod(method));
     }
 
-    private MockHttpServletRequest request(String httpMethod, long authAgeMillis) {
+    private MockHttpServletRequest request(String httpMethod) {
         MockHttpServletRequest request = new MockHttpServletRequest(httpMethod, "/api/admin/auth-policies/x");
-        MockHttpSession session = new MockHttpSession();
-        session.setAttribute(StepUpInterceptor.AUTH_TIME, System.currentTimeMillis() - authAgeMillis);
-        request.setSession(session);
+        request.setSession(new MockHttpSession());
         return request;
     }
 
-    @Test
-    void sensitiveOperationWithStaleAuthIsChallenged() throws Exception {
-        MockHttpServletRequest request = request("DELETE", 200_000); // 200s > 120s window (but < 300s policy)
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        boolean proceed = interceptor.preHandle(request, response, handler("sensitive"));
-
-        assertThat(proceed).isFalse();
-        assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
-        assertThat(response.getHeader("X-Step-Up-Required")).isEqualTo("true");
-        assertThat(response.getContentAsString()).contains("\"TOTP\"", "\"FIDO2\"", "reauthRequired");
+    private void authAge(MockHttpServletRequest request, long millis) {
+        request.getSession().setAttribute(StepUpInterceptor.AUTH_TIME, System.currentTimeMillis() - millis);
     }
 
-    @Test
-    void sensitiveOperationWithFreshAuthProceeds() throws Exception {
-        MockHttpServletRequest request = request("DELETE", 30_000); // 30s < 120s window
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        assertThat(interceptor.preHandle(request, response, handler("sensitive"))).isTrue();
-        assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+    private void activityAge(MockHttpServletRequest request, long millis) {
+        request.getSession().setAttribute(StepUpInterceptor.REAUTH_ACTIVITY, System.currentTimeMillis() - millis);
     }
 
-    @Test
-    void plainReadIsNeverGated() throws Exception {
-        MockHttpServletRequest request = request("GET", 999_999); // ancient auth, still fine for a read
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        assertThat(interceptor.preHandle(request, response, handler("plain"))).isTrue();
-    }
+    // --- sensitive (@RequireStepUp): fresh deliberate auth within the step-up window, stronger factors ---
 
     @Test
-    void ordinaryMutationUsesTheLongerPolicyWindow() throws Exception {
-        // A non-annotated DELETE 200s old passes: within the 300s policy window (the sensitive 120s
-        // window does NOT apply without the annotation).
-        MockHttpServletRequest request = request("DELETE", 200_000);
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        assertThat(interceptor.preHandle(request, response, handler("plain"))).isTrue();
-    }
-
-    @Test
-    void sensitiveOperationIsBoundedByTheStricterPolicyWindow() throws Exception {
-        // Policy window tightened to 1 min (60s); the 120s configured window must not loosen it.
-        SessionPolicyDetails strict = mock(SessionPolicyDetails.class);
-        when(strict.getReauthIntervalMinutes()).thenReturn(1);
-        lenient().when(strict.getReauthFactors()).thenReturn("TOTP");
-        when(policyService.resolveForUsername(anyString())).thenReturn(strict);
-
-        MockHttpServletRequest request = request("PUT", 90_000); // 90s: within 120s, but beyond 60s policy
+    void sensitiveWithStaleAuthIsChallengedWithStepUpFactors() throws Exception {
+        MockHttpServletRequest request = request("DELETE");
+        authAge(request, 200_000);       // 200s > 120s step-up window
+        activityAge(request, 0);         // active — but sensitive uses auth-freshness, not activity
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         assertThat(interceptor.preHandle(request, response, handler("sensitive"))).isFalse();
         assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+        assertThat(response.getHeader("X-Step-Up-Required")).isEqualTo("true");
+        assertThat(response.getContentAsString()).contains("\"FIDO2\"").doesNotContain("\"TOTP\"");
+        assertThat(request.getSession().getAttribute(StepUpInterceptor.STEPUP_FACTORS)).isEqualTo("FIDO2");
+    }
+
+    @Test
+    void sensitiveWithFreshAuthProceeds() throws Exception {
+        MockHttpServletRequest request = request("DELETE");
+        authAge(request, 30_000);        // 30s < 120s
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThat(interceptor.preHandle(request, response, handler("sensitive"))).isTrue();
+    }
+
+    // --- ordinary mutation: idle-based on the re-auth interval, general factors ---
+
+    @Test
+    void mutationWithinTheIdleWindowProceeds() throws Exception {
+        MockHttpServletRequest request = request("DELETE");
+        activityAge(request, 100_000);   // 100s < 300s interval
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThat(interceptor.preHandle(request, response, handler("plain"))).isTrue();
+    }
+
+    @Test
+    void mutationAfterAnIdleGapIsChallengedWithReauthFactors() throws Exception {
+        MockHttpServletRequest request = request("DELETE");
+        activityAge(request, 400_000);   // 400s > 300s interval — idle too long
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThat(interceptor.preHandle(request, response, handler("plain"))).isFalse();
+        assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+        assertThat(response.getContentAsString()).contains("\"TOTP\"", "\"FIDO2\"");
+    }
+
+    @Test
+    void mutationIsIdleBasedNotAuthBased() throws Exception {
+        // Ancient last auth, but recent activity: an actively-used session is NOT re-challenged.
+        MockHttpServletRequest request = request("PUT");
+        authAge(request, 9_999_000);
+        activityAge(request, 5_000);     // 5s ago — active
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThat(interceptor.preHandle(request, response, handler("plain"))).isTrue();
+    }
+
+    @Test
+    void aChallengedMutationDoesNotRefreshTheIdleClock() throws Exception {
+        MockHttpServletRequest request = request("DELETE");
+        long stamp = System.currentTimeMillis() - 400_000;
+        request.getSession().setAttribute(StepUpInterceptor.REAUTH_ACTIVITY, stamp);
+
+        interceptor.preHandle(request, new MockHttpServletResponse(), handler("plain")); // challenged
+
+        // The clock is left stale so a retry can't bypass the step-up by refreshing it.
+        assertThat(request.getSession().getAttribute(StepUpInterceptor.REAUTH_ACTIVITY)).isEqualTo(stamp);
+    }
+
+    // --- reads: never gated, but refresh the activity clock ---
+
+    @Test
+    void readIsNeverGatedAndRefreshesActivity() throws Exception {
+        MockHttpServletRequest request = request("GET");
+        activityAge(request, 9_999_000); // ancient — still fine for a read
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThat(interceptor.preHandle(request, response, handler("plain"))).isTrue();
+        long refreshed = (long) request.getSession().getAttribute(StepUpInterceptor.REAUTH_ACTIVITY);
+        assertThat(System.currentTimeMillis() - refreshed).isLessThan(5_000); // clock reset to ~now
     }
 }

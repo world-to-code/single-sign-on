@@ -26,6 +26,12 @@ public interface SessionPolicyDetails {
 
     String getReauthFactors();
 
+    /** Freshness window (minutes) for sensitive (@RequireStepUp) actions — stricter than the reauth interval. */
+    int getSensitiveReauthWindowMinutes();
+
+    /** Allowed factors for a sensitive-action step-up (may be stronger than the general reauth factors). */
+    String getStepUpFactors();
+
     boolean isBindClient();
 
     int getMaxConcurrentSessions();

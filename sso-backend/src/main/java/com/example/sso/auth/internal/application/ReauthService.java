@@ -13,6 +13,7 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.user.UserAccount;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import java.util.Arrays;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -33,10 +34,10 @@ public class ReauthService {
     private final FactorAuthorizationService factorAuth;
     private final AuditService audit;
 
-    /** Pre-step data for a re-auth factor (e.g. WebAuthn options); must be a policy-allowed re-auth factor. */
+    /** Pre-step data for a re-auth factor (e.g. WebAuthn options); must be allowed for the pending step-up. */
     public FactorChallenge prepare(AuthFactor factor, HttpServletRequest request) {
         UserAccount user = currentUser.require();
-        requireReauthFactor(sessionPolicy.resolveForUser(user), factor);
+        requireAllowedFactor(request, sessionPolicy.resolveForUser(user), factor);
         return factorHandlers.get(factor).prepare(user, request);
     }
 
@@ -45,7 +46,7 @@ public class ReauthService {
                        HttpServletRequest request, HttpServletResponse response) {
         UserAccount user = currentUser.require();
         SessionPolicyDetails policy = sessionPolicy.resolveForUser(user);
-        requireReauthFactor(policy, factor);
+        requireAllowedFactor(request, policy, factor);
 
         if (!factorHandlers.get(factor).verify(user, verification, request)) {
             audit.record(new AuditRecord(AuditType.REAUTH_FAILURE, user.getUsername(), false, "factor=" + factor, null));
@@ -59,16 +60,25 @@ public class ReauthService {
         }
 
         StepUpInterceptor.stamp(request.getSession(true));
+        request.getSession().removeAttribute(StepUpInterceptor.STEPUP_FACTORS); // pending step-up satisfied
         // Re-stamp the session Authentication's auth-time marker so an admin elevation token minted from
         // the OIDC flow right after this step-up carries a FRESH auth_time (RFC 9470 step-up).
         factorAuth.restampAuthTime(request, response);
         audit.record(new AuditRecord(AuditType.REAUTH_SUCCESS, user.getUsername(), true, "factor=" + factor, null));
     }
 
-    private void requireReauthFactor(SessionPolicyDetails policy, AuthFactor factor) {
-        boolean allowed = Arrays.stream(policy.getReauthFactors().split(","))
+    /**
+     * The factor must be in the set the pending step-up demands: the interceptor records the exact allowed
+     * factors on the session when it challenges (a sensitive action's may be stronger than the general
+     * re-auth factors); a proactive re-auth with no pending challenge falls back to the policy's re-auth factors.
+     */
+    private void requireAllowedFactor(HttpServletRequest request, SessionPolicyDetails policy, AuthFactor factor) {
+        HttpSession session = request.getSession(false);
+        Object pending = session == null ? null : session.getAttribute(StepUpInterceptor.STEPUP_FACTORS);
+        String allowed = pending instanceof String s && !s.isBlank() ? s : policy.getReauthFactors();
+        boolean ok = Arrays.stream(allowed.split(","))
                 .map(String::trim).anyMatch(f -> f.equals(factor.name()));
-        if (!allowed) {
+        if (!ok) {
             throw new BadRequestException(factor + " is not an allowed re-auth factor");
         }
     }

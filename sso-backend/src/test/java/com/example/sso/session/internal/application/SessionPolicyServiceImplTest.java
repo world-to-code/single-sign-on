@@ -65,12 +65,12 @@ class SessionPolicyServiceImplTest {
     }
 
     private SessionPolicySpec spec(String name, String reauthFactors) {
-        return new SessionPolicySpec(name, 5, true, 480, 30, 15, reauthFactors, false, 0, false,
+        return new SessionPolicySpec(name, 5, true, 480, 30, 15, reauthFactors, 2, reauthFactors, false, 0, false,
                 "Lax", Set.of(), Set.of());
     }
 
     private SessionPolicyUpdate update(int priority, boolean enabled, String reauthFactors) {
-        return new SessionPolicyUpdate(priority, enabled, 480, 30, 15, reauthFactors, false, 0, false,
+        return new SessionPolicyUpdate(priority, enabled, 480, 30, 15, reauthFactors, 2, reauthFactors, false, 0, false,
                 "Lax", Set.of(), Set.of());
     }
 

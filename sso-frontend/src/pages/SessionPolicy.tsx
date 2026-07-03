@@ -33,6 +33,8 @@ interface SessionPolicy {
   idleTimeoutMinutes: number;
   reauthIntervalMinutes: number;
   reauthFactors: string;
+  sensitiveReauthWindowMinutes: number;
+  stepUpFactors: string;
   bindClient: boolean;
   maxConcurrentSessions: number;
   rotateOnReauth: boolean;
@@ -51,6 +53,8 @@ interface Editor {
   idleTimeoutMinutes: string;
   reauthIntervalMinutes: string;
   reauthFactors: string;
+  sensitiveReauthWindowMinutes: string;
+  stepUpFactors: string;
   bindClient: boolean;
   maxConcurrentSessions: string;
   rotateOnReauth: boolean;
@@ -64,7 +68,8 @@ const REAUTH_FACTORS = ["TOTP", "FIDO2", "PASSWORD", "EMAIL"];
 const blankEditor: Editor = {
   id: null, name: "", priority: "10", enabled: true,
   absoluteTimeoutMinutes: "480", idleTimeoutMinutes: "30", reauthIntervalMinutes: "5",
-  reauthFactors: "TOTP,FIDO2", bindClient: true, maxConcurrentSessions: "0", rotateOnReauth: true,
+  reauthFactors: "TOTP,FIDO2", sensitiveReauthWindowMinutes: "2", stepUpFactors: "TOTP,FIDO2",
+  bindClient: true, maxConcurrentSessions: "0", rotateOnReauth: true,
   cookieSameSite: "Lax", roleIds: [], userIds: [],
 };
 
@@ -86,6 +91,8 @@ export default function SessionPolicyPage() {
       idleTimeoutMinutes: Number(e.idleTimeoutMinutes),
       reauthIntervalMinutes: Number(e.reauthIntervalMinutes),
       reauthFactors: e.reauthFactors,
+      sensitiveReauthWindowMinutes: Number(e.sensitiveReauthWindowMinutes),
+      stepUpFactors: e.stepUpFactors,
       bindClient: e.bindClient,
       maxConcurrentSessions: Number(e.maxConcurrentSessions),
       rotateOnReauth: e.rotateOnReauth,
@@ -125,13 +132,21 @@ export default function SessionPolicyPage() {
     set({ reauthFactors: next.join(",") });
   }
 
+  const stepUpFactorList = tokens(editor.stepUpFactors, ",");
+  function toggleStepUpFactor(f: string) {
+    const next = stepUpFactorList.includes(f) ? stepUpFactorList.filter((x) => x !== f) : [...stepUpFactorList, f];
+    set({ stepUpFactors: next.join(",") });
+  }
+
   function editPolicy(p: SessionPolicy) {
     openEdit({
       id: p.id, name: p.name, priority: String(p.priority), enabled: p.enabled,
       absoluteTimeoutMinutes: String(p.absoluteTimeoutMinutes),
       idleTimeoutMinutes: String(p.idleTimeoutMinutes),
       reauthIntervalMinutes: String(p.reauthIntervalMinutes),
-      reauthFactors: p.reauthFactors, bindClient: p.bindClient,
+      reauthFactors: p.reauthFactors,
+      sensitiveReauthWindowMinutes: String(p.sensitiveReauthWindowMinutes), stepUpFactors: p.stepUpFactors,
+      bindClient: p.bindClient,
       maxConcurrentSessions: String(p.maxConcurrentSessions), rotateOnReauth: p.rotateOnReauth,
       cookieSameSite: p.cookieSameSite,
       roleIds: [...p.assignedRoleIds], userIds: [...p.assignedUserIds],
@@ -291,6 +306,25 @@ export default function SessionPolicyPage() {
               </div>
             </div>
 
+            <div className="rounded-md border border-dashed p-3 space-y-3">
+              <p className="text-sm font-medium">Sensitive actions (delete / grant / key rotation)</p>
+              <Field label="Step-up re-auth window (min)" hint="These actions need a deliberate re-auth this recent — stricter than the interval above.">
+                <Input type="number" min={1} value={editor.sensitiveReauthWindowMinutes}
+                       onChange={(e) => set({ sensitiveReauthWindowMinutes: e.target.value })} />
+              </Field>
+              <div className="space-y-2">
+                <Label>Step-up factors</Label>
+                <div className="flex flex-wrap gap-2">
+                  {REAUTH_FACTORS.map((f) => (
+                    <label key={f} className="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm has-[:checked]:border-primary has-[:checked]:bg-accent">
+                      <Checkbox checked={stepUpFactorList.includes(f)} onCheckedChange={() => toggleStepUpFactor(f)} /> {f}
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">Can be stronger than the general factors — e.g. passkey (FIDO2) only.</p>
+              </div>
+            </div>
+
             <div className="flex items-center justify-between rounded-md border p-3">
               <div>
                 <Label htmlFor="sp-bind">Bind session to client</Label>
@@ -364,6 +398,8 @@ function CookieCard({ policy, onSaved }: { policy: SessionPolicy; onSaved: () =>
         idleTimeoutMinutes: policy.idleTimeoutMinutes,
         reauthIntervalMinutes: policy.reauthIntervalMinutes,
         reauthFactors: policy.reauthFactors,
+        sensitiveReauthWindowMinutes: policy.sensitiveReauthWindowMinutes,
+        stepUpFactors: policy.stepUpFactors,
         bindClient: policy.bindClient,
         maxConcurrentSessions: policy.maxConcurrentSessions,
         rotateOnReauth: policy.rotateOnReauth,

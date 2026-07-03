@@ -138,13 +138,14 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         }
 
         String reauthFactors = validateReauthFactors(spec.reauthFactors());
+        String stepUpFactors = validateReauthFactors(spec.stepUpFactors());
         SessionPolicy policy = new SessionPolicy(spec.name(), spec.priority());
         if (!spec.enabled()) {
             policy.disable();
         }
         policy.update(spec.absoluteTimeoutMinutes(), spec.idleTimeoutMinutes(), spec.reauthIntervalMinutes(),
-                reauthFactors, spec.bindClient(), spec.maxConcurrentSessions(), spec.rotateOnReauth(),
-                spec.cookieSameSite());
+                reauthFactors, spec.sensitiveReauthWindowMinutes(), stepUpFactors, spec.bindClient(),
+                spec.maxConcurrentSessions(), spec.rotateOnReauth(), spec.cookieSameSite());
         policy.assignUsers(spec.userIds() == null ? Set.of() : spec.userIds());
         policy.assignRoles(spec.roleIds() == null ? Set.of() : spec.roleIds());
 
@@ -161,12 +162,14 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
                 .orElseThrow(() -> new NotFoundException("policy not found"));
 
         String reauthFactors = validateReauthFactors(update.reauthFactors());
+        String stepUpFactors = validateReauthFactors(update.stepUpFactors());
         boolean isDefault = DEFAULT_NAME.equals(policy.getName());
         if (isDefault) {
             // The Default is not assignable/reprioritisable, but it DOES carry the global cookie
             // settings + the baseline timeouts, so allow editing those (priority/assignment fixed).
             policy.update(update.absoluteTimeoutMinutes(), update.idleTimeoutMinutes(),
-                    update.reauthIntervalMinutes(), reauthFactors, update.bindClient(),
+                    update.reauthIntervalMinutes(), reauthFactors, update.sensitiveReauthWindowMinutes(),
+                    stepUpFactors, update.bindClient(),
                     update.maxConcurrentSessions(), update.rotateOnReauth(), update.cookieSameSite());
         } else {
             policy.updatePriority(update.priority());
@@ -176,7 +179,8 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
                 policy.disable();
             }
             policy.update(update.absoluteTimeoutMinutes(), update.idleTimeoutMinutes(),
-                    update.reauthIntervalMinutes(), reauthFactors, update.bindClient(),
+                    update.reauthIntervalMinutes(), reauthFactors, update.sensitiveReauthWindowMinutes(),
+                    stepUpFactors, update.bindClient(),
                     update.maxConcurrentSessions(), update.rotateOnReauth(), update.cookieSameSite());
             policy.assignUsers(update.userIds() == null ? Set.of() : update.userIds());
             policy.assignRoles(update.roleIds() == null ? Set.of() : update.roleIds());

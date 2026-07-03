@@ -49,7 +49,7 @@ class PolicyAdminViewIT extends AbstractIntegrationTest {
         String role = UUID.randomUUID().toString();
 
         SessionPolicyView created = sessionPolicyAdmin.create(new SessionPolicyRequest(
-                "IT-Session-" + suffix(), 50, true, 480, 30, 5, "TOTP,FIDO2", true, 0, true, "Lax",
+                "IT-Session-" + suffix(), 50, true, 480, 30, 5, "TOTP,FIDO2", 2, "TOTP,FIDO2", true, 0, true, "Lax",
                 List.of(user), List.of(role)));
         cleanups.add(() -> sessionPolicyAdmin.delete(UUID.fromString(created.id())));
 

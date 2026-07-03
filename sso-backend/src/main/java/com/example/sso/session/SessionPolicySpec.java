@@ -9,6 +9,7 @@ import java.util.UUID;
  */
 public record SessionPolicySpec(String name, int priority, boolean enabled, int absoluteTimeoutMinutes,
                                 int idleTimeoutMinutes, int reauthIntervalMinutes, String reauthFactors,
+                                int sensitiveReauthWindowMinutes, String stepUpFactors,
                                 boolean bindClient, int maxConcurrentSessions, boolean rotateOnReauth,
                                 String cookieSameSite, Set<UUID> userIds, Set<UUID> roleIds) {
 }
