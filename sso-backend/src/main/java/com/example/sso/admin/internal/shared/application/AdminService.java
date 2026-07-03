@@ -9,6 +9,7 @@ import com.example.sso.saml.SamlCredentialService;
 import com.example.sso.scim.IssueScimTokenRequest;
 import com.example.sso.scim.ScimTokenIssued;
 import com.example.sso.scim.ScimTokenService;
+import com.example.sso.shared.Page;
 import java.time.Duration;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -35,10 +36,11 @@ public class AdminService {
      * scoped to the acting admin: a super admin sees everything; a delegate sees only entries whose
      * subject is inside their subtree (and their own actions).
      */
-    public List<AuditEntry> recentAudit(AuditCategory category) {
+    public Page<AuditEntry> recentAudit(AuditCategory category, int page, int size) {
         List<AuditEntry> events = category == null ? auditService.recent() : auditService.recentByCategory(category);
         AuditScope scope = accessPolicy.currentAuditScope();
-        return scope.unscoped() ? events : events.stream().filter(scope::permits).toList();
+        List<AuditEntry> visible = scope.unscoped() ? events : events.stream().filter(scope::permits).toList();
+        return Page.of(visible, page, size);
     }
 
     public ScimTokenIssued issueScimToken(IssueScimTokenRequest request) {

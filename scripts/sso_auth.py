@@ -54,7 +54,7 @@ def authenticate(session: requests.Session, base: str,
 def cleanup(session: requests.Session, base: str, username: str = "admin") -> None:
     """Resets the user's MFA so a human isn't left with a script-enrolled TOTP secret."""
     try:
-        users = session.get(f"{base}/api/admin/users").json()
+        users = session.get(f"{base}/api/admin/users?size=100").json()["items"]
         target = next((u for u in users if u["username"] == username), None)
         if target:
             session.post(f"{base}/api/admin/users/{target['id']}/reset-mfa", headers=_csrf_headers(session))

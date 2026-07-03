@@ -3,7 +3,7 @@ package com.example.sso.admin.internal.sessionpolicy.application;
 import com.example.sso.session.SessionPolicyRequest;
 import com.example.sso.session.SessionPolicyService;
 import com.example.sso.session.SessionPolicyView;
-import java.util.List;
+import com.example.sso.shared.Page;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -24,8 +24,8 @@ public class SessionPolicyAdminService {
     private final SessionPolicyService sessionPolicy;
 
     @Transactional(readOnly = true)
-    public List<SessionPolicyView> list() {
-        return sessionPolicy.listAll().stream().map(SessionPolicyView::of).toList();
+    public Page<SessionPolicyView> list(int page, int size) {
+        return Page.of(sessionPolicy.listAll().stream().map(SessionPolicyView::of).toList(), page, size);
     }
 
     @Transactional

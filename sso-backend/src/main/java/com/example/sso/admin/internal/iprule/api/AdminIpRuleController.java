@@ -3,11 +3,11 @@ package com.example.sso.admin.internal.iprule.api;
 import com.example.sso.session.IpRuleRequest;
 import com.example.sso.session.IpRuleService;
 import com.example.sso.session.IpRuleView;
+import com.example.sso.shared.Page;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.Permissions;
 import jakarta.validation.Valid;
-import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Admin API for network (IP) access rules enforced ahead of authentication. */
@@ -31,8 +32,9 @@ public class AdminIpRuleController {
 
     @GetMapping
     @RequirePermission(Permissions.IP_RULE_READ)
-    public List<IpRuleView> ipRules() {
-        return ipRules.list();
+    public Page<IpRuleView> ipRules(@RequestParam(defaultValue = "0") int page,
+                                    @RequestParam(defaultValue = "20") int size) {
+        return Page.of(ipRules.list(), page, size);
     }
 
     @PostMapping

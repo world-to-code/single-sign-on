@@ -29,7 +29,7 @@ def main() -> int:
         r = s.get(f"{BASE}{path}")
         if r.status_code != 200:
             raise SystemExit(f"{path} failed: {r.status_code} {r.text}")
-        print(f"[ok] {path} -> {len(r.json())} rows")
+        print(f"[ok] {path} -> {r.json()['total']} rows")
 
     issued = s.post(f"{BASE}/api/admin/scim/tokens",
                     json={"description": "console-issued", "ttlDays": 30},
@@ -75,7 +75,7 @@ def main() -> int:
         "publicClient": False, "requireConsent": True})
     assert created_client.status_code == 201 and created_client.json()["clientSecret"]
     print(f"[ok] registered OAuth2 client {cid} (secret returned once)")
-    row = next(c for c in s.get(f"{BASE}/api/admin/clients").json() if c["clientId"] == cid)
+    row = next(c for c in s.get(f"{BASE}/api/admin/clients?size=100").json()["items"] if c["clientId"] == cid)
     assert "app.example.com" in row["redirectUris"]
     assert s.delete(f"{BASE}/api/admin/clients/{row['id']}", headers=_csrf_headers(s)).status_code == 204
     print("[ok] deleted client")

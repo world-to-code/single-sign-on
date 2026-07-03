@@ -52,7 +52,7 @@ class PolicyAdminServiceTest {
         AuthPolicy policy = policy("MFA"); // hoisted: spy stubbing must not nest inside when(...)
         when(delegate.listAll()).thenReturn(List.of(policy));
 
-        List<PolicyView> views = service.list();
+        List<PolicyView> views = service.list(0, 100).items();
 
         assertThat(views).hasSize(1);
         PolicyView view = views.get(0);

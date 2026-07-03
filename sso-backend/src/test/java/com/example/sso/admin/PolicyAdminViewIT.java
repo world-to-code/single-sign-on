@@ -58,13 +58,13 @@ class PolicyAdminViewIT extends AbstractIntegrationTest {
         assertThat(created.assignedRoleIds()).containsExactly(role);
 
         // ...and list() projects entities re-read from the DB with their assignment sets still LAZY.
-        SessionPolicyView listed = sessionPolicyAdmin.list().stream()
+        SessionPolicyView listed = sessionPolicyAdmin.list(0, 100).items().stream()
                 .filter(p -> p.id().equals(created.id())).findFirst().orElseThrow();
         assertThat(listed.assignedUserIds()).containsExactly(user);
         assertThat(listed.assignedRoleIds()).containsExactly(role);
 
         // The seeded Default (and every other) policy must also project cleanly off the detached read.
-        assertThatCode(sessionPolicyAdmin::list).doesNotThrowAnyException();
+        assertThatCode(() -> sessionPolicyAdmin.list(0, 100)).doesNotThrowAnyException();
     }
 
     @Test
@@ -82,14 +82,14 @@ class PolicyAdminViewIT extends AbstractIntegrationTest {
         assertThat(created.assignedUserIds()).containsExactly(user);
 
         // list() re-reads the policy with steps/allowedFactors and both assignment sets LAZY.
-        PolicyView listed = authPolicyAdmin.list().stream()
+        PolicyView listed = authPolicyAdmin.list(0, 100).items().stream()
                 .filter(p -> p.id().equals(created.id())).findFirst().orElseThrow();
         assertThat(listed.steps()).hasSize(2);
         assertThat(listed.steps().get(1)).containsExactlyInAnyOrder("TOTP", "FIDO2");
         assertThat(listed.assignedUserIds()).containsExactly(user);
         assertThat(listed.assignedRoleIds()).containsExactly(role);
 
-        assertThatCode(authPolicyAdmin::list).doesNotThrowAnyException();
+        assertThatCode(() -> authPolicyAdmin.list(0, 100)).doesNotThrowAnyException();
     }
 
     private String suffix() {

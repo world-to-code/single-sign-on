@@ -6,6 +6,7 @@ import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.shared.IdName;
+import com.example.sso.shared.Page;
 import com.example.sso.user.GroupDeletedEvent;
 import com.example.sso.user.GroupMembersPage;
 import com.example.sso.user.GroupMembership;
@@ -13,7 +14,7 @@ import com.example.sso.user.GroupSpec;
 import com.example.sso.user.GroupView;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.Suggestion;
-import com.example.sso.user.UserGroupRepository;
+import com.example.sso.user.internal.domain.UserGroupRepository;
 import com.example.sso.user.UserGroupService;
 import com.example.sso.user.internal.domain.Role;
 import com.example.sso.user.internal.domain.RoleRepository;
@@ -48,6 +49,28 @@ public class UserGroupServiceImpl implements UserGroupService {
     @Transactional(readOnly = true)
     public List<GroupView> listAll() {
         return repository.findAllByOrderByNameAsc().stream().map(this::toView).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<GroupView> listAll(int page, int size) {
+        return toPage(repository.findByOrderByNameAsc(PageRequest.of(Page.clampPage(page), Page.clampSize(size))));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<GroupView> listByIds(Collection<UUID> ids, int page, int size) {
+        int safePage = Page.clampPage(page);
+        int safeSize = Page.clampSize(size);
+        if (ids.isEmpty()) {
+            return new Page<>(0, safePage, safeSize, List.of());
+        }
+        return toPage(repository.findByIdInOrderByNameAsc(ids, PageRequest.of(safePage, safeSize)));
+    }
+
+    private Page<GroupView> toPage(org.springframework.data.domain.Page<UserGroup> found) {
+        return new Page<>(found.getTotalElements(), found.getNumber(), found.getSize(),
+                found.getContent().stream().map(this::toView).toList());
     }
 
     @Override

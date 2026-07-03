@@ -6,6 +6,7 @@ import com.example.sso.portal.AppType;
 import com.example.sso.portal.ApplicationService;
 import com.example.sso.portal.ApplicationView;
 import com.example.sso.portal.AssignAppRequest;
+import com.example.sso.shared.Page;
 import com.example.sso.shared.error.ForbiddenException;
 import java.util.List;
 import java.util.Set;
@@ -28,14 +29,13 @@ public class AppAssignmentAdminService {
     private final ApplicationService applications;
     private final AdminAccessPolicy accessPolicy;
 
-    public List<ApplicationView> listApplications() {
+    public Page<ApplicationView> listApplications(int page, int size) {
         List<ApplicationView> all = applications.listApplications();
-        if (accessPolicy.isCurrentActorUnscoped()) {
-            return all;
+        if (!accessPolicy.isCurrentActorUnscoped()) {
+            Set<String> scoped = accessPolicy.currentScopedAppIds();
+            all = all.stream().filter(app -> scoped.contains(app.id())).toList();
         }
-
-        Set<String> scoped = accessPolicy.currentScopedAppIds();
-        return all.stream().filter(app -> scoped.contains(app.id())).toList();
+        return Page.of(all, page, size);
     }
 
     public List<AppAssignmentView> assignmentsForApp(AppType appType, String appId) {

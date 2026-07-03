@@ -3,6 +3,7 @@ package com.example.sso.admin.internal.group.api;
 import com.example.sso.admin.internal.group.application.GroupAdminService;
 import com.example.sso.admin.internal.shared.security.CanAssignGroupRoles;
 import com.example.sso.portal.ApplicationView;
+import com.example.sso.shared.Page;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.GroupMembersPage;
@@ -28,7 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Admin API for the organizational directory: groups, their paginated members and assigned apps,
- * and the group→role / group→manager delegation edited from the group detail page.
+ * and the group→role delegation edited from the group detail page.
  */
 @RestController
 @RequestMapping("/api/admin/groups")
@@ -39,8 +40,9 @@ public class AdminGroupController {
 
     @GetMapping
     @RequirePermission(Permissions.GROUP_READ)
-    public List<GroupView> groups() {
-        return groups.list();
+    public Page<GroupView> groups(@RequestParam(defaultValue = "0") int page,
+                                  @RequestParam(defaultValue = "20") int size) {
+        return groups.list(page, size);
     }
 
     @PostMapping

@@ -1,6 +1,6 @@
 package com.example.sso.saml;
 
-import java.util.List;
+import com.example.sso.shared.Page;
 import java.util.UUID;
 
 /**
@@ -9,7 +9,7 @@ import java.util.UUID;
  */
 public interface SamlRelyingPartyAdminService {
 
-    List<RelyingPartyView> list();
+    Page<RelyingPartyView> list(int page, int size);
 
     RelyingPartyView create(RelyingPartyRequest request);
 

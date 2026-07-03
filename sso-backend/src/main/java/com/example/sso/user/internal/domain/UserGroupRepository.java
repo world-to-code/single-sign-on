@@ -1,8 +1,7 @@
-package com.example.sso.user;
+package com.example.sso.user.internal.domain;
 
 import com.example.sso.shared.IdName;
-import com.example.sso.user.internal.domain.Role;
-import com.example.sso.user.internal.domain.UserGroup;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -21,6 +20,15 @@ public interface UserGroupRepository extends JpaRepository<UserGroup, UUID> {
 
     List<UserGroup> findAllByOrderByNameAsc();
 
+    /**
+     * A page of groups, ordered by name. No collection fetch-join (the member-ids and roles are
+     * batch-loaded per page), so the {@code Pageable} paginates in SQL rather than in memory.
+     */
+    Page<UserGroup> findByOrderByNameAsc(Pageable pageable);
+
+    /** A scoped page: groups whose id is in {@code ids} (a delegate's subtree), ordered by name. */
+    Page<UserGroup> findByIdInOrderByNameAsc(Collection<UUID> ids, Pageable pageable);
+
     Optional<UserGroup> findFirstBySystemTrue();
 
     /** Groups the given user is a member of (matched at the join table). */
@@ -30,7 +38,6 @@ public interface UserGroupRepository extends JpaRepository<UserGroup, UUID> {
     /** Ids of the groups the given user belongs to. */
     @Query("select g.id from UserGroup g where :userId member of g.memberUserIds")
     List<UUID> findGroupIdsByMember(@Param("userId") UUID userId);
-
 
     /** Distinct ids of all users who are members of ANY of the given groups (bulk scope expansion). */
     @Query("select distinct m from UserGroup g join g.memberUserIds m where g.id in :groupIds")

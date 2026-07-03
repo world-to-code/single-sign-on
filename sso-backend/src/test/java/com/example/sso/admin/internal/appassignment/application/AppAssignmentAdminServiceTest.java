@@ -82,7 +82,7 @@ class AppAssignmentAdminServiceTest {
         when(accessPolicy.currentScopedAppIds()).thenReturn(Set.of(APP_ID));
         when(applications.listApplications()).thenReturn(List.of(app(APP_ID), app("app-2")));
 
-        assertThat(service.listApplications()).extracting(ApplicationView::id).containsExactly(APP_ID);
+        assertThat(service.listApplications(0, 100).items()).extracting(ApplicationView::id).containsExactly(APP_ID);
     }
 
     @Test
@@ -90,7 +90,7 @@ class AppAssignmentAdminServiceTest {
         when(accessPolicy.isCurrentActorUnscoped()).thenReturn(true);
         when(applications.listApplications()).thenReturn(List.of(app(APP_ID), app("app-2")));
 
-        assertThat(service.listApplications()).hasSize(2);
+        assertThat(service.listApplications(0, 100).items()).hasSize(2);
         verify(accessPolicy, never()).currentScopedAppIds();
     }
 

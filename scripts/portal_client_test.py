@@ -22,8 +22,8 @@ assert r.status_code in (200, 201), f"register failed {r.status_code} {r.text}"
 secret = r.json()["clientSecret"]
 print("registered OIDC client 'portal-demo-app'")
 
-app = next(a for a in admin.get(f"{BASE}/api/admin/applications").json() if a["name"] == "Portal Demo App")
-adminId = next(u for u in admin.get(f"{BASE}/api/admin/users").json() if u["username"] == "admin")["id"]
+app = next(a for a in admin.get(f"{BASE}/api/admin/applications?size=100").json()["items"] if a["name"] == "Portal Demo App")
+adminId = next(u for u in admin.get(f"{BASE}/api/admin/users?size=100").json()["items"] if u["username"] == "admin")["id"]
 admin.post(f"{BASE}/api/admin/applications/assignments",
            json={"appType": "OIDC", "appId": app["id"], "subjectType": "USER", "subjectId": adminId}, headers=H(admin))
 print("assigned to admin; visible in portal:",

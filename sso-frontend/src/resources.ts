@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPut, apiDelete } from "@/api";
+import { apiGet, apiPost, apiPut, apiDelete, type Page } from "@/api";
 
 export const MEMBER_TYPES = ["RESOURCE", "GROUP", "APPLICATION", "USER"] as const;
 export type MemberType = (typeof MEMBER_TYPES)[number];
@@ -72,7 +72,8 @@ export interface AppOption {
   name: string;
 }
 /** All registered applications (OIDC + SAML), for the member picker. */
-export const listApplications = () => apiGet<AppOption[]>("/api/admin/applications");
+export const listApplications = () =>
+  apiGet<Page<AppOption>>("/api/admin/applications?size=100").then((p) => p.items);
 
 export const listResources = () => apiGet<Resource[]>("/api/admin/resources");
 export const getResourceDetail = (id: string) =>

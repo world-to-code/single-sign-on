@@ -1,6 +1,7 @@
 package com.example.sso.user.internal.application;
 
 import com.example.sso.shared.IdName;
+import com.example.sso.shared.Page;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
@@ -15,7 +16,7 @@ import com.example.sso.user.Suggestion;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserDeletedEvent;
 import com.example.sso.user.UserUpdate;
-import com.example.sso.user.UserGroupRepository;
+import com.example.sso.user.internal.domain.UserGroupRepository;
 import com.example.sso.user.internal.domain.UserGroup;
 import com.example.sso.user.UserService;
 import com.example.sso.user.internal.domain.PermissionRepository;
@@ -73,6 +74,28 @@ public class UserServiceImpl implements UserService {
     @Transactional(readOnly = true)
     public List<UserAccount> findAll() {
         return users.findAll().stream().map(UserAccount.class::cast).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<UserAccount> findAll(int page, int size) {
+        return toPage(users.findByOrderByUsernameAsc(PageRequest.of(Page.clampPage(page), Page.clampSize(size))));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<UserAccount> findByIds(Collection<UUID> ids, int page, int size) {
+        int safePage = Page.clampPage(page);
+        int safeSize = Page.clampSize(size);
+        if (ids.isEmpty()) {
+            return new Page<>(0, safePage, safeSize, List.of());
+        }
+        return toPage(users.findByIdInOrderByUsernameAsc(ids, PageRequest.of(safePage, safeSize)));
+    }
+
+    private Page<UserAccount> toPage(org.springframework.data.domain.Page<AppUser> found) {
+        return new Page<>(found.getTotalElements(), found.getNumber(), found.getSize(),
+                found.getContent().stream().map(UserAccount.class::cast).toList());
     }
 
     @Override

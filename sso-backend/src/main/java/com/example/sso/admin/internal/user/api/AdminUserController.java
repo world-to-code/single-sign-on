@@ -15,6 +15,7 @@ import com.example.sso.admin.internal.user.application.UserDevicesView;
 import com.example.sso.admin.internal.user.application.UserSessionView;
 import com.example.sso.audit.AuditEntry;
 import com.example.sso.portal.ApplicationView;
+import com.example.sso.shared.Page;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.Permissions;
@@ -51,8 +52,9 @@ public class AdminUserController {
 
     @GetMapping
     @RequirePermission(Permissions.USER_READ)
-    public List<AdminUserView> users() {
-        return userAdminService.listUsers();
+    public Page<AdminUserView> users(@RequestParam(defaultValue = "0") int page,
+                                     @RequestParam(defaultValue = "20") int size) {
+        return userAdminService.listUsers(page, size);
     }
 
     @GetMapping("/search")
@@ -60,6 +62,12 @@ public class AdminUserController {
     public List<Suggestion> searchUsers(@RequestParam(name = "q", defaultValue = "") String q,
                                         @RequestParam(defaultValue = "20") int limit) {
         return userAdminService.searchUsers(q, limit);
+    }
+
+    @GetMapping("/by-ids")
+    @RequirePermission(Permissions.USER_READ)
+    public List<Suggestion> usersByIds(@RequestParam(name = "ids", required = false) List<UUID> ids) {
+        return userAdminService.usersByIds(ids);
     }
 
     @GetMapping("/{id}")
@@ -88,8 +96,10 @@ public class AdminUserController {
 
     @GetMapping("/{id}/activity")
     @CanViewUser
-    public List<AuditEntry> userActivity(@PathVariable UUID id) {
-        return userDetailAdminService.activity(id);
+    public Page<AuditEntry> userActivity(@PathVariable UUID id,
+                                         @RequestParam(defaultValue = "0") int page,
+                                         @RequestParam(defaultValue = "20") int size) {
+        return userDetailAdminService.activity(id, page, size);
     }
 
     @PostMapping

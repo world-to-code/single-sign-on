@@ -8,10 +8,12 @@ import Dashboard from "./pages/Dashboard";
 import Users from "./pages/Users";
 import UserDetail from "./pages/UserDetail";
 import Roles from "./pages/Roles";
+import RoleDetail from "./pages/RoleDetail";
 import Groups from "./pages/Groups";
 import Resources from "./pages/Resources";
 import GroupDetail from "./pages/GroupDetail";
 import Clients from "./pages/Clients";
+import ClientDetail from "./pages/ClientDetail";
 import RelyingParties from "./pages/RelyingParties";
 import Audit from "./pages/Audit";
 import ScimTokens from "./pages/ScimTokens";
@@ -48,11 +50,13 @@ export default function Console({ session }: { session: SessionView }) {
                   <Route path="users" element={<Users />} />
                   <Route path="users/:id" element={<UserDetail session={session} />} />
                   <Route path="roles" element={<Roles />} />
+                  <Route path="roles/:id" element={<RoleDetail />} />
                   <Route path="groups" element={<Groups />} />
                   <Route path="groups/:id" element={<GroupDetail />} />
                   <Route path="resources" element={<Resources />} />
                   <Route path="applications" element={<Applications />} />
                   <Route path="clients" element={<Clients />} />
+                  <Route path="clients/:id" element={<ClientDetail />} />
                   <Route path="relying-parties" element={<RelyingParties />} />
                   <Route path="auth-policies" element={<AuthPolicies />} />
                   <Route path="session-policy" element={<SessionPolicy />} />

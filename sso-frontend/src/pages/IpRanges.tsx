@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
 import { Ban, CheckCircle2, Globe, Pencil, Plus, Trash2 } from "lucide-react";
-import { apiGet, apiPost, apiPut } from "../api";
+import { apiPost, apiPut } from "../api";
+import { usePaginated } from "@/usePaginated";
+import { Pagination } from "@/components/Pagination";
 import { PageHeader } from "@/components/PageHeader";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 import { useEditorForm } from "@/hooks/useEditorForm";
@@ -31,13 +32,7 @@ type Editor = typeof blank;
 
 export default function IpRanges() {
   const confirmDelete = useDeleteConfirm();
-  const [rules, setRules] = useState<IpRule[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  function reload() {
-    apiGet<IpRule[]>("/api/admin/ip-rules").then(setRules).catch((e) => setError(String(e)));
-  }
-  useEffect(reload, []);
+  const { items: rules, total, page, setPage, size, error, reload } = usePaginated<IpRule>("/api/admin/ip-rules");
 
   const {
     editor, set, setEditor, open, setOpen, error: formError, openCreate, openEdit, save,
@@ -115,6 +110,7 @@ export default function IpRanges() {
           </Table>
         )}
       </DataList>
+      <Pagination page={page} size={size} total={total} onPage={setPage} />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

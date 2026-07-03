@@ -6,6 +6,7 @@ import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.portal.ApplicationService;
 import com.example.sso.portal.ApplicationView;
+import com.example.sso.shared.Page;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.user.GroupMembersPage;
 import com.example.sso.user.GroupRequest;
@@ -37,14 +38,10 @@ public class GroupAdminService {
     private final AdminAccessPolicy accessPolicy;
     private final AdminAuditLogger auditLogger;
 
-    public List<GroupView> list() {
-        List<GroupView> all = userGroups.listAll();
-        if (accessPolicy.isCurrentActorUnscoped()) {
-            return all;
-        }
-
-        Set<UUID> scoped = accessPolicy.currentScopedGroupIds();
-        return all.stream().filter(group -> scoped.contains(UUID.fromString(group.id()))).toList();
+    public Page<GroupView> list(int page, int size) {
+        return accessPolicy.isCurrentActorUnscoped()
+                ? userGroups.listAll(page, size)
+                : userGroups.listByIds(accessPolicy.currentScopedGroupIds(), page, size);
     }
 
     public GroupView create(GroupRequest request) {

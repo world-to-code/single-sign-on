@@ -92,7 +92,7 @@ class ScopedAuditIT extends AbstractIntegrationTest {
         record(AuditType.GROUP_ROLES_UPDATED, "admin", AuditSubjectType.GROUP, outOfScopeGroup.toString());
 
         asDelegate(delegate);
-        List<String> subjects = adminService.recentAudit(null).stream()
+        List<String> subjects = adminService.recentAudit(null, 0, 100).items().stream()
                 .filter(e -> e.subjectType() == AuditSubjectType.GROUP)
                 .map(AuditEntry::subjectId).toList();
 
@@ -106,7 +106,7 @@ class ScopedAuditIT extends AbstractIntegrationTest {
         record(AuditType.AUTH_SUCCESS, "someone-else", AuditSubjectType.NONE, null);
 
         asDelegate(delegate);
-        List<String> principals = adminService.recentAudit(null).stream()
+        List<String> principals = adminService.recentAudit(null, 0, 100).items().stream()
                 .filter(e -> e.type().equals(AuditType.AUTH_SUCCESS.name()))
                 .map(AuditEntry::principal).toList();
 
@@ -120,7 +120,7 @@ class ScopedAuditIT extends AbstractIntegrationTest {
         record(AuditType.AUTH_SUCCESS, "someone-else", AuditSubjectType.NONE, null);
 
         asRole(Roles.ADMIN, "admin");
-        List<AuditEntry> all = adminService.recentAudit(null);
+        List<AuditEntry> all = adminService.recentAudit(null, 0, 100).items();
 
         assertThat(all).anyMatch(e -> outOfScopeGroup.toString().equals(e.subjectId()));
         assertThat(all).anyMatch(e -> "someone-else".equals(e.principal()));

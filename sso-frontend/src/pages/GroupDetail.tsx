@@ -6,6 +6,7 @@ import {
   type Group, type GroupApp, type GroupMembersPage,
 } from "@/groups";
 import { listRoles, type Role } from "@/roles";
+import { Pagination } from "@/components/Pagination";
 import { PageHeader } from "@/components/PageHeader";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -42,8 +43,6 @@ export default function GroupDetail() {
   useEffect(() => {
     if (tab === "roles") listRoles().then(setAllRoles).catch(() => undefined);
   }, [tab]);
-
-  const lastPage = members ? Math.max(0, Math.ceil(members.total / SIZE) - 1) : 0;
 
   function openRoles() {
     setRoleSel(group ? [...group.roleNames] : []);
@@ -98,15 +97,7 @@ export default function GroupDetail() {
               ))}
             </TableBody>
           </Table>
-          {members && members.total > SIZE && (
-            <div className="mt-3 flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Page {page + 1} of {lastPage + 1}</span>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled={page <= 0} onClick={() => setPage((p) => p - 1)}>Previous</Button>
-                <Button variant="outline" size="sm" disabled={page >= lastPage} onClick={() => setPage((p) => p + 1)}>Next</Button>
-              </div>
-            </div>
-          )}
+          <Pagination page={page} size={SIZE} total={members?.total ?? 0} onPage={setPage} />
         </>
       )}
 

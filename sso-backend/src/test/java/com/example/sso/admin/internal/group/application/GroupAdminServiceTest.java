@@ -5,6 +5,7 @@ import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.portal.ApplicationService;
+import com.example.sso.shared.Page;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.user.GroupView;
 import com.example.sso.user.UserGroupService;
@@ -103,22 +104,22 @@ class GroupAdminServiceTest {
     }
 
     @Test
-    void listFiltersToScopedGroupsForAScopedActor() {
+    void listPagesOnlyTheScopedGroupIdsInTheDatabase() {
         UUID scopedId = UUID.randomUUID();
-        UUID otherId = UUID.randomUUID();
         when(accessPolicy.isCurrentActorUnscoped()).thenReturn(false);
         when(accessPolicy.currentScopedGroupIds()).thenReturn(Set.of(scopedId));
-        when(userGroups.listAll()).thenReturn(List.of(group(scopedId), group(otherId)));
+        when(userGroups.listByIds(Set.of(scopedId), 0, 100)).thenReturn(new Page<>(1, 0, 100, List.of(group(scopedId))));
 
-        assertThat(service.list()).extracting(GroupView::id).containsExactly(scopedId.toString());
+        assertThat(service.list(0, 100).items()).extracting(GroupView::id).containsExactly(scopedId.toString());
     }
 
     @Test
-    void listReturnsEverythingForAnUnscopedActor() {
+    void listPagesEverythingForAnUnscopedActor() {
         when(accessPolicy.isCurrentActorUnscoped()).thenReturn(true);
-        when(userGroups.listAll()).thenReturn(List.of(group(UUID.randomUUID()), group(UUID.randomUUID())));
+        when(userGroups.listAll(0, 100))
+                .thenReturn(new Page<>(2, 0, 100, List.of(group(UUID.randomUUID()), group(UUID.randomUUID()))));
 
-        assertThat(service.list()).hasSize(2);
+        assertThat(service.list(0, 100).items()).hasSize(2);
         verify(accessPolicy, never()).currentScopedGroupIds();
     }
 

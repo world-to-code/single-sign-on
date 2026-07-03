@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { AppWindow, Lock, Network, Settings, Trash2, UserPlus, Users as UsersIcon } from "lucide-react";
 import { apiGet, apiPost, apiPut } from "../api";
 import { PageHeader } from "@/components/PageHeader";
+import { usePaginated } from "@/usePaginated";
+import { Pagination } from "@/components/Pagination";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -37,8 +39,7 @@ interface Policy { id: string; name: string; appliesToLogin: boolean; }
 
 export default function Applications() {
   const confirmDelete = useDeleteConfirm();
-  const [apps, setApps] = useState<Application[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { items: apps, total, page, setPage, size, error, reload } = usePaginated<Application>("/api/admin/applications");
   const [policies, setPolicies] = useState<Policy[]>([]);
 
   const [active, setActive] = useState<Application | null>(null);
@@ -56,13 +57,7 @@ export default function Applications() {
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsSaved, setSettingsSaved] = useState(false);
 
-  function loadApps() {
-    apiGet<Application[]>("/api/admin/applications")
-      .then((list) => { setApps(list); setActive((cur) => (cur ? list.find((a) => a.type === cur.type && a.id === cur.id) ?? cur : cur)); })
-      .catch((e) => setError(String(e)));
-  }
   useEffect(() => {
-    loadApps();
     apiGet<Policy[]>("/api/admin/auth-policies").then(setPolicies).catch(() => undefined);
   }, []);
 
@@ -100,7 +95,7 @@ export default function Applications() {
     setFormError(null);
     try {
       await apiPut(`/api/admin/applications/${active.type.toLowerCase()}/${active.id}/policy`, { requiredPolicyId: appPolicyId || null });
-      loadApps();
+      reload();
     } catch (e) {
       setFormError(String(e));
     }
@@ -170,6 +165,7 @@ export default function Applications() {
           </Table>
         )}
       </DataList>
+      <Pagination page={page} size={size} total={total} onPage={setPage} />
 
       <Dialog open={!!active} onOpenChange={(o) => { if (!o) setActive(null); }}>
         <DialogContent>

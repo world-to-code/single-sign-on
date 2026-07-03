@@ -6,7 +6,7 @@ import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.UserDeletedEvent;
 import com.example.sso.user.UserUpdate;
-import com.example.sso.user.UserGroupRepository;
+import com.example.sso.user.internal.domain.UserGroupRepository;
 import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.internal.domain.PermissionRepository;

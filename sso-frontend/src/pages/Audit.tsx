@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ScrollText } from "lucide-react";
-import { useApiData } from "../useApiData";
+import { usePaginated } from "@/usePaginated";
+import { Pagination } from "@/components/Pagination";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -25,13 +26,13 @@ const label = (c: string) => c.replace(/_/g, " ").toLowerCase();
 export default function Audit() {
   const [category, setCategory] = useState<string>("ALL");
   const path = category === "ALL" ? "/api/admin/audit" : `/api/admin/audit?category=${category}`;
-  const { data, error } = useApiData<AuditEvent[]>(path);
+  const { items, total, page, setPage, size, error } = usePaginated<AuditEvent>(path);
 
   return (
     <>
       <PageHeader
         title="Audit Log"
-        description={data ? `Showing the latest ${data.length} events${category === "ALL" ? "" : ` in ${label(category)}`}.` : "Recent security events."}
+        description={total ? `${total} recent event${total === 1 ? "" : "s"}${category === "ALL" ? "" : ` in ${label(category)}`}.` : "Recent security events."}
       />
 
       <div className="mb-4 flex flex-wrap gap-1 border-b">
@@ -51,7 +52,7 @@ export default function Audit() {
       </div>
 
       <DataList
-        data={data}
+        data={items}
         error={error}
         isEmpty={(events) => events.length === 0}
         empty={<EmptyState icon={<ScrollText className="size-8" />} title="No audit events" hint="No events in this category yet." />}
@@ -83,6 +84,7 @@ export default function Audit() {
           </Table>
         )}
       </DataList>
+      <Pagination page={page} size={size} total={total} onPage={setPage} />
     </>
   );
 }

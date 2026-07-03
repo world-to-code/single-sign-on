@@ -5,7 +5,7 @@ import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.GroupDeletedEvent;
 import com.example.sso.user.GroupSpec;
-import com.example.sso.user.UserGroupRepository;
+import com.example.sso.user.internal.domain.UserGroupRepository;
 import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.internal.domain.RoleRepository;
 import com.example.sso.user.internal.domain.UserGroup;

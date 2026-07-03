@@ -3,11 +3,11 @@ package com.example.sso.admin.internal.relyingparty.api;
 import com.example.sso.saml.RelyingPartyRequest;
 import com.example.sso.saml.RelyingPartyView;
 import com.example.sso.saml.SamlRelyingPartyAdminService;
+import com.example.sso.shared.Page;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.Permissions;
 import jakarta.validation.Valid;
-import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Admin API for SAML relying party (service provider) registration. */
@@ -31,8 +32,9 @@ public class AdminRelyingPartyController {
 
     @GetMapping
     @RequirePermission(Permissions.SAML_READ)
-    public List<RelyingPartyView> relyingParties() {
-        return samlRelyingParties.list();
+    public Page<RelyingPartyView> relyingParties(@RequestParam(defaultValue = "0") int page,
+                                                 @RequestParam(defaultValue = "20") int size) {
+        return samlRelyingParties.list(page, size);
     }
 
     @PostMapping

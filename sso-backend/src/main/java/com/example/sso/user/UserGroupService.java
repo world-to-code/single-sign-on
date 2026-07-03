@@ -1,6 +1,7 @@
 package com.example.sso.user;
 
 import com.example.sso.shared.IdName;
+import com.example.sso.shared.Page;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
@@ -14,6 +15,12 @@ import java.util.UUID;
 public interface UserGroupService {
 
     List<GroupView> listAll();
+
+    /** A DB-paged slice of all groups (0-based page), ordered by name — for the admin directory. */
+    Page<GroupView> listAll(int page, int size);
+
+    /** A DB-paged slice of the groups whose id is in {@code ids} — for a scoped admin's directory. */
+    Page<GroupView> listByIds(Collection<UUID> ids, int page, int size);
 
     GroupView get(UUID id);
 

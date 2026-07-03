@@ -6,6 +6,7 @@ import com.example.sso.portal.AppPolicyRequest;
 import com.example.sso.portal.AppType;
 import com.example.sso.portal.ApplicationView;
 import com.example.sso.portal.AssignAppRequest;
+import com.example.sso.shared.Page;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.Permissions;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Admin API for assigning applications to users/groups and setting per-app sign-on policy. */
@@ -34,8 +36,9 @@ public class AdminApplicationAssignmentController {
 
     @GetMapping
     @RequirePermission(Permissions.APP_ASSIGNMENT_READ)
-    public List<ApplicationView> applications() {
-        return applications.listApplications();
+    public Page<ApplicationView> applications(@RequestParam(defaultValue = "0") int page,
+                                              @RequestParam(defaultValue = "20") int size) {
+        return applications.listApplications(page, size);
     }
 
     @GetMapping("/{type}/{id}/assignments")

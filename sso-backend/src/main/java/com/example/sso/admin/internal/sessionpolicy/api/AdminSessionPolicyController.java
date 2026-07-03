@@ -3,11 +3,11 @@ package com.example.sso.admin.internal.sessionpolicy.api;
 import com.example.sso.admin.internal.sessionpolicy.application.SessionPolicyAdminService;
 import com.example.sso.session.SessionPolicyRequest;
 import com.example.sso.session.SessionPolicyView;
+import com.example.sso.shared.Page;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.Permissions;
 import jakarta.validation.Valid;
-import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Admin API for session policies (timeouts, re-auth cadence, concurrency, client binding). */
@@ -31,8 +32,9 @@ public class AdminSessionPolicyController {
 
     @GetMapping
     @RequirePermission(Permissions.SESSION_POLICY_READ)
-    public List<SessionPolicyView> sessionPolicies() {
-        return sessionPolicies.list();
+    public Page<SessionPolicyView> sessionPolicies(@RequestParam(defaultValue = "0") int page,
+                                                   @RequestParam(defaultValue = "20") int size) {
+        return sessionPolicies.list(page, size);
     }
 
     @PostMapping

@@ -3,7 +3,7 @@ package com.example.sso.user.internal.application;
 import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.internal.domain.UserGroup;
-import com.example.sso.user.UserGroupRepository;
+import com.example.sso.user.internal.domain.UserGroupRepository;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;

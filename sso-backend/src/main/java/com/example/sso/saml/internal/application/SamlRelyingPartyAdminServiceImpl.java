@@ -7,6 +7,7 @@ import com.example.sso.saml.internal.domain.SamlRelyingParty;
 import com.example.sso.saml.SamlRelyingPartyAdminService;
 import com.example.sso.saml.internal.domain.SamlRelyingPartyRepository;
 import com.example.sso.saml.internal.domain.SamlSecuritySettings;
+import com.example.sso.shared.Page;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -28,8 +29,9 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
 
     @Override
     @Transactional(readOnly = true)
-    public List<RelyingPartyView> list() {
-        return relyingParties.findAll().stream().map(this::toView).toList();
+    public Page<RelyingPartyView> list(int page, int size) {
+        List<RelyingPartyView> all = relyingParties.findAll().stream().map(this::toView).toList();
+        return Page.of(all, page, size);
     }
 
     @Override

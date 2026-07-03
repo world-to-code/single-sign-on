@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
 import { ExternalLink, Pencil, Plus, Trash2 } from "lucide-react";
-import { apiGet, apiPost, apiPut } from "../api";
+import { apiPost, apiPut } from "../api";
+import { usePaginated } from "@/usePaginated";
+import { Pagination } from "@/components/Pagination";
 import { PageHeader } from "@/components/PageHeader";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -50,10 +51,11 @@ type Editor = typeof blank;
 
 export default function RelyingParties() {
   const confirmDelete = useDeleteConfirm();
-  const [rps, setRps] = useState<RelyingParty[] | null>(null);
+  const { items: rps, total, page, setPage, size, error: listError, reload } =
+    usePaginated<RelyingParty>("/api/admin/saml/relying-parties");
 
   const {
-    editor, set, setEditor, open, setOpen, error, setError, openCreate, openEdit, save,
+    editor, set, setEditor, open, setOpen, error, openCreate, openEdit, save,
   } = useEditorForm<Editor>({
     blank,
     toRequest: (e) => e,
@@ -61,11 +63,6 @@ export default function RelyingParties() {
     update: (id, body) => apiPut(`/api/admin/saml/relying-parties/${id}`, body),
     onSaved: reload,
   });
-
-  function reload() {
-    apiGet<RelyingParty[]>("/api/admin/saml/relying-parties").then(setRps).catch((e) => setError(String(e)));
-  }
-  useEffect(reload, []);
 
   function edit(rp: RelyingParty) {
     openEdit({ ...rp, displayName: rp.displayName ?? "", signingCertificate: rp.signingCertificate ?? "", encryptionCertificate: rp.encryptionCertificate ?? "", spLoginUrl: rp.spLoginUrl ?? "" });
@@ -104,7 +101,7 @@ export default function RelyingParties() {
 
       <DataList
         data={rps}
-        error={error}
+        error={listError}
         isEmpty={(items) => items.length === 0}
         empty={<EmptyState title="No relying parties" hint="Register a SAML service provider to issue assertions to it." />}
       >
@@ -158,6 +155,7 @@ export default function RelyingParties() {
           </Table>
         )}
       </DataList>
+      <Pagination page={page} size={size} total={total} onPage={setPage} />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl">

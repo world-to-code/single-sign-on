@@ -6,6 +6,7 @@ import com.example.sso.mfa.MfaService;
 import com.example.sso.portal.ApplicationService;
 import com.example.sso.portal.ApplicationView;
 import com.example.sso.session.SessionMetadataStore;
+import com.example.sso.shared.Page;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
@@ -53,8 +54,9 @@ public class UserDetailAdminService {
                 .toList();
     }
 
-    public List<AuditEntry> activity(UUID userId) {
-        return audit.recentForPrincipal(require(userId).getUsername());
+    public Page<AuditEntry> activity(UUID userId, int page, int size) {
+        List<AuditEntry> recent = audit.recentForPrincipal(require(userId).getUsername());
+        return Page.of(recent, page, size);
     }
 
     private UserAccount require(UUID userId) {

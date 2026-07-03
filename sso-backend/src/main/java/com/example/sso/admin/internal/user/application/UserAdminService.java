@@ -1,27 +1,26 @@
 package com.example.sso.admin.internal.user.application;
 
-import com.example.sso.admin.internal.role.application.PermissionView;
-import com.example.sso.admin.internal.role.application.RoleView;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
+import com.example.sso.admin.internal.shared.application.LastAdminGuard;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.mfa.MfaService;
+import com.example.sso.shared.Page;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.Roles;
 import com.example.sso.user.GroupMembership;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.Permissions;
-import com.example.sso.user.RbacService;
 import com.example.sso.user.RoleRef;
-import com.example.sso.user.RoleService;
 import com.example.sso.user.Suggestion;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserGroupService;
 import com.example.sso.user.UserService;
 import com.example.sso.user.UserUpdate;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -34,9 +33,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Admin operations for users, roles, and per-user permissions (RBAC + PBAC). Delegates all user/role
- * state to the user module (via {@link UserService}/{@link RoleService}) — it never touches the
- * {@code AppUser}/{@code Role} entities — and maps the returned projections to the admin API views.
+ * Admin operations for users and their per-user permissions (RBAC + PBAC). Delegates all user state to
+ * the user module (via {@link UserService}) — it never touches the {@code AppUser} entity — and maps the
+ * returned projections to the admin API views. Role and role-membership admin lives in
+ * {@code RoleAdminService}.
  */
 @Service
 @RequiredArgsConstructor
@@ -45,24 +45,18 @@ public class UserAdminService {
     private static final String ADMIN_ROLE = Roles.ADMIN;
 
     private final UserService userService;
-    private final RoleService roleService;
-    private final RbacService rbacService;
     private final MfaService mfaService;
     private final UserGroupService userGroups;
     private final AdminAccessPolicy accessPolicy;
     private final AdminAuditLogger auditLogger;
+    private final LastAdminGuard lastAdminGuard;
 
     @Transactional(readOnly = true)
-    public List<AdminUserView> listUsers() {
-        if (accessPolicy.isCurrentActorUnscoped()) {
-            return userService.findAll().stream().map(AdminUserView::of).toList();
-        }
-
-        Set<UUID> managed = accessPolicy.currentManagedUserIds();
-        return userService.findAll().stream()
-                .filter(user -> managed.contains(user.getId()))
-                .map(AdminUserView::of)
-                .toList();
+    public Page<AdminUserView> listUsers(int page, int size) {
+        Page<UserAccount> users = accessPolicy.isCurrentActorUnscoped()
+                ? userService.findAll(page, size)
+                : userService.findByIds(accessPolicy.currentManagedUserIds(), page, size);
+        return users.map(AdminUserView::of);
     }
 
     /** Typeahead user search for the assignment picker (scoped admins see only users they manage). */
@@ -76,6 +70,23 @@ public class UserAdminService {
         Set<UUID> managed = accessPolicy.currentManagedUserIds();
         return results.stream()
                 .filter(suggestion -> managed.contains(UUID.fromString(suggestion.id())))
+                .toList();
+    }
+
+    /** Resolves selected user ids to (id, label) chips for the picker (scoped admins only their users). */
+    @Transactional(readOnly = true)
+    public List<Suggestion> usersByIds(Collection<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+
+        Set<UUID> visible = new HashSet<>(ids);
+        if (!accessPolicy.isCurrentActorUnscoped()) {
+            visible.retainAll(accessPolicy.currentManagedUserIds());
+        }
+
+        return userService.idNames(visible).stream()
+                .map(idName -> new Suggestion(idName.getId().toString(), idName.getName()))
                 .toList();
     }
 
@@ -95,7 +106,7 @@ public class UserAdminService {
     public AdminUserView updateUser(UUID id, UserUpdate update) {
         boolean remainsEnabledAdmin = update.enabled()
                 && update.roleNames() != null && update.roleNames().contains(ADMIN_ROLE);
-        ensureNotLastAdmin(id, remainsEnabledAdmin);
+        lastAdminGuard.ensureNotLastAdmin(id, remainsEnabledAdmin);
         AdminUserView updated = AdminUserView.of(userService.updateUser(id, update));
         auditLogger.log(AuditType.USER_UPDATED, AuditSubjectType.USER, id.toString(),
                 "user=" + id + " enabled=" + update.enabled() + " roles=" + update.roleNames());
@@ -104,7 +115,7 @@ public class UserAdminService {
 
     @Transactional
     public AdminUserView setEnabled(UUID id, boolean enabled) {
-        ensureNotLastAdmin(id, enabled);
+        lastAdminGuard.ensureNotLastAdmin(id, enabled);
         AdminUserView view = AdminUserView.of(userService.setEnabled(id, enabled));
         auditLogger.log(enabled ? AuditType.USER_ENABLED : AuditType.USER_DISABLED,
                 AuditSubjectType.USER, id.toString(), "user=" + id);
@@ -113,35 +124,9 @@ public class UserAdminService {
 
     @Transactional
     public void deleteUser(UUID id) {
-        ensureNotLastAdmin(id, false);
+        lastAdminGuard.ensureNotLastAdmin(id, false);
         userService.delete(id);
         auditLogger.log(AuditType.USER_DELETED, AuditSubjectType.USER, id.toString(), "user=" + id);
-    }
-
-    /**
-     * Actor-independent invariant: the platform must retain at least one enabled administrator. Rejects
-     * (409) an operation that would make the target — currently the only enabled {@code ROLE_ADMIN} —
-     * no longer an enabled admin. {@code remainsEnabledAdmin} is whether the target stays an enabled admin
-     * after the operation (then there is nothing to guard).
-     */
-    private void ensureNotLastAdmin(UUID targetId, boolean remainsEnabledAdmin) {
-        if (remainsEnabledAdmin) {
-            return;
-        }
-        RoleRef adminRole = roleService.findByName(ADMIN_ROLE).orElse(null);
-        if (adminRole == null) {
-            return;
-        }
-
-        List<UserAccount> admins = roleService.members(adminRole.getId());
-        boolean targetIsEnabledAdmin = admins.stream()
-                .anyMatch(user -> user.getId().equals(targetId) && user.isEnabled());
-        boolean anotherEnabledAdminExists = admins.stream()
-                .anyMatch(user -> user.isEnabled() && !user.getId().equals(targetId));
-
-        if (targetIsEnabledAdmin && !anotherEnabledAdminExists) {
-            throw new ConflictException("cannot remove the last administrator");
-        }
     }
 
     /** Clears a user's MFA enrollment so they re-enroll on next login (recovery). */
@@ -152,36 +137,6 @@ public class UserAdminService {
         }
         mfaService.resetMfa(id);
         auditLogger.log(AuditType.USER_MFA_RESET, AuditSubjectType.USER, id.toString(), "user=" + id);
-    }
-
-    @Transactional(readOnly = true)
-    public List<RoleView> listRoles() {
-        return roleService.findAll().stream().map(RoleView::of).toList();
-    }
-
-    @Transactional
-    public RoleView createRole(String name, Set<String> permissions) {
-        RoleView view = RoleView.of(roleService.create(name, permissions));
-        auditLogger.log(AuditType.ROLE_CREATED, "role=" + name + " permissions=" + permissions);
-        return view;
-    }
-
-    @Transactional
-    public RoleView updateRole(UUID id, String name, Set<String> permissions) {
-        RoleView view = RoleView.of(roleService.updateRole(id, name, permissions));
-        auditLogger.log(AuditType.ROLE_UPDATED, "role=" + id + " name=" + name + " permissions=" + permissions);
-        return view;
-    }
-
-    @Transactional
-    public void deleteRole(UUID id) {
-        roleService.deleteRole(id);
-        auditLogger.log(AuditType.ROLE_DELETED, "role=" + id);
-    }
-
-    @Transactional(readOnly = true)
-    public List<PermissionView> listPermissions() {
-        return rbacService.allPermissions().stream().map(PermissionView::of).toList();
     }
 
     @Transactional

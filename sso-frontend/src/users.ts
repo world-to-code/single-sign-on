@@ -85,11 +85,9 @@ export interface ActivityEntry {
   detail: string | null;
 }
 
-export const listUsers = () => apiGet<AdminUser[]>("/api/admin/users");
 export const getUserApplications = (id: string) => apiGet<UserApplication[]>(`/api/admin/users/${id}/applications`);
 export const getUserDevices = (id: string) => apiGet<UserDevices>(`/api/admin/users/${id}/devices`);
 export const getUserSessions = (id: string) => apiGet<UserSession[]>(`/api/admin/users/${id}/sessions`);
-export const getUserActivity = (id: string) => apiGet<ActivityEntry[]>(`/api/admin/users/${id}/activity`);
 export const getUser = (id: string) => apiGet<UserDetail>(`/api/admin/users/${id}`);
 export const createUser = (body: CreateUserRequest) => apiPost<AdminUser>("/api/admin/users", body);
 export const updateUser = (id: string, body: UpdateUserRequest) =>

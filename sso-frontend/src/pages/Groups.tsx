@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Lock, Pencil, Plus, Trash2 } from "lucide-react";
-import { apiGet } from "../api";
 import { createGroup, updateGroup, type Group, type GroupRequest } from "@/groups";
+import { usePaginated } from "@/usePaginated";
+import { Pagination } from "@/components/Pagination";
+import { UserMultiSelect } from "@/components/UserMultiSelect";
 import { PageHeader } from "@/components/PageHeader";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -10,15 +11,12 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DataList, EmptyState } from "@/components/states";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 import { useEditorForm } from "@/hooks/useEditorForm";
-
-interface User { id: string; username: string }
 
 interface Editor {
   id: string | null;
@@ -32,11 +30,10 @@ const blankEditor: Editor = { id: null, name: "", description: "", externalId: "
 
 export default function Groups() {
   const confirmDelete = useDeleteConfirm();
-  const [groups, setGroups] = useState<Group[] | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
+  const { items: groups, total, page, setPage, size, error: listError, reload } = usePaginated<Group>("/api/admin/groups");
 
   const {
-    editor, set, setEditor, open, setOpen, error, setError, openCreate, openEdit, save,
+    editor, set, setEditor, open, setOpen, error, openCreate, openEdit, save,
   } = useEditorForm<Editor>({
     blank: blankEditor,
     toRequest: (e) => ({
@@ -49,18 +46,6 @@ export default function Groups() {
     update: (id, body) => updateGroup(id, body as GroupRequest),
     onSaved: reload,
   });
-
-  function reload() {
-    apiGet<Group[]>("/api/admin/groups").then(setGroups).catch((e) => setError(String(e)));
-  }
-  useEffect(() => {
-    reload();
-    apiGet<User[]>("/api/admin/users").then(setUsers).catch(() => undefined);
-  }, []);
-
-  function toggle(list: string[], id: string): string[] {
-    return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
-  }
 
   function editGroup(g: Group) {
     openEdit({
@@ -96,7 +81,7 @@ export default function Groups() {
 
       <DataList
         data={groups}
-        error={error}
+        error={listError}
         isEmpty={(items) => items.length === 0}
         empty={<EmptyState title="No groups yet" hint="Create a group to bundle users by department or team." />}
       >
@@ -141,6 +126,7 @@ export default function Groups() {
           </Table>
         )}
       </DataList>
+      <Pagination page={page} size={size} total={total} onPage={setPage} />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
@@ -172,14 +158,8 @@ export default function Groups() {
 
             <div className="space-y-2">
               <Label>Members</Label>
-              <div className="max-h-36 space-y-1 overflow-y-auto rounded-md border p-3">
-                {users.length === 0 ? <span className="text-sm text-muted-foreground">none</span> : users.map((u) => (
-                  <label key={u.id} className="flex items-center gap-2 text-sm">
-                    <Checkbox checked={editor.userIds.includes(u.id)}
-                              onCheckedChange={() => set({ userIds: toggle(editor.userIds, u.id) })} /> {u.username}
-                  </label>
-                ))}
-              </div>
+              <UserMultiSelect selected={editor.userIds} onChange={(ids) => set({ userIds: ids })}
+                               placeholder="Search users to add as members…" />
             </div>
 
             <DialogFooter>

@@ -1,5 +1,13 @@
 import { clearAdminUnlock, getAdminToken } from "@/adminPortal";
 
+/** One page of a larger admin list — mirrors the backend `shared.Page` record. */
+export interface Page<T> {
+  total: number;
+  page: number;
+  size: number;
+  items: T[];
+}
+
 /** Thrown for non-2xx responses so callers can branch on status (e.g. 401/403). */
 export class ApiError extends Error {
   constructor(public status: number, message?: string) {

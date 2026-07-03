@@ -3,7 +3,7 @@ package com.example.sso.authpolicy.internal.application;
 import com.example.sso.authpolicy.AuthPolicyAdminService;
 import com.example.sso.authpolicy.AuthPolicySpec;
 import com.example.sso.authpolicy.AuthPolicyUpdate;
-import java.util.List;
+import com.example.sso.shared.Page;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -26,8 +26,8 @@ public class PolicyAdminService {
     private final AuthPolicyAdminService service;
 
     @Transactional(readOnly = true)
-    public List<PolicyView> list() {
-        return service.listAll().stream().map(PolicyView::of).toList();
+    public Page<PolicyView> list(int page, int size) {
+        return Page.of(service.listAll().stream().map(PolicyView::of).toList(), page, size);
     }
 
     @Transactional

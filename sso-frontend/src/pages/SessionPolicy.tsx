@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Pencil, Plus, Save, Trash2 } from "lucide-react";
-import { apiGet, apiPost, apiPut } from "../api";
+import { apiGet, apiPost, apiPut, type Page } from "../api";
 import { PageHeader } from "@/components/PageHeader";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,8 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DataList, EmptyState } from "@/components/states";
 import { Field } from "@/components/form/fields";
+import { UserMultiSelect } from "@/components/UserMultiSelect";
+import { usersByIds } from "@/groups";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 import { useEditorForm } from "@/hooks/useEditorForm";
 import { tokens } from "@/lib/utils";
@@ -39,7 +41,6 @@ interface SessionPolicy {
   assignedRoleIds: string[];
 }
 interface Role { id: string; name: string }
-interface User { id: string; username: string }
 
 interface Editor {
   id: string | null;
@@ -71,7 +72,7 @@ export default function SessionPolicyPage() {
   const confirmDelete = useDeleteConfirm();
   const [policies, setPolicies] = useState<SessionPolicy[] | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
+  const [userNames, setUserNames] = useState<Record<string, string>>({});
 
   const {
     editor, set, setEditor, open, setOpen, error, setError, openCreate, openEdit, save,
@@ -98,13 +99,21 @@ export default function SessionPolicyPage() {
   });
 
   function reload() {
-    apiGet<SessionPolicy[]>("/api/admin/session-policies").then(setPolicies).catch((e) => setError(String(e)));
+    apiGet<Page<SessionPolicy>>("/api/admin/session-policies?size=100")
+      .then((p) => setPolicies(p.items)).catch((e) => setError(String(e)));
   }
   useEffect(() => {
     reload();
     apiGet<Role[]>("/api/admin/roles").then(setRoles).catch(() => undefined);
-    apiGet<User[]>("/api/admin/users").then(setUsers).catch(() => undefined);
   }, []);
+
+  // Resolve the user ids assigned across the loaded policies to names for the table (no all-users load).
+  useEffect(() => {
+    const ids = [...new Set((policies ?? []).flatMap((p) => p.assignedUserIds))];
+    usersByIds(ids)
+      .then((sugs) => setUserNames(Object.fromEntries(sugs.map((s) => [s.id, s.label]))))
+      .catch(() => undefined);
+  }, [policies]);
 
   function toggle(list: string[], id: string): string[] {
     return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
@@ -139,7 +148,7 @@ export default function SessionPolicyPage() {
   }
 
   const roleName = (id: string) => roles.find((r) => r.id === id)?.name ?? id;
-  const userName = (id: string) => users.find((u) => u.id === id)?.username ?? id;
+  const userName = (id: string) => userNames[id] ?? id;
   const defaultPolicy = policies?.find((p) => p.name === "Default") ?? null;
 
   return (
@@ -317,14 +326,8 @@ export default function SessionPolicyPage() {
 
             <div className="space-y-2">
               <Label>Assign to users</Label>
-              <div className="max-h-36 space-y-1 overflow-y-auto rounded-md border p-3">
-                {users.length === 0 ? <span className="text-sm text-muted-foreground">none</span> : users.map((u) => (
-                  <label key={u.id} className="flex items-center gap-2 text-sm">
-                    <Checkbox checked={editor.userIds.includes(u.id)}
-                              onCheckedChange={() => set({ userIds: toggle(editor.userIds, u.id) })} /> {u.username}
-                  </label>
-                ))}
-              </div>
+              <UserMultiSelect selected={editor.userIds} onChange={(ids) => set({ userIds: ids })}
+                               placeholder="Search users to target…" />
             </div>
 
             <DialogFooter>

@@ -118,11 +118,11 @@ class ScopedAdminSurfaceIsolationIT extends AbstractIntegrationTest {
     void aDelegateSeesOnlyTheirSubtreeGroupsAndUsers() {
         asDelegate(backendLead);
 
-        assertThat(groups.list().stream().map(GroupView::id).map(UUID::fromString)).contains(backendGroup);
-        assertThat(groups.list().stream().map(GroupView::id).map(UUID::fromString)).doesNotContain(frontendGroup);
+        assertThat(groups.list(0, 100).items().stream().map(GroupView::id).map(UUID::fromString)).contains(backendGroup);
+        assertThat(groups.list(0, 100).items().stream().map(GroupView::id).map(UUID::fromString)).doesNotContain(frontendGroup);
 
-        assertThat(users.listUsers().stream().map(AdminUserView::id).map(UUID::fromString)).contains(backendUser);
-        assertThat(users.listUsers().stream().map(AdminUserView::id).map(UUID::fromString)).doesNotContain(frontendUser);
+        assertThat(users.listUsers(0, 100).items().stream().map(AdminUserView::id).map(UUID::fromString)).contains(backendUser);
+        assertThat(users.listUsers(0, 100).items().stream().map(AdminUserView::id).map(UUID::fromString)).doesNotContain(frontendUser);
     }
 
     @Test
@@ -150,7 +150,7 @@ class ScopedAdminSurfaceIsolationIT extends AbstractIntegrationTest {
         assertThatCode(() -> apps.assignmentsForApp(AppType.OIDC, "surf-app-backend")).doesNotThrowAnyException();
         assertForbidden(() -> apps.assignmentsForApp(AppType.OIDC, "surf-app-frontend"));
         // None of the real registered apps are in the delegate's subtree, so the filtered list is empty.
-        assertThat(apps.listApplications()).isEmpty();
+        assertThat(apps.listApplications(0, 100).items()).isEmpty();
     }
 
     @Test
@@ -158,9 +158,9 @@ class ScopedAdminSurfaceIsolationIT extends AbstractIntegrationTest {
         UUID stranger = user("surf-stranger");
         asDelegate(stranger);
 
-        assertThat(groups.list()).isEmpty();
-        assertThat(users.listUsers()).isEmpty();
-        assertThat(apps.listApplications()).isEmpty();
+        assertThat(groups.list(0, 100).items()).isEmpty();
+        assertThat(users.listUsers(0, 100).items()).isEmpty();
+        assertThat(apps.listApplications(0, 100).items()).isEmpty();
         assertForbidden(() -> groups.get(backendGroup));
         assertForbidden(() -> apps.assignmentsForApp(AppType.OIDC, "surf-app-backend"));
     }
@@ -169,11 +169,11 @@ class ScopedAdminSurfaceIsolationIT extends AbstractIntegrationTest {
     void aSuperAdminBypassesScope() {
         asRole(Roles.ADMIN, "admin");
 
-        assertThat(groups.list().stream().map(GroupView::id).map(UUID::fromString))
+        assertThat(groups.list(0, 100).items().stream().map(GroupView::id).map(UUID::fromString))
                 .contains(backendGroup, frontendGroup);
         assertThatCode(() -> groups.get(frontendGroup)).doesNotThrowAnyException();
         assertThatCode(() -> apps.assignmentsForApp(AppType.OIDC, "surf-app-frontend")).doesNotThrowAnyException();
-        assertThat(apps.listApplications()).isNotEmpty(); // the seeded apps, unfiltered
+        assertThat(apps.listApplications(0, 100).items()).isNotEmpty(); // the seeded apps, unfiltered
     }
 
     private void assertForbidden(ThrowingCallable call) {

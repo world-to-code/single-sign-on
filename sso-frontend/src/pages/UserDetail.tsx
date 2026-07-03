@@ -6,12 +6,14 @@ import {
 } from "lucide-react";
 import type { SessionView } from "@/auth";
 import {
-  getUser, getUserActivity, getUserApplications, getUserDevices, getUserSessions, resetUserMfa,
+  getUser, getUserApplications, getUserDevices, getUserSessions, resetUserMfa,
   setUserEnabled, setUserPermissions, updateUser,
   type ActivityEntry, type UserApplication, type UserDetail as UserDetailData, type UserDevices,
   type UserSession,
 } from "@/users";
 import { ADMIN_ROLE, listPermissions, listRoles, togglePermission, type Permission, type Role } from "@/roles";
+import { usePaginated } from "@/usePaginated";
+import { Pagination } from "@/components/Pagination";
 import { PageHeader } from "@/components/PageHeader";
 import { PermissionPicker } from "@/components/PermissionPicker";
 import { useConfirm } from "@/components/ConfirmProvider";
@@ -24,6 +26,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+
+type Tab = "overview" | "activity";
 
 export default function UserDetail({ session }: { session: SessionView }) {
   const { id = "" } = useParams();
@@ -41,7 +45,8 @@ export default function UserDetail({ session }: { session: SessionView }) {
   const [apps, setApps] = useState<UserApplication[]>([]);
   const [devices, setDevices] = useState<UserDevices | null>(null);
   const [sessions, setSessions] = useState<UserSession[]>([]);
-  const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  const [tab, setTab] = useState<Tab>("overview");
+  const activityPage = usePaginated<ActivityEntry>(`/api/admin/users/${id}/activity`);
 
   function load() { getUser(id).then(setUser).catch((e) => setError(String(e))); }
   useEffect(load, [id]);
@@ -49,7 +54,6 @@ export default function UserDetail({ session }: { session: SessionView }) {
     getUserApplications(id).then(setApps).catch(() => undefined);
     getUserDevices(id).then(setDevices).catch(() => undefined);
     getUserSessions(id).then(setSessions).catch(() => undefined);
-    getUserActivity(id).then(setActivity).catch(() => undefined);
   }, [id]);
   useEffect(() => {
     listRoles().then(setAllRoles).catch(() => undefined);
@@ -150,6 +154,17 @@ export default function UserDetail({ session }: { session: SessionView }) {
       {error && <Alert variant="destructive" className="mb-4"><AlertDescription>{error}</AlertDescription></Alert>}
 
       {user && (
+        <div className="mb-4 flex gap-1 border-b">
+          {(["overview", "activity"] as Tab[]).map((t) => (
+            <button key={t} onClick={() => setTab(t)}
+                    className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium capitalize ${tab === t ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+              {t === "activity" ? `Activity${activityPage.total ? ` (${activityPage.total})` : ""}` : t}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {user && tab === "overview" && (
         <div className="space-y-6">
           <Card>
             <CardHeader>
@@ -309,30 +324,6 @@ export default function UserDetail({ session }: { session: SessionView }) {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2"><Activity className="size-4" /> Recent activity</CardTitle>
-              <CardDescription>Recent audited events for this user.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {activity.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No recent activity.</p>
-              ) : (
-                <div className="space-y-1">
-                  {activity.map((a) => (
-                    <div key={a.id} className="flex items-center justify-between gap-3 border-b py-2 text-sm last:border-0">
-                      <span className="inline-flex items-center gap-2">
-                        <Badge variant={a.success ? "success" : "destructive"}>{a.success ? "ok" : "fail"}</Badge>
-                        <span className="font-mono text-xs">{a.type}</span>
-                      </span>
-                      <span className="shrink-0 text-muted-foreground">{new Date(a.occurredAt).toLocaleString()}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
           <div className="grid gap-4 sm:grid-cols-2">
             <Card>
               <CardHeader>
@@ -355,6 +346,37 @@ export default function UserDetail({ session }: { session: SessionView }) {
             </Card>
           </div>
         </div>
+      )}
+
+      {user && tab === "activity" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Activity className="size-4" /> Activity</CardTitle>
+            <CardDescription>Audited events for this user, most recent first.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {activityPage.error ? (
+              <Alert variant="destructive"><AlertDescription>{activityPage.error}</AlertDescription></Alert>
+            ) : activityPage.items === null ? (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : activityPage.items.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No recent activity.</p>
+            ) : (
+              <div className="space-y-1">
+                {activityPage.items.map((a) => (
+                  <div key={a.id} className="flex items-center justify-between gap-3 border-b py-2 text-sm last:border-0">
+                    <span className="inline-flex items-center gap-2">
+                      <Badge variant={a.success ? "success" : "destructive"}>{a.success ? "ok" : "fail"}</Badge>
+                      <span className="font-mono text-xs">{a.type}</span>
+                    </span>
+                    <span className="shrink-0 text-muted-foreground">{new Date(a.occurredAt).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Pagination page={activityPage.page} size={activityPage.size} total={activityPage.total} onPage={activityPage.setPage} />
+          </CardContent>
+        </Card>
       )}
 
       <Dialog open={rolesOpen} onOpenChange={setRolesOpen}>

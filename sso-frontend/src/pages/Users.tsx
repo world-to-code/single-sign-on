@@ -1,8 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { KeyRound, Plus } from "lucide-react";
-import { createUser, listUsers, type AdminUser } from "@/users";
+import { createUser, type AdminUser } from "@/users";
+import { errorMessage } from "@/api";
+import { usePaginated } from "@/usePaginated";
+import { Pagination } from "@/components/Pagination";
 import { PageHeader } from "@/components/PageHeader";
 import { tokens } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -19,19 +22,14 @@ import { DataList, EmptyState } from "@/components/states";
 const emptyForm = { username: "", email: "", displayName: "", password: "", roles: "ROLE_USER" };
 
 export default function Users() {
-  const [users, setUsers] = useState<AdminUser[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { items: users, total, page, setPage, size, error, reload } = usePaginated<AdminUser>("/api/admin/users");
+  const [formError, setFormError] = useState<string | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [open, setOpen] = useState(false);
 
-  function reload() {
-    listUsers().then(setUsers).catch((e) => setError(String(e)));
-  }
-  useEffect(reload, []);
-
   async function create(event: FormEvent) {
     event.preventDefault();
-    setError(null);
+    setFormError(null);
     try {
       await createUser({
         username: form.username,
@@ -44,7 +42,7 @@ export default function Users() {
       setOpen(false);
       reload();
     } catch (e) {
-      setError(String(e));
+      setFormError(errorMessage(e));
     }
   }
 
@@ -58,7 +56,7 @@ export default function Users() {
           <DialogTitle>Create user</DialogTitle>
           <DialogDescription>New users complete email verification + TOTP enrollment on first sign-in.</DialogDescription>
         </DialogHeader>
-        {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
+        {formError && <Alert variant="destructive"><AlertDescription>{formError}</AlertDescription></Alert>}
         <form onSubmit={create} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="u-username">Username</Label>
@@ -92,7 +90,7 @@ export default function Users() {
     <>
       <PageHeader
         title="Users"
-        description={users ? `${users.length} user${users.length === 1 ? "" : "s"} in the directory.` : "Manage directory users."}
+        description={total ? `${total} user${total === 1 ? "" : "s"} in the directory.` : "Manage directory users."}
         actions={createButton}
       />
 
@@ -133,6 +131,7 @@ export default function Users() {
           </Table>
         )}
       </DataList>
+      <Pagination page={page} size={size} total={total} onPage={setPage} />
     </>
   );
 }

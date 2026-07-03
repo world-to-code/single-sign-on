@@ -1,7 +1,7 @@
 package com.example.sso.user.internal.application;
 
 import com.example.sso.user.Permissions;
-import com.example.sso.user.UserGroupRepository;
+import com.example.sso.user.internal.domain.UserGroupRepository;
 import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.internal.domain.Permission;

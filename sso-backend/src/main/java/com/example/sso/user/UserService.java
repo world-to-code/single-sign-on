@@ -1,6 +1,7 @@
 package com.example.sso.user;
 
 import com.example.sso.shared.IdName;
+import com.example.sso.shared.Page;
 
 import java.time.Duration;
 import java.util.Collection;
@@ -26,6 +27,12 @@ public interface UserService {
     Optional<UserAccount> findById(UUID id);
 
     List<UserAccount> findAll();
+
+    /** A DB-paged slice of all users (0-based page), ordered by username — for the admin directory. */
+    Page<UserAccount> findAll(int page, int size);
+
+    /** A DB-paged slice of the users whose id is in {@code ids} — for a scoped admin's directory. */
+    Page<UserAccount> findByIds(Collection<UUID> ids, int page, int size);
 
     /** A page of users (SCIM 1-based startIndex). */
     List<UserAccount> page(long startIndex, int count);

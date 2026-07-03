@@ -13,6 +13,7 @@ import com.example.sso.admin.internal.client.domain.OAuth2RegisteredClientEntity
 import com.example.sso.admin.internal.client.domain.OAuth2RegisteredClientRepository;
 import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.portal.ApplicationDeletedEvent;
+import com.example.sso.shared.Page;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
@@ -75,8 +76,13 @@ public class ClientAdminService {
                 .toList();
     }
 
+    public Page<ClientView> listClients(int page, int size) {
+        return Page.of(listClients(), page, size);
+    }
+
     /**
-     * Registers a new OAuth2/OIDC client with full AS settings. Returns the secret once (confidential).
+     * Registers a new OAuth2/OIDC client with full AS settings. Returns the generated secret once, when
+     * one applies (a confidential client using client_secret auth); null for public / JWT / mTLS clients.
      */
     @Transactional
     public ClientCreated createClient(CreateClientRequest request) {
