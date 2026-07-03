@@ -6,9 +6,11 @@ import com.example.sso.authpolicy.Factors;
 import com.example.sso.ratelimit.AuthRateLimitFilter;
 import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.security.AdminElevationFilter;
+import com.example.sso.security.PolicyIpAccessFilter;
 import com.example.sso.security.SessionIntegrityFilter;
 import com.example.sso.security.SessionMetadataCleanupListener;
 import com.example.sso.session.SessionMetadataStore;
+import com.example.sso.session.SessionPolicyService;
 import jakarta.servlet.http.HttpSessionListener;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.ServletListenerRegistrationBean;
@@ -102,7 +104,7 @@ public class SecurityConfig {
     @Order(Ordered.LOWEST_PRECEDENCE)
     SecurityFilterChain appSecurityFilterChain(
             HttpSecurity http, AuthRateLimitFilter authRateLimitFilter,
-            SessionIntegrityFilter sessionIntegrityFilter, JwtDecoder jwtDecoder,
+            SessionIntegrityFilter sessionIntegrityFilter, SessionPolicyService policyService, JwtDecoder jwtDecoder,
             AdminPortalSettingsService adminPortalSettingsService, AuditService audit,
             @Value("${sso.issuer}") String issuer,
             @Value("${sso.webauthn.rp-id:localhost}") String rpId,
@@ -134,7 +136,7 @@ public class SecurityConfig {
                         // SPA shell + static assets (the SPA itself gates content via /api/auth/session).
                         .requestMatchers(HttpMethod.GET, "/", "/index.html", "/favicon.ico", "/assets/**",
                                 "/login", "/stepup", "/apps", "/passkeys", "/applications", "/users", "/groups", "/auth-policies", "/clients",
-                                "/relying-parties", "/scim-tokens", "/session-policy", "/ip-ranges",
+                                "/relying-parties", "/scim-tokens", "/session-policy",
                                 "/audit", "/profile",
                                 // Admin console SPA shell (the OIDC flow + admin API still enforce auth).
                                 "/admin", "/admin/**").permitAll()
@@ -158,6 +160,8 @@ public class SecurityConfig {
                 .addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class)
                 // Zero-Trust: re-verify session integrity (client binding + absolute lifetime) on every request.
                 .addFilterAfter(sessionIntegrityFilter, CsrfFilter.class)
+                // Per-policy network (IP) access, post-authentication (also registered on the OIDC chain).
+                .addFilterAfter(new PolicyIpAccessFilter(policyService, audit), SessionIntegrityFilter.class)
                 // RFC 9470 elevation gate: require a fresh admin-console bearer token on /api/admin/**.
                 // Anchored AFTER the authorization filter so the session MFA_COMPLETE check
                 // (and @RequirePermission) still run first — a non-admin gets 403 there, never the 401 challenge.

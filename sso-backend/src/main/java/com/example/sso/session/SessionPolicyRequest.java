@@ -1,5 +1,6 @@
 package com.example.sso.session;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -30,7 +31,8 @@ public record SessionPolicyRequest(
         boolean rotateOnReauth,
         @Pattern(regexp = "Lax|Strict|None") String cookieSameSite,
         List<String> assignedUserIds,
-        List<String> assignedRoleIds) {
+        List<String> assignedRoleIds,
+        List<@Valid IpRuleSpec> ipRules) {
 
     /**
      * The create command, resolving the assignment id strings to UUIDs.
@@ -39,7 +41,7 @@ public record SessionPolicyRequest(
         return new SessionPolicySpec(name, priority, enabled, absoluteTimeoutMinutes, idleTimeoutMinutes,
                 reauthIntervalMinutes, reauthFactors, sensitiveReauthWindowMinutes, stepUpFactors,
                 bindClient, maxConcurrentSessions, rotateOnReauth,
-                cookieSameSite, uuids(assignedUserIds), uuids(assignedRoleIds));
+                cookieSameSite, uuids(assignedUserIds), uuids(assignedRoleIds), ipRules());
     }
 
     /**
@@ -49,7 +51,7 @@ public record SessionPolicyRequest(
         return new SessionPolicyUpdate(priority, enabled, absoluteTimeoutMinutes, idleTimeoutMinutes,
                 reauthIntervalMinutes, reauthFactors, sensitiveReauthWindowMinutes, stepUpFactors,
                 bindClient, maxConcurrentSessions, rotateOnReauth,
-                cookieSameSite, uuids(assignedUserIds), uuids(assignedRoleIds));
+                cookieSameSite, uuids(assignedUserIds), uuids(assignedRoleIds), ipRules());
     }
 
     private Set<UUID> uuids(List<String> values) {

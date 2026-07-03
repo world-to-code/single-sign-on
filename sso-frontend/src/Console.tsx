@@ -20,7 +20,7 @@ import ScimTokens from "./pages/ScimTokens";
 import AuthPolicies from "./pages/AuthPolicies";
 import Passkeys from "./pages/Passkeys";
 import SessionPolicy from "./pages/SessionPolicy";
-import IpRanges from "./pages/IpRanges";
+import SessionPolicyDetail from "./pages/SessionPolicyDetail";
 import MyApps from "./pages/MyApps";
 import Applications from "./pages/Applications";
 import Profile from "./pages/Profile";
@@ -60,7 +60,8 @@ export default function Console({ session }: { session: SessionView }) {
                   <Route path="relying-parties" element={<RelyingParties />} />
                   <Route path="auth-policies" element={<AuthPolicies />} />
                   <Route path="session-policy" element={<SessionPolicy />} />
-                  <Route path="ip-ranges" element={<IpRanges />} />
+                  <Route path="session-policy/new" element={<SessionPolicyDetail />} />
+                  <Route path="session-policy/:id" element={<SessionPolicyDetail />} />
                   <Route path="scim-tokens" element={<ScimTokens />} />
                   <Route path="audit" element={<Audit />} />
                   <Route path="*" element={<Navigate to="/admin" replace />} />

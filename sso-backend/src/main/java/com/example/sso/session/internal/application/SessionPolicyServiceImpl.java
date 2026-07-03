@@ -1,6 +1,9 @@
 package com.example.sso.session.internal.application;
 
 import com.example.sso.authpolicy.AuthFactor;
+import com.example.sso.session.IpRuleSpec;
+import com.example.sso.session.internal.domain.IpAction;
+import com.example.sso.session.internal.domain.IpRuleEntry;
 import com.example.sso.session.internal.domain.SessionPolicy;
 import com.example.sso.session.SessionPolicyDetails;
 import com.example.sso.session.SessionPolicyService;
@@ -15,12 +18,14 @@ import com.example.sso.user.UserService;
 import com.example.sso.user.RoleRef;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.web.util.matcher.IpAddressMatcher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -130,6 +135,23 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         return String.join(",", tokens);
     }
 
+    /** Validates each rule's CIDR (reusing Spring's parser) and maps to the embeddable rule entries. */
+    private Set<IpRuleEntry> toIpRules(List<IpRuleSpec> rules) {
+        if (rules == null) {
+            return Set.of();
+        }
+        Set<IpRuleEntry> entries = new LinkedHashSet<>();
+        for (IpRuleSpec r : rules) {
+            try {
+                new IpAddressMatcher(r.cidr().trim());
+            } catch (IllegalArgumentException e) {
+                throw new BadRequestException("invalid CIDR: " + r.cidr());
+            }
+            entries.add(new IpRuleEntry(r.cidr().trim(), IpAction.valueOf(r.action()), r.priority()));
+        }
+        return entries;
+    }
+
     @Override
     @Transactional
     public SessionPolicyDetails create(SessionPolicySpec spec) {
@@ -148,6 +170,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
                 spec.maxConcurrentSessions(), spec.rotateOnReauth(), spec.cookieSameSite());
         policy.assignUsers(spec.userIds() == null ? Set.of() : spec.userIds());
         policy.assignRoles(spec.roleIds() == null ? Set.of() : spec.roleIds());
+        policy.assignIpRules(toIpRules(spec.ipRules()));
 
         SessionPolicy saved = repository.save(policy);
         refresh();
@@ -185,6 +208,8 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
             policy.assignUsers(update.userIds() == null ? Set.of() : update.userIds());
             policy.assignRoles(update.roleIds() == null ? Set.of() : update.roleIds());
         }
+        // IP rules are policy config (not an assignment) — the Default may carry them too (global restriction).
+        policy.assignIpRules(toIpRules(update.ipRules()));
 
         SessionPolicy saved = repository.save(policy);
         refresh();

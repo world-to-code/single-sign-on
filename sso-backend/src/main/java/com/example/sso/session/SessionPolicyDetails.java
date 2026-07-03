@@ -1,5 +1,6 @@
 package com.example.sso.session;
 
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -43,4 +44,7 @@ public interface SessionPolicyDetails {
     Set<UUID> getAssignedUserIds();
 
     Set<UUID> getAssignedRoleIds();
+
+    /** IP access rules in evaluation order (priority asc). First rule whose CIDR matches the client IP decides. */
+    List<IpRuleSpec> getIpRules();
 }

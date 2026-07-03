@@ -1,5 +1,6 @@
 package com.example.sso.session.internal.application;
 
+import com.example.sso.session.IpRuleSpec;
 import com.example.sso.session.SessionPolicyDetails;
 import com.example.sso.session.SessionPolicyService;
 import com.example.sso.session.SessionPolicySpec;
@@ -65,13 +66,17 @@ class SessionPolicyServiceImplTest {
     }
 
     private SessionPolicySpec spec(String name, String reauthFactors) {
-        return new SessionPolicySpec(name, 5, true, 480, 30, 15, reauthFactors, 2, reauthFactors, false, 0, false,
-                "Lax", Set.of(), Set.of());
+        return spec(name, reauthFactors, reauthFactors);
+    }
+
+    private SessionPolicySpec spec(String name, String reauthFactors, String stepUpFactors) {
+        return new SessionPolicySpec(name, 5, true, 480, 30, 15, reauthFactors, 2, stepUpFactors, false, 0, false,
+                "Lax", Set.of(), Set.of(), List.of());
     }
 
     private SessionPolicyUpdate update(int priority, boolean enabled, String reauthFactors) {
         return new SessionPolicyUpdate(priority, enabled, 480, 30, 15, reauthFactors, 2, reauthFactors, false, 0, false,
-                "Lax", Set.of(), Set.of());
+                "Lax", Set.of(), Set.of(), List.of());
     }
 
     // --- resolution ---
@@ -175,17 +180,55 @@ class SessionPolicyServiceImplTest {
     }
 
     @Test
+    void createRejectsAnUnknownStepUpFactor() {
+        // The stronger sensitive-action factors are validated INDEPENDENTLY of the general re-auth factors,
+        // so a valid reauthFactors cannot smuggle an unknown stepUpFactors through.
+        when(repository.findByName("BadStepUp")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.create(spec("BadStepUp", "TOTP", "FIDO2,SMS")))
+                .isInstanceOf(BadRequestException.class);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
     void createPersistsAndRefreshesOnValidInput() {
         when(repository.findByName("Strict")).thenReturn(Optional.empty());
         when(repository.save(any(SessionPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
         when(repository.findAllWithAssignmentsByPriorityDesc()).thenReturn(List.of());
 
-        SessionPolicyDetails created = service.create(spec("Strict", "TOTP,FIDO2"));
+        SessionPolicyDetails created = service.create(spec("Strict", "TOTP,FIDO2", "FIDO2"));
 
         assertThat(created.getName()).isEqualTo("Strict");
         assertThat(created.getReauthFactors()).isEqualTo("TOTP,FIDO2");
+        assertThat(created.getStepUpFactors()).isEqualTo("FIDO2");             // stronger sensitive set
+        assertThat(created.getSensitiveReauthWindowMinutes()).isEqualTo(2);    // window round-trips
         verify(repository).save(any(SessionPolicy.class));
         verify(repository).findAllWithAssignmentsByPriorityDesc(); // cache refreshed
+    }
+
+    @Test
+    void createRejectsAnInvalidCidr() {
+        when(repository.findByName("BadCidr")).thenReturn(Optional.empty());
+        SessionPolicySpec spec = new SessionPolicySpec("BadCidr", 5, true, 480, 30, 15, "TOTP", 2, "TOTP",
+                false, 0, false, "Lax", Set.of(), Set.of(), List.of(new IpRuleSpec("not-a-cidr", "BLOCK", 0)));
+
+        assertThatThrownBy(() -> service.create(spec)).isInstanceOf(BadRequestException.class);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void createPersistsIpRulesInEvaluationOrder() {
+        when(repository.findByName("Net")).thenReturn(Optional.empty());
+        when(repository.save(any(SessionPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(repository.findAllWithAssignmentsByPriorityDesc()).thenReturn(List.of());
+        SessionPolicySpec spec = new SessionPolicySpec("Net", 5, true, 480, 30, 15, "TOTP", 2, "TOTP",
+                false, 0, false, "Lax", Set.of(), Set.of(),
+                List.of(new IpRuleSpec("0.0.0.0/0", "BLOCK", 1), new IpRuleSpec("10.0.0.0/8", "ALLOW", 0)));
+
+        SessionPolicyDetails created = service.create(spec);
+
+        // getIpRules() returns them sorted by priority asc — ALLOW(0) before BLOCK(1) — regardless of input order.
+        assertThat(created.getIpRules()).extracting(IpRuleSpec::cidr).containsExactly("10.0.0.0/8", "0.0.0.0/0");
     }
 
     // --- update ---

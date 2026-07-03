@@ -5,6 +5,7 @@ import com.example.sso.authpolicy.AuthFactor;
 import com.example.sso.authpolicy.AuthPolicySpec;
 import com.example.sso.authpolicy.internal.application.PolicyAdminService;
 import com.example.sso.authpolicy.internal.application.PolicyView;
+import com.example.sso.session.IpRuleSpec;
 import com.example.sso.session.SessionPolicyRequest;
 import com.example.sso.session.SessionPolicyView;
 import com.example.sso.support.AbstractIntegrationTest;
@@ -50,18 +51,22 @@ class PolicyAdminViewIT extends AbstractIntegrationTest {
 
         SessionPolicyView created = sessionPolicyAdmin.create(new SessionPolicyRequest(
                 "IT-Session-" + suffix(), 50, true, 480, 30, 5, "TOTP,FIDO2", 2, "TOTP,FIDO2", true, 0, true, "Lax",
-                List.of(user), List.of(role)));
+                List.of(user), List.of(role),
+                List.of(new IpRuleSpec("10.0.0.0/8", "ALLOW", 0), new IpRuleSpec("0.0.0.0/0", "BLOCK", 1))));
         cleanups.add(() -> sessionPolicyAdmin.delete(UUID.fromString(created.id())));
 
         // create() projected the freshly-persisted entity...
         assertThat(created.assignedUserIds()).containsExactly(user);
         assertThat(created.assignedRoleIds()).containsExactly(role);
+        assertThat(created.ipRules()).extracting(IpRuleSpec::cidr).containsExactly("10.0.0.0/8", "0.0.0.0/0");
 
-        // ...and list() projects entities re-read from the DB with their assignment sets still LAZY.
+        // ...and list() projects entities re-read from the DB with their assignment sets + IP rules still LAZY.
         SessionPolicyView listed = sessionPolicyAdmin.list(0, 100).items().stream()
                 .filter(p -> p.id().equals(created.id())).findFirst().orElseThrow();
         assertThat(listed.assignedUserIds()).containsExactly(user);
         assertThat(listed.assignedRoleIds()).containsExactly(role);
+        // IP rules project in priority order off the detached read.
+        assertThat(listed.ipRules()).extracting(IpRuleSpec::action).containsExactly("ALLOW", "BLOCK");
 
         // The seeded Default (and every other) policy must also project cleanly off the detached read.
         assertThatCode(() -> sessionPolicyAdmin.list(0, 100)).doesNotThrowAnyException();

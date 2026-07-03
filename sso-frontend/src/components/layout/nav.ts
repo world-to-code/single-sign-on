@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, KeyRound, Users, ShieldCheck, AppWindow, Network, Coins, ScrollText,
-  Clock, Globe, LayoutGrid, Boxes, UsersRound, UserCog, KeySquare,
+  Clock, LayoutGrid, Boxes, UsersRound, UserCog, KeySquare,
   type LucideIcon,
 } from "lucide-react";
 
@@ -65,7 +65,6 @@ export const NAV: NavGroup[] = [
           { to: "/admin/roles", label: "Roles", icon: KeySquare, permission: "role:read" },
           { to: "/admin/auth-policies", label: "Auth Policies", icon: ShieldCheck, permission: "auth-policy:read" },
           { to: "/admin/session-policy", label: "Session Policy", icon: Clock, permission: "session-policy:read" },
-          { to: "/admin/ip-ranges", label: "IP Ranges", icon: Globe, permission: "ip-rule:read" },
         ],
       },
       {

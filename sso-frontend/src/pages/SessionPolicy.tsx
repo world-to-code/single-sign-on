@@ -1,28 +1,19 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { Pencil, Plus, Save, Trash2 } from "lucide-react";
-import { apiGet, apiPost, apiPut, type Page } from "../api";
+import { apiGet, apiPut, errorMessage, type Page } from "../api";
 import { PageHeader } from "@/components/PageHeader";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DataList, EmptyState } from "@/components/states";
 import { Field } from "@/components/form/fields";
-import { UserMultiSelect } from "@/components/UserMultiSelect";
 import { usersByIds } from "@/groups";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
-import { useEditorForm } from "@/hooks/useEditorForm";
-import { tokens } from "@/lib/utils";
 
 interface SessionPolicy {
   id: string;
@@ -44,70 +35,16 @@ interface SessionPolicy {
 }
 interface Role { id: string; name: string }
 
-interface Editor {
-  id: string | null;
-  name: string;
-  priority: string;
-  enabled: boolean;
-  absoluteTimeoutMinutes: string;
-  idleTimeoutMinutes: string;
-  reauthIntervalMinutes: string;
-  reauthFactors: string;
-  sensitiveReauthWindowMinutes: string;
-  stepUpFactors: string;
-  bindClient: boolean;
-  maxConcurrentSessions: string;
-  rotateOnReauth: boolean;
-  cookieSameSite: string;
-  roleIds: string[];
-  userIds: string[];
-}
-
-const REAUTH_FACTORS = ["TOTP", "FIDO2", "PASSWORD", "EMAIL"];
-
-const blankEditor: Editor = {
-  id: null, name: "", priority: "10", enabled: true,
-  absoluteTimeoutMinutes: "480", idleTimeoutMinutes: "30", reauthIntervalMinutes: "5",
-  reauthFactors: "TOTP,FIDO2", sensitiveReauthWindowMinutes: "2", stepUpFactors: "TOTP,FIDO2",
-  bindClient: true, maxConcurrentSessions: "0", rotateOnReauth: true,
-  cookieSameSite: "Lax", roleIds: [], userIds: [],
-};
-
 export default function SessionPolicyPage() {
   const confirmDelete = useDeleteConfirm();
   const [policies, setPolicies] = useState<SessionPolicy[] | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const [userNames, setUserNames] = useState<Record<string, string>>({});
-
-  const {
-    editor, set, setEditor, open, setOpen, error, setError, openCreate, openEdit, save,
-  } = useEditorForm<Editor>({
-    blank: blankEditor,
-    toRequest: (e) => ({
-      name: e.name,
-      priority: Number(e.priority),
-      enabled: e.enabled,
-      absoluteTimeoutMinutes: Number(e.absoluteTimeoutMinutes),
-      idleTimeoutMinutes: Number(e.idleTimeoutMinutes),
-      reauthIntervalMinutes: Number(e.reauthIntervalMinutes),
-      reauthFactors: e.reauthFactors,
-      sensitiveReauthWindowMinutes: Number(e.sensitiveReauthWindowMinutes),
-      stepUpFactors: e.stepUpFactors,
-      bindClient: e.bindClient,
-      maxConcurrentSessions: Number(e.maxConcurrentSessions),
-      rotateOnReauth: e.rotateOnReauth,
-      cookieSameSite: e.cookieSameSite,
-      assignedRoleIds: e.roleIds,
-      assignedUserIds: e.userIds,
-    }),
-    create: (body) => apiPost("/api/admin/session-policies", body),
-    update: (id, body) => apiPut(`/api/admin/session-policies/${id}`, body),
-    onSaved: reload,
-  });
+  const [error, setError] = useState<string | null>(null);
 
   function reload() {
     apiGet<Page<SessionPolicy>>("/api/admin/session-policies?size=100")
-      .then((p) => setPolicies(p.items)).catch((e) => setError(String(e)));
+      .then((p) => setPolicies(p.items)).catch((e) => setError(errorMessage(e)));
   }
   useEffect(() => {
     reload();
@@ -121,37 +58,6 @@ export default function SessionPolicyPage() {
       .then((sugs) => setUserNames(Object.fromEntries(sugs.map((s) => [s.id, s.label]))))
       .catch(() => undefined);
   }, [policies]);
-
-  function toggle(list: string[], id: string): string[] {
-    return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
-  }
-
-  const factors = tokens(editor.reauthFactors, ",");
-  function toggleFactor(f: string) {
-    const next = factors.includes(f) ? factors.filter((x) => x !== f) : [...factors, f];
-    set({ reauthFactors: next.join(",") });
-  }
-
-  const stepUpFactorList = tokens(editor.stepUpFactors, ",");
-  function toggleStepUpFactor(f: string) {
-    const next = stepUpFactorList.includes(f) ? stepUpFactorList.filter((x) => x !== f) : [...stepUpFactorList, f];
-    set({ stepUpFactors: next.join(",") });
-  }
-
-  function editPolicy(p: SessionPolicy) {
-    openEdit({
-      id: p.id, name: p.name, priority: String(p.priority), enabled: p.enabled,
-      absoluteTimeoutMinutes: String(p.absoluteTimeoutMinutes),
-      idleTimeoutMinutes: String(p.idleTimeoutMinutes),
-      reauthIntervalMinutes: String(p.reauthIntervalMinutes),
-      reauthFactors: p.reauthFactors,
-      sensitiveReauthWindowMinutes: String(p.sensitiveReauthWindowMinutes), stepUpFactors: p.stepUpFactors,
-      bindClient: p.bindClient,
-      maxConcurrentSessions: String(p.maxConcurrentSessions), rotateOnReauth: p.rotateOnReauth,
-      cookieSameSite: p.cookieSameSite,
-      roleIds: [...p.assignedRoleIds], userIds: [...p.assignedUserIds],
-    });
-  }
 
   async function remove(p: SessionPolicy) {
     await confirmDelete({
@@ -171,7 +77,7 @@ export default function SessionPolicyPage() {
       <PageHeader
         title="Session Policy"
         description="Named session policies applied per role or user — the highest-priority matching policy wins."
-        actions={<Button onClick={openCreate}><Plus /> New policy</Button>}
+        actions={<Button asChild><Link to="new"><Plus /> New policy</Link></Button>}
       />
 
       <Alert variant="info" className="mb-4">
@@ -207,7 +113,7 @@ export default function SessionPolicyPage() {
                 <TableRow key={p.id}>
                   <TableCell className="font-medium">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      {p.name}
+                      <Link to={p.id} className="hover:underline">{p.name}</Link>
                       {(p.assignedRoleIds.length === 0 && p.assignedUserIds.length === 0) && p.name !== "Default" && (
                         <Badge variant="default">Global</Badge>
                       )}
@@ -229,11 +135,14 @@ export default function SessionPolicyPage() {
                   <TableCell className="text-right">
                     {p.name !== "Default" ? (
                       <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => editPolicy(p)}><Pencil /></Button>
+                        <Button variant="ghost" size="icon" asChild><Link to={p.id}><Pencil /></Link></Button>
                         <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" onClick={() => remove(p)}><Trash2 /></Button>
                       </div>
                     ) : (
-                      <Badge variant="outline">Built-in</Badge>
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon" asChild><Link to={p.id}><Pencil /></Link></Button>
+                        <Badge variant="outline">Built-in</Badge>
+                      </div>
                     )}
                   </TableCell>
                 </TableRow>
@@ -244,133 +153,6 @@ export default function SessionPolicyPage() {
       </DataList>
 
       {defaultPolicy && <CookieCard policy={defaultPolicy} onSaved={reload} />}
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editor.id ? `Edit policy: ${editor.name}` : "Create session policy"}</DialogTitle>
-            <DialogDescription>Session lifetime, step-up re-auth, concurrency limits and where it applies.</DialogDescription>
-          </DialogHeader>
-
-          {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-
-          <form onSubmit={save} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="sp-name">Name</Label>
-              <Input id="sp-name" value={editor.name} disabled={!!editor.id}
-                     onChange={(e) => set({ name: e.target.value })} required />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="sp-priority">Priority <span className="text-muted-foreground">(higher wins)</span></Label>
-                <Input id="sp-priority" value={editor.priority} inputMode="numeric"
-                       onChange={(e) => set({ priority: e.target.value })} />
-              </div>
-              <div className="flex items-center gap-2 pt-7">
-                <Switch id="sp-enabled" checked={editor.enabled} onCheckedChange={(v) => set({ enabled: v })} />
-                <Label htmlFor="sp-enabled">Enabled</Label>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Absolute timeout (min)" hint="Max session lifetime — forces full re-auth.">
-                <Input type="number" min={1} value={editor.absoluteTimeoutMinutes}
-                       onChange={(e) => set({ absoluteTimeoutMinutes: e.target.value })} />
-              </Field>
-              <Field label="Idle timeout (min)" hint="Expires after this much inactivity.">
-                <Input type="number" min={1} value={editor.idleTimeoutMinutes}
-                       onChange={(e) => set({ idleTimeoutMinutes: e.target.value })} />
-              </Field>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Re-auth interval (min)" hint="After this, sensitive actions require re-auth.">
-                <Input type="number" min={1} value={editor.reauthIntervalMinutes}
-                       onChange={(e) => set({ reauthIntervalMinutes: e.target.value })} />
-              </Field>
-              <Field label="Max concurrent sessions" hint="0 = unlimited; over the cap evicts the oldest.">
-                <Input type="number" min={0} value={editor.maxConcurrentSessions}
-                       onChange={(e) => set({ maxConcurrentSessions: e.target.value })} />
-              </Field>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Allowed re-auth factors</Label>
-              <div className="flex flex-wrap gap-2">
-                {REAUTH_FACTORS.map((f) => (
-                  <label key={f} className="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm has-[:checked]:border-primary has-[:checked]:bg-accent">
-                    <Checkbox checked={factors.includes(f)} onCheckedChange={() => toggleFactor(f)} /> {f}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-md border border-dashed p-3 space-y-3">
-              <p className="text-sm font-medium">Sensitive actions (delete / grant / key rotation)</p>
-              <Field label="Step-up re-auth window (min)" hint="These actions need a deliberate re-auth this recent — stricter than the interval above.">
-                <Input type="number" min={1} value={editor.sensitiveReauthWindowMinutes}
-                       onChange={(e) => set({ sensitiveReauthWindowMinutes: e.target.value })} />
-              </Field>
-              <div className="space-y-2">
-                <Label>Step-up factors</Label>
-                <div className="flex flex-wrap gap-2">
-                  {REAUTH_FACTORS.map((f) => (
-                    <label key={f} className="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm has-[:checked]:border-primary has-[:checked]:bg-accent">
-                      <Checkbox checked={stepUpFactorList.includes(f)} onCheckedChange={() => toggleStepUpFactor(f)} /> {f}
-                    </label>
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground">Can be stronger than the general factors — e.g. passkey (FIDO2) only.</p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between rounded-md border p-3">
-              <div>
-                <Label htmlFor="sp-bind">Bind session to client</Label>
-                <p className="text-xs text-muted-foreground">Reject a session cookie replayed from a different browser/device.</p>
-              </div>
-              <Switch id="sp-bind" checked={editor.bindClient} onCheckedChange={(v) => set({ bindClient: v })} />
-            </div>
-
-            <div className="flex items-center justify-between rounded-md border p-3">
-              <div>
-                <Label htmlFor="sp-rotate">Rotate session id on re-auth</Label>
-                <p className="text-xs text-muted-foreground">Issue a fresh session id after a successful step-up re-authentication.</p>
-              </div>
-              <Switch id="sp-rotate" checked={editor.rotateOnReauth} onCheckedChange={(v) => set({ rotateOnReauth: v })} />
-            </div>
-
-            <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
-              Leave roles &amp; users empty to apply this policy to <strong>everyone</strong> (global).
-              Cookie attributes (SameSite/Secure) are global and edited on the Default below.
-            </p>
-
-            <div className="space-y-2">
-              <Label>Assign to roles</Label>
-              <div className="flex flex-wrap gap-3 rounded-md border p-3">
-                {roles.length === 0 ? <span className="text-sm text-muted-foreground">none</span> : roles.map((r) => (
-                  <label key={r.id} className="flex items-center gap-2 text-sm">
-                    <Checkbox checked={editor.roleIds.includes(r.id)}
-                              onCheckedChange={() => set({ roleIds: toggle(editor.roleIds, r.id) })} /> {r.name}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Assign to users</Label>
-              <UserMultiSelect selected={editor.userIds} onChange={(ids) => set({ userIds: ids })}
-                               placeholder="Search users to target…" />
-            </div>
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => { setEditor(blankEditor); setOpen(false); }}>Cancel</Button>
-              <Button type="submit">{editor.id ? "Save changes" : "Create policy"}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }
@@ -410,7 +192,7 @@ function CookieCard({ policy, onSaved }: { policy: SessionPolicy; onSaved: () =>
       setStatus("Cookie settings saved.");
       onSaved();
     } catch (e) {
-      setError(String(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }

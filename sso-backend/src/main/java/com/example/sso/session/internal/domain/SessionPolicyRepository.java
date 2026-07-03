@@ -16,12 +16,13 @@ public interface SessionPolicyRepository extends JpaRepository<SessionPolicy, UU
     List<SessionPolicy> findAllByOrderByPriorityDesc();
 
     /**
-     * All policies (priority desc) with both assignment sets fetch-joined, so the cache can hold them
-     * detached. Both are {@code Set}s (not bags), so a single query fetching both is allowed; the small
-     * assignment sets keep the Cartesian product negligible.
+     * All policies (priority desc) with the assignment sets AND the IP rules fetch-joined, so the cache can
+     * hold them detached. All three are {@code Set}s (not bags), so a single query fetching them is allowed;
+     * the small per-policy collections keep the (three-way) Cartesian product negligible.
      */
     @Query("select distinct p from SessionPolicy p "
-            + "left join fetch p.assignedUserIds left join fetch p.assignedRoleIds order by p.priority desc")
+            + "left join fetch p.assignedUserIds left join fetch p.assignedRoleIds "
+            + "left join fetch p.ipRules order by p.priority desc")
     List<SessionPolicy> findAllWithAssignmentsByPriorityDesc();
 
     /** Enabled policies directly assigned to the given user (matched at the join table). */

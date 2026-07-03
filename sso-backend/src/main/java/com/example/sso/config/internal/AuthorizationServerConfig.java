@@ -6,6 +6,8 @@ import com.example.sso.crypto.RsaKeyService;
 import com.example.sso.portal.AppAssignmentFilter;
 import com.example.sso.portal.AppStepUpFilter;
 import com.example.sso.portal.ApplicationService;
+import com.example.sso.security.PolicyIpAccessFilter;
+import com.example.sso.session.SessionPolicyService;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.UserService;
 import com.nimbusds.jose.jwk.source.JWKSource;
@@ -68,7 +70,7 @@ public class AuthorizationServerConfig {
     SecurityFilterChain authorizationServerSecurityFilterChain(
             HttpSecurity http, JWKSource<SecurityContext> jwkSource,
             RegisteredClientRepository registeredClients, UserService users, ApplicationService applications,
-            AuditService audit)
+            SessionPolicyService policyService, AuditService audit)
             throws Exception {
 
         OAuth2AuthorizationServerConfigurer authorizationServer = new OAuth2AuthorizationServerConfigurer();
@@ -95,6 +97,10 @@ public class AuthorizationServerConfig {
                                 new MediaTypeRequestMatcher(MediaType.TEXT_HTML)))
                 // The OIDC UserInfo endpoint is a resource-server endpoint (bearer access token).
                 .oauth2ResourceServer(rs -> rs.jwt(Customizer.withDefaults()))
+                // Per-policy network (IP) access on the OIDC chain too: a blocked network must not be able to
+                // complete SSO (/oauth2/authorize) even though it reached login. Anchored after the context
+                // filter so the resolved user (and policy) is available.
+                .addFilterAfter(new PolicyIpAccessFilter(policyService, audit), SecurityContextHolderFilter.class)
                 // Per-app step-up: redirect to /stepup when the client requires extra factors. Anchored
                 // after the context filter (a registered-order filter) so it runs once the session is loaded.
                 .addFilterAfter(new AppStepUpFilter(registeredClients, users, applications, audit),

@@ -2,7 +2,6 @@ package com.example.sso.session.internal.application;
 
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.ServerErrorAuditFilter;
-import com.example.sso.session.IpRuleService;
 import com.example.sso.session.SessionPolicyService;
 import org.springframework.boot.web.server.Cookie;
 import org.springframework.boot.web.server.servlet.CookieSameSiteSupplier;
@@ -14,10 +13,10 @@ import org.springframework.core.Ordered;
 import java.util.Locale;
 
 /**
- * Session/network infrastructure beans: the dynamic session-cookie SameSite supplier (so policy
- * changes take effect without a restart; the Secure attribute is driven by
- * {@code server.servlet.session.cookie.secure}), and the highest-precedence {@link IpAccessFilter}
- * registration so IP rules are enforced before any other filter.
+ * Session infrastructure beans: the dynamic session-cookie SameSite supplier (so policy changes take
+ * effect without a restart; the Secure attribute is driven by {@code server.servlet.session.cookie.secure})
+ * and the outermost server-error audit filter. IP access is enforced per-policy, post-authentication, in
+ * {@code SessionIntegrityFilter}.
  */
 @Configuration
 public class SessionCookieConfig {
@@ -40,15 +39,7 @@ public class SessionCookieConfig {
     public FilterRegistrationBean<ServerErrorAuditFilter> serverErrorAuditFilterRegistration(AuditService audit) {
         FilterRegistrationBean<ServerErrorAuditFilter> registration =
                 new FilterRegistrationBean<>(new ServerErrorAuditFilter(audit));
-        registration.setOrder(Ordered.HIGHEST_PRECEDENCE); // wrap everything, including IP access + security chains
-        registration.addUrlPatterns("/*");
-        return registration;
-    }
-
-    @Bean
-    public FilterRegistrationBean<IpAccessFilter> ipAccessFilterRegistration(IpRuleService ipRules, AuditService audit) {
-        FilterRegistrationBean<IpAccessFilter> registration = new FilterRegistrationBean<>(new IpAccessFilter(ipRules, audit));
-        registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 10); // just inside the error-audit filter, before security
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE); // wrap everything, including the security chain
         registration.addUrlPatterns("/*");
         return registration;
     }

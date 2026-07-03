@@ -10,7 +10,8 @@ public record SessionPolicyView(String id, String name, int priority, boolean en
                                 int sensitiveReauthWindowMinutes, String stepUpFactors, boolean bindClient,
                                 int maxConcurrentSessions, boolean rotateOnReauth,
                                 String cookieSameSite,
-                                List<String> assignedUserIds, List<String> assignedRoleIds) {
+                                List<String> assignedUserIds, List<String> assignedRoleIds,
+                                List<IpRuleSpec> ipRules) {
 
     public static SessionPolicyView of(SessionPolicyDetails p) {
         return new SessionPolicyView(p.getId().toString(), p.getName(), p.getPriority(), p.isEnabled(),
@@ -19,6 +20,7 @@ public record SessionPolicyView(String id, String name, int priority, boolean en
                 p.isBindClient(), p.getMaxConcurrentSessions(), p.isRotateOnReauth(),
                 p.getCookieSameSite(),
                 p.getAssignedUserIds().stream().map(UUID::toString).toList(),
-                p.getAssignedRoleIds().stream().map(UUID::toString).toList());
+                p.getAssignedRoleIds().stream().map(UUID::toString).toList(),
+                p.getIpRules());
     }
 }

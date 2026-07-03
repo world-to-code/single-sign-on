@@ -50,11 +50,6 @@ public final class Permissions {
     public static final String SESSION_POLICY_CREATE = "session-policy:create";
     public static final String SESSION_POLICY_UPDATE = "session-policy:update";
     public static final String SESSION_POLICY_DELETE = "session-policy:delete";
-    // IP access rules
-    public static final String IP_RULE_READ = "ip-rule:read";
-    public static final String IP_RULE_CREATE = "ip-rule:create";
-    public static final String IP_RULE_UPDATE = "ip-rule:update";
-    public static final String IP_RULE_DELETE = "ip-rule:delete";
     // Admin-portal security settings (singleton)
     public static final String PORTAL_SETTINGS_READ = "portal-settings:read";
     public static final String PORTAL_SETTINGS_UPDATE = "portal-settings:update";
@@ -82,7 +77,6 @@ public final class Permissions {
             SAML_READ, SAML_CREATE, SAML_UPDATE, SAML_DELETE,
             POLICY_READ, POLICY_CREATE, POLICY_UPDATE, POLICY_DELETE,
             SESSION_POLICY_READ, SESSION_POLICY_CREATE, SESSION_POLICY_UPDATE, SESSION_POLICY_DELETE,
-            IP_RULE_READ, IP_RULE_CREATE, IP_RULE_UPDATE, IP_RULE_DELETE,
             PORTAL_SETTINGS_READ, PORTAL_SETTINGS_UPDATE,
             APP_ASSIGNMENT_READ, APP_ASSIGNMENT_ASSIGN, APP_ASSIGNMENT_UNASSIGN,
             RESOURCE_READ, RESOURCE_CREATE, RESOURCE_UPDATE, RESOURCE_DELETE, RESOURCE_ASSIGN_ADMIN,

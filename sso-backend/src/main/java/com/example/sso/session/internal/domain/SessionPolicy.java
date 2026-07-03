@@ -1,5 +1,6 @@
 package com.example.sso.session.internal.domain;
 
+import com.example.sso.session.IpRuleSpec;
 import com.example.sso.session.SessionPolicyDetails;
 import com.example.sso.shared.domain.AbstractEntity;
 import jakarta.persistence.CollectionTable;
@@ -11,7 +12,9 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import lombok.AccessLevel;
@@ -59,6 +62,10 @@ public class SessionPolicy extends AbstractEntity implements SessionPolicyDetail
     @Column(name = "role_id")
     private Set<UUID> assignedRoleIds = new HashSet<>();
 
+    @ElementCollection
+    @CollectionTable(name = "session_policy_ip_rule", joinColumns = @JoinColumn(name = "policy_id"))
+    private Set<IpRuleEntry> ipRules = new HashSet<>();
+
     public SessionPolicy(String name, int priority) {
         this.name = name;
         this.priority = priority;
@@ -93,6 +100,11 @@ public class SessionPolicy extends AbstractEntity implements SessionPolicyDetail
     public void assignRoles(Collection<UUID> roleIds) {
         this.assignedRoleIds.clear();
         this.assignedRoleIds.addAll(roleIds);
+    }
+
+    public void assignIpRules(Collection<IpRuleEntry> rules) {
+        this.ipRules.clear();
+        this.ipRules.addAll(rules);
     }
 
     // The session rules live in the embedded value object; these delegate to satisfy SessionPolicyDetails.
@@ -156,5 +168,14 @@ public class SessionPolicy extends AbstractEntity implements SessionPolicyDetail
     @Override
     public Set<UUID> getAssignedRoleIds() {
         return Collections.unmodifiableSet(assignedRoleIds);
+    }
+
+    /** IP rules in evaluation order (priority asc) — first match decides; see {@link IpRuleEntry}. */
+    @Override
+    public List<IpRuleSpec> getIpRules() {
+        return ipRules.stream()
+                .sorted(Comparator.comparingInt(IpRuleEntry::priority))
+                .map(r -> new IpRuleSpec(r.cidr(), r.action().name(), r.priority()))
+                .toList();
     }
 }
