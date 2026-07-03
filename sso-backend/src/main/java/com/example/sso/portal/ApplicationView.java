@@ -9,4 +9,10 @@ package com.example.sso.portal;
  */
 public record ApplicationView(String id, String type, String name, String launchUrl, boolean system,
                               String requiredPolicyId, String requiredPolicyName) {
+
+    /** Projects a catalog descriptor, given its resolved app-level policy id/name (both null when none). */
+    public static ApplicationView of(ApplicationDescriptor app, String requiredPolicyId, String requiredPolicyName) {
+        return new ApplicationView(app.id(), app.type().name(), app.name(), app.launchUrl(), app.system(),
+                requiredPolicyId, requiredPolicyName);
+    }
 }
