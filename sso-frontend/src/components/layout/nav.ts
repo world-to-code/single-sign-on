@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, KeyRound, Users, ShieldCheck, AppWindow, Network, Coins, ScrollText,
-  Clock, LayoutGrid, Boxes, UsersRound, UserCog, KeySquare,
+  Clock, Globe, LayoutGrid, Boxes, UsersRound, UserCog, KeySquare,
   type LucideIcon,
 } from "lucide-react";
 
@@ -65,6 +65,7 @@ export const NAV: NavGroup[] = [
           { to: "/admin/roles", label: "Roles", icon: KeySquare, permission: "role:read" },
           { to: "/admin/auth-policies", label: "Auth Policies", icon: ShieldCheck, permission: "auth-policy:read" },
           { to: "/admin/session-policy", label: "Session Policy", icon: Clock, permission: "session-policy:read" },
+          { to: "/admin/network-zones", label: "Network Zones", icon: Globe, permission: "network-zone:read" },
         ],
       },
       {
@@ -84,5 +85,9 @@ function allItems(): NavItem[] {
 }
 
 export function titleFor(pathname: string): string {
-  return allItems().find((i) => i.to === pathname)?.label ?? "Dashboard";
+  // Longest prefix match so detail routes (e.g. /admin/session-policy/:id) inherit their section's title.
+  const match = allItems()
+    .filter((i) => pathname === i.to || pathname.startsWith(i.to + "/"))
+    .sort((a, b) => b.to.length - a.to.length)[0];
+  return match?.label ?? "Dashboard";
 }

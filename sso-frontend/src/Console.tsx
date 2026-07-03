@@ -21,6 +21,7 @@ import AuthPolicies from "./pages/AuthPolicies";
 import Passkeys from "./pages/Passkeys";
 import SessionPolicy from "./pages/SessionPolicy";
 import SessionPolicyDetail from "./pages/SessionPolicyDetail";
+import NetworkZones from "./pages/NetworkZones";
 import MyApps from "./pages/MyApps";
 import Applications from "./pages/Applications";
 import Profile from "./pages/Profile";
@@ -62,6 +63,7 @@ export default function Console({ session }: { session: SessionView }) {
                   <Route path="session-policy" element={<SessionPolicy />} />
                   <Route path="session-policy/new" element={<SessionPolicyDetail />} />
                   <Route path="session-policy/:id" element={<SessionPolicyDetail />} />
+                  <Route path="network-zones" element={<NetworkZones />} />
                   <Route path="scim-tokens" element={<ScimTokens />} />
                   <Route path="audit" element={<Audit />} />
                   <Route path="*" element={<Navigate to="/admin" replace />} />
