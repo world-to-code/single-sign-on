@@ -20,4 +20,11 @@ public interface UserSessions {
      * user's session is never reachable. Throws {@code NotFoundException} when no such handle exists.
      */
     void revoke(String username, String handle);
+
+    /**
+     * Terminates ALL of a user's live sessions (admin force-expiry, or automatically when the user is
+     * disabled/deleted/re-roled). Deleting the Redis session fires the termination listeners, so the user
+     * is also logged out of their OIDC/SAML participants. Returns the number of sessions ended.
+     */
+    int terminateAll(String username);
 }

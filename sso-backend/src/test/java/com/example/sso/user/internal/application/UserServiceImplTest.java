@@ -4,6 +4,7 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.NewUser;
+import com.example.sso.user.UserAccessChangedEvent;
 import com.example.sso.user.UserDeletedEvent;
 import com.example.sso.user.UserUpdate;
 import com.example.sso.user.internal.domain.UserGroupRepository;
@@ -29,6 +30,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -99,7 +101,7 @@ class UserServiceImplTest {
     @Test
     void deleteMissingUserThrowsNotFoundAndPublishesNothing() {
         UUID id = UUID.randomUUID();
-        when(users.existsById(id)).thenReturn(false);
+        when(users.findById(id)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.delete(id)).isInstanceOf(NotFoundException.class);
         verify(users, never()).deleteById(any());
@@ -109,12 +111,15 @@ class UserServiceImplTest {
     @Test
     void deleteRemovesTheUserAndPublishesUserDeletedEvent() {
         UUID id = UUID.randomUUID();
-        when(users.existsById(id)).thenReturn(true);
+        AppUser user = mock(AppUser.class);
+        when(user.getUsername()).thenReturn("bob");
+        when(users.findById(id)).thenReturn(Optional.of(user));
 
         service.delete(id);
 
         verify(users).deleteById(id);
         verify(events).publishEvent(new UserDeletedEvent(id));
+        verify(events).publishEvent(new UserAccessChangedEvent("bob")); // terminate the deleted user's sessions
     }
 
     @Test

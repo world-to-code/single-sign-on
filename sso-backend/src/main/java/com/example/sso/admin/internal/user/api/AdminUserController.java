@@ -94,6 +94,15 @@ public class AdminUserController {
         return userDetailAdminService.sessions(id);
     }
 
+    /** Admin force-expiry: end all of a user's live sessions (e.g. a compromised account). */
+    @DeleteMapping("/{id}/sessions")
+    @CanSetUserEnabled
+    @RequireStepUp
+    public ResponseEntity<Void> revokeUserSessions(@PathVariable UUID id) {
+        userDetailAdminService.terminateSessions(id);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/{id}/activity")
     @CanViewUser
     public Page<AuditEntry> userActivity(@PathVariable UUID id,

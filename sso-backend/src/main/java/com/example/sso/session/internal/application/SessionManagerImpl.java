@@ -8,12 +8,14 @@ import com.example.sso.session.SessionPolicyDetails;
 import com.example.sso.session.SessionPolicyService;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.shared.web.ClientIp;
+import com.example.sso.user.UserAccessChangedEvent;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.session.SessionInformation;
 import org.springframework.security.core.session.SessionRegistry;
@@ -113,6 +115,22 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
         }
 
         sessionMetadata.remove(target.sessionId());
+    }
+
+    @Override
+    public int terminateAll(String username) {
+        List<SessionInformation> active = sessionRegistry.getAllSessions(username, false);
+        // expireNow() deletes the Redis session -> SessionDestroyedEvent -> back-channel logout / SLO + the
+        // metadata cleanup listener. Nothing here reads the (revoked) user state, so it is safe pre-commit.
+        active.forEach(SessionInformation::expireNow);
+        return active.size();
+    }
+
+    /** When a user is disabled/deleted/re-roled, end their live sessions so a frozen SecurityContext can't
+     *  keep acting on stale authorities until idle/absolute expiry. */
+    @EventListener
+    public void onUserAccessChanged(UserAccessChangedEvent event) {
+        terminateAll(event.username());
     }
 
     private boolean isLive(SessionMetadata metadata) {

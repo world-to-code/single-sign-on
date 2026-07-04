@@ -14,6 +14,7 @@ import com.example.sso.user.internal.domain.RoleRepository;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.Suggestion;
 import com.example.sso.user.UserAccount;
+import com.example.sso.user.UserAccessChangedEvent;
 import com.example.sso.user.UserDeletedEvent;
 import com.example.sso.user.UserUpdate;
 import com.example.sso.user.internal.domain.UserGroupRepository;
@@ -198,7 +199,9 @@ public class UserServiceImpl implements UserService {
             user.assignRoles(roleNames.stream().map(this::requireRole).collect(Collectors.toSet()));
         }
 
-        return users.save(user);
+        AppUser saved = users.save(user);
+        events.publishEvent(new UserAccessChangedEvent(saved.getUsername())); // roles/enabled may have changed
+        return saved;
     }
 
     @Override
@@ -211,7 +214,11 @@ public class UserServiceImpl implements UserService {
             user.disable();
         }
 
-        return users.save(user);
+        AppUser saved = users.save(user);
+        if (!enabled) {
+            events.publishEvent(new UserAccessChangedEvent(saved.getUsername())); // disabled -> kill sessions
+        }
+        return saved;
     }
 
     @Override
@@ -223,7 +230,9 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public void disable(UUID id) {
-        require(id).disable();
+        AppUser user = require(id);
+        user.disable();
+        events.publishEvent(new UserAccessChangedEvent(user.getUsername()));
     }
 
     @Override
@@ -234,7 +243,9 @@ public class UserServiceImpl implements UserService {
                 : permissionNames.stream().map(this::getOrCreatePermission).collect(Collectors.toSet());
         user.assignDirectPermissions(resolved);
 
-        return users.save(user);
+        AppUser saved = users.save(user);
+        events.publishEvent(new UserAccessChangedEvent(saved.getUsername()));
+        return saved;
     }
 
     @Override
@@ -252,12 +263,13 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public void delete(UUID id) {
-        if (!users.existsById(id)) {
-            throw new NotFoundException("User not found");
-        }
+        AppUser user = users.findById(id)
+                .orElseThrow(() -> new NotFoundException("User not found"));
+        String username = user.getUsername();
 
         users.deleteById(id);
         events.publishEvent(new UserDeletedEvent(id));
+        events.publishEvent(new UserAccessChangedEvent(username)); // terminate the deleted user's sessions
     }
 
     @Override

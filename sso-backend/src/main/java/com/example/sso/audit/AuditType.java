@@ -36,6 +36,7 @@ public enum AuditType {
     LOGOUT(AuditCategory.SESSION),
     OIDC_BACKCHANNEL_LOGOUT(AuditCategory.SESSION),
     SAML_SLO(AuditCategory.SESSION),
+    SESSION_ADMIN_REVOKED(AuditCategory.SESSION),
 
     // Network / rate access
     IP_BLOCKED(AuditCategory.ACCESS),

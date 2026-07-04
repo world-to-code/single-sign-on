@@ -5,6 +5,7 @@ import com.example.sso.session.SessionMetadataStore;
 import com.example.sso.session.SessionPolicyDetails;
 import com.example.sso.session.SessionPolicyService;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.user.UserAccessChangedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,6 +21,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -157,6 +159,29 @@ class SessionManagerImplTest {
 
         // current (uncounted by the registry) + other = 2 > cap 1 → evict the older 'other'.
         verify(other).expireNow();
+    }
+
+    @Test
+    void terminateAllExpiresEveryLiveSessionAndReturnsTheCount() {
+        SessionInformation a = mock(SessionInformation.class);
+        SessionInformation b = mock(SessionInformation.class);
+        when(sessionRegistry.getAllSessions(USER, false)).thenReturn(List.of(a, b));
+
+        int count = manager.terminateAll(USER);
+
+        verify(a).expireNow();
+        verify(b).expireNow();
+        assertThat(count).isEqualTo(2);
+    }
+
+    @Test
+    void userAccessChangedEventTerminatesTheUsersSessions() {
+        SessionInformation a = mock(SessionInformation.class);
+        when(sessionRegistry.getAllSessions(USER, false)).thenReturn(List.of(a));
+
+        manager.onUserAccessChanged(new UserAccessChangedEvent(USER));
+
+        verify(a).expireNow();
     }
 
     @Test

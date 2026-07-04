@@ -51,16 +51,17 @@ public class SamlSloController {
         LogoutRequest request = codec.decodeLogoutRedirect(samlRequest);
         SamlRelyingParty relyingParty = resolve(request);
 
-        if (relyingParty.isWantAuthnRequestsSigned()) {
-            if (signature == null || sigAlg == null) {
-                throw new BadRequestException("LogoutRequest must be signed (Redirect binding)");
-            }
-            String query = httpRequest.getQueryString();
-            int idx = query.indexOf(SIGNATURE_PARAM);
-            String signedContent = idx >= 0 ? query.substring(0, idx) : query;
-            signatureValidator.verifyRedirect(signedContent.getBytes(StandardCharsets.US_ASCII), sigAlg,
-                    Base64.getDecoder().decode(signature), relyingParty);
+        // ALWAYS verify the SP signature on an inbound LogoutRequest (unlike SSO, this is not gated on the
+        // per-RP wantAuthnRequestsSigned flag): the signature is what prevents cross-site logout-CSRF, since
+        // /saml2/idp/slo is permitAll and a Lax SESSION cookie IS sent on a top-level GET navigation.
+        if (signature == null || sigAlg == null) {
+            throw new BadRequestException("LogoutRequest must be signed (Redirect binding)");
         }
+        String query = httpRequest.getQueryString();
+        int idx = query.indexOf(SIGNATURE_PARAM);
+        String signedContent = idx >= 0 ? query.substring(0, idx) : query;
+        signatureValidator.verifyRedirect(signedContent.getBytes(StandardCharsets.US_ASCII), sigAlg,
+                Base64.getDecoder().decode(signature), relyingParty);
 
         return render(inboundLogout.process(request, relyingParty, username(authentication, request),
                 relayState, httpRequest));
@@ -73,9 +74,8 @@ public class SamlSloController {
         LogoutRequest request = codec.decodeLogoutPost(samlRequest);
         SamlRelyingParty relyingParty = resolve(request);
 
-        if (relyingParty.isWantAuthnRequestsSigned()) {
-            signatureValidator.verifyEmbedded(request, relyingParty);
-        }
+        // Always verify (see the Redirect handler) — the SP signature authenticates the LogoutRequest.
+        signatureValidator.verifyEmbedded(request, relyingParty);
 
         return render(inboundLogout.process(request, relyingParty, username(authentication, request),
                 relayState, httpRequest));

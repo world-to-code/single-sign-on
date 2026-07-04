@@ -63,8 +63,14 @@ class LogoutPropagationImpl implements LogoutPropagation {
             }
             boolean sessionRequired = Boolean.TRUE.equals(
                     client.getClientSettings().getSetting(BackChannelLogout.CLIENT_SETTING_SESSION_REQUIRED));
-            String token = tokens.create(clientId, subject, sessionRequired ? sid : null);
-            boolean delivered = post(logoutUri, token);
+            // Build + deliver per client inside the try so one client's failure (a token-build or network
+            // error) never starves the OTHER clients of their logout, and never skips index.clear below.
+            boolean delivered = false;
+            try {
+                delivered = post(logoutUri, tokens.create(clientId, subject, sessionRequired ? sid : null));
+            } catch (RuntimeException e) {
+                log.warn("back-channel logout to {} failed to build/send: {}", clientId, e.getMessage());
+            }
             audit.record(new AuditRecord(AuditType.OIDC_BACKCHANNEL_LOGOUT, subject, delivered,
                     "client=" + clientId, null));
         }

@@ -63,12 +63,22 @@ class SamlLogoutPropagationImpl implements SamlLogoutPropagation {
                 continue; // SP not configured for SLO
             }
             // The event-driven (browser-less) path can only reach back-channel SOAP SPs. Front-channel SPs
-            // are logged out during the explicit-logout redirect chain, not here.
+            // need the explicit-logout redirect chain (not built here) — audit the SKIP so the gap that the
+            // SP session survives this termination is VISIBLE to operators, never silent.
             if (rp.sloBinding() != SloBinding.SOAP) {
+                audit.record(new AuditRecord(AuditType.SAML_SLO, username, false,
+                        "sp=" + entityId + " skipped (front-channel binding, no browser)", null));
                 continue;
             }
-            String logoutRequest = messageBuilder.signedLogoutRequestXml(rp, participant.getValue(), sid);
-            boolean delivered = postSoap(rp.getSingleLogoutUrl(), logoutRequest);
+            // Build + deliver per SP inside the try so one SP's failure never starves the others or skips
+            // index.clear below.
+            boolean delivered = false;
+            try {
+                delivered = postSoap(rp.getSingleLogoutUrl(),
+                        messageBuilder.signedLogoutRequestXml(rp, participant.getValue(), sid));
+            } catch (RuntimeException e) {
+                log.warn("SAML SLO to {} failed to build/send: {}", entityId, e.getMessage());
+            }
             audit.record(new AuditRecord(AuditType.SAML_SLO, username, delivered, "sp=" + entityId, null));
         }
         index.clear(sid);
