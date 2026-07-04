@@ -33,6 +33,8 @@ public enum AuditType {
     SESSION_EXPIRED_ABSOLUTE(AuditCategory.SESSION),
     SESSION_CONCURRENT_EXPIRED(AuditCategory.SESSION),
     SESSION_CONTEXT_MISMATCH(AuditCategory.SESSION),
+    LOGOUT(AuditCategory.SESSION),
+    OIDC_BACKCHANNEL_LOGOUT(AuditCategory.SESSION),
 
     // Network / rate access
     IP_BLOCKED(AuditCategory.ACCESS),

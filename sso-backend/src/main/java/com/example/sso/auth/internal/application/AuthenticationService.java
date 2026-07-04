@@ -7,6 +7,7 @@ import com.example.sso.authpolicy.Factors;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.shared.error.UnauthorizedException;
+import com.example.sso.shared.web.ClientIp;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -88,6 +89,10 @@ public class AuthenticationService {
 
     public void logout(HttpServletRequest request, HttpServletResponse response) {
         Authentication authentication = currentUser.authentication();
+        if (authentication != null) {
+            audit.record(new AuditRecord(AuditType.LOGOUT, authentication.getName(), true, null, ClientIp.of(request)));
+        }
+        // Invalidating the session deletes the Redis session -> SessionDestroyedEvent -> back-channel logout.
         new SecurityContextLogoutHandler().logout(request, response, authentication);
         new CookieClearingLogoutHandler(SESSION_COOKIE, CSRF_COOKIE).logout(request, response, authentication);
     }
