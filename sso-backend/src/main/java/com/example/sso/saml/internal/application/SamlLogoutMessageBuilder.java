@@ -8,8 +8,11 @@ import org.opensaml.core.xml.io.MarshallingException;
 import org.opensaml.saml.common.SAMLVersion;
 import org.opensaml.saml.saml2.core.Issuer;
 import org.opensaml.saml.saml2.core.LogoutRequest;
+import org.opensaml.saml.saml2.core.LogoutResponse;
 import org.opensaml.saml.saml2.core.NameID;
 import org.opensaml.saml.saml2.core.SessionIndex;
+import org.opensaml.saml.saml2.core.Status;
+import org.opensaml.saml.saml2.core.StatusCode;
 import org.opensaml.security.SecurityException;
 import org.opensaml.xmlsec.signature.support.SignatureException;
 import org.springframework.beans.factory.annotation.Value;
@@ -62,6 +65,33 @@ public class SamlLogoutMessageBuilder {
             return SerializeSupport.nodeToString(request.getDOM());
         } catch (SecurityException | MarshallingException | SignatureException e) {
             throw new IllegalStateException("Failed to build SAML LogoutRequest", e);
+        }
+    }
+
+    /** A signed successful LogoutResponse answering the SP's LogoutRequest ({@code inResponseTo} = its ID). */
+    public LogoutResponse signedLogoutResponse(SamlRelyingParty sp, String inResponseTo) {
+        try {
+            LogoutResponse response = build(LogoutResponse.DEFAULT_ELEMENT_NAME);
+            response.setID(idGenerator.generateIdentifier());
+            response.setIssueInstant(Instant.now());
+            response.setVersion(SAMLVersion.VERSION_20);
+            response.setInResponseTo(inResponseTo);
+            response.setDestination(sp.getSingleLogoutUrl());
+
+            Issuer issuer = build(Issuer.DEFAULT_ELEMENT_NAME);
+            issuer.setValue(idpEntityId);
+            response.setIssuer(issuer);
+
+            StatusCode statusCode = build(StatusCode.DEFAULT_ELEMENT_NAME);
+            statusCode.setValue(StatusCode.SUCCESS);
+            Status status = build(Status.DEFAULT_ELEMENT_NAME);
+            status.setStatusCode(statusCode);
+            response.setStatus(status);
+
+            signer.signObject(response, sp.getSignatureAlgorithm());
+            return response;
+        } catch (SecurityException | MarshallingException | SignatureException e) {
+            throw new IllegalStateException("Failed to build SAML LogoutResponse", e);
         }
     }
 }

@@ -4,11 +4,14 @@ import com.example.sso.shared.error.BadRequestException;
 import lombok.RequiredArgsConstructor;
 import net.shibboleth.shared.xml.ParserPool;
 import net.shibboleth.shared.xml.SerializeSupport;
+import org.opensaml.core.xml.XMLObject;
 import org.opensaml.core.xml.config.XMLObjectProviderRegistrySupport;
 import org.opensaml.core.xml.io.MarshallingException;
 import org.opensaml.core.xml.io.Unmarshaller;
 import org.opensaml.saml.saml2.core.AuthnRequest;
+import org.opensaml.saml.saml2.core.LogoutRequest;
 import org.opensaml.saml.saml2.core.Response;
+import org.opensaml.saml.common.SignableSAMLObject;
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.HtmlUtils;
 import org.w3c.dom.Document;
@@ -34,43 +37,66 @@ public class SamlBindingCodec {
 
     /** Decodes a {@code SAMLRequest} carried over the HTTP-Redirect binding. */
     public AuthnRequest decodeRedirect(String samlRequest) {
-        byte[] deflated = Base64.getDecoder().decode(samlRequest);
-        try (InflaterInputStream inflater =
-                     new InflaterInputStream(new ByteArrayInputStream(deflated), new Inflater(true))) {
-            return parse(inflater);
-        } catch (Exception e) {
-            throw new BadRequestException("Invalid SAML redirect request");
-        }
+        return (AuthnRequest) parseRedirect(samlRequest);
     }
 
     /** Decodes a {@code SAMLRequest} carried over the HTTP-POST binding. */
     public AuthnRequest decodePost(String samlRequest) {
-        byte[] xml = Base64.getDecoder().decode(samlRequest);
-        try {
-            return parse(new ByteArrayInputStream(xml));
+        return (AuthnRequest) parsePost(samlRequest);
+    }
+
+    /** Decodes an inbound {@code LogoutRequest} over the HTTP-Redirect binding. */
+    public LogoutRequest decodeLogoutRedirect(String samlRequest) {
+        return (LogoutRequest) parseRedirect(samlRequest);
+    }
+
+    /** Decodes an inbound {@code LogoutRequest} over the HTTP-POST binding. */
+    public LogoutRequest decodeLogoutPost(String samlRequest) {
+        return (LogoutRequest) parsePost(samlRequest);
+    }
+
+    private XMLObject parseRedirect(String message) {
+        byte[] deflated = Base64.getDecoder().decode(message);
+        try (InflaterInputStream inflater =
+                     new InflaterInputStream(new ByteArrayInputStream(deflated), new Inflater(true))) {
+            return parse(inflater);
         } catch (Exception e) {
-            throw new BadRequestException("Invalid SAML POST request");
+            throw new BadRequestException("Invalid SAML redirect message");
         }
     }
 
-    private AuthnRequest parse(InputStream in) throws Exception {
+    private XMLObject parsePost(String message) {
+        byte[] xml = Base64.getDecoder().decode(message);
+        try {
+            return parse(new ByteArrayInputStream(xml));
+        } catch (Exception e) {
+            throw new BadRequestException("Invalid SAML POST message");
+        }
+    }
+
+    private XMLObject parse(InputStream in) throws Exception {
         Document document = parserPool.parse(in);
         Element root = document.getDocumentElement();
         Unmarshaller unmarshaller = XMLObjectProviderRegistrySupport
                 .getUnmarshallerFactory().getUnmarshaller(root);
 
-        return (AuthnRequest) unmarshaller.unmarshall(root);
+        return unmarshaller.unmarshall(root);
     }
 
     /** Base64-encodes a marshalled SAML {@link Response} for the HTTP-POST binding. */
     public String encode(Response response) {
-        Element element = response.getDOM();
+        return encodeObject(response);
+    }
+
+    /** Base64-encodes any marshalled/signed SAML object (Response, LogoutResponse) for the POST binding. */
+    public String encodeObject(SignableSAMLObject object) {
+        Element element = object.getDOM();
         if (element == null) {
             try {
                 element = XMLObjectProviderRegistrySupport.getMarshallerFactory()
-                        .getMarshaller(response).marshall(response);
+                        .getMarshaller(object).marshall(object);
             } catch (MarshallingException e) {
-                throw new IllegalStateException("Failed to marshall SAML response", e);
+                throw new IllegalStateException("Failed to marshall SAML object", e);
             }
         }
 
