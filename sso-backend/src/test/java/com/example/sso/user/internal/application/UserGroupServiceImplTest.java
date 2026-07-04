@@ -41,6 +41,7 @@ class UserGroupServiceImplTest {
     @Mock private AppUserRepository users;
     @Mock private RoleRepository roles;
     @Mock private ApplicationEventPublisher events;
+    @Mock private AccessChangePublisher accessChanges;
 
     @InjectMocks private UserGroupServiceImpl service;
 
@@ -84,14 +85,18 @@ class UserGroupServiceImplTest {
     }
 
     @Test
-    void deleteOfANormalGroupRemovesItAndPublishesGroupDeletedEvent() {
+    void deleteOfANormalGroupRemovesItAndEndsMemberSessions() {
         UUID id = UUID.randomUUID();
-        when(repository.findById(id)).thenReturn(Optional.of(new UserGroup("Engineering", "d", null)));
+        UUID memberId = UUID.randomUUID();
+        UserGroup group = new UserGroup("Engineering", "d", null);
+        group.setMembers(Set.of(memberId));
+        when(repository.findById(id)).thenReturn(Optional.of(group));
 
         service.delete(id);
 
-        verify(repository).delete(any(UserGroup.class));
+        verify(repository).delete(group);
         verify(events).publishEvent(new GroupDeletedEvent(id));
+        verify(accessChanges).forUserIds(Set.of(memberId)); // members lose the group's delegated roles
     }
 
     @Test

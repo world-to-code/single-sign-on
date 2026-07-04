@@ -9,12 +9,14 @@ import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.internal.domain.PermissionRepository;
 import com.example.sso.user.internal.domain.Role;
 import com.example.sso.user.internal.domain.RoleRepository;
+import com.example.sso.user.internal.domain.UserGroupRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -37,6 +39,8 @@ class RoleServiceImplTest {
     @Mock private RoleRepository roles;
     @Mock private AppUserRepository users;
     @Mock private PermissionRepository permissions;
+    @Mock private UserGroupRepository groups;
+    @Mock private AccessChangePublisher accessChanges;
 
     @InjectMocks private RoleServiceImpl service;
 
@@ -132,6 +136,7 @@ class RoleServiceImplTest {
         service.addMember(roleId, userId);
 
         verify(user).addRole(role);
+        verify(accessChanges).forUserIds(Set.of(userId)); // refresh the user's authorities
     }
 
     @Test
@@ -146,6 +151,25 @@ class RoleServiceImplTest {
         service.removeMember(roleId, userId);
 
         verify(user).removeRole(role);
+        verify(accessChanges).forUserIds(Set.of(userId)); // end the demoted user's sessions
+    }
+
+    @Test
+    void deletingARoleEndsSessionsOfDirectAndGroupDelegatedHolders() {
+        UUID roleId = UUID.randomUUID();
+        UUID directHolder = UUID.randomUUID();
+        UUID groupHolder = UUID.randomUUID();
+        Role role = new Role("ROLE_EDITOR");
+        AppUser direct = mock(AppUser.class);
+        when(direct.getId()).thenReturn(directHolder);
+        when(roles.findById(roleId)).thenReturn(Optional.of(role));
+        when(users.findByRoles_Id(roleId)).thenReturn(List.of(direct));
+        when(groups.findMemberIdsByRoleId(roleId)).thenReturn(List.of(groupHolder));
+
+        service.deleteRole(roleId);
+
+        verify(roles).delete(role);
+        verify(accessChanges).forUserIds(Set.of(directHolder, groupHolder));
     }
 
     @Test

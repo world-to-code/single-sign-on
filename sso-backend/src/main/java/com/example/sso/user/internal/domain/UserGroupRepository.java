@@ -43,6 +43,11 @@ public interface UserGroupRepository extends JpaRepository<UserGroup, UUID> {
     @Query("select distinct m from UserGroup g join g.memberUserIds m where g.id in :groupIds")
     List<UUID> findMemberIdsByGroupIds(@Param("groupIds") Collection<UUID> groupIds);
 
+    /** Distinct ids of all users who hold the given role via ANY group that delegates it (group-delegated
+     *  holders) — used to end their sessions when the role's permissions or existence change. */
+    @Query("select distinct m from UserGroup g join g.memberUserIds m join g.roles r where r.id = :roleId")
+    List<UUID> findMemberIdsByRoleId(@Param("roleId") UUID roleId);
+
     /**
      * Distinct roles delegated to the user via any group they belong to, with permissions fetched —
      * used when building the member's effective authorities at login.

@@ -13,6 +13,7 @@ import com.example.sso.user.internal.domain.Role;
 import com.example.sso.user.internal.domain.RoleMemberRow;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.internal.domain.RoleRepository;
+import com.example.sso.user.internal.domain.UserGroupRepository;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.RoleService;
 import com.example.sso.user.UserAccount;
@@ -53,6 +54,8 @@ public class RoleServiceImpl implements RoleService {
     private final RoleRepository roles;
     private final AppUserRepository users;
     private final PermissionRepository permissions;
+    private final UserGroupRepository groups;
+    private final AccessChangePublisher accessChanges;
 
     @Override
     @Transactional(readOnly = true)
@@ -125,6 +128,9 @@ public class RoleServiceImpl implements RoleService {
 
         role.replacePermissions(resolvePermissions(permissionNames));
 
+        // A rename changes the emitted role-name authority and a permission edit changes granted
+        // permissions, so end every holder's sessions to shed the now-stale authorities.
+        accessChanges.forUserIds(holdersOf(roleId));
         return role;
     }
 
@@ -136,13 +142,19 @@ public class RoleServiceImpl implements RoleService {
             throw new ConflictException("system role '" + role.getName() + "' cannot be deleted");
         }
 
+        Set<UUID> affected = holdersOf(roleId); // resolve before the delete removes the associations
         roles.delete(role);
+        accessChanges.forUserIds(affected);
     }
 
     @Override
     @Transactional
     public void delete(UUID roleId) {
-        roles.findById(roleId).ifPresent(roles::delete);
+        roles.findById(roleId).ifPresent(role -> {
+            Set<UUID> affected = holdersOf(roleId);
+            roles.delete(role);
+            accessChanges.forUserIds(affected);
+        });
     }
 
     /**
@@ -235,6 +247,12 @@ public class RoleServiceImpl implements RoleService {
         current.stream().filter(u -> !userIds.contains(u.getId())).forEach(u -> u.removeRole(role));
         Set<UUID> toAdd = userIds.stream().filter(id -> !currentIds.contains(id)).collect(Collectors.toSet());
         users.findAllById(toAdd).forEach(u -> u.addRole(role));
+
+        // End sessions of everyone whose membership changed (gained or lost the role) to refresh authorities.
+        Set<UUID> affected = current.stream().map(AppUser::getId).filter(id -> !userIds.contains(id))
+                .collect(Collectors.toSet());
+        affected.addAll(toAdd);
+        accessChanges.forUserIds(affected);
     }
 
     @Override
@@ -243,6 +261,7 @@ public class RoleServiceImpl implements RoleService {
         Role role = roles.findById(roleId).orElseThrow(() -> new NotFoundException("role not found"));
         AppUser user = users.findById(userId).orElseThrow(() -> new NotFoundException("user not found"));
         user.addRole(role); // idempotent (Set); managed entity, dirty checking flushes
+        accessChanges.forUserIds(Set.of(userId));
     }
 
     @Override
@@ -251,5 +270,13 @@ public class RoleServiceImpl implements RoleService {
         Role role = roles.findById(roleId).orElseThrow(() -> new NotFoundException("role not found"));
         AppUser user = users.findById(userId).orElseThrow(() -> new NotFoundException("user not found"));
         user.removeRole(role); // idempotent; managed entity, dirty checking flushes
+        accessChanges.forUserIds(Set.of(userId));
+    }
+
+    /** All users who hold the role — directly assigned plus everyone who inherits it through a group. */
+    private Set<UUID> holdersOf(UUID roleId) {
+        Set<UUID> ids = users.findByRoles_Id(roleId).stream().map(AppUser::getId).collect(Collectors.toSet());
+        ids.addAll(groups.findMemberIdsByRoleId(roleId));
+        return ids;
     }
 }

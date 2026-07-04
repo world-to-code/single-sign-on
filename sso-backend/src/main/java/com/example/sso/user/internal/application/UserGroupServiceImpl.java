@@ -26,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -44,6 +45,7 @@ public class UserGroupServiceImpl implements UserGroupService {
     private final AppUserRepository users;
     private final RoleRepository roles;
     private final ApplicationEventPublisher events;
+    private final AccessChangePublisher accessChanges;
 
     @Override
     @Transactional(readOnly = true)
@@ -124,12 +126,16 @@ public class UserGroupServiceImpl implements UserGroupService {
                 .filter(other -> !other.getId().equals(id))
                 .ifPresent(other -> { throw new ConflictException("group name already exists"); });
 
+        Set<UUID> affected = new HashSet<>(group.getMemberUserIds()); // former members (roles may change too)
         group.rename(spec.name());
         group.describe(spec.description());
         group.assignExternalId(spec.externalId());
         group.setMembers(existingUserIds(spec.memberIds()));
 
-        return toView(repository.save(group));
+        affected.addAll(group.getMemberUserIds()); // and current members — both sets' delegated roles shift
+        GroupView view = toView(repository.save(group));
+        accessChanges.forUserIds(affected);
+        return view;
     }
 
     @Override
@@ -140,8 +146,10 @@ public class UserGroupServiceImpl implements UserGroupService {
             throw new ConflictException("the '" + group.getName() + "' system group cannot be deleted");
         }
 
+        Set<UUID> affected = new HashSet<>(group.getMemberUserIds()); // members lose the group's delegated roles
         repository.delete(group);
         events.publishEvent(new GroupDeletedEvent(id));
+        accessChanges.forUserIds(affected);
     }
 
     @Override
@@ -152,9 +160,13 @@ public class UserGroupServiceImpl implements UserGroupService {
             throw new ConflictException("membership of the '" + group.getName() + "' system group is managed automatically");
         }
 
+        Set<UUID> affected = new HashSet<>(group.getMemberUserIds());
         group.setMembers(existingUserIds(memberIds));
 
-        return toView(repository.save(group));
+        affected.addAll(group.getMemberUserIds()); // gained-or-lost members refresh their delegated roles
+        GroupView view = toView(repository.save(group));
+        accessChanges.forUserIds(affected);
+        return view;
     }
 
     @Override
@@ -167,7 +179,9 @@ public class UserGroupServiceImpl implements UserGroupService {
 
         group.replaceRoles(resolveRoles(roleNames));
 
-        return toView(repository.save(group));
+        GroupView view = toView(repository.save(group));
+        accessChanges.forUserIds(group.getMemberUserIds()); // every member's delegated roles just changed
+        return view;
     }
 
     @Override
