@@ -5,6 +5,7 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.mfa.FactorAuthorizationService;
+import com.example.sso.saml.SamlFrontChannelLogout;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.shared.error.UnauthorizedException;
 import com.example.sso.shared.web.ClientIp;
@@ -13,6 +14,7 @@ import com.example.sso.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -43,6 +45,7 @@ public class AuthenticationService {
     private final CurrentUserProvider currentUser;
     private final UserService users;
     private final LoginAttemptService loginAttempts;
+    private final SamlFrontChannelLogout samlFrontChannel;
     private final AuditService audit;
 
     public AuthSessionView session() {
@@ -87,14 +90,28 @@ public class AuthenticationService {
         }
     }
 
-    public void logout(HttpServletRequest request, HttpServletResponse response) {
+    /**
+     * Logs out and returns a front-channel SAML SLO redirect URL when the session had front-channel SPs
+     * (the SPA navigates there to run the redirect chain); empty otherwise. Back-channel OIDC/SAML-SOAP
+     * logout happens automatically when the session is invalidated below.
+     */
+    public Optional<String> logout(HttpServletRequest request, HttpServletResponse response) {
         Authentication authentication = currentUser.authentication();
+        Optional<String> frontChannel = Optional.empty();
         if (authentication != null) {
             audit.record(new AuditRecord(AuditType.LOGOUT, authentication.getName(), true, null, ClientIp.of(request)));
+            // Stage the front-channel chain BEFORE invalidating — invalidation clears the participant index.
+            frontChannel = authentication.getAuthorities().stream()
+                    .map(GrantedAuthority::getAuthority)
+                    .filter(a -> a.startsWith(Factors.SID_PREFIX))
+                    .map(a -> a.substring(Factors.SID_PREFIX.length()))
+                    .findFirst()
+                    .flatMap(samlFrontChannel::startChain);
         }
         // Invalidating the session deletes the Redis session -> SessionDestroyedEvent -> back-channel logout.
         new SecurityContextLogoutHandler().logout(request, response, authentication);
         new CookieClearingLogoutHandler(SESSION_COOKIE, CSRF_COOKIE).logout(request, response, authentication);
+        return frontChannel;
     }
 
     /**

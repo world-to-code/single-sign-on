@@ -1,0 +1,18 @@
+package com.example.sso.saml;
+
+import java.util.Optional;
+
+/**
+ * Stages a front-channel SAML Single Logout redirect chain for an explicit browser logout. Front-channel
+ * (Redirect/POST) SPs can only be logged out while a browser is present, so — unlike the back-channel SOAP
+ * path driven by the session-termination listener — this is initiated from the interactive logout.
+ */
+public interface SamlFrontChannelLogout {
+
+    /**
+     * If the terminating OP session ({@code sid}) had front-channel SAML participants, persists a redirect
+     * chain and returns the URL the browser should navigate to to run it; otherwise empty. MUST be called
+     * BEFORE the session is invalidated — it reads the participant index the termination listener clears.
+     */
+    Optional<String> startChain(String sid);
+}

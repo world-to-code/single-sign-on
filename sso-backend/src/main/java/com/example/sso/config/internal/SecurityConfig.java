@@ -119,7 +119,7 @@ public class SecurityConfig {
                         // SAML metadata is public; the SSO endpoint requires a completed policy. Single
                         // Logout is public — the SP signature is the real check, and it only ends the
                         // caller's own session (SameSite=Lax blocks cross-site POST logout-CSRF).
-                        .requestMatchers("/saml2/idp/metadata", "/saml2/idp/slo").permitAll()
+                        .requestMatchers("/saml2/idp/metadata", "/saml2/idp/slo", "/saml2/idp/slo/**").permitAll()
                         // SPA shell + static assets (the SPA itself gates content via /api/auth/session).
                         .requestMatchers(HttpMethod.GET, "/", "/index.html", "/favicon.ico", "/assets/**",
                                 "/login", "/stepup", "/apps", "/passkeys", "/applications", "/users", "/groups", "/auth-policies", "/clients",

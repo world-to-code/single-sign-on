@@ -3,16 +3,20 @@ package com.example.sso.saml.internal.api;
 import com.example.sso.saml.internal.application.SamlBindingCodec;
 import com.example.sso.saml.internal.application.SamlInboundLogoutService;
 import com.example.sso.saml.internal.application.SamlInboundLogoutService.InboundLogout;
+import com.example.sso.saml.internal.application.SamlLogoutChainService;
+import com.example.sso.saml.internal.application.SamlLogoutChainService.ChainStep;
 import com.example.sso.saml.internal.application.SamlSignatureValidator;
 import com.example.sso.saml.internal.domain.SamlRelyingParty;
 import com.example.sso.saml.internal.domain.SamlRelyingPartyRepository;
 import com.example.sso.shared.error.BadRequestException;
 import jakarta.servlet.http.HttpServletRequest;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Base64;
 import lombok.RequiredArgsConstructor;
 import org.opensaml.saml.saml2.core.LogoutRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -23,10 +27,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * SAML 2.0 IdP Single Logout endpoint (binding adapter): accepts an SP-initiated {@code LogoutRequest}
- * over the HTTP-Redirect/POST bindings, verifies the SP signature, then delegates to
- * {@link SamlInboundLogoutService} (which terminates the session and fans out logout) and posts a signed
- * {@code LogoutResponse} back to the SP.
+ * SAML 2.0 IdP Single Logout endpoint (binding adapter). Handles three cases:
+ * <ul>
+ *   <li>an SP-initiated {@code LogoutRequest} (verify SP signature, end the session, respond);</li>
+ *   <li>a {@code LogoutResponse} returning from an SP during an IdP-initiated front-channel chain
+ *       (advance to the next SP); and</li>
+ *   <li>{@code /chain} — driving the next hop of that chain (emit a LogoutRequest to the next SP).</li>
+ * </ul>
  */
 @RequestMapping("/saml2/idp/slo")
 @Controller
@@ -35,25 +42,32 @@ public class SamlSloController {
 
     private static final String CSP_HEADER = "Content-Security-Policy";
     private static final String SIGNATURE_PARAM = "&Signature=";
+    private static final String POST_LOGOUT_LANDING = "/";
 
     private final SamlBindingCodec codec;
     private final SamlRelyingPartyRepository relyingParties;
     private final SamlSignatureValidator signatureValidator;
     private final SamlInboundLogoutService inboundLogout;
+    private final SamlLogoutChainService chainService;
     private final SecureRandom nonceRandom = new SecureRandom();
 
     @GetMapping
-    public ResponseEntity<String> sloRedirect(@RequestParam("SAMLRequest") String samlRequest,
-                                              @RequestParam(value = "RelayState", required = false) String relayState,
-                                              @RequestParam(value = "SigAlg", required = false) String sigAlg,
-                                              @RequestParam(value = "Signature", required = false) String signature,
-                                              Authentication authentication, HttpServletRequest httpRequest) {
-        LogoutRequest request = codec.decodeLogoutRedirect(samlRequest);
+    public ResponseEntity<String> sloRedirect(
+            @RequestParam(value = "SAMLRequest", required = false) String samlRequest,
+            @RequestParam(value = "SAMLResponse", required = false) String samlResponse,
+            @RequestParam(value = "RelayState", required = false) String relayState,
+            @RequestParam(value = "SigAlg", required = false) String sigAlg,
+            @RequestParam(value = "Signature", required = false) String signature,
+            Authentication authentication, HttpServletRequest httpRequest) {
+        if (samlResponse != null) {
+            return advanceChain(relayState); // a chained SP's LogoutResponse came back — go to the next SP
+        }
+        LogoutRequest request = codec.decodeLogoutRedirect(require(samlRequest));
         SamlRelyingParty relyingParty = resolve(request);
 
-        // ALWAYS verify the SP signature on an inbound LogoutRequest (unlike SSO, this is not gated on the
-        // per-RP wantAuthnRequestsSigned flag): the signature is what prevents cross-site logout-CSRF, since
-        // /saml2/idp/slo is permitAll and a Lax SESSION cookie IS sent on a top-level GET navigation.
+        // ALWAYS verify the SP signature on an inbound LogoutRequest (unlike SSO, not gated on the per-RP
+        // wantAuthnRequestsSigned flag): the signature prevents cross-site logout-CSRF, since /saml2/idp/slo
+        // is permitAll and a Lax SESSION cookie IS sent on a top-level GET navigation.
         if (signature == null || sigAlg == null) {
             throw new BadRequestException("LogoutRequest must be signed (Redirect binding)");
         }
@@ -68,17 +82,45 @@ public class SamlSloController {
     }
 
     @PostMapping
-    public ResponseEntity<String> sloPost(@RequestParam("SAMLRequest") String samlRequest,
-                                         @RequestParam(value = "RelayState", required = false) String relayState,
-                                         Authentication authentication, HttpServletRequest httpRequest) {
-        LogoutRequest request = codec.decodeLogoutPost(samlRequest);
+    public ResponseEntity<String> sloPost(
+            @RequestParam(value = "SAMLRequest", required = false) String samlRequest,
+            @RequestParam(value = "SAMLResponse", required = false) String samlResponse,
+            @RequestParam(value = "RelayState", required = false) String relayState,
+            Authentication authentication, HttpServletRequest httpRequest) {
+        if (samlResponse != null) {
+            return advanceChain(relayState);
+        }
+        LogoutRequest request = codec.decodeLogoutPost(require(samlRequest));
         SamlRelyingParty relyingParty = resolve(request);
 
-        // Always verify (see the Redirect handler) — the SP signature authenticates the LogoutRequest.
-        signatureValidator.verifyEmbedded(request, relyingParty);
+        signatureValidator.verifyEmbedded(request, relyingParty); // always verify (see the Redirect handler)
 
         return render(inboundLogout.process(request, relyingParty, username(authentication, request),
                 relayState, httpRequest));
+    }
+
+    /** Drives the next hop of a front-channel logout chain (emits a LogoutRequest to the next SP). */
+    @GetMapping("/chain")
+    public ResponseEntity<String> chain(@RequestParam("logout") String logoutId) {
+        String nonce = newNonce();
+        return switch (chainService.next(logoutId, nonce)) {
+            case ChainStep.Redirect redirect -> redirectTo(redirect.url());
+            case ChainStep.PostForm form -> autoSubmit(form.html(), nonce);
+            case ChainStep.Complete ignored -> redirectTo(POST_LOGOUT_LANDING);
+        };
+    }
+
+    /** A chained SP returned a LogoutResponse — continue the chain (RelayState carries the logout id). */
+    private ResponseEntity<String> advanceChain(String logoutId) {
+        return redirectTo(logoutId == null || logoutId.isBlank()
+                ? POST_LOGOUT_LANDING : "/saml2/idp/slo/chain?logout=" + logoutId);
+    }
+
+    private String require(String samlRequest) {
+        if (samlRequest == null) {
+            throw new BadRequestException("SAMLRequest or SAMLResponse is required");
+        }
+        return samlRequest;
     }
 
     private SamlRelyingParty resolve(LogoutRequest request) {
@@ -101,11 +143,19 @@ public class SamlSloController {
     /** Posts the signed LogoutResponse back to the SP via an auto-submitting form (POST binding). */
     private ResponseEntity<String> render(InboundLogout result) {
         String nonce = newNonce();
-        String html = codec.postBindingHtml(result.sloUrl(), result.base64Response(), result.relayState(), nonce);
+        return autoSubmit(codec.postBindingHtml(result.sloUrl(), result.base64Response(),
+                result.relayState(), nonce), nonce);
+    }
+
+    private ResponseEntity<String> autoSubmit(String html, String nonce) {
         return ResponseEntity.ok()
                 .contentType(MediaType.TEXT_HTML)
                 .header(CSP_HEADER, "default-src 'self'; script-src 'nonce-" + nonce + "'")
                 .body(html);
+    }
+
+    private ResponseEntity<String> redirectTo(String location) {
+        return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(location)).build();
     }
 
     private String newNonce() {

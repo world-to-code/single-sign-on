@@ -40,9 +40,14 @@ public class AuthenticationController {
         return authentication.login(request.username(), request.password(), httpRequest, httpResponse);
     }
 
+    /** Logs out. {@code samlLogoutRedirect} is a URL the SPA should navigate to for front-channel SAML
+     *  Single Logout (a browser redirect chain), or null when there are no front-channel SPs. */
     @PostMapping("/logout")
-    public void logout(HttpServletRequest request, HttpServletResponse response) {
-        authentication.logout(request, response);
+    public LogoutResult logout(HttpServletRequest request, HttpServletResponse response) {
+        return new LogoutResult(authentication.logout(request, response).orElse(null));
+    }
+
+    public record LogoutResult(String samlLogoutRedirect) {
     }
 
     @PostMapping("/complete")

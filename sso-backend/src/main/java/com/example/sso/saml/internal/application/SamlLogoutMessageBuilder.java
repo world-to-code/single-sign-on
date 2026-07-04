@@ -39,31 +39,46 @@ public class SamlLogoutMessageBuilder {
         this.idpEntityId = idpEntityId;
     }
 
-    /** A signed LogoutRequest addressed to the SP, serialized to an XML element string (no XML declaration). */
+    private LogoutRequest buildLogoutRequest(SamlRelyingParty sp, String nameIdValue, String sessionIndex) {
+        LogoutRequest request = build(LogoutRequest.DEFAULT_ELEMENT_NAME);
+        request.setID(idGenerator.generateIdentifier());
+        request.setIssueInstant(Instant.now());
+        request.setVersion(SAMLVersion.VERSION_20);
+        request.setDestination(sp.getSingleLogoutUrl());
+
+        Issuer issuer = build(Issuer.DEFAULT_ELEMENT_NAME);
+        issuer.setValue(idpEntityId);
+        request.setIssuer(issuer);
+
+        NameID nameId = build(NameID.DEFAULT_ELEMENT_NAME);
+        nameId.setValue(nameIdValue);
+        nameId.setFormat(sp.getNameIdFormat());
+        request.setNameID(nameId);
+
+        SessionIndex sessionIndexElement = build(SessionIndex.DEFAULT_ELEMENT_NAME);
+        sessionIndexElement.setValue(sessionIndex);
+        request.getSessionIndexes().add(sessionIndexElement);
+        return request;
+    }
+
+    /** A signed LogoutRequest (embedded signature — for SOAP/POST bindings), serialized to an XML string. */
     public String signedLogoutRequestXml(SamlRelyingParty sp, String nameIdValue, String sessionIndex) {
         try {
-            LogoutRequest request = build(LogoutRequest.DEFAULT_ELEMENT_NAME);
-            request.setID(idGenerator.generateIdentifier());
-            request.setIssueInstant(Instant.now());
-            request.setVersion(SAMLVersion.VERSION_20);
-            request.setDestination(sp.getSingleLogoutUrl());
-
-            Issuer issuer = build(Issuer.DEFAULT_ELEMENT_NAME);
-            issuer.setValue(idpEntityId);
-            request.setIssuer(issuer);
-
-            NameID nameId = build(NameID.DEFAULT_ELEMENT_NAME);
-            nameId.setValue(nameIdValue);
-            nameId.setFormat(sp.getNameIdFormat());
-            request.setNameID(nameId);
-
-            SessionIndex sessionIndexElement = build(SessionIndex.DEFAULT_ELEMENT_NAME);
-            sessionIndexElement.setValue(sessionIndex);
-            request.getSessionIndexes().add(sessionIndexElement);
-
+            LogoutRequest request = buildLogoutRequest(sp, nameIdValue, sessionIndex);
             signer.signObject(request, sp.getSignatureAlgorithm());
             return SerializeSupport.nodeToString(request.getDOM());
         } catch (SecurityException | MarshallingException | SignatureException e) {
+            throw new IllegalStateException("Failed to build SAML LogoutRequest", e);
+        }
+    }
+
+    /** An UNSIGNED LogoutRequest XML string — for the Redirect binding, where the signature is on the query. */
+    public String unsignedLogoutRequestXml(SamlRelyingParty sp, String nameIdValue, String sessionIndex) {
+        try {
+            LogoutRequest request = buildLogoutRequest(sp, nameIdValue, sessionIndex);
+            signer.marshall(request);
+            return SerializeSupport.nodeToString(request.getDOM());
+        } catch (MarshallingException e) {
             throw new IllegalStateException("Failed to build SAML LogoutRequest", e);
         }
     }

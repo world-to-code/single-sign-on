@@ -111,21 +111,31 @@ public class SamlBindingCodec {
      * A visible Continue button is the fallback if the script does not run.
      */
     public String postBindingHtml(String acsUrl, String base64Response, String relayState, String scriptNonce) {
+        return formHtml(acsUrl, "SAMLResponse", base64Response, relayState, scriptNonce);
+    }
+
+    /** Auto-submit POST form carrying a {@code SAMLRequest} — for a front-channel LogoutRequest over POST. */
+    public String postRequestHtml(String destination, String base64Request, String relayState, String scriptNonce) {
+        return formHtml(destination, "SAMLRequest", base64Request, relayState, scriptNonce);
+    }
+
+    private String formHtml(String actionUrl, String fieldName, String base64Value, String relayState,
+                            String scriptNonce) {
         String relayStateField = relayState == null ? "" :
                 "<input type=\"hidden\" name=\"RelayState\" value=\""
                         + HtmlUtils.htmlEscape(relayState) + "\"/>";
 
         return """
-                <!DOCTYPE html><html><head><meta charset="utf-8"><title>Signing in…</title></head>
+                <!DOCTYPE html><html><head><meta charset="utf-8"><title>Signing out…</title></head>
                 <body>
                   <form method="POST" action="%s">
-                    <input type="hidden" name="SAMLResponse" value="%s"/>
+                    <input type="hidden" name="%s" value="%s"/>
                     %s
                     <input type="submit" value="Continue"/>
                   </form>
                   <script nonce="%s">document.forms[0].submit();</script>
                 </body></html>
-                """.formatted(HtmlUtils.htmlEscape(acsUrl),
-                HtmlUtils.htmlEscape(base64Response), relayStateField, HtmlUtils.htmlEscape(scriptNonce));
+                """.formatted(HtmlUtils.htmlEscape(actionUrl), fieldName,
+                HtmlUtils.htmlEscape(base64Value), relayStateField, HtmlUtils.htmlEscape(scriptNonce));
     }
 }

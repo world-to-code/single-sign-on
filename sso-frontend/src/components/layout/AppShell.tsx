@@ -35,8 +35,10 @@ export default function AppShell(
 
   async function doLogout() {
     clearAdminUnlock(); // drop the admin-console OIDC marker on sign-out
-    await logout();
-    window.location.href = "/";
+    // If the session did SAML SSO to front-channel SPs, follow the redirect chain that logs them out too;
+    // it ends by returning here. Otherwise go straight to the landing page.
+    const result = await logout().catch(() => null);
+    window.location.href = result?.samlLogoutRedirect ?? "/";
   }
 
   function exitAdmin() {
