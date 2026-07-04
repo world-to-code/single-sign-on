@@ -32,5 +32,7 @@ public record CreateClientRequest(
         String x509SubjectDn,                     // for tls_client_auth
         boolean x509BoundAccessTokens,            // certificate-bound (mTLS) access tokens
         Integer clientSecretDays,                 // secret expiry; null = never
-        String initiateLoginUri) {                // OIDC third-party (portal-launch) initiated login URI
+        String initiateLoginUri,                  // OIDC third-party (portal-launch) initiated login URI
+        String backchannelLogoutUri,              // OIDC back-channel logout: where logout_tokens are POSTed
+        boolean backchannelLogoutSessionRequired) { // whether the logout_token must carry a sid
 }

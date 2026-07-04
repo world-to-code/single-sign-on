@@ -12,6 +12,7 @@ import static org.springframework.security.oauth2.jose.jws.SignatureAlgorithm.RS
 import com.example.sso.admin.internal.client.domain.OAuth2RegisteredClientEntity;
 import com.example.sso.admin.internal.client.domain.OAuth2RegisteredClientRepository;
 import com.example.sso.oidc.AdminPortalSeeder;
+import com.example.sso.oidc.BackChannelLogout;
 import com.example.sso.portal.ApplicationDeletedEvent;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.error.BadRequestException;
@@ -190,6 +191,13 @@ public class ClientAdminService {
 
         if (StringUtils.hasText(request.x509SubjectDn())) {
             settings.x509CertificateSubjectDN(request.x509SubjectDn());
+        }
+
+        // OIDC back-channel logout target, stored as custom ClientSettings (round-trips through the
+        // client_settings JSON — no schema change). Read back by the logout-token sender on termination.
+        if (StringUtils.hasText(request.backchannelLogoutUri())) {
+            settings.setting(BackChannelLogout.CLIENT_SETTING_URI, request.backchannelLogoutUri().trim());
+            settings.setting(BackChannelLogout.CLIENT_SETTING_SESSION_REQUIRED, request.backchannelLogoutSessionRequired());
         }
 
         return settings.build();

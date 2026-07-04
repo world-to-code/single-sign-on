@@ -3,6 +3,8 @@ package com.example.sso.config.internal;
 import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.crypto.RsaKeyService;
+import com.example.sso.oidc.BackChannelLogout;
+import com.example.sso.oidc.OidcBackchannelSessionIndex;
 import com.example.sso.portal.AppAssignmentFilter;
 import com.example.sso.portal.AppStepUpFilter;
 import com.example.sso.portal.ApplicationService;
@@ -85,7 +87,13 @@ public class AuthorizationServerConfig {
 
         http
                 .securityMatcher(authorizationServer.getEndpointsMatcher())
-                .with(authorizationServer, as -> as.oidc(Customizer.withDefaults())) // enable OIDC
+                // Enable OIDC and advertise back-channel logout support in the discovery metadata (the
+                // end_session endpoint is already enabled by the OIDC defaults).
+                .with(authorizationServer, as -> as.oidc(oidc -> oidc
+                        .providerConfigurationEndpoint(providerConfig -> providerConfig
+                                .providerConfigurationCustomizer(metadata -> metadata
+                                        .claim(BackChannelLogout.METADATA_SUPPORTED, true)
+                                        .claim(BackChannelLogout.METADATA_SESSION_SUPPORTED, true)))))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/oauth2/authorize").access(mfaComplete)
                         .anyRequest().access(plainAuthenticated))
@@ -154,7 +162,8 @@ public class AuthorizationServerConfig {
      * skipped for client-credentials tokens (no associated user).
      */
     @Bean
-    OAuth2TokenCustomizer<JwtEncodingContext> oidcTokenCustomizer(UserService users) {
+    OAuth2TokenCustomizer<JwtEncodingContext> oidcTokenCustomizer(UserService users,
+            OidcBackchannelSessionIndex backchannelIndex) {
         return context -> {
             String username = context.getPrincipal().getName();
             users.findByUsername(username).ifPresent(user -> {
@@ -199,11 +208,16 @@ public class AuthorizationServerConfig {
                             .ifPresent(a -> context.getClaims().claim("stepup_time",
                                     a.substring(Factors.STEPUP_TIME_PREFIX.length())));
                     // OIDC `sid` (id token only): identifies THIS OP session so back-channel logout can
-                    // target the exact session on expiry/logout, not every session of the subject.
+                    // target the exact session on expiry/logout, not every session of the subject. Record
+                    // the client as a participant of this session (the token endpoint has no HTTP session,
+                    // so the sid→clients map is captured here for the termination listener to fan out to).
                     if (idToken) {
                         auth.stream().filter(a -> a.startsWith(Factors.SID_PREFIX)).findFirst()
-                                .ifPresent(a -> context.getClaims().claim("sid",
-                                        a.substring(Factors.SID_PREFIX.length())));
+                                .map(a -> a.substring(Factors.SID_PREFIX.length()))
+                                .ifPresent(sid -> {
+                                    context.getClaims().claim("sid", sid);
+                                    backchannelIndex.record(sid, context.getRegisteredClient().getClientId(), username);
+                                });
                     }
                 }
 

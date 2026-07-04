@@ -42,6 +42,8 @@ const empty = {
   x509BoundAccessTokens: false,
   clientSecretDays: "",
   initiateLoginUri: "",
+  backchannelLogoutUri: "",
+  backchannelLogoutSessionRequired: true,
 };
 type Form = typeof empty;
 
@@ -98,6 +100,8 @@ export default function ClientCreate() {
         x509BoundAccessTokens: form.x509BoundAccessTokens,
         clientSecretDays: num(form.clientSecretDays),
         initiateLoginUri: form.initiateLoginUri || null,
+        backchannelLogoutUri: form.backchannelLogoutUri || null,
+        backchannelLogoutSessionRequired: form.backchannelLogoutSessionRequired,
       });
       setCreated(result);
     } catch (e) {
@@ -168,6 +172,14 @@ export default function ClientCreate() {
             <Field label="Post-logout redirect URIs" hint="Space or comma separated.">
               <Textarea rows={1} value={form.postLogoutRedirectUris} onChange={(e) => set({ postLogoutRedirectUris: e.target.value })} />
             </Field>
+            <Field label="Back-channel logout URI"
+                   hint="OIDC back-channel logout: the IdP POSTs a logout_token here when the user's session ends, so the app can end its own session.">
+              <Input value={form.backchannelLogoutUri} onChange={(e) => set({ backchannelLogoutUri: e.target.value })}
+                     placeholder="https://app.example.com/logout/backchannel" />
+            </Field>
+            <Toggle label="Require session id in logout token"
+                    hint="Include the sid so only the matching session is logged out (recommended). Off logs the subject out everywhere."
+                    checked={form.backchannelLogoutSessionRequired} onChange={(v) => set({ backchannelLogoutSessionRequired: v })} />
           </SettingsSection>
 
           <SettingsSection title="Scopes & grants" description="What the client may request and how it obtains tokens.">
