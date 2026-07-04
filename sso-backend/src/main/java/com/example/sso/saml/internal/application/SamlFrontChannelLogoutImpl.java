@@ -6,6 +6,7 @@ import com.example.sso.saml.SloBinding;
 import com.example.sso.saml.internal.application.SamlLogoutChainStore.Participant;
 import com.example.sso.saml.internal.domain.SamlRelyingParty;
 import com.example.sso.saml.internal.domain.SamlRelyingPartyRepository;
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -26,10 +27,11 @@ public class SamlFrontChannelLogoutImpl implements SamlFrontChannelLogout {
     private final SamlSloSessionIndex sloIndex;
     private final SamlRelyingPartyRepository relyingParties;
     private final SamlLogoutChainStore chainStore;
+    private final SamlLogoutChainCookie chainCookie;
 
     @Override
     @Transactional(readOnly = true)
-    public Optional<String> startChain(String sid) {
+    public Optional<String> startChain(String sid, HttpServletResponse response) {
         Map<String, String> participants = sloIndex.lookup(sid);
         List<Participant> frontChannel = new ArrayList<>();
         for (Map.Entry<String, String> entry : participants.entrySet()) {
@@ -43,6 +45,7 @@ public class SamlFrontChannelLogoutImpl implements SamlFrontChannelLogout {
         }
         String logoutId = UUID.randomUUID().toString();
         chainStore.create(logoutId, sid, frontChannel);
+        chainCookie.issue(response, logoutId); // bind the chain to this browser
         return Optional.of(CHAIN_PATH + "?logout=" + logoutId);
     }
 }

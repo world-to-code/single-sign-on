@@ -3,6 +3,7 @@ package com.example.sso.saml.internal.api;
 import com.example.sso.saml.internal.application.SamlBindingCodec;
 import com.example.sso.saml.internal.application.SamlInboundLogoutService;
 import com.example.sso.saml.internal.application.SamlInboundLogoutService.InboundLogout;
+import com.example.sso.saml.internal.application.SamlLogoutChainCookie;
 import com.example.sso.saml.internal.application.SamlLogoutChainService;
 import com.example.sso.saml.internal.application.SamlLogoutChainService.ChainStep;
 import com.example.sso.saml.internal.application.SamlSignatureValidator;
@@ -10,6 +11,7 @@ import com.example.sso.saml.internal.domain.SamlRelyingParty;
 import com.example.sso.saml.internal.domain.SamlRelyingPartyRepository;
 import com.example.sso.shared.error.BadRequestException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
@@ -49,6 +51,7 @@ public class SamlSloController {
     private final SamlSignatureValidator signatureValidator;
     private final SamlInboundLogoutService inboundLogout;
     private final SamlLogoutChainService chainService;
+    private final SamlLogoutChainCookie chainCookie;
     private final SecureRandom nonceRandom = new SecureRandom();
 
     @GetMapping
@@ -101,12 +104,22 @@ public class SamlSloController {
 
     /** Drives the next hop of a front-channel logout chain (emits a LogoutRequest to the next SP). */
     @GetMapping("/chain")
-    public ResponseEntity<String> chain(@RequestParam("logout") String logoutId) {
+    public ResponseEntity<String> chain(@RequestParam("logout") String logoutId,
+            HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        // The chain id rides RelayState to every SP, so it is not a secret. Require the browser-bound cookie
+        // that logout set, so a participant SP that only learned the id cannot drive another user's chain.
+        if (!chainCookie.matches(httpRequest, logoutId)) {
+            chainCookie.clear(httpResponse);
+            return redirectTo(POST_LOGOUT_LANDING);
+        }
         String nonce = newNonce();
         return switch (chainService.next(logoutId, nonce)) {
             case ChainStep.Redirect redirect -> redirectTo(redirect.url());
             case ChainStep.PostForm form -> autoSubmit(form.html(), nonce);
-            case ChainStep.Complete ignored -> redirectTo(POST_LOGOUT_LANDING);
+            case ChainStep.Complete ignored -> {
+                chainCookie.clear(httpResponse);
+                yield redirectTo(POST_LOGOUT_LANDING);
+            }
         };
     }
 

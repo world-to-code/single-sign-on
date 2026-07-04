@@ -106,7 +106,7 @@ public class AuthenticationService {
                     .filter(a -> a.startsWith(Factors.SID_PREFIX))
                     .map(a -> a.substring(Factors.SID_PREFIX.length()))
                     .findFirst()
-                    .flatMap(samlFrontChannel::startChain);
+                    .flatMap(sid -> samlFrontChannel.startChain(sid, response));
         }
         // Invalidating the session deletes the Redis session -> SessionDestroyedEvent -> back-channel logout.
         new SecurityContextLogoutHandler().logout(request, response, authentication);
