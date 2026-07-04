@@ -1,72 +1,33 @@
+import { Link } from "react-router-dom";
 import { ExternalLink, Pencil, Plus, Trash2 } from "lucide-react";
-import { apiPost, apiPut } from "../api";
 import { usePaginated } from "@/usePaginated";
 import { Pagination } from "@/components/Pagination";
 import { PageHeader } from "@/components/PageHeader";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DataList, EmptyState } from "@/components/states";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
-import { useEditorForm } from "@/hooks/useEditorForm";
 
 interface RelyingParty {
   id: string;
   entityId: string;
   displayName: string | null;
   acsUrl: string;
-  nameIdFormat: string;
   signAssertion: boolean;
   signResponse: boolean;
   encryptAssertion: boolean;
-  signatureAlgorithm: string;
   dataEncryptionAlgorithm: string;
   keyTransportAlgorithm: string;
   wantAuthnRequestsSigned: boolean;
   allowIdpInitiated: boolean;
-  signingCertificate: string | null;
-  encryptionCertificate: string | null;
-  spLoginUrl: string | null;
 }
-
-const blank = {
-  id: null as string | null,
-  entityId: "", displayName: "", acsUrl: "", nameIdFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
-  signAssertion: true, signResponse: false, encryptAssertion: false,
-  signatureAlgorithm: "RSA_SHA256", dataEncryptionAlgorithm: "AES256_GCM", keyTransportAlgorithm: "RSA_OAEP",
-  wantAuthnRequestsSigned: false, allowIdpInitiated: true,
-  signingCertificate: "", encryptionCertificate: "", spLoginUrl: "",
-};
-type Editor = typeof blank;
 
 export default function RelyingParties() {
   const confirmDelete = useDeleteConfirm();
   const { items: rps, total, page, setPage, size, error: listError, reload } =
     usePaginated<RelyingParty>("/api/admin/saml/relying-parties");
-
-  const {
-    editor, set, setEditor, open, setOpen, error, openCreate, openEdit, save,
-  } = useEditorForm<Editor>({
-    blank,
-    toRequest: (e) => e,
-    create: (body) => apiPost("/api/admin/saml/relying-parties", body),
-    update: (id, body) => apiPut(`/api/admin/saml/relying-parties/${id}`, body),
-    onSaved: reload,
-  });
-
-  function edit(rp: RelyingParty) {
-    openEdit({ ...rp, displayName: rp.displayName ?? "", signingCertificate: rp.signingCertificate ?? "", encryptionCertificate: rp.encryptionCertificate ?? "", spLoginUrl: rp.spLoginUrl ?? "" });
-  }
 
   async function remove(rp: RelyingParty) {
     await confirmDelete({
@@ -82,7 +43,7 @@ export default function RelyingParties() {
       <PageHeader
         title="SAML Relying Parties"
         description="Service providers that trust this IdP, with their per-RP signing and encryption settings."
-        actions={<Button onClick={openCreate}><Plus /> New relying party</Button>}
+        actions={<Button asChild><Link to="/admin/relying-parties/new"><Plus /> New relying party</Link></Button>}
       />
 
       <Alert variant="info" className="mb-4">
@@ -145,7 +106,7 @@ export default function RelyingParties() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => edit(rp)}><Pencil /></Button>
+                      <Button variant="ghost" size="icon" asChild><Link to={`/admin/relying-parties/${rp.id}`}><Pencil /></Link></Button>
                       <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" onClick={() => remove(rp)}><Trash2 /></Button>
                     </div>
                   </TableCell>
@@ -156,122 +117,6 @@ export default function RelyingParties() {
         )}
       </DataList>
       <Pagination page={page} size={size} total={total} onPage={setPage} />
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{editor.id ? `Edit: ${editor.entityId}` : "Register a relying party"}</DialogTitle>
-            <DialogDescription>Endpoint and per-RP SAML security configuration.</DialogDescription>
-          </DialogHeader>
-
-          {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-
-          <form onSubmit={save} className="space-y-5">
-            <section className="space-y-3">
-              <div className="space-y-2">
-                <Label htmlFor="rp-entity">Entity ID</Label>
-                <Input id="rp-entity" value={editor.entityId} disabled={!!editor.id} required
-                       onChange={(e) => set({ entityId: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="rp-display">Display name</Label>
-                <Input id="rp-display" value={editor.displayName} placeholder="Friendly name shown in app lists (defaults to Entity ID)"
-                       onChange={(e) => set({ displayName: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="rp-acs">ACS URL</Label>
-                <Input id="rp-acs" value={editor.acsUrl} required onChange={(e) => set({ acsUrl: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="rp-nameid">NameID format</Label>
-                <Input id="rp-nameid" value={editor.nameIdFormat} onChange={(e) => set({ nameIdFormat: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="rp-sp-login">SP-initiated login URL</Label>
-                <Input id="rp-sp-login" value={editor.spLoginUrl} placeholder="https://sp.example.com/login (blank = IdP-initiated)"
-                       onChange={(e) => set({ spLoginUrl: e.target.value })} />
-                <p className="text-xs text-muted-foreground">
-                  Portal “launch” redirects here so the SP starts SP-initiated SSO (sends us an AuthnRequest).
-                  Leave blank to fall back to IdP-initiated (unsolicited) SSO.
-                </p>
-              </div>
-            </section>
-
-            <Separator />
-            <section className="space-y-3">
-              <h4 className="text-sm font-semibold">Signing</h4>
-              <div className="flex items-center gap-2">
-                <Switch id="rp-sign-assert" checked={editor.signAssertion} onCheckedChange={(v) => set({ signAssertion: v })} />
-                <Label htmlFor="rp-sign-assert">Sign assertion</Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Switch id="rp-sign-resp" checked={editor.signResponse} onCheckedChange={(v) => set({ signResponse: v })} />
-                <Label htmlFor="rp-sign-resp">Sign response</Label>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="rp-sig-alg">Signature algorithm</Label>
-                <Select id="rp-sig-alg" value={editor.signatureAlgorithm} onChange={(e) => set({ signatureAlgorithm: e.target.value })}>
-                  <option>RSA_SHA256</option><option>RSA_SHA512</option><option value="RSA_SHA1">RSA_SHA1 (legacy)</option>
-                </Select>
-              </div>
-            </section>
-
-            <Separator />
-            <section className="space-y-3">
-              <h4 className="text-sm font-semibold">Assertion encryption</h4>
-              <div className="flex items-center gap-2">
-                <Switch id="rp-encrypt" checked={editor.encryptAssertion} onCheckedChange={(v) => set({ encryptAssertion: v })} />
-                <Label htmlFor="rp-encrypt">Encrypt assertion</Label>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="rp-data-alg">Data algorithm</Label>
-                  <Select id="rp-data-alg" value={editor.dataEncryptionAlgorithm} onChange={(e) => set({ dataEncryptionAlgorithm: e.target.value })}>
-                    <option>AES256_GCM</option><option>AES128_GCM</option>
-                    <option value="AES256_CBC">AES256_CBC (legacy)</option><option value="AES128_CBC">AES128_CBC (legacy)</option>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="rp-key-alg">Key transport</Label>
-                  <Select id="rp-key-alg" value={editor.keyTransportAlgorithm} onChange={(e) => set({ keyTransportAlgorithm: e.target.value })}>
-                    <option>RSA_OAEP</option><option value="RSA_1_5">RSA_1_5 (legacy)</option>
-                  </Select>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="rp-enc-cert">SP encryption certificate (PEM)</Label>
-                <Textarea id="rp-enc-cert" rows={3} value={editor.encryptionCertificate}
-                          onChange={(e) => set({ encryptionCertificate: e.target.value })} />
-              </div>
-            </section>
-
-            <Separator />
-            <section className="space-y-3">
-              <h4 className="text-sm font-semibold">Inbound AuthnRequest</h4>
-              <div className="flex items-center gap-2">
-                <Switch id="rp-want-signed" checked={editor.wantAuthnRequestsSigned} onCheckedChange={(v) => set({ wantAuthnRequestsSigned: v })} />
-                <Label htmlFor="rp-want-signed">Require signed AuthnRequests</Label>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="rp-sign-cert">SP signing certificate (PEM)</Label>
-                <Textarea id="rp-sign-cert" rows={3} value={editor.signingCertificate}
-                          onChange={(e) => set({ signingCertificate: e.target.value })} />
-              </div>
-            </section>
-
-            <Separator />
-            <div className="flex items-center gap-2">
-              <Switch id="rp-idp-init" checked={editor.allowIdpInitiated} onCheckedChange={(v) => set({ allowIdpInitiated: v })} />
-              <Label htmlFor="rp-idp-init">Allow IdP-initiated SSO</Label>
-            </div>
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => { setEditor(blank); setOpen(false); }}>Cancel</Button>
-              <Button type="submit">{editor.id ? "Save changes" : "Register"}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }
