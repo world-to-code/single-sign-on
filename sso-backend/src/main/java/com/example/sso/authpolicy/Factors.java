@@ -27,6 +27,11 @@ public final class Factors {
      *  (not merely a recent login). */
     public static final String STEPUP_TIME_PREFIX = "STEPUP_TIME_";
 
+    /** Marker-authority prefix carrying this OP session's stable id, surfaced as the OIDC {@code sid}
+     *  claim so back-channel logout can target the exact session (not every session of the subject).
+     *  Generated once at login completion and carried across re-auth; mirrors the OIDC_SID session attribute. */
+    public static final String SID_PREFIX = "SID_";
+
     private Factors() {
     }
 }

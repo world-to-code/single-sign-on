@@ -13,6 +13,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -64,6 +65,9 @@ public class AuthenticationCompletionService {
             // the standard `auth_time` claim. (A details object would break JdbcOAuth2AuthorizationService,
             // whose Jackson validator rejects arbitrary types; GrantedAuthority serializes fine.)
             authorities.add(new SimpleGrantedAuthority(Factors.AUTH_TIME_PREFIX + Instant.now().getEpochSecond()));
+            // Stable per-session id surfaced as the OIDC `sid` claim (back-channel logout targets it). Set
+            // once here (login completion runs once — MFA_COMPLETE gates re-entry); carried across re-auth.
+            authorities.add(new SimpleGrantedAuthority(Factors.SID_PREFIX + UUID.randomUUID()));
             // Spring Authorization Server derives the OIDC `auth_time` from a FactorGrantedAuthority's
             // issuedAt (JwtGenerator asserts one is present, else the token endpoint 500s). Our custom
             // flow uses string factor markers, so add one explicitly — reusing an existing factor

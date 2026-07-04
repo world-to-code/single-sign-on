@@ -198,6 +198,13 @@ public class AuthorizationServerConfig {
                     auth.stream().filter(a -> a.startsWith(Factors.STEPUP_TIME_PREFIX)).findFirst()
                             .ifPresent(a -> context.getClaims().claim("stepup_time",
                                     a.substring(Factors.STEPUP_TIME_PREFIX.length())));
+                    // OIDC `sid` (id token only): identifies THIS OP session so back-channel logout can
+                    // target the exact session on expiry/logout, not every session of the subject.
+                    if (idToken) {
+                        auth.stream().filter(a -> a.startsWith(Factors.SID_PREFIX)).findFirst()
+                                .ifPresent(a -> context.getClaims().claim("sid",
+                                        a.substring(Factors.SID_PREFIX.length())));
+                    }
                 }
 
                 if (accessToken) {
