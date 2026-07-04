@@ -35,6 +35,7 @@ public enum AuditType {
     SESSION_CONTEXT_MISMATCH(AuditCategory.SESSION),
     LOGOUT(AuditCategory.SESSION),
     OIDC_BACKCHANNEL_LOGOUT(AuditCategory.SESSION),
+    SAML_SLO(AuditCategory.SESSION),
 
     // Network / rate access
     IP_BLOCKED(AuditCategory.ACCESS),

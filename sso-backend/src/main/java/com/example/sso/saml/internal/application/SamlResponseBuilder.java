@@ -1,15 +1,11 @@
 package com.example.sso.saml.internal.application;
 
-import com.example.sso.saml.SamlCredentialService;
 import com.example.sso.saml.internal.domain.SamlRelyingParty;
 import com.example.sso.shared.error.BadRequestException;
 import net.shibboleth.shared.security.IdentifierGenerationStrategy;
 import net.shibboleth.shared.security.impl.SecureRandomIdentifierGenerationStrategy;
-import org.opensaml.core.xml.XMLObject;
-import org.opensaml.core.xml.config.XMLObjectProviderRegistrySupport;
 import org.opensaml.core.xml.io.MarshallingException;
 import org.opensaml.saml.common.SAMLVersion;
-import org.opensaml.saml.common.SignableSAMLObject;
 import org.opensaml.saml.saml2.core.*;
 import org.opensaml.saml.saml2.encryption.Encrypter;
 import org.opensaml.security.SecurityException;
@@ -18,13 +14,8 @@ import org.opensaml.xmlsec.encryption.support.DataEncryptionParameters;
 import org.opensaml.xmlsec.encryption.support.EncryptionConstants;
 import org.opensaml.xmlsec.encryption.support.EncryptionException;
 import org.opensaml.xmlsec.encryption.support.KeyEncryptionParameters;
-import org.opensaml.xmlsec.keyinfo.KeyInfoGenerator;
 import org.opensaml.xmlsec.keyinfo.impl.X509KeyInfoGeneratorFactory;
-import org.opensaml.xmlsec.signature.KeyInfo;
-import org.opensaml.xmlsec.signature.Signature;
-import org.opensaml.xmlsec.signature.support.SignatureConstants;
 import org.opensaml.xmlsec.signature.support.SignatureException;
-import org.opensaml.xmlsec.signature.support.Signer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -41,22 +32,17 @@ import static com.example.sso.saml.internal.application.SamlObjects.stringAttrib
 @Service
 public class SamlResponseBuilder {
 
-    private final SamlCredentialService credentialService;
+    private final SamlSigner signer;
     private final String idpEntityId;
     private final long validitySeconds;
     private final IdentifierGenerationStrategy idGenerator = new SecureRandomIdentifierGenerationStrategy();
 
-    public SamlResponseBuilder(SamlCredentialService credentialService,
+    public SamlResponseBuilder(SamlSigner signer,
                                @Value("${sso.saml.entity-id}") String idpEntityId,
                                @Value("${sso.saml.assertion-validity-seconds:300}") long validitySeconds) {
-        this.credentialService = credentialService;
+        this.signer = signer;
         this.idpEntityId = idpEntityId;
         this.validitySeconds = validitySeconds;
-    }
-
-    /** The IdP signing credential resolved fresh each use (so key rotation takes effect). */
-    private BasicX509Credential signingCredential() {
-        return new BasicX509Credential(credentialService.getCertificate(), credentialService.getPrivateKey());
     }
 
     /**
@@ -72,7 +58,7 @@ public class SamlResponseBuilder {
             Assertion assertion = response.getAssertions().get(0);
 
             if (sp.isSignAssertion()) {
-                signObject(assertion, sp.getSignatureAlgorithm());
+                signer.signObject(assertion, sp.getSignatureAlgorithm());
             }
             if (sp.isEncryptAssertion()) {
                 EncryptedAssertion encrypted = encryptAssertion(assertion, sp);
@@ -80,9 +66,9 @@ public class SamlResponseBuilder {
                 response.getEncryptedAssertions().add(encrypted);
             }
             if (sp.isSignResponse()) {
-                signObject(response, sp.getSignatureAlgorithm());
+                signer.signObject(response, sp.getSignatureAlgorithm());
             } else {
-                marshall(response); // ensure a DOM exists for encoding (reuses a signed assertion's DOM)
+                signer.marshall(response); // ensure a DOM exists for encoding (reuses a signed assertion's DOM)
             }
             return response;
         } catch (SecurityException | MarshallingException | SignatureException | EncryptionException e) {
@@ -168,34 +154,6 @@ public class SamlResponseBuilder {
         return response;
     }
 
-    /** Signs a SAML object (assertion or response) in place; marshalls its tree first. */
-    private void signObject(SignableSAMLObject object, String signatureAlgorithm)
-            throws SecurityException, MarshallingException, SignatureException {
-        Signature signature = newSignature(signatureUri(signatureAlgorithm));
-        object.setSignature(signature);
-        marshall(object);
-        Signer.signObject(signature);
-    }
-
-    private void marshall(XMLObject object) throws MarshallingException {
-        XMLObjectProviderRegistrySupport.getMarshallerFactory().getMarshaller(object).marshall(object);
-    }
-
-    private Signature newSignature(String signatureAlgorithmUri) throws SecurityException {
-        BasicX509Credential credential = signingCredential();
-        Signature signature = build(Signature.DEFAULT_ELEMENT_NAME);
-        signature.setSigningCredential(credential);
-        signature.setSignatureAlgorithm(signatureAlgorithmUri);
-        signature.setCanonicalizationAlgorithm(SignatureConstants.ALGO_ID_C14N_EXCL_OMIT_COMMENTS);
-
-        X509KeyInfoGeneratorFactory keyInfoFactory = new X509KeyInfoGeneratorFactory();
-        keyInfoFactory.setEmitEntityCertificate(true); // embed <ds:X509Certificate> for SP verification
-        KeyInfoGenerator keyInfoGenerator = keyInfoFactory.newInstance();
-        KeyInfo keyInfo = keyInfoGenerator.generate(credential);
-        signature.setKeyInfo(keyInfo);
-        return signature;
-    }
-
     /** Encrypts the assertion to the SP's certificate (modern or legacy data/key-transport algorithms). */
     private EncryptedAssertion encryptAssertion(Assertion assertion, SamlRelyingParty sp)
             throws EncryptionException {
@@ -217,14 +175,6 @@ public class SamlResponseBuilder {
         Encrypter encrypter = new Encrypter(dataParams, keyParams);
         encrypter.setKeyPlacement(Encrypter.KeyPlacement.INLINE);
         return encrypter.encrypt(assertion);
-    }
-
-    private String signatureUri(String algorithm) {
-        return switch (algorithm == null ? "RSA_SHA256" : algorithm) {
-            case "RSA_SHA1" -> SignatureConstants.ALGO_ID_SIGNATURE_RSA_SHA1;       // legacy
-            case "RSA_SHA512" -> SignatureConstants.ALGO_ID_SIGNATURE_RSA_SHA512;
-            default -> SignatureConstants.ALGO_ID_SIGNATURE_RSA_SHA256;
-        };
     }
 
     private String dataEncryptionUri(String algorithm) {
