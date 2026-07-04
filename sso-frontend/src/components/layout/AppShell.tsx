@@ -6,7 +6,7 @@ import { logout } from "@/auth";
 import { clearAdminUnlock, startAdminOidc } from "@/adminPortal";
 import { triggerStepUp } from "@/api";
 import { Brand } from "@/components/Brand";
-import { NAV, titleFor } from "@/components/layout/nav";
+import { NAV, isNavActive, titleFor } from "@/components/layout/nav";
 import type { NavItem } from "@/components/layout/nav";
 import { useAdminConsoleAccess } from "@/hooks/useAdminConsoleAccess";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -53,7 +53,7 @@ export default function AppShell(
   }
 
   const navLink = ({ to, label, icon: Icon }: NavItem) => {
-    const active = location.pathname === to;
+    const active = isNavActive(location.pathname, to);
     return (
       <Link
         key={to}
@@ -114,7 +114,7 @@ export default function AppShell(
               </p>
               <div className="space-y-0.5">
                 {sections.map((s) => {
-                  const hasActive = s.items.some((i) => i.to === location.pathname);
+                  const hasActive = s.items.some((i) => isNavActive(location.pathname, i.to));
                   const isOpen = hasActive || !collapsed[s.heading]; // active section stays open
                   return (
                     <div key={s.heading}>
