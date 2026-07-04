@@ -46,7 +46,7 @@ class SamlRelyingPartyAdminServiceImplTest {
 
     private RelyingPartyRequest request(String entityId) {
         return new RelyingPartyRequest(entityId, "Acme SP", "https://sp.example/acs", null,
-                true, false, false, null, null, null, false, true, null, null, null);
+                true, false, false, null, null, null, false, true, null, null, null, null, null);
     }
 
     private SamlRelyingParty stubbedRp(UUID id, String entityId) {
@@ -102,7 +102,7 @@ class SamlRelyingPartyAdminServiceImplTest {
 
         RelyingPartyView view = service.update(id, request("ignored-on-update"));
 
-        verify(existing).update(any(), any(), any(), any(), any(), any(), any());
+        verify(existing).update(any(), any(), any(), any(), any(), any(), any(), any(), any());
         verify(relyingParties).save(existing);
         assertThat(view.entityId()).isEqualTo("edit-sp");
     }

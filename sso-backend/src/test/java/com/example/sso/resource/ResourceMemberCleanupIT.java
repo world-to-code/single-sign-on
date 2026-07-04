@@ -73,7 +73,7 @@ class ResourceMemberCleanupIT extends AbstractIntegrationTest {
     @Test
     void deletingAnApplicationDropsItsMembershipRows() {
         String appId = relyingParties.create(new RelyingPartyRequest("urn:test:clean-sp", null, "https://sp/acs", null,
-                false, false, false, null, null, null, false, false, null, null, null)).id();
+                false, false, false, null, null, null, false, false, null, null, null, null, null)).id();
         seedResourceWith(ResourceMember.application(appId));
         assertThat(members(MemberType.APPLICATION)).containsExactly(appId);
 

@@ -62,6 +62,7 @@ sso:
   saml:
     entity-id: http://localhost:9000/saml2/idp
     sso-location: http://localhost:9000/saml2/idp/sso
+    slo-location: http://localhost:9000/saml2/idp/slo   # SAML Single Logout endpoint (advertised in metadata)
     keystore-path: data/saml-idp.p12
     keystore-password: changeit  # dev only
     key-size: 2048                       # self-signed IdP signing key size (bits)

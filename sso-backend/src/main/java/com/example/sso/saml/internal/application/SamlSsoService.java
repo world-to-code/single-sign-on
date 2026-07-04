@@ -9,6 +9,7 @@ import com.example.sso.portal.AppAccessQuery;
 import com.example.sso.portal.AppStepUpFilter;
 import com.example.sso.portal.AppType;
 import com.example.sso.portal.ApplicationService;
+import com.example.sso.saml.SamlSloSessionIndex;
 import com.example.sso.saml.internal.domain.SamlRelyingParty;
 import com.example.sso.shared.error.UnauthorizedException;
 import com.example.sso.user.UserAccount;
@@ -37,6 +38,7 @@ public class SamlSsoService {
     private final ApplicationService applications;
     private final SamlResponseBuilder responseBuilder;
     private final SamlBindingCodec codec;
+    private final SamlSloSessionIndex sloIndex;
     private final AuditService audit;
 
     public SamlSsoOutcome process(SamlRelyingParty relyingParty, String inResponseTo, String relayState,
@@ -62,9 +64,20 @@ public class SamlSsoService {
             return new SamlSsoOutcome.StepUpForbidden();
         }
 
+        // The OP session id (shared with OIDC via the SID_ marker) doubles as the SAML SessionIndex, and
+        // records this SP as a logout participant so session termination can send it a LogoutRequest.
+        String sid = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .filter(a -> a.startsWith(Factors.SID_PREFIX))
+                .map(a -> a.substring(Factors.SID_PREFIX.length()))
+                .findFirst().orElse(null);
+
         Response response = responseBuilder.issueResponse(
-                relyingParty, inResponseTo, user.getEmail(), user.getDisplayName());
+                relyingParty, inResponseTo, user.getEmail(), user.getDisplayName(), sid);
         String encoded = codec.encode(response);
+        if (sid != null) {
+            sloIndex.record(sid, relyingParty.getEntityId(), user.getEmail());
+        }
         String flow = inResponseTo == null ? " (idp-initiated)" : "";
         audit.record(new AuditRecord(AuditType.SAML_SSO_ISSUED, user.getUsername(), true,
                 "sp=" + relyingParty.getEntityId() + flow, null));

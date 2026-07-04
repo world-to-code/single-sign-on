@@ -26,6 +26,8 @@ interface RelyingParty {
   signingCertificate: string | null;
   encryptionCertificate: string | null;
   spLoginUrl: string | null;
+  singleLogoutUrl: string | null;
+  sloBinding: string | null;
 }
 
 const blank = {
@@ -35,6 +37,7 @@ const blank = {
   signatureAlgorithm: "RSA_SHA256", dataEncryptionAlgorithm: "AES256_GCM", keyTransportAlgorithm: "RSA_OAEP",
   wantAuthnRequestsSigned: false, allowIdpInitiated: true,
   signingCertificate: "", encryptionCertificate: "", spLoginUrl: "",
+  singleLogoutUrl: "", sloBinding: "REDIRECT",
 };
 type Editor = typeof blank;
 
@@ -45,6 +48,8 @@ function toEditor(rp: RelyingParty): Editor {
     signingCertificate: rp.signingCertificate ?? "",
     encryptionCertificate: rp.encryptionCertificate ?? "",
     spLoginUrl: rp.spLoginUrl ?? "",
+    singleLogoutUrl: rp.singleLogoutUrl ?? "",
+    sloBinding: rp.sloBinding ?? "REDIRECT",
   };
 }
 
@@ -118,6 +123,19 @@ export default function RelyingPartyDetail() {
                    hint="Portal “launch” redirects here so the SP starts SP-initiated SSO. Blank = IdP-initiated (unsolicited) SSO.">
               <Input value={editor.spLoginUrl} placeholder="https://sp.example.com/login"
                      onChange={(e) => set({ spLoginUrl: e.target.value })} />
+            </Field>
+            <Field label="Single Logout URL"
+                   hint="Where the IdP sends LogoutRequests when the user's session ends. Blank = no SLO for this SP.">
+              <Input value={editor.singleLogoutUrl} placeholder="https://sp.example.com/saml/slo"
+                     onChange={(e) => set({ singleLogoutUrl: e.target.value })} />
+            </Field>
+            <Field label="Logout binding"
+                   hint="REDIRECT/POST are front-channel (explicit logout only). SOAP is back-channel — also logs out on idle expiry.">
+              <Select value={editor.sloBinding} onChange={(e) => set({ sloBinding: e.target.value })}>
+                <option value="REDIRECT">Redirect (front-channel)</option>
+                <option value="POST">POST (front-channel)</option>
+                <option value="SOAP">SOAP (back-channel)</option>
+              </Select>
             </Field>
           </SettingsSection>
 

@@ -44,7 +44,7 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
         SamlRelyingParty rp = new SamlRelyingParty(request.entityId(), request.acsUrl(), nameIdFormat(request));
         rp.update(request.displayName(), request.acsUrl(), nameIdFormat(request), settings(request),
                 trimToNull(request.signingCertificate()), trimToNull(request.encryptionCertificate()),
-                trimToNull(request.spLoginUrl()));
+                trimToNull(request.spLoginUrl()), trimToNull(request.singleLogoutUrl()), request.sloBinding());
         return toView(relyingParties.save(rp));
     }
 
@@ -56,7 +56,7 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
 
         rp.update(request.displayName(), request.acsUrl(), nameIdFormat(request), settings(request),
                 trimToNull(request.signingCertificate()), trimToNull(request.encryptionCertificate()),
-                trimToNull(request.spLoginUrl()));
+                trimToNull(request.spLoginUrl()), trimToNull(request.singleLogoutUrl()), request.sloBinding());
         return toView(relyingParties.save(rp));
     }
 
@@ -107,6 +107,7 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
                 rp.isSignAssertion(), rp.isSignResponse(), rp.isEncryptAssertion(),
                 rp.getSignatureAlgorithm(), rp.getDataEncryptionAlgorithm(), rp.getKeyTransportAlgorithm(),
                 rp.isWantAuthnRequestsSigned(), rp.isAllowIdpInitiated(),
-                rp.getSigningCertificate(), rp.getEncryptionCertificate(), rp.getSpLoginUrl());
+                rp.getSigningCertificate(), rp.getEncryptionCertificate(), rp.getSpLoginUrl(),
+                rp.getSingleLogoutUrl(), rp.sloBinding());
     }
 }

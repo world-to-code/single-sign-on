@@ -43,6 +43,7 @@ sso:
   saml:
     entity-id: ${SSO_SAML_ENTITY_ID}
     sso-location: ${SSO_SAML_SSO_LOCATION}
+    slo-location: ${SSO_SAML_SLO_LOCATION}
     keystore-path: ${SSO_SAML_KEYSTORE_PATH:/data/saml-idp.p12}
     keystore-password: ${SSO_SAML_KEYSTORE_PASSWORD}
   cors:

@@ -87,7 +87,7 @@ class ResourceDetailIT extends AbstractIntegrationTest {
         viewerUser = user("det-vieweruser");
         backendGroup = group("Det-Backend", memberUser);
         appId = relyingParties.create(new RelyingPartyRequest("urn:test:det-sp", null, "https://sp/acs", null,
-                false, false, false, null, null, null, false, false, null, null, null)).id();
+                false, false, false, null, null, null, false, false, null, null, null, null, null)).id();
         createdApps.add(UUID.fromString(appId));
 
         Resource devRes = new Resource("Det-Dev", any);

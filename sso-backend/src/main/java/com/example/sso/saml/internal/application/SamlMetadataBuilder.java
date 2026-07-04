@@ -10,6 +10,7 @@ import org.opensaml.saml.saml2.metadata.EntityDescriptor;
 import org.opensaml.saml.saml2.metadata.IDPSSODescriptor;
 import org.opensaml.saml.saml2.metadata.KeyDescriptor;
 import org.opensaml.saml.saml2.metadata.NameIDFormat;
+import org.opensaml.saml.saml2.metadata.SingleLogoutService;
 import org.opensaml.saml.saml2.metadata.SingleSignOnService;
 import org.opensaml.security.SecurityException;
 import org.opensaml.security.credential.UsageType;
@@ -33,13 +34,16 @@ public class SamlMetadataBuilder {
     private final SamlCredentialService credentialService;
     private final String idpEntityId;
     private final String ssoLocation;
+    private final String sloLocation;
 
     public SamlMetadataBuilder(SamlCredentialService credentialService,
                                @Value("${sso.saml.entity-id}") String idpEntityId,
-                               @Value("${sso.saml.sso-location}") String ssoLocation) {
+                               @Value("${sso.saml.sso-location}") String ssoLocation,
+                               @Value("${sso.saml.slo-location}") String sloLocation) {
         this.credentialService = credentialService;
         this.idpEntityId = idpEntityId;
         this.ssoLocation = ssoLocation;
+        this.sloLocation = sloLocation;
     }
 
     public String buildMetadata() {
@@ -58,11 +62,20 @@ public class SamlMetadataBuilder {
             post.setBinding(SAMLConstants.SAML2_POST_BINDING_URI);
             post.setLocation(ssoLocation);
 
+            SingleLogoutService sloRedirect = build(SingleLogoutService.DEFAULT_ELEMENT_NAME);
+            sloRedirect.setBinding(SAMLConstants.SAML2_REDIRECT_BINDING_URI);
+            sloRedirect.setLocation(sloLocation);
+            SingleLogoutService sloPost = build(SingleLogoutService.DEFAULT_ELEMENT_NAME);
+            sloPost.setBinding(SAMLConstants.SAML2_POST_BINDING_URI);
+            sloPost.setLocation(sloLocation);
+
             IDPSSODescriptor idpDescriptor = build(IDPSSODescriptor.DEFAULT_ELEMENT_NAME);
             idpDescriptor.addSupportedProtocol(SAMLConstants.SAML20P_NS);
             idpDescriptor.setWantAuthnRequestsSigned(false);
             idpDescriptor.getKeyDescriptors().add(keyDescriptor);
             idpDescriptor.getNameIDFormats().add(nameIdFormat);
+            idpDescriptor.getSingleLogoutServices().add(sloRedirect);
+            idpDescriptor.getSingleLogoutServices().add(sloPost);
             idpDescriptor.getSingleSignOnServices().add(redirect);
             idpDescriptor.getSingleSignOnServices().add(post);
 

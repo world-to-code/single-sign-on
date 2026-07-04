@@ -65,9 +65,10 @@ public class SamlResponseBuilder {
      * assertion to the SP's certificate (modern or legacy algorithms). Order matters: sign the
      * assertion first, then encrypt it, then sign the response.
      */
-    public Response issueResponse(SamlRelyingParty sp, String inResponseTo, String email, String displayName) {
+    public Response issueResponse(SamlRelyingParty sp, String inResponseTo, String email, String displayName,
+                                  String sessionIndex) {
         try {
-            Response response = buildResponse(sp, inResponseTo, email, displayName);
+            Response response = buildResponse(sp, inResponseTo, email, displayName, sessionIndex);
             Assertion assertion = response.getAssertions().get(0);
 
             if (sp.isSignAssertion()) {
@@ -90,7 +91,7 @@ public class SamlResponseBuilder {
     }
 
     private Response buildResponse(SamlRelyingParty sp, String inResponseTo,
-                                   String email, String displayName) {
+                                   String email, String displayName, String sessionIndex) {
         Instant now = Instant.now();
         Instant expiry = now.plusSeconds(validitySeconds);
 
@@ -126,7 +127,8 @@ public class SamlResponseBuilder {
         authnContext.setAuthnContextClassRef(classRef);
         AuthnStatement authnStatement = build(AuthnStatement.DEFAULT_ELEMENT_NAME);
         authnStatement.setAuthnInstant(now);
-        authnStatement.setSessionIndex(idGenerator.generateIdentifier());
+        // The OP session id (shared with OIDC) so SLO can target this exact session; random only if absent.
+        authnStatement.setSessionIndex(sessionIndex != null ? sessionIndex : idGenerator.generateIdentifier());
         authnStatement.setAuthnContext(authnContext);
 
         AttributeStatement attributeStatement = build(AttributeStatement.DEFAULT_ELEMENT_NAME);

@@ -1,8 +1,11 @@
 package com.example.sso.saml.internal.domain;
 
+import com.example.sso.saml.SloBinding;
 import com.example.sso.shared.domain.AuditedEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
@@ -50,15 +53,26 @@ public class SamlRelyingParty extends AuditedEntity {
     @Column(name = "sp_login_url", length = 1024)
     private String spLoginUrl;
 
+    /** The SP's Single Logout endpoint the IdP sends LogoutRequests to; null => SLO not configured. */
+    @Column(name = "single_logout_url", length = 1024)
+    private String singleLogoutUrl;
+
+    /** How LogoutRequests are delivered (REDIRECT/POST front-channel, SOAP back-channel). Null => REDIRECT. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "slo_binding", length = 16)
+    private SloBinding sloBinding;
+
     public SamlRelyingParty(String entityId, String acsUrl, String nameIdFormat) {
         this.entityId = entityId;
         this.acsUrl = acsUrl;
         this.nameIdFormat = nameIdFormat;
     }
 
-    /** Admin edit of the display name, endpoint, security policy, and SP certificates (entityId is immutable). */
+    /** Admin edit of the display name, endpoint, security policy, SP certificates, and SLO endpoint
+     *  (entityId is immutable). */
     public void update(String displayName, String acsUrl, String nameIdFormat, SamlSecuritySettings settings,
-                       String signingCertificate, String encryptionCertificate, String spLoginUrl) {
+                       String signingCertificate, String encryptionCertificate, String spLoginUrl,
+                       String singleLogoutUrl, SloBinding sloBinding) {
         this.displayName = displayName == null || displayName.isBlank() ? null : displayName.trim();
         this.acsUrl = acsUrl;
         this.nameIdFormat = nameIdFormat;
@@ -66,6 +80,13 @@ public class SamlRelyingParty extends AuditedEntity {
         this.signingCertificate = signingCertificate;
         this.encryptionCertificate = encryptionCertificate;
         this.spLoginUrl = spLoginUrl == null || spLoginUrl.isBlank() ? null : spLoginUrl.trim();
+        this.singleLogoutUrl = singleLogoutUrl == null || singleLogoutUrl.isBlank() ? null : singleLogoutUrl.trim();
+        this.sloBinding = sloBinding;
+    }
+
+    /** The configured SLO delivery binding, defaulting to front-channel REDIRECT. */
+    public SloBinding sloBinding() {
+        return sloBinding == null ? SloBinding.REDIRECT : sloBinding;
     }
 
     // The per-RP security knobs live in the embedded value object; these delegate to preserve callers.
