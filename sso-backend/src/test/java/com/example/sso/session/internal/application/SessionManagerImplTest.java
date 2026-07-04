@@ -15,6 +15,8 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.core.session.SessionInformation;
 import org.springframework.security.core.session.SessionRegistry;
+import org.springframework.session.FindByIndexNameSessionRepository;
+import org.springframework.session.Session;
 
 import java.time.Instant;
 import java.util.Date;
@@ -50,12 +52,14 @@ class SessionManagerImplTest {
     private SessionMetadataStore sessionMetadata;
     @Mock
     private SessionPolicyService sessionPolicy;
+    @Mock
+    private FindByIndexNameSessionRepository<Session> sessionRepository;
 
     private SessionManagerImpl manager;
 
     @BeforeEach
     void setUp() {
-        manager = new SessionManagerImpl(sessionRegistry, sessionMetadata, sessionPolicy);
+        manager = new SessionManagerImpl(sessionRegistry, sessionMetadata, sessionPolicy, sessionRepository);
     }
 
     private MockHttpServletRequest requestWithSession() {
@@ -162,26 +166,31 @@ class SessionManagerImplTest {
     }
 
     @Test
-    void terminateAllExpiresEveryLiveSessionAndReturnsTheCount() {
+    void terminateAllDeletesEveryLiveSessionAndReturnsTheCount() {
+        // Hard-delete (not expireNow mark), so the Redis deletion fires SessionDeletedEvent -> BCL/SLO now.
         SessionInformation a = mock(SessionInformation.class);
         SessionInformation b = mock(SessionInformation.class);
+        when(a.getSessionId()).thenReturn("sid-a");
+        when(b.getSessionId()).thenReturn("sid-b");
         when(sessionRegistry.getAllSessions(USER, false)).thenReturn(List.of(a, b));
 
         int count = manager.terminateAll(USER);
 
-        verify(a).expireNow();
-        verify(b).expireNow();
+        verify(sessionRepository).deleteById("sid-a");
+        verify(sessionRepository).deleteById("sid-b");
+        verify(a, never()).expireNow();
         assertThat(count).isEqualTo(2);
     }
 
     @Test
-    void userAccessChangedEventTerminatesTheUsersSessions() {
+    void userAccessChangedEventDeletesTheUsersSessions() {
         SessionInformation a = mock(SessionInformation.class);
+        when(a.getSessionId()).thenReturn("sid-a");
         when(sessionRegistry.getAllSessions(USER, false)).thenReturn(List.of(a));
 
         manager.onUserAccessChanged(new UserAccessChangedEvent(USER));
 
-        verify(a).expireNow();
+        verify(sessionRepository).deleteById("sid-a");
     }
 
     @Test

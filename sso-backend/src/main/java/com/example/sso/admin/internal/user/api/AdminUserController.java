@@ -4,6 +4,7 @@ import com.example.sso.admin.internal.shared.security.CanCreateUser;
 import com.example.sso.admin.internal.shared.security.CanDeleteUser;
 import com.example.sso.admin.internal.shared.security.CanManageUserPermissions;
 import com.example.sso.admin.internal.shared.security.CanResetUserMfa;
+import com.example.sso.admin.internal.shared.security.CanRevokeUserSessions;
 import com.example.sso.admin.internal.shared.security.CanSetUserEnabled;
 import com.example.sso.admin.internal.shared.security.CanUpdateUser;
 import com.example.sso.admin.internal.shared.security.CanViewUser;
@@ -96,7 +97,7 @@ public class AdminUserController {
 
     /** Admin force-expiry: end all of a user's live sessions (e.g. a compromised account). */
     @DeleteMapping("/{id}/sessions")
-    @CanSetUserEnabled
+    @CanRevokeUserSessions
     @RequireStepUp
     public ResponseEntity<Void> revokeUserSessions(@PathVariable UUID id) {
         userDetailAdminService.terminateSessions(id);

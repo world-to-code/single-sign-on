@@ -15,11 +15,14 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.session.SessionInformation;
 import org.springframework.security.core.session.SessionRegistry;
+import org.springframework.session.FindByIndexNameSessionRepository;
+import org.springframework.session.Session;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * Implements both session roles ({@link SessionLifecycle} + {@link UserSessions}): bridges the servlet
@@ -35,6 +38,7 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
     private final SessionRegistry sessionRegistry;
     private final SessionMetadataStore sessionMetadata;
     private final SessionPolicyService sessionPolicy;
+    private final FindByIndexNameSessionRepository<? extends Session> sessionRepository;
 
     @Override
     public void registerAndEnforceLimit(HttpServletRequest request, String username) {
@@ -120,15 +124,18 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
     @Override
     public int terminateAll(String username) {
         List<SessionInformation> active = sessionRegistry.getAllSessions(username, false);
-        // expireNow() deletes the Redis session -> SessionDestroyedEvent -> back-channel logout / SLO + the
-        // metadata cleanup listener. Nothing here reads the (revoked) user state, so it is safe pre-commit.
-        active.forEach(SessionInformation::expireNow);
+        // Hard-delete each Redis session rather than expireNow() (which only marks it EXPIRED, deferring
+        // deletion to the victim's next request). Deletion fires a keyspace notification -> SessionDeletedEvent
+        // -> OIDC back-channel logout / SAML SLO + the metadata cleanup listener, so downstream apps are
+        // logged out promptly instead of only when the user returns or the idle/absolute TTL lapses.
+        active.forEach(info -> sessionRepository.deleteById(info.getSessionId()));
         return active.size();
     }
 
     /** When a user is disabled/deleted/re-roled, end their live sessions so a frozen SecurityContext can't
-     *  keep acting on stale authorities until idle/absolute expiry. */
-    @EventListener
+     *  keep acting on stale authorities until idle/absolute expiry. Runs AFTER_COMMIT so a rolled-back
+     *  mutation never terminates sessions (fallbackExecution covers publishers outside a transaction). */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onUserAccessChanged(UserAccessChangedEvent event) {
         terminateAll(event.username());
     }
