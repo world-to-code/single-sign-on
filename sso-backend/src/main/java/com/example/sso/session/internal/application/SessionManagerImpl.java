@@ -68,7 +68,7 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
 
         // Evict the oldest over the cap. The current session (newest, or not in the list) is never evicted.
         active.sort(Comparator.comparing(SessionInformation::getLastRequest)); // oldest first
-        active.stream().limit(total - max).forEach(SessionInformation::expireNow);
+        active.stream().limit(total - max).forEach(this::hardDelete);
     }
 
     @Override
@@ -115,7 +115,7 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
 
         SessionInformation info = sessionRegistry.getSessionInformation(target.sessionId());
         if (info != null) {
-            info.expireNow(); // SessionIntegrityFilter rejects + invalidates it on the next request
+            hardDelete(info); // deletes the Redis session -> downstream BCL/SLO logout, not just a mark
         }
 
         sessionMetadata.remove(target.sessionId());
@@ -124,12 +124,19 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
     @Override
     public int terminateAll(String username) {
         List<SessionInformation> active = sessionRegistry.getAllSessions(username, false);
-        // Hard-delete each Redis session rather than expireNow() (which only marks it EXPIRED, deferring
-        // deletion to the victim's next request). Deletion fires a keyspace notification -> SessionDeletedEvent
-        // -> OIDC back-channel logout / SAML SLO + the metadata cleanup listener, so downstream apps are
-        // logged out promptly instead of only when the user returns or the idle/absolute TTL lapses.
-        active.forEach(info -> sessionRepository.deleteById(info.getSessionId()));
+        active.forEach(this::hardDelete);
         return active.size();
+    }
+
+    /**
+     * Ends a session by DELETING its Redis key rather than {@code expireNow()} (which only marks it EXPIRED
+     * and defers deletion to the victim's next request). The deletion fires a keyspace notification ->
+     * {@code SessionDeletedEvent} -> OIDC back-channel logout / SAML SLO + the metadata cleanup listener, so
+     * every termination source (admin force-expiry, access change, self-revoke, concurrent eviction) logs the
+     * user out of their downstream apps promptly instead of only on their return or the idle/absolute TTL.
+     */
+    private void hardDelete(SessionInformation info) {
+        sessionRepository.deleteById(info.getSessionId());
     }
 
     /** When a user is disabled/deleted/re-roled, end their live sessions so a frozen SecurityContext can't

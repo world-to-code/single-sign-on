@@ -31,6 +31,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -126,8 +127,7 @@ class SessionManagerImplTest {
 
         manager.registerAndEnforceLimit(request, USER);
 
-        verify(a, never()).expireNow();
-        verify(b, never()).expireNow();
+        verify(sessionRepository, never()).deleteById(anyString());
     }
 
     @Test
@@ -139,15 +139,15 @@ class SessionManagerImplTest {
         SessionInformation oldest = session("s1", now.minusSeconds(300));
         SessionInformation middle = session("s2", now.minusSeconds(200));
         SessionInformation newest = session("s3", now.minusSeconds(100));
+        when(oldest.getSessionId()).thenReturn("s1");
         when(newest.getSessionId()).thenReturn(currentId); // current session is the newest, already indexed
         when(sessionRegistry.getAllSessions(USER, false)).thenReturn(List.of(newest, oldest, middle));
 
         manager.registerAndEnforceLimit(request, USER);
 
-        // 3 active, limit 2 → exactly the single oldest is expired; the other two survive.
-        verify(oldest).expireNow();
-        verify(middle, never()).expireNow();
-        verify(newest, never()).expireNow();
+        // 3 active, limit 2 → exactly the single oldest is hard-deleted (propagates logout); others survive.
+        verify(sessionRepository).deleteById("s1");
+        verify(sessionRepository, times(1)).deleteById(anyString());
     }
 
     @Test
@@ -157,12 +157,13 @@ class SessionManagerImplTest {
         MockHttpServletRequest request = requestWithSession();
         policyWithLimit(1);
         SessionInformation other = mock(SessionInformation.class); // sole element → sort never reads lastRequest
+        when(other.getSessionId()).thenReturn("other-id");
         when(sessionRegistry.getAllSessions(USER, false)).thenReturn(List.of(other));
 
         manager.registerAndEnforceLimit(request, USER);
 
         // current (uncounted by the registry) + other = 2 > cap 1 → evict the older 'other'.
-        verify(other).expireNow();
+        verify(sessionRepository).deleteById("other-id");
     }
 
     @Test
@@ -203,15 +204,16 @@ class SessionManagerImplTest {
     }
 
     @Test
-    void revokeExpiresTheRegistrySessionAndForgetsItsMetadata() {
+    void revokeDeletesTheRegistrySessionAndForgetsItsMetadata() {
         SessionMetadata target = new SessionMetadata("h1", "sid-1", USER, "UA", "ip", Instant.now());
         when(sessionMetadata.findByUserAndHandle(USER, "h1")).thenReturn(Optional.of(target));
         SessionInformation info = mock(SessionInformation.class);
+        when(info.getSessionId()).thenReturn("sid-1");
         when(sessionRegistry.getSessionInformation("sid-1")).thenReturn(info);
 
         manager.revoke(USER, "h1");
 
-        verify(info).expireNow();
+        verify(sessionRepository).deleteById("sid-1"); // hard delete -> downstream BCL/SLO, not a mark
         verify(sessionMetadata).remove("sid-1");
     }
 }

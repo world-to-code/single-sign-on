@@ -158,6 +158,15 @@ public class AdminAccessPolicy {
         return !isSelf(targetId) && !isAdmin(targetId);
     }
 
+    /**
+     * Admin force-expiry of a user's sessions. A super admin may revoke anyone (force-expiring a
+     * compromised administrator's sessions is a legitimate response); a scoped delegate may not target
+     * another administrator, so they cannot grief a super admin who falls within their user scope.
+     */
+    public boolean canRevokeSessions(UUID targetId) {
+        return currentIsSuperAdmin() || !isAdmin(targetId);
+    }
+
     /** Blocks resetting another administrator's MFA (resetting your own is allowed). */
     public boolean canResetMfa(UUID targetId) {
         return isSelf(targetId) || !isAdmin(targetId);

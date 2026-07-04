@@ -9,15 +9,16 @@ import java.lang.annotation.Target;
 import org.springframework.security.access.prepost.PreAuthorize;
 
 /**
- * PBAC + ABAC for admin force-expiry of a user's sessions: the caller needs {@code user:update} and must
- * be allowed to reach the target ({@code #id}) under group scope. Unlike {@link CanSetUserEnabled}/
- * {@link CanUpdateUser} it carries no self/other-admin guard — force-expiring a compromised admin's
- * sessions is a legitimate response — and no {@code #body}/{@code #request} clause, so it fits an
+ * PBAC + ABAC for admin force-expiry of a user's sessions: the caller needs {@code user:update}, must be
+ * allowed to reach the target ({@code #id}) under group scope, and must satisfy {@code canRevokeSessions}
+ * (a super admin may revoke anyone — force-expiring a compromised admin is legitimate — but a scoped
+ * delegate may not target another administrator). No {@code #body}/{@code #request} clause, so it fits an
  * endpoint whose only parameter is {@code id}.
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@PreAuthorize("hasAuthority('" + Permissions.USER_UPDATE + "') and @adminAccessPolicy.canAccessUser(#id)")
+@PreAuthorize("hasAuthority('" + Permissions.USER_UPDATE + "') and @adminAccessPolicy.canAccessUser(#id)"
+        + " and @adminAccessPolicy.canRevokeSessions(#id)")
 public @interface CanRevokeUserSessions {
 }
