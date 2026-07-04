@@ -1,22 +1,22 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ChevronDown, ChevronRight, ChevronUp, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { apiGet, apiPost, apiPut, errorMessage, type Page } from "../api";
 import { listZones, searchZones } from "@/zones";
+import { EditorPage } from "@/components/EditorPage";
 import { InfoHint } from "@/components/InfoHint";
 import { SearchSelect } from "@/components/SearchSelect";
 import { SettingsSection } from "@/components/SettingsSection";
-import { LoadingCard } from "@/components/states";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { cn, tokens } from "@/lib/utils";
+import { tokens } from "@/lib/utils";
 import { Field, Toggle } from "@/components/form/fields";
+import { CheckboxGroup } from "@/components/form/CheckboxGroup";
 import { UserMultiSelect } from "@/components/UserMultiSelect";
 
 interface IpRuleWire { zoneId: string; action: string; priority: number }
@@ -181,61 +181,35 @@ export default function SessionPolicyDetail() {
   const crumbName = isNew ? "New policy" : (editor?.name || "Edit");
 
   return (
-    <div>
-      <nav className="mb-5 flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Link to="/admin/session-policy" className="hover:text-foreground">Session Policies</Link>
-        <ChevronRight className="size-3.5 opacity-60" />
-        <span className="font-medium text-foreground">{crumbName}</span>
-      </nav>
-
-      <header className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">{isNew ? "New session policy" : (editor?.name ?? "…")}</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          Session lifetimes, re-authentication, network access, and where this policy applies.
-        </p>
-      </header>
-
-      <div className="mb-2 flex gap-7 border-b border-border">
-        {TABS.map((t) => (
-          <button key={t.key} type="button" onClick={() => setTab(t.key)}
-                  className={cn("-mb-px border-b-2 pb-3 text-sm font-medium transition-colors",
-                    tab === t.key ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {error && <Alert variant="destructive" className="mt-4"><AlertDescription>{error}</AlertDescription></Alert>}
-
-      {!editor ? (
-        <div className="mt-6">{error ? null : <LoadingCard />}</div>
-      ) : (
+    <EditorPage<Tab>
+      backTo="/admin/session-policy" backLabel="Session Policies" crumb={crumbName}
+      title={isNew ? "New session policy" : (editor?.name ?? "…")}
+      description="Session lifetimes, re-authentication, network access, and where this policy applies."
+      tabs={TABS} activeTab={tab} onTab={setTab}
+      error={error} formId="policy-form" onSubmit={submit} busy={busy}
+      submitLabel={isNew ? "Create policy" : "Save changes"}
+      onCancel={() => navigate("/admin/session-policy")} loading={!editor}
+    >
+      {editor && (
         <>
-          <form id="policy-form" onSubmit={submit}>
-            {tab === "general" && <GeneralTab editor={editor} set={set} />}
-            {tab === "reauth" && <ReauthTab editor={editor} set={set} />}
-            {tab === "network" && (
-              <NetworkTab editor={editor} set={set} zoneNames={zoneNames} addKey={addKey}
-                          onAdd={(zoneId, label) => {
-                            setZoneNames((m) => ({ ...m, [zoneId]: label }));
-                            // One rule per zone: a duplicate row could never fire (first-match) yet would
-                            // display as a meaningful rule — skip instead.
-                            if (!editor.ipRules.some((r) => r.zoneId === zoneId)) {
-                              set({ ipRules: [...editor.ipRules, { zoneId, action: "BLOCK" }] });
-                            }
-                            setAddKey((k) => k + 1);
-                          }} />
-            )}
-            {tab === "assign" && <AssignTab editor={editor} set={set} roles={roles} />}
-          </form>
-
-          <div className="sticky bottom-0 z-10 mt-2 flex items-center justify-end gap-3 border-t border-border bg-background/90 py-4 backdrop-blur">
-            <Button type="button" variant="outline" onClick={() => navigate("/admin/session-policy")}>Cancel</Button>
-            <Button form="policy-form" type="submit" disabled={busy}>{isNew ? "Create policy" : "Save changes"}</Button>
-          </div>
+          {tab === "general" && <GeneralTab editor={editor} set={set} />}
+          {tab === "reauth" && <ReauthTab editor={editor} set={set} />}
+          {tab === "network" && (
+            <NetworkTab editor={editor} set={set} zoneNames={zoneNames} addKey={addKey}
+                        onAdd={(zoneId, label) => {
+                          setZoneNames((m) => ({ ...m, [zoneId]: label }));
+                          // One rule per zone: a duplicate row could never fire (first-match) yet would
+                          // display as a meaningful rule — skip instead.
+                          if (!editor.ipRules.some((r) => r.zoneId === zoneId)) {
+                            set({ ipRules: [...editor.ipRules, { zoneId, action: "BLOCK" }] });
+                          }
+                          setAddKey((k) => k + 1);
+                        }} />
+          )}
+          {tab === "assign" && <AssignTab editor={editor} set={set} roles={roles} />}
         </>
       )}
-    </div>
+    </EditorPage>
   );
 }
 
@@ -380,20 +354,17 @@ function NetworkTab({ editor, set, zoneNames, addKey, onAdd }:
 }
 
 function AssignTab({ editor, set, roles }: { editor: Editor; set: (p: Partial<Editor>) => void; roles: Role[] }) {
-  const toggle = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+  const toggle = (v: string) => (editor.roleIds.includes(v) ? editor.roleIds.filter((x) => x !== v) : [...editor.roleIds, v]);
   return (
     <SettingsSection
       title="Applies to"
       description="Target this policy at roles and/or users. Leave both empty to apply it to everyone (global). Cookie attributes are global and edited on the Default policy.">
       <div className="space-y-2">
         <Label>Roles</Label>
-        <div className="flex flex-wrap gap-3 rounded-md border p-3">
-          {roles.length === 0 ? <span className="text-sm text-muted-foreground">No roles</span> : roles.map((r) => (
-            <label key={r.id} className="flex cursor-pointer items-center gap-2 text-sm">
-              <Checkbox checked={editor.roleIds.includes(r.id)} onCheckedChange={() => set({ roleIds: toggle(editor.roleIds, r.id) })} /> {r.name}
-            </label>
-          ))}
-        </div>
+        <CheckboxGroup
+          options={roles.map((r) => ({ value: r.id, label: r.name }))}
+          selected={editor.roleIds} onToggle={(v) => set({ roleIds: toggle(v) })} emptyText="No roles"
+        />
       </div>
       <div className="space-y-2">
         <Label>Users</Label>
