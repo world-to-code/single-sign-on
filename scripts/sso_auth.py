@@ -7,10 +7,14 @@ import base64
 import hashlib
 import hmac
 import re
+import secrets
 import struct
 import time
 
 import requests
+
+ADMIN_CLIENT = "admin-console"
+ADMIN_REDIRECT = "http://localhost:9000/admin/callback"
 
 
 def totp(secret_b32: str) -> str:
@@ -49,6 +53,48 @@ def authenticate(session: requests.Session, base: str,
     if confirm.status_code != 200 or confirm.json().get("next") != "DONE":
         raise SystemExit(f"MFA completion failed: {confirm.status_code} {confirm.text}")
     return secret
+
+
+def elevate(session: requests.Session, base: str, totp_secret: str) -> str:
+    """
+    Acquire the admin-console elevation bearer the /api/admin/** gate (AdminElevationFilter) requires:
+    a DELIBERATE step-up (stamps stepup_time) followed by the admin-console OIDC + PKCE flow. Returns the
+    access token; attach it as `Authorization: Bearer <token>` on admin API requests.
+    """
+    # TOTP replay protection rejects a code already spent (login just used this 30s window's code);
+    # wait for a fresh window so the deliberate step-up presents an unused code.
+    window = int(time.time() // 30)
+    while int(time.time() // 30) == window:
+        time.sleep(1)
+    reauth = session.post(f"{base}/api/auth/reauth/TOTP/verify",
+                          json={"code": totp(totp_secret)}, headers=_csrf_headers(session))
+    if reauth.status_code != 200:
+        raise SystemExit(f"deliberate step-up failed: {reauth.status_code} {reauth.text}")
+
+    verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    authz = session.get(f"{base}/oauth2/authorize", params={
+        "response_type": "code", "client_id": ADMIN_CLIENT, "scope": "openid profile admin",
+        "redirect_uri": ADMIN_REDIRECT, "state": "elev",
+        "code_challenge": challenge, "code_challenge_method": "S256",
+    }, allow_redirects=False)
+    if authz.status_code == 200 and "consent" in authz.text.lower():
+        state = re.search(r'name="state"[^>]*value="([^"]+)"', authz.text).group(1)
+        authz = session.post(f"{base}/oauth2/authorize",
+                             data={"client_id": ADMIN_CLIENT, "state": state, "scope": ["profile", "admin"]},
+                             allow_redirects=False)
+    location = authz.headers.get("Location", "")
+    code = re.search(r"[?&]code=([^&]+)", location)
+    if not code:
+        raise SystemExit(f"no admin authorization code: {authz.status_code} {location} {authz.text[:200]}")
+
+    token = requests.post(f"{base}/oauth2/token", data={
+        "grant_type": "authorization_code", "code": code.group(1),
+        "redirect_uri": ADMIN_REDIRECT, "client_id": ADMIN_CLIENT, "code_verifier": verifier,
+    })
+    if token.status_code != 200 or "access_token" not in token.json():
+        raise SystemExit(f"admin token exchange failed: {token.status_code} {token.text}")
+    return token.json()["access_token"]
 
 
 def cleanup(session: requests.Session, base: str, username: str = "admin") -> None:
