@@ -86,16 +86,16 @@ class SessionManagerImplTest {
     }
 
     @Test
-    void firstSightRegistersTheNewSessionAndRecordsMetadata() {
+    void firstSightRecordsMetadataAndLeavesRegistrationToSpringSession() {
         MockHttpServletRequest request = requestWithSession();
         String id = request.getSession(false).getId();
-        when(sessionRegistry.getSessionInformation(id)).thenReturn(null);
         policyWithLimit(0); // unlimited → no eviction path
 
         manager.registerAndEnforceLimit(request, USER);
 
-        verify(sessionRegistry).registerNewSession(id, USER);
+        // Spring Session auto-registers + principal-indexes the session; we only stamp device metadata.
         verify(sessionMetadata).record(eq(id), eq(USER), any(), eq("10.0.0.1"));
+        verify(sessionRegistry, never()).registerNewSession(anyString(), any());
     }
 
     @Test
@@ -111,9 +111,11 @@ class SessionManagerImplTest {
     @Test
     void atOrUnderTheLimitEvictsNothing() {
         MockHttpServletRequest request = requestWithSession();
+        String currentId = request.getSession(false).getId();
         policyWithLimit(2);
         SessionInformation a = mock(SessionInformation.class);
         SessionInformation b = mock(SessionInformation.class);
+        when(a.getSessionId()).thenReturn(currentId); // the registry already includes the current session
         when(sessionRegistry.getAllSessions(USER, false)).thenReturn(List.of(a, b));
 
         manager.registerAndEnforceLimit(request, USER);
@@ -125,11 +127,13 @@ class SessionManagerImplTest {
     @Test
     void overTheLimitEvictsTheOldestSessionsOnly() {
         MockHttpServletRequest request = requestWithSession();
+        String currentId = request.getSession(false).getId();
         policyWithLimit(2);
         Instant now = Instant.now();
         SessionInformation oldest = session("s1", now.minusSeconds(300));
         SessionInformation middle = session("s2", now.minusSeconds(200));
         SessionInformation newest = session("s3", now.minusSeconds(100));
+        when(newest.getSessionId()).thenReturn(currentId); // current session is the newest, already indexed
         when(sessionRegistry.getAllSessions(USER, false)).thenReturn(List.of(newest, oldest, middle));
 
         manager.registerAndEnforceLimit(request, USER);
@@ -138,6 +142,21 @@ class SessionManagerImplTest {
         verify(oldest).expireNow();
         verify(middle, never()).expireNow();
         verify(newest, never()).expireNow();
+    }
+
+    @Test
+    void singleRequestCompletionCountsTheCurrentSessionTowardTheCap() {
+        // A login that completes in the request that created the session: Spring Session hasn't flushed it
+        // to the principal index yet, so getAllSessions omits it. It must still count toward the cap.
+        MockHttpServletRequest request = requestWithSession();
+        policyWithLimit(1);
+        SessionInformation other = mock(SessionInformation.class); // sole element → sort never reads lastRequest
+        when(sessionRegistry.getAllSessions(USER, false)).thenReturn(List.of(other));
+
+        manager.registerAndEnforceLimit(request, USER);
+
+        // current (uncounted by the registry) + other = 2 > cap 1 → evict the older 'other'.
+        verify(other).expireNow();
     }
 
     @Test

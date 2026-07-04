@@ -32,7 +32,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AuthenticationService {
 
-    private static final String SESSION_COOKIE = "JSESSIONID";
+    private static final String SESSION_COOKIE = "SESSION"; // Spring Session's cookie (was JSESSIONID)
     private static final String CSRF_COOKIE = "XSRF-TOKEN";
 
     private final AuthenticationManager authenticationManager;

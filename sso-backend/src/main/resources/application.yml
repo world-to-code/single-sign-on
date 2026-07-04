@@ -10,6 +10,15 @@ spring:
     url: jdbc:postgresql://localhost:5432/sso
     username: sso
     password: sso
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  session:
+    # Sessions in Redis (see RedisSessionConfig): the key TTL fires SessionExpiredEvent on idle
+    # expiry with no request. Mirror the servlet idle timeout; per-policy idle is applied per-request
+    # by SessionIntegrityFilter via setMaxInactiveInterval (which now sets the Redis key TTL).
+    timeout: 30m
   jpa:
     hibernate:
       ddl-auto: validate        # schema is owned by Flyway, never by Hibernate

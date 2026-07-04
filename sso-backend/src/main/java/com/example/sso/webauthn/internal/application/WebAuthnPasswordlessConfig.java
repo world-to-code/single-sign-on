@@ -13,6 +13,7 @@ import org.springframework.security.web.webauthn.management.PublicKeyCredentialU
 import org.springframework.security.web.webauthn.management.UserCredentialRepository;
 import org.springframework.security.web.webauthn.management.WebAuthnRelyingPartyOperations;
 import org.springframework.security.web.webauthn.management.Webauthn4JRelyingPartyOperations;
+import org.springframework.security.web.webauthn.registration.PublicKeyCredentialCreationOptionsRepository;
 
 import java.util.Set;
 
@@ -49,5 +50,15 @@ public class WebAuthnPasswordlessConfig {
     @Bean
     PublicKeyCredentialRequestOptionsRepository publicKeyCredentialRequestOptionsRepository() {
         return new HttpSessionPublicKeyCredentialRequestOptionsRepository();
+    }
+
+    /**
+     * Registration ceremony store that survives Redis sessions (the default one stores a non-Serializable
+     * options object). Wired into {@code http.webAuthn(..)} by {@code SecurityConfig}.
+     */
+    @Bean
+    PublicKeyCredentialCreationOptionsRepository publicKeyCredentialCreationOptionsRepository(
+            WebAuthnRelyingPartyOperations operations) {
+        return new RegistrationChallengeOptionsRepository(operations);
     }
 }

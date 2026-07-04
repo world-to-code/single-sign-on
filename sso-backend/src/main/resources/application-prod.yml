@@ -5,6 +5,13 @@ spring:
     url: ${DB_URL:jdbc:postgresql://postgres:5432/sso}
     username: ${DB_USERNAME:sso}
     password: ${DB_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+      # No default: Redis holds serialized SecurityContexts (principal + MFA_COMPLETE), so a passwordless
+      # prod Redis is an auth-bypass risk — fail fast like DB_PASSWORD / crypto secrets do.
+      password: ${REDIS_PASSWORD}
   jpa:
     hibernate:
       ddl-auto: validate

@@ -10,6 +10,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.webauthn.api.AuthenticatorAssertionResponse;
 import org.springframework.security.web.webauthn.api.AuthenticatorAttestationResponse;
+import org.springframework.security.web.webauthn.api.Bytes;
 import org.springframework.security.web.webauthn.api.PublicKeyCredential;
 import org.springframework.security.web.webauthn.api.PublicKeyCredentialCreationOptions;
 import org.springframework.security.web.webauthn.api.PublicKeyCredentialRequestOptions;
@@ -40,7 +41,7 @@ public class Fido2FactorHandler implements FactorHandler {
 
     private static final Logger log = LoggerFactory.getLogger(Fido2FactorHandler.class);
     private static final String OPTIONS_ATTR = "FIDO2_REQUEST_OPTIONS";
-    private static final String CREATION_OPTIONS_ATTR = "FIDO2_CREATION_OPTIONS";
+    private static final String CREATION_CHALLENGE_ATTR = "FIDO2_CREATION_CHALLENGE";
 
     private final WebAuthnRelyingPartyOperations operations;
     private final PublicKeyCredentialUserEntityRepository userEntities;
@@ -76,12 +77,13 @@ public class Fido2FactorHandler implements FactorHandler {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         HttpSession session = request.getSession(true);
 
-        // Options objects aren't Jackson-deserializable, so we keep the OBJECT in the session and
-        // only serialize JSON for the browser (a round-trip would fail on verify).
+        // The session lives in Redis. PublicKeyCredentialRequestOptions IS Serializable, so we keep the
+        // object; PublicKeyCredentialCreationOptions is NOT (and can't be Jackson-deserialized), so for
+        // registration we persist only the challenge (Bytes, Serializable) and rebuild the options on verify.
         if (isEnrolled(user)) {
             PublicKeyCredentialRequestOptions options = operations.createCredentialRequestOptions(
                     new ImmutablePublicKeyCredentialRequestOptionsRequest(authentication));
-            session.removeAttribute(CREATION_OPTIONS_ATTR);
+            session.removeAttribute(CREATION_CHALLENGE_ATTR);
             session.setAttribute(OPTIONS_ATTR, options);
             return FactorChallenge.publicKey(json.writeValueAsString(options));
         }
@@ -90,7 +92,7 @@ public class Fido2FactorHandler implements FactorHandler {
         PublicKeyCredentialCreationOptions options = operations.createPublicKeyCredentialCreationOptions(
                 new ImmutablePublicKeyCredentialCreationOptionsRequest(authentication));
         session.removeAttribute(OPTIONS_ATTR);
-        session.setAttribute(CREATION_OPTIONS_ATTR, options);
+        session.setAttribute(CREATION_CHALLENGE_ATTR, options.getChallenge());
         return FactorChallenge.publicKey(json.writeValueAsString(options));
     }
 
@@ -105,13 +107,31 @@ public class Fido2FactorHandler implements FactorHandler {
             return false;
         }
 
-        if (session.getAttribute(CREATION_OPTIONS_ATTR) instanceof PublicKeyCredentialCreationOptions creation) {
-            return register(user, creation, verification, session);
+        if (session.getAttribute(CREATION_CHALLENGE_ATTR) instanceof Bytes challenge) {
+            return register(user, rebuildCreationOptions(challenge), verification, session);
         }
         if (session.getAttribute(OPTIONS_ATTR) instanceof PublicKeyCredentialRequestOptions options) {
             return assertCredential(user, options, verification, session);
         }
         return false;
+    }
+
+    /**
+     * Rebuilds the registration options from the stored challenge: re-derives fresh options (rp, user,
+     * params — all stable for the same user) and overrides the challenge with the one the browser signed.
+     * Lets us persist only the Serializable {@link Bytes} challenge, since the options object is not.
+     */
+    private PublicKeyCredentialCreationOptions rebuildCreationOptions(Bytes challenge) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        PublicKeyCredentialCreationOptions fresh = operations.createPublicKeyCredentialCreationOptions(
+                new ImmutablePublicKeyCredentialCreationOptionsRequest(authentication));
+        return PublicKeyCredentialCreationOptions.builder()
+                .rp(fresh.getRp()).user(fresh.getUser()).challenge(challenge)
+                .pubKeyCredParams(fresh.getPubKeyCredParams()).timeout(fresh.getTimeout())
+                .excludeCredentials(fresh.getExcludeCredentials())
+                .authenticatorSelection(fresh.getAuthenticatorSelection())
+                .attestation(fresh.getAttestation()).extensions(fresh.getExtensions())
+                .build();
     }
 
     /** Completes a registration ceremony: persists the new passkey; success satisfies the factor. */
@@ -127,7 +147,7 @@ public class Fido2FactorHandler implements FactorHandler {
             log.warn("FIDO2 registration failed for {}: {}", user.getUsername(), e.getMessage());
             return false;
         } finally {
-            session.removeAttribute(CREATION_OPTIONS_ATTR); // single-use challenge
+            session.removeAttribute(CREATION_CHALLENGE_ATTR); // single-use challenge
         }
     }
 

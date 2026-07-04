@@ -8,13 +8,9 @@ import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.security.AdminElevationFilter;
 import com.example.sso.security.PolicyIpAccessFilter;
 import com.example.sso.security.SessionIntegrityFilter;
-import com.example.sso.security.SessionMetadataCleanupListener;
 import com.example.sso.session.NetworkZoneService;
-import com.example.sso.session.SessionMetadataStore;
 import com.example.sso.session.SessionPolicyService;
-import jakarta.servlet.http.HttpSessionListener;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.web.servlet.ServletListenerRegistrationBean;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -39,10 +35,12 @@ import org.springframework.security.web.authentication.LoginUrlAuthenticationEnt
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
-import org.springframework.security.web.session.HttpSessionEventPublisher;
+import org.springframework.security.web.webauthn.registration.PublicKeyCredentialCreationOptionsRepository;
 import org.springframework.security.core.session.SessionRegistry;
-import org.springframework.security.core.session.SessionRegistryImpl;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
+import org.springframework.session.FindByIndexNameSessionRepository;
+import org.springframework.session.Session;
+import org.springframework.session.security.SpringSessionBackedSessionRegistry;
 
 import java.time.Duration;
 import java.util.Set;
@@ -72,33 +70,15 @@ public class SecurityConfig {
     }
 
     /**
-     * Tracks live sessions per principal for the per-policy "max concurrent sessions" control. Our
-     * custom JSON login flow does not run Spring's {@code ConcurrentSessionControlAuthenticationStrategy},
-     * so {@code SessionLifecycle} (SessionManagerImpl) registers sessions + expires the oldest overflow manually, and
-     * {@link SessionIntegrityFilter} enforces the resulting expiry on the next request.
+     * Tracks live sessions per principal for the per-policy "max concurrent sessions" control. Backed by
+     * Spring Session (Redis): sessions auto-register (indexed by principal), so no manual registration is
+     * needed, and {@code SessionInformation.expireNow()} deletes the Redis session — which fires a
+     * {@code SessionDeletedEvent} the back-channel-logout listener reacts to. {@code SessionLifecycle}
+     * (SessionManagerImpl) only expires the oldest overflow; {@link SessionIntegrityFilter} enforces expiry.
      */
     @Bean
-    SessionRegistry sessionRegistry() {
-        return new SessionRegistryImpl();
-    }
-
-    /**
-     * Bridges servlet session lifecycle events into Spring Security so the {@link SessionRegistry}
-     * sees session creation/destruction (e.g. removing entries when a session is invalidated/expires).
-     */
-    @Bean
-    ServletListenerRegistrationBean<HttpSessionEventPublisher> httpSessionEventPublisher() {
-        return new ServletListenerRegistrationBean<>(new HttpSessionEventPublisher());
-    }
-
-    /**
-     * Evicts a session's device metadata from the {@link SessionMetadataStore} when the container
-     * destroys the session (logout / expiry / invalidation), so the self-service "My Profile"
-     * sessions list never shows dead sessions. Registered like the {@code HttpSessionEventPublisher}.
-     */
-    @Bean
-    ServletListenerRegistrationBean<HttpSessionListener> sessionMetadataCleanupListener(SessionMetadataStore store) {
-        return new ServletListenerRegistrationBean<>(new SessionMetadataCleanupListener(store));
+    SessionRegistry sessionRegistry(FindByIndexNameSessionRepository<? extends Session> sessions) {
+        return new SpringSessionBackedSessionRegistry<>(sessions);
     }
 
     @Bean
@@ -108,6 +88,7 @@ public class SecurityConfig {
             SessionIntegrityFilter sessionIntegrityFilter, SessionPolicyService policyService,
             NetworkZoneService networkZones, JwtDecoder jwtDecoder,
             AdminPortalSettingsService adminPortalSettingsService, AuditService audit,
+            PublicKeyCredentialCreationOptionsRepository creationOptionsRepository,
             @Value("${sso.issuer}") String issuer,
             @Value("${sso.webauthn.rp-id:localhost}") String rpId,
             @Value("${sso.webauthn.rp-name:Mini SSO}") String rpName,
@@ -118,11 +99,13 @@ public class SecurityConfig {
         http
                 // PRIMARY passwordless passkey login (Spring Security WebAuthn module). /webauthn/register
                 // (built-in page) registers passkeys; /login/webauthn authenticates with one and grants
-                // FACTOR_WEBAUTHN, which the policy engine treats as the FIDO2 factor.
+                // FACTOR_WEBAUTHN, which the policy engine treats as the FIDO2 factor. The creation-options
+                // repository stores only the challenge so the ceremony survives the Redis session store.
                 .webAuthn(webAuthn -> webAuthn
                         .rpName(rpName)
                         .rpId(rpId)
                         .allowedOrigins(allowedOrigins)
+                        .creationOptionsRepository(creationOptionsRepository)
                         .disableDefaultRegistrationPage(true)) // the React SPA drives the passkey UI
                 .authorizeHttpRequests(auth -> auth
                         // Passkey REGISTRATION (self-service "My Passkeys") requires a completed login —

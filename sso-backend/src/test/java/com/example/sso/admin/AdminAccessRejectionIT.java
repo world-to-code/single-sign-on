@@ -7,11 +7,11 @@ import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.hamcrest.Matchers;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
@@ -60,29 +60,29 @@ class AdminAccessRejectionIT extends AbstractIntegrationTest {
     void authenticatedWithoutMfaIsRejectedByTheMfaGate() throws Exception {
         // Password step done, MFA step NOT completed → no MFA_COMPLETE authority.
         createUser("no-mfa-user");
-        MockHttpSession session = login("no-mfa-user");
+        Cookie session = login("no-mfa-user");
 
-        mvc.perform(get(ADMIN_URI).session(session)).andExpect(status().isForbidden());
+        mvc.perform(get(ADMIN_URI).cookie(session)).andExpect(status().isForbidden());
         // Sanity: the same half-authenticated session cannot reach an ordinary MFA-gated endpoint either.
-        mvc.perform(get("/api/me").session(session)).andExpect(status().isForbidden());
+        mvc.perform(get("/api/me").cookie(session)).andExpect(status().isForbidden());
     }
 
     @Test
     void fullyAuthenticatedWithoutThePermissionIsForbidden() throws Exception {
         // MFA-complete but only ROLE_USER (no resource:read). Elevation filter skipped (empty servletPath),
         // so the request reaches @RequirePermission → 403.
-        MockHttpSession session = mfaSession("perm-less-user");
+        Cookie session = mfaSession("perm-less-user");
 
-        mvc.perform(get(ADMIN_URI).session(session)).andExpect(status().isForbidden());
-        mvc.perform(get("/api/me").session(session)).andExpect(status().isOk()); // ordinary endpoint fine
+        mvc.perform(get(ADMIN_URI).cookie(session)).andExpect(status().isForbidden());
+        mvc.perform(get("/api/me").cookie(session)).andExpect(status().isOk()); // ordinary endpoint fine
     }
 
     @Test
     void fullyAuthenticatedWithoutElevationGetsTheStepUpChallenge() throws Exception {
-        MockHttpSession session = mfaSession("unelevated-user");
+        Cookie session = mfaSession("unelevated-user");
 
         // With the real servlet path set, AdminElevationFilter runs: no admin-console bearer → 401 + challenge.
-        mvc.perform(get(ADMIN_URI).session(session).with(servletPath(ADMIN_URI)))
+        mvc.perform(get(ADMIN_URI).cookie(session).with(servletPath(ADMIN_URI)))
                 .andExpect(status().isUnauthorized())
                 .andExpect(header().string("WWW-Authenticate",
                         Matchers.containsString("insufficient_user_authentication")));
@@ -90,34 +90,35 @@ class AdminAccessRejectionIT extends AbstractIntegrationTest {
 
     @Test
     void garbageElevationBearerIsRejected() throws Exception {
-        MockHttpSession session = mfaSession("garbage-token-user");
+        Cookie session = mfaSession("garbage-token-user");
 
-        mvc.perform(get(ADMIN_URI).session(session).with(servletPath(ADMIN_URI))
+        mvc.perform(get(ADMIN_URI).cookie(session).with(servletPath(ADMIN_URI))
                         .header("Authorization", "Bearer not-a-real-jwt"))
                 .andExpect(status().isUnauthorized());
     }
 
     // --- session builders (real login + MFA flow) ---
 
-    private MockHttpSession login(String username) throws Exception {
-        return (MockHttpSession) mvc.perform(post("/api/auth/login").with(csrf())
+    private Cookie login(String username) throws Exception {
+        return sessionCookie(mvc.perform(post("/api/auth/login").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"" + username + "\",\"password\":\"pw-neg-1!\"}"))
-                .andReturn().getRequest().getSession();
+                .andReturn(), null);
     }
 
-    private MockHttpSession mfaSession(String username) throws Exception {
+    private Cookie mfaSession(String username) throws Exception {
         UserAccount user = createUser(username);
         TotpEnrollment enrollment = mfaService.newEnrollment(user);
         mfaService.confirmEnrollment(user, enrollment.secret(),
                 totpService.generateCodeAt(enrollment.secret(), System.currentTimeMillis() - 30_000));
 
-        MockHttpSession session = login(username);
-        mvc.perform(post("/api/auth/factors/TOTP/verify").session(session).with(csrf())
+        Cookie session = login(username);
+        // MFA completion rotates the session id (session-fixation defense), so carry the refreshed cookie.
+        return sessionCookie(mvc.perform(post("/api/auth/factors/TOTP/verify").cookie(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"code\":\"" + totpService.generateCurrentCode(enrollment.secret()) + "\"}"))
-                .andExpect(status().isOk());
-        return session;
+                .andExpect(status().isOk())
+                .andReturn(), session);
     }
 
     private UserAccount createUser(String username) {

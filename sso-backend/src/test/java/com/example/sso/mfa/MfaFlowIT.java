@@ -5,11 +5,11 @@ import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -57,23 +57,25 @@ class MfaFlowIT extends AbstractIntegrationTest {
         mfaService.confirmEnrollment(user, enrollment.secret(),
                 totpService.generateCodeAt(enrollment.secret(), System.currentTimeMillis() - 30_000));
 
-        MockHttpSession session = (MockHttpSession) mvc.perform(login("mfa-ok", "pw-ok-12!"))
+        Cookie session = sessionCookie(mvc.perform(login("mfa-ok", "pw-ok-12!"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.next").value("FACTOR"))
-                .andReturn().getRequest().getSession();
+                .andReturn(), null);
 
         // Policy not satisfied yet -> protected API forbidden.
-        mvc.perform(get("/api/me").session(session)).andExpect(status().isForbidden());
+        mvc.perform(get("/api/me").cookie(session)).andExpect(status().isForbidden());
 
-        // Complete the TOTP factor -> policy satisfied (MFA_COMPLETE).
-        mvc.perform(post("/api/auth/factors/TOTP/verify").session(session).with(csrf())
+        // Complete the TOTP factor -> policy satisfied (MFA_COMPLETE). Auth rotates the session id, so
+        // carry the refreshed cookie.
+        session = sessionCookie(mvc.perform(post("/api/auth/factors/TOTP/verify").cookie(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"code\":\"" + totpService.generateCurrentCode(enrollment.secret()) + "\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.next").value("DONE"));
+                .andExpect(jsonPath("$.next").value("DONE"))
+                .andReturn(), session);
 
         // Now fully authenticated.
-        mvc.perform(get("/api/me").session(session)).andExpect(status().isOk());
+        mvc.perform(get("/api/me").cookie(session)).andExpect(status().isOk());
     }
 
     private MockHttpServletRequestBuilder login(String user, String password) {

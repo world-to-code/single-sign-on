@@ -24,5 +24,20 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  # Session store. `--notify-keyspace-events Egx` is REQUIRED: it makes an idle session's key TTL
+  # expiry publish an event (SessionExpiredEvent) with no request — the trigger for OIDC back-channel
+  # logout on idle expiry. (E=keyevent, g=generic DEL, x=expired.)
+  redis:
+    image: redis:7
+    container_name: sso-redis
+    command: ["redis-server", "--notify-keyspace-events", "Egx"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   pgdata:

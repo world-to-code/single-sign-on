@@ -1,22 +1,25 @@
 package com.example.sso.security;
 
 import com.example.sso.session.SessionMetadataStore;
-import jakarta.servlet.http.HttpSessionEvent;
-import jakarta.servlet.http.HttpSessionListener;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.event.EventListener;
+import org.springframework.session.events.SessionDestroyedEvent;
+import org.springframework.stereotype.Component;
 
 /**
- * Removes a session's device metadata from the {@link SessionMetadataStore} when the servlet
- * container destroys the session (logout, expiry, or invalidation). Registered as a servlet
- * listener alongside Spring Security's {@code HttpSessionEventPublisher} in {@code SecurityConfig}.
+ * Removes a session's device metadata from the {@link SessionMetadataStore} when its Redis session is
+ * destroyed. Listens to Spring Session's {@code SessionDestroyedEvent} (the common supertype of
+ * deleted + expired), NOT a servlet {@code HttpSessionListener} — Redis sessions are not container-managed,
+ * so servlet destroy events never fire; the application event also covers TTL expiry with no request.
  */
+@Component
 @RequiredArgsConstructor
-public class SessionMetadataCleanupListener implements HttpSessionListener {
+public class SessionMetadataCleanupListener {
 
     private final SessionMetadataStore store;
 
-    @Override
-    public void sessionDestroyed(HttpSessionEvent event) {
-        store.remove(event.getSession().getId());
+    @EventListener
+    public void onSessionDestroyed(SessionDestroyedEvent event) {
+        store.remove(event.getSessionId());
     }
 }

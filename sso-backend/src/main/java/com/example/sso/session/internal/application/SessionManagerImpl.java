@@ -41,11 +41,8 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
             return;
         }
 
-        if (sessionRegistry.getSessionInformation(session.getId()) == null) {
-            sessionRegistry.registerNewSession(session.getId(), username);
-        }
-
-        // Stamp device metadata for the self-service "My Profile" sessions list (single-node, in-memory).
+        // Spring Session registers + principal-indexes the session automatically (it holds the security
+        // context), so we don't register here — the backing registry queries Redis by principal.
         sessionMetadata.record(session.getId(), username, request.getHeader(HttpHeaders.USER_AGENT), ClientIp.of(request));
         SessionPolicyDetails policy = sessionPolicy.resolveForUsername(username);
         int max = policy.getMaxConcurrentSessions();
@@ -54,12 +51,18 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
         }
 
         List<SessionInformation> active = new ArrayList<>(sessionRegistry.getAllSessions(username, false));
-        if (active.size() <= max) {
+        // Count the CURRENT session even if Spring Session hasn't flushed it to the Redis principal index
+        // yet — a login that completes in the same request that created the session (a single-step policy)
+        // wouldn't otherwise be counted, letting max+1 through.
+        boolean currentCounted = active.stream().anyMatch(si -> session.getId().equals(si.getSessionId()));
+        long total = active.size() + (currentCounted ? 0 : 1);
+        if (total <= max) {
             return;
         }
 
+        // Evict the oldest over the cap. The current session (newest, or not in the list) is never evicted.
         active.sort(Comparator.comparing(SessionInformation::getLastRequest)); // oldest first
-        active.stream().limit(active.size() - (long) max).forEach(SessionInformation::expireNow);
+        active.stream().limit(total - max).forEach(SessionInformation::expireNow);
     }
 
     @Override
@@ -70,16 +73,10 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
         }
 
         String oldId = session.getId();
-        boolean tracked = sessionRegistry.getSessionInformation(oldId) != null;
         String newId = request.changeSessionId();
         if (!oldId.equals(newId)) {
-            if (tracked) {
-                sessionRegistry.removeSessionInformation(oldId);
-                sessionRegistry.registerNewSession(newId, username);
-            }
-            // changeSessionId() fires sessionIdChanged (not sessionDestroyed), so the cleanup listener
-            // never drops the old-id entry — re-key the device metadata to the new id ourselves, else the
-            // current session disappears from "My Profile" and the old entry leaks.
+            // Spring Session re-keys the Redis session + its principal index on changeSessionId(); we only
+            // re-key our own device-metadata map (keyed by the old id) so "My Profile" keeps the session.
             sessionMetadata.rekey(oldId, newId);
         }
     }
@@ -89,12 +86,10 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
         HttpSession current = request.getSession(false);
         String currentId = current == null ? null : current.getId();
 
-        // Guarantee the caller's CURRENT session is always tracked + shown: backfill the registry +
-        // metadata if missing (e.g. an in-memory restart cleared the store, or it was never recorded).
+        // Guarantee the caller's CURRENT session is always shown: backfill device metadata if missing
+        // (e.g. a restart cleared the in-memory store, or it was never recorded). Spring Session already
+        // tracks the session itself in the registry, so only the metadata needs backfilling.
         if (currentId != null) {
-            if (sessionRegistry.getSessionInformation(currentId) == null) {
-                sessionRegistry.registerNewSession(currentId, username);
-            }
             boolean tracked = sessionMetadata.forUser(username).stream()
                     .anyMatch(m -> m.sessionId().equals(currentId));
             if (!tracked) {

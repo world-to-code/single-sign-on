@@ -7,11 +7,11 @@ import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Set;
@@ -46,18 +46,19 @@ class AdminAuthzIT extends AbstractIntegrationTest {
         mfaService.confirmEnrollment(user, enrollment.secret(),
                 totpService.generateCodeAt(enrollment.secret(), System.currentTimeMillis() - 30_000));
 
-        MockHttpSession session = (MockHttpSession) mvc.perform(post("/api/auth/login").with(csrf())
+        Cookie session = sessionCookie(mvc.perform(post("/api/auth/login").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"plainuser\",\"password\":\"pw-plain-1!\"}"))
-                .andReturn().getRequest().getSession();
-        mvc.perform(post("/api/auth/factors/TOTP/verify").session(session).with(csrf())
+                .andReturn(), null);
+        session = sessionCookie(mvc.perform(post("/api/auth/factors/TOTP/verify").cookie(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"code\":\"" + totpService.generateCurrentCode(enrollment.secret()) + "\"}"))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andReturn(), session);
 
         // Fully authenticated, but lacks ROLE_ADMIN -> admin API forbidden.
-        mvc.perform(get("/api/admin/users").session(session)).andExpect(status().isForbidden());
+        mvc.perform(get("/api/admin/users").cookie(session)).andExpect(status().isForbidden());
         // Ordinary authenticated endpoint is allowed.
-        mvc.perform(get("/api/me").session(session)).andExpect(status().isOk());
+        mvc.perform(get("/api/me").cookie(session)).andExpect(status().isOk());
     }
 }
