@@ -120,7 +120,7 @@ class UserGroupServiceImplTest {
     void setRolesRejectsAnUnknownRole() {
         UUID id = UUID.randomUUID();
         when(repository.findById(id)).thenReturn(Optional.of(new UserGroup("Engineering", "d", null)));
-        when(roles.findByName("ROLE_GHOST")).thenReturn(Optional.empty());
+        when(roles.findByNameAndOrgIdIsNull("ROLE_GHOST")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.setRoles(id, Set.of("ROLE_GHOST")))
                 .isInstanceOf(BadRequestException.class);

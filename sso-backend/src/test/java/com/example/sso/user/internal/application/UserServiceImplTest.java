@@ -96,7 +96,7 @@ class UserServiceImplTest {
     void createUserWithUnknownRoleThrowsBadRequest() {
         when(users.existsByUsername("alice")).thenReturn(false);
         when(users.existsByEmail("alice@example.com")).thenReturn(false);
-        when(roles.findByName("ROLE_GHOST")).thenReturn(Optional.empty());
+        when(roles.findByNameAndOrgIdIsNull("ROLE_GHOST")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.createUser(newUser(Set.of("ROLE_GHOST"))))
                 .isInstanceOf(BadRequestException.class);
@@ -150,7 +150,7 @@ class UserServiceImplTest {
     void updateUserRejectsAnUnknownRole() {
         UUID id = UUID.randomUUID();
         when(users.findById(id)).thenReturn(Optional.of(new AppUser("alice", "a@x", "A", "h")));
-        when(roles.findByName("ROLE_GHOST")).thenReturn(Optional.empty());
+        when(roles.findByNameAndOrgIdIsNull("ROLE_GHOST")).thenReturn(Optional.empty());
 
         UserUpdate update = new UserUpdate("Alice", "a@x", true, Set.of("ROLE_GHOST"));
 

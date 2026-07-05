@@ -1,8 +1,11 @@
 package com.example.sso.user;
 
+import com.example.sso.organization.NewOrganization;
+import com.example.sso.organization.OrganizationService;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.support.AbstractIntegrationTest;
+import com.example.sso.tenancy.OrgContext;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.GrantedAuthority;
@@ -30,6 +33,10 @@ class RbacDelegationIT extends AbstractIntegrationTest {
     UserGroupService userGroups;
     @Autowired
     UserDetailsService userDetailsService;
+    @Autowired
+    OrganizationService organizations;
+    @Autowired
+    OrgContext orgContext;
 
     @Test
     void memberInheritsGroupRolePermissionsWithImpliedRead() {
@@ -46,6 +53,25 @@ class RbacDelegationIT extends AbstractIntegrationTest {
         assertThat(authorities).contains("APP_MANAGER");          // group-delegated role name
         assertThat(authorities).contains(Permissions.USER_CREATE); // its permission
         assertThat(authorities).contains(Permissions.USER_READ);   // create implies read
+    }
+
+    @Test
+    void anOrgRoleNamedLikeASystemRoleGrantsItsPermissionsButNotThatAuthority() {
+        // Role names are unrestricted (no prefix limit): a tenant may create an org role literally named
+        // ROLE_ADMIN. It must NOT escalate — an org role contributes only its permissions, never its name
+        // as a granted authority, so it can never mint the platform super-admin authority.
+        String s = UUID.randomUUID().toString().substring(0, 8);
+        UUID orgId = organizations.create(new NewOrganization("esc-" + s, "Esc")).id();
+        String username = "esc-user-" + s;
+        UUID user = userService.createUser(new NewUser(username, username + "@example.com", "Esc",
+                "S3cret!pw", Set.of("ROLE_USER"))).getId();
+        UUID roleId = orgContext.callInOrg(orgId,
+                () -> roleService.create("ROLE_ADMIN", Set.of(Permissions.USER_READ))).getId();
+        roleService.addMember(roleId, user);
+
+        Set<String> authorities = authoritiesOf(username);
+        assertThat(authorities).contains(Permissions.USER_READ);      // the org role's permission is granted
+        assertThat(authorities).doesNotContain("ROLE_ADMIN");         // but NOT the ROLE_ADMIN authority
     }
 
     @Test

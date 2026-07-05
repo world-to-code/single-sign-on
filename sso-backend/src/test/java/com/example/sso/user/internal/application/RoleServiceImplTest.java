@@ -4,6 +4,7 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.PermissionGrantPolicy;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.RoleRef;
@@ -14,6 +15,7 @@ import com.example.sso.user.internal.domain.PermissionRepository;
 import com.example.sso.user.internal.domain.Role;
 import com.example.sso.user.internal.domain.RoleRepository;
 import com.example.sso.user.internal.domain.UserGroupRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -28,6 +30,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -46,8 +49,15 @@ class RoleServiceImplTest {
     @Mock private UserGroupRepository groups;
     @Mock private AccessChangePublisher accessChanges;
     @Mock private PermissionGrantPolicy grantPolicy;
+    @Mock private OrgContext orgContext;
 
     @InjectMocks private RoleServiceImpl service;
+
+    @BeforeEach
+    void noTenantContext() {
+        // Default to the global tier (no bound org) for role creation; individual tests may override.
+        lenient().when(orgContext.currentOrg()).thenReturn(Optional.empty());
+    }
 
     private Role systemRole(String name) {
         Role role = new Role(name);
@@ -104,7 +114,7 @@ class RoleServiceImplTest {
 
     @Test
     void creatingWithAnExistingNameThrowsConflict() {
-        when(roles.findByName("ROLE_EDITOR")).thenReturn(Optional.of(new Role("ROLE_EDITOR")));
+        when(roles.findByNameAndOrgIdIsNull("ROLE_EDITOR")).thenReturn(Optional.of(new Role("ROLE_EDITOR")));
 
         assertThatThrownBy(() -> service.create("ROLE_EDITOR", Set.of()))
                 .isInstanceOf(ConflictException.class);
@@ -112,7 +122,7 @@ class RoleServiceImplTest {
 
     @Test
     void creatingWithAnUnknownPermissionThrowsBadRequest() {
-        when(roles.findByName("ROLE_EDITOR")).thenReturn(Optional.empty());
+        when(roles.findByNameAndOrgIdIsNull("ROLE_EDITOR")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.create("ROLE_EDITOR", Set.of("not:a-permission")))
                 .isInstanceOf(BadRequestException.class);
@@ -120,7 +130,7 @@ class RoleServiceImplTest {
 
     @Test
     void creatingWithAPlatformPermissionTheActorMayNotGrantIsForbidden() {
-        when(roles.findByName("ROLE_EDITOR")).thenReturn(Optional.empty());
+        when(roles.findByNameAndOrgIdIsNull("ROLE_EDITOR")).thenReturn(Optional.empty());
         when(grantPolicy.mayGrant(Permissions.ORG_CREATE)).thenReturn(false); // e.g. a tenant admin
 
         assertThatThrownBy(() -> service.create("ROLE_EDITOR", Set.of(Permissions.ORG_CREATE)))
@@ -129,8 +139,21 @@ class RoleServiceImplTest {
     }
 
     @Test
+    void anOrgScopedRoleCannotCarryAPlatformPermissionEvenForASuper() {
+        // A tenant (org) context — e.g. a super drilled into an org. The actor policy would allow a super to
+        // grant a platform perm, but an org role is STRUCTURALLY barred from carrying one (no cross-tenant reach).
+        UUID orgId = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgId));
+        when(roles.findByNameAndOrgId("REPORTING", orgId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.create("REPORTING", Set.of(Permissions.KEY_ROTATE)))
+                .isInstanceOf(ForbiddenException.class);
+        verify(roles, never()).save(any());
+    }
+
+    @Test
     void creatingWithAGrantablePermissionSavesTheRole() {
-        when(roles.findByName("ROLE_EDITOR")).thenReturn(Optional.empty());
+        when(roles.findByNameAndOrgIdIsNull("ROLE_EDITOR")).thenReturn(Optional.empty());
         when(grantPolicy.mayGrant(Permissions.USER_READ)).thenReturn(true);
         when(permissions.findByName(Permissions.USER_READ))
                 .thenReturn(Optional.of(new Permission(Permissions.USER_READ)));
@@ -144,7 +167,7 @@ class RoleServiceImplTest {
     @Test
     void getOrCreateReturnsTheExistingRoleWithoutSaving() {
         Role existing = new Role("ROLE_EDITOR");
-        when(roles.findByName("ROLE_EDITOR")).thenReturn(Optional.of(existing));
+        when(roles.findByNameAndOrgIdIsNull("ROLE_EDITOR")).thenReturn(Optional.of(existing));
 
         RoleRef result = service.getOrCreate("ROLE_EDITOR");
 

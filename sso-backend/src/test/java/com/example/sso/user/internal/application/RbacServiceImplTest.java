@@ -42,7 +42,7 @@ class RbacServiceImplTest {
     @Test
     void grantAllPermissionsToAdminAssignsTheEntireCatalogAndSaves() {
         Role admin = new Role(Roles.ADMIN);
-        when(roles.findByName(Roles.ADMIN)).thenReturn(Optional.of(admin));
+        when(roles.findByNameAndOrgIdIsNull(Roles.ADMIN)).thenReturn(Optional.of(admin));
         permissionsAreGetOrCreated();
 
         service.grantAllPermissionsToAdmin();
@@ -53,7 +53,7 @@ class RbacServiceImplTest {
 
     @Test
     void grantAllPermissionsToAdminFailsWhenTheAdminRoleIsMissing() {
-        when(roles.findByName(Roles.ADMIN)).thenReturn(Optional.empty());
+        when(roles.findByNameAndOrgIdIsNull(Roles.ADMIN)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.grantAllPermissionsToAdmin())
                 .isInstanceOf(IllegalStateException.class);
@@ -62,7 +62,7 @@ class RbacServiceImplTest {
     @Test
     void grantGroupAdminPermissionsAssignsOnlyTheThreeBaselinePermissions() {
         Role groupAdmin = new Role(Roles.GROUP_ADMIN);
-        when(roles.findByName(Roles.GROUP_ADMIN)).thenReturn(Optional.of(groupAdmin));
+        when(roles.findByNameAndOrgIdIsNull(Roles.GROUP_ADMIN)).thenReturn(Optional.of(groupAdmin));
         permissionsAreGetOrCreated();
 
         service.grantGroupAdminPermissions();
@@ -74,7 +74,7 @@ class RbacServiceImplTest {
 
     @Test
     void grantGroupAdminPermissionsFailsWhenTheRoleIsMissing() {
-        when(roles.findByName(Roles.GROUP_ADMIN)).thenReturn(Optional.empty());
+        when(roles.findByNameAndOrgIdIsNull(Roles.GROUP_ADMIN)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.grantGroupAdminPermissions())
                 .isInstanceOf(IllegalStateException.class);

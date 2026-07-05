@@ -225,7 +225,8 @@ public class UserGroupServiceImpl implements UserGroupService {
         }
 
         return roleNames.stream()
-                .map(name -> roles.findByName(name)
+                // Groups delegate GLOBAL roles by name; tenant roles are managed per-org by id.
+                .map(name -> roles.findByNameAndOrgIdIsNull(name)
                         .orElseThrow(() -> new BadRequestException("unknown role: " + name)))
                 .collect(Collectors.toSet());
     }

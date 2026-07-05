@@ -38,7 +38,7 @@ public class RbacServiceImpl implements RbacService {
     @Override
     @Transactional
     public void grantAllPermissionsToAdmin() {
-        Role admin = roles.findByName(Roles.ADMIN)
+        Role admin = roles.findByNameAndOrgIdIsNull(Roles.ADMIN)
                 .orElseThrow(() -> new IllegalStateException("ROLE_ADMIN must exist before granting permissions"));
 
         ALL_PERMISSIONS.forEach(name -> admin.addPermission(getOrCreatePermission(name)));
@@ -48,7 +48,7 @@ public class RbacServiceImpl implements RbacService {
     @Override
     @Transactional
     public void grantGroupAdminPermissions() {
-        Role groupAdmin = roles.findByName(Roles.GROUP_ADMIN)
+        Role groupAdmin = roles.findByNameAndOrgIdIsNull(Roles.GROUP_ADMIN)
                 .orElseThrow(() -> new IllegalStateException("ROLE_GROUP_ADMIN must exist before granting permissions"));
 
         GROUP_ADMIN_PERMISSIONS.forEach(name -> groupAdmin.addPermission(getOrCreatePermission(name)));
@@ -58,7 +58,7 @@ public class RbacServiceImpl implements RbacService {
     @Override
     @Transactional
     public void grantOrgAdminPermissions() {
-        Role orgAdmin = roles.findByName(Roles.ORG_ADMIN)
+        Role orgAdmin = roles.findByNameAndOrgIdIsNull(Roles.ORG_ADMIN)
                 .orElseThrow(() -> new IllegalStateException("ROLE_ORG_ADMIN must exist before granting permissions"));
 
         ORG_ADMIN_PERMISSIONS.forEach(name -> orgAdmin.addPermission(getOrCreatePermission(name)));

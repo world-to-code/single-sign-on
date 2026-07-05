@@ -59,10 +59,16 @@ public class SsoUserDetailsService implements UserDetailsService {
         return principal(user, authorities);
     }
 
-    /** Role name (ROLE_*) + each of the role's permission names, for every given role. */
+    /**
+     * A role's authorities: its permission names always, plus its name (ROLE_*) ONLY for a global/system
+     * role. A tenant (org) role contributes only its permissions, so an org role name never becomes a
+     * granted authority — an org role named e.g. {@code ROLE_ADMIN} can't escalate, and org role names stay
+     * unrestricted. (Org-scoped roles resolve here only when this runs in that org's context — see the
+     * completion service, which loads authorities bound to the login org.)
+     */
     private Stream<String> roleAuthorities(Collection<Role> roles) {
         return roles.stream().flatMap(role -> Stream.concat(
-                Stream.of(role.getName()),
+                role.getOrgId() == null ? Stream.of(role.getName()) : Stream.empty(),
                 role.getPermissions().stream().map(Permission::getName)));
     }
 

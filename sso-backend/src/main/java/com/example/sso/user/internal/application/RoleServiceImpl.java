@@ -5,6 +5,7 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.PermissionGrantPolicy;
 import com.example.sso.user.Roles;
 import com.example.sso.user.internal.domain.AppUser;
@@ -59,11 +60,18 @@ public class RoleServiceImpl implements RoleService {
     private final UserGroupRepository groups;
     private final AccessChangePublisher accessChanges;
     private final PermissionGrantPolicy grantPolicy;
+    private final OrgContext orgContext;
+
+    /** The org a newly-created role belongs to: the active tenant context, or null (global/system role). */
+    private UUID creationOrg() {
+        return orgContext.currentOrg().orElse(null);
+    }
 
     @Override
     @Transactional(readOnly = true)
     public Optional<RoleRef> findByName(String name) {
-        return roles.findByName(name).map(r -> r);
+        // Name-based lookup targets the global tier; tenant roles are addressed by id.
+        return roles.findByNameAndOrgIdIsNull(name).map(r -> r);
     }
 
     @Override
@@ -83,13 +91,14 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional
     public RoleRef getOrCreate(String name) {
-        return roles.findByName(name).orElseGet(() -> roles.save(new Role(name)));
+        // A name-addressed role is a global one (SCIM group→role, etc.); tenant roles are created via the id path.
+        return roles.findByNameAndOrgIdIsNull(name).orElseGet(() -> roles.save(new Role(name)));
     }
 
     @Override
     @Transactional
     public RoleRef getOrCreateSystem(String name) {
-        Role role = roles.findByName(name).orElseGet(() -> new Role(name));
+        Role role = roles.findByNameAndOrgIdIsNull(name).orElseGet(() -> new Role(name)); // system roles are global
         if (!role.isSystem()) {
             role.markSystem();
         }
@@ -101,19 +110,26 @@ public class RoleServiceImpl implements RoleService {
     @Transactional
     public RoleRef create(String name) {
         validateRoleName(name);
-        return roles.save(new Role(name));
+        return roles.save(new Role(name, creationOrg()));
     }
 
     @Override
     @Transactional
     public RoleRef create(String name, Set<String> permissionNames) {
         validateRoleName(name);
-        roles.findByName(name).ifPresent(existing -> {
+        UUID org = creationOrg();
+        // Unique within its own tier only (a tenant may reuse a name another tenant — or the global tier —
+        // already uses; names are not restricted). Escalation via a name like ROLE_ADMIN is prevented at the
+        // authority layer: org roles contribute only their PERMISSIONS, never their name as a role authority.
+        boolean nameTaken = org == null
+                ? roles.findByNameAndOrgIdIsNull(name).isPresent()
+                : roles.findByNameAndOrgId(name, org).isPresent();
+        if (nameTaken) {
             throw new ConflictException("role '" + name + "' already exists");
-        });
+        }
 
-        Role role = new Role(name);
-        role.replacePermissions(resolvePermissions(permissionNames));
+        Role role = new Role(name, org);
+        role.replacePermissions(resolvePermissions(permissionNames, org));
 
         return roles.save(role);
     }
@@ -131,13 +147,16 @@ public class RoleServiceImpl implements RoleService {
                 throw new ConflictException("system role '" + role.getName() + "' cannot be renamed");
             }
             validateRoleName(name);
-            roles.findByName(name).ifPresent(existing -> {
+            boolean taken = role.getOrgId() == null
+                    ? roles.findByNameAndOrgIdIsNull(name).isPresent()
+                    : roles.findByNameAndOrgId(name, role.getOrgId()).isPresent();
+            if (taken) {
                 throw new ConflictException("role '" + name + "' already exists");
-            });
+            }
             role.rename(name);
         }
 
-        role.replacePermissions(resolvePermissions(permissionNames));
+        role.replacePermissions(resolvePermissions(permissionNames, role.getOrgId()));
 
         // A rename changes the emitted role-name authority and a permission edit changes granted
         // permissions, so end every holder's sessions to shed the now-stale authorities.
@@ -186,11 +205,18 @@ public class RoleServiceImpl implements RoleService {
 
     /**
      * Resolves catalog permission names to (get-or-created) entities; rejects unknown names (400) and any
-     * permission the current actor may not grant (403). The grant guard is the AUTHORITATIVE control that a
-     * tenant (org) admin cannot bundle a platform-only permission into a role and escalate — it covers every
-     * caller (admin console, SCIM, future), unlike a controller-only check.
+     * permission not permitted here (403). Two authoritative, caller-independent guards (admin console, SCIM,
+     * future):
+     * <ul>
+     *   <li>a TENANT (org-scoped, {@code roleOrg != null}) role may NEVER carry a platform-only permission —
+     *       structurally, regardless of who creates it (a super drilled into that org included), because a
+     *       role's permissions are granted verbatim to its holders and a platform permission crosses tenant
+     *       boundaries;</li>
+     *   <li>a GLOBAL role falls back to the actor policy ({@link PermissionGrantPolicy}) — only an unscoped
+     *       super may put a platform permission in a global role.</li>
+     * </ul>
      */
-    private Set<Permission> resolvePermissions(Set<String> names) {
+    private Set<Permission> resolvePermissions(Set<String> names, UUID roleOrg) {
         if (names == null || names.isEmpty()) {
             return Set.of();
         }
@@ -199,7 +225,8 @@ public class RoleServiceImpl implements RoleService {
             if (!CATALOG.contains(name)) {
                 throw new BadRequestException("unknown permission: " + name);
             }
-            if (!grantPolicy.mayGrant(name)) {
+            boolean permitted = roleOrg != null ? !Permissions.isPlatform(name) : grantPolicy.mayGrant(name);
+            if (!permitted) {
                 throw new ForbiddenException("not permitted to grant permission: " + name);
             }
             return permissions.findByName(name).orElseGet(() -> permissions.save(new Permission(name)));

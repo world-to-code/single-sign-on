@@ -313,7 +313,9 @@ public class UserServiceImpl implements UserService {
      * never plant a role whose name collides with a reserved authority (e.g. MFA_COMPLETE, key:rotate).
      */
     private Role requireRole(String name) {
-        return roles.findByName(name).orElseThrow(() -> new BadRequestException("unknown role: " + name));
+        // Users are assigned GLOBAL roles by name; tenant (org) roles are assigned by id via the role builder.
+        return roles.findByNameAndOrgIdIsNull(name)
+                .orElseThrow(() -> new BadRequestException("unknown role: " + name));
     }
 
     /**
