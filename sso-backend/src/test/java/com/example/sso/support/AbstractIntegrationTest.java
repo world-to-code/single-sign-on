@@ -1,10 +1,15 @@
 package com.example.sso.support;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.testcontainers.containers.GenericContainer;
@@ -40,6 +45,20 @@ public abstract class AbstractIntegrationTest {
     protected static Cookie sessionCookie(MvcResult result, Cookie fallback) {
         Cookie set = result.getResponse().getCookie(SESSION_COOKIE);
         return set != null ? set : fallback;
+    }
+
+    /** Slug of the org the {@code DataSeeder} bootstraps every deployment (and every existing user) into. */
+    public static final String DEFAULT_ORG_SLUG = "default";
+
+    /**
+     * Tenant-first entry: stash the seeded {@link #DEFAULT_ORG_SLUG default org} in a fresh session and
+     * return its {@code SESSION} cookie, which the caller carries into identify/login. Login now refuses to
+     * proceed without a resolved org, so login-based ITs resolve one here first.
+     */
+    protected Cookie resolveDefaultOrg(MockMvc mvc) throws Exception {
+        return sessionCookie(mvc.perform(post("/api/auth/organization").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"slug\":\"" + DEFAULT_ORG_SLUG + "\"}"))
+                .andReturn(), null);
     }
 
     // Testcontainers 2.x: org.testcontainers.postgresql.PostgreSQLContainer is non-generic.

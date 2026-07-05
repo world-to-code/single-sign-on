@@ -3,6 +3,7 @@ package com.example.sso.admin;
 import com.example.sso.mfa.MfaService;
 import com.example.sso.mfa.TotpEnrollment;
 import com.example.sso.mfa.internal.application.TotpService;
+import com.example.sso.organization.OrganizationService;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.UserAccount;
@@ -33,6 +34,8 @@ class AdminAuthzIT extends AbstractIntegrationTest {
     @Autowired
     UserService userService;
     @Autowired
+    OrganizationService organizations;
+    @Autowired
     MfaService mfaService;
     @Autowired
     TotpService totpService;
@@ -42,14 +45,16 @@ class AdminAuthzIT extends AbstractIntegrationTest {
         UserAccount user = userService.createUser(new NewUser("plainuser", "plain@example.com", "Plain",
                 "pw-plain-1!", Set.of("ROLE_USER")));
         userService.markEmailVerified(user.getId());
+        organizations.addMember(organizations.findBySlug(DEFAULT_ORG_SLUG).orElseThrow().getId(), user.getId());
         TotpEnrollment enrollment = mfaService.newEnrollment(user);
         mfaService.confirmEnrollment(user, enrollment.secret(),
                 totpService.generateCodeAt(enrollment.secret(), System.currentTimeMillis() - 30_000));
 
-        Cookie session = sessionCookie(mvc.perform(post("/api/auth/login").with(csrf())
+        Cookie org = resolveDefaultOrg(mvc);
+        Cookie session = sessionCookie(mvc.perform(post("/api/auth/login").cookie(org).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"plainuser\",\"password\":\"pw-plain-1!\"}"))
-                .andReturn(), null);
+                .andReturn(), org);
         session = sessionCookie(mvc.perform(post("/api/auth/factors/TOTP/verify").cookie(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"code\":\"" + totpService.generateCurrentCode(enrollment.secret()) + "\"}"))

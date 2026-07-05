@@ -95,6 +95,31 @@ class TenantLoginIT extends AbstractIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void theOrgCannotBeReselectedAfterIdentify() throws Exception {
+        String s = UUID.randomUUID().toString().substring(0, 8);
+        String slug = "pin-" + s;
+        UUID orgId = organizations.create(new NewOrganization(slug, "Pin")).id();
+        UserAccount member = newUser("pin-" + s);
+        organizations.addMember(orgId, member.getId());
+        cleanups.add(() -> organizations.delete(orgId));
+
+        Cookie session = sessionCookie(mvc.perform(post("/api/auth/organization").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"slug\":\"" + slug + "\"}"))
+                .andReturn(), null);
+        session = sessionCookie(mvc.perform(post("/api/auth/identify").cookie(session).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"pin-" + s + "@example.com\"}"))
+                .andExpect(status().isOk())
+                .andReturn(), session);
+
+        // Once identified (membership verified against this org), re-selecting an org is refused — a member
+        // of this org cannot switch the session to another org that login completion would then bind.
+        mvc.perform(post("/api/auth/organization").cookie(session).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"slug\":\"" + slug + "\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
     private UserAccount newUser(String username) {
         UserAccount user = users.createUser(new NewUser(username, username + "@example.com", username,
                 "pw-tenant-1!", Set.of("ROLE_USER")));

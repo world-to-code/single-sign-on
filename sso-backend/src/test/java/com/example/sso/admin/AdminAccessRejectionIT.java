@@ -3,6 +3,7 @@ package com.example.sso.admin;
 import com.example.sso.mfa.MfaService;
 import com.example.sso.mfa.TotpEnrollment;
 import com.example.sso.mfa.internal.application.TotpService;
+import com.example.sso.organization.OrganizationService;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.UserAccount;
@@ -44,6 +45,8 @@ class AdminAccessRejectionIT extends AbstractIntegrationTest {
     MockMvc mvc;
     @Autowired
     UserService userService;
+    @Autowired
+    OrganizationService organizations;
     @Autowired
     MfaService mfaService;
     @Autowired
@@ -100,10 +103,11 @@ class AdminAccessRejectionIT extends AbstractIntegrationTest {
     // --- session builders (real login + MFA flow) ---
 
     private Cookie login(String username) throws Exception {
-        return sessionCookie(mvc.perform(post("/api/auth/login").with(csrf())
+        Cookie org = resolveDefaultOrg(mvc);
+        return sessionCookie(mvc.perform(post("/api/auth/login").cookie(org).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"" + username + "\",\"password\":\"pw-neg-1!\"}"))
-                .andReturn(), null);
+                .andReturn(), org);
     }
 
     private Cookie mfaSession(String username) throws Exception {
@@ -125,6 +129,7 @@ class AdminAccessRejectionIT extends AbstractIntegrationTest {
         UserAccount user = userService.createUser(new NewUser(username, username + "@example.com", username,
                 "pw-neg-1!", Set.of("ROLE_USER")));
         userService.markEmailVerified(user.getId());
+        organizations.addMember(organizations.findBySlug(DEFAULT_ORG_SLUG).orElseThrow().getId(), user.getId());
         return user;
     }
 

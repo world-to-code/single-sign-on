@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -59,12 +60,25 @@ public class AuthenticationService {
         return authState.describe(currentUser.authentication(), preAuthOrg.orgSlug(request).orElse(null));
     }
 
+    /** Whether an account has already been identified in this session (a pre-auth principal is established). */
+    private boolean identified() {
+        Authentication auth = currentUser.authentication();
+        return auth != null && auth.isAuthenticated()
+                && !(auth instanceof AnonymousAuthenticationToken) && auth.getName() != null;
+    }
+
     /**
      * Tenant-first entry: resolve the organization by slug and stash it in the pre-auth session, so the
      * subsequent identify step is scoped to it. An unknown or suspended org is rejected the same way (no
      * enumeration of which tenants exist / are active).
      */
     public AuthSessionView organization(String slug, HttpServletRequest request, HttpServletResponse response) {
+        // Pin the org once an account has been identified: identify verifies membership against the stashed
+        // org, so allowing a later re-selection would let a member of A switch the session to B (which login
+        // completion then binds) without a membership check — a cross-tenant escape.
+        if (identified()) {
+            throw new BadRequestException("Sign-in is already in progress; restart to change organization.");
+        }
         OrganizationRef org = organizations.findBySlug(slug)
                 .filter(o -> o.getStatus() == OrganizationStatus.ACTIVE)
                 .orElseThrow(() -> new NotFoundException("No such organization."));
@@ -100,9 +114,17 @@ public class AuthenticationService {
     /** Password sign-in; the password provider grants the password factor. Bad credentials → 401. */
     public AuthSessionView login(String username, String password, HttpServletRequest httpRequest,
                                  HttpServletResponse httpResponse) {
+        UUID orgId = requireResolvedOrg(httpRequest);
         try {
             Authentication authentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(username, password));
+            // Tenant-first: the account must belong to the resolved org. Reject a non-member the same way
+            // as bad credentials, so login can neither bypass org selection nor cross into another tenant.
+            if (!isMemberOf(orgId, username)) {
+                loginAttempts.onFailure(username);
+                audit.record(new AuditRecord(AuditType.AUTH_FAILURE, username, false, "not a member of the org", null));
+                throw new UnauthorizedException();
+            }
             factorAuth.establish(httpRequest, httpResponse, authentication);
 
             loginAttempts.onSuccess(username);
@@ -113,6 +135,16 @@ public class AuthenticationService {
             audit.record(new AuditRecord(AuditType.AUTH_FAILURE, username, false, e.getMessage(), null));
             throw new UnauthorizedException();
         }
+    }
+
+    /** The org resolved at the tenant-first entry step; sign-in is refused without one. */
+    private UUID requireResolvedOrg(HttpServletRequest request) {
+        return preAuthOrg.orgId(request)
+                .orElseThrow(() -> new BadRequestException("Select an organization first."));
+    }
+
+    private boolean isMemberOf(UUID orgId, String username) {
+        return users.findByLogin(username).map(u -> organizations.isMember(orgId, u.getId())).orElse(false);
     }
 
     /**
@@ -146,6 +178,13 @@ public class AuthenticationService {
     public AuthSessionView complete(HttpServletRequest request, HttpServletResponse response) {
         Authentication authentication = currentUser.authentication();
         if (authentication != null && authentication.isAuthenticated()) {
+            // Tenant-first applies to passwordless passkey login too: the passkey authenticates the user, but
+            // the session must not finalize without a resolved org they belong to (else login bypasses org
+            // selection via /login/webauthn). Reject a non-member the same way as any failed sign-in.
+            UUID orgId = requireResolvedOrg(request);
+            if (!isMemberOf(orgId, authentication.getName())) {
+                throw new UnauthorizedException();
+            }
             boolean hasFido2 = authentication.getAuthorities().stream()
                     .map(GrantedAuthority::getAuthority).anyMatch(Factors.FIDO2::equals);
             if (authentication instanceof WebAuthnAuthentication && !hasFido2) {

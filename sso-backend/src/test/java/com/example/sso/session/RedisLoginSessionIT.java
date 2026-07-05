@@ -4,6 +4,7 @@ import com.example.sso.authpolicy.Factors;
 import com.example.sso.mfa.MfaService;
 import com.example.sso.mfa.TotpEnrollment;
 import com.example.sso.mfa.internal.application.TotpService;
+import com.example.sso.organization.OrganizationService;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.UserAccount;
@@ -44,6 +45,8 @@ class RedisLoginSessionIT extends AbstractIntegrationTest {
     @Autowired
     UserService userService;
     @Autowired
+    OrganizationService organizations;
+    @Autowired
     MfaService mfaService;
     @Autowired
     TotpService totpService;
@@ -54,15 +57,17 @@ class RedisLoginSessionIT extends AbstractIntegrationTest {
         UserAccount user = userService.createUser(new NewUser(username, username + "@example.com", username,
                 "pw-redis-1!", Set.of("ROLE_USER")));
         userService.markEmailVerified(user.getId());
+        organizations.addMember(organizations.findBySlug(DEFAULT_ORG_SLUG).orElseThrow().getId(), user.getId());
         TotpEnrollment enrollment = mfaService.newEnrollment(user);
         mfaService.confirmEnrollment(user, enrollment.secret(),
                 totpService.generateCodeAt(enrollment.secret(), System.currentTimeMillis() - 30_000));
 
-        Cookie session = sessionCookie(mvc.perform(post("/api/auth/login").with(csrf())
+        Cookie org = resolveDefaultOrg(mvc);
+        Cookie session = sessionCookie(mvc.perform(post("/api/auth/login").cookie(org).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"" + username + "\",\"password\":\"pw-redis-1!\"}"))
                 .andExpect(status().isOk())
-                .andReturn(), null);
+                .andReturn(), org);
         mvc.perform(post("/api/auth/factors/TOTP/verify").cookie(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"code\":\"" + totpService.generateCurrentCode(enrollment.secret()) + "\"}"))

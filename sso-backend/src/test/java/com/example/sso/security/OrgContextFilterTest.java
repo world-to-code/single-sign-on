@@ -39,7 +39,7 @@ class OrgContextFilterTest {
 
     @Test
     void aSuperAdminGetsThePlatformContext() throws Exception {
-        authenticate("admin", Roles.ADMIN, Factors.ORG_PREFIX + UUID.randomUUID());
+        authenticate("admin", Roles.ADMIN, Factors.MFA_COMPLETE, Factors.ORG_PREFIX + UUID.randomUUID());
 
         filter.doFilter(request, response, chain);
 
@@ -52,7 +52,7 @@ class OrgContextFilterTest {
     @Test
     void aRegularUserIsBoundToTheirLoginOrg() throws Exception {
         UUID org = UUID.randomUUID();
-        authenticate("bob", "ROLE_USER", Factors.ORG_PREFIX + org);
+        authenticate("bob", "ROLE_USER", Factors.MFA_COMPLETE, Factors.ORG_PREFIX + org);
 
         filter.doFilter(request, response, chain);
 
@@ -72,13 +72,25 @@ class OrgContextFilterTest {
     }
 
     @Test
-    void anAuthenticatedRequestWithNoOrgMarkerBindsNothing() throws Exception {
-        authenticate("bob", "ROLE_USER");
+    void aFullyAuthenticatedSessionWithNoOrgMarkerBindsNothing() throws Exception {
+        authenticate("bob", "ROLE_USER", Factors.MFA_COMPLETE);
 
         filter.doFilter(request, response, chain);
 
         verify(orgContext, never()).bindOrg(any());
         verify(orgContext, never()).enterPlatform();
+        verify(orgContext, never()).clear();
+    }
+
+    @Test
+    void aPreMfaSessionBindsNothingEvenForAnAdmin() throws Exception {
+        // password step passed (carries ROLE_ADMIN) but MFA not complete -> no platform/tenant binding.
+        authenticate("admin", Roles.ADMIN, Factors.ORG_PREFIX + UUID.randomUUID());
+
+        filter.doFilter(request, response, chain);
+
+        verify(orgContext, never()).enterPlatform();
+        verify(orgContext, never()).bindOrg(any());
         verify(orgContext, never()).clear();
     }
 

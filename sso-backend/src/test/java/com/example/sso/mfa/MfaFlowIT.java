@@ -1,6 +1,7 @@
 package com.example.sso.mfa;
 
 import com.example.sso.mfa.internal.application.TotpService;
+import com.example.sso.organization.OrganizationService;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.UserAccount;
@@ -14,6 +15,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.util.Set;
+import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -34,16 +36,20 @@ class MfaFlowIT extends AbstractIntegrationTest {
     @Autowired
     UserService userService;
     @Autowired
+    OrganizationService organizations;
+    @Autowired
     MfaService mfaService;
     @Autowired
     TotpService totpService;
 
     @Test
     void defaultPolicyRequiresTotpAfterPassword() throws Exception {
-        userService.createUser(new NewUser("mfa-new", "mfa-new@example.com", "New", "pw-new-12!",
-                Set.of("ROLE_USER")));
+        UserAccount user = userService.createUser(new NewUser("mfa-new", "mfa-new@example.com", "New",
+                "pw-new-12!", Set.of("ROLE_USER")));
+        joinDefault(user.getId());
+        Cookie org = resolveDefaultOrg(mvc);
 
-        mvc.perform(login("mfa-new", "pw-new-12!"))
+        mvc.perform(login(org, "mfa-new", "pw-new-12!"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.next").value("FACTOR"))
                 .andExpect(jsonPath("$.pendingFactors[0]").value("TOTP"));
@@ -53,14 +59,16 @@ class MfaFlowIT extends AbstractIntegrationTest {
     void completingTotpReachesFullyAuthenticated() throws Exception {
         UserAccount user = userService.createUser(new NewUser("mfa-ok", "mfa-ok@example.com", "Ok", "pw-ok-12!",
                 Set.of("ROLE_USER")));
+        joinDefault(user.getId());
         TotpEnrollment enrollment = mfaService.newEnrollment(user);
         mfaService.confirmEnrollment(user, enrollment.secret(),
                 totpService.generateCodeAt(enrollment.secret(), System.currentTimeMillis() - 30_000));
 
-        Cookie session = sessionCookie(mvc.perform(login("mfa-ok", "pw-ok-12!"))
+        Cookie org = resolveDefaultOrg(mvc);
+        Cookie session = sessionCookie(mvc.perform(login(org, "mfa-ok", "pw-ok-12!"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.next").value("FACTOR"))
-                .andReturn(), null);
+                .andReturn(), org);
 
         // Policy not satisfied yet -> protected API forbidden.
         mvc.perform(get("/api/me").cookie(session)).andExpect(status().isForbidden());
@@ -78,9 +86,13 @@ class MfaFlowIT extends AbstractIntegrationTest {
         mvc.perform(get("/api/me").cookie(session)).andExpect(status().isOk());
     }
 
-    private MockHttpServletRequestBuilder login(String user, String password) {
-        return post("/api/auth/login").with(csrf())
+    private MockHttpServletRequestBuilder login(Cookie org, String user, String password) {
+        return post("/api/auth/login").cookie(org).with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"username\":\"" + user + "\",\"password\":\"" + password + "\"}");
+    }
+
+    private void joinDefault(UUID userId) {
+        organizations.addMember(organizations.findBySlug(DEFAULT_ORG_SLUG).orElseThrow().getId(), userId);
     }
 }
