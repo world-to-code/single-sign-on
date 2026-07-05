@@ -1,9 +1,11 @@
 package com.example.sso.admin.internal.client.domain;
 
+import com.example.sso.tenancy.OrgOwned;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -18,11 +20,15 @@ import lombok.NoArgsConstructor;
 @Table(name = "oauth2_registered_client")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
-public class OAuth2RegisteredClientEntity {
+public class OAuth2RegisteredClientEntity implements OrgOwned {
 
     @Id
     @Column(length = 100)
     private String id;
+
+    /** The owning tenant (null = a global/platform client); stamped on registration (V49). */
+    @Column(name = "org_id")
+    private UUID orgId;
 
     @Column(name = "client_id", nullable = false, length = 100)
     private String clientId;

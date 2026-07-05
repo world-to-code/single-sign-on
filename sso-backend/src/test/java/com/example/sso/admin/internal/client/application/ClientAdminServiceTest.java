@@ -6,6 +6,9 @@ import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.portal.ApplicationDeletedEvent;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.tenancy.OrgContext;
+import com.example.sso.tenancy.OrgTierGuard;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
@@ -42,7 +45,10 @@ class ClientAdminServiceTest {
         passwordEncoder = mock(PasswordEncoder.class);
         clientRows = mock(OAuth2RegisteredClientRepository.class);
         events = mock(ApplicationEventPublisher.class);
-        service = new ClientAdminService(registeredClients, passwordEncoder, clientRows, events);
+        OrgContext orgContext = mock(OrgContext.class);
+        when(orgContext.currentOrg()).thenReturn(Optional.<UUID>empty()); // platform tier — the test clients are global
+        service = new ClientAdminService(registeredClients, passwordEncoder, clientRows,
+                new OrgTierGuard(orgContext), events);
     }
 
     @Test

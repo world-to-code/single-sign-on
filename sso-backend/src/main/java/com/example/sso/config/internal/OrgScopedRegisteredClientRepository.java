@@ -36,9 +36,9 @@ public class OrgScopedRegisteredClientRepository implements RegisteredClientRepo
     @Override
     public void save(RegisteredClient registeredClient) {
         delegate.save(registeredClient);
-        // Stamp the client with the acting tenant (null = a global/platform client). A client is thus always
-        // owned by whichever context created it and can only be used under that tenant's host.
-        jdbc.update("update oauth2_registered_client set org_id = ? where id = ?",
+        // Stamp the owning tenant ONLY on first insert (org_id still null) — never re-assign an existing
+        // client's tenant on a later update, which would silently move it to another org / the global tier.
+        jdbc.update("update oauth2_registered_client set org_id = ? where id = ? and org_id is null",
                 orgContext.currentOrg().orElse(null), registeredClient.getId());
     }
 

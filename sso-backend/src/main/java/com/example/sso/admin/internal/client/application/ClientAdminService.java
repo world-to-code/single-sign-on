@@ -11,6 +11,7 @@ import static org.springframework.security.oauth2.jose.jws.SignatureAlgorithm.RS
 
 import com.example.sso.admin.internal.client.domain.OAuth2RegisteredClientEntity;
 import com.example.sso.admin.internal.client.domain.OAuth2RegisteredClientRepository;
+import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.oidc.BackChannelLogout;
 import com.example.sso.portal.ApplicationDeletedEvent;
@@ -67,14 +68,17 @@ public class ClientAdminService {
     private final RegisteredClientRepository registeredClients;
     private final PasswordEncoder passwordEncoder;
     private final OAuth2RegisteredClientRepository clientRows;
+    private final OrgTierGuard tierGuard;
     private final ApplicationEventPublisher events;
 
     @Transactional(readOnly = true)
     public List<ClientView> listClients() {
-        return clientRows.findAll()
-                .stream()
-                .map(ClientView::of)
-                .toList();
+        // Scope to the acting tier: the platform admin (no org bound) sees global clients; a super-admin
+        // drilled into an org (or a tenant admin) sees only that org's clients — never another tenant's.
+        UUID org = tierGuard.currentTier();
+        List<OAuth2RegisteredClientEntity> rows =
+                org == null ? clientRows.findAllByOrgIdIsNull() : clientRows.findAllByOrgId(org);
+        return rows.stream().map(ClientView::of).toList();
     }
 
     public Page<ClientView> listClients(int page, int size) {
@@ -151,8 +155,10 @@ public class ClientAdminService {
 
     @Transactional
     public void deleteClient(String id) {
-        OAuth2RegisteredClientEntity client = clientRows.findById(id)
-                .orElseThrow(() -> new NotFoundException("Client not found"));
+        // Only a client in the actor's tier may be deleted — a super-admin drilled into org A cannot delete
+        // another tenant's (or a global) client; mismatch → 404 (non-revealing).
+        OAuth2RegisteredClientEntity client =
+                tierGuard.requireInTier(clientRows.findById(id), () -> new NotFoundException("Client not found"));
 
         // The first-party admin console is a fixed part of the platform (auto-assigned to admins,
         // launches /admin); it is protected from deletion so the admin entry point can't be removed.
