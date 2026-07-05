@@ -7,6 +7,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import com.example.sso.portal.AppType;
+import com.example.sso.tenancy.OrgOwned;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -17,7 +18,7 @@ import lombok.NoArgsConstructor;
 @Table(name = "app_assignment")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class AppAssignment extends AuditedEntity {
+public class AppAssignment extends AuditedEntity implements OrgOwned {
 
     public enum SubjectType { USER, ROLE, GROUP }
 
@@ -39,11 +40,23 @@ public class AppAssignment extends AuditedEntity {
     @Column(name = "required_policy_id")
     private UUID requiredPolicyId;
 
-    public AppAssignment(AppType appType, String appId, SubjectType subjectType, UUID subjectId, UUID requiredPolicyId) {
+    /** Owning tenant, or {@code null} for a GLOBAL assignment (e.g. the seeded admin-console grant) that
+     *  applies across tenants; RLS confines an org assignment to its tenant's users (see {@code V53}). */
+    @Column(name = "org_id")
+    private UUID orgId;
+
+    public AppAssignment(AppType appType, String appId, SubjectType subjectType, UUID subjectId,
+            UUID requiredPolicyId, UUID orgId) {
         this.appType = appType;
         this.appId = appId;
         this.subjectType = subjectType;
         this.subjectId = subjectId;
         this.requiredPolicyId = requiredPolicyId;
+        this.orgId = orgId;
+    }
+
+    /** GLOBAL assignment (no owning tenant) — used by the admin-console seeder. */
+    public AppAssignment(AppType appType, String appId, SubjectType subjectType, UUID subjectId, UUID requiredPolicyId) {
+        this(appType, appId, subjectType, subjectId, requiredPolicyId, null);
     }
 }

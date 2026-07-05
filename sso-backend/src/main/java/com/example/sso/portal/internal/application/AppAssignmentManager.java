@@ -9,6 +9,7 @@ import com.example.sso.portal.internal.domain.AppAssignment.SubjectType;
 import com.example.sso.portal.internal.domain.AppAssignmentRepository;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.RoleService;
 import com.example.sso.user.UserAccount;
@@ -43,6 +44,7 @@ class AppAssignmentManager {
     private final RoleService roles;
     private final UserGroupService userGroups;
     private final AppCatalog catalog;
+    private final OrgTierGuard tierGuard;
 
     @Transactional(readOnly = true)
     List<ApplicationView> appsForUser(UserAccount user) {
@@ -114,7 +116,8 @@ class AppAssignmentManager {
 
         UUID policyId = request.requiredPolicyId() == null || request.requiredPolicyId().isBlank()
                 ? null : UUID.fromString(request.requiredPolicyId());
-        AppAssignment saved = assignments.save(new AppAssignment(appType, request.appId(), subjectType, subjectId, policyId));
+        AppAssignment saved = assignments.save(new AppAssignment(appType, request.appId(), subjectType, subjectId,
+                policyId, tierGuard.currentTier())); // stamp the acting admin's tier so it applies only in-org
         ApplicationView app = catalog.index().get(AppKey.of(appType, request.appId()));
         String appName = app == null ? request.appId() : app.name();
 
@@ -123,10 +126,12 @@ class AppAssignmentManager {
 
     @Transactional
     void unassign(UUID assignmentId) {
-        if (!assignments.existsById(assignmentId)) {
-            throw new NotFoundException("assignment not found");
-        }
-        assignments.deleteById(assignmentId);
+        // Tier-check in code: RLS lets any context READ a global row, so confirm the row is in the caller's
+        // tier before deleting (a tenant admin cannot remove a global or another tenant's assignment) — a
+        // non-revealing 404 on mismatch, not disclosing that the assignment exists.
+        AppAssignment assignment = tierGuard.requireInTier(assignments.findById(assignmentId),
+                () -> new NotFoundException("assignment not found"));
+        assignments.delete(assignment);
     }
 
     /** Resolves subject (user/role) display names for a batch of assignments in two queries, not per-row. */

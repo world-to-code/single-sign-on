@@ -19,8 +19,11 @@ import org.springframework.stereotype.Service;
  * filters the app list and gates every by-app read/mutation to the acting admin's resource subtree
  * (super admin bypasses). Two deliberate non-confinements: {@code assign} scopes the app but not the
  * SUBJECT (an app owner may grant it to any principal), and {@code unassign} carries only the assignment
- * id (gated by super-tier {@code app-assignment:unassign}) — per-assignment scoping awaits a portal
- * assignment→app lookup.
+ * id — it is now org-tier confined in the portal ({@code OrgTierGuard.requireInTier}, so a tenant admin
+ * can only remove its OWN org's assignments), but not yet resource-subtree confined WITHIN a tenant.
+ * Since {@code app-assignment:unassign} became tenant-grantable, two delegated admins in one org with
+ * disjoint subtrees can each remove the other's assignment; closing that needs a portal assignment→app
+ * lookup to gate {@code unassign} through {@code requireAccess} like {@code assign} (tracked follow-up).
  */
 @Service
 @RequiredArgsConstructor

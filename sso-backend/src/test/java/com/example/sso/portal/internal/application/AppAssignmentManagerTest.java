@@ -10,6 +10,8 @@ import com.example.sso.portal.internal.domain.AppAssignmentRepository;
 import com.example.sso.shared.IdName;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.tenancy.OrgContext;
+import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.RoleService;
 import com.example.sso.user.UserAccount;
@@ -21,6 +23,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -29,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -49,6 +53,7 @@ class AppAssignmentManagerTest {
     private RoleService roles;
     private UserGroupService userGroups;
     private AppCatalog catalog;
+    private OrgContext orgContext;
     private AppAssignmentManager manager;
 
     @BeforeEach
@@ -58,7 +63,10 @@ class AppAssignmentManagerTest {
         roles = mock(RoleService.class);
         userGroups = mock(UserGroupService.class);
         catalog = mock(AppCatalog.class);
-        manager = new AppAssignmentManager(assignments, users, roles, userGroups, catalog);
+        orgContext = mock(OrgContext.class);
+        lenient().when(orgContext.currentOrg()).thenReturn(Optional.empty()); // platform/global tier by default
+        // REAL guard over the mocked context so tier-ownership logic is exercised, not stubbed.
+        manager = new AppAssignmentManager(assignments, users, roles, userGroups, catalog, new OrgTierGuard(orgContext));
     }
 
     // --- hasAssignment ---
@@ -140,6 +148,7 @@ class AppAssignmentManagerTest {
         assertThat(built.getValue().getSubjectType()).isEqualTo(SubjectType.USER);
         assertThat(built.getValue().getSubjectId()).isEqualTo(subjectId);
         assertThat(built.getValue().getRequiredPolicyId()).isNull();
+        assertThat(built.getValue().getOrgId()).isNull(); // platform tier -> a global assignment
         assertThat(view.id()).isEqualTo(assignmentId.toString());
         assertThat(view.appType()).isEqualTo("OIDC");
         assertThat(view.subjectType()).isEqualTo("USER");
@@ -169,6 +178,27 @@ class AppAssignmentManagerTest {
     }
 
     @Test
+    void assignStampsTheCallersTierOntoTheAssignment() {
+        UUID orgA = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        AssignAppRequest request = new AssignAppRequest("OIDC", APP_ID, "ROLE", subjectId.toString(), null);
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgA));
+        when(assignments.existsByAppTypeAndAppIdAndSubjectTypeAndSubjectId(
+                APP_TYPE, APP_ID, SubjectType.ROLE, subjectId)).thenReturn(false);
+        AppAssignment saved = assignment(SubjectType.ROLE, subjectId);
+        IdName admins = idName(subjectId, "admins");
+        when(assignments.save(any(AppAssignment.class))).thenReturn(saved);
+        when(roles.idNames(any())).thenReturn(List.of(admins));
+        when(catalog.index()).thenReturn(Map.of());
+
+        manager.assign(request);
+
+        ArgumentCaptor<AppAssignment> built = ArgumentCaptor.forClass(AppAssignment.class);
+        verify(assignments).save(built.capture());
+        assertThat(built.getValue().getOrgId()).isEqualTo(orgA); // tenant tier -> confined to that org
+    }
+
+    @Test
     void assignRejectsADuplicate() {
         UUID subjectId = UUID.randomUUID();
         AssignAppRequest request = new AssignAppRequest("OIDC", APP_ID, "USER", subjectId.toString(), null);
@@ -180,22 +210,37 @@ class AppAssignmentManagerTest {
     }
 
     @Test
-    void unassignDeletesAnExistingAssignment() {
+    void unassignDeletesAnInTierAssignment() {
         UUID id = UUID.randomUUID();
-        when(assignments.existsById(id)).thenReturn(true);
+        AppAssignment assignment = assignment(SubjectType.USER, UUID.randomUUID()); // global (orgId null) == null tier
+        when(assignments.findById(id)).thenReturn(Optional.of(assignment));
 
         manager.unassign(id);
 
-        verify(assignments).deleteById(id);
+        verify(assignments).delete(assignment);
     }
 
     @Test
     void unassignRejectsAMissingAssignment() {
         UUID id = UUID.randomUUID();
-        when(assignments.existsById(id)).thenReturn(false);
+        when(assignments.findById(id)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> manager.unassign(id)).isInstanceOf(NotFoundException.class);
-        verify(assignments, never()).deleteById(any(UUID.class));
+        verify(assignments, never()).delete(any(AppAssignment.class));
+    }
+
+    @Test
+    void unassignRefusesAnotherTenantsAssignmentAsNotFound() {
+        UUID id = UUID.randomUUID();
+        UUID orgA = UUID.randomUUID();
+        UUID orgB = UUID.randomUUID();
+        AppAssignment other = mock(AppAssignment.class);
+        when(other.getOrgId()).thenReturn(orgB);
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgA));
+        when(assignments.findById(id)).thenReturn(Optional.of(other));
+
+        assertThatThrownBy(() -> manager.unassign(id)).isInstanceOf(NotFoundException.class);
+        verify(assignments, never()).delete(any(AppAssignment.class));
     }
 
     // --- reverse-lookup projections ---

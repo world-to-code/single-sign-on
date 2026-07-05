@@ -65,12 +65,14 @@ class PermissionsTest {
         assertThat(Permissions.PLATFORM).contains(
                 Permissions.ORG_CREATE, Permissions.PORTAL_SETTINGS_UPDATE,
                 Permissions.SCIM_MANAGE, Permissions.AUDIT_READ, Permissions.CLIENT_CREATE,
-                Permissions.APP_ASSIGNMENT_ASSIGN, Permissions.RESOURCE_ASSIGN_ADMIN);
-        // the directory + policy domain a tenant admin owns is NOT platform; SAML RPs are now org-scoped too
+                Permissions.RESOURCE_ASSIGN_ADMIN);
+        // the directory + policy domain a tenant admin owns is NOT platform; SAML RPs and app assignments
+        // are now org-scoped too
         assertThat(Permissions.PLATFORM).doesNotContain(
                 Permissions.USER_READ, Permissions.GROUP_CREATE, Permissions.ROLE_CREATE,
                 Permissions.POLICY_READ, Permissions.SESSION_POLICY_READ, Permissions.NETWORK_ZONE_READ,
-                Permissions.SAML_CREATE, Permissions.ORG_READ, Permissions.ORG_MEMBER_MANAGE);
+                Permissions.SAML_CREATE, Permissions.APP_ASSIGNMENT_ASSIGN,
+                Permissions.ORG_READ, Permissions.ORG_MEMBER_MANAGE);
     }
 
     @Test
