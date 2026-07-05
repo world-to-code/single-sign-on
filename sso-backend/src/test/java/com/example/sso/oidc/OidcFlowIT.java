@@ -1,6 +1,8 @@
 package com.example.sso.oidc;
 
+import com.example.sso.organization.OrganizationService;
 import com.example.sso.support.AbstractIntegrationTest;
+import com.example.sso.tenancy.OrgContext;
 import com.nimbusds.jwt.SignedJWT;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,32 +36,55 @@ class OidcFlowIT extends AbstractIntegrationTest {
     private static final String CLIENT_ID = "test-client";
     private static final String CLIENT_SECRET = "test-secret";
 
+    private static final String TENANT_CLIENT_ID = "tenant-client";
+
     @Autowired
     MockMvc mvc;
     @Autowired
     RegisteredClientRepository clients;
     @Autowired
     PasswordEncoder passwordEncoder;
+    @Autowired
+    OrgContext orgContext;
+    @Autowired
+    OrganizationService organizations;
 
     @BeforeEach
     void ensureClient() {
-        if (clients.findByClientId(CLIENT_ID) == null) {
-            clients.save(RegisteredClient.withId(UUID.randomUUID().toString())
-                    .clientId(CLIENT_ID)
-                    .clientSecret(passwordEncoder.encode(CLIENT_SECRET))
-                    .clientName("Test Client")
-                    .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-                    .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
-                    .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                    .redirectUri("http://127.0.0.1:8080/callback")
-                    .scope(OidcScopes.OPENID)
-                    .scope(OidcScopes.PROFILE)
-                    .clientSettings(ClientSettings.builder()
-                            .requireAuthorizationConsent(false)
-                            .requireProofKey(false)
-                            .build())
-                    .build());
+        saveClient(CLIENT_ID, null); // the global/platform client (usable only under the bare host)
+    }
+
+    // Create a client owned by the given org (null = global), created within that org's context so the
+    // OrgScopedRegisteredClientRepository stamps it correctly.
+    private void saveClient(String clientId, UUID org) {
+        Runnable create = () -> {
+            if (clients.findByClientId(clientId) == null) {
+                clients.save(RegisteredClient.withId(UUID.randomUUID().toString())
+                        .clientId(clientId)
+                        .clientSecret(passwordEncoder.encode(CLIENT_SECRET))
+                        .clientName("Test Client " + clientId)
+                        .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                        .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                        .redirectUri("http://127.0.0.1:8080/callback")
+                        .scope(OidcScopes.OPENID)
+                        .scope(OidcScopes.PROFILE)
+                        .clientSettings(ClientSettings.builder()
+                                .requireAuthorizationConsent(false)
+                                .requireProofKey(false)
+                                .build())
+                        .build());
+            }
+        };
+        if (org == null) {
+            create.run();
+        } else {
+            orgContext.runInOrg(org, create);
         }
+    }
+
+    private UUID defaultOrgId() {
+        return organizations.findBySlug(DEFAULT_ORG_SLUG).orElseThrow().getId();
     }
 
     @Test
@@ -82,19 +107,42 @@ class OidcFlowIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void aTenantSubdomainHostGetsItsOwnIssuer() throws Exception {
-        // Per-tenant issuer: a request to <tenant>.<base-domain> derives that tenant's issuer, resolved from
-        // the host by TenantHostFilter (the seeded "default" org). The token is signed under that issuer.
+    void aGlobalClientCannotMintAtATenantHost() throws Exception {
+        // The global client belongs to the platform, not to a tenant — presenting its credentials at a
+        // tenant's host (where its key/issuer would be used) must be rejected, not mint a cross-tenant token.
+        mvc.perform(post("http://" + DEFAULT_ORG_SLUG + ".localhost:9000/oauth2/token")
+                        .param("grant_type", "client_credentials")
+                        .with(httpBasic(CLIENT_ID, CLIENT_SECRET)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void aTenantOwnedClientMintsUnderItsOwnIssuer() throws Exception {
+        // Per-tenant issuer + client: a client OWNED by the tenant, used at the tenant's host, mints a token
+        // whose issuer is that tenant's host.
+        saveClient(TENANT_CLIENT_ID, defaultOrgId());
+
         String response = mvc.perform(post("http://" + DEFAULT_ORG_SLUG + ".localhost:9000/oauth2/token")
                         .param("grant_type", "client_credentials")
                         .param("scope", "profile")
-                        .with(httpBasic(CLIENT_ID, CLIENT_SECRET)))
+                        .with(httpBasic(TENANT_CLIENT_ID, CLIENT_SECRET)))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
 
         SignedJWT jwt = SignedJWT.parse(extractJson(response, "access_token"));
         assertThat(jwt.getJWTClaimsSet().getIssuer()).isEqualTo("http://" + DEFAULT_ORG_SLUG + ".localhost:9000");
-        assertThat(jwt.getHeader().getKeyID()).isNotBlank(); // signed (global key fallback until the tenant has its own)
+        assertThat(jwt.getHeader().getKeyID()).isNotBlank();
+    }
+
+    @Test
+    void aTenantOwnedClientCannotMintAtTheBareHost() throws Exception {
+        // The converse: a tenant's client is not usable on the platform host either — strict per-tier binding.
+        saveClient(TENANT_CLIENT_ID, defaultOrgId());
+
+        mvc.perform(post("http://localhost:9000/oauth2/token")
+                        .param("grant_type", "client_credentials")
+                        .with(httpBasic(TENANT_CLIENT_ID, CLIENT_SECRET)))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

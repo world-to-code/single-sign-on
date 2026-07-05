@@ -137,8 +137,11 @@ public class AuthorizationServerConfig {
     }
 
     @Bean
-    RegisteredClientRepository registeredClientRepository(JdbcTemplate jdbcTemplate) {
-        return new JdbcRegisteredClientRepository(jdbcTemplate);
+    RegisteredClientRepository registeredClientRepository(JdbcTemplate jdbcTemplate, OrgContext orgContext) {
+        // Bind clients to their owning tenant so a client can only be used under its own tenant's host —
+        // the per-tenant issuer/key is otherwise selected purely by the (attacker-influenceable) host.
+        return new OrgScopedRegisteredClientRepository(
+                new JdbcRegisteredClientRepository(jdbcTemplate), orgContext, jdbcTemplate);
     }
 
     @Bean
