@@ -39,6 +39,7 @@ public class SamlSsoService {
     private final SamlResponseBuilder responseBuilder;
     private final SamlBindingCodec codec;
     private final SamlSloSessionIndex sloIndex;
+    private final SamlEntityId samlEntityId;
     private final AuditService audit;
 
     public SamlSsoOutcome process(SamlRelyingParty relyingParty, String inResponseTo, String relayState,
@@ -72,8 +73,10 @@ public class SamlSsoService {
                 .map(a -> a.substring(Factors.SID_PREFIX.length()))
                 .findFirst().orElse(null);
 
+        // The IdP entityID follows the host the SP reached, matching the tenant's own signing credential.
         Response response = responseBuilder.issueResponse(
-                relyingParty, inResponseTo, user.getEmail(), user.getDisplayName(), sid);
+                relyingParty, inResponseTo, user.getEmail(), user.getDisplayName(), sid,
+                samlEntityId.resolve(httpRequest));
         String encoded = codec.encode(response);
         if (sid != null) {
             sloIndex.record(sid, relyingParty.getEntityId(), user.getEmail());

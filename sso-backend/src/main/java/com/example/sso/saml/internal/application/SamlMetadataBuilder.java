@@ -18,7 +18,6 @@ import org.opensaml.security.x509.BasicX509Credential;
 import org.opensaml.xmlsec.keyinfo.KeyInfoGenerator;
 import org.opensaml.xmlsec.keyinfo.impl.X509KeyInfoGeneratorFactory;
 import org.opensaml.xmlsec.signature.KeyInfo;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.w3c.dom.Element;
 
@@ -32,21 +31,18 @@ import static com.example.sso.saml.internal.application.SamlObjects.build;
 public class SamlMetadataBuilder {
 
     private final SamlCredentialService credentialService;
-    private final String idpEntityId;
-    private final String ssoLocation;
-    private final String sloLocation;
 
-    public SamlMetadataBuilder(SamlCredentialService credentialService,
-                               @Value("${sso.saml.entity-id}") String idpEntityId,
-                               @Value("${sso.saml.sso-location}") String ssoLocation,
-                               @Value("${sso.saml.slo-location}") String sloLocation) {
+    public SamlMetadataBuilder(SamlCredentialService credentialService) {
         this.credentialService = credentialService;
-        this.idpEntityId = idpEntityId;
-        this.ssoLocation = ssoLocation;
-        this.sloLocation = sloLocation;
     }
 
-    public String buildMetadata() {
+    /**
+     * Builds the IdP metadata for {@code idpEntityId} (host-derived), with the SSO/SLO endpoints under it
+     * and the current tenant's signing certificate (resolved via {@link SamlCredentialService}).
+     */
+    public String buildMetadata(String idpEntityId) {
+        String ssoLocation = idpEntityId + "/sso";
+        String sloLocation = idpEntityId + "/slo";
         try {
             KeyDescriptor keyDescriptor = build(KeyDescriptor.DEFAULT_ELEMENT_NAME);
             keyDescriptor.setUse(UsageType.SIGNING);

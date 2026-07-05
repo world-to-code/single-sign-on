@@ -22,7 +22,7 @@ class SamlResponseBuilderTest {
 
     @BeforeEach
     void setUp() {
-        builder = new SamlResponseBuilder(mock(SamlSigner.class), "https://idp.example/entity", 300L);
+        builder = new SamlResponseBuilder(mock(SamlSigner.class), 300L);
     }
 
     private String invoke(String methodName, String algorithm) throws Exception {

@@ -33,15 +33,12 @@ import static com.example.sso.saml.internal.application.SamlObjects.stringAttrib
 public class SamlResponseBuilder {
 
     private final SamlSigner signer;
-    private final String idpEntityId;
     private final long validitySeconds;
     private final IdentifierGenerationStrategy idGenerator = new SecureRandomIdentifierGenerationStrategy();
 
     public SamlResponseBuilder(SamlSigner signer,
-                               @Value("${sso.saml.entity-id}") String idpEntityId,
                                @Value("${sso.saml.assertion-validity-seconds:300}") long validitySeconds) {
         this.signer = signer;
-        this.idpEntityId = idpEntityId;
         this.validitySeconds = validitySeconds;
     }
 
@@ -52,9 +49,9 @@ public class SamlResponseBuilder {
      * assertion first, then encrypt it, then sign the response.
      */
     public Response issueResponse(SamlRelyingParty sp, String inResponseTo, String email, String displayName,
-                                  String sessionIndex) {
+                                  String sessionIndex, String idpEntityId) {
         try {
-            Response response = buildResponse(sp, inResponseTo, email, displayName, sessionIndex);
+            Response response = buildResponse(sp, inResponseTo, email, displayName, sessionIndex, idpEntityId);
             Assertion assertion = response.getAssertions().get(0);
 
             if (sp.isSignAssertion()) {
@@ -77,7 +74,7 @@ public class SamlResponseBuilder {
     }
 
     private Response buildResponse(SamlRelyingParty sp, String inResponseTo,
-                                   String email, String displayName, String sessionIndex) {
+                                   String email, String displayName, String sessionIndex, String idpEntityId) {
         Instant now = Instant.now();
         Instant expiry = now.plusSeconds(validitySeconds);
 
