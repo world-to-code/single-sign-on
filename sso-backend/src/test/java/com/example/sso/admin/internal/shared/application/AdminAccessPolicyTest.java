@@ -4,6 +4,7 @@ import com.example.sso.admin.internal.audit.application.AuditScope;
 import com.example.sso.resource.ApplicationAuthorization;
 import com.example.sso.resource.GroupAuthorization;
 import com.example.sso.resource.ResourceAuthorization;
+import com.example.sso.organization.OrganizationAuthorization;
 import com.example.sso.resource.UserAuthorization;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.RoleService;
@@ -44,6 +45,7 @@ class AdminAccessPolicyTest {
     private GroupAuthorization groupAuth;
     private ApplicationAuthorization appAuth;
     private ResourceAuthorization resourceAuth;
+    private OrganizationAuthorization orgAuth;
     private AdminAccessPolicy policy;
 
     @BeforeEach
@@ -54,7 +56,8 @@ class AdminAccessPolicyTest {
         groupAuth = mock(GroupAuthorization.class);
         appAuth = mock(ApplicationAuthorization.class);
         resourceAuth = mock(ResourceAuthorization.class);
-        policy = new AdminAccessPolicy(userService, roleService, userAuth, groupAuth, appAuth, resourceAuth);
+        orgAuth = mock(OrganizationAuthorization.class);
+        policy = new AdminAccessPolicy(userService, roleService, userAuth, groupAuth, appAuth, resourceAuth, orgAuth);
 
         UserAccount actor = mock(UserAccount.class);
         when(actor.getId()).thenReturn(ACTOR_ID);
@@ -112,6 +115,25 @@ class AdminAccessPolicyTest {
         when(appAuth.canManage(ACTOR_ID, "app-1")).thenReturn(true);
         assertThat(policy.canAccessApp("app-1")).isTrue();
         assertThat(policy.canAccessApp("app-2")).isFalse();
+    }
+
+    @Test
+    void canAccessOrgDelegatesToOrganizationAuthorizationAndSuperBypasses() {
+        UUID orgId = UUID.randomUUID();
+        when(orgAuth.canManage(ACTOR_ID, orgId)).thenReturn(true);
+        assertThat(policy.canAccessOrg(orgId)).isTrue();          // scoped org-admin of that org
+        assertThat(policy.canAccessOrg(UUID.randomUUID())).isFalse(); // not their org
+
+        when(resourceAuth.isUnscoped(ACTOR_ID)).thenReturn(true);
+        assertThat(policy.canAccessOrg(UUID.randomUUID())).isTrue();  // super admin bypasses
+    }
+
+    @Test
+    void currentScopedOrgIdsComeFromOrganizationAuthorization() {
+        UUID org = UUID.randomUUID();
+        when(orgAuth.scopedOrgIds(ACTOR_ID)).thenReturn(Set.of(org));
+
+        assertThat(policy.currentScopedOrgIds()).containsExactly(org);
     }
 
     @Test

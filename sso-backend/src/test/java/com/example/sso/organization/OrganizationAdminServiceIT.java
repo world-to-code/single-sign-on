@@ -9,6 +9,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -28,10 +30,15 @@ class OrganizationAdminServiceIT extends AbstractIntegrationTest {
     void cleanup() {
         cleanups.forEach(Runnable::run);
         cleanups.clear();
+        SecurityContextHolder.clearContext();
     }
 
     @Test
-    void listIncludesTheSeededDefaultOrganization() {
+    void superAdminListsAllOrganizationsIncludingTheSeededDefault() {
+        // The list is org-scope-filtered; the seeded super admin (unscoped) sees every org.
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("admin", null, List.of()));
+
         assertThat(organizations.list(0, 100).items())
                 .anyMatch(o -> o.slug().equals("default"));
     }

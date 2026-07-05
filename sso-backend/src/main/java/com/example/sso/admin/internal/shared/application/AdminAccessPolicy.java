@@ -4,6 +4,7 @@ import com.example.sso.admin.internal.audit.application.AuditScope;
 import com.example.sso.resource.ApplicationAuthorization;
 import com.example.sso.resource.GroupAuthorization;
 import com.example.sso.resource.ResourceAuthorization;
+import com.example.sso.organization.OrganizationAuthorization;
 import com.example.sso.resource.UserAuthorization;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.RoleService;
@@ -50,6 +51,7 @@ public class AdminAccessPolicy {
     private final GroupAuthorization groupAuth;
     private final ApplicationAuthorization appAuth;
     private final ResourceAuthorization resourceAuth;
+    private final OrganizationAuthorization orgAuth;
 
     /**
      * User scope: whether the acting admin may act on {@code targetId} at all. A super admin
@@ -112,6 +114,18 @@ public class AdminAccessPolicy {
     /** For a scoped acting admin, the ids of the groups inside their resource subtree. */
     public Set<UUID> currentScopedGroupIds() {
         return currentUserId().map(groupAuth::scopedGroupIds).orElse(Set.of());
+    }
+
+    /** Org scope: whether the acting admin may administer {@code orgId} (super bypasses; else org-admin+member). */
+    public boolean canAccessOrg(UUID orgId) {
+        return currentUserId()
+                .map(actorId -> resourceAuth.isUnscoped(actorId) || orgAuth.canManage(actorId, orgId))
+                .orElse(false);
+    }
+
+    /** For a scoped acting admin, the ids of the organizations they administer (their memberships). */
+    public Set<UUID> currentScopedOrgIds() {
+        return currentUserId().map(orgAuth::scopedOrgIds).orElse(Set.of());
     }
 
     /** Application scope: whether the acting admin may manage {@code appId} (resource subtree; super bypasses). */

@@ -1,5 +1,6 @@
 package com.example.sso.admin.internal.organization.application;
 
+import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
@@ -9,6 +10,8 @@ import com.example.sso.organization.OrganizationStatus;
 import com.example.sso.organization.OrganizationView;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.error.NotFoundException;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -22,10 +25,16 @@ import org.springframework.stereotype.Service;
 public class OrganizationAdminService {
 
     private final OrganizationService organizations;
+    private final AdminAccessPolicy access;
     private final AdminAuditLogger audit;
 
     public Page<OrganizationView> list(int page, int size) {
-        return Page.of(organizations.listAll(), page, size);
+        List<OrganizationView> all = organizations.listAll();
+        if (access.isCurrentActorUnscoped()) {
+            return Page.of(all, page, size); // super admin sees every org
+        }
+        Set<UUID> scoped = access.currentScopedOrgIds(); // a scoped org-admin sees only their own orgs
+        return Page.of(all.stream().filter(o -> scoped.contains(o.id())).toList(), page, size);
     }
 
     public OrganizationView get(UUID id) {

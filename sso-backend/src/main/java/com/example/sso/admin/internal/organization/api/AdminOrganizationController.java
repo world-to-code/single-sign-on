@@ -1,6 +1,8 @@
 package com.example.sso.admin.internal.organization.api;
 
 import com.example.sso.admin.internal.organization.application.OrganizationAdminService;
+import com.example.sso.admin.internal.shared.security.CanManageOrgMembers;
+import com.example.sso.admin.internal.shared.security.CanViewOrg;
 import com.example.sso.organization.OrganizationView;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.security.RequirePermission;
@@ -37,7 +39,7 @@ public class AdminOrganizationController {
     }
 
     @GetMapping("/{id}")
-    @RequirePermission(Permissions.ORG_READ)
+    @CanViewOrg
     public OrganizationView organization(@PathVariable UUID id) {
         return organizations.get(id);
     }
@@ -66,7 +68,7 @@ public class AdminOrganizationController {
     }
 
     @PostMapping("/{id}/members")
-    @RequirePermission(Permissions.ORG_MEMBER_MANAGE)
+    @CanManageOrgMembers
     @RequireStepUp
     public ResponseEntity<Void> addMember(@PathVariable UUID id, @Valid @RequestBody OrgMemberRequest request) {
         organizations.addMember(id, request.userId());
@@ -74,7 +76,7 @@ public class AdminOrganizationController {
     }
 
     @DeleteMapping("/{id}/members/{userId}")
-    @RequirePermission(Permissions.ORG_MEMBER_MANAGE)
+    @CanManageOrgMembers
     @RequireStepUp
     public ResponseEntity<Void> removeMember(@PathVariable UUID id, @PathVariable UUID userId) {
         organizations.removeMember(id, userId);
