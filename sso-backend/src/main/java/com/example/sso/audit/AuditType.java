@@ -66,6 +66,13 @@ public enum AuditType {
     USER_DELETED(AuditCategory.ADMIN),
     USER_MFA_RESET(AuditCategory.ADMIN),
 
+    // Administrative operations on organizations (tenants)
+    ORGANIZATION_CREATED(AuditCategory.ADMIN),
+    ORGANIZATION_UPDATED(AuditCategory.ADMIN),
+    ORGANIZATION_DELETED(AuditCategory.ADMIN),
+    ORGANIZATION_MEMBER_ADDED(AuditCategory.ADMIN),
+    ORGANIZATION_MEMBER_REMOVED(AuditCategory.ADMIN),
+
     // Platform / system
     SERVER_ERROR(AuditCategory.SYSTEM);
 

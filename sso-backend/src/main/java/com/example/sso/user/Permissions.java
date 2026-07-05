@@ -68,6 +68,12 @@ public final class Permissions {
     public static final String RESOURCE_UPDATE = "resource:update";
     public static final String RESOURCE_DELETE = "resource:delete";
     public static final String RESOURCE_ASSIGN_ADMIN = "resource:assign-admin";
+    // Organizations (tenants) — platform-admin registry management + membership
+    public static final String ORG_READ = "organization:read";
+    public static final String ORG_CREATE = "organization:create";
+    public static final String ORG_UPDATE = "organization:update";
+    public static final String ORG_DELETE = "organization:delete";
+    public static final String ORG_MEMBER_MANAGE = "organization:member-manage";
     // Single-action resources
     public static final String AUDIT_READ = "audit:read";
     public static final String SCIM_MANAGE = "scim:manage";
@@ -86,6 +92,7 @@ public final class Permissions {
             PORTAL_SETTINGS_READ, PORTAL_SETTINGS_UPDATE,
             APP_ASSIGNMENT_READ, APP_ASSIGNMENT_ASSIGN, APP_ASSIGNMENT_UNASSIGN,
             RESOURCE_READ, RESOURCE_CREATE, RESOURCE_UPDATE, RESOURCE_DELETE, RESOURCE_ASSIGN_ADMIN,
+            ORG_READ, ORG_CREATE, ORG_UPDATE, ORG_DELETE, ORG_MEMBER_MANAGE,
             AUDIT_READ, SCIM_MANAGE, KEY_ROTATE);
 
     private static final Set<String> CATALOG = Set.copyOf(ALL);

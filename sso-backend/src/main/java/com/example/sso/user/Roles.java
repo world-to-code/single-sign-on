@@ -16,6 +16,8 @@ public final class Roles {
     public static final String ADMIN = "ROLE_ADMIN";
     /** Scoped delegated administrator: manages only the members of groups they manage. */
     public static final String GROUP_ADMIN = "ROLE_GROUP_ADMIN";
+    /** Organization (tenant) administrator: manages only their own org's members (scoped in a later phase). */
+    public static final String ORG_ADMIN = "ROLE_ORG_ADMIN";
     /** The baseline role every user holds. */
     public static final String USER = "ROLE_USER";
     /** The SCIM provisioning client's authority. */

@@ -27,6 +27,11 @@ public class RbacServiceImpl implements RbacService {
     private static final List<String> GROUP_ADMIN_PERMISSIONS = List.of(
             Permissions.USER_READ, Permissions.USER_UPDATE, Permissions.USER_DELETE);
 
+    // Baseline for the scoped ROLE_ORG_ADMIN: read their org and manage its membership. Deliberately
+    // minimal until org-scoped authorization lands — no directory-wide or org create/delete authority.
+    private static final List<String> ORG_ADMIN_PERMISSIONS = List.of(
+            Permissions.ORG_READ, Permissions.ORG_MEMBER_MANAGE);
+
     private final PermissionRepository permissions;
     private final RoleRepository roles;
 
@@ -48,6 +53,16 @@ public class RbacServiceImpl implements RbacService {
 
         GROUP_ADMIN_PERMISSIONS.forEach(name -> groupAdmin.addPermission(getOrCreatePermission(name)));
         roles.save(groupAdmin);
+    }
+
+    @Override
+    @Transactional
+    public void grantOrgAdminPermissions() {
+        Role orgAdmin = roles.findByName(Roles.ORG_ADMIN)
+                .orElseThrow(() -> new IllegalStateException("ROLE_ORG_ADMIN must exist before granting permissions"));
+
+        ORG_ADMIN_PERMISSIONS.forEach(name -> orgAdmin.addPermission(getOrCreatePermission(name)));
+        roles.save(orgAdmin);
     }
 
     @Override

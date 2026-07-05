@@ -14,5 +14,8 @@ public interface RbacService {
     /** Grants the scoped ROLE_GROUP_ADMIN its baseline user-management permissions (idempotent). */
     void grantGroupAdminPermissions();
 
+    /** Grants the scoped ROLE_ORG_ADMIN its baseline organization-management permissions (idempotent). */
+    void grantOrgAdminPermissions();
+
     List<String> allPermissions();
 }

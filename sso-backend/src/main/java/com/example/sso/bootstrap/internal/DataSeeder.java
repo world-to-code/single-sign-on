@@ -1,6 +1,7 @@
 package com.example.sso.bootstrap.internal;
 
 import com.example.sso.authpolicy.AuthPolicyAdminService;
+import com.example.sso.organization.OrganizationService;
 import com.example.sso.user.Roles;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.RbacService;
@@ -24,10 +25,14 @@ public class DataSeeder implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DataSeeder.class);
 
+    /** The seeded tenant every pre-existing user is backfilled into (see V41 migration). */
+    private static final String DEFAULT_ORG_SLUG = "default";
+
     private final UserService userService;
     private final RoleService roleService;
     private final RbacService rbacService;
     private final AuthPolicyAdminService authPolicyService;
+    private final OrganizationService organizationService;
     private final String adminUsername;
     private final String adminEmail;
     private final String adminPassword;
@@ -36,6 +41,7 @@ public class DataSeeder implements ApplicationRunner {
                       RoleService roleService,
                       RbacService rbacService,
                       AuthPolicyAdminService authPolicyService,
+                      OrganizationService organizationService,
                       @Value("${sso.admin.username:admin}") String adminUsername,
                       @Value("${sso.admin.email:admin@example.com}") String adminEmail,
                       @Value("${sso.admin.password:admin123!}") String adminPassword) {
@@ -43,6 +49,7 @@ public class DataSeeder implements ApplicationRunner {
         this.roleService = roleService;
         this.rbacService = rbacService;
         this.authPolicyService = authPolicyService;
+        this.organizationService = organizationService;
         this.adminUsername = adminUsername;
         this.adminEmail = adminEmail;
         this.adminPassword = adminPassword;
@@ -53,8 +60,10 @@ public class DataSeeder implements ApplicationRunner {
         roleService.getOrCreateSystem(Roles.USER);
         roleService.getOrCreateSystem(Roles.ADMIN);
         roleService.getOrCreateSystem(Roles.GROUP_ADMIN);
+        roleService.getOrCreateSystem(Roles.ORG_ADMIN);
         rbacService.grantAllPermissionsToAdmin();
         rbacService.grantGroupAdminPermissions();
+        rbacService.grantOrgAdminPermissions();
         authPolicyService.seedDefault();
 
         if (!userService.existsByUsername(adminUsername)) {
@@ -64,9 +73,14 @@ public class DataSeeder implements ApplicationRunner {
                     adminUsername);
         }
 
-        // The bootstrap admin is a system account — pre-verify its email so it is never locked out.
-        userService.findByUsername(adminUsername)
-                .filter(admin -> !admin.isEmailVerified())
-                .ifPresent(admin -> userService.markEmailVerified(admin.getId()));
+        userService.findByUsername(adminUsername).ifPresent(admin -> {
+            // The bootstrap admin is a system account — pre-verify its email so it is never locked out.
+            if (!admin.isEmailVerified()) {
+                userService.markEmailVerified(admin.getId());
+            }
+            // On a fresh DB the V41 backfill ran before the admin existed, so add it to the default org here.
+            organizationService.findBySlug(DEFAULT_ORG_SLUG)
+                    .ifPresent(org -> organizationService.addMember(org.getId(), admin.getId()));
+        });
     }
 }
