@@ -19,6 +19,9 @@ public interface RoleService {
 
     Optional<RoleRef> findById(UUID id);
 
+    /** The role's permission names, resolved inside a transaction (safe to read outside one). */
+    Set<String> permissionNames(UUID roleId);
+
     /** Returns the role, creating it if absent (idempotent). */
     RoleRef getOrCreate(String name);
 

@@ -6,6 +6,7 @@ import com.example.sso.admin.internal.shared.application.LastAdminGuard;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.user.Permissions;
 import com.example.sso.user.RbacService;
 import com.example.sso.user.RoleService;
 import com.example.sso.user.Roles;
@@ -97,8 +98,17 @@ public class RoleAdminService {
         return roleService.findById(roleId).map(role -> ADMIN_ROLE.equals(role.getName())).orElse(false);
     }
 
+    /**
+     * The permission catalog for the role builder, filtered to the actor's tier: a platform super-admin
+     * sees the full catalog; a tenant (org) admin sees only the tenant-grantable subset — platform-only
+     * permissions never appear. This is the UI side; {@code RoleServiceImpl} enforces the same split
+     * authoritatively on write.
+     */
     @Transactional(readOnly = true)
     public List<PermissionView> listPermissions() {
-        return rbacService.allPermissions().stream().map(PermissionView::of).toList();
+        List<String> catalog = accessPolicy.isCurrentActorUnscoped()
+                ? rbacService.allPermissions()
+                : Permissions.tenantGrantable();
+        return catalog.stream().map(PermissionView::of).toList();
     }
 }

@@ -33,7 +33,9 @@ class RbacDelegationIT extends AbstractIntegrationTest {
 
     @Test
     void memberInheritsGroupRolePermissionsWithImpliedRead() {
-        roleService.create("APP_MANAGER", Set.of(Permissions.CLIENT_CREATE));
+        // Uses a tenant-grantable permission (user:create) whose mutating→read implication is under test;
+        // platform perms (e.g. oidc-client:*) are un-grantable outside a super context — a separate concern.
+        roleService.create("APP_MANAGER", Set.of(Permissions.USER_CREATE));
         UUID carol = userService.createUser(new NewUser("carol", "carol@example.com", "Carol", "S3cret!pw",
                 Set.of("ROLE_USER"))).getId();
         userGroups.create(new GroupSpec("Managers", "app managers", null, Set.of(carol)));
@@ -42,8 +44,8 @@ class RbacDelegationIT extends AbstractIntegrationTest {
 
         Set<String> authorities = authoritiesOf("carol");
         assertThat(authorities).contains("APP_MANAGER");          // group-delegated role name
-        assertThat(authorities).contains(Permissions.CLIENT_CREATE); // its permission
-        assertThat(authorities).contains(Permissions.CLIENT_READ);   // create implies read
+        assertThat(authorities).contains(Permissions.USER_CREATE); // its permission
+        assertThat(authorities).contains(Permissions.USER_READ);   // create implies read
     }
 
     @Test

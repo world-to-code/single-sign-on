@@ -2,10 +2,14 @@ package com.example.sso.user.internal.application;
 
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
+import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.user.PermissionGrantPolicy;
+import com.example.sso.user.Permissions;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
+import com.example.sso.user.internal.domain.Permission;
 import com.example.sso.user.internal.domain.PermissionRepository;
 import com.example.sso.user.internal.domain.Role;
 import com.example.sso.user.internal.domain.RoleRepository;
@@ -41,6 +45,7 @@ class RoleServiceImplTest {
     @Mock private PermissionRepository permissions;
     @Mock private UserGroupRepository groups;
     @Mock private AccessChangePublisher accessChanges;
+    @Mock private PermissionGrantPolicy grantPolicy;
 
     @InjectMocks private RoleServiceImpl service;
 
@@ -111,6 +116,29 @@ class RoleServiceImplTest {
 
         assertThatThrownBy(() -> service.create("ROLE_EDITOR", Set.of("not:a-permission")))
                 .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void creatingWithAPlatformPermissionTheActorMayNotGrantIsForbidden() {
+        when(roles.findByName("ROLE_EDITOR")).thenReturn(Optional.empty());
+        when(grantPolicy.mayGrant(Permissions.ORG_CREATE)).thenReturn(false); // e.g. a tenant admin
+
+        assertThatThrownBy(() -> service.create("ROLE_EDITOR", Set.of(Permissions.ORG_CREATE)))
+                .isInstanceOf(ForbiddenException.class);
+        verify(roles, never()).save(any());
+    }
+
+    @Test
+    void creatingWithAGrantablePermissionSavesTheRole() {
+        when(roles.findByName("ROLE_EDITOR")).thenReturn(Optional.empty());
+        when(grantPolicy.mayGrant(Permissions.USER_READ)).thenReturn(true);
+        when(permissions.findByName(Permissions.USER_READ))
+                .thenReturn(Optional.of(new Permission(Permissions.USER_READ)));
+        when(roles.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.create("ROLE_EDITOR", Set.of(Permissions.USER_READ));
+
+        verify(roles).save(any());
     }
 
     @Test

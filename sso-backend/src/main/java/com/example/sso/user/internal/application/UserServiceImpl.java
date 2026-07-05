@@ -4,7 +4,9 @@ import com.example.sso.shared.IdName;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
+import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.user.PermissionGrantPolicy;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
@@ -52,6 +54,7 @@ public class UserServiceImpl implements UserService {
     private final UserGroupRepository groups;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher events;
+    private final PermissionGrantPolicy grantPolicy;
 
     @Override
     @Transactional(readOnly = true)
@@ -313,10 +316,18 @@ public class UserServiceImpl implements UserService {
         return roles.findByName(name).orElseThrow(() -> new BadRequestException("unknown role: " + name));
     }
 
-    /** Resolves a catalog permission for direct assignment; rejects anything outside the catalog. */
+    /**
+     * Resolves a catalog permission for direct assignment; rejects anything outside the catalog (400) or
+     * any permission the current actor may not grant (403). The grant guard keeps the direct-permission
+     * path symmetric with the role builder: a tenant admin can't self-grant a platform permission here
+     * either, so the tier split is enforced on every write path, not only via roles.
+     */
     private Permission getOrCreatePermission(String name) {
         if (!Permissions.ALL.contains(name)) {
             throw new BadRequestException("unknown permission: " + name);
+        }
+        if (!grantPolicy.mayGrant(name)) {
+            throw new ForbiddenException("not permitted to grant permission: " + name);
         }
 
         return permissions.findByName(name).orElseGet(() -> permissions.save(new Permission(name)));

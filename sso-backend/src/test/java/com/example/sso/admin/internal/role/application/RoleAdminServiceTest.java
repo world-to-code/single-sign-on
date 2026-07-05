@@ -7,6 +7,7 @@ import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.user.Permissions;
 import com.example.sso.user.RbacService;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.RoleService;
@@ -117,6 +118,27 @@ class RoleAdminServiceTest {
         assertThatThrownBy(() -> service.removeRoleMember(adminRoleId, userId))
                 .isInstanceOf(ConflictException.class);
         verify(roleService, never()).removeMember(any(), any());
+    }
+
+    @Test
+    void listPermissionsGivesASuperAdminTheFullCatalog() {
+        when(accessPolicy.isCurrentActorUnscoped()).thenReturn(true);
+        when(rbacService.allPermissions()).thenReturn(Permissions.ALL);
+
+        assertThat(service.listPermissions()).extracting(PermissionView::name)
+                .contains(Permissions.ORG_CREATE, Permissions.PORTAL_SETTINGS_UPDATE, Permissions.USER_READ)
+                .hasSize(Permissions.ALL.size());
+    }
+
+    @Test
+    void listPermissionsHidesPlatformPermissionsFromATenantAdmin() {
+        when(accessPolicy.isCurrentActorUnscoped()).thenReturn(false);
+
+        assertThat(service.listPermissions()).extracting(PermissionView::name)
+                .doesNotContain(Permissions.ORG_CREATE, Permissions.ORG_DELETE, Permissions.PORTAL_SETTINGS_UPDATE,
+                        Permissions.KEY_ROTATE, Permissions.SCIM_MANAGE, Permissions.CLIENT_CREATE, Permissions.AUDIT_READ)
+                .contains(Permissions.USER_READ, Permissions.ORG_READ, Permissions.ROLE_CREATE, Permissions.POLICY_READ);
+        verify(rbacService, never()).allPermissions(); // a tenant admin uses the static tenant subset
     }
 
     private UserAccount user(UUID id) {

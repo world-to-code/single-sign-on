@@ -98,6 +98,34 @@ public final class Permissions {
     private static final Set<String> CATALOG = Set.copyOf(ALL);
 
     /**
+     * Platform-only permissions: the tenant registry itself ({@code organization:create/update/delete}),
+     * the global admin-console security config ({@code portal-settings:*}), and shared cross-tenant
+     * INFRASTRUCTURE — the single signing key ({@code key:rotate}), global provisioning ({@code
+     * scim:manage}), cross-tenant audit ({@code audit:read}), the global OIDC/SAML app registries and
+     * assignments ({@code oidc-client:*}, {@code saml-rp:*}, {@code app-assignment:*}), and the resource
+     * DAG ({@code resource:*}). A tenant (org) admin can neither see these in the catalog nor grant them
+     * (enforced by {@link PermissionGrantPolicy}) — granting one would cross tenant boundaries (e.g.
+     * rotating the shared key invalidates every tenant's tokens).
+     *
+     * <p>Everything else in {@link #ALL} is tenant-grantable — the directory + policy domain a tenant admin
+     * owns ({@code user:*}, {@code group:*}, {@code role:*}, {@code auth-policy:*}, {@code session-policy:*},
+     * {@code network-zone:*}) plus {@code organization:read}/{@code member-manage} (their own org). These
+     * are the near-term org-scoping targets; each stays here (this set SHRINKS) and its data becomes truly
+     * per-tenant as Workstream-A adds {@code org_id} + RLS. Until then a deliberate super-grant of one to a
+     * tenant admin is cross-tenant — nothing is granted by default (the ROLE_ORG_ADMIN baseline is only
+     * {@code organization:read} + {@code member-manage}). An infra perm above moves out of PLATFORM only
+     * once it is genuinely per-tenant (e.g. per-tenant signing keys).
+     */
+    public static final Set<String> PLATFORM = Set.of(
+            ORG_CREATE, ORG_UPDATE, ORG_DELETE,
+            PORTAL_SETTINGS_READ, PORTAL_SETTINGS_UPDATE,
+            KEY_ROTATE, SCIM_MANAGE, AUDIT_READ,
+            CLIENT_READ, CLIENT_CREATE, CLIENT_UPDATE, CLIENT_DELETE,
+            SAML_READ, SAML_CREATE, SAML_UPDATE, SAML_DELETE,
+            APP_ASSIGNMENT_READ, APP_ASSIGNMENT_ASSIGN, APP_ASSIGNMENT_UNASSIGN,
+            RESOURCE_READ, RESOURCE_CREATE, RESOURCE_UPDATE, RESOURCE_DELETE, RESOURCE_ASSIGN_ADMIN);
+
+    /**
      * Expands a set of granted permissions with the implied {@code <resource>:read}: any mutating
      * action (anything other than {@code read}) on a resource that HAS a read permission also grants
      * read. Applied when building a user's effective authorities so that, e.g., a create/update/delete
@@ -119,6 +147,16 @@ public final class Permissions {
         }
 
         return result;
+    }
+
+    /** Whether a permission is platform-only (super-admin exclusive); see {@link #PLATFORM}. */
+    public static boolean isPlatform(String permission) {
+        return PLATFORM.contains(permission);
+    }
+
+    /** The catalog a tenant (org) admin may see and grant — the full catalog minus {@link #PLATFORM}. */
+    public static List<String> tenantGrantable() {
+        return ALL.stream().filter(perm -> !PLATFORM.contains(perm)).toList();
     }
 
     private Permissions() {

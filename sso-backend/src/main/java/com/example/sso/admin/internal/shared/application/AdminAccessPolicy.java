@@ -6,6 +6,7 @@ import com.example.sso.resource.GroupAuthorization;
 import com.example.sso.resource.ResourceAuthorization;
 import com.example.sso.organization.OrganizationAuthorization;
 import com.example.sso.resource.UserAuthorization;
+import com.example.sso.user.Permissions;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.RoleService;
 import com.example.sso.user.Roles;
@@ -43,7 +44,7 @@ public class AdminAccessPolicy {
     static final String ADMIN_ROLE = Roles.ADMIN;
 
     /** Roles that grant admin-console reach; only a super admin may assign them. */
-    private static final Set<String> PRIVILEGED_ROLES = Set.of(Roles.ADMIN, Roles.GROUP_ADMIN);
+    private static final Set<String> PRIVILEGED_ROLES = Set.of(Roles.ADMIN, Roles.GROUP_ADMIN, Roles.ORG_ADMIN);
 
     private final UserService userService;
     private final RoleService roleService;
@@ -77,12 +78,20 @@ public class AdminAccessPolicy {
     }
 
     /**
-     * Only a super admin may assign a privileged role (ROLE_ADMIN/ROLE_GROUP_ADMIN) — e.g. by delegating
-     * it to a group. Otherwise a non-super admin with group management could grant admin to a group they
-     * belong to and escalate. A set with no privileged role is allowed for anyone.
+     * Only a super admin may assign a privileged role (ROLE_ADMIN/ROLE_GROUP_ADMIN/ROLE_ORG_ADMIN) — e.g.
+     * by delegating it to a group — OR a role that CARRIES a platform-only permission. Otherwise a non-super
+     * admin with group management could grant admin (or a platform permission, via a super-created role that
+     * bundles one) to a group they belong to and escalate. A set with no privileged/platform-bearing role is
+     * allowed for anyone.
      */
     public boolean mayAssignRoles(Collection<String> roleNames) {
-        return currentIsSuperAdmin() || !containsPrivilegedRole(roleNames);
+        if (currentIsSuperAdmin()) {
+            return true;
+        }
+        if (containsPrivilegedRole(roleNames)) {
+            return false;
+        }
+        return roleNames == null || roleNames.stream().noneMatch(this::roleCarriesPlatformPermission);
     }
 
     /**
@@ -225,7 +234,7 @@ public class AdminAccessPolicy {
      * {@code ROLE_ADMIN}/{@code ROLE_GROUP_ADMIN}, which would escalate the target or themselves).
      */
     public boolean canGrantRole(UUID userId, UUID roleId) {
-        return canManageRoleMembership(userId, roleName(roleId));
+        return canManageRoleMembership(userId, roleId);
     }
 
     /**
@@ -234,18 +243,33 @@ public class AdminAccessPolicy {
      * admin must). The actor-independent "last administrator" invariant is a 409 in {@link UserAdminService}.
      */
     public boolean canRevokeRole(UUID userId, UUID roleId) {
-        String roleName = roleName(roleId);
-        if (isSelf(userId) && ADMIN_ROLE.equals(roleName)) {
+        if (isSelf(userId) && ADMIN_ROLE.equals(roleName(roleId))) {
             return false;
         }
-        return canManageRoleMembership(userId, roleName);
+        return canManageRoleMembership(userId, roleId);
     }
 
-    private boolean canManageRoleMembership(UUID userId, String roleName) {
-        if (!currentIsSuperAdmin() && (isAdmin(userId) || PRIVILEGED_ROLES.contains(roleName))) {
+    private boolean canManageRoleMembership(UUID userId, UUID roleId) {
+        if (!currentIsSuperAdmin()
+                && (isAdmin(userId) || PRIVILEGED_ROLES.contains(roleName(roleId))
+                        || roleCarriesPlatformPermission(roleId))) {
+            // A scoped admin may never touch admin accounts, hand out a privileged role, nor grant a role
+            // that carries a platform-only permission (which would escalate the target — or themselves).
             return false;
         }
         return canAccessUser(userId);
+    }
+
+    /** Whether the role (by id) carries any platform-only permission — un-grantable by a non-super admin. */
+    private boolean roleCarriesPlatformPermission(UUID roleId) {
+        return roleService.permissionNames(roleId).stream().anyMatch(Permissions::isPlatform);
+    }
+
+    /** Whether the role (by name) carries any platform-only permission; unknown name → false. */
+    private boolean roleCarriesPlatformPermission(String roleName) {
+        return roleService.findByName(roleName)
+                .map(role -> roleCarriesPlatformPermission(role.getId()))
+                .orElse(false);
     }
 
     /** The role's name, or {@code null} if it no longer exists (the caller's service then 404s). */

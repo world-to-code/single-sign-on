@@ -3,7 +3,9 @@ package com.example.sso.user.internal.application;
 import com.example.sso.shared.IdName;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
+import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.user.PermissionGrantPolicy;
 import com.example.sso.user.Roles;
 import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
@@ -56,6 +58,7 @@ public class RoleServiceImpl implements RoleService {
     private final PermissionRepository permissions;
     private final UserGroupRepository groups;
     private final AccessChangePublisher accessChanges;
+    private final PermissionGrantPolicy grantPolicy;
 
     @Override
     @Transactional(readOnly = true)
@@ -67,6 +70,14 @@ public class RoleServiceImpl implements RoleService {
     @Transactional(readOnly = true)
     public Optional<RoleRef> findById(UUID id) {
         return roles.findById(id).map(r -> r);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Set<String> permissionNames(UUID roleId) {
+        // Initialize the LAZY permissions inside this tx so callers (e.g. @adminAccessPolicy SpEL, which
+        // runs outside the method tx) can read them without a LazyInitializationException.
+        return roles.findById(roleId).map(Role::getPermissionNames).orElse(Set.of());
     }
 
     @Override
@@ -173,7 +184,12 @@ public class RoleServiceImpl implements RoleService {
         }
     }
 
-    /** Resolves catalog permission names to (get-or-created) entities; rejects unknown names (400). */
+    /**
+     * Resolves catalog permission names to (get-or-created) entities; rejects unknown names (400) and any
+     * permission the current actor may not grant (403). The grant guard is the AUTHORITATIVE control that a
+     * tenant (org) admin cannot bundle a platform-only permission into a role and escalate — it covers every
+     * caller (admin console, SCIM, future), unlike a controller-only check.
+     */
     private Set<Permission> resolvePermissions(Set<String> names) {
         if (names == null || names.isEmpty()) {
             return Set.of();
@@ -182,6 +198,9 @@ public class RoleServiceImpl implements RoleService {
         return names.stream().map(name -> {
             if (!CATALOG.contains(name)) {
                 throw new BadRequestException("unknown permission: " + name);
+            }
+            if (!grantPolicy.mayGrant(name)) {
+                throw new ForbiddenException("not permitted to grant permission: " + name);
             }
             return permissions.findByName(name).orElseGet(() -> permissions.save(new Permission(name)));
         }).collect(Collectors.toSet());

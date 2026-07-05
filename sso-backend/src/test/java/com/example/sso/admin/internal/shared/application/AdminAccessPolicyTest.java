@@ -6,6 +6,7 @@ import com.example.sso.resource.GroupAuthorization;
 import com.example.sso.resource.ResourceAuthorization;
 import com.example.sso.organization.OrganizationAuthorization;
 import com.example.sso.resource.UserAuthorization;
+import com.example.sso.user.Permissions;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.RoleService;
 import com.example.sso.user.Roles;
@@ -161,6 +162,36 @@ class AdminAccessPolicyTest {
     @Test
     void nonSuperAdminMayNotAssignPrivilegedRoles() {
         assertThat(policy.mayAssignRoles(Set.of(Roles.ADMIN))).isFalse();
+    }
+
+    @Test
+    void nonSuperAdminMayNotAssignTheOrgAdminRole() {
+        // ROLE_ORG_ADMIN grants membership-scoped tenant-admin reach; only a super admin may hand it out.
+        assertThat(policy.mayAssignRoles(Set.of(Roles.ORG_ADMIN))).isFalse();
+    }
+
+    @Test
+    void nonSuperAdminMayNotAssignARoleCarryingAPlatformPermission() {
+        // A super may have built a NON-privileged role that bundles a platform perm; a scoped admin must
+        // not be able to assign it and inherit that permission (indirection escalation).
+        UUID roleId = UUID.randomUUID();
+        RoleRef reporting = mock(RoleRef.class);
+        when(reporting.getId()).thenReturn(roleId);
+        when(roleService.findByName("ROLE_REPORTING")).thenReturn(Optional.of(reporting));
+        when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.PORTAL_SETTINGS_READ));
+
+        assertThat(policy.mayAssignRoles(Set.of("ROLE_REPORTING"))).isFalse();
+    }
+
+    @Test
+    void nonSuperAdminMayNotGrantARoleCarryingAPlatformPermissionToAUser() {
+        UUID roleId = UUID.randomUUID();
+        RoleRef reporting = mock(RoleRef.class);
+        when(reporting.getName()).thenReturn("ROLE_REPORTING");
+        when(roleService.findById(roleId)).thenReturn(Optional.of(reporting)); // roleName() lookup
+        when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.KEY_ROTATE));
+
+        assertThat(policy.canGrantRole(OTHER_ID, roleId)).isFalse();
     }
 
     @Test

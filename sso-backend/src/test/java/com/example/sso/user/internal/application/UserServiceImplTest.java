@@ -2,8 +2,11 @@ package com.example.sso.user.internal.application;
 
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
+import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.NewUser;
+import com.example.sso.user.PermissionGrantPolicy;
+import com.example.sso.user.Permissions;
 import com.example.sso.user.UserAccessChangedEvent;
 import com.example.sso.user.UserDeletedEvent;
 import com.example.sso.user.UserUpdate;
@@ -49,6 +52,7 @@ class UserServiceImplTest {
     @Mock private UserGroupRepository groups;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private ApplicationEventPublisher events;
+    @Mock private PermissionGrantPolicy grantPolicy;
 
     @InjectMocks private UserServiceImpl service;
 
@@ -129,6 +133,17 @@ class UserServiceImplTest {
 
         assertThatThrownBy(() -> service.setDirectPermissions(id, Set.of("not:a-permission")))
                 .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void setDirectPermissionsRejectsAPlatformPermissionTheActorMayNotGrant() {
+        // The direct-permission path enforces the same tier split as the role builder (deny-by-default).
+        UUID id = UUID.randomUUID();
+        when(users.findById(id)).thenReturn(Optional.of(new AppUser("alice", "a@x", "A", "h")));
+        when(grantPolicy.mayGrant(Permissions.KEY_ROTATE)).thenReturn(false); // e.g. a tenant admin
+
+        assertThatThrownBy(() -> service.setDirectPermissions(id, Set.of(Permissions.KEY_ROTATE)))
+                .isInstanceOf(ForbiddenException.class);
     }
 
     @Test
