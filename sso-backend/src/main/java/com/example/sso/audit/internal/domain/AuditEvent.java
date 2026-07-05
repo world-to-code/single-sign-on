@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.Instant;
+import java.util.UUID;
 
 /**
  * Immutable-by-design audit record for security-relevant events. Created fully-formed
@@ -57,8 +58,12 @@ public class AuditEvent {
     @Column(name = "subject_id", length = 255)
     private String subjectId;
 
+    /** The tenant this event occurred in (analytics dimension), or null when there is no resolvable org. */
+    @Column(name = "org_id")
+    private UUID orgId;
+
     public AuditEvent(AuditType type, String principal, boolean success, String detail, String remoteIp,
-                      AuditSubjectType subjectType, String subjectId) {
+                      AuditSubjectType subjectType, String subjectId, UUID orgId) {
         this.type = type.name();
         this.principal = principal;
         this.success = success;
@@ -67,5 +72,6 @@ public class AuditEvent {
         this.category = type.getCategory();
         this.subjectType = subjectType == null ? AuditSubjectType.NONE : subjectType;
         this.subjectId = subjectId;
+        this.orgId = orgId;
     }
 }

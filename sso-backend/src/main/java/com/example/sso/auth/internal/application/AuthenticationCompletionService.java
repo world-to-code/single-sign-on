@@ -91,7 +91,8 @@ public class AuthenticationCompletionService {
                     UsernamePasswordAuthenticationToken.authenticated(principal, null, authorities));
             StepUpInterceptor.stamp(request.getSession(false)); // count login as activity (idle clock), NOT a step-up
             sessions.registerAndEnforceLimit(request, principal.getUsername());
-            audit.record(new AuditRecord(AuditType.SESSION_CREATED, principal.getUsername(), true, null, ClientIp.of(request)));
+            audit.record(new AuditRecord(AuditType.SESSION_CREATED, principal.getUsername(), true, null,
+                    ClientIp.of(request), preAuthOrg.orgId(request).orElse(null))); // tenant-tag the completed sign-in
         }
 
         return authState.describe(SecurityContextHolder.getContext().getAuthentication(),

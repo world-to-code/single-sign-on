@@ -47,6 +47,7 @@ export const NAV: NavGroup[] = [
       {
         heading: "Platform",
         items: [
+          { to: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: "organization:read", superAdmin: true },
           { to: "/admin/organizations", label: "Organizations", icon: Building2, permission: "organization:read", superAdmin: true },
         ],
       },

@@ -41,4 +41,7 @@ public interface OrganizationService {
 
     /** The ids of every organization the user belongs to. */
     Set<UUID> orgIdsForUser(UUID userId);
+
+    /** The number of members in an organization (analytics). */
+    long memberCount(UUID orgId);
 }

@@ -122,7 +122,7 @@ public class AuthenticationService {
             // as bad credentials, so login can neither bypass org selection nor cross into another tenant.
             if (!isMemberOf(orgId, username)) {
                 loginAttempts.onFailure(username);
-                audit.record(new AuditRecord(AuditType.AUTH_FAILURE, username, false, "not a member of the org", null));
+                audit.record(new AuditRecord(AuditType.AUTH_FAILURE, username, false, "not a member of the org", null, orgId));
                 throw new UnauthorizedException();
             }
             factorAuth.establish(httpRequest, httpResponse, authentication);
@@ -132,7 +132,7 @@ public class AuthenticationService {
             return completionService.completeIfSatisfied(httpRequest, httpResponse);
         } catch (AuthenticationException e) {
             loginAttempts.onFailure(username);
-            audit.record(new AuditRecord(AuditType.AUTH_FAILURE, username, false, e.getMessage(), null));
+            audit.record(new AuditRecord(AuditType.AUTH_FAILURE, username, false, e.getMessage(), null, orgId));
             throw new UnauthorizedException();
         }
     }

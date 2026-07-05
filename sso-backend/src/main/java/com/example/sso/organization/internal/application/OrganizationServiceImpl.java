@@ -124,6 +124,14 @@ public class OrganizationServiceImpl implements OrganizationService {
         return orgContext.callAsPlatform(() -> Set.copyOf(memberships.findOrgIdsByUserId(userId)));
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public long memberCount(UUID orgId) {
+        // Counts one org's members by explicit org_id; runs as platform so the count is exact regardless of
+        // the caller's bound context (the caller's authorization to see this org is enforced upstream).
+        return orgContext.callAsPlatform(() -> memberships.countByOrgId(orgId));
+    }
+
     private Organization require(UUID id) {
         return organizations.findById(id).orElseThrow(() -> new NotFoundException("organization not found"));
     }

@@ -10,6 +10,8 @@ public interface OrganizationMembershipRepository extends JpaRepository<Organiza
 
     boolean existsByOrgIdAndUserId(UUID orgId, UUID userId);
 
+    long countByOrgId(UUID orgId);
+
     void deleteByOrgIdAndUserId(UUID orgId, UUID userId);
 
     @Query("select m.orgId from OrganizationMembership m where m.userId = :userId")

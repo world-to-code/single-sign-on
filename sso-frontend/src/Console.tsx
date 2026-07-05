@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import type { SessionView } from "./auth";
+import { isPlatformAdmin } from "./auth";
 import AppShell from "./components/layout/AppShell";
 import { StepUpProvider } from "./components/StepUpProvider";
 import { SessionTimers } from "./components/SessionTimers";
@@ -9,6 +10,8 @@ import Users from "./pages/Users";
 import UserCreate from "./pages/UserCreate";
 import UserDetail from "./pages/UserDetail";
 import Organizations from "./pages/Organizations";
+import PlatformDashboard from "./pages/PlatformDashboard";
+import OrgDashboard from "./pages/OrgDashboard";
 import Roles from "./pages/Roles";
 import RoleDetail from "./pages/RoleDetail";
 import Groups from "./pages/Groups";
@@ -52,8 +55,10 @@ export default function Console({ session }: { session: SessionView }) {
             <AdminGuard>
               <AppShell session={session} variant="admin">
                 <Routes>
-                  <Route index element={<Navigate to="users" replace />} />
+                  <Route index element={<Navigate to={isPlatformAdmin(session) ? "dashboard" : "users"} replace />} />
+                  <Route path="dashboard" element={<PlatformDashboard />} />
                   <Route path="organizations" element={<Organizations />} />
+                  <Route path="organizations/:id" element={<OrgDashboard />} />
                   <Route path="users" element={<Users />} />
                   <Route path="users/new" element={<UserCreate />} />
                   <Route path="users/:id" element={<UserDetail session={session} />} />

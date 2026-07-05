@@ -109,6 +109,8 @@ sso:
     refresh-token-ttl-minutes: 30
     # Elevation freshness + admin session idle/absolute lifetimes are now runtime-editable in the
     # admin console (Applications -> Admin Portal -> Portal settings), stored in admin_portal_settings.
+  metrics:
+    trend-days: 30   # analytics window for the dashboards' sign-in trend + platform totals
 
 management:
   endpoints:

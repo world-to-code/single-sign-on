@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Building2, LogIn, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { BarChart3, Building2, LogIn, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import {
   createOrganization, updateOrganization,
   type Organization, type OrganizationStatus,
@@ -124,6 +124,10 @@ export default function Organizations() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="icon" title="Analytics"
+                              onClick={() => navigate(`/admin/organizations/${org.id}`)}>
+                        <BarChart3 />
+                      </Button>
                       <Button variant="ghost" size="sm" title="Manage this organization"
                               disabled={org.status !== "ACTIVE"} onClick={() => manage(org)}>
                         <LogIn /> Manage
