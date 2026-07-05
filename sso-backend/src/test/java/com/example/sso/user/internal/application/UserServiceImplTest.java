@@ -70,7 +70,7 @@ class UserServiceImplTest {
         service.createUser(newUser(Set.of()));
 
         verify(users).save(any(AppUser.class));
-        verify(groups).findByName("All Users");
+        verify(groups).findByNameAndOrgIdIsNull("All Users");
     }
 
     @Test

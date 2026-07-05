@@ -14,7 +14,12 @@ import java.util.UUID;
 
 public interface UserGroupRepository extends JpaRepository<UserGroup, UUID> {
 
-    Optional<UserGroup> findByName(String name);
+    /** The GLOBAL/system group with this name (org_id IS NULL) — name lookup resolves to the global tier;
+     *  tenant groups are addressed by id. Deterministic via the {@code uq_user_group_name_global} index. */
+    Optional<UserGroup> findByNameAndOrgIdIsNull(String name);
+
+    /** A group with this name within the given org — the per-tenant uniqueness check on creation. */
+    Optional<UserGroup> findByNameAndOrgId(String name, UUID orgId);
 
     Optional<UserGroup> findByExternalId(String externalId);
 

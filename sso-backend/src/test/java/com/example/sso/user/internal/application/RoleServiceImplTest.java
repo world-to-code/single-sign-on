@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -57,6 +58,9 @@ class RoleServiceImplTest {
     void noTenantContext() {
         // Default to the global tier (no bound org) for role creation; individual tests may override.
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.empty());
+        // callAsPlatform just runs its supplier (session-revocation fan-out reads groups as platform).
+        lenient().when(orgContext.callAsPlatform(any()))
+                .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(0)).get());
     }
 
     private Role systemRole(String name) {

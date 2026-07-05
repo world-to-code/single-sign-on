@@ -3,6 +3,7 @@ package com.example.sso.user.internal.application;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.shared.IdName;
@@ -29,6 +30,7 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -46,6 +48,17 @@ public class UserGroupServiceImpl implements UserGroupService {
     private final RoleRepository roles;
     private final ApplicationEventPublisher events;
     private final AccessChangePublisher accessChanges;
+    private final OrgContext orgContext;
+
+    /** The org a newly-created group belongs to: the active tenant context, or null (global/system group). */
+    private UUID creationOrg() {
+        return orgContext.currentOrg().orElse(null);
+    }
+
+    /** A group with this name in the same tier (org, or global), or empty — for the uniqueness check. */
+    private Optional<UserGroup> sameTierByName(String name, UUID org) {
+        return org == null ? repository.findByNameAndOrgIdIsNull(name) : repository.findByNameAndOrgId(name, org);
+    }
 
     @Override
     @Transactional(readOnly = true)
@@ -104,11 +117,12 @@ public class UserGroupServiceImpl implements UserGroupService {
     @Override
     @Transactional
     public GroupView create(GroupSpec spec) {
-        if (repository.findByName(spec.name()).isPresent()) {
+        UUID org = creationOrg();
+        if (sameTierByName(spec.name(), org).isPresent()) { // unique within its own tier (global or this org)
             throw new ConflictException("group name already exists");
         }
 
-        UserGroup group = new UserGroup(spec.name(), spec.description(), spec.externalId());
+        UserGroup group = new UserGroup(spec.name(), spec.description(), spec.externalId(), org);
         group.setMembers(existingUserIds(spec.memberIds()));
 
         return toView(repository.save(group));
@@ -122,7 +136,7 @@ public class UserGroupServiceImpl implements UserGroupService {
             throw new ConflictException("the '" + group.getName() + "' system group cannot be edited");
         }
 
-        repository.findByName(spec.name())
+        sameTierByName(spec.name(), group.getOrgId())
                 .filter(other -> !other.getId().equals(id))
                 .ifPresent(other -> { throw new ConflictException("group name already exists"); });
 

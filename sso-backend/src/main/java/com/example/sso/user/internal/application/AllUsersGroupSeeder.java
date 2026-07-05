@@ -35,7 +35,7 @@ public class AllUsersGroupSeeder implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        UserGroup group = groups.findByName(UserGroup.ALL_USERS).orElseGet(() -> {
+        UserGroup group = groups.findByNameAndOrgIdIsNull(UserGroup.ALL_USERS).orElseGet(() -> {
             UserGroup g = new UserGroup(UserGroup.ALL_USERS, "Every user belongs to this group.", null);
             g.markSystem();
             log.info("Seeded system group '{}'.", UserGroup.ALL_USERS);

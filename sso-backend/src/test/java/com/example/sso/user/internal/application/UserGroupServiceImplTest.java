@@ -3,12 +3,14 @@ package com.example.sso.user.internal.application;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.GroupDeletedEvent;
 import com.example.sso.user.GroupSpec;
 import com.example.sso.user.internal.domain.UserGroupRepository;
 import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.internal.domain.RoleRepository;
 import com.example.sso.user.internal.domain.UserGroup;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -24,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
@@ -42,8 +45,15 @@ class UserGroupServiceImplTest {
     @Mock private RoleRepository roles;
     @Mock private ApplicationEventPublisher events;
     @Mock private AccessChangePublisher accessChanges;
+    @Mock private OrgContext orgContext;
 
     @InjectMocks private UserGroupServiceImpl service;
+
+    @BeforeEach
+    void noTenantContext() {
+        // Default to the global tier (no bound org) for group creation; tests may override.
+        lenient().when(orgContext.currentOrg()).thenReturn(Optional.empty());
+    }
 
     private UserGroup systemGroup() {
         UserGroup group = new UserGroup(UserGroup.ALL_USERS, null, null);
@@ -54,7 +64,7 @@ class UserGroupServiceImplTest {
     @Test
     void createRejectsADuplicateName() {
         GroupSpec spec = new GroupSpec("Engineering", "d", null, Set.of());
-        when(repository.findByName("Engineering")).thenReturn(Optional.of(new UserGroup("Engineering", "d", null)));
+        when(repository.findByNameAndOrgIdIsNull("Engineering")).thenReturn(Optional.of(new UserGroup("Engineering", "d", null)));
 
         assertThatThrownBy(() -> service.create(spec)).isInstanceOf(ConflictException.class);
         verify(repository, never()).save(any());
@@ -66,7 +76,7 @@ class UserGroupServiceImplTest {
         // The saved entity must carry an id so toView() can project it (getId().toString()).
         UserGroup saved = spy(new UserGroup("Engineering", "d", null));
         doReturn(UUID.randomUUID()).when(saved).getId();
-        when(repository.findByName("Engineering")).thenReturn(Optional.empty());
+        when(repository.findByNameAndOrgIdIsNull("Engineering")).thenReturn(Optional.empty());
         when(repository.save(any(UserGroup.class))).thenReturn(saved);
 
         service.create(spec);

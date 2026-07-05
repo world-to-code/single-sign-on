@@ -319,10 +319,15 @@ public class RoleServiceImpl implements RoleService {
         accessChanges.forUserIds(Set.of(userId));
     }
 
-    /** All users who hold the role — directly assigned plus everyone who inherits it through a group. */
+    /**
+     * All users who hold the role — directly assigned plus everyone who inherits it through a group. The
+     * group-delegated lookup runs as PLATFORM: {@code user_group} is org-scoped (RLS), so editing a GLOBAL
+     * role from within one tenant's context would otherwise miss delegating groups in OTHER tenants and fail
+     * to terminate their members' sessions. Session revocation on a role change must span every affected org.
+     */
     private Set<UUID> holdersOf(UUID roleId) {
         Set<UUID> ids = users.findByRoles_Id(roleId).stream().map(AppUser::getId).collect(Collectors.toSet());
-        ids.addAll(groups.findMemberIdsByRoleId(roleId));
+        ids.addAll(orgContext.callAsPlatform(() -> groups.findMemberIdsByRoleId(roleId)));
         return ids;
     }
 }

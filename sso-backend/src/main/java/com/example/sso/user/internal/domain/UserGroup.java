@@ -30,8 +30,14 @@ public class UserGroup extends AuditedEntity {
     /** The system group every user belongs to; auto-managed, cannot be renamed/deleted. */
     public static final String ALL_USERS = "All Users";
 
-    @Column(nullable = false, unique = true, length = 120)
+    // Tier-aware uniqueness (partial indexes in V45): global name, or (org_id, name) per tenant.
+    @Column(nullable = false, length = 120)
     private String name;
+
+    // NULL = a GLOBAL/system group (e.g. "All Users", visible to every tenant); non-null = a custom group
+    // owned by that organization (RLS-isolated). Set at creation from the active OrgContext; immutable after.
+    @Column(name = "org_id")
+    private UUID orgId;
 
     @Column(length = 255)
     private String description;
@@ -58,10 +64,17 @@ public class UserGroup extends AuditedEntity {
             inverseJoinColumns = @JoinColumn(name = "role_id"))
     private Set<Role> roles = new HashSet<>();
 
+    /** A global/system group (no owning org). */
     public UserGroup(String name, String description, String externalId) {
         this.name = name;
         this.description = description;
         this.externalId = externalId;
+    }
+
+    /** A group owned by {@code orgId} (null = global). The org is fixed at creation. */
+    public UserGroup(String name, String description, String externalId, UUID orgId) {
+        this(name, description, externalId);
+        this.orgId = orgId;
     }
 
     /** Marks this as a platform-managed system group (auto-managed membership, locked from edits). */

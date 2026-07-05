@@ -180,7 +180,7 @@ public class UserServiceImpl implements UserService {
 
     /** Adds a user to the platform "All Users" group (within the caller's transaction). */
     private void addToDefaultGroup(UUID userId) {
-        groups.findByName(UserGroup.ALL_USERS).ifPresent(group -> {
+        groups.findByNameAndOrgIdIsNull(UserGroup.ALL_USERS).ifPresent(group -> {
             group.addMember(userId);
             groups.save(group);
         });
