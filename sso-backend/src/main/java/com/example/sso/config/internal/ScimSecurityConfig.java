@@ -2,6 +2,7 @@ package com.example.sso.config.internal;
 
 import com.example.sso.scim.ScimBearerTokenFilter;
 import com.example.sso.scim.ScimTokenService;
+import com.example.sso.tenancy.OrgContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -23,11 +24,11 @@ public class ScimSecurityConfig {
 
     @Bean
     @Order(1)
-    SecurityFilterChain scimSecurityFilterChain(HttpSecurity http, ScimTokenService scimTokenService)
-            throws Exception {
+    SecurityFilterChain scimSecurityFilterChain(HttpSecurity http, ScimTokenService scimTokenService,
+            OrgContext orgContext) throws Exception {
         // Instantiated here (NOT a @Component) so it runs only on this /scim/v2/** chain — a @Component
         // Filter would also be auto-registered on the main app chain, letting a SCIM token authenticate there.
-        ScimBearerTokenFilter scimBearerTokenFilter = new ScimBearerTokenFilter(scimTokenService);
+        ScimBearerTokenFilter scimBearerTokenFilter = new ScimBearerTokenFilter(scimTokenService, orgContext);
 
         http
                 .securityMatcher("/scim/v2/**")

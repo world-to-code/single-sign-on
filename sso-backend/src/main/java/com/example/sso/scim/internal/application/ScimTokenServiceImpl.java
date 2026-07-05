@@ -1,8 +1,10 @@
 package com.example.sso.scim.internal.application;
 
+import com.example.sso.scim.ScimPrincipal;
 import com.example.sso.scim.ScimTokenService;
 import com.example.sso.scim.internal.domain.ScimToken;
 import com.example.sso.scim.internal.domain.ScimTokenRepository;
+import com.example.sso.tenancy.OrgContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,6 +17,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.Optional;
 
 /**
  * Default {@link ScimTokenService}. Issues and validates SCIM bearer tokens; the plaintext token is
@@ -27,13 +30,15 @@ public class ScimTokenServiceImpl implements ScimTokenService {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final ScimTokenRepository tokens;
+    private final OrgContext orgContext;
 
     @Override
     @Transactional
     public String issue(String description, Duration ttl) {
         String raw = randomToken();
         Instant expiresAt = ttl == null ? null : Instant.now().plus(ttl);
-        tokens.save(new ScimToken(description, hash(raw), expiresAt));
+        // Owned by the acting tenant (bound org), or global when a platform admin issues with none bound.
+        tokens.save(new ScimToken(description, hash(raw), expiresAt, orgContext.currentOrg().orElse(null)));
 
         return raw;
     }
@@ -43,16 +48,19 @@ public class ScimTokenServiceImpl implements ScimTokenService {
     public void ensureToken(String rawToken, String description) {
         String hash = hash(rawToken);
         if (!tokens.existsByTokenHash(hash)) {
-            tokens.save(new ScimToken(description, hash, null));
+            tokens.save(new ScimToken(description, hash, null, null)); // a global dev token
         }
     }
 
     @Override
     @Transactional(readOnly = true)
-    public boolean isValid(String rawToken) {
-        return tokens.findByTokenHash(hash(rawToken))
-                .map(token -> token.isActiveAt(Instant.now()))
-                .orElse(false);
+    public Optional<ScimPrincipal> authenticate(String rawToken) {
+        String hash = hash(rawToken);
+        // The request is not yet tenant-bound, so look the token up cross-org (platform); RLS would otherwise
+        // hide an org-owned token. The caller binds the returned org for the SCIM request.
+        return orgContext.callAsPlatform(() -> tokens.findByTokenHash(hash))
+                .filter(token -> token.isActiveAt(Instant.now()))
+                .map(token -> new ScimPrincipal(token.getOrgId()));
     }
 
     private String randomToken() {
