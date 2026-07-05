@@ -5,7 +5,11 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.mfa.FactorAuthorizationService;
+import com.example.sso.organization.OrganizationRef;
+import com.example.sso.organization.OrganizationService;
+import com.example.sso.organization.OrganizationStatus;
 import com.example.sso.saml.SamlFrontChannelLogout;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.shared.error.UnauthorizedException;
 import com.example.sso.shared.web.ClientIp;
@@ -15,6 +19,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -46,10 +51,26 @@ public class AuthenticationService {
     private final UserService users;
     private final LoginAttemptService loginAttempts;
     private final SamlFrontChannelLogout samlFrontChannel;
+    private final OrganizationService organizations;
+    private final PreAuthOrgSession preAuthOrg;
     private final AuditService audit;
 
-    public AuthSessionView session() {
-        return authState.describe(currentUser.authentication());
+    public AuthSessionView session(HttpServletRequest request) {
+        return authState.describe(currentUser.authentication(), preAuthOrg.orgSlug(request).orElse(null));
+    }
+
+    /**
+     * Tenant-first entry: resolve the organization by slug and stash it in the pre-auth session, so the
+     * subsequent identify step is scoped to it. An unknown or suspended org is rejected the same way (no
+     * enumeration of which tenants exist / are active).
+     */
+    public AuthSessionView organization(String slug, HttpServletRequest request, HttpServletResponse response) {
+        OrganizationRef org = organizations.findBySlug(slug)
+                .filter(o -> o.getStatus() == OrganizationStatus.ACTIVE)
+                .orElseThrow(() -> new NotFoundException("No such organization."));
+        preAuthOrg.stash(request, org.getId(), org.getSlug());
+        audit.record(AuditType.AUTH_ORGANIZATION, org.getSlug(), true);
+        return authState.describe(currentUser.authentication(), org.getSlug());
     }
 
     /**
@@ -59,9 +80,13 @@ public class AuthenticationService {
      */
     public AuthSessionView identify(String email, HttpServletRequest httpRequest,
                                     HttpServletResponse httpResponse) {
+        UUID orgId = preAuthOrg.orgId(httpRequest)
+                .orElseThrow(() -> new BadRequestException("Select an organization first."));
         UserAccount user = users.findByLogin(email).filter(UserAccount::isEnabled).orElse(null);
-        if (user == null) {
-            audit.record(new AuditRecord(AuditType.AUTH_IDENTIFY, email, false, "no active account", null));
+        // Gate on membership in the resolved org. Reject a non-member the SAME way as an unknown account so
+        // an attacker can't discover which emails exist (or belong to another tenant) via the login form.
+        if (user == null || !organizations.isMember(orgId, user.getId())) {
+            audit.record(new AuditRecord(AuditType.AUTH_IDENTIFY, email, false, "no active account in org", null));
             throw new NotFoundException("No active account for that email. Contact your administrator.");
         }
 

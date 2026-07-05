@@ -8,9 +8,11 @@ export interface SessionView {
   factors: string[];
   roles: string[];
   permissions: string[];
-  next: "IDENTIFY" | "FACTOR" | "DONE";
+  next: "ORGANIZATION" | "IDENTIFY" | "FACTOR" | "DONE";
   pendingFactors: string[];
   mfaEnrollmentAllowed: boolean;
+  /** The active organization (tenant) slug once resolved via the tenant-first entry step, else null. */
+  org: string | null;
 }
 
 /** Pre-step data for a factor: TOTP enrollment secret + QR, or a WebAuthn options document. */
@@ -32,7 +34,10 @@ export const getSession = () => apiGet<SessionView>("/api/auth/session");
 /** Whether the signed-in user may ENTER the admin console (assignment-based; gates the entry affordance). */
 export const getAdminConsoleAccess = () =>
   apiGet<{ allowed: boolean }>("/api/portal/admin-console/access");
-/** Identifier-first: submit the email; the response's policy drives which factor comes first. */
+/** Tenant-first: submit the organization slug; the response advances to IDENTIFY (or stays ORGANIZATION). */
+export const organization = (slug: string) =>
+  apiPost<SessionView>("/api/auth/organization", { slug });
+/** Identifier-first: submit the email (scoped to the resolved org); the policy drives which factor comes first. */
 export const identify = (email: string) =>
   apiPost<SessionView>("/api/auth/identify", { email });
 /** Logs out. `samlLogoutRedirect` is a URL to navigate to for front-channel SAML Single Logout, or null. */

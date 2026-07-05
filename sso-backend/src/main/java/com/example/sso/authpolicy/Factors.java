@@ -32,6 +32,11 @@ public final class Factors {
      *  Generated once at login completion and carried across re-auth; mirrors the OIDC_SID session attribute. */
     public static final String SID_PREFIX = "SID_";
 
+    /** Marker-authority prefix carrying the id of the organization (tenant) the session logged into,
+     *  surfaced as the {@code org} claim (OIDC) / attribute (SAML) and used to bind the request's tenant
+     *  context. Set at login completion from the tenant-first entry step; carried across re-auth. */
+    public static final String ORG_PREFIX = "ORG_";
+
     private Factors() {
     }
 }

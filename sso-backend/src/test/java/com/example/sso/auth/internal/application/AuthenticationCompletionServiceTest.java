@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -44,6 +45,8 @@ class AuthenticationCompletionServiceTest {
     @Mock private UserDetailsService userDetailsService;
     @Mock private FactorAuthorizationService factorAuth;
     @Mock private SessionLifecycle sessions;
+    // Real (not mocked) so its Optional-returning reads work against the session-less MockHttpServletRequest.
+    @Spy private PreAuthOrgSession preAuthOrg = new PreAuthOrgSession();
     @Mock private AuditService audit;
 
     @InjectMocks private AuthenticationCompletionService service;
@@ -66,7 +69,7 @@ class AuthenticationCompletionServiceTest {
     @Test
     void anUnauthenticatedContextIsNeverPromoted() {
         SecurityContextHolder.clearContext();
-        when(authState.describe(any())).thenReturn(AuthSessionView.anonymous(true));
+        when(authState.describe(any(), any())).thenReturn(AuthSessionView.organizationPending(true));
 
         service.completeIfSatisfied(request, response);
 
@@ -77,7 +80,7 @@ class AuthenticationCompletionServiceTest {
     @Test
     void anAlreadyCompleteSessionIsNotPromotedAgain() {
         signIn(Factors.PASSWORD, Factors.MFA_COMPLETE);
-        when(authState.describe(any())).thenReturn(AuthSessionView.anonymous(true));
+        when(authState.describe(any(), any())).thenReturn(AuthSessionView.organizationPending(true));
 
         service.completeIfSatisfied(request, response);
 
@@ -91,7 +94,7 @@ class AuthenticationCompletionServiceTest {
         when(authState.isPolicySatisfied(any())).thenReturn(true);
         when(userDetailsService.loadUserByUsername("alice"))
                 .thenReturn(new User("alice", "", List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
-        when(authState.describe(any())).thenReturn(AuthSessionView.anonymous(true));
+        when(authState.describe(any(), any())).thenReturn(AuthSessionView.organizationPending(true));
 
         service.completeIfSatisfied(request, response);
 
@@ -106,7 +109,7 @@ class AuthenticationCompletionServiceTest {
         when(authState.isPolicySatisfied(any())).thenReturn(true);
         when(userDetailsService.loadUserByUsername("alice"))
                 .thenReturn(new User("alice", "", List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
-        when(authState.describe(any())).thenReturn(AuthSessionView.anonymous(true));
+        when(authState.describe(any(), any())).thenReturn(AuthSessionView.organizationPending(true));
 
         service.completeIfSatisfied(request, response);
 

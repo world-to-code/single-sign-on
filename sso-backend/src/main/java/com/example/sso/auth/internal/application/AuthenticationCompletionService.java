@@ -40,6 +40,7 @@ public class AuthenticationCompletionService {
     private final UserDetailsService userDetailsService;
     private final FactorAuthorizationService factorAuth;
     private final SessionLifecycle sessions;
+    private final PreAuthOrgSession preAuthOrg;
     private final AuditService audit;
 
     /**
@@ -49,7 +50,7 @@ public class AuthenticationCompletionService {
     public AuthSessionView completeIfSatisfied(HttpServletRequest request, HttpServletResponse response) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {
-            return authState.describe(authentication);
+            return authState.describe(authentication, preAuthOrg.orgSlug(request).orElse(null));
         }
 
         boolean alreadyComplete = authentication.getAuthorities().stream()
@@ -68,6 +69,10 @@ public class AuthenticationCompletionService {
             // Stable per-session id surfaced as the OIDC `sid` claim (back-channel logout targets it). Set
             // once here (login completion runs once — MFA_COMPLETE gates re-entry); carried across re-auth.
             authorities.add(new SimpleGrantedAuthority(Factors.SID_PREFIX + UUID.randomUUID()));
+            // Bind the session to the organization resolved at the tenant-first entry step, surfaced as the
+            // `org` claim/attribute and used to scope the request's tenant context.
+            preAuthOrg.orgId(request)
+                    .ifPresent(orgId -> authorities.add(new SimpleGrantedAuthority(Factors.ORG_PREFIX + orgId)));
             // Spring Authorization Server derives the OIDC `auth_time` from a FactorGrantedAuthority's
             // issuedAt (JwtGenerator asserts one is present, else the token endpoint 500s). Our custom
             // flow uses string factor markers, so add one explicitly — reusing an existing factor
@@ -81,7 +86,8 @@ public class AuthenticationCompletionService {
             audit.record(new AuditRecord(AuditType.SESSION_CREATED, principal.getUsername(), true, null, ClientIp.of(request)));
         }
 
-        return authState.describe(SecurityContextHolder.getContext().getAuthentication());
+        return authState.describe(SecurityContextHolder.getContext().getAuthentication(),
+                preAuthOrg.orgSlug(request).orElse(null));
     }
 
     /** An existing factor authority to label the FactorGrantedAuthority with, so amr/acr stay unchanged. */

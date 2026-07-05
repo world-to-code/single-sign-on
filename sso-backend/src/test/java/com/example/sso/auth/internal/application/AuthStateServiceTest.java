@@ -62,45 +62,58 @@ class AuthStateServiceTest {
     }
 
     @Test
-    void aNullAuthenticationReportsIdentify() {
+    void aNullAuthenticationWithNoOrgReportsOrganization() {
         when(policyService.defaultPolicy()).thenReturn(policy);
         when(policy.isAllowEnrollmentAtLogin()).thenReturn(true);
 
-        AuthSessionView view = service.describe(null);
+        AuthSessionView view = service.describe(null, null);
 
-        assertThat(view.next()).isEqualTo(AuthSessionView.NEXT_IDENTIFY);
+        assertThat(view.next()).isEqualTo(AuthSessionView.NEXT_ORGANIZATION);
         assertThat(view.authenticated()).isFalse();
+        assertThat(view.org()).isNull();
     }
 
     @Test
-    void anAnonymousTokenReportsIdentify() {
+    void aResolvedOrgWithNoUserReportsIdentify() {
+        when(policyService.defaultPolicy()).thenReturn(policy);
+        when(policy.isAllowEnrollmentAtLogin()).thenReturn(true);
+
+        AuthSessionView view = service.describe(null, "acme");
+
+        assertThat(view.next()).isEqualTo(AuthSessionView.NEXT_IDENTIFY);
+        assertThat(view.org()).isEqualTo("acme");
+    }
+
+    @Test
+    void anAnonymousTokenWithNoOrgReportsOrganization() {
         when(policyService.defaultPolicy()).thenReturn(policy);
         when(policy.isAllowEnrollmentAtLogin()).thenReturn(false);
         Authentication anonymous = new AnonymousAuthenticationToken(
                 "key", "anonymousUser", List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS")));
 
-        assertThat(service.describe(anonymous).next()).isEqualTo(AuthSessionView.NEXT_IDENTIFY);
+        assertThat(service.describe(anonymous, null).next()).isEqualTo(AuthSessionView.NEXT_ORGANIZATION);
     }
 
     @Test
-    void anUnknownUsernameReportsIdentify() {
+    void anUnknownUsernameWithNoOrgReportsOrganization() {
         when(users.findByUsername("alice")).thenReturn(Optional.empty());
         when(policyService.defaultPolicy()).thenReturn(policy);
         when(policy.isAllowEnrollmentAtLogin()).thenReturn(true);
 
-        assertThat(service.describe(authed()).next()).isEqualTo(AuthSessionView.NEXT_IDENTIFY);
+        assertThat(service.describe(authed(), null).next()).isEqualTo(AuthSessionView.NEXT_ORGANIZATION);
     }
 
     @Test
-    void aSatisfiedPolicyReportsDone() {
+    void aSatisfiedPolicyReportsDoneCarryingTheActiveOrg() {
         identifiedAlice();
         when(evaluator.currentStep(eq(policy), any())).thenReturn(Optional.empty());
 
-        AuthSessionView view = service.describe(authed(Factors.PASSWORD, Factors.TOTP));
+        AuthSessionView view = service.describe(authed(Factors.PASSWORD, Factors.TOTP), "acme");
 
         assertThat(view.next()).isEqualTo(AuthSessionView.NEXT_DONE);
         assertThat(view.username()).isEqualTo("alice");
         assertThat(view.authenticated()).isTrue();
+        assertThat(view.org()).isEqualTo("acme");
     }
 
     @Test
@@ -109,7 +122,7 @@ class AuthStateServiceTest {
         when(evaluator.currentStep(eq(policy), any())).thenReturn(Optional.of(step));
         when(step.getAllowedFactors()).thenReturn(Set.of(AuthFactor.TOTP, AuthFactor.PASSWORD));
 
-        AuthSessionView view = service.describe(authed(Factors.PASSWORD));
+        AuthSessionView view = service.describe(authed(Factors.PASSWORD), "acme");
 
         assertThat(view.next()).isEqualTo(AuthSessionView.NEXT_FACTOR);
         // PASSWORD precedes TOTP by the enum's declared preference order (not alphabetical).

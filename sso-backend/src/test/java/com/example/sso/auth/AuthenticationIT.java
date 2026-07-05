@@ -25,17 +25,25 @@ class AuthenticationIT extends AbstractIntegrationTest {
     MockMvc mvc;
 
     @Test
-    void anonymousSessionStartsWithIdentify() throws Exception {
+    void anonymousSessionStartsWithOrganization() throws Exception {
+        // Tenant-first: a fresh visitor picks their organization before anything else.
         mvc.perform(get("/api/auth/session"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.authenticated").value(false))
-                .andExpect(jsonPath("$.next").value("IDENTIFY"));
+                .andExpect(jsonPath("$.next").value("ORGANIZATION"));
     }
 
     @Test
-    void identifyResolvesPolicyFirstFactorWithoutExposingRoles() throws Exception {
-        // Identifier-first: email in -> the policy's first factor (password), and NO roles yet.
-        mvc.perform(post("/api/auth/identify").with(csrf())
+    void identifyWithinTheOrgResolvesPolicyFirstFactorWithoutExposingRoles() throws Exception {
+        // Resolve the (seeded) default org first, then identify the admin within it -> the policy's first
+        // factor (password), and NO roles exposed yet.
+        Cookie session = sessionCookie(mvc.perform(post("/api/auth/organization").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"slug\":\"default\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.next").value("IDENTIFY"))
+                .andReturn(), null);
+
+        mvc.perform(post("/api/auth/identify").cookie(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"admin\"}"))
                 .andExpect(status().isOk())

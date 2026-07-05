@@ -207,6 +207,11 @@ public class AuthorizationServerConfig {
                     auth.stream().filter(a -> a.startsWith(Factors.STEPUP_TIME_PREFIX)).findFirst()
                             .ifPresent(a -> context.getClaims().claim("stepup_time",
                                     a.substring(Factors.STEPUP_TIME_PREFIX.length())));
+                    // `org`: the organization (tenant) id this session logged into (tenant-first entry), so a
+                    // relying party can scope the user to the tenant. String marker -> round-trips like acr.
+                    auth.stream().filter(a -> a.startsWith(Factors.ORG_PREFIX)).findFirst()
+                            .ifPresent(a -> context.getClaims().claim("org",
+                                    a.substring(Factors.ORG_PREFIX.length())));
                     // OIDC `sid` (id token only): identifies THIS OP session so back-channel logout can
                     // target the exact session on expiry/logout, not every session of the subject. Record
                     // the client as a participant of this session (the token endpoint has no HTTP session,

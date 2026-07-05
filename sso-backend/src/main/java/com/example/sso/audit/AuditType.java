@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 public enum AuditType {
 
     // Authentication
+    AUTH_ORGANIZATION(AuditCategory.AUTHENTICATION),
     AUTH_IDENTIFY(AuditCategory.AUTHENTICATION),
     AUTH_SUCCESS(AuditCategory.AUTHENTICATION),
     AUTH_FAILURE(AuditCategory.AUTHENTICATION),

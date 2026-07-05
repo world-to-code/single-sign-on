@@ -24,8 +24,14 @@ public class AuthenticationController {
     private final ResumeService resumeService;
 
     @GetMapping("/session")
-    public AuthSessionView session() {
-        return authentication.session();
+    public AuthSessionView session(HttpServletRequest httpRequest) {
+        return authentication.session(httpRequest);
+    }
+
+    @PostMapping("/organization")
+    public AuthSessionView organization(@Valid @RequestBody OrganizationRequest request,
+                                        HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        return authentication.organization(request.slug(), httpRequest, httpResponse);
     }
 
     @PostMapping("/identify")

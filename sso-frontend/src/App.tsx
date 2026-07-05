@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getSession, resume } from "./auth";
 import type { SessionView } from "./auth";
+import OrgSelect from "./pages/OrgSelect";
 import Login from "./pages/Login";
 import MfaStep from "./pages/MfaStep";
 import AppStepUp from "./pages/AppStepUp";
@@ -31,7 +32,8 @@ export default function App() {
       // A failed probe must not hang on "Loading…" — fall back to the entry screen so the user can sign in.
       .catch(() => setSession({
         authenticated: false, username: null, totpEnrolled: false, fido2Enrolled: false,
-        factors: [], roles: [], permissions: [], next: "IDENTIFY", pendingFactors: [], mfaEnrollmentAllowed: true,
+        factors: [], roles: [], permissions: [], next: "ORGANIZATION", pendingFactors: [],
+        mfaEnrollmentAllowed: true, org: null,
       }))
       .finally(() => setLoading(false));
   }, [apply]);
@@ -46,6 +48,8 @@ export default function App() {
   }
 
   switch (session.next) {
+    case "ORGANIZATION":
+      return <OrgSelect onDone={apply} />;
     case "IDENTIFY":
       return <Login onDone={apply} />;
     case "FACTOR":

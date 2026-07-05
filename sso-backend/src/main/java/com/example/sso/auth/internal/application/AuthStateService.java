@@ -34,14 +34,14 @@ public class AuthStateService {
     private final AuthPolicyResolver policyService;
     private final AuthPolicyEvaluator evaluator;
 
-    public AuthSessionView describe(Authentication authentication) {
+    public AuthSessionView describe(Authentication authentication, String activeOrgSlug) {
         if (authentication == null || !authentication.isAuthenticated()
                 || authentication instanceof AnonymousAuthenticationToken) {
-            return anonymous();
+            return anonymous(activeOrgSlug);
         }
         UserAccount user = users.findByUsername(authentication.getName()).orElse(null);
         if (user == null) {
-            return anonymous();
+            return anonymous(activeOrgSlug);
         }
 
         Set<String> granted = authentication.getAuthorities().stream()
@@ -57,7 +57,7 @@ public class AuthStateService {
         boolean enrollAllowed = policy.isAllowEnrollmentAtLogin(); // per the user's winning login policy
         Optional<AuthPolicyStepView> step = evaluator.currentStep(policy, granted);
         if (step.isEmpty()) {
-            return AuthSessionView.complete(user.getUsername(), totpEnrolled, fido2Enrolled, factors, roles, permissions, enrollAllowed);
+            return AuthSessionView.complete(user.getUsername(), totpEnrolled, fido2Enrolled, factors, roles, permissions, enrollAllowed, activeOrgSlug);
         }
 
         // Order by the factor's natural preference (PASSWORD, TOTP, EMAIL, FIDO2) so the SPA defaults
@@ -67,17 +67,20 @@ public class AuthStateService {
         List<String> pending = step.get().getAllowedFactors().stream()
                 .sorted(Comparator.comparingInt(Enum::ordinal))
                 .map(AuthFactor::name).toList();
-        return AuthSessionView.pending(user.getUsername(), totpEnrolled, fido2Enrolled, factors, roles, permissions, pending, enrollAllowed);
+        return AuthSessionView.pending(user.getUsername(), totpEnrolled, fido2Enrolled, factors, roles, permissions, pending, enrollAllowed, activeOrgSlug);
     }
 
     /** True once the user's policy is fully satisfied (used to grant the MFA-complete marker). */
     public boolean isPolicySatisfied(Authentication authentication) {
-        return AuthSessionView.NEXT_DONE.equals(describe(authentication).next());
+        return AuthSessionView.NEXT_DONE.equals(describe(authentication, null).next());
     }
 
-    private AuthSessionView anonymous() {
-        // Identifier-first: the SPA collects the email, then the policy drives the factors. No user yet,
-        // so report the default policy's enroll-at-login flag.
-        return AuthSessionView.anonymous(policyService.defaultPolicy().isAllowEnrollmentAtLogin());
+    private AuthSessionView anonymous(String activeOrgSlug) {
+        // Tenant-first: collect the org slug, then the email, then the policy drives the factors. No user
+        // yet, so report the default policy's enroll-at-login flag.
+        boolean enroll = policyService.defaultPolicy().isAllowEnrollmentAtLogin();
+        return activeOrgSlug == null
+                ? AuthSessionView.organizationPending(enroll)
+                : AuthSessionView.identifyPending(activeOrgSlug, enroll);
     }
 }

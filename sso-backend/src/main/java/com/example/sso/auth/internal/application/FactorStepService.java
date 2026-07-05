@@ -85,7 +85,7 @@ public class FactorStepService {
      * longer applies — so allow it.
      */
     private void requireCurrentStep(AuthFactor factor) {
-        AuthSessionView view = authState.describe(currentUser.authentication());
+        AuthSessionView view = authState.describe(currentUser.authentication(), null); // only next() is read
         if (AuthSessionView.NEXT_DONE.equals(view.next())) {
             return; // fully authenticated -> step-up context, not initial login ordering
         }
