@@ -5,9 +5,11 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.ratelimit.AuthRateLimitFilter;
 import com.example.sso.oidc.AdminPortalSeeder;
+import com.example.sso.organization.OrganizationService;
 import com.example.sso.security.AdminElevationFilter;
 import com.example.sso.security.PolicyIpAccessFilter;
 import com.example.sso.security.OrgContextFilter;
+import com.example.sso.security.OrgDrillInFilter;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.security.SessionIntegrityFilter;
 import com.example.sso.session.NetworkZoneService;
@@ -88,6 +90,7 @@ public class SecurityConfig {
     SecurityFilterChain appSecurityFilterChain(
             HttpSecurity http, AuthRateLimitFilter authRateLimitFilter,
             SessionIntegrityFilter sessionIntegrityFilter, OrgContext orgContext,
+            OrganizationService organizations,
             SessionPolicyService policyService,
             NetworkZoneService networkZones, JwtDecoder jwtDecoder,
             AdminPortalSettingsService adminPortalSettingsService, AuditService audit,
@@ -152,6 +155,10 @@ public class SecurityConfig {
                 .addFilterAfter(sessionIntegrityFilter, CsrfFilter.class)
                 // Bind the request's tenant context (org / platform) so org-scoped queries isolate by tenant.
                 .addFilterAfter(new OrgContextFilter(orgContext), SessionIntegrityFilter.class)
+                // Platform super-admin drill-in: an X-Org-Context header on /api/admin/** scopes the request
+                // to one tenant (super-admin only; a tenant admin sending it is refused). Runs AFTER the base
+                // binding so it overrides platform with the target org.
+                .addFilterAfter(new OrgDrillInFilter(orgContext, organizations, audit), OrgContextFilter.class)
                 // Per-policy network (IP) access, post-authentication (also registered on the OIDC chain).
                 .addFilterAfter(new PolicyIpAccessFilter(policyService, networkZones, audit), SessionIntegrityFilter.class)
                 // RFC 9470 elevation gate: require a fresh admin-console bearer token on /api/admin/**.

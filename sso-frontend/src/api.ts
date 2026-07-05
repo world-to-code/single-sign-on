@@ -63,6 +63,25 @@ function adminAuthHeader(path: string): Record<string, string> {
 }
 
 /**
+ * Drill-in: a platform super-admin scoping admin requests to one tenant. The drill-in store registers a
+ * getter; when set, admin requests carry X-Org-Context so the backend scopes RLS to that org. Server-side
+ * the header is honored only for a super-admin (a tenant admin is refused), so this is a UI convenience.
+ */
+let drillInOrgId: () => string | null = () => null;
+export function registerDrillInOrgId(getter: () => string | null): void {
+  drillInOrgId = getter;
+}
+function orgContextHeader(path: string): Record<string, string> {
+  if (path.startsWith("/api/admin")) {
+    const id = drillInOrgId();
+    if (id) {
+      return { "X-Org-Context": id };
+    }
+  }
+  return {};
+}
+
+/**
  * The admin elevation gate (RFC 9470) rejects a missing/stale/foreign bearer with a 401 whose
  * WWW-Authenticate challenge names `insufficient_user_authentication`. When that happens, drop the
  * stale admin unlock and bounce to /admin so AdminGuard restarts the step-up + OIDC flow. Returns
@@ -102,7 +121,7 @@ async function parse<T>(res: Response): Promise<T> {
 export async function apiGet<T>(path: string): Promise<T> {
   const res = await fetch(path, {
     credentials: "include",
-    headers: { ...adminAuthHeader(path) },
+    headers: { ...adminAuthHeader(path), ...orgContextHeader(path) },
   });
   if (handleElevationChallenge(path, res)) {
     return new Promise<T>(() => {}); // navigating away; never resolves
@@ -173,7 +192,9 @@ async function send<T>(method: string, path: string, body?: unknown, retried = f
   const res = await fetch(path, {
     method,
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...csrfHeader(), ...adminAuthHeader(path) },
+    headers: {
+      "Content-Type": "application/json", ...csrfHeader(), ...adminAuthHeader(path), ...orgContextHeader(path),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (res.status === 401 && res.headers.get("X-Step-Up-Required") === "true" && !retried && stepUpHandler) {

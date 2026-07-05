@@ -73,6 +73,7 @@ public enum AuditType {
     ORGANIZATION_DELETED(AuditCategory.ADMIN),
     ORGANIZATION_MEMBER_ADDED(AuditCategory.ADMIN),
     ORGANIZATION_MEMBER_REMOVED(AuditCategory.ADMIN),
+    ORGANIZATION_CONTEXT_ENTERED(AuditCategory.ADMIN),
 
     // Platform / system
     SERVER_ERROR(AuditCategory.SYSTEM);

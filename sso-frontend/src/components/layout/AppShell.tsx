@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
-import { ArrowLeft, ChevronDown, LogOut, Menu, ShieldCheck, X } from "lucide-react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { ArrowLeft, Building2, ChevronDown, LogOut, Menu, ShieldCheck, X } from "lucide-react";
 import type { SessionView } from "@/auth";
 import { isPlatformAdmin, logout } from "@/auth";
+import { setDrillIn, useDrillIn } from "@/drillIn";
 import { clearAdminUnlock, startAdminOidc } from "@/adminPortal";
 import { triggerStepUp } from "@/api";
 import { Brand } from "@/components/Brand";
@@ -31,6 +32,8 @@ export default function AppShell(
     (!i.permission || session.permissions.includes(i.permission))
     && (!i.superAdmin || isPlatformAdmin(session)); // platform-only areas hidden from tenant admins
   const location = useLocation();
+  const navigate = useNavigate();
+  const drill = useDrillIn(); // the tenant a super-admin is managing, or null (platform view)
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const groups = NAV.filter((g) => g.scope === variant);
@@ -46,6 +49,11 @@ export default function AppShell(
   function exitAdmin() {
     clearAdminUnlock();
     window.location.href = "/";
+  }
+
+  function exitDrillIn() {
+    setDrillIn(null); // subsequent admin requests drop X-Org-Context → back to platform (all tenants)
+    navigate("/admin/organizations");
   }
 
   // Enter the admin console: force a FRESH step-up re-auth FIRST (re-stamps the session auth_time), so
@@ -194,6 +202,16 @@ export default function AppShell(
             </DropdownMenu>
           </div>
         </header>
+        {variant === "admin" && drill && (
+          <div className="flex items-center justify-between gap-3 border-b border-primary/20 bg-primary/10 px-4 py-2 sm:px-6">
+            <span className="inline-flex items-center gap-2 text-sm font-medium text-primary">
+              <Building2 className="size-4 shrink-0" />
+              Managing organization: <span className="font-mono">{drill.slug}</span>
+              <span className="hidden text-primary/70 sm:inline">— acting in this tenant's context</span>
+            </span>
+            <Button variant="outline" size="sm" onClick={exitDrillIn}>Exit organization</Button>
+          </div>
+        )}
         <main className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">{children}</main>
       </div>
     </div>

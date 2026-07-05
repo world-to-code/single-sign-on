@@ -1,8 +1,10 @@
-import { Building2, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Building2, LogIn, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import {
   createOrganization, updateOrganization,
   type Organization, type OrganizationStatus,
 } from "@/organizations";
+import { setDrillIn } from "@/drillIn";
 import { usePaginated } from "@/usePaginated";
 import { errorMessage } from "@/api";
 import { Pagination } from "@/components/Pagination";
@@ -36,6 +38,7 @@ const blankEditor: Editor = { id: null, slug: "", name: "", status: "ACTIVE" };
  * roles, policies) is done by drilling into an org (SA-3), not here.
  */
 export default function Organizations() {
+  const navigate = useNavigate();
   const confirmDelete = useDeleteConfirm();
   const { items: orgs, total, page, setPage, size, error: listError, reload } =
     usePaginated<Organization>("/api/admin/organizations");
@@ -58,6 +61,12 @@ export default function Organizations() {
     } catch (e) {
       window.alert(errorMessage(e)); // rare; step-up is handled by the api client
     }
+  }
+
+  function manage(org: Organization) {
+    // Drill in: scope subsequent admin requests to this tenant, then land on its user directory.
+    setDrillIn({ id: org.id, slug: org.slug });
+    navigate("/admin/users");
   }
 
   async function remove(org: Organization) {
@@ -115,6 +124,10 @@ export default function Organizations() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="sm" title="Manage this organization"
+                              disabled={org.status !== "ACTIVE"} onClick={() => manage(org)}>
+                        <LogIn /> Manage
+                      </Button>
                       <Button variant="ghost" size="icon" title="Rename" onClick={() =>
                         openEdit({ id: org.id, slug: org.slug, name: org.name, status: org.status })}>
                         <Pencil />
