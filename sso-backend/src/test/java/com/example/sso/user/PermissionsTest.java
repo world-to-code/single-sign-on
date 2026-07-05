@@ -65,12 +65,12 @@ class PermissionsTest {
         assertThat(Permissions.PLATFORM).contains(
                 Permissions.ORG_CREATE, Permissions.PORTAL_SETTINGS_UPDATE,
                 Permissions.SCIM_MANAGE, Permissions.AUDIT_READ, Permissions.CLIENT_CREATE,
-                Permissions.SAML_CREATE, Permissions.APP_ASSIGNMENT_ASSIGN, Permissions.RESOURCE_ASSIGN_ADMIN);
-        // the directory + policy domain a tenant admin owns is NOT platform
+                Permissions.APP_ASSIGNMENT_ASSIGN, Permissions.RESOURCE_ASSIGN_ADMIN);
+        // the directory + policy domain a tenant admin owns is NOT platform; SAML RPs are now org-scoped too
         assertThat(Permissions.PLATFORM).doesNotContain(
                 Permissions.USER_READ, Permissions.GROUP_CREATE, Permissions.ROLE_CREATE,
                 Permissions.POLICY_READ, Permissions.SESSION_POLICY_READ, Permissions.NETWORK_ZONE_READ,
-                Permissions.ORG_READ, Permissions.ORG_MEMBER_MANAGE);
+                Permissions.SAML_CREATE, Permissions.ORG_READ, Permissions.ORG_MEMBER_MANAGE);
     }
 
     @Test
@@ -81,6 +81,7 @@ class PermissionsTest {
         assertThat(Permissions.isPlatform(Permissions.CLIENT_CREATE)).isTrue();
         // a tenant's own directory + registry membership stay tenant-grantable; key:rotate is now per-tenant
         assertThat(Permissions.isPlatform(Permissions.KEY_ROTATE)).isFalse();  // per-tenant signing keys
+        assertThat(Permissions.isPlatform(Permissions.SAML_CREATE)).isFalse(); // per-tenant SAML relying parties
         assertThat(Permissions.isPlatform(Permissions.ORG_READ)).isFalse();
         assertThat(Permissions.isPlatform(Permissions.ORG_MEMBER_MANAGE)).isFalse();
         assertThat(Permissions.isPlatform(Permissions.USER_READ)).isFalse();
@@ -93,7 +94,8 @@ class PermissionsTest {
                 .doesNotContainAnyElementsOf(Permissions.PLATFORM)
                 .contains(Permissions.USER_READ, Permissions.ROLE_CREATE, Permissions.GROUP_CREATE,
                         Permissions.POLICY_READ, Permissions.ORG_READ, Permissions.ORG_MEMBER_MANAGE,
-                        Permissions.KEY_ROTATE) // per-tenant signing keys are tenant-grantable
+                        Permissions.KEY_ROTATE, // per-tenant signing keys are tenant-grantable
+                        Permissions.SAML_CREATE) // per-tenant SAML relying parties are tenant-grantable
                 .doesNotContain(Permissions.CLIENT_CREATE, Permissions.AUDIT_READ)
                 .hasSize(Permissions.ALL.size() - Permissions.PLATFORM.size());
     }

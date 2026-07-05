@@ -2,12 +2,14 @@ package com.example.sso.saml.internal.domain;
 
 import com.example.sso.saml.SloBinding;
 import com.example.sso.shared.domain.AuditedEntity;
+import com.example.sso.tenancy.OrgOwned;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -20,12 +22,17 @@ import lombok.NoArgsConstructor;
 @Table(name = "saml_relying_party")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
-public class SamlRelyingParty extends AuditedEntity {
+public class SamlRelyingParty extends AuditedEntity implements OrgOwned {
 
     public static final String NAMEID_EMAIL = "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress";
 
     @Column(name = "entity_id", nullable = false, unique = true, length = 512)
     private String entityId;
+
+    /** Owning tenant, or {@code null} for a GLOBAL relying party visible to every tenant. The entityId
+     *  stays globally unique; RLS confines an org RP to its tenant's SSO (see {@code V52}). */
+    @Column(name = "org_id")
+    private UUID orgId;
 
     /** Friendly admin-set label shown in the app lists; falls back to {@code entityId} when unset. */
     @Column(name = "display_name", length = 256)
@@ -62,10 +69,16 @@ public class SamlRelyingParty extends AuditedEntity {
     @Column(name = "slo_binding", length = 16)
     private SloBinding sloBinding;
 
-    public SamlRelyingParty(String entityId, String acsUrl, String nameIdFormat) {
+    public SamlRelyingParty(String entityId, String acsUrl, String nameIdFormat, UUID orgId) {
         this.entityId = entityId;
         this.acsUrl = acsUrl;
         this.nameIdFormat = nameIdFormat;
+        this.orgId = orgId;
+    }
+
+    /** GLOBAL relying party (no owning tenant) — used by the seeder for platform-wide SPs. */
+    public SamlRelyingParty(String entityId, String acsUrl, String nameIdFormat) {
+        this(entityId, acsUrl, nameIdFormat, null);
     }
 
     /** Admin edit of the display name, endpoint, security policy, SP certificates, and SLO endpoint

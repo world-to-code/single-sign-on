@@ -10,6 +10,8 @@ import com.example.sso.saml.internal.domain.SamlSecuritySettings;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.tenancy.OrgContext;
+import com.example.sso.tenancy.OrgTierGuard;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -26,22 +28,31 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
 
     private final SamlRelyingPartyRepository relyingParties;
     private final ApplicationEventPublisher events;
+    private final OrgContext orgContext;
+    private final OrgTierGuard tierGuard;
 
     @Override
     @Transactional(readOnly = true)
     public Page<RelyingPartyView> list(int page, int size) {
-        List<RelyingPartyView> all = relyingParties.findAll().stream().map(this::toView).toList();
+        UUID tier = tierGuard.currentTier();
+        List<SamlRelyingParty> rows = tier == null
+                ? relyingParties.findAllByOrgIdIsNull()
+                : relyingParties.findAllByOrgId(tier);
+        List<RelyingPartyView> all = rows.stream().map(this::toView).toList();
         return Page.of(all, page, size);
     }
 
     @Override
     @Transactional
     public RelyingPartyView create(RelyingPartyRequest request) {
-        if (relyingParties.existsByEntityId(request.entityId())) {
+        // entityId is globally unique across tenants; check cross-org (RLS would otherwise hide another
+        // tenant's row and let a duplicate slip through) before stamping the RP with the caller's tier.
+        if (orgContext.callAsPlatform(() -> relyingParties.existsByEntityId(request.entityId()))) {
             throw new ConflictException("a relying party with that entityId already exists");
         }
 
-        SamlRelyingParty rp = new SamlRelyingParty(request.entityId(), request.acsUrl(), nameIdFormat(request));
+        SamlRelyingParty rp = new SamlRelyingParty(request.entityId(), request.acsUrl(), nameIdFormat(request),
+                tierGuard.currentTier());
         rp.update(request.displayName(), request.acsUrl(), nameIdFormat(request), settings(request),
                 trimToNull(request.signingCertificate()), trimToNull(request.encryptionCertificate()),
                 trimToNull(request.spLoginUrl()), trimToNull(request.singleLogoutUrl()), request.sloBinding());
@@ -51,8 +62,8 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
     @Override
     @Transactional
     public RelyingPartyView update(UUID id, RelyingPartyRequest request) {
-        SamlRelyingParty rp = relyingParties.findById(id)
-                .orElseThrow(() -> new NotFoundException("relying party not found"));
+        SamlRelyingParty rp = tierGuard.requireInTier(relyingParties.findById(id),
+                () -> new NotFoundException("relying party not found"));
 
         rp.update(request.displayName(), request.acsUrl(), nameIdFormat(request), settings(request),
                 trimToNull(request.signingCertificate()), trimToNull(request.encryptionCertificate()),
@@ -63,11 +74,10 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
     @Override
     @Transactional
     public void delete(UUID id) {
-        if (!relyingParties.existsById(id)) {
-            throw new NotFoundException("relying party not found");
-        }
+        SamlRelyingParty rp = tierGuard.requireInTier(relyingParties.findById(id),
+                () -> new NotFoundException("relying party not found"));
 
-        relyingParties.deleteById(id);
+        relyingParties.delete(rp);
         events.publishEvent(new ApplicationDeletedEvent(id.toString()));
     }
 

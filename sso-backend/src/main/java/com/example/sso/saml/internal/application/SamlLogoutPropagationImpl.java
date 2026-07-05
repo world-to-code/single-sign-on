@@ -7,15 +7,16 @@ import com.example.sso.saml.SamlSloSessionIndex;
 import com.example.sso.saml.SloBinding;
 import com.example.sso.saml.internal.domain.SamlRelyingParty;
 import com.example.sso.saml.internal.domain.SamlRelyingPartyRepository;
+import com.example.sso.tenancy.OrgContext;
 import java.time.Duration;
 import java.util.Map;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -37,28 +38,34 @@ class SamlLogoutPropagationImpl implements SamlLogoutPropagation {
     private final SamlRelyingPartyRepository relyingParties;
     private final SamlLogoutMessageBuilder messageBuilder;
     private final AuditService audit;
+    private final OrgContext orgContext;
     private final RestClient http;
 
     SamlLogoutPropagationImpl(SamlSloSessionIndex index, SamlRelyingPartyRepository relyingParties,
-            SamlLogoutMessageBuilder messageBuilder, AuditService audit,
+            SamlLogoutMessageBuilder messageBuilder, AuditService audit, OrgContext orgContext,
             @Value("${sso.saml.slo.http-timeout:PT5S}") Duration timeout) {
         this.index = index;
         this.relyingParties = relyingParties;
         this.messageBuilder = messageBuilder;
         this.audit = audit;
+        this.orgContext = orgContext;
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(timeout);
         factory.setReadTimeout(timeout);
         this.http = RestClient.builder().requestFactory(factory).build();
     }
 
+    // NOT @Transactional: this runs on the browser-less expiry path with no OrgContext bound, and each RP is
+    // resolved/signed under its OWN tenant scope below — a method-level tx would pin the first connection's
+    // RLS GUC and hide every org-scoped RP (they resolve only in platform or their own org's context).
     @Override
-    @Transactional(readOnly = true)
     public void propagate(String sid, String username) {
         Map<String, String> participants = index.lookup(sid);
         for (Map.Entry<String, String> participant : participants.entrySet()) {
             String entityId = participant.getKey();
-            SamlRelyingParty rp = relyingParties.findByEntityId(entityId).orElse(null);
+            // Resolve cross-tenant (platform context) so an org-scoped RP is visible here, where nothing is
+            // bound — RLS would otherwise hide it and the SP session would silently survive this termination.
+            SamlRelyingParty rp = orgContext.callAsPlatform(() -> relyingParties.findByEntityId(entityId).orElse(null));
             if (rp == null || !StringUtils.hasText(rp.getSingleLogoutUrl())) {
                 continue; // SP not configured for SLO
             }
@@ -74,14 +81,24 @@ class SamlLogoutPropagationImpl implements SamlLogoutPropagation {
             // index.clear below.
             boolean delivered = false;
             try {
-                delivered = postSoap(rp.getSingleLogoutUrl(),
-                        messageBuilder.signedLogoutRequestXml(rp, participant.getValue(), sid));
+                delivered = sendSoapLogout(rp, participant.getValue(), sid);
             } catch (RuntimeException e) {
                 log.warn("SAML SLO to {} failed to build/send: {}", entityId, e.getMessage());
             }
             audit.record(new AuditRecord(AuditType.SAML_SLO, username, delivered, "sp=" + entityId, null));
         }
         index.clear(sid);
+    }
+
+    // Build (which SIGNS with the RP's tenant SAML credential) + deliver, bound to the RP's org so the
+    // LogoutRequest is signed with that tenant's key; a global RP (org null) runs in the ambient context.
+    private boolean sendSoapLogout(SamlRelyingParty rp, String nameId, String sid) {
+        UUID org = rp.getOrgId();
+        if (org == null) {
+            return postSoap(rp.getSingleLogoutUrl(), messageBuilder.signedLogoutRequestXml(rp, nameId, sid));
+        }
+        return orgContext.callInOrg(org, () ->
+                postSoap(rp.getSingleLogoutUrl(), messageBuilder.signedLogoutRequestXml(rp, nameId, sid)));
     }
 
     private boolean postSoap(String url, String logoutRequestXml) {

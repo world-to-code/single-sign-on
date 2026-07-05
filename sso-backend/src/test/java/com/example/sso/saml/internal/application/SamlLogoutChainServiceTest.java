@@ -5,7 +5,11 @@ import com.example.sso.saml.internal.application.SamlLogoutChainService.ChainSte
 import com.example.sso.saml.internal.application.SamlLogoutChainStore.Hop;
 import com.example.sso.saml.internal.domain.SamlRelyingParty;
 import com.example.sso.saml.internal.domain.SamlRelyingPartyRepository;
+import com.example.sso.tenancy.OrgContext;
 import java.util.Optional;
+import java.util.UUID;
+import java.util.function.Supplier;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -15,6 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -33,8 +38,18 @@ class SamlLogoutChainServiceTest {
     SamlRedirectEncoder redirectEncoder;
     @Mock
     SamlBindingCodec codec;
+    @Mock
+    OrgContext orgContext;
     @InjectMocks
     SamlLogoutChainService service;
+
+    @BeforeEach
+    void setUp() {
+        // resolution runs in platform context; run the supplier inline. RPs default to org null (global),
+        // so callInOrg is not exercised here.
+        lenient().when(orgContext.callAsPlatform(any()))
+                .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(0)).get());
+    }
 
     private SamlRelyingParty rp(SloBinding binding) {
         SamlRelyingParty rp = mock(SamlRelyingParty.class);
@@ -71,6 +86,24 @@ class SamlLogoutChainServiceTest {
         ChainStep step = service.next("L", "nonce");
 
         assertThat(step).isInstanceOf(ChainStep.PostForm.class);
+    }
+
+    @Test
+    void orgScopedHopIsResolvedAndBuiltInsideTheRelyingPartysTenant() {
+        UUID org = UUID.randomUUID();
+        SamlRelyingParty rp = rp(SloBinding.POST);
+        when(rp.getOrgId()).thenReturn(org);
+        when(chainStore.next("L")).thenReturn(Optional.of(new Hop("sp", "user@x", "sid-1")));
+        when(relyingParties.findByEntityId("sp")).thenReturn(Optional.of(rp));
+        when(orgContext.callInOrg(eq(org), any()))
+                .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(1)).get());
+        when(messageBuilder.signedLogoutRequestXml(any(), eq("user@x"), eq("sid-1"))).thenReturn("<xml/>");
+        when(codec.postRequestHtml(any(), any(), eq("L"), eq("nonce"))).thenReturn("<html/>");
+
+        ChainStep step = service.next("L", "nonce");
+
+        assertThat(step).isInstanceOf(ChainStep.PostForm.class);
+        verify(orgContext).callInOrg(eq(org), any()); // signed under the tenant's SAML key, not the global one
     }
 
     @Test

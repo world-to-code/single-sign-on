@@ -4,9 +4,11 @@ import com.example.sso.saml.SloBinding;
 import com.example.sso.saml.internal.application.SamlLogoutChainStore.Hop;
 import com.example.sso.saml.internal.domain.SamlRelyingParty;
 import com.example.sso.saml.internal.domain.SamlRelyingPartyRepository;
+import com.example.sso.tenancy.OrgContext;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -26,6 +28,7 @@ public class SamlLogoutChainService {
     private final SamlLogoutMessageBuilder messageBuilder;
     private final SamlRedirectEncoder redirectEncoder;
     private final SamlBindingCodec codec;
+    private final OrgContext orgContext;
 
     /** The browser step for this hop. */
     public sealed interface ChainStep {
@@ -49,10 +52,21 @@ public class SamlLogoutChainService {
             return new ChainStep.Complete();
         }
         Hop h = hop.get();
-        SamlRelyingParty rp = relyingParties.findByEntityId(h.entityId()).orElse(null);
+        // The chain runs on the anonymous, post-logout /chain request (no OrgContext bound), so resolve the RP
+        // in platform context — an org-scoped RP would otherwise be RLS-invisible and its hop silently skipped.
+        SamlRelyingParty rp = orgContext.callAsPlatform(() -> relyingParties.findByEntityId(h.entityId()).orElse(null));
         if (rp == null || !StringUtils.hasText(rp.getSingleLogoutUrl())) {
             return next(logoutId, scriptNonce); // SP vanished / not configured — skip to the next hop
         }
+        // Build the hop bound to the RP's org so its LogoutRequest is signed with that tenant's SAML key; a
+        // global RP (org null) builds in the ambient context.
+        UUID org = rp.getOrgId();
+        return org == null
+                ? buildStep(rp, h, logoutId, scriptNonce)
+                : orgContext.callInOrg(org, () -> buildStep(rp, h, logoutId, scriptNonce));
+    }
+
+    private ChainStep buildStep(SamlRelyingParty rp, Hop h, String logoutId, String scriptNonce) {
         if (rp.sloBinding() == SloBinding.POST) {
             String signed = messageBuilder.signedLogoutRequestXml(rp, h.nameId(), h.sid());
             String base64 = Base64.getEncoder().encodeToString(signed.getBytes(StandardCharsets.UTF_8));

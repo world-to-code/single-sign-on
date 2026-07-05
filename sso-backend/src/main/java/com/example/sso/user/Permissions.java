@@ -101,17 +101,17 @@ public final class Permissions {
      * Platform-only permissions: the tenant registry itself ({@code organization:create/update/delete}),
      * the global admin-console security config ({@code portal-settings:*}), and shared cross-tenant
      * INFRASTRUCTURE — global provisioning ({@code scim:manage}), cross-tenant audit ({@code audit:read}),
-     * the global OIDC/SAML app registries and assignments ({@code oidc-client:*}, {@code saml-rp:*},
-     * {@code app-assignment:*}), and the resource DAG ({@code resource:*}). A tenant (org) admin can neither
-     * see these in the catalog nor grant them (enforced by {@link PermissionGrantPolicy}) — granting one
-     * would cross tenant boundaries.
+     * the global OIDC client registry and app assignments ({@code oidc-client:*}, {@code app-assignment:*}),
+     * and the resource DAG ({@code resource:*}). A tenant (org) admin can neither see these in the catalog
+     * nor grant them (enforced by {@link PermissionGrantPolicy}) — granting one would cross tenant boundaries.
      *
      * <p>Everything else in {@link #ALL} is tenant-grantable — the directory + policy domain a tenant admin
      * owns ({@code user:*}, {@code group:*}, {@code role:*}, {@code auth-policy:*}, {@code session-policy:*},
-     * {@code network-zone:*}, {@code key:rotate} — both OIDC and SAML signing keys are now per-tenant, so a
-     * rotation touches only that tenant's own keys) plus {@code organization:read}/{@code member-manage}
-     * (their own org). This set SHRINKS as Workstream-A makes each remaining domain truly per-tenant
-     * ({@code org_id} + RLS). Nothing is granted by default (the ROLE_ORG_ADMIN baseline is only
+     * {@code network-zone:*}, {@code saml-rp:*} — SAML relying parties are now org-scoped ({@code org_id} +
+     * RLS), so a tenant manages only its own SPs — {@code key:rotate} — both OIDC and SAML signing keys are
+     * now per-tenant, so a rotation touches only that tenant's own keys) plus {@code organization:read}/
+     * {@code member-manage} (their own org). This set SHRINKS as Workstream-A makes each remaining domain
+     * truly per-tenant ({@code org_id} + RLS). Nothing is granted by default (the ROLE_ORG_ADMIN baseline is only
      * {@code organization:read} + {@code member-manage}).
      */
     public static final Set<String> PLATFORM = Set.of(
@@ -119,7 +119,6 @@ public final class Permissions {
             PORTAL_SETTINGS_READ, PORTAL_SETTINGS_UPDATE,
             SCIM_MANAGE, AUDIT_READ,
             CLIENT_READ, CLIENT_CREATE, CLIENT_UPDATE, CLIENT_DELETE,
-            SAML_READ, SAML_CREATE, SAML_UPDATE, SAML_DELETE,
             APP_ASSIGNMENT_READ, APP_ASSIGNMENT_ASSIGN, APP_ASSIGNMENT_UNASSIGN,
             RESOURCE_READ, RESOURCE_CREATE, RESOURCE_UPDATE, RESOURCE_DELETE, RESOURCE_ASSIGN_ADMIN);
 
