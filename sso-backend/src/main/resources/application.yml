@@ -60,7 +60,11 @@ server:
         secure: false           # dev (HTTP); set true (HTTPS-only cookies) in production
 
 sso:
-  issuer: http://localhost:9000  # OIDC issuer + SAML IdP entityID base
+  issuer: http://localhost:9000  # OIDC issuer + SAML IdP entityID base (bare/platform host)
+  tenant:
+    # Base domains under which a tenant subdomain identifies the org, e.g. acme.localhost / acme.idp.example.com.
+    # A bare base domain keeps the slug-typed tenant-first login. Local dev: *.localhost → 127.0.0.1 (no DNS).
+    base-domains: localhost,idp.example.com
   admin:
     username: admin
     email: admin@example.com

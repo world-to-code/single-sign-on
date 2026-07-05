@@ -4,6 +4,7 @@ import com.example.sso.crypto.RsaKeyService;
 import com.example.sso.crypto.SecretCipher;
 import com.example.sso.crypto.internal.domain.SigningKey;
 import com.example.sso.crypto.internal.domain.SigningKeyRepository;
+import com.example.sso.tenancy.OrgContext;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.JWKSet;
@@ -39,12 +40,14 @@ public class RsaKeyServiceImpl implements RsaKeyService, ApplicationRunner {
 
     private final SigningKeyRepository repository;
     private final SecretCipher secretCipher;
+    private final OrgContext orgContext;
     private final int keySize;
 
-    public RsaKeyServiceImpl(SigningKeyRepository repository, SecretCipher secretCipher,
+    public RsaKeyServiceImpl(SigningKeyRepository repository, SecretCipher secretCipher, OrgContext orgContext,
                              @Value("${sso.crypto.rsa-key-size:2048}") int keySize) {
         this.repository = repository;
         this.secretCipher = secretCipher;
+        this.orgContext = orgContext;
         this.keySize = keySize;
     }
 
@@ -95,7 +98,17 @@ public class RsaKeyServiceImpl implements RsaKeyService, ApplicationRunner {
     @Override
     @Transactional(readOnly = true)
     public JWKSet buildJwkSet() {
-        return new JWKSet((JWK) toRsaKey(ensureActiveKey()));
+        return new JWKSet((JWK) toRsaKey(activeSigningKey()));
+    }
+
+    // The active signing key for the CURRENT tenant context (bound from the request host / session): the
+    // org's own key if it has one, otherwise the GLOBAL key — so a tenant without its own key still signs
+    // verifiably under its issuer (its JWKS then publishes the global key). Platform/unbound → global.
+    private SigningKey activeSigningKey() {
+        return orgContext.currentOrg()
+                .flatMap(repository::findFirstByActiveTrueAndOrgIdOrderByCreatedAtDesc)
+                .or(repository::findFirstByActiveTrueAndOrgIdIsNullOrderByCreatedAtDesc)
+                .orElseThrow(() -> new IllegalStateException("No active signing key (global key missing)"));
     }
 
     private RSAKey toRsaKey(SigningKey key) {

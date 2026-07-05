@@ -64,7 +64,8 @@ class OidcFlowIT extends AbstractIntegrationTest {
 
     @Test
     void clientCredentialsIssuesRsaSignedJwt() throws Exception {
-        String response = mvc.perform(post("/oauth2/token")
+        // The issuer is now derived from the request host; the bare platform host derives back to sso.issuer.
+        String response = mvc.perform(post("http://localhost:9000/oauth2/token")
                         .param("grant_type", "client_credentials")
                         .param("scope", "profile")
                         .with(httpBasic(CLIENT_ID, CLIENT_SECRET)))
@@ -78,6 +79,31 @@ class OidcFlowIT extends AbstractIntegrationTest {
         assertThat(jwt.getHeader().getKeyID()).isNotBlank();
         assertThat(jwt.getJWTClaimsSet().getIssuer()).isEqualTo("http://localhost:9000");
         assertThat(jwt.getJWTClaimsSet().getAudience()).contains(CLIENT_ID);
+    }
+
+    @Test
+    void aTenantSubdomainHostGetsItsOwnIssuer() throws Exception {
+        // Per-tenant issuer: a request to <tenant>.<base-domain> derives that tenant's issuer, resolved from
+        // the host by TenantHostFilter (the seeded "default" org). The token is signed under that issuer.
+        String response = mvc.perform(post("http://" + DEFAULT_ORG_SLUG + ".localhost:9000/oauth2/token")
+                        .param("grant_type", "client_credentials")
+                        .param("scope", "profile")
+                        .with(httpBasic(CLIENT_ID, CLIENT_SECRET)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        SignedJWT jwt = SignedJWT.parse(extractJson(response, "access_token"));
+        assertThat(jwt.getJWTClaimsSet().getIssuer()).isEqualTo("http://" + DEFAULT_ORG_SLUG + ".localhost:9000");
+        assertThat(jwt.getHeader().getKeyID()).isNotBlank(); // signed (global key fallback until the tenant has its own)
+    }
+
+    @Test
+    void anUnknownTenantSubdomainIsRefused() throws Exception {
+        // The host derives the issuer, so an unrecognised subdomain must not mint one — 404, not a token.
+        mvc.perform(post("http://no-such-tenant.localhost:9000/oauth2/token")
+                        .param("grant_type", "client_credentials")
+                        .with(httpBasic(CLIENT_ID, CLIENT_SECRET)))
+                .andExpect(status().isNotFound());
     }
 
     @Test

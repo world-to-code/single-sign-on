@@ -8,16 +8,18 @@ import com.example.sso.oidc.OidcBackchannelSessionIndex;
 import com.example.sso.portal.AppAssignmentFilter;
 import com.example.sso.portal.AppStepUpFilter;
 import com.example.sso.portal.ApplicationService;
+import com.example.sso.organization.OrganizationService;
 import com.example.sso.security.OrgContextFilter;
 import com.example.sso.security.PolicyIpAccessFilter;
+import com.example.sso.security.TenantHostFilter;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.tenancy.SubdomainTenantResolver;
 import com.example.sso.session.NetworkZoneService;
 import com.example.sso.session.SessionPolicyService;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.UserService;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
@@ -76,7 +78,7 @@ public class AuthorizationServerConfig {
             HttpSecurity http, JWKSource<SecurityContext> jwkSource,
             RegisteredClientRepository registeredClients, UserService users, ApplicationService applications,
             SessionPolicyService policyService, NetworkZoneService networkZones, AuditService audit,
-            OrgContext orgContext)
+            OrgContext orgContext, SubdomainTenantResolver subdomainResolver, OrganizationService organizations)
             throws Exception {
 
         OAuth2AuthorizationServerConfigurer authorizationServer = new OAuth2AuthorizationServerConfigurer();
@@ -109,10 +111,15 @@ public class AuthorizationServerConfig {
                                 new MediaTypeRequestMatcher(MediaType.TEXT_HTML)))
                 // The OIDC UserInfo endpoint is a resource-server endpoint (bearer access token).
                 .oauth2ResourceServer(rs -> rs.jwt(Customizer.withDefaults()))
-                // Bind the tenant context from the logged-in session on this chain too, so the IP filter's
-                // policy resolution sees the user's ORG-scoped session policy (not just global rules). The
-                // app chain has its own OrgContextFilter; this second instance scopes the OIDC endpoints.
-                .addFilterAfter(new OrgContextFilter(orgContext), SecurityContextHolderFilter.class)
+                // Per-tenant issuer: bind the org from the request HOST (subdomain) FIRST, so the host-derived
+                // OIDC issuer is backed by that tenant's signing key and its own JWKS/discovery — even for the
+                // unauthenticated discovery/JWKS endpoints. An unknown subdomain is refused (404). A bare host
+                // passes through to the session-based OrgContextFilter below.
+                .addFilterAfter(new TenantHostFilter(subdomainResolver, organizations, orgContext),
+                        SecurityContextHolderFilter.class)
+                // Then bind the tenant context from the logged-in session (bare host), so the IP filter's
+                // policy resolution sees the user's ORG-scoped session policy (not just global rules).
+                .addFilterAfter(new OrgContextFilter(orgContext), TenantHostFilter.class)
                 // Per-policy network (IP) access on the OIDC chain too: a blocked network must not be able to
                 // complete SSO (/oauth2/authorize) even though it reached login. Anchored after the org
                 // context filter so the resolved user's tenant policy (and its IP rules) is available.
@@ -157,10 +164,11 @@ public class AuthorizationServerConfig {
     }
 
     @Bean
-    AuthorizationServerSettings authorizationServerSettings(@Value("${sso.issuer}") String issuer) {
-        return AuthorizationServerSettings.builder()
-                .issuer(issuer)
-                .build();
+    AuthorizationServerSettings authorizationServerSettings() {
+        // No fixed issuer: the issuer is derived per-request from the host, so each tenant subdomain
+        // (acme.idp.example.com) is its own OIDC issuer with its own discovery document + JWKS, backed by
+        // that tenant's signing key. The bare platform host derives back to the sso.issuer value.
+        return AuthorizationServerSettings.builder().build();
     }
 
     /**
