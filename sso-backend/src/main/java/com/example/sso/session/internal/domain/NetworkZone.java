@@ -11,6 +11,7 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -26,8 +27,14 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
 public class NetworkZone extends AuditedEntity {
 
-    @Column(nullable = false, unique = true, length = 100)
+    // Tier-aware uniqueness (partial indexes in V47): global name, or (org_id, name) per tenant.
+    @Column(nullable = false, length = 100)
     private String name;
+
+    // NULL = a GLOBAL zone (platform-wide); non-null = owned by that organization (RLS-isolated). Fixed
+    // at creation — a tenant may only reference zones visible in its own context in a session policy rule.
+    @Column(name = "org_id")
+    private UUID orgId;
 
     @Column(length = 255)
     private String description;
@@ -37,10 +44,17 @@ public class NetworkZone extends AuditedEntity {
     @Column(name = "cidr", nullable = false, length = 64)
     private Set<String> cidrs = new HashSet<>();
 
+    /** A global zone (no owning org). */
     public NetworkZone(String name, String description, Collection<String> cidrs) {
         this.name = name;
         this.description = description;
         this.cidrs.addAll(cidrs);
+    }
+
+    /** A zone owned by {@code orgId} (null = global). The org is fixed at creation. */
+    public NetworkZone(String name, String description, Collection<String> cidrs, UUID orgId) {
+        this(name, description, cidrs);
+        this.orgId = orgId;
     }
 
     public void update(String name, String description, Collection<String> cidrs) {

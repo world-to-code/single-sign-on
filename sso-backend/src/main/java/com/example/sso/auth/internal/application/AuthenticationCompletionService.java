@@ -91,7 +91,11 @@ public class AuthenticationCompletionService {
             factorAuth.establish(request, response,
                     UsernamePasswordAuthenticationToken.authenticated(principal, null, authorities));
             StepUpInterceptor.stamp(request.getSession(false)); // count login as activity (idle clock), NOT a step-up
-            sessions.registerAndEnforceLimit(request, principal.getUsername());
+            // Enforce the concurrent-session limit under the login org, so the tenant's own session policy
+            // (not just the global default) governs how many sessions its members may hold.
+            preAuthOrg.orgId(request).ifPresentOrElse(
+                    orgId -> orgContext.runInOrg(orgId, () -> sessions.registerAndEnforceLimit(request, principal.getUsername())),
+                    () -> sessions.registerAndEnforceLimit(request, principal.getUsername()));
             audit.record(new AuditRecord(AuditType.SESSION_CREATED, principal.getUsername(), true, null,
                     ClientIp.of(request), preAuthOrg.orgId(request).orElse(null))); // tenant-tag the completed sign-in
         }

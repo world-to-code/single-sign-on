@@ -39,8 +39,14 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
 public class SessionPolicy extends AbstractEntity implements SessionPolicyDetails {
 
-    @Column(nullable = false, unique = true, length = 100)
+    // Tier-aware uniqueness (partial indexes in V47): global name, or (org_id, name) per tenant.
+    @Column(nullable = false, length = 100)
     private String name;
+
+    // NULL = a GLOBAL/default policy (the seeded Default, platform-wide policies); non-null = owned by that
+    // organization (RLS-isolated; applies only to that org's sessions). Fixed at creation.
+    @Column(name = "org_id")
+    private UUID orgId;
 
     /** Higher value wins when multiple policies apply to a user. */
     @Column(nullable = false)
@@ -66,9 +72,16 @@ public class SessionPolicy extends AbstractEntity implements SessionPolicyDetail
     @CollectionTable(name = "session_policy_ip_rule", joinColumns = @JoinColumn(name = "policy_id"))
     private Set<IpRuleEntry> ipRules = new HashSet<>();
 
+    /** A global/default policy (no owning org). */
     public SessionPolicy(String name, int priority) {
         this.name = name;
         this.priority = priority;
+    }
+
+    /** A policy owned by {@code orgId} (null = global). The org is fixed at creation. */
+    public SessionPolicy(String name, int priority, UUID orgId) {
+        this(name, priority);
+        this.orgId = orgId;
     }
 
     public void update(int absoluteTimeoutMinutes, int idleTimeoutMinutes, int reauthIntervalMinutes,

@@ -151,16 +151,20 @@ public class SecurityConfig {
                         .ignoringRequestMatchers("/saml2/idp/sso", "/saml2/idp/slo"))
                 .addFilterBefore(authRateLimitFilter, CsrfFilter.class)
                 .addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class)
-                // Zero-Trust: re-verify session integrity (client binding + absolute lifetime) on every request.
-                .addFilterAfter(sessionIntegrityFilter, CsrfFilter.class)
-                // Bind the request's tenant context (org / platform) so org-scoped queries isolate by tenant.
-                .addFilterAfter(new OrgContextFilter(orgContext), SessionIntegrityFilter.class)
-                // Platform super-admin drill-in: an X-Org-Context header on /api/admin/** scopes the request
-                // to one tenant (super-admin only; a tenant admin sending it is refused). Runs AFTER the base
-                // binding so it overrides platform with the target org.
-                .addFilterAfter(new OrgDrillInFilter(orgContext, organizations, audit), OrgContextFilter.class)
+                // Bind the request's tenant context (org / platform) FIRST, so the session-policy consumers
+                // that follow resolve the caller's ORG-scoped policy, not just the global default. Ordering is
+                // explicit (each filter anchored on the previous) — the tenant's session controls depend on it.
+                .addFilterAfter(new OrgContextFilter(orgContext), CsrfFilter.class)
+                // Zero-Trust: re-verify session integrity (client binding + absolute lifetime + idle + reauth)
+                // on every request — under the bound org, so a tenant's stricter session policy actually applies.
+                .addFilterAfter(sessionIntegrityFilter, OrgContextFilter.class)
                 // Per-policy network (IP) access, post-authentication (also registered on the OIDC chain).
                 .addFilterAfter(new PolicyIpAccessFilter(policyService, networkZones, audit), SessionIntegrityFilter.class)
+                // Platform super-admin drill-in: an X-Org-Context header on /api/admin/** scopes the request
+                // to one tenant (super-admin only; a tenant admin sending it is refused). Runs AFTER the
+                // session-security filters so the super-admin's OWN session still follows its base/platform
+                // policy; the rebind scopes only the admin CRUD that follows.
+                .addFilterAfter(new OrgDrillInFilter(orgContext, organizations, audit), PolicyIpAccessFilter.class)
                 // RFC 9470 elevation gate: require a fresh admin-console bearer token on /api/admin/**.
                 // Anchored AFTER the authorization filter so the session MFA_COMPLETE check
                 // (and @RequirePermission) still run first — a non-admin gets 403 there, never the 401 challenge.

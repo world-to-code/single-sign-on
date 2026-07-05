@@ -8,23 +8,28 @@ import com.example.sso.session.internal.domain.SessionPolicyRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.tenancy.OrgContext;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -41,9 +46,21 @@ class NetworkZoneServiceImplTest {
     private NetworkZoneRepository repository;
     @Mock
     private SessionPolicyRepository policies;
+    @Mock
+    private OrgContext orgContext;
+    @Mock
+    private ApplicationEventPublisher events;
 
     @InjectMocks
     private NetworkZoneServiceImpl service;
+
+    @BeforeEach
+    void setUp() {
+        // Default to the platform context (no org bound → the global tier); the cache reload runs as platform.
+        lenient().when(orgContext.currentOrg()).thenReturn(Optional.empty());
+        lenient().when(orgContext.callAsPlatform(any()))
+                .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(0)).get());
+    }
 
     private NetworkZone zone(String name, String description, List<String> cidrs) {
         NetworkZone z = new NetworkZone(name, description, cidrs);
@@ -65,8 +82,7 @@ class NetworkZoneServiceImplTest {
 
     @Test
     void createValidatesPersistsAndRefreshesTheCache() {
-        when(repository.findByName("Office")).thenReturn(Optional.empty());
-        when(repository.findAllWithCidrs()).thenReturn(List.of());
+        when(repository.findByNameAndOrgIdIsNull("Office")).thenReturn(Optional.empty());
         stampIdOnSave();
 
         NetworkZoneView view = service.create(new NetworkZoneSpec("Office", "HQ", List.of("192.168.0.0/16", "10.0.0.0/8")));
@@ -74,13 +90,12 @@ class NetworkZoneServiceImplTest {
         assertThat(view.name()).isEqualTo("Office");
         assertThat(view.cidrs()).containsExactlyInAnyOrder("192.168.0.0/16", "10.0.0.0/8");
         verify(repository).save(any(NetworkZone.class));
-        verify(repository).findAllWithCidrs(); // cache refreshed
+        verify(events).publishEvent(any(NetworkZoneCacheChanged.class)); // cache rebuilt AFTER_COMMIT
     }
 
     @Test
     void createTrimsAndDeduplicatesCidrs() {
-        when(repository.findByName("Z")).thenReturn(Optional.empty());
-        when(repository.findAllWithCidrs()).thenReturn(List.of());
+        when(repository.findByNameAndOrgIdIsNull("Z")).thenReturn(Optional.empty());
         stampIdOnSave();
         ArgumentCaptor<NetworkZone> captor = ArgumentCaptor.forClass(NetworkZone.class);
 
@@ -92,7 +107,7 @@ class NetworkZoneServiceImplTest {
 
     @Test
     void createRejectsADuplicateName() {
-        when(repository.findByName("Dup")).thenReturn(Optional.of(zone("Dup", null, List.of("10.0.0.0/8"))));
+        when(repository.findByNameAndOrgIdIsNull("Dup")).thenReturn(Optional.of(zone("Dup", null, List.of("10.0.0.0/8"))));
 
         assertThatThrownBy(() -> service.create(new NetworkZoneSpec("Dup", null, List.of("10.0.0.0/8"))))
                 .isInstanceOf(ConflictException.class);
@@ -101,7 +116,7 @@ class NetworkZoneServiceImplTest {
 
     @Test
     void createRejectsAnEmptyCidrList() {
-        when(repository.findByName("Empty")).thenReturn(Optional.empty());
+        when(repository.findByNameAndOrgIdIsNull("Empty")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.create(new NetworkZoneSpec("Empty", null, List.of())))
                 .isInstanceOf(BadRequestException.class);
@@ -110,7 +125,7 @@ class NetworkZoneServiceImplTest {
 
     @Test
     void createRejectsAnInvalidCidr() {
-        when(repository.findByName("Bad")).thenReturn(Optional.empty());
+        when(repository.findByNameAndOrgIdIsNull("Bad")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.create(new NetworkZoneSpec("Bad", null, List.of("10.0.0.0/8", "nope"))))
                 .isInstanceOf(BadRequestException.class);
@@ -125,15 +140,14 @@ class NetworkZoneServiceImplTest {
         NetworkZone existing = zone("Old", "d", List.of("1.1.1.0/24"));
         ReflectionTestUtils.setField(existing, "id", id);
         when(repository.findById(id)).thenReturn(Optional.of(existing));
-        when(repository.findByName("New")).thenReturn(Optional.empty());
-        when(repository.findAllWithCidrs()).thenReturn(List.of());
+        when(repository.findByNameAndOrgIdIsNull("New")).thenReturn(Optional.empty());
         when(repository.save(existing)).thenReturn(existing);
 
         NetworkZoneView view = service.update(id, new NetworkZoneSpec("New", "d2", List.of("2.2.2.0/24")));
 
         assertThat(view.name()).isEqualTo("New");
         assertThat(view.cidrs()).containsExactly("2.2.2.0/24");
-        verify(repository).findAllWithCidrs();
+        verify(events).publishEvent(any(NetworkZoneCacheChanged.class));
     }
 
     @Test
@@ -142,8 +156,7 @@ class NetworkZoneServiceImplTest {
         NetworkZone existing = zone("Same", null, List.of("1.1.1.0/24"));
         ReflectionTestUtils.setField(existing, "id", id);
         when(repository.findById(id)).thenReturn(Optional.of(existing));
-        when(repository.findByName("Same")).thenReturn(Optional.of(existing)); // resolves to itself → not a conflict
-        when(repository.findAllWithCidrs()).thenReturn(List.of());
+        when(repository.findByNameAndOrgIdIsNull("Same")).thenReturn(Optional.of(existing)); // resolves to itself → not a conflict
         when(repository.save(existing)).thenReturn(existing);
 
         NetworkZoneView view = service.update(id, new NetworkZoneSpec("Same", null, List.of("3.3.3.0/24")));
@@ -157,7 +170,7 @@ class NetworkZoneServiceImplTest {
         NetworkZone existing = zone("Old", null, List.of("1.1.1.0/24"));
         ReflectionTestUtils.setField(existing, "id", id);
         when(repository.findById(id)).thenReturn(Optional.of(existing));
-        when(repository.findByName("Taken")).thenReturn(Optional.of(zone("Taken", null, List.of("2.2.2.0/24"))));
+        when(repository.findByNameAndOrgIdIsNull("Taken")).thenReturn(Optional.of(zone("Taken", null, List.of("2.2.2.0/24"))));
 
         assertThatThrownBy(() -> service.update(id, new NetworkZoneSpec("Taken", null, List.of("1.1.1.0/24"))))
                 .isInstanceOf(ConflictException.class);
@@ -180,12 +193,11 @@ class NetworkZoneServiceImplTest {
         NetworkZone existing = zone("Z", null, List.of("1.1.1.0/24"));
         when(repository.findById(id)).thenReturn(Optional.of(existing));
         when(policies.countReferencingZone(id)).thenReturn(0L);
-        when(repository.findAllWithCidrs()).thenReturn(List.of());
 
         service.delete(id);
 
         verify(repository).delete(existing);
-        verify(repository).findAllWithCidrs();
+        verify(events).publishEvent(any(NetworkZoneCacheChanged.class));
     }
 
     @Test
@@ -238,5 +250,62 @@ class NetworkZoneServiceImplTest {
         when(repository.existsById(id)).thenReturn(true);
 
         assertThat(service.exists(id)).isTrue();
+    }
+
+    // --- adversarial: tenant/platform tier isolation -----------------------------------------------
+
+    @Test
+    void createStampsTheZoneWithTheBoundTenantAsOwner() {
+        UUID orgA = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgA));
+        when(repository.findByNameAndOrgId("Office", orgA)).thenReturn(Optional.empty());
+        stampIdOnSave();
+        ArgumentCaptor<NetworkZone> captor = ArgumentCaptor.forClass(NetworkZone.class);
+
+        service.create(new NetworkZoneSpec("Office", null, List.of("10.0.0.0/8")));
+
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().getOrgId()).isEqualTo(orgA); // never a global (org_id null) zone
+    }
+
+    @Test
+    void aTenantAdminCannotUpdateAGlobalZone() {
+        UUID orgA = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgA));
+        when(repository.findById(id)).thenReturn(Optional.of(zone("Global", null, List.of("1.1.1.0/24")))); // org_id null
+
+        assertThatThrownBy(() -> service.update(id, new NetworkZoneSpec("X", null, List.of("2.2.2.0/24"))))
+                .isInstanceOf(NotFoundException.class); // 404 — no enumeration of a global zone
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void aTenantAdminCannotDeleteAnotherTenantsZone() {
+        UUID orgA = UUID.randomUUID();
+        UUID orgB = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgA));
+        when(repository.findById(id)).thenReturn(Optional.of(orgZone("B-Zone", orgB)));
+
+        assertThatThrownBy(() -> service.delete(id)).isInstanceOf(NotFoundException.class);
+        verify(repository, never()).delete(any());
+    }
+
+    @Test
+    void thePlatformAdminCannotMutateAnOrgZoneWithoutDrillingIn() {
+        UUID orgB = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        // Platform context (no org bound) — the @BeforeEach default — must not reach a tenant's zone.
+        when(repository.findById(id)).thenReturn(Optional.of(orgZone("B-Zone", orgB)));
+
+        assertThatThrownBy(() -> service.delete(id)).isInstanceOf(NotFoundException.class);
+        verify(repository, never()).delete(any());
+    }
+
+    private NetworkZone orgZone(String name, UUID orgId) {
+        NetworkZone z = new NetworkZone(name, null, List.of("9.9.9.0/24"), orgId);
+        ReflectionTestUtils.setField(z, "id", UUID.randomUUID());
+        return z;
     }
 }

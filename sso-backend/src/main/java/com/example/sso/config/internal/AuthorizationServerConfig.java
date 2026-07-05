@@ -8,7 +8,9 @@ import com.example.sso.oidc.OidcBackchannelSessionIndex;
 import com.example.sso.portal.AppAssignmentFilter;
 import com.example.sso.portal.AppStepUpFilter;
 import com.example.sso.portal.ApplicationService;
+import com.example.sso.security.OrgContextFilter;
 import com.example.sso.security.PolicyIpAccessFilter;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.session.NetworkZoneService;
 import com.example.sso.session.SessionPolicyService;
 import com.example.sso.user.RoleRef;
@@ -73,7 +75,8 @@ public class AuthorizationServerConfig {
     SecurityFilterChain authorizationServerSecurityFilterChain(
             HttpSecurity http, JWKSource<SecurityContext> jwkSource,
             RegisteredClientRepository registeredClients, UserService users, ApplicationService applications,
-            SessionPolicyService policyService, NetworkZoneService networkZones, AuditService audit)
+            SessionPolicyService policyService, NetworkZoneService networkZones, AuditService audit,
+            OrgContext orgContext)
             throws Exception {
 
         OAuth2AuthorizationServerConfigurer authorizationServer = new OAuth2AuthorizationServerConfigurer();
@@ -106,10 +109,14 @@ public class AuthorizationServerConfig {
                                 new MediaTypeRequestMatcher(MediaType.TEXT_HTML)))
                 // The OIDC UserInfo endpoint is a resource-server endpoint (bearer access token).
                 .oauth2ResourceServer(rs -> rs.jwt(Customizer.withDefaults()))
+                // Bind the tenant context from the logged-in session on this chain too, so the IP filter's
+                // policy resolution sees the user's ORG-scoped session policy (not just global rules). The
+                // app chain has its own OrgContextFilter; this second instance scopes the OIDC endpoints.
+                .addFilterAfter(new OrgContextFilter(orgContext), SecurityContextHolderFilter.class)
                 // Per-policy network (IP) access on the OIDC chain too: a blocked network must not be able to
-                // complete SSO (/oauth2/authorize) even though it reached login. Anchored after the context
-                // filter so the resolved user (and policy) is available.
-                .addFilterAfter(new PolicyIpAccessFilter(policyService, networkZones, audit), SecurityContextHolderFilter.class)
+                // complete SSO (/oauth2/authorize) even though it reached login. Anchored after the org
+                // context filter so the resolved user's tenant policy (and its IP rules) is available.
+                .addFilterAfter(new PolicyIpAccessFilter(policyService, networkZones, audit), OrgContextFilter.class)
                 // Per-app step-up: redirect to /stepup when the client requires extra factors. Anchored
                 // after the context filter (a registered-order filter) so it runs once the session is loaded.
                 .addFilterAfter(new AppStepUpFilter(registeredClients, users, applications, audit),

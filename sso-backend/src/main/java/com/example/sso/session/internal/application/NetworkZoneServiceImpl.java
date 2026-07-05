@@ -9,16 +9,22 @@ import com.example.sso.session.internal.domain.SessionPolicyRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.tenancy.OrgContext;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.web.util.matcher.IpAddressMatcher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -34,18 +40,30 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
 
     private final NetworkZoneRepository repository;
     private final SessionPolicyRepository policies;
+    private final OrgContext orgContext;
+    private final ApplicationEventPublisher events;
     private volatile Map<UUID, List<String>> cache = Map.of();
 
-    // No @Transactional: lifecycle callbacks bypass the proxy anyway; findAllWithCidrs opens its own tx
-    // and fetch-joins the CIDRs, so the detached entities are fully initialized.
     @PostConstruct
     public void load() {
-        refresh();
+        reload();
     }
 
-    private void refresh() {
-        this.cache = repository.findAllWithCidrs().stream()
-                .collect(Collectors.toUnmodifiableMap(NetworkZone::getId, NetworkZone::cidrList));
+    /**
+     * Rebuilds the zone→CIDR cache in the PLATFORM context so it holds EVERY tenant's zones: a session
+     * policy's IP rule (resolved on the request path via {@link #cidrsForZone}) may reference any zone the
+     * request's org can see, so the lookup table must be cross-org. The query runs in its own connection
+     * (no ambient transaction) whose GUC is set from the platform context here.
+     */
+    private void reload() {
+        this.cache = orgContext.callAsPlatform(() -> repository.findAllWithCidrs().stream()
+                .collect(Collectors.toUnmodifiableMap(NetworkZone::getId, NetworkZone::cidrList)));
+    }
+
+    /** Rebuild AFTER the mutating transaction commits, so the reload reads the committed cross-org rows. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    void onCacheChanged(NetworkZoneCacheChanged event) {
+        reload();
     }
 
     @Override
@@ -60,34 +78,35 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
     @Override
     @Transactional
     public NetworkZoneView create(NetworkZoneSpec spec) {
-        if (repository.findByName(spec.name()).isPresent()) {
+        UUID creationOrg = creationOrg();
+        if (findInTier(spec.name(), creationOrg).isPresent()) {
             throw new ConflictException("zone name already exists");
         }
         List<String> cidrs = validateCidrs(spec.cidrs());
         NetworkZoneView view = NetworkZoneView.of(
-                repository.save(new NetworkZone(spec.name(), spec.description(), cidrs)));
-        refresh();
+                repository.save(new NetworkZone(spec.name(), spec.description(), cidrs, creationOrg)));
+        events.publishEvent(new NetworkZoneCacheChanged());
         return view;
     }
 
     @Override
     @Transactional
     public NetworkZoneView update(UUID id, NetworkZoneSpec spec) {
-        NetworkZone zone = repository.findById(id).orElseThrow(() -> new NotFoundException("zone not found"));
-        repository.findByName(spec.name())
+        NetworkZone zone = requireInActorTier(repository.findById(id));
+        findInTier(spec.name(), creationOrg())
                 .filter(other -> !other.getId().equals(id))
                 .ifPresent(other -> { throw new ConflictException("zone name already exists"); });
         List<String> cidrs = validateCidrs(spec.cidrs());
         zone.update(spec.name(), spec.description(), cidrs);
         NetworkZoneView view = NetworkZoneView.of(repository.save(zone));
-        refresh();
+        events.publishEvent(new NetworkZoneCacheChanged());
         return view;
     }
 
     @Override
     @Transactional
     public void delete(UUID id) {
-        NetworkZone zone = repository.findById(id).orElseThrow(() -> new NotFoundException("zone not found"));
+        NetworkZone zone = requireInActorTier(repository.findById(id));
         if (policies.countReferencingZone(id) > 0) {
             throw new ConflictException("zone is referenced by a session policy; remove those rules first");
         }
@@ -99,7 +118,24 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
             // refused. Same outcome as the guard above, so report the same 409, not a 500.
             throw new ConflictException("zone is referenced by a session policy; remove those rules first");
         }
-        refresh();
+        events.publishEvent(new NetworkZoneCacheChanged());
+    }
+
+    // The org that owns rows created in the current context: a tenant admin's bound org, or null (global)
+    // for the platform super-admin. RLS lets both READ global rows, so the tier is also checked in code.
+    private UUID creationOrg() {
+        return orgContext.currentOrg().orElse(null);
+    }
+
+    private Optional<NetworkZone> findInTier(String name, UUID org) {
+        return org == null ? repository.findByNameAndOrgIdIsNull(name) : repository.findByNameAndOrgId(name, org);
+    }
+
+    // A tenant admin must not mutate global zones (which RLS still lets them READ), and the platform admin
+    // must drill into an org before mutating that org's zones. Mismatch → 404 (non-revealing).
+    private NetworkZone requireInActorTier(Optional<NetworkZone> found) {
+        return found.filter(z -> Objects.equals(z.getOrgId(), creationOrg()))
+                .orElseThrow(() -> new NotFoundException("zone not found"));
     }
 
     @Override

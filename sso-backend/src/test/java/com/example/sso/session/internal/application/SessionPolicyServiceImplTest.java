@@ -11,24 +11,30 @@ import com.example.sso.session.internal.domain.SessionPolicyRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -52,13 +58,25 @@ class SessionPolicyServiceImplTest {
     private UserService users;
     @Mock
     private NetworkZoneService networkZones;
+    @Mock
+    private OrgContext orgContext;
+    @Mock
+    private ApplicationEventPublisher events;
 
     @InjectMocks
     private SessionPolicyServiceImpl service;
 
+    @BeforeEach
+    void setUp() {
+        // Default to the platform context (no org bound → the global tier); the cache reload runs as platform.
+        lenient().when(orgContext.currentOrg()).thenReturn(Optional.empty());
+        lenient().when(orgContext.callAsPlatform(any()))
+                .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(0)).get());
+    }
+
     private void cache(SessionPolicy... policies) {
         when(repository.findAllWithAssignmentsByPriorityDesc()).thenReturn(List.of(policies));
-        service.load(); // @PostConstruct populates the volatile cache in a real run
+        service.load(); // @PostConstruct populates the volatile cache (via a platform reload) in a real run
     }
 
     private UserAccount userWith(UUID id, RoleRef... roles) {
@@ -157,7 +175,7 @@ class SessionPolicyServiceImplTest {
 
     @Test
     void createRejectsADuplicateName() {
-        when(repository.findByName("Dup")).thenReturn(Optional.of(new SessionPolicy("Dup", 1)));
+        when(repository.findByNameAndOrgIdIsNull("Dup")).thenReturn(Optional.of(new SessionPolicy("Dup", 1)));
 
         assertThatThrownBy(() -> service.create(spec("Dup", "TOTP")))
                 .isInstanceOf(ConflictException.class);
@@ -166,7 +184,7 @@ class SessionPolicyServiceImplTest {
 
     @Test
     void createRejectsEmptyReauthFactors() {
-        when(repository.findByName("Empty")).thenReturn(Optional.empty());
+        when(repository.findByNameAndOrgIdIsNull("Empty")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.create(spec("Empty", "  ")))
                 .isInstanceOf(BadRequestException.class);
@@ -175,7 +193,7 @@ class SessionPolicyServiceImplTest {
 
     @Test
     void createRejectsAnUnknownReauthFactor() {
-        when(repository.findByName("Bad")).thenReturn(Optional.empty());
+        when(repository.findByNameAndOrgIdIsNull("Bad")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.create(spec("Bad", "TOTP,SMS")))
                 .isInstanceOf(BadRequestException.class);
@@ -186,7 +204,7 @@ class SessionPolicyServiceImplTest {
     void createRejectsAnUnknownStepUpFactor() {
         // The stronger sensitive-action factors are validated INDEPENDENTLY of the general re-auth factors,
         // so a valid reauthFactors cannot smuggle an unknown stepUpFactors through.
-        when(repository.findByName("BadStepUp")).thenReturn(Optional.empty());
+        when(repository.findByNameAndOrgIdIsNull("BadStepUp")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.create(spec("BadStepUp", "TOTP", "FIDO2,SMS")))
                 .isInstanceOf(BadRequestException.class);
@@ -195,9 +213,8 @@ class SessionPolicyServiceImplTest {
 
     @Test
     void createPersistsAndRefreshesOnValidInput() {
-        when(repository.findByName("Strict")).thenReturn(Optional.empty());
+        when(repository.findByNameAndOrgIdIsNull("Strict")).thenReturn(Optional.empty());
         when(repository.save(any(SessionPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(repository.findAllWithAssignmentsByPriorityDesc()).thenReturn(List.of());
 
         SessionPolicyDetails created = service.create(spec("Strict", "TOTP,FIDO2", "FIDO2"));
 
@@ -206,12 +223,12 @@ class SessionPolicyServiceImplTest {
         assertThat(created.getStepUpFactors()).isEqualTo("FIDO2");             // stronger sensitive set
         assertThat(created.getSensitiveReauthWindowMinutes()).isEqualTo(2);    // window round-trips
         verify(repository).save(any(SessionPolicy.class));
-        verify(repository).findAllWithAssignmentsByPriorityDesc(); // cache refreshed
+        verify(events).publishEvent(any(SessionPolicyCacheChanged.class)); // cache rebuilt AFTER_COMMIT
     }
 
     @Test
     void createRejectsAnUnknownZoneReference() {
-        when(repository.findByName("BadZone")).thenReturn(Optional.empty());
+        when(repository.findByNameAndOrgIdIsNull("BadZone")).thenReturn(Optional.empty());
         String ghost = UUID.randomUUID().toString();
         when(networkZones.exists(UUID.fromString(ghost))).thenReturn(false);
         SessionPolicySpec spec = new SessionPolicySpec("BadZone", 5, true, 480, 30, 15, "TOTP", 2, "TOTP",
@@ -223,7 +240,7 @@ class SessionPolicyServiceImplTest {
 
     @Test
     void createRejectsAMalformedZoneId() {
-        when(repository.findByName("BadId")).thenReturn(Optional.empty());
+        when(repository.findByNameAndOrgIdIsNull("BadId")).thenReturn(Optional.empty());
         SessionPolicySpec spec = new SessionPolicySpec("BadId", 5, true, 480, 30, 15, "TOTP", 2, "TOTP",
                 false, 0, false, "Lax", Set.of(), Set.of(), List.of(new IpRuleSpec("not-a-uuid", "BLOCK", 0)));
 
@@ -233,9 +250,8 @@ class SessionPolicyServiceImplTest {
 
     @Test
     void createPersistsIpRulesInEvaluationOrder() {
-        when(repository.findByName("Net")).thenReturn(Optional.empty());
+        when(repository.findByNameAndOrgIdIsNull("Net")).thenReturn(Optional.empty());
         when(repository.save(any(SessionPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(repository.findAllWithAssignmentsByPriorityDesc()).thenReturn(List.of());
         String office = UUID.randomUUID().toString();
         String everywhere = UUID.randomUUID().toString();
         when(networkZones.exists(any(UUID.class))).thenReturn(true);
@@ -266,7 +282,6 @@ class SessionPolicyServiceImplTest {
         SessionPolicy def = new SessionPolicy(SessionPolicyService.DEFAULT_NAME, 0);
         when(repository.findById(id)).thenReturn(Optional.of(def));
         when(repository.save(any(SessionPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(repository.findAllWithAssignmentsByPriorityDesc()).thenReturn(List.of());
 
         SessionPolicyDetails saved = service.update(id, update(99, false, "TOTP"));
 
@@ -301,11 +316,103 @@ class SessionPolicyServiceImplTest {
         UUID id = UUID.randomUUID();
         SessionPolicy custom = new SessionPolicy("Custom", 3);
         when(repository.findById(id)).thenReturn(Optional.of(custom));
-        when(repository.findAllWithAssignmentsByPriorityDesc()).thenReturn(List.of());
 
         service.delete(id);
 
         verify(repository).delete(custom);
-        verify(repository).findAllWithAssignmentsByPriorityDesc();
+        verify(events).publishEvent(any(SessionPolicyCacheChanged.class));
+    }
+
+    // --- adversarial: cross-tenant resolution + tier isolation --------------------------------------
+
+    @Test
+    void resolveIgnoresAnotherTenantsPolicyEvenWhenHigherPriority() {
+        UUID orgA = UUID.randomUUID();
+        UUID orgB = UUID.randomUUID();
+        SessionPolicy def = new SessionPolicy(SessionPolicyService.DEFAULT_NAME, 0);        // global
+        SessionPolicy foreign = new SessionPolicy("B-Strict", 99, orgB);                    // another tenant's
+        cache(foreign, def);
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgA)); // request bound to org A
+
+        // org B's policy sits in the shared (platform-loaded) cache but must NEVER apply to an org A
+        // session — even at priority 99 it is filtered out, so resolution falls back to the global Default.
+        assertThat(service.resolveForUser(userWith(UUID.randomUUID())).getName())
+                .isEqualTo(SessionPolicyService.DEFAULT_NAME);
+    }
+
+    @Test
+    void resolveAppliesTheBoundOrgsOwnOrgWidePolicy() {
+        UUID orgA = UUID.randomUUID();
+        SessionPolicy def = new SessionPolicy(SessionPolicyService.DEFAULT_NAME, 0);
+        SessionPolicy orgWide = new SessionPolicy("A-Wide", 5, orgA); // org A, unassigned → org-wide
+        cache(orgWide, def);
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgA));
+
+        assertThat(service.resolveForUser(userWith(UUID.randomUUID())).getName()).isEqualTo("A-Wide");
+    }
+
+    @Test
+    void createStampsThePolicyWithTheBoundTenantAsOwner() {
+        UUID orgA = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgA));
+        when(repository.findByNameAndOrgId("T", orgA)).thenReturn(Optional.empty());
+        when(repository.save(any(SessionPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.create(spec("T", "TOTP"));
+
+        ArgumentCaptor<SessionPolicy> saved = ArgumentCaptor.forClass(SessionPolicy.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getOrgId()).isEqualTo(orgA); // never a global (org_id null) policy
+    }
+
+    @Test
+    void aTenantAdminCannotUpdateAGlobalPolicy() {
+        UUID orgA = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgA));
+        when(repository.findById(id)).thenReturn(Optional.of(new SessionPolicy("Global", 5))); // org_id null
+
+        assertThatThrownBy(() -> service.update(id, update(3, true, "TOTP")))
+                .isInstanceOf(NotFoundException.class); // 404, not 403 — no enumeration of global policies
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void aTenantAdminCannotDeleteAnotherTenantsPolicy() {
+        UUID orgA = UUID.randomUUID();
+        UUID orgB = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgA));
+        when(repository.findById(id)).thenReturn(Optional.of(new SessionPolicy("B", 5, orgB)));
+
+        assertThatThrownBy(() -> service.delete(id)).isInstanceOf(NotFoundException.class);
+        verify(repository, never()).delete(any());
+    }
+
+    @Test
+    void thePlatformAdminCannotMutateAnOrgPolicyWithoutDrillingIn() {
+        UUID orgB = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        // Platform context (no org bound) — the @BeforeEach default — must not reach into a tenant's policy.
+        when(repository.findById(id)).thenReturn(Optional.of(new SessionPolicy("B", 5, orgB)));
+
+        assertThatThrownBy(() -> service.delete(id)).isInstanceOf(NotFoundException.class);
+        verify(repository, never()).delete(any());
+    }
+
+    @Test
+    void anOrgScopedPolicyNamedDefaultIsRepriorisableByItsOwner() {
+        UUID orgA = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgA));
+        SessionPolicy orgDefault = new SessionPolicy(SessionPolicyService.DEFAULT_NAME, 3, orgA);
+        when(repository.findById(id)).thenReturn(Optional.of(orgDefault));
+        when(repository.save(any(SessionPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        SessionPolicyDetails saved = service.update(id, update(7, true, "TOTP"));
+
+        // The immutable-fallback guard is for the GLOBAL Default only; an org policy named "Default" is a
+        // normal custom policy and stays fully editable (priority applied, not frozen to 0).
+        assertThat(saved.getPriority()).isEqualTo(7);
     }
 }
