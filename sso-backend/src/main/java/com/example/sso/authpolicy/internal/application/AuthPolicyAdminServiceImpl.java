@@ -8,7 +8,14 @@ import com.example.sso.authpolicy.AuthPolicyUpdate;
 import com.example.sso.authpolicy.AuthPolicyView;
 import com.example.sso.authpolicy.internal.domain.AuthPolicy;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyRepository;
+import com.example.sso.authpolicy.internal.domain.AuthPolicyRole;
+import com.example.sso.authpolicy.internal.domain.AuthPolicyRoleRepository;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyStep;
+import com.example.sso.authpolicy.internal.domain.AuthPolicyStepFactor;
+import com.example.sso.authpolicy.internal.domain.AuthPolicyStepFactorRepository;
+import com.example.sso.authpolicy.internal.domain.AuthPolicyStepRepository;
+import com.example.sso.authpolicy.internal.domain.AuthPolicyUser;
+import com.example.sso.authpolicy.internal.domain.AuthPolicyUserRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
@@ -17,8 +24,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -28,12 +33,22 @@ import java.util.UUID;
  * Default fallback policy. Every policy is owned by the acting tier: a tenant admin (org context bound)
  * creates/edits only their org's policies; the platform super-admin (no org bound) manages global policies
  * and, after drilling into an org, that org's policies. RLS enforces the same boundary at the row level.
+ *
+ * <p>Steps, their factor rows, and the user/role assignment rows are managed EXPLICITLY through their
+ * own repositories — there is no JPA cascade or orphan removal. Every insert/delete a mutation performs
+ * is therefore visible here: replacing a policy's steps deletes the old factor rows, then the old step
+ * rows, then inserts the new ones; deleting a policy deletes its steps' factors, its steps, and its
+ * assignments before the policy itself.
  */
 @Service
 @RequiredArgsConstructor
 public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
     private final AuthPolicyRepository repository;
     private final OrgTierGuard tierGuard;
+    private final AuthPolicyStepRepository stepRepository;
+    private final AuthPolicyStepFactorRepository stepFactorRepository;
+    private final AuthPolicyUserRepository userRepository;
+    private final AuthPolicyRoleRepository roleRepository;
 
     @Override
     @Transactional
@@ -45,11 +60,8 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         policy.enable();
         policy.useForLogin(true);
         policy.allowEnrollmentAtLogin(true); // the fallback must let users bootstrap a required factor
-        policy.replaceSteps(List.of(
-                new AuthPolicyStep(1, Set.of(AuthFactor.PASSWORD)),
-                new AuthPolicyStep(2, Set.of(AuthFactor.TOTP))));
-
-        repository.save(policy);
+        AuthPolicy saved = repository.save(policy);
+        replaceSteps(saved, List.of(Set.of(AuthFactor.PASSWORD), Set.of(AuthFactor.TOTP)));
     }
 
     @Override
@@ -74,11 +86,15 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         policy.useForLogin(spec.appliesToLogin());
         policy.allowEnrollmentAtLogin(spec.allowEnrollmentAtLogin());
         policy.updateStepUpFreshnessMinutes(spec.stepUpFreshnessMinutes());
-        applySteps(policy, spec.steps());
-        policy.assignUsers(spec.userIds() == null ? Set.of() : spec.userIds());
-        policy.assignRoles(spec.roleIds() == null ? Set.of() : spec.roleIds());
 
-        return repository.save(policy);
+        AuthPolicy saved = repository.save(policy);
+        Set<UUID> userIds = spec.userIds() == null ? Set.of() : spec.userIds();
+        Set<UUID> roleIds = spec.roleIds() == null ? Set.of() : spec.roleIds();
+        replaceSteps(saved, spec.steps());
+        replaceUserAssignments(saved, userIds);
+        replaceRoleAssignments(saved, roleIds);
+
+        return AuthPolicyProjection.of(saved, spec.steps(), userIds, roleIds);
     }
 
     @Override
@@ -98,11 +114,15 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         policy.useForLogin(update.appliesToLogin());
         policy.allowEnrollmentAtLogin(update.allowEnrollmentAtLogin());
         policy.updateStepUpFreshnessMinutes(update.stepUpFreshnessMinutes());
-        applySteps(policy, update.steps());
-        policy.assignUsers(update.userIds() == null ? Set.of() : update.userIds());
-        policy.assignRoles(update.roleIds() == null ? Set.of() : update.roleIds());
 
-        return repository.save(policy);
+        Set<UUID> userIds = update.userIds() == null ? Set.of() : update.userIds();
+        Set<UUID> roleIds = update.roleIds() == null ? Set.of() : update.roleIds();
+        replaceSteps(policy, update.steps());
+        replaceUserAssignments(policy, userIds);
+        replaceRoleAssignments(policy, roleIds);
+
+        AuthPolicy saved = repository.save(policy);
+        return AuthPolicyProjection.of(saved, update.steps(), userIds, roleIds);
     }
 
     @Override
@@ -113,7 +133,10 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
             throw new BadRequestException("the Default policy cannot be deleted");
         }
 
-        repository.delete(policy);
+        deleteSteps(id);                        // each step's factor rows, then the step rows
+        userRepository.deleteByPolicyId(id);    // user assignments
+        roleRepository.deleteByPolicyId(id);    // role assignments
+        repository.delete(policy);              // finally the policy itself (no reliance on DB cascade)
     }
 
     // The immutable fallback is only the GLOBAL Default (org_id null); a tenant may legitimately own an
@@ -130,16 +153,48 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
                 : repository.findByNameAndOrgId(name, org)).isPresent();
     }
 
-    private void applySteps(AuthPolicy policy, List<? extends Set<AuthFactor>> steps) {
-        List<AuthPolicyStep> built = new ArrayList<>();
-        int order = 1;
+    /** Replaces a policy's steps: validate, delete the old step/factor rows, then insert the new ones. */
+    private void replaceSteps(AuthPolicy policy, List<? extends Set<AuthFactor>> steps) {
         for (Set<AuthFactor> factors : steps) {
             if (factors.isEmpty()) {
                 throw new BadRequestException("a policy step needs at least one factor");
             }
-            built.add(new AuthPolicyStep(order++, new HashSet<>(factors)));
         }
 
-        policy.replaceSteps(built);
+        deleteSteps(policy.getId());
+
+        int order = 1;
+        for (Set<AuthFactor> factors : steps) {
+            AuthPolicyStep step = stepRepository.save(new AuthPolicyStep(policy, order++));
+            for (AuthFactor factor : factors) {
+                stepFactorRepository.save(new AuthPolicyStepFactor(step, factor));
+            }
+        }
+    }
+
+    /** Deletes every step of a policy — its factor rows first, then the step rows (visible, no cascade). */
+    private void deleteSteps(UUID policyId) {
+        List<AuthPolicyStep> existing = stepRepository.findByPolicyId(policyId);
+        for (AuthPolicyStep step : existing) {
+            stepFactorRepository.deleteByStepId(step.getId());
+        }
+        stepRepository.deleteAll(existing);
+        stepRepository.flush(); // ensure the old rows are gone before re-inserting
+    }
+
+    /** Diff-based reassignment: drop the policy's user rows, then insert the requested set. */
+    private void replaceUserAssignments(AuthPolicy policy, Set<UUID> userIds) {
+        userRepository.deleteByPolicyId(policy.getId());
+        for (UUID userId : userIds) {
+            userRepository.save(new AuthPolicyUser(policy, userId));
+        }
+    }
+
+    /** Diff-based reassignment: drop the policy's role rows, then insert the requested set. */
+    private void replaceRoleAssignments(AuthPolicy policy, Set<UUID> roleIds) {
+        roleRepository.deleteByPolicyId(policy.getId());
+        for (UUID roleId : roleIds) {
+            roleRepository.save(new AuthPolicyRole(policy, roleId));
+        }
     }
 }

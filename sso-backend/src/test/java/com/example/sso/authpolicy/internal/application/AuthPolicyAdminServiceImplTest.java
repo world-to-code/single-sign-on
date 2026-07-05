@@ -7,6 +7,12 @@ import com.example.sso.authpolicy.AuthPolicyUpdate;
 import com.example.sso.authpolicy.AuthPolicyView;
 import com.example.sso.authpolicy.internal.domain.AuthPolicy;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyRepository;
+import com.example.sso.authpolicy.internal.domain.AuthPolicyRoleRepository;
+import com.example.sso.authpolicy.internal.domain.AuthPolicyStep;
+import com.example.sso.authpolicy.internal.domain.AuthPolicyStepFactor;
+import com.example.sso.authpolicy.internal.domain.AuthPolicyStepFactorRepository;
+import com.example.sso.authpolicy.internal.domain.AuthPolicyStepRepository;
+import com.example.sso.authpolicy.internal.domain.AuthPolicyUserRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
@@ -18,6 +24,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 import java.util.List;
 import java.util.Optional;
@@ -29,19 +37,26 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for {@link AuthPolicyAdminServiceImpl}: duplicate-name and empty-step validation on
- * create, the "Default fallback policy is immutable" guard on update/delete, and the not-found paths.
- * Persistence is the unit's job, so create/delete are asserted with {@code verify(...)}.
+ * Unit tests for {@link AuthPolicyAdminServiceImpl}: duplicate-name and empty-step validation on create,
+ * the "Default fallback policy is immutable" guard on update/delete, and the not-found paths. Steps,
+ * factors and assignments are now persisted EXPLICITLY, so create/delete are asserted with
+ * {@code verify(...)} against the step/factor/assignment repositories (no JPA cascade).
  */
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class AuthPolicyAdminServiceImplTest {
 
     @Mock private AuthPolicyRepository repository;
     @Mock private OrgContext orgContext;
+    @Mock private AuthPolicyStepRepository stepRepository;
+    @Mock private AuthPolicyStepFactorRepository stepFactorRepository;
+    @Mock private AuthPolicyUserRepository userRepository;
+    @Mock private AuthPolicyRoleRepository roleRepository;
 
     private AuthPolicyAdminServiceImpl service;
 
@@ -50,7 +65,9 @@ class AuthPolicyAdminServiceImplTest {
         // Default to the platform (no org bound) → the global tier, matching org_id-null test policies.
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.empty());
         // Exercise the REAL tier guard (driven by the mocked OrgContext) so the isolation checks are genuine.
-        service = new AuthPolicyAdminServiceImpl(repository, new OrgTierGuard(orgContext));
+        service = new AuthPolicyAdminServiceImpl(
+                repository, new OrgTierGuard(orgContext),
+                stepRepository, stepFactorRepository, userRepository, roleRepository);
     }
 
     private AuthPolicySpec spec(String name, List<Set<AuthFactor>> steps) {
@@ -76,19 +93,23 @@ class AuthPolicyAdminServiceImplTest {
 
         assertThatThrownBy(() -> service.create(spec("MFA", List.of(Set.of()))))
                 .isInstanceOf(BadRequestException.class);
+        verify(stepRepository, never()).save(any());
     }
 
     @Test
-    void createPersistsThePolicyWithOrderedSteps() {
+    void createPersistsThePolicyWithEachStepAndFactorExplicitly() {
         when(repository.findByNameAndOrgIdIsNull("MFA")).thenReturn(Optional.empty());
         when(repository.save(any(AuthPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(stepRepository.findByPolicyId(any())).thenReturn(List.of());
+        when(stepRepository.save(any(AuthPolicyStep.class))).thenAnswer(inv -> inv.getArgument(0));
 
         AuthPolicyView view = service.create(
                 spec("MFA", List.of(Set.of(AuthFactor.PASSWORD), Set.of(AuthFactor.TOTP))));
 
         assertThat(view.getName()).isEqualTo("MFA");
-        assertThat(view.getSteps()).hasSize(2);
         verify(repository).save(any(AuthPolicy.class));
+        verify(stepRepository, times(2)).save(any(AuthPolicyStep.class));           // two ordered steps
+        verify(stepFactorRepository, times(2)).save(any(AuthPolicyStepFactor.class)); // one factor each
     }
 
     @Test
@@ -127,13 +148,17 @@ class AuthPolicyAdminServiceImplTest {
     }
 
     @Test
-    void deleteRemovesANormalPolicy() {
+    void deleteExplicitlyRemovesStepsAssignmentsThenThePolicy() {
         UUID id = UUID.randomUUID();
         AuthPolicy policy = new AuthPolicy("MFA", 5);
         when(repository.findById(id)).thenReturn(Optional.of(policy));
+        when(stepRepository.findByPolicyId(id)).thenReturn(List.of());
 
         service.delete(id);
 
+        verify(stepRepository).findByPolicyId(id);
+        verify(userRepository).deleteByPolicyId(id);
+        verify(roleRepository).deleteByPolicyId(id);
         verify(repository).delete(policy);
     }
 
