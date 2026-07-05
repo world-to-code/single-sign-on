@@ -56,14 +56,14 @@ public class RsaKeyServiceImpl implements RsaKeyService, ApplicationRunner {
 
     @Transactional
     public SigningKey ensureActiveKey() {
-        return repository.findFirstByActiveTrueOrderByCreatedAtDesc()
+        return repository.findFirstByActiveTrueAndOrgIdIsNullOrderByCreatedAtDesc()
                 .orElseGet(this::generateAndStore);
     }
 
     @Override
     @Transactional
     public String rotate() {
-        repository.findFirstByActiveTrueOrderByCreatedAtDesc().ifPresent(SigningKey::deactivate);
+        repository.findFirstByActiveTrueAndOrgIdIsNullOrderByCreatedAtDesc().ifPresent(SigningKey::deactivate);
 
         SigningKey rotated = generateAndStore();
         log.info("Rotated OIDC signing key; new active kid={}", rotated.getKid());

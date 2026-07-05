@@ -39,7 +39,7 @@ class RsaKeyServiceImplTest {
 
     @Test
     void rotateGeneratesAndStoresAKeyWithAnEncryptedPrivateKey() {
-        when(repository.findFirstByActiveTrueOrderByCreatedAtDesc()).thenReturn(Optional.empty());
+        when(repository.findFirstByActiveTrueAndOrgIdIsNullOrderByCreatedAtDesc()).thenReturn(Optional.empty());
         when(secretCipher.encrypt(anyString())).thenReturn("encg:encrypted-private");
         when(repository.save(any(SigningKey.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -60,7 +60,7 @@ class RsaKeyServiceImplTest {
         String publicKey = Base64.getEncoder().encodeToString(pair.getPublic().getEncoded());
         String privateKey = Base64.getEncoder().encodeToString(pair.getPrivate().getEncoded());
         SigningKey stored = new SigningKey("kid-1", "RS256", publicKey, "encg:cipher-private");
-        when(repository.findFirstByActiveTrueOrderByCreatedAtDesc()).thenReturn(Optional.of(stored));
+        when(repository.findFirstByActiveTrueAndOrgIdIsNullOrderByCreatedAtDesc()).thenReturn(Optional.of(stored));
         when(secretCipher.decrypt("encg:cipher-private")).thenReturn(privateKey);
 
         JWKSet jwkSet = newService().buildJwkSet();

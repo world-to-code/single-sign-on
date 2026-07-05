@@ -8,7 +8,8 @@ import java.util.UUID;
 
 public interface SigningKeyRepository extends JpaRepository<SigningKey, UUID> {
 
-    Optional<SigningKey> findFirstByActiveTrueOrderByCreatedAtDesc();
+    /** The newest active key in the GLOBAL tier (org_id IS NULL) — the platform key and tenant fallback. */
+    Optional<SigningKey> findFirstByActiveTrueAndOrgIdIsNullOrderByCreatedAtDesc();
 
     List<SigningKey> findAllByOrderByActiveDescCreatedAtDesc();
 }
