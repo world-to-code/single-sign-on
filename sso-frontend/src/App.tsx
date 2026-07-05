@@ -51,10 +51,12 @@ export default function App() {
     case "ORGANIZATION":
       return <OrgSelect onDone={apply} />;
     case "IDENTIFY":
-      return <Login onDone={apply} />;
+      return <Login session={session} onDone={apply} />;
     case "FACTOR":
       // A signed-out user who hasn't identified yet should see the entry screen, not a bare factor.
-      return session.username ? <MfaStep session={session} onDone={apply} /> : <Login onDone={apply} />;
+      return session.username
+        ? <MfaStep session={session} onDone={apply} />
+        : <Login session={session} onDone={apply} />;
     case "DONE":
       return <Console session={session} />;
   }

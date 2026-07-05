@@ -1,14 +1,14 @@
 import type { ReactNode } from "react";
-import { ArrowLeft, Lock } from "lucide-react";
+import { ArrowLeft, Building2, Lock } from "lucide-react";
 import { Brand } from "@/components/Brand";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 /** Centered authentication shell used by the login / MFA screens. */
 export default function AuthLayout({
-  title, description, step, children, footer, onBack, backLabel = "Back",
+  title, description, step, org, children, footer, onBack, backLabel = "Back",
 }: {
-  title: string; description?: string; step?: string; children: ReactNode; footer?: ReactNode;
-  onBack?: () => void; backLabel?: string;
+  title: string; description?: string; step?: string; org?: string | null; children: ReactNode;
+  footer?: ReactNode; onBack?: () => void; backLabel?: string;
 }) {
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-10">
@@ -25,6 +25,11 @@ export default function AuthLayout({
                       className="mb-1 -ml-1 inline-flex w-fit items-center gap-1 rounded-md px-1 py-0.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
                 <ArrowLeft className="size-4" /> {backLabel}
               </button>
+            )}
+            {org && (
+              <div className="mb-1 inline-flex w-fit items-center gap-1.5 rounded-full border bg-muted/60 px-2.5 py-1 text-xs font-medium text-foreground">
+                <Building2 className="size-3.5 text-primary" /> {org}
+              </div>
             )}
             {step && (
               <div className="mb-1 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-primary">

@@ -63,6 +63,7 @@ export default function MfaStep({ session, onDone }: { session: SessionView; onD
     <AuthLayout
       onBack={useDifferentEmail}
       backLabel="Back to sign in"
+      org={session.org}
       step={`Signing in${session.username ? ` as ${session.username}` : ""}`}
       title="Verify your identity"
       description={needEnroll
