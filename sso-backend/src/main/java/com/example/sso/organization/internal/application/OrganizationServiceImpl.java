@@ -13,6 +13,7 @@ import com.example.sso.organization.internal.domain.OrganizationRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.UserService;
 import java.util.List;
 import java.util.Locale;
@@ -37,6 +38,7 @@ public class OrganizationServiceImpl implements OrganizationService {
     private final OrganizationMembershipRepository memberships;
     private final ApplicationEventPublisher events;
     private final UserService users;
+    private final OrgContext orgContext;
 
     @Override
     @Transactional
@@ -84,36 +86,42 @@ public class OrganizationServiceImpl implements OrganizationService {
     @Override
     @Transactional(readOnly = true)
     public boolean isMember(UUID orgId, UUID userId) {
-        return memberships.existsByOrgIdAndUserId(orgId, userId);
+        // Bind the org so the RLS-guarded membership read is scoped to it.
+        return orgContext.callInOrg(orgId, () -> memberships.existsByOrgIdAndUserId(orgId, userId));
     }
 
     @Override
     @Transactional
     public void addMember(UUID orgId, UUID userId) {
-        require(orgId); // reject membership in an unknown org
-        if (users.findById(userId).isEmpty()) { // reject an unknown user (else a bare FK violation -> 500)
-            throw new NotFoundException("user not found");
-        }
-        if (!memberships.existsByOrgIdAndUserId(orgId, userId)) {
-            memberships.save(new OrganizationMembership(orgId, userId));
-        }
+        orgContext.runInOrg(orgId, () -> {
+            require(orgId); // reject membership in an unknown org
+            if (users.findById(userId).isEmpty()) { // reject an unknown user (else a bare FK violation -> 500)
+                throw new NotFoundException("user not found");
+            }
+            if (!memberships.existsByOrgIdAndUserId(orgId, userId)) {
+                memberships.save(new OrganizationMembership(orgId, userId)); // org_id == bound org -> RLS WITH CHECK ok
+            }
+        });
     }
 
     @Override
     @Transactional
     public void removeMember(UUID orgId, UUID userId) {
-        // Only act (and publish) when a membership actually existed — a no-op delete must not trigger the
-        // downstream session-termination the event drives.
-        if (memberships.existsByOrgIdAndUserId(orgId, userId)) {
-            memberships.deleteByOrgIdAndUserId(orgId, userId);
-            events.publishEvent(new OrganizationMembershipChangedEvent(orgId, userId));
-        }
+        orgContext.runInOrg(orgId, () -> {
+            // Only act (and publish) when a membership actually existed — a no-op delete must not trigger the
+            // downstream session-termination the event drives.
+            if (memberships.existsByOrgIdAndUserId(orgId, userId)) {
+                memberships.deleteByOrgIdAndUserId(orgId, userId);
+                events.publishEvent(new OrganizationMembershipChangedEvent(orgId, userId));
+            }
+        });
     }
 
     @Override
     @Transactional(readOnly = true)
     public Set<UUID> orgIdsForUser(UUID userId) {
-        return Set.copyOf(memberships.findOrgIdsByUserId(userId));
+        // Cross-org query (all orgs a user belongs to) — must run in the platform context.
+        return orgContext.callAsPlatform(() -> Set.copyOf(memberships.findOrgIdsByUserId(userId)));
     }
 
     private Organization require(UUID id) {

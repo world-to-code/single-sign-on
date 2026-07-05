@@ -36,6 +36,10 @@ server:
 
 sso:
   issuer: ${SSO_ISSUER}
+  tenancy:
+    # Fail startup if the DB runtime role is a superuser — a superuser bypasses RLS, silently disabling
+    # tenant isolation. The runtime role must be a non-superuser (Flyway may migrate as the owner).
+    require-non-superuser-role: true
   admin:
     username: ${SSO_ADMIN_USERNAME:admin}
     email: ${SSO_ADMIN_EMAIL:admin@example.com}

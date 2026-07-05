@@ -29,6 +29,12 @@ spring:
         # Batch EAGER/lazy association loads into IN(...) queries instead of one-per-parent (N+1).
         # Applies globally to @ManyToMany / @OneToMany / @ElementCollection collection initialization.
         default_batch_fetch_size: 100
+        connection:
+          # Load-bearing for tenant RLS (see OrgAwareDataSource): the connection is acquired lazily on the
+          # first statement — after a service enters OrgContext.runInOrg(...) — and held for the whole tx, so
+          # the per-connection app.current_org GUC reflects the operation's tenant. Do NOT switch to a
+          # RELEASE_AFTER_STATEMENT mode.
+          handling_mode: DELAYED_ACQUISITION_AND_RELEASE_AFTER_TRANSACTION
   flyway:
     enabled: true
     locations: classpath:db/migration

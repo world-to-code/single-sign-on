@@ -11,6 +11,7 @@ import com.example.sso.organization.internal.domain.OrganizationRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
 import java.util.Optional;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -42,6 +44,8 @@ class OrganizationServiceImplTest {
     @Mock private OrganizationMembershipRepository memberships;
     @Mock private ApplicationEventPublisher events;
     @Mock private UserService users;
+    // A real OrgContext (not a mock) so runInOrg/callAsPlatform actually execute the wrapped action.
+    @Spy private OrgContext orgContext = new OrgContext();
 
     @InjectMocks private OrganizationServiceImpl service;
 
