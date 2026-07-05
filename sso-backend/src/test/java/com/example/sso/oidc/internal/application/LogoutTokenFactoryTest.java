@@ -29,7 +29,7 @@ class LogoutTokenFactoryTest {
     void setUp() throws Exception {
         key = new RSAKeyGenerator(2048).keyID("test-kid").generate();
         JWKSource<SecurityContext> jwkSource = (selector, context) -> selector.select(new JWKSet(key));
-        factory = new LogoutTokenFactory(jwkSource, ISSUER);
+        factory = new LogoutTokenFactory(jwkSource);
     }
 
     private Jwt decode(String token) throws Exception {
@@ -39,7 +39,7 @@ class LogoutTokenFactoryTest {
 
     @Test
     void buildsAValidSidScopedLogoutToken() throws Exception {
-        Jwt jwt = decode(factory.create("client-1", "user-sub", "sid-123"));
+        Jwt jwt = decode(factory.create("client-1", "user-sub", "sid-123", ISSUER));
 
         assertThat(jwt.getIssuer().toString()).isEqualTo(ISSUER);
         assertThat(jwt.getAudience()).containsExactly("client-1");
@@ -53,7 +53,7 @@ class LogoutTokenFactoryTest {
 
     @Test
     void omitsSidForSubjectWideLogout() throws Exception {
-        Jwt jwt = decode(factory.create("client-1", "user-sub", null));
+        Jwt jwt = decode(factory.create("client-1", "user-sub", null, ISSUER));
 
         assertThat(jwt.hasClaim("sid")).isFalse();
         assertThat(jwt.getSubject()).isEqualTo("user-sub");
