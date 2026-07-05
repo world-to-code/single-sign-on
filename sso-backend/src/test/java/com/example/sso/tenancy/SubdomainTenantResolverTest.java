@@ -57,4 +57,14 @@ class SubdomainTenantResolverTest {
     void anIpv6LiteralHostHasNoTenant() {
         assertThat(resolver.tenantSlug("[::1]:9000")).isEmpty();
     }
+
+    @Test
+    void recognisesBaseDomainsSoArbitraryHostsCanBeRejected() {
+        assertThat(resolver.isBaseDomain("localhost:9000")).isTrue();
+        assertThat(resolver.isBaseDomain("idp.example.com")).isTrue();
+        // A tenant subdomain is NOT a base domain (it carries a tenant), nor is an arbitrary/spoofed host.
+        assertThat(resolver.isBaseDomain("acme.localhost")).isFalse();
+        assertThat(resolver.isBaseDomain("evil.com")).isFalse();
+        assertThat(resolver.isBaseDomain(null)).isFalse();
+    }
 }

@@ -52,6 +52,18 @@ public class SubdomainTenantResolver {
         return Optional.empty();
     }
 
+    /**
+     * Whether {@code host} is one of the configured bare base (platform) domains — the host that carries no
+     * tenant subdomain and derives back to the platform issuer. Used to REJECT any host that is neither a
+     * base domain nor a tenant subdomain, so an arbitrary Host header cannot mint a forged OIDC issuer.
+     */
+    public boolean isBaseDomain(String host) {
+        if (host == null || host.isBlank()) {
+            return false;
+        }
+        return baseDomains.contains(stripPort(host).toLowerCase().strip());
+    }
+
     private String stripPort(String host) {
         int colon = host.lastIndexOf(':');
         // Guard IPv6 literals ("[::1]:9000") — only strip a trailing :port after the last ']' or when no ']'.

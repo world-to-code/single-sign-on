@@ -107,6 +107,16 @@ class OidcFlowIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void anArbitraryHostIsRefused() throws Exception {
+        // A Host that is neither a base domain nor a tenant subdomain must not derive its own issuer
+        // (host-header issuer forgery / discovery poisoning) — refuse it before any token is minted.
+        mvc.perform(post("http://evil.com/oauth2/token")
+                        .param("grant_type", "client_credentials")
+                        .with(httpBasic(CLIENT_ID, CLIENT_SECRET)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void tokenEndpointRejectsBadClientSecret() throws Exception {
         mvc.perform(post("/oauth2/token")
                         .param("grant_type", "client_credentials")

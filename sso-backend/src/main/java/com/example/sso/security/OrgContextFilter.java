@@ -50,6 +50,12 @@ public class OrgContextFilter extends OncePerRequestFilter {
     }
 
     private boolean bindContext() {
+        // If an earlier filter already bound the tenant context (TenantHostFilter binds it from the request
+        // host on the OIDC chain), leave that binding — the host-derived org, which the issuer + signing key
+        // follow, must win over the session's org here.
+        if (orgContext.currentOrg().isPresent() || orgContext.isPlatform()) {
+            return false;
+        }
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
             return false;

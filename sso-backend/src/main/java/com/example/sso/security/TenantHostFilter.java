@@ -19,11 +19,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * is resolved to org "acme" and its key signs the token / is published at that host's JWKS. Runs even for
  * the unauthenticated discovery and JWKS endpoints (they must resolve the host's org too).
  *
- * <p>Zero-trust: a subdomain that does NOT resolve to an ACTIVE organization is refused with 404 — the host
- * derives the OIDC issuer, so an unrecognised subdomain must not be able to mint an issuer or fall through
- * to the platform key. A bare (platform) host carries no subdomain and passes through untouched, leaving the
- * session-based {@link OrgContextFilter} to bind the org there. Instantiated (not a {@code @Component}) so it
- * runs only on the OIDC chain it is added to.
+ * <p>Zero-trust: because the host derives the OIDC issuer, this filter is a strict host allowlist. Only a
+ * configured bare (platform) base domain or a subdomain that resolves to an ACTIVE organization is served;
+ * any other Host — an unknown tenant subdomain OR an arbitrary domain like {@code evil.com} — is refused
+ * with 404, so an attacker-controlled Host header cannot mint a forged issuer or poison the discovery/JWKS
+ * documents. A bare base domain passes through, leaving the session-based {@link OrgContextFilter} to bind
+ * the org there. Instantiated (not a {@code @Component}) so it runs only on the OIDC chain it is added to.
  */
 public class TenantHostFilter extends OncePerRequestFilter {
 
@@ -41,9 +42,16 @@ public class TenantHostFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        String slug = resolver.tenantSlug(request.getServerName()).orElse(null);
+        String host = request.getServerName();
+        String slug = resolver.tenantSlug(host).orElse(null);
         if (slug == null) {
-            chain.doFilter(request, response); // bare platform host — session-based binding handles it
+            if (resolver.isBaseDomain(host)) {
+                chain.doFilter(request, response); // bare platform host — session-based binding handles it
+            } else {
+                // Not a base domain and not a tenant subdomain (e.g. an arbitrary/spoofed Host) — the issuer
+                // is host-derived, so refuse rather than mint one for an unrecognised host.
+                response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            }
             return;
         }
         UUID orgId = organizations.findBySlug(slug)
