@@ -7,6 +7,7 @@ import com.example.sso.ratelimit.AuthRateLimitFilter;
 import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.security.AdminElevationFilter;
 import com.example.sso.security.PolicyIpAccessFilter;
+import com.example.sso.security.OrgContextFilter;
 import com.example.sso.security.SessionIntegrityFilter;
 import com.example.sso.session.NetworkZoneService;
 import com.example.sso.session.SessionPolicyService;
@@ -85,7 +86,8 @@ public class SecurityConfig {
     @Order(Ordered.LOWEST_PRECEDENCE)
     SecurityFilterChain appSecurityFilterChain(
             HttpSecurity http, AuthRateLimitFilter authRateLimitFilter,
-            SessionIntegrityFilter sessionIntegrityFilter, SessionPolicyService policyService,
+            SessionIntegrityFilter sessionIntegrityFilter, OrgContextFilter orgContextFilter,
+            SessionPolicyService policyService,
             NetworkZoneService networkZones, JwtDecoder jwtDecoder,
             AdminPortalSettingsService adminPortalSettingsService, AuditService audit,
             PublicKeyCredentialCreationOptionsRepository creationOptionsRepository,
@@ -147,6 +149,8 @@ public class SecurityConfig {
                 .addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class)
                 // Zero-Trust: re-verify session integrity (client binding + absolute lifetime) on every request.
                 .addFilterAfter(sessionIntegrityFilter, CsrfFilter.class)
+                // Bind the request's tenant context (org / platform) so org-scoped queries isolate by tenant.
+                .addFilterAfter(orgContextFilter, SessionIntegrityFilter.class)
                 // Per-policy network (IP) access, post-authentication (also registered on the OIDC chain).
                 .addFilterAfter(new PolicyIpAccessFilter(policyService, networkZones, audit), SessionIntegrityFilter.class)
                 // RFC 9470 elevation gate: require a fresh admin-console bearer token on /api/admin/**.

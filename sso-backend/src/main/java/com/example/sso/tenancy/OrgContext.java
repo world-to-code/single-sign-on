@@ -36,6 +36,24 @@ public class OrgContext {
         return state != null && state.platform();
     }
 
+    // --- request-lifecycle binding (a servlet filter sets one at request start and clears at the end;
+    //     nested callInOrg/callAsPlatform scopes still save-and-restore around it) --------------------
+
+    /** Binds the thread to {@code orgId} for the rest of the request. */
+    public void bindOrg(UUID orgId) {
+        holder.set(new State(orgId, false));
+    }
+
+    /** Binds the thread to the cross-org platform context for the rest of the request. */
+    public void enterPlatform() {
+        holder.set(new State(null, true));
+    }
+
+    /** Clears the bound context (call in a {@code finally} at request end). */
+    public void clear() {
+        holder.remove();
+    }
+
     /** Runs {@code action} bound to {@code orgId} (RLS scoped to that org), restoring the prior context. */
     public <T> T callInOrg(UUID orgId, Supplier<T> action) {
         return withState(new State(orgId, false), action);
