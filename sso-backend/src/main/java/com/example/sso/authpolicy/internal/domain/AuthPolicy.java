@@ -1,5 +1,6 @@
 package com.example.sso.authpolicy.internal.domain;
 import com.example.sso.shared.domain.AuditedEntity;
+import com.example.sso.tenancy.OrgOwned;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -26,7 +27,7 @@ import java.util.UUID;
 @Table(name = "auth_policy")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
-public class AuthPolicy extends AuditedEntity implements AuthPolicyView {
+public class AuthPolicy extends AuditedEntity implements AuthPolicyView, OrgOwned {
 
     // Tier-aware uniqueness (partial indexes in V46): global name, or (org_id, name) per tenant.
     @Column(nullable = false, length = 100)

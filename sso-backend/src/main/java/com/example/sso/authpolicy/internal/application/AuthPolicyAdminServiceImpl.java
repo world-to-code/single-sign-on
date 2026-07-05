@@ -12,7 +12,7 @@ import com.example.sso.authpolicy.internal.domain.AuthPolicyStep;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
-import com.example.sso.tenancy.OrgContext;
+import com.example.sso.tenancy.OrgTierGuard;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,8 +20,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -35,7 +33,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
     private final AuthPolicyRepository repository;
-    private final OrgContext orgContext;
+    private final OrgTierGuard tierGuard;
 
     @Override
     @Transactional
@@ -64,7 +62,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
     @Override
     @Transactional
     public AuthPolicyView create(AuthPolicySpec spec) {
-        UUID creationOrg = creationOrg();
+        UUID creationOrg = tierGuard.currentTier();
         if (existsInTier(spec.name(), creationOrg)) {
             throw new ConflictException("policy name already exists");
         }
@@ -86,7 +84,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
     @Override
     @Transactional
     public AuthPolicyView update(UUID id, AuthPolicyUpdate update) {
-        AuthPolicy policy = requireInActorTier(repository.findById(id));
+        AuthPolicy policy = tierGuard.requireInTier(repository.findById(id), () -> new NotFoundException("policy not found"));
         if (isGlobalDefault(policy)) {
             throw new BadRequestException("the Default fallback policy cannot be edited");
         }
@@ -110,7 +108,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
     @Override
     @Transactional
     public void delete(UUID id) {
-        AuthPolicy policy = requireInActorTier(repository.findById(id));
+        AuthPolicy policy = tierGuard.requireInTier(repository.findById(id), () -> new NotFoundException("policy not found"));
         if (isGlobalDefault(policy)) {
             throw new BadRequestException("the Default policy cannot be deleted");
         }
@@ -124,23 +122,12 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         return policy.getOrgId() == null && AuthPolicyResolver.DEFAULT_NAME.equals(policy.getName());
     }
 
-    // The org that owns rows created in the current context: a tenant admin's bound org, or null (global)
-    // for the platform super-admin. RLS lets both read global rows, so the tier must be checked in code too.
-    private UUID creationOrg() {
-        return orgContext.currentOrg().orElse(null);
-    }
-
+    // Duplicate-name check within the acting tier (RLS makes the global name globally unique, and each org's
+    // names unique within that org — see the partial indexes).
     private boolean existsInTier(String name, UUID org) {
         return (org == null
                 ? repository.findByNameAndOrgIdIsNull(name)
                 : repository.findByNameAndOrgId(name, org)).isPresent();
-    }
-
-    // A tenant admin must not mutate global policies (which RLS still lets them READ), and the platform
-    // admin must drill into an org before mutating that org's policies. Mismatch → 404 (non-revealing).
-    private AuthPolicy requireInActorTier(Optional<AuthPolicy> found) {
-        return found.filter(p -> Objects.equals(p.getOrgId(), creationOrg()))
-                .orElseThrow(() -> new NotFoundException("policy not found"));
     }
 
     private void applySteps(AuthPolicy policy, List<? extends Set<AuthFactor>> steps) {

@@ -10,6 +10,7 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.tenancy.OrgTierGuard;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -23,7 +24,6 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -41,6 +41,7 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
     private final NetworkZoneRepository repository;
     private final SessionPolicyRepository policies;
     private final OrgContext orgContext;
+    private final OrgTierGuard tierGuard;
     private final ApplicationEventPublisher events;
     private volatile Map<UUID, List<String>> cache = Map.of();
 
@@ -78,7 +79,7 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
     @Override
     @Transactional
     public NetworkZoneView create(NetworkZoneSpec spec) {
-        UUID creationOrg = creationOrg();
+        UUID creationOrg = tierGuard.currentTier();
         if (findInTier(spec.name(), creationOrg).isPresent()) {
             throw new ConflictException("zone name already exists");
         }
@@ -92,8 +93,8 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
     @Override
     @Transactional
     public NetworkZoneView update(UUID id, NetworkZoneSpec spec) {
-        NetworkZone zone = requireInActorTier(repository.findById(id));
-        findInTier(spec.name(), creationOrg())
+        NetworkZone zone = tierGuard.requireInTier(repository.findById(id), () -> new NotFoundException("zone not found"));
+        findInTier(spec.name(), tierGuard.currentTier())
                 .filter(other -> !other.getId().equals(id))
                 .ifPresent(other -> { throw new ConflictException("zone name already exists"); });
         List<String> cidrs = validateCidrs(spec.cidrs());
@@ -106,7 +107,7 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
     @Override
     @Transactional
     public void delete(UUID id) {
-        NetworkZone zone = requireInActorTier(repository.findById(id));
+        NetworkZone zone = tierGuard.requireInTier(repository.findById(id), () -> new NotFoundException("zone not found"));
         if (policies.countReferencingZone(id) > 0) {
             throw new ConflictException("zone is referenced by a session policy; remove those rules first");
         }
@@ -121,21 +122,10 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
         events.publishEvent(new NetworkZoneCacheChanged());
     }
 
-    // The org that owns rows created in the current context: a tenant admin's bound org, or null (global)
-    // for the platform super-admin. RLS lets both READ global rows, so the tier is also checked in code.
-    private UUID creationOrg() {
-        return orgContext.currentOrg().orElse(null);
-    }
-
+    // Name lookup within the acting tier (partial-unique indexes keep the global name and each org's names
+    // unique within their own tier); returns the row so the rename check can exclude the zone itself.
     private Optional<NetworkZone> findInTier(String name, UUID org) {
         return org == null ? repository.findByNameAndOrgIdIsNull(name) : repository.findByNameAndOrgId(name, org);
-    }
-
-    // A tenant admin must not mutate global zones (which RLS still lets them READ), and the platform admin
-    // must drill into an org before mutating that org's zones. Mismatch → 404 (non-revealing).
-    private NetworkZone requireInActorTier(Optional<NetworkZone> found) {
-        return found.filter(z -> Objects.equals(z.getOrgId(), creationOrg()))
-                .orElseThrow(() -> new NotFoundException("zone not found"));
     }
 
     @Override

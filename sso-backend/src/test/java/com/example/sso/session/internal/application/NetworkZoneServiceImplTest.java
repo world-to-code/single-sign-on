@@ -9,11 +9,11 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.tenancy.OrgTierGuard;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
@@ -51,7 +51,6 @@ class NetworkZoneServiceImplTest {
     @Mock
     private ApplicationEventPublisher events;
 
-    @InjectMocks
     private NetworkZoneServiceImpl service;
 
     @BeforeEach
@@ -60,6 +59,8 @@ class NetworkZoneServiceImplTest {
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.empty());
         lenient().when(orgContext.callAsPlatform(any()))
                 .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(0)).get());
+        // Exercise the REAL tier guard (driven by the mocked OrgContext) so the isolation checks are genuine.
+        service = new NetworkZoneServiceImpl(repository, policies, orgContext, new OrgTierGuard(orgContext), events);
     }
 
     private NetworkZone zone(String name, String description, List<String> cidrs) {

@@ -11,11 +11,11 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.tenancy.OrgTierGuard;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -43,12 +43,14 @@ class AuthPolicyAdminServiceImplTest {
     @Mock private AuthPolicyRepository repository;
     @Mock private OrgContext orgContext;
 
-    @InjectMocks private AuthPolicyAdminServiceImpl service;
+    private AuthPolicyAdminServiceImpl service;
 
     @BeforeEach
     void platformContext() {
         // Default to the platform (no org bound) → the global tier, matching org_id-null test policies.
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.empty());
+        // Exercise the REAL tier guard (driven by the mocked OrgContext) so the isolation checks are genuine.
+        service = new AuthPolicyAdminServiceImpl(repository, new OrgTierGuard(orgContext));
     }
 
     private AuthPolicySpec spec(String name, List<Set<AuthFactor>> steps) {

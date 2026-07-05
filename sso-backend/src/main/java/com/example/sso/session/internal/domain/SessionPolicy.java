@@ -3,6 +3,7 @@ package com.example.sso.session.internal.domain;
 import com.example.sso.session.IpRuleSpec;
 import com.example.sso.session.SessionPolicyDetails;
 import com.example.sso.shared.domain.AbstractEntity;
+import com.example.sso.tenancy.OrgOwned;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
@@ -37,7 +38,7 @@ import lombok.NoArgsConstructor;
 @Table(name = "session_policy")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
-public class SessionPolicy extends AbstractEntity implements SessionPolicyDetails {
+public class SessionPolicy extends AbstractEntity implements SessionPolicyDetails, OrgOwned {
 
     // Tier-aware uniqueness (partial indexes in V47): global name, or (org_id, name) per tenant.
     @Column(nullable = false, length = 100)

@@ -15,6 +15,7 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
 import com.example.sso.user.RoleRef;
@@ -31,7 +32,6 @@ import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -52,6 +52,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
     private final UserService users;
     private final NetworkZoneService networkZones;
     private final OrgContext orgContext;
+    private final OrgTierGuard tierGuard;
     private final ApplicationEventPublisher events;
     private volatile List<SessionPolicy> cached = List.of();
 
@@ -188,7 +189,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
     @Override
     @Transactional
     public SessionPolicyDetails create(SessionPolicySpec spec) {
-        UUID creationOrg = creationOrg();
+        UUID creationOrg = tierGuard.currentTier();
         if (existsInTier(spec.name(), creationOrg)) {
             throw new ConflictException("policy name already exists");
         }
@@ -215,7 +216,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
     @Override
     @Transactional
     public SessionPolicyDetails update(UUID id, SessionPolicyUpdate update) {
-        SessionPolicy policy = requireInActorTier(repository.findById(id));
+        SessionPolicy policy = tierGuard.requireInTier(repository.findById(id), () -> new NotFoundException("policy not found"));
 
         String reauthFactors = validateReauthFactors(update.reauthFactors());
         String stepUpFactors = validateReauthFactors(update.stepUpFactors());
@@ -253,7 +254,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
     @Override
     @Transactional
     public void delete(UUID id) {
-        SessionPolicy policy = requireInActorTier(repository.findById(id));
+        SessionPolicy policy = tierGuard.requireInTier(repository.findById(id), () -> new NotFoundException("policy not found"));
         if (isGlobalDefault(policy)) {
             throw new BadRequestException("the Default policy cannot be deleted");
         }
@@ -262,23 +263,12 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         events.publishEvent(new SessionPolicyCacheChanged());
     }
 
-    // The org that owns rows created in the current context: a tenant admin's bound org, or null (global)
-    // for the platform super-admin. RLS lets both read global rows, so the tier is also checked in code.
-    private UUID creationOrg() {
-        return orgContext.currentOrg().orElse(null);
-    }
-
+    // Duplicate-name check within the acting tier (partial-unique indexes make the global name and each
+    // org's names unique within their own tier).
     private boolean existsInTier(String name, UUID org) {
         return (org == null
                 ? repository.findByNameAndOrgIdIsNull(name)
                 : repository.findByNameAndOrgId(name, org)).isPresent();
-    }
-
-    // A tenant admin must not mutate global policies (which RLS still lets them READ), and the platform
-    // admin must drill into an org before mutating that org's policies. Mismatch → 404 (non-revealing).
-    private SessionPolicy requireInActorTier(Optional<SessionPolicy> found) {
-        return found.filter(p -> Objects.equals(p.getOrgId(), creationOrg()))
-                .orElseThrow(() -> new NotFoundException("policy not found"));
     }
 
     // The immutable fallback is only the GLOBAL Default (org_id null); a tenant may own a policy named
