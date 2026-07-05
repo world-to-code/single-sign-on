@@ -26,6 +26,7 @@ import java.security.interfaces.RSAPublicKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -59,22 +60,34 @@ public class RsaKeyServiceImpl implements RsaKeyService, ApplicationRunner {
 
     @Transactional
     public SigningKey ensureActiveKey() {
+        // Startup runs with no org bound — ensure the GLOBAL platform key exists.
         return repository.findFirstByActiveTrueAndOrgIdIsNullOrderByCreatedAtDesc()
-                .orElseGet(this::generateAndStore);
+                .orElseGet(() -> generateAndStore(null));
     }
 
     @Override
     @Transactional
     public String rotate() {
-        repository.findFirstByActiveTrueAndOrgIdIsNullOrderByCreatedAtDesc().ifPresent(SigningKey::deactivate);
+        // Rotate the signing key of the CURRENT tier: a tenant admin (org bound) rotates its OWN org key
+        // (creating one on first rotation); the platform admin (no org bound) rotates the global key. RLS
+        // ensures a tenant can only ever deactivate/write its own tier's rows.
+        UUID org = orgContext.currentOrg().orElse(null);
+        activeKeyForTier(org).ifPresent(SigningKey::deactivate);
 
-        SigningKey rotated = generateAndStore();
-        log.info("Rotated OIDC signing key; new active kid={}", rotated.getKid());
+        SigningKey rotated = generateAndStore(org);
+        log.info("Rotated OIDC signing key for {}; new active kid={}",
+                org == null ? "the platform" : "org " + org, rotated.getKid());
 
         return rotated.getKid();
     }
 
-    private SigningKey generateAndStore() {
+    private Optional<SigningKey> activeKeyForTier(UUID org) {
+        return org == null
+                ? repository.findFirstByActiveTrueAndOrgIdIsNullOrderByCreatedAtDesc()
+                : repository.findFirstByActiveTrueAndOrgIdOrderByCreatedAtDesc(org);
+    }
+
+    private SigningKey generateAndStore(UUID org) {
         try {
             KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
             generator.initialize(keySize);
@@ -84,7 +97,8 @@ public class RsaKeyServiceImpl implements RsaKeyService, ApplicationRunner {
                     UUID.randomUUID().toString(),
                     "RS256",
                     Base64.getEncoder().encodeToString(pair.getPublic().getEncoded()),
-                    secretCipher.encrypt(Base64.getEncoder().encodeToString(pair.getPrivate().getEncoded())));
+                    secretCipher.encrypt(Base64.getEncoder().encodeToString(pair.getPrivate().getEncoded())),
+                    org);
 
             SigningKey saved = repository.save(key);
             log.info("Generated new RSA signing key kid={}", saved.getKid());

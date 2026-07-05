@@ -100,21 +100,23 @@ public final class Permissions {
     /**
      * Platform-only permissions: the tenant registry itself ({@code organization:create/update/delete}),
      * the global admin-console security config ({@code portal-settings:*}), and shared cross-tenant
-     * INFRASTRUCTURE — the single signing key ({@code key:rotate}), global provisioning ({@code
-     * scim:manage}), cross-tenant audit ({@code audit:read}), the global OIDC/SAML app registries and
-     * assignments ({@code oidc-client:*}, {@code saml-rp:*}, {@code app-assignment:*}), and the resource
-     * DAG ({@code resource:*}). A tenant (org) admin can neither see these in the catalog nor grant them
-     * (enforced by {@link PermissionGrantPolicy}) — granting one would cross tenant boundaries (e.g.
-     * rotating the shared key invalidates every tenant's tokens).
+     * INFRASTRUCTURE — the signing keys ({@code key:rotate}), global provisioning ({@code scim:manage}),
+     * cross-tenant audit ({@code audit:read}), the global OIDC/SAML app registries and assignments
+     * ({@code oidc-client:*}, {@code saml-rp:*}, {@code app-assignment:*}), and the resource DAG
+     * ({@code resource:*}). A tenant (org) admin can neither see these in the catalog nor grant them
+     * (enforced by {@link PermissionGrantPolicy}) — granting one would cross tenant boundaries.
+     *
+     * <p>{@code key:rotate} note: OIDC signing keys are now per-tenant (a super-admin drilled into an org
+     * rotates only that org's key), but the SAML signing credential is still a single global one, and both
+     * rotations share this permission — so it stays platform-only until SAML is per-tenant too. It flips to
+     * tenant-grantable then.
      *
      * <p>Everything else in {@link #ALL} is tenant-grantable — the directory + policy domain a tenant admin
      * owns ({@code user:*}, {@code group:*}, {@code role:*}, {@code auth-policy:*}, {@code session-policy:*},
-     * {@code network-zone:*}) plus {@code organization:read}/{@code member-manage} (their own org). These
-     * are the near-term org-scoping targets; each stays here (this set SHRINKS) and its data becomes truly
-     * per-tenant as Workstream-A adds {@code org_id} + RLS. Until then a deliberate super-grant of one to a
-     * tenant admin is cross-tenant — nothing is granted by default (the ROLE_ORG_ADMIN baseline is only
-     * {@code organization:read} + {@code member-manage}). An infra perm above moves out of PLATFORM only
-     * once it is genuinely per-tenant (e.g. per-tenant signing keys).
+     * {@code network-zone:*}) plus {@code organization:read}/{@code member-manage} (their own org). This set
+     * SHRINKS as Workstream-A makes each remaining domain truly per-tenant ({@code org_id} + RLS). Nothing is
+     * granted by default (the ROLE_ORG_ADMIN baseline is only {@code organization:read} +
+     * {@code member-manage}).
      */
     public static final Set<String> PLATFORM = Set.of(
             ORG_CREATE, ORG_UPDATE, ORG_DELETE,

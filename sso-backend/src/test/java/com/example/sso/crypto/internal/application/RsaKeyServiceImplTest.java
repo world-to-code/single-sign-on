@@ -76,6 +76,22 @@ class RsaKeyServiceImplTest {
     }
 
     @Test
+    void rotateCreatesAKeyOwnedByTheBoundOrg() {
+        UUID org = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
+        when(repository.findFirstByActiveTrueAndOrgIdOrderByCreatedAtDesc(org)).thenReturn(Optional.empty());
+        when(secretCipher.encrypt(anyString())).thenReturn("encg:enc");
+        when(repository.save(any(SigningKey.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        newService().rotate();
+
+        // A rotation in an org context creates that org's OWN key (never a global one).
+        ArgumentCaptor<SigningKey> saved = ArgumentCaptor.forClass(SigningKey.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getOrgId()).isEqualTo(org);
+    }
+
+    @Test
     void buildJwkSetPrefersTheBoundOrgsOwnKeyOverTheGlobalKey() throws Exception {
         UUID org = UUID.randomUUID();
         KeyPair pair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
