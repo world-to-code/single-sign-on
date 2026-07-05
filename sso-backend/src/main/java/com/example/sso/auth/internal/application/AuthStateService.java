@@ -6,6 +6,7 @@ import com.example.sso.authpolicy.AuthPolicyResolver;
 import com.example.sso.authpolicy.AuthPolicyStepView;
 import com.example.sso.authpolicy.AuthPolicyView;
 import com.example.sso.authpolicy.Factors;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.Roles;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
@@ -19,6 +20,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -33,8 +35,14 @@ public class AuthStateService {
     private final FactorHandlers factorHandlers;
     private final AuthPolicyResolver policyService;
     private final AuthPolicyEvaluator evaluator;
+    private final OrgContext orgContext;
 
-    public AuthSessionView describe(Authentication authentication, String activeOrgSlug) {
+    /**
+     * @param loginOrgId the tenant-first login org (null before it is resolved, or for post-login
+     *                   step-up). Policy resolution binds it so the login org's own auth policies
+     *                   (RLS-scoped) participate alongside the global/default policy.
+     */
+    public AuthSessionView describe(Authentication authentication, String activeOrgSlug, UUID loginOrgId) {
         if (authentication == null || !authentication.isAuthenticated()
                 || authentication instanceof AnonymousAuthenticationToken) {
             return anonymous(activeOrgSlug);
@@ -53,7 +61,7 @@ public class AuthStateService {
         boolean totpEnrolled = factorHandlers.isEnrolled(AuthFactor.TOTP, user);
         boolean fido2Enrolled = factorHandlers.isEnrolled(AuthFactor.FIDO2, user);
 
-        AuthPolicyView policy = policyService.resolveForUser(user);
+        AuthPolicyView policy = resolvePolicy(user, loginOrgId);
         boolean enrollAllowed = policy.isAllowEnrollmentAtLogin(); // per the user's winning login policy
         Optional<AuthPolicyStepView> step = evaluator.currentStep(policy, granted);
         if (step.isEmpty()) {
@@ -71,8 +79,16 @@ public class AuthStateService {
     }
 
     /** True once the user's policy is fully satisfied (used to grant the MFA-complete marker). */
-    public boolean isPolicySatisfied(Authentication authentication) {
-        return AuthSessionView.NEXT_DONE.equals(describe(authentication, null).next());
+    public boolean isPolicySatisfied(Authentication authentication, UUID loginOrgId) {
+        return AuthSessionView.NEXT_DONE.equals(describe(authentication, null, loginOrgId).next());
+    }
+
+    // Resolve within the LOGIN org so the tenant's own auth policies (RLS-scoped) participate in
+    // resolution; with no org bound (pre-org steps / step-up) only global/default policies resolve.
+    private AuthPolicyView resolvePolicy(UserAccount user, UUID loginOrgId) {
+        return loginOrgId == null
+                ? policyService.resolveForUser(user)
+                : orgContext.callInOrg(loginOrgId, () -> policyService.resolveForUser(user));
     }
 
     private AuthSessionView anonymous(String activeOrgSlug) {

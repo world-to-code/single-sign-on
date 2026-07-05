@@ -5,15 +5,18 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
 import com.example.sso.authpolicy.AuthFactor;
 import com.example.sso.authpolicy.AuthPolicyResolver;
+import com.example.sso.authpolicy.AuthPolicyView;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.portal.AppStepUp;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.LockedException;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.UserAccount;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.Instant;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -35,17 +38,21 @@ public class FactorStepService {
     private final AuthenticationCompletionService completionService;
     private final AppStepUp appStepUp;
     private final AuditService audit;
+    private final PreAuthOrgSession preAuthOrg;
+    private final OrgContext orgContext;
 
     /** Issues any pre-step data for the factor (TOTP QR, WebAuthn options, or sends an email code). */
     public FactorChallenge prepare(AuthFactor factor, HttpServletRequest request) {
         UserAccount user = currentUser.require();
-        requireCurrentStep(factor); // can only act on the factor the policy currently expects
+        UUID loginOrgId = preAuthOrg.orgId(request).orElse(null);
+        requireCurrentStep(factor, loginOrgId); // can only act on the factor the policy currently expects
 
         // Keycloak-style gate: setting up an un-enrolled factor (which factors are enrollable is owned
-        // by the strategy) during login is only allowed when the session policy permits enroll-at-login.
+        // by the strategy) during login is only allowed when the winning login policy permits enroll-at-login
+        // — resolved in the login org so the tenant's own policy (not just the global default) governs.
         FactorHandler handler = factorHandlers.get(factor);
         if (handler.enrollableAtLogin() && !handler.isEnrolled(user)
-                && !authPolicies.resolveForUser(user).isAllowEnrollmentAtLogin()) {
+                && !resolveForLogin(user, loginOrgId).isAllowEnrollmentAtLogin()) {
             throw new ForbiddenException(
                     "Setting up a new authenticator during login is disabled. Contact your administrator.");
         }
@@ -53,11 +60,19 @@ public class FactorStepService {
         return handler.prepare(user, request);
     }
 
+    // Resolve the winning login policy bound to the login org, so tenant-scoped policies participate.
+    private AuthPolicyView resolveForLogin(UserAccount user, UUID loginOrgId) {
+        return loginOrgId == null
+                ? authPolicies.resolveForUser(user)
+                : orgContext.callInOrg(loginOrgId, () -> authPolicies.resolveForUser(user));
+    }
+
     /** Verifies the user's response; on success grants the factor and returns the (possibly completed) view. */
     public AuthSessionView verify(AuthFactor factor, FactorVerificationRequest verification,
                                   HttpServletRequest request, HttpServletResponse response) {
         UserAccount user = currentUser.require();
-        requireCurrentStep(factor); // reject factors out of policy order (e.g. TOTP before password)
+        // reject factors out of policy order (e.g. TOTP before password), per the login org's own policy
+        requireCurrentStep(factor, preAuthOrg.orgId(request).orElse(null));
 
         // Account lockout applies to every factor (password is verified here too, not just /login).
         if (user.isTemporarilyLocked(Instant.now()) || !user.isAccountNonLocked()) {
@@ -84,8 +99,9 @@ public class FactorStepService {
      * authenticated, the /factors endpoints are reused for per-app step-up, where login step-ordering no
      * longer applies — so allow it.
      */
-    private void requireCurrentStep(AuthFactor factor) {
-        AuthSessionView view = authState.describe(currentUser.authentication(), null); // only next() is read
+    private void requireCurrentStep(AuthFactor factor, UUID loginOrgId) {
+        // only next() is read; resolved in the login org so step-ordering follows the tenant's own policy
+        AuthSessionView view = authState.describe(currentUser.authentication(), null, loginOrgId);
         if (AuthSessionView.NEXT_DONE.equals(view.next())) {
             return; // fully authenticated -> step-up context, not initial login ordering
         }

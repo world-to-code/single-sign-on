@@ -28,8 +28,14 @@ import java.util.UUID;
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
 public class AuthPolicy extends AuditedEntity implements AuthPolicyView {
 
-    @Column(nullable = false, unique = true, length = 100)
+    // Tier-aware uniqueness (partial indexes in V46): global name, or (org_id, name) per tenant.
+    @Column(nullable = false, length = 100)
     private String name;
+
+    // NULL = a GLOBAL/default policy (resolved for every tenant, e.g. "Default"); non-null = a custom policy
+    // owned by that organization (RLS-isolated, resolved only for that org's logins). Fixed at creation.
+    @Column(name = "org_id")
+    private UUID orgId;
 
     /** Higher value wins when multiple policies apply to a user. */
     @Column(nullable = false)
@@ -66,9 +72,16 @@ public class AuthPolicy extends AuditedEntity implements AuthPolicyView {
     @Column(name = "role_id")
     private Set<UUID> assignedRoleIds = new HashSet<>();
 
+    /** A global/default policy (no owning org). */
     public AuthPolicy(String name, int priority) {
         this.name = name;
         this.priority = priority;
+    }
+
+    /** A policy owned by {@code orgId} (null = global). The org is fixed at creation. */
+    public AuthPolicy(String name, int priority, UUID orgId) {
+        this(name, priority);
+        this.orgId = orgId;
     }
 
     public void addStep(AuthPolicyStep step) {

@@ -10,6 +10,7 @@ import com.example.sso.portal.AppStepUp;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.LockedException;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.UserAccount;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,6 +23,9 @@ import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -48,6 +52,8 @@ class FactorStepServiceTest {
     @Mock private AuthenticationCompletionService completionService;
     @Mock private AppStepUp appStepUp;
     @Mock private AuditService audit;
+    @Mock private PreAuthOrgSession preAuthOrg;
+    @Mock private OrgContext orgContext;
 
     @Mock private UserAccount user;
     @Mock private FactorHandler handler;
@@ -60,7 +66,7 @@ class FactorStepServiceTest {
 
     /** The policy currently expects TOTP (next=FACTOR, pending=[TOTP]). */
     private void expectTotpStep() {
-        lenient().when(authState.describe(any(), any())).thenReturn(AuthSessionView.pending(
+        lenient().when(authState.describe(any(), any(), any())).thenReturn(AuthSessionView.pending(
                 "alice", true, false, List.of(), List.of(), List.of(), List.of("TOTP"), true, null));
     }
 
@@ -136,6 +142,27 @@ class FactorStepServiceTest {
 
         assertThatThrownBy(() -> service.prepare(AuthFactor.TOTP, request))
                 .isInstanceOf(ForbiddenException.class);
+        verify(handler, never()).prepare(any(), any());
+    }
+
+    @Test
+    void theEnrollAtLoginGateResolvesInTheLoginOrgSoTheTenantPolicyGovernsNotTheGlobalDefault() {
+        UUID loginOrg = UUID.randomUUID();
+        expectTotpStep();
+        when(preAuthOrg.orgId(request)).thenReturn(Optional.of(loginOrg));
+        when(orgContext.callInOrg(eq(loginOrg), any()))
+                .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(1)).get());
+        when(factorHandlers.get(AuthFactor.TOTP)).thenReturn(handler);
+        when(handler.enrollableAtLogin()).thenReturn(true);
+        when(handler.isEnrolled(user)).thenReturn(false);
+        when(authPolicies.resolveForUser(user)).thenReturn(policy);
+        when(policy.isAllowEnrollmentAtLogin()).thenReturn(false); // the LOGIN org's policy forbids enroll-at-login
+
+        assertThatThrownBy(() -> service.prepare(AuthFactor.TOTP, request))
+                .isInstanceOf(ForbiddenException.class);
+        // The gate was evaluated bound to the login org — a user cannot dodge a tenant's stricter policy
+        // by exploiting the no-context (global-default) resolution window.
+        verify(orgContext).callInOrg(eq(loginOrg), any());
         verify(handler, never()).prepare(any(), any());
     }
 }

@@ -52,13 +52,14 @@ public class AuthenticationCompletionService {
     public AuthSessionView completeIfSatisfied(HttpServletRequest request, HttpServletResponse response) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {
-            return authState.describe(authentication, preAuthOrg.orgSlug(request).orElse(null));
+            return authState.describe(authentication,
+                    preAuthOrg.orgSlug(request).orElse(null), preAuthOrg.orgId(request).orElse(null));
         }
 
         boolean alreadyComplete = authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority).collect(Collectors.toSet()).contains(Factors.MFA_COMPLETE);
 
-        if (!alreadyComplete && authState.isPolicySatisfied(authentication)) {
+        if (!alreadyComplete && authState.isPolicySatisfied(authentication, preAuthOrg.orgId(request).orElse(null))) {
             // Resolve the FINAL session authorities bound to the LOGIN org, so the user's global roles AND
             // their roles in THIS org (RLS-scoped) both resolve — and no other org's roles leak in. This is
             // the single chokepoint every login path (password, passkey, factor) funnels through.
@@ -96,7 +97,7 @@ public class AuthenticationCompletionService {
         }
 
         return authState.describe(SecurityContextHolder.getContext().getAuthentication(),
-                preAuthOrg.orgSlug(request).orElse(null));
+                preAuthOrg.orgSlug(request).orElse(null), preAuthOrg.orgId(request).orElse(null));
     }
 
     /** An existing factor authority to label the FactorGrantedAuthority with, so amr/acr stay unchanged. */

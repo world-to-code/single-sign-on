@@ -6,6 +6,7 @@ import com.example.sso.authpolicy.AuthPolicyResolver;
 import com.example.sso.authpolicy.AuthPolicyStepView;
 import com.example.sso.authpolicy.AuthPolicyView;
 import com.example.sso.authpolicy.Factors;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
 import org.junit.jupiter.api.Test;
@@ -21,11 +22,15 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -43,6 +48,7 @@ class AuthStateServiceTest {
     @Mock private AuthPolicyView policy;
     @Mock private AuthPolicyStepView step;
     @Mock private UserAccount user;
+    @Mock private OrgContext orgContext;
 
     @InjectMocks private AuthStateService service;
 
@@ -66,7 +72,7 @@ class AuthStateServiceTest {
         when(policyService.defaultPolicy()).thenReturn(policy);
         when(policy.isAllowEnrollmentAtLogin()).thenReturn(true);
 
-        AuthSessionView view = service.describe(null, null);
+        AuthSessionView view = service.describe(null, null, null);
 
         assertThat(view.next()).isEqualTo(AuthSessionView.NEXT_ORGANIZATION);
         assertThat(view.authenticated()).isFalse();
@@ -78,7 +84,7 @@ class AuthStateServiceTest {
         when(policyService.defaultPolicy()).thenReturn(policy);
         when(policy.isAllowEnrollmentAtLogin()).thenReturn(true);
 
-        AuthSessionView view = service.describe(null, "acme");
+        AuthSessionView view = service.describe(null, "acme", null);
 
         assertThat(view.next()).isEqualTo(AuthSessionView.NEXT_IDENTIFY);
         assertThat(view.org()).isEqualTo("acme");
@@ -91,7 +97,7 @@ class AuthStateServiceTest {
         Authentication anonymous = new AnonymousAuthenticationToken(
                 "key", "anonymousUser", List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS")));
 
-        assertThat(service.describe(anonymous, null).next()).isEqualTo(AuthSessionView.NEXT_ORGANIZATION);
+        assertThat(service.describe(anonymous, null, null).next()).isEqualTo(AuthSessionView.NEXT_ORGANIZATION);
     }
 
     @Test
@@ -100,7 +106,7 @@ class AuthStateServiceTest {
         when(policyService.defaultPolicy()).thenReturn(policy);
         when(policy.isAllowEnrollmentAtLogin()).thenReturn(true);
 
-        assertThat(service.describe(authed(), null).next()).isEqualTo(AuthSessionView.NEXT_ORGANIZATION);
+        assertThat(service.describe(authed(), null, null).next()).isEqualTo(AuthSessionView.NEXT_ORGANIZATION);
     }
 
     @Test
@@ -108,7 +114,7 @@ class AuthStateServiceTest {
         identifiedAlice();
         when(evaluator.currentStep(eq(policy), any())).thenReturn(Optional.empty());
 
-        AuthSessionView view = service.describe(authed(Factors.PASSWORD, Factors.TOTP), "acme");
+        AuthSessionView view = service.describe(authed(Factors.PASSWORD, Factors.TOTP), "acme", null);
 
         assertThat(view.next()).isEqualTo(AuthSessionView.NEXT_DONE);
         assertThat(view.username()).isEqualTo("alice");
@@ -122,7 +128,7 @@ class AuthStateServiceTest {
         when(evaluator.currentStep(eq(policy), any())).thenReturn(Optional.of(step));
         when(step.getAllowedFactors()).thenReturn(Set.of(AuthFactor.TOTP, AuthFactor.PASSWORD));
 
-        AuthSessionView view = service.describe(authed(Factors.PASSWORD), "acme");
+        AuthSessionView view = service.describe(authed(Factors.PASSWORD), "acme", null);
 
         assertThat(view.next()).isEqualTo(AuthSessionView.NEXT_FACTOR);
         // PASSWORD precedes TOTP by the enum's declared preference order (not alphabetical).
@@ -134,6 +140,33 @@ class AuthStateServiceTest {
         identifiedAlice();
         when(evaluator.currentStep(eq(policy), any())).thenReturn(Optional.empty());
 
-        assertThat(service.isPolicySatisfied(authed(Factors.PASSWORD, Factors.TOTP))).isTrue();
+        assertThat(service.isPolicySatisfied(authed(Factors.PASSWORD, Factors.TOTP), null)).isTrue();
+    }
+
+    @Test
+    void withNoLoginOrgResolutionNeverBindsAnOrgContext() {
+        identifiedAlice();
+        when(evaluator.currentStep(eq(policy), any())).thenReturn(Optional.empty());
+
+        service.describe(authed(Factors.PASSWORD, Factors.TOTP), "acme", null);
+
+        // No org resolved yet (pre-org step / post-login step-up) → must resolve the global/default policy
+        // WITHOUT binding any tenant context (binding an unverified org would be a cross-tenant risk).
+        verify(orgContext, never()).callInOrg(any(), any());
+    }
+
+    @Test
+    void policyResolutionBindsTheLoginOrgSoTenantPoliciesApply() {
+        UUID loginOrg = UUID.randomUUID();
+        identifiedAlice();
+        // Bind the login org around resolution so the tenant's own (RLS-scoped) auth policies participate.
+        when(orgContext.callInOrg(eq(loginOrg), any()))
+                .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(1)).get());
+        when(evaluator.currentStep(eq(policy), any())).thenReturn(Optional.empty());
+
+        AuthSessionView view = service.describe(authed(Factors.PASSWORD, Factors.TOTP), "acme", loginOrg);
+
+        assertThat(view.next()).isEqualTo(AuthSessionView.NEXT_DONE);
+        verify(orgContext).callInOrg(eq(loginOrg), any());
     }
 }

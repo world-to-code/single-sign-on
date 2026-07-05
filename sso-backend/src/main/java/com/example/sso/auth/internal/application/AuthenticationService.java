@@ -57,7 +57,8 @@ public class AuthenticationService {
     private final AuditService audit;
 
     public AuthSessionView session(HttpServletRequest request) {
-        return authState.describe(currentUser.authentication(), preAuthOrg.orgSlug(request).orElse(null));
+        return authState.describe(currentUser.authentication(),
+                preAuthOrg.orgSlug(request).orElse(null), preAuthOrg.orgId(request).orElse(null));
     }
 
     /** Whether an account has already been identified in this session (a pre-auth principal is established). */
@@ -84,7 +85,7 @@ public class AuthenticationService {
                 .orElseThrow(() -> new NotFoundException("No such organization."));
         preAuthOrg.stash(request, org.getId(), org.getSlug());
         audit.record(AuditType.AUTH_ORGANIZATION, org.getSlug(), true);
-        return authState.describe(currentUser.authentication(), org.getSlug());
+        return authState.describe(currentUser.authentication(), org.getSlug(), org.getId());
     }
 
     /**

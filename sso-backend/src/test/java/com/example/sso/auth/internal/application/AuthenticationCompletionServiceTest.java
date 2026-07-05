@@ -69,7 +69,7 @@ class AuthenticationCompletionServiceTest {
     @Test
     void anUnauthenticatedContextIsNeverPromoted() {
         SecurityContextHolder.clearContext();
-        when(authState.describe(any(), any())).thenReturn(AuthSessionView.organizationPending(true));
+        when(authState.describe(any(), any(), any())).thenReturn(AuthSessionView.organizationPending(true));
 
         service.completeIfSatisfied(request, response);
 
@@ -80,7 +80,7 @@ class AuthenticationCompletionServiceTest {
     @Test
     void anAlreadyCompleteSessionIsNotPromotedAgain() {
         signIn(Factors.PASSWORD, Factors.MFA_COMPLETE);
-        when(authState.describe(any(), any())).thenReturn(AuthSessionView.organizationPending(true));
+        when(authState.describe(any(), any(), any())).thenReturn(AuthSessionView.organizationPending(true));
 
         service.completeIfSatisfied(request, response);
 
@@ -91,10 +91,10 @@ class AuthenticationCompletionServiceTest {
     @Test
     void aSatisfiedSessionIsPromotedRegisteredAndAudited() {
         signIn(Factors.PASSWORD, Factors.TOTP);
-        when(authState.isPolicySatisfied(any())).thenReturn(true);
+        when(authState.isPolicySatisfied(any(), any())).thenReturn(true);
         when(userDetailsService.loadUserByUsername("alice"))
                 .thenReturn(new User("alice", "", List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
-        when(authState.describe(any(), any())).thenReturn(AuthSessionView.organizationPending(true));
+        when(authState.describe(any(), any(), any())).thenReturn(AuthSessionView.organizationPending(true));
 
         service.completeIfSatisfied(request, response);
 
@@ -106,10 +106,10 @@ class AuthenticationCompletionServiceTest {
     @Test
     void thePromotedAuthenticationCarriesAFactorGrantedAuthorityForOidcAuthTime() {
         signIn(Factors.PASSWORD, Factors.TOTP);
-        when(authState.isPolicySatisfied(any())).thenReturn(true);
+        when(authState.isPolicySatisfied(any(), any())).thenReturn(true);
         when(userDetailsService.loadUserByUsername("alice"))
                 .thenReturn(new User("alice", "", List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
-        when(authState.describe(any(), any())).thenReturn(AuthSessionView.organizationPending(true));
+        when(authState.describe(any(), any(), any())).thenReturn(AuthSessionView.organizationPending(true));
 
         service.completeIfSatisfied(request, response);
 
