@@ -19,6 +19,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
@@ -44,8 +45,10 @@ class OrganizationServiceImplTest {
     @Mock private OrganizationMembershipRepository memberships;
     @Mock private ApplicationEventPublisher events;
     @Mock private UserService users;
-    // A real OrgContext (not a mock) so runInOrg/callAsPlatform actually execute the wrapped action.
-    @Spy private OrgContext orgContext = new OrgContext();
+    // A real OrgContext (not a mock) so runInOrg/callAsPlatform actually execute the wrapped action. No
+    // active transaction in a unit test, so the connection binder is never consulted (raw no-op provider).
+    @SuppressWarnings("unchecked")
+    @Spy private OrgContext orgContext = new OrgContext(mock(ObjectProvider.class));
 
     @InjectMocks private OrganizationServiceImpl service;
 
@@ -126,7 +129,7 @@ class OrganizationServiceImplTest {
 
         service.addMember(orgId, userId);
 
-        verify(memberships).save(any(OrganizationMembership.class));
+        verify(memberships).saveAndFlush(any(OrganizationMembership.class));
     }
 
     @Test

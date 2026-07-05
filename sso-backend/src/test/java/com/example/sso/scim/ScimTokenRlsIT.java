@@ -4,7 +4,6 @@ import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.support.AbstractIntegrationTest;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -12,29 +11,26 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Proves the org-scoping RLS on {@code scim_token} through a dedicated <b>non-superuser</b> role. Global +
- * org-override form (a global token is visible in every context — the token lookup runs cross-org before the
- * request is bound): a tenant token is visible only in its org's context (or platform), and WITH CHECK
- * refuses a tenant-bound connection writing a global token or another org's token. Not {@code @Transactional}.
+ * Proves the org-scoping RLS on {@code scim_token} against the application's real NON-SUPERUSER runtime role
+ * ({@code sso_app}) — a superuser would bypass RLS entirely. Global + org-override form (a global token is
+ * visible in every context — the token lookup runs cross-org before the request is bound): a tenant token is
+ * visible only in its org's context (or platform), and WITH CHECK refuses a tenant-bound connection writing a
+ * global token or another org's token. Seeding/teardown use the privileged owner connection
+ * ({@link #ownerJdbc()}); the isolation assertions use a raw {@link #appRoleConnection()}.
+ * Not {@code @Transactional}.
  */
 class ScimTokenRlsIT extends AbstractIntegrationTest {
 
     @Autowired
     OrganizationService organizations;
-    @Autowired
-    JdbcTemplate jdbc;
-    @Autowired
-    DataSource dataSource;
 
     private final List<Runnable> cleanups = new ArrayList<>();
 
@@ -56,8 +52,7 @@ class ScimTokenRlsIT extends AbstractIntegrationTest {
         seed(a, orgA);
         seed(b, orgB);
 
-        createProbeRole();
-        try (Connection probe = DriverManager.getConnection(jdbcUrl(), "rls_probe", "probe")) {
+        try (Connection probe = appRoleConnection()) {
             setContext(probe, "app.current_org", orgA.toString());
             assertThat(visible(probe, global)).isTrue();
             assertThat(visible(probe, a)).isTrue();
@@ -82,34 +77,15 @@ class ScimTokenRlsIT extends AbstractIntegrationTest {
 
     private UUID newOrg(String prefix) {
         UUID id = organizations.create(new NewOrganization(prefix + "-" + suffix(), prefix)).id();
-        cleanups.add(() -> organizations.delete(id));
+        // Delete via the owner: an org's cascade-deletes hit RLS-guarded child rows the app role cannot see.
+        cleanups.add(() -> ownerJdbc().update("delete from organization where id = ?", id));
         return id;
     }
 
     private void seed(String hash, UUID orgId) {
-        jdbc.update("insert into scim_token (id, token_hash, org_id) values (gen_random_uuid(), ?, ?)", hash, orgId);
-        cleanups.add(() -> jdbc.update("delete from scim_token where token_hash = ?", hash));
-    }
-
-    private String jdbcUrl() {
-        try (Connection c = dataSource.getConnection()) {
-            return c.getMetaData().getURL();
-        } catch (SQLException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    private void createProbeRole() {
-        dropProbeRole();
-        jdbc.execute("CREATE ROLE rls_probe LOGIN PASSWORD 'probe' NOSUPERUSER");
-        jdbc.execute("GRANT USAGE ON SCHEMA public TO rls_probe");
-        jdbc.execute("GRANT SELECT, INSERT, DELETE ON scim_token TO rls_probe");
-        cleanups.add(this::dropProbeRole);
-    }
-
-    private void dropProbeRole() {
-        jdbc.execute("do $$ begin if exists (select from pg_roles where rolname = 'rls_probe') then "
-                + "execute 'drop owned by rls_probe'; execute 'drop role rls_probe'; end if; end $$");
+        ownerJdbc().update("insert into scim_token (id, token_hash, org_id) values (gen_random_uuid(), ?, ?)",
+                hash, orgId);
+        cleanups.add(() -> ownerJdbc().update("delete from scim_token where token_hash = ?", hash));
     }
 
     private void setContext(Connection c, String key, String value) throws SQLException {
@@ -137,7 +113,7 @@ class ScimTokenRlsIT extends AbstractIntegrationTest {
     }
 
     private void insertRow(Connection c, String hash, UUID orgId) throws SQLException {
-        cleanups.add(() -> jdbc.update("delete from scim_token where token_hash = ?", hash));
+        cleanups.add(() -> ownerJdbc().update("delete from scim_token where token_hash = ?", hash));
         try (PreparedStatement ps = c.prepareStatement(
                 "insert into scim_token (id, token_hash, org_id) values (gen_random_uuid(), ?, ?)")) {
             ps.setString(1, hash);

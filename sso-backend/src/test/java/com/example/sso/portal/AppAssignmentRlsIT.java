@@ -4,7 +4,6 @@ import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.support.AbstractIntegrationTest;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -12,29 +11,25 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Proves the org-scoping RLS on {@code app_assignment} through a dedicated <b>non-superuser</b> role. Global
- * + org-override form: a global assignment (e.g. the seeded admin-console grant) is visible in every context,
- * a tenant assignment is visible only in its org's context (or platform), and WITH CHECK refuses a
- * tenant-bound connection writing a global assignment or another org's assignment. Not {@code @Transactional}.
+ * Proves the org-scoping RLS on {@code app_assignment} against the application's real NON-SUPERUSER runtime
+ * role ({@code sso_app}) — a superuser bypasses RLS. Global + org-override form: a global assignment (e.g. the
+ * seeded admin-console grant) is visible in every context, a tenant assignment is visible only in its org's
+ * context (or platform), and WITH CHECK refuses a tenant-bound connection writing a global assignment or
+ * another org's assignment. Seeding/teardown use the privileged owner connection ({@link #ownerJdbc()}); the
+ * isolation assertions use a raw {@link #appRoleConnection()}. Not {@code @Transactional}.
  */
 class AppAssignmentRlsIT extends AbstractIntegrationTest {
 
     @Autowired
     OrganizationService organizations;
-    @Autowired
-    JdbcTemplate jdbc;
-    @Autowired
-    DataSource dataSource;
 
     private final List<Runnable> cleanups = new ArrayList<>();
 
@@ -52,8 +47,7 @@ class AppAssignmentRlsIT extends AbstractIntegrationTest {
         UUID a = seed(orgA);
         UUID b = seed(orgB);
 
-        createProbeRole();
-        try (Connection probe = DriverManager.getConnection(jdbcUrl(), "rls_probe", "probe")) {
+        try (Connection probe = appRoleConnection()) {
             setContext(probe, "app.current_org", orgA.toString());
             assertThat(visible(probe, global)).isTrue();
             assertThat(visible(probe, a)).isTrue();
@@ -83,8 +77,7 @@ class AppAssignmentRlsIT extends AbstractIntegrationTest {
         String appId = "shared-app-" + suffix();
         UUID subject = UUID.randomUUID(); // a GLOBAL user identity assigned in two tenants
 
-        createProbeRole();
-        try (Connection probe = DriverManager.getConnection(jdbcUrl(), "rls_probe", "probe")) {
+        try (Connection probe = appRoleConnection()) {
             setContext(probe, "app.current_org", orgA.toString());
             insertKeyed(probe, appId, subject, orgA);                                  // org A grant — allowed
             setContext(probe, "app.current_org", orgB.toString());
@@ -102,7 +95,7 @@ class AppAssignmentRlsIT extends AbstractIntegrationTest {
 
     private void insertKeyed(Connection c, String appId, UUID subjectId, UUID orgId) throws SQLException {
         UUID id = UUID.randomUUID();
-        cleanups.add(() -> jdbc.update("delete from app_assignment where id = ?", id));
+        cleanups.add(() -> ownerJdbc().update("delete from app_assignment where id = ?", id));
         try (PreparedStatement ps = c.prepareStatement("insert into app_assignment "
                 + "(id, app_type, app_id, subject_type, subject_id, org_id) values (?, 'OIDC', ?, 'USER', ?, ?)")) {
             ps.setObject(1, id);
@@ -115,37 +108,17 @@ class AppAssignmentRlsIT extends AbstractIntegrationTest {
 
     private UUID newOrg(String prefix) {
         UUID id = organizations.create(new NewOrganization(prefix + "-" + suffix(), prefix)).id();
-        cleanups.add(() -> organizations.delete(id));
+        // Delete via the owner: an org's cascade-deletes hit RLS-guarded child rows the app role cannot see.
+        cleanups.add(() -> ownerJdbc().update("delete from organization where id = ?", id));
         return id;
     }
 
     private UUID seed(UUID orgId) {
         UUID id = UUID.randomUUID();
-        jdbc.update("insert into app_assignment (id, app_type, app_id, subject_type, subject_id, org_id) "
+        ownerJdbc().update("insert into app_assignment (id, app_type, app_id, subject_type, subject_id, org_id) "
                 + "values (?, 'OIDC', ?, 'USER', ?, ?)", id, "app-" + suffix(), UUID.randomUUID(), orgId);
-        cleanups.add(() -> jdbc.update("delete from app_assignment where id = ?", id));
+        cleanups.add(() -> ownerJdbc().update("delete from app_assignment where id = ?", id));
         return id;
-    }
-
-    private String jdbcUrl() {
-        try (Connection c = dataSource.getConnection()) {
-            return c.getMetaData().getURL();
-        } catch (SQLException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    private void createProbeRole() {
-        dropProbeRole();
-        jdbc.execute("CREATE ROLE rls_probe LOGIN PASSWORD 'probe' NOSUPERUSER");
-        jdbc.execute("GRANT USAGE ON SCHEMA public TO rls_probe");
-        jdbc.execute("GRANT SELECT, INSERT, DELETE ON app_assignment TO rls_probe");
-        cleanups.add(this::dropProbeRole);
-    }
-
-    private void dropProbeRole() {
-        jdbc.execute("do $$ begin if exists (select from pg_roles where rolname = 'rls_probe') then "
-                + "execute 'drop owned by rls_probe'; execute 'drop role rls_probe'; end if; end $$");
     }
 
     private void setContext(Connection c, String key, String value) throws SQLException {
@@ -174,7 +147,7 @@ class AppAssignmentRlsIT extends AbstractIntegrationTest {
 
     private void insertRow(Connection c, UUID orgId) throws SQLException {
         UUID id = UUID.randomUUID();
-        cleanups.add(() -> jdbc.update("delete from app_assignment where id = ?", id));
+        cleanups.add(() -> ownerJdbc().update("delete from app_assignment where id = ?", id));
         try (PreparedStatement ps = c.prepareStatement("insert into app_assignment "
                 + "(id, app_type, app_id, subject_type, subject_id, org_id) values (?, 'OIDC', ?, 'USER', ?, ?)")) {
             ps.setObject(1, id);

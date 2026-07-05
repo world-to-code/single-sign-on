@@ -4,9 +4,14 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import jakarta.servlet.http.Cookie;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -62,7 +67,38 @@ public abstract class AbstractIntegrationTest {
     }
 
     // Testcontainers 2.x: org.testcontainers.postgresql.PostgreSQLContainer is non-generic.
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17");
+    // withInitScript provisions the non-superuser runtime role `sso_app` (as the container superuser, before
+    // Flyway) so the app connects as a role RLS actually constrains — mirroring dev + prod. See #91 / V54.
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17")
+            .withInitScript("testcontainers/create-runtime-role.sql");
+
+    /** The non-superuser runtime role the app connects as (RLS applies); its creds are dev/test-only. */
+    protected static final String APP_DB_USER = "sso_app";
+    protected static final String APP_DB_PASSWORD = "sso_app";
+
+    private static volatile JdbcTemplate ownerJdbc;
+
+    /**
+     * A raw connection as the NON-SUPERUSER runtime role, bypassing {@code OrgAwareDataSource} so RLS GUCs
+     * are set by hand — the honest way an RLS test proves a policy constrains the app's real runtime role
+     * (a superuser bypasses RLS). Caller closes it.
+     */
+    protected static Connection appRoleConnection() throws SQLException {
+        return DriverManager.getConnection(POSTGRES.getJdbcUrl(), APP_DB_USER, APP_DB_PASSWORD);
+    }
+
+    /**
+     * A {@code JdbcTemplate} as the privileged OWNER (the container superuser), used by RLS tests for
+     * cross-org seeding and teardown that must BYPASS RLS (a non-superuser cannot insert another org's rows,
+     * and cascade-deletes would be blocked by RLS). Never use it to assert isolation — only to arrange it.
+     */
+    protected static JdbcTemplate ownerJdbc() {
+        if (ownerJdbc == null) {
+            ownerJdbc = new JdbcTemplate(new DriverManagerDataSource(
+                    POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()));
+        }
+        return ownerJdbc;
+    }
 
     // Session store. `--notify-keyspace-events Egx` lets an idle session's TTL expiry publish a
     // SessionExpiredEvent (Spring Session also CONFIG SETs this at startup; set here for determinism).
@@ -77,9 +113,13 @@ public abstract class AbstractIntegrationTest {
 
     @DynamicPropertySource
     static void datasourceProperties(DynamicPropertyRegistry registry) {
+        // Runtime datasource = the non-superuser role (RLS enforced); Flyway = the container owner (keeps DDL).
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        registry.add("spring.datasource.username", () -> APP_DB_USER);
+        registry.add("spring.datasource.password", () -> APP_DB_PASSWORD);
+        registry.add("spring.flyway.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.flyway.user", POSTGRES::getUsername);
+        registry.add("spring.flyway.password", POSTGRES::getPassword);
         registry.add("spring.data.redis.host", REDIS::getHost);
         registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
     }

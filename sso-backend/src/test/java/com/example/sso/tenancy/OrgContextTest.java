@@ -2,14 +2,18 @@ package com.example.sso.tenancy;
 
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 /** Unit tests for {@link OrgContext}: the three states and the save/restore nesting semantics. */
 class OrgContextTest {
 
-    private final OrgContext context = new OrgContext();
+    // No active transaction in a plain unit test, so the connection binder is never consulted (no-op).
+    @SuppressWarnings("unchecked")
+    private final OrgContext context = new OrgContext(mock(ObjectProvider.class));
 
     @Test
     void isUnsetByDefault() {

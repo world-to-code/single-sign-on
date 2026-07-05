@@ -67,9 +67,13 @@ class RbacDelegationIT extends AbstractIntegrationTest {
                 "S3cret!pw", Set.of("ROLE_USER"))).getId();
         UUID roleId = orgContext.callInOrg(orgId,
                 () -> roleService.create("ROLE_ADMIN", Set.of(Permissions.USER_READ))).getId();
-        roleService.addMember(roleId, user);
+        // Managing an org role's membership runs in that org's context (as a drilled-in admin would); the
+        // org role is RLS-invisible from an unbound context now that the app runs as a non-superuser.
+        orgContext.runInOrg(orgId, () -> roleService.addMember(roleId, user));
 
-        Set<String> authorities = authoritiesOf(username);
+        // Authorities are computed bound to the login org (as at real login), so the org role resolves; an
+        // unbound computation would not see it now that the app runs as a non-superuser (RLS).
+        Set<String> authorities = orgContext.callInOrg(orgId, () -> authoritiesOf(username));
         assertThat(authorities).contains(Permissions.USER_READ);      // the org role's permission is granted
         assertThat(authorities).doesNotContain("ROLE_ADMIN");         // but NOT the ROLE_ADMIN authority
     }

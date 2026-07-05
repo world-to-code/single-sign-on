@@ -329,6 +329,15 @@ Run with `SPRING_PROFILES_ACTIVE=prod`; secrets come from the environment (see
 Build the image with `docker build -t mini-sso .` (single node; sessions are in-memory — front
 with sticky sessions or externalize the session store before scaling out).
 
+**Tenant isolation requires a non-superuser DB role.** PostgreSQL Row-Level Security — the hard
+boundary between tenants — is *bypassed by a superuser*, so the application must connect as a
+**non-superuser** role. Provision one owning nothing (migration `V54` grants it the DML it needs)
+and point the runtime at it: `DB_APP_USERNAME` / `DB_APP_PASSWORD` (the app), while `DB_USERNAME` /
+`DB_PASSWORD` stay the schema owner Flyway migrates as. `sso.tenancy.require-non-superuser-role` is
+`true`, so startup **fails fast** if the runtime role is a superuser rather than silently running
+without isolation. Locally, `docker/postgres-init/10-runtime-role.sql` creates this role (`sso_app`)
+automatically.
+
 ---
 
 ## Conventions

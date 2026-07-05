@@ -4,7 +4,6 @@ import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.support.AbstractIntegrationTest;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -12,32 +11,27 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Proves the org-scoping RLS on {@code session_policy} and {@code network_zone}, verified through a dedicated
- * <b>non-superuser</b> role (a superuser — the Testcontainers/dev default — bypasses RLS). Both tables use
- * the global-default + org-override policy (mirrors {@code role}): a tenant row is visible only in its org's
- * context (or platform), a GLOBAL row (org_id NULL — the seeded Default session policy, platform-wide zones)
- * is visible in every context including unset (startup seeding / the request path's cross-org cache load),
- * and WITH CHECK refuses writing another org's row from a tenant context. Not {@code @Transactional} — each
- * probe call is its own connection.
+ * Proves the org-scoping RLS on {@code session_policy} and {@code network_zone} against the application's real
+ * NON-SUPERUSER runtime role ({@code sso_app}) — a superuser (the Testcontainers/dev default) bypasses RLS.
+ * Both tables use the global-default + org-override policy (mirrors {@code role}): a tenant row is visible only
+ * in its org's context (or platform), a GLOBAL row (org_id NULL — the seeded Default session policy,
+ * platform-wide zones) is visible in every context including unset (startup seeding / the request path's
+ * cross-org cache load), and WITH CHECK refuses writing another org's row from a tenant context.
+ * Seeding/teardown use the privileged owner connection ({@link #ownerJdbc()}); the isolation assertions use a
+ * raw {@link #appRoleConnection()}. Not {@code @Transactional} — each probe call is its own connection.
  */
 class SessionPolicyAndZoneRlsIT extends AbstractIntegrationTest {
 
     @Autowired
     OrganizationService organizations;
-    @Autowired
-    JdbcTemplate jdbc;
-    @Autowired
-    DataSource dataSource;
 
     private final List<Runnable> cleanups = new ArrayList<>();
 
@@ -68,8 +62,7 @@ class SessionPolicyAndZoneRlsIT extends AbstractIntegrationTest {
         seedRow(table, aName, orgA);
         seedRow(table, bName, orgB);
 
-        createProbeRole(table);
-        try (Connection probe = DriverManager.getConnection(jdbcUrl(), "rls_probe", "probe")) {
+        try (Connection probe = appRoleConnection()) {
             // Org A's context: sees the global row + A's row, never B's.
             setContext(probe, "app.current_org", orgA.toString());
             assertThat(visible(probe, table, globalName)).isTrue();
@@ -111,35 +104,16 @@ class SessionPolicyAndZoneRlsIT extends AbstractIntegrationTest {
 
     private UUID newOrg(String prefix) {
         UUID id = organizations.create(new NewOrganization(prefix + "-" + suffix(), prefix)).id();
-        cleanups.add(() -> organizations.delete(id)); // FK cascade removes the org's rows
+        // Delete via the owner: an org's cascade-deletes hit RLS-guarded child rows the app role cannot see.
+        cleanups.add(() -> ownerJdbc().update("delete from organization where id = ?", id));
         return id;
     }
 
     /** Insert a row directly (owner connection bypasses RLS) so we control its tier. */
     private void seedRow(String table, String name, UUID orgId) {
-        jdbc.update("insert into " + table + " (id, name, org_id) values (gen_random_uuid(), ?, ?)", name, orgId);
-        cleanups.add(() -> jdbc.update("delete from " + table + " where name = ?", name));
-    }
-
-    private String jdbcUrl() {
-        try (Connection c = dataSource.getConnection()) {
-            return c.getMetaData().getURL();
-        } catch (SQLException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    private void createProbeRole(String table) {
-        dropProbeRole();
-        jdbc.execute("CREATE ROLE rls_probe LOGIN PASSWORD 'probe' NOSUPERUSER");
-        jdbc.execute("GRANT USAGE ON SCHEMA public TO rls_probe");
-        jdbc.execute("GRANT SELECT, INSERT, DELETE ON " + table + " TO rls_probe");
-        cleanups.add(this::dropProbeRole);
-    }
-
-    private void dropProbeRole() {
-        jdbc.execute("do $$ begin if exists (select from pg_roles where rolname = 'rls_probe') then "
-                + "execute 'drop owned by rls_probe'; execute 'drop role rls_probe'; end if; end $$");
+        ownerJdbc().update("insert into " + table + " (id, name, org_id) values (gen_random_uuid(), ?, ?)",
+                name, orgId);
+        cleanups.add(() -> ownerJdbc().update("delete from " + table + " where name = ?", name));
     }
 
     private void setContext(Connection c, String key, String value) throws SQLException {
@@ -167,7 +141,7 @@ class SessionPolicyAndZoneRlsIT extends AbstractIntegrationTest {
     }
 
     private void insertRow(Connection c, String table, String name, UUID orgId) throws SQLException {
-        cleanups.add(() -> jdbc.update("delete from " + table + " where name = ?", name));
+        cleanups.add(() -> ownerJdbc().update("delete from " + table + " where name = ?", name));
         try (PreparedStatement ps = c.prepareStatement(
                 "insert into " + table + " (id, name, org_id) values (gen_random_uuid(), ?, ?)")) {
             ps.setString(1, name);

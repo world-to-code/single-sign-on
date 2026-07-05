@@ -5,7 +5,6 @@ import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.UserService;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -14,7 +13,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,9 +27,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>{@code OrgAwareDataSource} sets the {@code app.current_org}/{@code app.platform} GUCs from the
  *       current {@link OrgContext} on the connection (checked via {@code current_setting}); and</li>
  *   <li>the RLS policy isolates rows by org, allows the platform bypass, fails closed with no context, and
- *       enforces WITH CHECK on writes — verified through a dedicated <b>non-superuser</b> role, because a
- *       superuser (the Testcontainers/dev default) bypasses RLS entirely. In production the app's runtime
- *       role MUST likewise be a non-superuser for RLS to take effect.</li>
+ *       enforces WITH CHECK on writes — verified against the application's real NON-SUPERUSER runtime role
+ *       ({@code sso_app}), because a superuser (the Testcontainers/dev default) bypasses RLS entirely. In
+ *       production the app's runtime role MUST likewise be a non-superuser for RLS to take effect.</li>
  * </ol>
  * Not {@code @Transactional} — each call is its own tx/connection.
  */
@@ -45,8 +43,6 @@ class OrganizationRlsIT extends AbstractIntegrationTest {
     OrgContext orgContext;
     @Autowired
     JdbcTemplate jdbc;
-    @Autowired
-    DataSource dataSource;
 
     private final List<Runnable> cleanups = new ArrayList<>();
 
@@ -77,9 +73,7 @@ class OrganizationRlsIT extends AbstractIntegrationTest {
         cleanups.add(() -> users.delete(user));
         organizations.addMember(orgA, user); // user belongs to A only
 
-        String url = jdbcUrl();
-        createProbeRole();
-        try (Connection probe = DriverManager.getConnection(url, "rls_probe", "probe")) {
+        try (Connection probe = appRoleConnection()) {
             // USING: visible only in A's context / platform; never in B or with no context (fail-closed).
             setContext(probe, "app.current_org", orgA.toString());
             assertThat(countFor(probe, user)).isEqualTo(1);
@@ -103,34 +97,13 @@ class OrganizationRlsIT extends AbstractIntegrationTest {
 
     private UUID newOrg(String prefix) {
         UUID id = organizations.create(new NewOrganization(prefix + "-" + suffix(), prefix)).id();
-        cleanups.add(() -> organizations.delete(id));
+        // Delete via the owner: an org's cascade-deletes hit RLS-guarded child rows the app role cannot see.
+        cleanups.add(() -> ownerJdbc().update("delete from organization where id = ?", id));
         return id;
     }
 
     private String currentSetting(String key) {
         return jdbc.queryForObject("select current_setting(?, true)", String.class, key);
-    }
-
-    private String jdbcUrl() {
-        try (Connection c = dataSource.getConnection()) {
-            return c.getMetaData().getURL();
-        } catch (SQLException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    private void createProbeRole() {
-        // A non-owner, non-superuser role IS subject to RLS (unlike the superuser test connection).
-        dropProbeRole();
-        jdbc.execute("CREATE ROLE rls_probe LOGIN PASSWORD 'probe' NOSUPERUSER");
-        jdbc.execute("GRANT USAGE ON SCHEMA public TO rls_probe");
-        jdbc.execute("GRANT SELECT, INSERT, DELETE ON organization_membership TO rls_probe");
-        cleanups.add(this::dropProbeRole);
-    }
-
-    private void dropProbeRole() {
-        jdbc.execute("do $$ begin if exists (select from pg_roles where rolname = 'rls_probe') then "
-                + "execute 'drop owned by rls_probe'; execute 'drop role rls_probe'; end if; end $$");
     }
 
     private void setContext(Connection c, String key, String value) throws SQLException {

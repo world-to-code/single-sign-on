@@ -4,7 +4,6 @@ import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.support.AbstractIntegrationTest;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -12,30 +11,26 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Proves the org-scoping RLS on {@code user_group}, via a dedicated <b>non-superuser</b> role (a superuser
- * bypasses RLS). Like {@code role}, the policy keeps GLOBAL groups (org_id NULL — e.g. "All Users") visible
- * in every context, which login group-delegated-role resolution and the seeder depend on: a tenant group is
- * visible only in its org's context (or platform); a global group is visible in org A, org B, platform, and
- * unset; a global (NULL) group is writable in any context, a tenant group only in its own org's context.
+ * Proves the org-scoping RLS on {@code user_group} against the application's real NON-SUPERUSER runtime role
+ * ({@code sso_app}) — a superuser bypasses RLS. Like {@code role}, the policy keeps GLOBAL groups (org_id NULL
+ * — e.g. "All Users") visible in every context, which login group-delegated-role resolution and the seeder
+ * depend on: a tenant group is visible only in its org's context (or platform); a global group is visible in
+ * org A, org B, platform, and unset; a global (NULL) group is writable in any context, a tenant group only in
+ * its own org's context. Seeding/teardown use the privileged owner connection ({@link #ownerJdbc()}); the
+ * isolation assertions use a raw {@link #appRoleConnection()}.
  */
 class GroupRlsIT extends AbstractIntegrationTest {
 
     @Autowired
     OrganizationService organizations;
-    @Autowired
-    JdbcTemplate jdbc;
-    @Autowired
-    DataSource dataSource;
 
     private final List<Runnable> cleanups = new ArrayList<>();
 
@@ -57,8 +52,7 @@ class GroupRlsIT extends AbstractIntegrationTest {
         seedGroup(aName, orgA);
         seedGroup(bName, orgB);
 
-        createProbeRole();
-        try (Connection probe = DriverManager.getConnection(jdbcUrl(), "rls_probe", "probe")) {
+        try (Connection probe = appRoleConnection()) {
             setContext(probe, "app.current_org", orgA.toString());
             assertThat(visible(probe, globalName)).isTrue();
             assertThat(visible(probe, aName)).isTrue();
@@ -91,35 +85,15 @@ class GroupRlsIT extends AbstractIntegrationTest {
 
     private UUID newOrg(String prefix) {
         UUID id = organizations.create(new NewOrganization(prefix + "-" + suffix(), prefix)).id();
-        cleanups.add(() -> organizations.delete(id)); // FK cascade removes the org's groups
+        // Delete via the owner: an org's cascade-deletes hit RLS-guarded child rows the app role cannot see.
+        cleanups.add(() -> ownerJdbc().update("delete from organization where id = ?", id));
         return id;
     }
 
     private void seedGroup(String name, UUID orgId) {
-        jdbc.update("insert into user_group (id, name, org_id, system, created_at) "
+        ownerJdbc().update("insert into user_group (id, name, org_id, system, created_at) "
                 + "values (gen_random_uuid(), ?, ?, false, now())", name, orgId);
-        cleanups.add(() -> jdbc.update("delete from user_group where name = ?", name));
-    }
-
-    private String jdbcUrl() {
-        try (Connection c = dataSource.getConnection()) {
-            return c.getMetaData().getURL();
-        } catch (SQLException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    private void createProbeRole() {
-        dropProbeRole();
-        jdbc.execute("CREATE ROLE rls_probe LOGIN PASSWORD 'probe' NOSUPERUSER");
-        jdbc.execute("GRANT USAGE ON SCHEMA public TO rls_probe");
-        jdbc.execute("GRANT SELECT, INSERT, DELETE ON user_group TO rls_probe");
-        cleanups.add(this::dropProbeRole);
-    }
-
-    private void dropProbeRole() {
-        jdbc.execute("do $$ begin if exists (select from pg_roles where rolname = 'rls_probe') then "
-                + "execute 'drop owned by rls_probe'; execute 'drop role rls_probe'; end if; end $$");
+        cleanups.add(() -> ownerJdbc().update("delete from user_group where name = ?", name));
     }
 
     private void setContext(Connection c, String key, String value) throws SQLException {
@@ -147,7 +121,7 @@ class GroupRlsIT extends AbstractIntegrationTest {
     }
 
     private void insertGroup(Connection c, String name, UUID orgId) throws SQLException {
-        cleanups.add(() -> jdbc.update("delete from user_group where name = ?", name));
+        cleanups.add(() -> ownerJdbc().update("delete from user_group where name = ?", name));
         try (PreparedStatement ps = c.prepareStatement("insert into user_group (id, name, org_id, system, created_at) "
                 + "values (gen_random_uuid(), ?, ?, false, now())")) {
             ps.setString(1, name);

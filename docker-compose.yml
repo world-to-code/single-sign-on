@@ -10,6 +10,9 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Provisions the non-superuser runtime role `sso_app` on first init (before the app connects), so
+      # RLS is actually enforced locally. Flyway still migrates as the owner `sso`; V54 grants sso_app.
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sso -d sso"]
       interval: 5s

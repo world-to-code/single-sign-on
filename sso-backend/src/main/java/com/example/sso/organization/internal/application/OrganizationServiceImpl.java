@@ -99,7 +99,9 @@ public class OrganizationServiceImpl implements OrganizationService {
                 throw new NotFoundException("user not found");
             }
             if (!memberships.existsByOrgIdAndUserId(orgId, userId)) {
-                memberships.save(new OrganizationMembership(orgId, userId)); // org_id == bound org -> RLS WITH CHECK ok
+                // saveAndFlush: force the INSERT to run INSIDE this runInOrg scope (GUC = orgId) so RLS WITH
+                // CHECK passes. A plain save() defers to commit — after the scope restores the outer context.
+                memberships.saveAndFlush(new OrganizationMembership(orgId, userId));
             }
         });
     }

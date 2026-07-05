@@ -4,7 +4,6 @@ import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.support.AbstractIntegrationTest;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -12,36 +11,31 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Proves the org-scoping RLS on the {@code role} table, verified through a dedicated <b>non-superuser</b>
- * role (a superuser — the Testcontainers/dev default — bypasses RLS). The role policy differs from the
- * membership one by an {@code org_id IS NULL} clause, so GLOBAL/system roles stay visible in EVERY context
- * (critical: login authority resolution and startup seeding read roles with no org bound):
+ * Proves the org-scoping RLS on the {@code role} table against the application's real NON-SUPERUSER runtime
+ * role ({@code sso_app}) — a superuser (the Testcontainers/dev default) bypasses RLS. The role policy differs
+ * from the membership one by an {@code org_id IS NULL} clause, so GLOBAL/system roles stay visible in EVERY
+ * context (critical: login authority resolution and startup seeding read roles with no org bound):
  * <ul>
  *   <li>a tenant role is visible only in its org's context (or platform), never another org's nor unset;</li>
  *   <li>a GLOBAL role (org_id NULL) is visible in every context — org A, org B, platform, and unset;</li>
  *   <li>WITH CHECK: a global (NULL) role is writable in any context (seeder), a tenant role only in its own
  *       org's context; a cross-org write is refused.</li>
  * </ul>
- * Not {@code @Transactional} — each probe call is its own connection.
+ * Seeding/teardown use the privileged owner connection ({@link #ownerJdbc()}); the isolation assertions use a
+ * raw {@link #appRoleConnection()}. Not {@code @Transactional} — each probe call is its own connection.
  */
 class RoleRlsIT extends AbstractIntegrationTest {
 
     @Autowired
     OrganizationService organizations;
-    @Autowired
-    JdbcTemplate jdbc;
-    @Autowired
-    DataSource dataSource;
 
     private final List<Runnable> cleanups = new ArrayList<>();
 
@@ -64,8 +58,7 @@ class RoleRlsIT extends AbstractIntegrationTest {
         seedRole(aName, orgA);
         seedRole(bName, orgB);
 
-        createProbeRole();
-        try (Connection probe = DriverManager.getConnection(jdbcUrl(), "rls_probe", "probe")) {
+        try (Connection probe = appRoleConnection()) {
             // Org A's context: sees the global role + A's role, never B's.
             setContext(probe, "app.current_org", orgA.toString());
             assertThat(visible(probe, globalName)).isTrue();
@@ -104,36 +97,16 @@ class RoleRlsIT extends AbstractIntegrationTest {
 
     private UUID newOrg(String prefix) {
         UUID id = organizations.create(new NewOrganization(prefix + "-" + suffix(), prefix)).id();
-        cleanups.add(() -> organizations.delete(id)); // FK cascade removes the org's roles
+        // Delete via the owner: an org's cascade-deletes hit RLS-guarded child rows the app role cannot see.
+        cleanups.add(() -> ownerJdbc().update("delete from organization where id = ?", id));
         return id;
     }
 
     /** Insert a role directly (owner connection bypasses RLS) so we control its tier. */
     private void seedRole(String name, UUID orgId) {
-        jdbc.update("insert into role (id, name, org_id, system) values (gen_random_uuid(), ?, ?, false)",
+        ownerJdbc().update("insert into role (id, name, org_id, system) values (gen_random_uuid(), ?, ?, false)",
                 name, orgId);
-        cleanups.add(() -> jdbc.update("delete from role where name = ?", name));
-    }
-
-    private String jdbcUrl() {
-        try (Connection c = dataSource.getConnection()) {
-            return c.getMetaData().getURL();
-        } catch (SQLException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    private void createProbeRole() {
-        dropProbeRole();
-        jdbc.execute("CREATE ROLE rls_probe LOGIN PASSWORD 'probe' NOSUPERUSER");
-        jdbc.execute("GRANT USAGE ON SCHEMA public TO rls_probe");
-        jdbc.execute("GRANT SELECT, INSERT, DELETE ON role TO rls_probe");
-        cleanups.add(this::dropProbeRole);
-    }
-
-    private void dropProbeRole() {
-        jdbc.execute("do $$ begin if exists (select from pg_roles where rolname = 'rls_probe') then "
-                + "execute 'drop owned by rls_probe'; execute 'drop role rls_probe'; end if; end $$");
+        cleanups.add(() -> ownerJdbc().update("delete from role where name = ?", name));
     }
 
     private void setContext(Connection c, String key, String value) throws SQLException {
@@ -161,7 +134,7 @@ class RoleRlsIT extends AbstractIntegrationTest {
     }
 
     private void insertRole(Connection c, String name, UUID orgId) throws SQLException {
-        cleanups.add(() -> jdbc.update("delete from role where name = ?", name));
+        cleanups.add(() -> ownerJdbc().update("delete from role where name = ?", name));
         try (PreparedStatement ps = c.prepareStatement(
                 "insert into role (id, name, org_id, system) values (gen_random_uuid(), ?, ?, false)")) {
             ps.setString(1, name);

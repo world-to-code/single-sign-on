@@ -3,8 +3,18 @@
 spring:
   datasource:
     url: ${DB_URL:jdbc:postgresql://postgres:5432/sso}
-    username: ${DB_USERNAME:sso}
+    # Runtime connects as a NON-SUPERUSER role so RLS is enforced (sso.tenancy.require-non-superuser-role=true
+    # in application.yml fails startup otherwise). Provision this role out of band (owned by nothing, DML only);
+    # Flyway migrates as the owner below. DB_APP_USERNAME defaults to the owner only for a single-role dev-like
+    # deploy — in real prod set a distinct non-superuser.
+    username: ${DB_APP_USERNAME:${DB_USERNAME:sso}}
+    password: ${DB_APP_PASSWORD:${DB_PASSWORD}}
+  flyway:
+    # Migrations run as the schema owner (keeps DDL); the placeholder names the runtime role V54 grants to.
+    user: ${DB_USERNAME:sso}
     password: ${DB_PASSWORD}
+    placeholders:
+      approle: ${DB_APP_USERNAME:${DB_USERNAME:sso}}
   data:
     redis:
       host: ${REDIS_HOST:redis}

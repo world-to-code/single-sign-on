@@ -4,7 +4,6 @@ import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.support.AbstractIntegrationTest;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -12,30 +11,26 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Proves the org-scoping RLS on {@code saml_relying_party} through a dedicated <b>non-superuser</b> role.
- * The entityId is globally unique, so RLS — not a per-tier name split — is what isolates a tenant RP:
- * a global RP is visible in every context (SSO resolves by entityId before the request is bound), a
- * tenant RP is visible only in its org's context (or platform), and WITH CHECK refuses a tenant-bound
- * connection writing a global RP or another org's RP. Not {@code @Transactional}.
+ * Proves the org-scoping RLS on {@code saml_relying_party} against the application's real NON-SUPERUSER
+ * runtime role ({@code sso_app}) — a superuser would bypass RLS entirely. The entityId is globally unique,
+ * so RLS (not a per-tier name split) isolates a tenant RP: a global RP is visible in every context (SSO
+ * resolves by entityId before the request is bound), a tenant RP only in its org's context (or platform),
+ * and WITH CHECK refuses a tenant-bound connection writing a global RP or another org's RP. Seeding/teardown
+ * use the privileged owner connection ({@link #ownerJdbc()}); the isolation assertions use a raw
+ * {@link #appRoleConnection()}. Not {@code @Transactional}.
  */
 class SamlRelyingPartyRlsIT extends AbstractIntegrationTest {
 
     @Autowired
     OrganizationService organizations;
-    @Autowired
-    JdbcTemplate jdbc;
-    @Autowired
-    DataSource dataSource;
 
     private final List<Runnable> cleanups = new ArrayList<>();
 
@@ -57,8 +52,7 @@ class SamlRelyingPartyRlsIT extends AbstractIntegrationTest {
         seed(a, orgA);
         seed(b, orgB);
 
-        createProbeRole();
-        try (Connection probe = DriverManager.getConnection(jdbcUrl(), "rls_probe", "probe")) {
+        try (Connection probe = appRoleConnection()) {
             setContext(probe, "app.current_org", orgA.toString());
             assertThat(visible(probe, global)).isTrue();
             assertThat(visible(probe, a)).isTrue();
@@ -86,35 +80,15 @@ class SamlRelyingPartyRlsIT extends AbstractIntegrationTest {
 
     private UUID newOrg(String prefix) {
         UUID id = organizations.create(new NewOrganization(prefix + "-" + suffix(), prefix)).id();
-        cleanups.add(() -> organizations.delete(id));
+        // Delete via the owner: an org's cascade-deletes hit RLS-guarded child rows the app role cannot see.
+        cleanups.add(() -> ownerJdbc().update("delete from organization where id = ?", id));
         return id;
     }
 
     private void seed(String entityId, UUID orgId) {
-        jdbc.update("insert into saml_relying_party (id, entity_id, acs_url, org_id) "
+        ownerJdbc().update("insert into saml_relying_party (id, entity_id, acs_url, org_id) "
                 + "values (gen_random_uuid(), ?, ?, ?)", entityId, "https://sp.example/acs", orgId);
-        cleanups.add(() -> jdbc.update("delete from saml_relying_party where entity_id = ?", entityId));
-    }
-
-    private String jdbcUrl() {
-        try (Connection c = dataSource.getConnection()) {
-            return c.getMetaData().getURL();
-        } catch (SQLException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    private void createProbeRole() {
-        dropProbeRole();
-        jdbc.execute("CREATE ROLE rls_probe LOGIN PASSWORD 'probe' NOSUPERUSER");
-        jdbc.execute("GRANT USAGE ON SCHEMA public TO rls_probe");
-        jdbc.execute("GRANT SELECT, INSERT, DELETE ON saml_relying_party TO rls_probe");
-        cleanups.add(this::dropProbeRole);
-    }
-
-    private void dropProbeRole() {
-        jdbc.execute("do $$ begin if exists (select from pg_roles where rolname = 'rls_probe') then "
-                + "execute 'drop owned by rls_probe'; execute 'drop role rls_probe'; end if; end $$");
+        cleanups.add(() -> ownerJdbc().update("delete from saml_relying_party where entity_id = ?", entityId));
     }
 
     private void setContext(Connection c, String key, String value) throws SQLException {
@@ -143,7 +117,7 @@ class SamlRelyingPartyRlsIT extends AbstractIntegrationTest {
     }
 
     private void insertRow(Connection c, String entityId, UUID orgId) throws SQLException {
-        cleanups.add(() -> jdbc.update("delete from saml_relying_party where entity_id = ?", entityId));
+        cleanups.add(() -> ownerJdbc().update("delete from saml_relying_party where entity_id = ?", entityId));
         try (PreparedStatement ps = c.prepareStatement("insert into saml_relying_party "
                 + "(id, entity_id, acs_url, org_id) values (gen_random_uuid(), ?, ?, ?)")) {
             ps.setString(1, entityId);

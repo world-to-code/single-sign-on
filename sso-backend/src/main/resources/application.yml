@@ -8,8 +8,10 @@ spring:
       fail-on-null-for-primitives: false
   datasource:
     url: jdbc:postgresql://localhost:5432/sso
-    username: sso
-    password: sso
+    # Runtime connects as the NON-SUPERUSER role so Row-Level Security is actually enforced (a superuser
+    # bypasses RLS even with FORCE). Provisioned by docker/postgres-init; granted DML by migration V54.
+    username: sso_app
+    password: sso_app
   data:
     redis:
       host: localhost
@@ -38,6 +40,11 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+    # Migrations run as the schema OWNER (keeps full DDL); the runtime datasource above is a non-superuser.
+    user: sso
+    password: sso
+    placeholders:
+      approle: sso_app     # V54 grants this runtime role its DML (parameterized so prod can rename it)
   mail:
     host: localhost
     port: 1025                  # MailHog (docker-compose) for OTT email in dev
@@ -61,6 +68,10 @@ server:
 
 sso:
   issuer: http://localhost:9000  # OIDC issuer + SAML IdP entityID base (bare/platform host)
+  tenancy:
+    # Fail startup if the runtime DB role is a superuser (which silently bypasses RLS). The runtime
+    # datasource above is the non-superuser `sso_app`, so this holds in dev/test and must hold in prod.
+    require-non-superuser-role: true
   tenant:
     # Base domains under which a tenant subdomain identifies the org, e.g. acme.localhost / acme.idp.example.com.
     # A bare base domain keeps the slug-typed tenant-first login. Local dev: *.localhost → 127.0.0.1 (no DNS).
