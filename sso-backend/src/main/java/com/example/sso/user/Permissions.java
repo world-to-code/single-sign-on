@@ -100,28 +100,24 @@ public final class Permissions {
     /**
      * Platform-only permissions: the tenant registry itself ({@code organization:create/update/delete}),
      * the global admin-console security config ({@code portal-settings:*}), and shared cross-tenant
-     * INFRASTRUCTURE — the signing keys ({@code key:rotate}), global provisioning ({@code scim:manage}),
-     * cross-tenant audit ({@code audit:read}), the global OIDC/SAML app registries and assignments
-     * ({@code oidc-client:*}, {@code saml-rp:*}, {@code app-assignment:*}), and the resource DAG
-     * ({@code resource:*}). A tenant (org) admin can neither see these in the catalog nor grant them
-     * (enforced by {@link PermissionGrantPolicy}) — granting one would cross tenant boundaries.
-     *
-     * <p>{@code key:rotate} note: OIDC signing keys are now per-tenant (a super-admin drilled into an org
-     * rotates only that org's key), but the SAML signing credential is still a single global one, and both
-     * rotations share this permission — so it stays platform-only until SAML is per-tenant too. It flips to
-     * tenant-grantable then.
+     * INFRASTRUCTURE — global provisioning ({@code scim:manage}), cross-tenant audit ({@code audit:read}),
+     * the global OIDC/SAML app registries and assignments ({@code oidc-client:*}, {@code saml-rp:*},
+     * {@code app-assignment:*}), and the resource DAG ({@code resource:*}). A tenant (org) admin can neither
+     * see these in the catalog nor grant them (enforced by {@link PermissionGrantPolicy}) — granting one
+     * would cross tenant boundaries.
      *
      * <p>Everything else in {@link #ALL} is tenant-grantable — the directory + policy domain a tenant admin
      * owns ({@code user:*}, {@code group:*}, {@code role:*}, {@code auth-policy:*}, {@code session-policy:*},
-     * {@code network-zone:*}) plus {@code organization:read}/{@code member-manage} (their own org). This set
-     * SHRINKS as Workstream-A makes each remaining domain truly per-tenant ({@code org_id} + RLS). Nothing is
-     * granted by default (the ROLE_ORG_ADMIN baseline is only {@code organization:read} +
-     * {@code member-manage}).
+     * {@code network-zone:*}, {@code key:rotate} — both OIDC and SAML signing keys are now per-tenant, so a
+     * rotation touches only that tenant's own keys) plus {@code organization:read}/{@code member-manage}
+     * (their own org). This set SHRINKS as Workstream-A makes each remaining domain truly per-tenant
+     * ({@code org_id} + RLS). Nothing is granted by default (the ROLE_ORG_ADMIN baseline is only
+     * {@code organization:read} + {@code member-manage}).
      */
     public static final Set<String> PLATFORM = Set.of(
             ORG_CREATE, ORG_UPDATE, ORG_DELETE,
             PORTAL_SETTINGS_READ, PORTAL_SETTINGS_UPDATE,
-            KEY_ROTATE, SCIM_MANAGE, AUDIT_READ,
+            SCIM_MANAGE, AUDIT_READ,
             CLIENT_READ, CLIENT_CREATE, CLIENT_UPDATE, CLIENT_DELETE,
             SAML_READ, SAML_CREATE, SAML_UPDATE, SAML_DELETE,
             APP_ASSIGNMENT_READ, APP_ASSIGNMENT_ASSIGN, APP_ASSIGNMENT_UNASSIGN,

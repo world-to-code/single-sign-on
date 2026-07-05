@@ -140,9 +140,9 @@ class UserServiceImplTest {
         // The direct-permission path enforces the same tier split as the role builder (deny-by-default).
         UUID id = UUID.randomUUID();
         when(users.findById(id)).thenReturn(Optional.of(new AppUser("alice", "a@x", "A", "h")));
-        when(grantPolicy.mayGrant(Permissions.KEY_ROTATE)).thenReturn(false); // e.g. a tenant admin
+        when(grantPolicy.mayGrant(Permissions.SCIM_MANAGE)).thenReturn(false); // e.g. a tenant admin
 
-        assertThatThrownBy(() -> service.setDirectPermissions(id, Set.of(Permissions.KEY_ROTATE)))
+        assertThatThrownBy(() -> service.setDirectPermissions(id, Set.of(Permissions.SCIM_MANAGE)))
                 .isInstanceOf(ForbiddenException.class);
     }
 
