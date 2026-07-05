@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, KeyRound, Users, ShieldCheck, AppWindow, Network, Coins, ScrollText,
-  Clock, Globe, LayoutGrid, Boxes, UsersRound, UserCog, KeySquare,
+  Clock, Globe, LayoutGrid, Boxes, UsersRound, UserCog, KeySquare, Building2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -9,6 +9,7 @@ export interface NavItem {
   label: string;
   icon: LucideIcon;
   permission?: string; // fine-grained permission (resource:read) required to see this item
+  superAdmin?: boolean; // platform-only area: additionally requires a super-admin (unscoped ROLE_ADMIN)
 }
 
 export interface NavSection {
@@ -43,6 +44,12 @@ export const NAV: NavGroup[] = [
     heading: "Administration",
     scope: "admin",
     sections: [
+      {
+        heading: "Platform",
+        items: [
+          { to: "/admin/organizations", label: "Organizations", icon: Building2, permission: "organization:read", superAdmin: true },
+        ],
+      },
       {
         heading: "Directory",
         items: [

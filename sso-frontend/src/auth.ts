@@ -29,6 +29,13 @@ export interface FactorVerification {
   credential?: string;
 }
 
+/**
+ * A platform super-admin (unscoped {@code ROLE_ADMIN}) — gates the platform-only console areas
+ * (Organizations registry, cross-tenant analytics) from tenant admins. UI gating only; the server
+ * enforces authority on every request regardless.
+ */
+export const isPlatformAdmin = (session: SessionView): boolean => session.roles.includes("ROLE_ADMIN");
+
 export const getSession = () => apiGet<SessionView>("/api/auth/session");
 
 /** Whether the signed-in user may ENTER the admin console (assignment-based; gates the entry affordance). */

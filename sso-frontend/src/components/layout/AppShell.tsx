@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ArrowLeft, ChevronDown, LogOut, Menu, ShieldCheck, X } from "lucide-react";
 import type { SessionView } from "@/auth";
-import { logout } from "@/auth";
+import { isPlatformAdmin, logout } from "@/auth";
 import { clearAdminUnlock, startAdminOidc } from "@/adminPortal";
 import { triggerStepUp } from "@/api";
 import { Brand } from "@/components/Brand";
@@ -27,7 +27,9 @@ export default function AppShell(
   // one). Backend expands create/update/delete into the implied :read, so an admin with only e.g.
   // user:create still sees the Users tab. Whoever is in the admin shell already passed the assignment
   // gate (AdminGuard), so no role is checked here.
-  const canSee = (i: NavItem) => !i.permission || session.permissions.includes(i.permission);
+  const canSee = (i: NavItem) =>
+    (!i.permission || session.permissions.includes(i.permission))
+    && (!i.superAdmin || isPlatformAdmin(session)); // platform-only areas hidden from tenant admins
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
