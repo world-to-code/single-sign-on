@@ -47,7 +47,9 @@ public class ScimTokenServiceImpl implements ScimTokenService {
     @Transactional
     public void ensureToken(String rawToken, String description) {
         String hash = hash(rawToken);
-        if (!tokens.existsByTokenHash(hash)) {
+        // Check cross-org (like issue/authenticate): the token hash is globally unique, so a seed run in some
+        // bound context must still see an existing token owned by another tier and stay idempotent.
+        if (!orgContext.callAsPlatform(() -> tokens.existsByTokenHash(hash))) {
             tokens.save(new ScimToken(description, hash, null, null)); // a global dev token
         }
     }

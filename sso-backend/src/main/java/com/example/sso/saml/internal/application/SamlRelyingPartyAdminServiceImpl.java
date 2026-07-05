@@ -84,7 +84,9 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
     @Override
     @Transactional
     public void ensureRelyingParty(String entityId, String acsUrl) {
-        if (relyingParties.existsByEntityId(entityId)) {
+        // entityId is globally unique — check cross-org (like create) so a seed run in some bound context
+        // still sees an existing RP owned by another tier and stays idempotent.
+        if (orgContext.callAsPlatform(() -> relyingParties.existsByEntityId(entityId))) {
             return;
         }
 
