@@ -141,6 +141,7 @@ public class ResourceAdminService {
     @Transactional(readOnly = true)
     public ResourceView get(UUID id) {
         access.requireManage(id);
+        requireInTier(id); // a tenant tier-admin's manage bypass is RLS-bounded; reject a global/foreign row
         return viewOf(id);
     }
 
@@ -151,7 +152,7 @@ public class ResourceAdminService {
     @Transactional(readOnly = true)
     public ResourceDetailView detail(UUID id) {
         access.requireManage(id);
-        Resource resource = requireFetchingType(id);
+        Resource resource = requireInTierFetchingType(id);
         List<ResourceMemberRow> members = memberRows.findByResourceId(id);
         List<ResourceGrantRow> grants = grantRows.findByResourceId(id);
 
@@ -255,7 +256,7 @@ public class ResourceAdminService {
     @Transactional
     public ResourceView createSubResource(UUID parentId, String name, String typeName) {
         access.requireManage(parentId);
-        Resource parent = require(parentId);
+        Resource parent = requireInTier(parentId);
         ResourceType type = types.findByName(typeName)
                 .orElseThrow(() -> new NotFoundException("Resource type not found."));
         // A sub-resource inherits its parent's tenant (the tree stays within one org).
@@ -267,7 +268,7 @@ public class ResourceAdminService {
     @Transactional
     public ResourceView rename(UUID id, String name) {
         access.requireManage(id);
-        Resource resource = requireFetchingType(id);
+        Resource resource = requireInTierFetchingType(id);
         resource.rename(name);
         return viewOf(id);
     }
@@ -275,7 +276,7 @@ public class ResourceAdminService {
     @Transactional
     public void delete(UUID id) {
         access.requireManage(id);
-        Resource resource = require(id);
+        Resource resource = requireInTier(id);
         // Explicit teardown of everything the node owns before the node itself — no reliance on JPA
         // cascade (the DB FKs also cascade, but the deletes are spelled out here to be self-documenting).
         edges.deleteByParentIdOrChildId(id, id);
@@ -293,12 +294,15 @@ public class ResourceAdminService {
         // gives the scope check and the graph write a consistent snapshot (matches the other mutators, OSIV-off).
         access.requireManage(parentId);
         access.requireManage(childId);
+        requireInTier(parentId); // both endpoints must be in the caller's tier, else a global/foreign 404
+        requireInTier(childId);
         graph.attachChild(parentId, childId);
     }
 
     @Transactional
     public void detachChild(UUID parentId, UUID childId) {
         access.requireManage(parentId);
+        requireInTier(parentId);
         graph.detachChild(parentId, childId);
     }
 
@@ -308,7 +312,7 @@ public class ResourceAdminService {
     public ResourceView attachMember(UUID id, MemberType memberType, String memberId) {
         access.requireManage(id);
         access.requireManagesMember(memberType, memberId); // pull-in guard
-        Resource resource = requireFetchingType(id);
+        Resource resource = requireInTierFetchingType(id);
         resource.requireCanAttachMember(memberType, allowedMemberTypes(resource.getType().getId()));
         requireMemberExists(memberType, memberId);
         memberRows.save(ResourceMemberRow.of(id, new ResourceMember(memberType, memberId), resource.getOrgId()));
@@ -318,7 +322,7 @@ public class ResourceAdminService {
     @Transactional
     public ResourceView detachMember(UUID id, MemberType memberType, String memberId) {
         access.requireManage(id);
-        require(id);
+        requireInTier(id);
         if (memberType == MemberType.GROUP || memberType == MemberType.USER) {
             MemberIds.requireUuid(memberId); // malformed id → 400, not a 500 on the delete
         }
@@ -363,6 +367,19 @@ public class ResourceAdminService {
 
     private Resource requireFetchingType(UUID id) {
         return resources.findByIdFetchingType(id).orElseThrow(() -> new NotFoundException("Resource not found."));
+    }
+
+    // A tier-admin's manage bypass ({@link ResourceAccessPolicy#isTierAdmin}) is only RLS-bounded, and RLS lets
+    // any context READ a GLOBAL (org null) row, so structure/read ops must additionally confirm the loaded
+    // resource belongs to the caller's tier — a mismatch (a global row, or the platform's un-drilled context on
+    // an org row) is a non-revealing 404, never a mutation on a resource the caller does not own.
+    private Resource requireInTier(UUID id) {
+        return tierGuard.requireInTier(resources.findById(id), () -> new NotFoundException("Resource not found."));
+    }
+
+    private Resource requireInTierFetchingType(UUID id) {
+        return tierGuard.requireInTier(resources.findByIdFetchingType(id),
+                () -> new NotFoundException("Resource not found."));
     }
 
     /** Projects the single-resource admin view, loading its explicit edge/member/grant rows. */

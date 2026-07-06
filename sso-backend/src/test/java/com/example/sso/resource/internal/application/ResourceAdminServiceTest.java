@@ -11,15 +11,17 @@ import com.example.sso.resource.internal.domain.ResourceTypeAllowedMemberReposit
 import com.example.sso.resource.internal.domain.ResourceTypeRepository;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.tenancy.OrgContext;
+import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.UserGroupService;
 import com.example.sso.user.UserService;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -66,9 +68,20 @@ class ResourceAdminServiceTest {
     private UserGroupService groups;
     @Mock
     private ApplicationService applications;
+    @Mock
+    private OrgContext orgContext;
 
-    @InjectMocks
     private ResourceAdminService service;
+
+    @BeforeEach
+    void buildService() {
+        // Exercise the REAL tier guard (driven by the mocked OrgContext) so the org-tier isolation checks are
+        // genuine; an unbound context (currentOrg empty) means the caller's tier is the GLOBAL tier (null),
+        // matching the mock resources' default null org so the happy-path loads pass through.
+        lenient().when(orgContext.currentOrg()).thenReturn(Optional.empty());
+        service = new ResourceAdminService(resources, types, allowedMembers, edges, memberRows, grantRows,
+                graph, access, users, groups, applications, new OrgTierGuard(orgContext));
+    }
 
     @Test
     void deleteTypeRejectsATypeStillInUse() {
@@ -122,6 +135,8 @@ class ResourceAdminServiceTest {
     void attachChildRequiresManagingBothEndpointsBeforeWiringTheEdge() {
         UUID parentId = UUID.randomUUID();
         UUID childId = UUID.randomUUID();
+        when(resources.findById(parentId)).thenReturn(Optional.of(mock(Resource.class))); // tier-check both endpoints
+        when(resources.findById(childId)).thenReturn(Optional.of(mock(Resource.class)));
 
         service.attachChild(parentId, childId);
 
@@ -135,7 +150,7 @@ class ResourceAdminServiceTest {
         UUID parentId = UUID.randomUUID();
         UUID childId = UUID.randomUUID();
         Resource child = viewable(childId);
-        when(resources.findById(parentId)).thenReturn(Optional.of(mock(Resource.class))); // require(parentId) for its org
+        when(resources.findById(parentId)).thenReturn(Optional.of(mock(Resource.class))); // tier-checked parent load for its org
         when(types.findByName("TEAM")).thenReturn(Optional.of(mock(ResourceType.class)));
         when(resources.save(any(Resource.class))).thenReturn(child);
 
