@@ -1,9 +1,11 @@
 package com.example.sso.organization.internal.domain;
 
+import com.example.sso.organization.CompanyProfile;
 import com.example.sso.organization.OrganizationRef;
 import com.example.sso.organization.OrganizationStatus;
 import com.example.sso.shared.domain.AuditedEntity;
 import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -33,10 +35,18 @@ public class Organization extends AuditedEntity implements OrganizationRef {
     @Column(nullable = false, length = 16)
     private OrganizationStatus status = OrganizationStatus.ACTIVE;
 
+    @Embedded
+    private CompanyProfileData companyProfile;
+
     public Organization(String slug, String name) {
+        this(slug, name, CompanyProfile.empty());
+    }
+
+    public Organization(String slug, String name, CompanyProfile profile) {
         this.slug = slug;
         this.name = name;
         this.status = OrganizationStatus.ACTIVE;
+        this.companyProfile = CompanyProfileData.of(profile);
     }
 
     public void rename(String name) {
@@ -45,5 +55,14 @@ public class Organization extends AuditedEntity implements OrganizationRef {
 
     public void changeStatus(OrganizationStatus status) {
         this.status = status;
+    }
+
+    /**
+     * The company profile as the public value (never leaks the embedded persistence type). Hibernate maps an
+     * all-null embeddable to a NULL field (e.g. tenants created before V58, or with no profile), so treat that
+     * as an empty profile.
+     */
+    public CompanyProfile getCompanyProfile() {
+        return companyProfile == null ? CompanyProfile.empty() : companyProfile.toProfile();
     }
 }

@@ -1,5 +1,6 @@
 package com.example.sso.organization.internal.application;
 
+import com.example.sso.organization.CompanyProfile;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationAccessRevokedEvent;
 import com.example.sso.organization.OrganizationStatus;
@@ -65,6 +66,17 @@ class OrganizationServiceImplTest {
         assertThat(view.slug()).isEqualTo("acme");
         assertThat(view.name()).isEqualTo("Acme Inc");
         assertThat(view.status()).isEqualTo(OrganizationStatus.ACTIVE);
+    }
+
+    @Test
+    void createPersistsAndReturnsTheCompanyProfile() {
+        when(organizations.existsBySlug("acme")).thenReturn(false);
+        when(organizations.save(any(Organization.class))).thenAnswer(i -> i.getArgument(0));
+        CompanyProfile profile = new CompanyProfile("51-200", "US", "SaaS", "+1-555-0100");
+
+        OrganizationView view = service.create(new NewOrganization("acme", "Acme", profile));
+
+        assertThat(view.profile()).isEqualTo(profile); // round-trips through the embedded value object
     }
 
     @Test

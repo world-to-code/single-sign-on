@@ -3,6 +3,7 @@ package com.example.sso.security;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
+import com.example.sso.organization.CompanyProfile;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationView;
 import com.example.sso.organization.OrganizationStatus;
@@ -74,7 +75,8 @@ class OrgDrillInFilterTest {
         UUID orgId = UUID.randomUUID();
         when(orgContext.isPlatform()).thenReturn(true);
         when(organizations.findView(orgId)).thenReturn(Optional.of(
-                new OrganizationView(orgId, "acme", "Acme", OrganizationStatus.ACTIVE, Instant.now())));
+                new OrganizationView(orgId, "acme", "Acme", OrganizationStatus.ACTIVE, Instant.now(),
+                        CompanyProfile.empty())));
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         filter.doFilter(adminRequest(orgId.toString()), response, chain);

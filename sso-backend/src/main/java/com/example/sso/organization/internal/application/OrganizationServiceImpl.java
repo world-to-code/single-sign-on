@@ -47,7 +47,7 @@ public class OrganizationServiceImpl implements OrganizationService {
         if (organizations.existsBySlug(slug)) {
             throw new ConflictException("organization slug '" + slug + "' already exists");
         }
-        return view(organizations.save(new Organization(slug, requireName(command.name()))));
+        return view(organizations.save(new Organization(slug, requireName(command.name()), command.profile())));
     }
 
     @Override
@@ -158,7 +158,7 @@ public class OrganizationServiceImpl implements OrganizationService {
     }
 
     private OrganizationView view(Organization org) {
-        return OrganizationView.of(org, org.getCreatedAt());
+        return OrganizationView.of(org, org.getCreatedAt(), org.getCompanyProfile());
     }
 
     private String normalizeSlug(String raw) {
