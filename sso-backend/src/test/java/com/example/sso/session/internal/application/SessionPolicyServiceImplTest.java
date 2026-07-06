@@ -7,7 +7,12 @@ import com.example.sso.session.SessionPolicyService;
 import com.example.sso.session.SessionPolicySpec;
 import com.example.sso.session.SessionPolicyUpdate;
 import com.example.sso.session.internal.domain.SessionPolicy;
+import com.example.sso.session.internal.domain.SessionPolicyIpRuleRepository;
 import com.example.sso.session.internal.domain.SessionPolicyRepository;
+import com.example.sso.session.internal.domain.SessionPolicyRole;
+import com.example.sso.session.internal.domain.SessionPolicyRoleRepository;
+import com.example.sso.session.internal.domain.SessionPolicyUser;
+import com.example.sso.session.internal.domain.SessionPolicyUserRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
@@ -23,6 +28,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
@@ -42,18 +48,24 @@ import static org.mockito.Mockito.when;
 
 /**
  * Unit test for {@link SessionPolicyServiceImpl}: resolution off the in-memory cache and the admin CRUD
- * guards. Resolution is pure logic over cached entities, so those tests assert on the RETURNED policy
- * (highest applicable priority wins; disabled ones are skipped; a global/empty-assignment policy applies
- * to all; an unknown user or no match falls back to Default). CRUD tests assert on the thrown
- * {@link com.example.sso.shared.error.ApiException} subtypes and {@code verify()} persistence + cache
- * refresh where that IS the unit's job. Real {@link SessionPolicy} entities back the cache (its methods
- * implement {@link SessionPolicyDetails}); collaborators are mocked.
+ * guards. Assignments now live in explicit child rows, so resolution tests seed the cache from the policy
+ * list plus {@link SessionPolicyUser}/{@link SessionPolicyRole} rows and assert on the RETURNED policy
+ * (highest applicable priority wins; disabled ones are skipped; a global/empty-assignment policy applies to
+ * all; an unknown user or no match falls back to Default). CRUD tests assert on the thrown
+ * {@link com.example.sso.shared.error.ApiException} subtypes and {@code verify()} persistence + cache refresh
+ * where that IS the unit's job. Collaborators are mocked.
  */
 @ExtendWith(MockitoExtension.class)
 class SessionPolicyServiceImplTest {
 
     @Mock
     private SessionPolicyRepository repository;
+    @Mock
+    private SessionPolicyUserRepository policyUsers;
+    @Mock
+    private SessionPolicyRoleRepository policyRoles;
+    @Mock
+    private SessionPolicyIpRuleRepository policyIpRules;
     @Mock
     private UserService users;
     @Mock
@@ -73,12 +85,28 @@ class SessionPolicyServiceImplTest {
                 .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(0)).get());
         // Exercise the REAL tier guard (driven by the mocked OrgContext) so the isolation checks are genuine.
         service = new SessionPolicyServiceImpl(
-                repository, users, networkZones, orgContext, new OrgTierGuard(orgContext), events);
+                repository, policyUsers, policyRoles, policyIpRules, users, networkZones,
+                orgContext, new OrgTierGuard(orgContext), events);
     }
 
-    private void cache(SessionPolicy... policies) {
-        when(repository.findAllWithAssignmentsByPriorityDesc()).thenReturn(List.of(policies));
+    private SessionPolicy policy(String name, int priority) {
+        SessionPolicy p = new SessionPolicy(name, priority);
+        ReflectionTestUtils.setField(p, "id", UUID.randomUUID());
+        return p;
+    }
+
+    private void loadCache(List<SessionPolicy> policies, List<SessionPolicyUser> userRows,
+                           List<SessionPolicyRole> roleRows) {
+        when(repository.findAllByOrderByPriorityDesc()).thenReturn(policies);
+        when(policyUsers.findAll()).thenReturn(userRows);
+        when(policyRoles.findAll()).thenReturn(roleRows);
+        when(policyIpRules.findAll()).thenReturn(List.of());
         service.load(); // @PostConstruct populates the volatile cache (via a platform reload) in a real run
+    }
+
+    // Seed the cache from bare policies (no user/role assignments) — used by the cross-tenant resolution tests.
+    private void cache(SessionPolicy... policies) {
+        loadCache(List.of(policies), List.of(), List.of());
     }
 
     private UserAccount userWith(UUID id, RoleRef... roles) {
@@ -107,10 +135,9 @@ class SessionPolicyServiceImplTest {
     @Test
     void resolveForUserPicksTheHighestPriorityApplicablePolicy() {
         UUID userId = UUID.randomUUID();
-        SessionPolicy def = new SessionPolicy(SessionPolicyService.DEFAULT_NAME, 0); // global
-        SessionPolicy high = new SessionPolicy("High", 10);
-        high.assignUsers(Set.of(userId));
-        cache(high, def);
+        SessionPolicy def = policy(SessionPolicyService.DEFAULT_NAME, 0); // global
+        SessionPolicy high = policy("High", 10);
+        loadCache(List.of(high, def), List.of(new SessionPolicyUser(high.getId(), userId)), List.of());
 
         SessionPolicyDetails resolved = service.resolveForUser(userWith(userId));
 
@@ -122,10 +149,9 @@ class SessionPolicyServiceImplTest {
         UUID roleId = UUID.randomUUID();
         RoleRef role = mock(RoleRef.class);
         when(role.getId()).thenReturn(roleId);
-        SessionPolicy def = new SessionPolicy(SessionPolicyService.DEFAULT_NAME, 0);
-        SessionPolicy byRole = new SessionPolicy("ByRole", 7);
-        byRole.assignRoles(Set.of(roleId));
-        cache(byRole, def);
+        SessionPolicy def = policy(SessionPolicyService.DEFAULT_NAME, 0);
+        SessionPolicy byRole = policy("ByRole", 7);
+        loadCache(List.of(byRole, def), List.of(), List.of(new SessionPolicyRole(byRole.getId(), roleId)));
 
         SessionPolicyDetails resolved = service.resolveForUser(userWith(UUID.randomUUID(), role));
 
@@ -135,11 +161,10 @@ class SessionPolicyServiceImplTest {
     @Test
     void resolveForUserSkipsDisabledPoliciesAndFallsBackToDefault() {
         UUID userId = UUID.randomUUID();
-        SessionPolicy def = new SessionPolicy(SessionPolicyService.DEFAULT_NAME, 0);
-        SessionPolicy high = new SessionPolicy("High", 10);
-        high.assignUsers(Set.of(userId));
+        SessionPolicy def = policy(SessionPolicyService.DEFAULT_NAME, 0);
+        SessionPolicy high = policy("High", 10);
         high.disable();
-        cache(high, def);
+        loadCache(List.of(high, def), List.of(new SessionPolicyUser(high.getId(), userId)), List.of());
 
         SessionPolicyDetails resolved = service.resolveForUser(userWith(userId));
 
@@ -148,9 +173,9 @@ class SessionPolicyServiceImplTest {
 
     @Test
     void aGlobalUnassignedPolicyAppliesToEveryUser() {
-        SessionPolicy def = new SessionPolicy(SessionPolicyService.DEFAULT_NAME, 0);
-        SessionPolicy global = new SessionPolicy("GlobalStrict", 5); // no assignments → applies to all
-        cache(global, def);
+        SessionPolicy def = policy(SessionPolicyService.DEFAULT_NAME, 0);
+        SessionPolicy global = policy("GlobalStrict", 5); // no assignments → applies to all
+        loadCache(List.of(global, def), List.of(), List.of());
 
         SessionPolicyDetails resolved = service.resolveForUser(userWith(UUID.randomUUID()));
 
@@ -159,8 +184,8 @@ class SessionPolicyServiceImplTest {
 
     @Test
     void resolveForUsernameFallsBackToDefaultWhenUserIsUnknown() {
-        SessionPolicy def = new SessionPolicy(SessionPolicyService.DEFAULT_NAME, 0);
-        cache(def);
+        SessionPolicy def = policy(SessionPolicyService.DEFAULT_NAME, 0);
+        loadCache(List.of(def), List.of(), List.of());
         when(users.findByUsername("ghost")).thenReturn(Optional.empty());
 
         assertThat(service.resolveForUsername("ghost").getName()).isEqualTo(SessionPolicyService.DEFAULT_NAME);
@@ -168,7 +193,7 @@ class SessionPolicyServiceImplTest {
 
     @Test
     void defaultPolicyThrowsWhenTheDefaultIsMissingFromTheCache() {
-        cache(); // empty cache → the invariant is violated
+        loadCache(List.of(), List.of(), List.of()); // empty cache → the invariant is violated
 
         assertThatThrownBy(() -> service.defaultPolicy()).isInstanceOf(IllegalStateException.class);
     }
@@ -314,13 +339,16 @@ class SessionPolicyServiceImplTest {
     }
 
     @Test
-    void deleteRemovesAndRefreshes() {
+    void deleteRemovesChildRowsAndThenThePolicyAndRefreshes() {
         UUID id = UUID.randomUUID();
-        SessionPolicy custom = new SessionPolicy("Custom", 3);
+        SessionPolicy custom = policy("Custom", 3);
         when(repository.findById(id)).thenReturn(Optional.of(custom));
 
         service.delete(id);
 
+        verify(policyUsers).deleteByPolicyId(id);
+        verify(policyRoles).deleteByPolicyId(id);
+        verify(policyIpRules).deleteByPolicyId(id);
         verify(repository).delete(custom);
         verify(events).publishEvent(any(SessionPolicyCacheChanged.class));
     }

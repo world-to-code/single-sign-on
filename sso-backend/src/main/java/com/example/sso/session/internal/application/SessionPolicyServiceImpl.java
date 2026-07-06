@@ -3,22 +3,28 @@ package com.example.sso.session.internal.application;
 import com.example.sso.authpolicy.AuthFactor;
 import com.example.sso.session.IpRuleSpec;
 import com.example.sso.session.NetworkZoneService;
-import com.example.sso.session.internal.domain.IpAction;
-import com.example.sso.session.internal.domain.IpRuleEntry;
-import com.example.sso.session.internal.domain.SessionPolicy;
 import com.example.sso.session.SessionPolicyDetails;
 import com.example.sso.session.SessionPolicyService;
 import com.example.sso.session.SessionPolicySpec;
 import com.example.sso.session.SessionPolicyUpdate;
+import com.example.sso.session.internal.domain.IpAction;
+import com.example.sso.session.internal.domain.IpRuleEntry;
+import com.example.sso.session.internal.domain.SessionPolicy;
+import com.example.sso.session.internal.domain.SessionPolicyIpRule;
+import com.example.sso.session.internal.domain.SessionPolicyIpRuleRepository;
 import com.example.sso.session.internal.domain.SessionPolicyRepository;
+import com.example.sso.session.internal.domain.SessionPolicyRole;
+import com.example.sso.session.internal.domain.SessionPolicyRoleRepository;
+import com.example.sso.session.internal.domain.SessionPolicyUser;
+import com.example.sso.session.internal.domain.SessionPolicyUserRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.tenancy.OrgTierGuard;
+import com.example.sso.user.RoleRef;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
-import com.example.sso.user.RoleRef;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -28,33 +34,40 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Default {@link SessionPolicyService}. Holds an in-memory cache of all policies whose LAZY assignment
- * sets are fetch-joined at refresh time (before the entities detach), so the cached detached entities
- * are safe to read off the request path without a database round-trip. Resolves the effective policy
- * per user from that cache. The cache is refreshed on
- * every mutation. Also owns admin CRUD and seeding/self-healing of the non-editable Default fallback.
+ * Default {@link SessionPolicyService}. Holds an in-memory cache of all policies, each composed with its
+ * explicitly-loaded assignment sets and IP rules ({@link CachedSessionPolicy}), so resolution runs off the
+ * cache without a database round-trip. The cache is refreshed on every mutation. Also owns admin CRUD and
+ * seeding/self-healing of the non-editable Default fallback.
+ *
+ * <p>The user/role assignments and IP rules are stored as explicit child rows
+ * ({@link SessionPolicyUser}/{@link SessionPolicyRole}/{@link SessionPolicyIpRule}); this service issues each
+ * insert/delete itself (whole-set replaces compute the diff), so the code shows exactly which rows change.
  */
 @Service
 @RequiredArgsConstructor
 public class SessionPolicyServiceImpl implements SessionPolicyService {
 
     private final SessionPolicyRepository repository;
+    private final SessionPolicyUserRepository policyUsers;
+    private final SessionPolicyRoleRepository policyRoles;
+    private final SessionPolicyIpRuleRepository policyIpRules;
     private final UserService users;
     private final NetworkZoneService networkZones;
     private final OrgContext orgContext;
     private final OrgTierGuard tierGuard;
     private final ApplicationEventPublisher events;
-    private volatile List<SessionPolicy> cached = List.of();
+    private volatile List<CachedSessionPolicy> cached = List.of();
 
     @PostConstruct
     public void load() {
@@ -62,20 +75,39 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
     }
 
     /**
-     * Rebuilds the cache in the PLATFORM context so it holds EVERY tenant's policies (fetch-joining each
-     * policy's LAZY sets before it detaches). A tenant-scoped transaction only sees its own tier under RLS,
-     * so the cache must be (re)loaded cross-org; resolution then filters per request org. The query runs in
-     * its own connection (no ambient transaction) whose GUC is set from the platform context here.
+     * Rebuilds the cache in the PLATFORM context so it holds EVERY tenant's policies: {@link #loadAll} reads
+     * {@code session_policy} (RLS-guarded), so a tenant-scoped transaction would only see its own tier. The
+     * cache must be cross-org (resolution filters per request org afterwards via {@link #inScope}), so the
+     * reload runs as platform. It runs in its own connection whose GUC is set from the platform context here.
      */
     private void reload() {
-        this.cached = orgContext.callAsPlatform(
-                () -> List.copyOf(repository.findAllWithAssignmentsByPriorityDesc()));
+        this.cached = orgContext.callAsPlatform(this::loadAll);
     }
 
     /** Rebuild AFTER the mutating transaction commits, so the reload reads the committed cross-org rows. */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     void onCacheChanged(SessionPolicyCacheChanged event) {
         reload();
+    }
+
+    /** Loads every policy with its child rows in a fixed number of queries (no per-policy N+1). */
+    private List<CachedSessionPolicy> loadAll() {
+        Map<UUID, Set<UUID>> usersByPolicy = policyUsers.findAll().stream()
+                .collect(Collectors.groupingBy(SessionPolicyUser::policyId,
+                        Collectors.mapping(SessionPolicyUser::userId, Collectors.toSet())));
+        Map<UUID, Set<UUID>> rolesByPolicy = policyRoles.findAll().stream()
+                .collect(Collectors.groupingBy(SessionPolicyRole::policyId,
+                        Collectors.mapping(SessionPolicyRole::roleId, Collectors.toSet())));
+        Map<UUID, List<IpRuleEntry>> ipRulesByPolicy = policyIpRules.findAll().stream()
+                .collect(Collectors.groupingBy(SessionPolicyIpRule::policyId,
+                        Collectors.mapping(SessionPolicyIpRule::toEntry, Collectors.toList())));
+
+        return repository.findAllByOrderByPriorityDesc().stream()
+                .map(policy -> new CachedSessionPolicy(policy,
+                        usersByPolicy.getOrDefault(policy.getId(), Set.of()),
+                        rolesByPolicy.getOrDefault(policy.getId(), Set.of()),
+                        toSpecs(ipRulesByPolicy.getOrDefault(policy.getId(), List.of()))))
+                .toList();
     }
 
     // --- Read path (served from the cache) ---
@@ -86,18 +118,19 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         UUID currentOrg = orgContext.currentOrg().orElse(null);
 
         return cached.stream()
-                .filter(SessionPolicy::isEnabled)
+                .filter(SessionPolicyDetails::isEnabled)
                 .filter(p -> inScope(p, currentOrg))
                 .filter(p -> appliesTo(p, user.getId(), roleIds))
-                .max(Comparator.comparingInt(SessionPolicy::getPriority))
+                .max(Comparator.comparingInt(SessionPolicyDetails::getPriority))
                 .<SessionPolicyDetails>map(p -> p)
                 .orElseGet(this::defaultPolicy);
     }
 
     // A policy applies to a request only if it is GLOBAL (org_id null) or owned by the request's bound org.
     // With no org bound (e.g. an unauthenticated chain) only global policies apply — never another tenant's.
-    private boolean inScope(SessionPolicy p, UUID currentOrg) {
-        return p.getOrgId() == null || p.getOrgId().equals(currentOrg);
+    private boolean inScope(CachedSessionPolicy p, UUID currentOrg) {
+        UUID orgId = p.policy().getOrgId();
+        return orgId == null || orgId.equals(currentOrg);
     }
 
     @Override
@@ -111,12 +144,13 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
     public SessionPolicyDetails defaultPolicy() {
         // The fallback is the GLOBAL Default (org_id null); a tenant may also own a policy named "Default".
         return cached.stream()
-                .filter(p -> p.getOrgId() == null && DEFAULT_NAME.equals(p.getName()))
+                .filter(p -> p.policy().getOrgId() == null && DEFAULT_NAME.equals(p.getName()))
                 .findFirst()
+                .<SessionPolicyDetails>map(p -> p)
                 .orElseThrow(() -> new IllegalStateException("Default session policy is missing"));
     }
 
-    private boolean appliesTo(SessionPolicy p, UUID userId, Set<UUID> roleIds) {
+    private boolean appliesTo(SessionPolicyDetails p, UUID userId, Set<UUID> roleIds) {
         boolean assignedToUser = p.getAssignedUserIds().contains(userId);
         boolean assignedToRole = p.getAssignedRoleIds().stream().anyMatch(roleIds::contains);
         boolean global = p.getAssignedUserIds().isEmpty() && p.getAssignedRoleIds().isEmpty();
@@ -139,8 +173,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
     @Override
     @Transactional(readOnly = true)
     public List<SessionPolicyDetails> listAll() {
-        return repository.findAllByOrderByPriorityDesc().stream()
-                .map(SessionPolicyDetails.class::cast).toList();
+        return loadAll().stream().map(SessionPolicyDetails.class::cast).toList();
     }
 
     /**
@@ -165,10 +198,10 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         return String.join(",", tokens);
     }
 
-    /** Resolves each rule's zone id (which must name an existing network zone) into the embeddable entries. */
-    private Set<IpRuleEntry> toIpRules(List<IpRuleSpec> rules) {
+    /** Resolves each rule's zone id (which must name an existing network zone) into validated value objects. */
+    private List<IpRuleEntry> toIpRules(List<IpRuleSpec> rules) {
         if (rules == null) {
-            return Set.of();
+            return List.of();
         }
         Set<IpRuleEntry> entries = new LinkedHashSet<>();
         for (IpRuleSpec r : rules) {
@@ -183,7 +216,14 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
             }
             entries.add(new IpRuleEntry(zoneId, IpAction.valueOf(r.action()), r.priority()));
         }
-        return entries;
+        return List.copyOf(entries);
+    }
+
+    private List<IpRuleSpec> toSpecs(Collection<IpRuleEntry> entries) {
+        return entries.stream()
+                .sorted(Comparator.comparingInt(IpRuleEntry::priority))
+                .map(e -> new IpRuleSpec(e.zoneId().toString(), e.action().name(), e.priority()))
+                .toList();
     }
 
     @Override
@@ -196,6 +236,10 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
 
         String reauthFactors = validateReauthFactors(spec.reauthFactors());
         String stepUpFactors = validateReauthFactors(spec.stepUpFactors());
+        Set<UUID> userIds = spec.userIds() == null ? Set.of() : Set.copyOf(spec.userIds());
+        Set<UUID> roleIds = spec.roleIds() == null ? Set.of() : Set.copyOf(spec.roleIds());
+        List<IpRuleEntry> ipRules = toIpRules(spec.ipRules()); // validates zone references before any write
+
         SessionPolicy policy = new SessionPolicy(spec.name(), spec.priority(), creationOrg);
         if (!spec.enabled()) {
             policy.disable();
@@ -203,14 +247,14 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         policy.update(spec.absoluteTimeoutMinutes(), spec.idleTimeoutMinutes(), spec.reauthIntervalMinutes(),
                 reauthFactors, spec.sensitiveReauthWindowMinutes(), stepUpFactors, spec.bindClient(),
                 spec.maxConcurrentSessions(), spec.rotateOnReauth(), spec.cookieSameSite());
-        policy.assignUsers(spec.userIds() == null ? Set.of() : spec.userIds());
-        policy.assignRoles(spec.roleIds() == null ? Set.of() : spec.roleIds());
-        policy.assignIpRules(toIpRules(spec.ipRules()));
-
         SessionPolicy saved = repository.save(policy);
+
+        replaceUsers(saved.getId(), userIds);
+        replaceRoles(saved.getId(), roleIds);
+        replaceIpRules(saved.getId(), ipRules);
         events.publishEvent(new SessionPolicyCacheChanged());
 
-        return saved;
+        return new CachedSessionPolicy(saved, userIds, roleIds, toSpecs(ipRules));
     }
 
     @Override
@@ -220,7 +264,11 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
 
         String reauthFactors = validateReauthFactors(update.reauthFactors());
         String stepUpFactors = validateReauthFactors(update.stepUpFactors());
+        List<IpRuleEntry> ipRules = toIpRules(update.ipRules()); // validates zone references before any write
+
         boolean isDefault = isGlobalDefault(policy);
+        Set<UUID> userIds;
+        Set<UUID> roleIds;
         if (isDefault) {
             // The Default is not assignable/reprioritisable, but it DOES carry the global cookie
             // settings + the baseline timeouts, so allow editing those (priority/assignment fixed).
@@ -228,6 +276,8 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
                     update.reauthIntervalMinutes(), reauthFactors, update.sensitiveReauthWindowMinutes(),
                     stepUpFactors, update.bindClient(),
                     update.maxConcurrentSessions(), update.rotateOnReauth(), update.cookieSameSite());
+            userIds = currentUserIds(id);
+            roleIds = currentRoleIds(id);
         } else {
             policy.updatePriority(update.priority());
             if (update.enabled()) {
@@ -239,16 +289,18 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
                     update.reauthIntervalMinutes(), reauthFactors, update.sensitiveReauthWindowMinutes(),
                     stepUpFactors, update.bindClient(),
                     update.maxConcurrentSessions(), update.rotateOnReauth(), update.cookieSameSite());
-            policy.assignUsers(update.userIds() == null ? Set.of() : update.userIds());
-            policy.assignRoles(update.roleIds() == null ? Set.of() : update.roleIds());
+            userIds = update.userIds() == null ? Set.of() : Set.copyOf(update.userIds());
+            roleIds = update.roleIds() == null ? Set.of() : Set.copyOf(update.roleIds());
+            replaceUsers(id, userIds);
+            replaceRoles(id, roleIds);
         }
         // IP rules are policy config (not an assignment) — the Default may carry them too (global restriction).
-        policy.assignIpRules(toIpRules(update.ipRules()));
+        replaceIpRules(id, ipRules);
 
         SessionPolicy saved = repository.save(policy);
         events.publishEvent(new SessionPolicyCacheChanged());
 
-        return saved;
+        return new CachedSessionPolicy(saved, userIds, roleIds, toSpecs(ipRules));
     }
 
     @Override
@@ -259,6 +311,10 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
             throw new BadRequestException("the Default policy cannot be deleted");
         }
 
+        // Explicitly remove the child rows before the owner (no JPA cascade).
+        policyUsers.deleteByPolicyId(id);
+        policyRoles.deleteByPolicyId(id);
+        policyIpRules.deleteByPolicyId(id);
         repository.delete(policy);
         events.publishEvent(new SessionPolicyCacheChanged());
     }
@@ -275,5 +331,43 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
     // "Default" and must still be able to edit/delete it.
     private boolean isGlobalDefault(SessionPolicy policy) {
         return policy.getOrgId() == null && DEFAULT_NAME.equals(policy.getName());
+    }
+
+    private Set<UUID> currentUserIds(UUID policyId) {
+        return policyUsers.findByPolicyId(policyId).stream().map(SessionPolicyUser::userId)
+                .collect(Collectors.toSet());
+    }
+
+    private Set<UUID> currentRoleIds(UUID policyId) {
+        return policyRoles.findByPolicyId(policyId).stream().map(SessionPolicyRole::roleId)
+                .collect(Collectors.toSet());
+    }
+
+    /** Replaces the policy's user assignments: delete the dropped rows, insert the newly added ones. */
+    private void replaceUsers(UUID policyId, Set<UUID> desired) {
+        List<SessionPolicyUser> current = policyUsers.findByPolicyId(policyId);
+        current.stream().filter(row -> !desired.contains(row.userId())).forEach(policyUsers::delete);
+        Set<UUID> present = current.stream().map(SessionPolicyUser::userId).collect(Collectors.toSet());
+        desired.stream().filter(userId -> !present.contains(userId))
+                .forEach(userId -> policyUsers.save(new SessionPolicyUser(policyId, userId)));
+    }
+
+    /** Replaces the policy's role assignments: delete the dropped rows, insert the newly added ones. */
+    private void replaceRoles(UUID policyId, Set<UUID> desired) {
+        List<SessionPolicyRole> current = policyRoles.findByPolicyId(policyId);
+        current.stream().filter(row -> !desired.contains(row.roleId())).forEach(policyRoles::delete);
+        Set<UUID> present = current.stream().map(SessionPolicyRole::roleId).collect(Collectors.toSet());
+        desired.stream().filter(roleId -> !present.contains(roleId))
+                .forEach(roleId -> policyRoles.save(new SessionPolicyRole(policyId, roleId)));
+    }
+
+    /** Replaces the policy's IP rules: delete the dropped rows, insert the newly added ones. */
+    private void replaceIpRules(UUID policyId, List<IpRuleEntry> desired) {
+        List<SessionPolicyIpRule> current = policyIpRules.findByPolicyId(policyId);
+        Set<IpRuleEntry> keep = Set.copyOf(desired);
+        current.stream().filter(row -> !keep.contains(row.toEntry())).forEach(policyIpRules::delete);
+        Set<IpRuleEntry> present = current.stream().map(SessionPolicyIpRule::toEntry).collect(Collectors.toSet());
+        desired.stream().filter(rule -> !present.contains(rule))
+                .forEach(rule -> policyIpRules.save(new SessionPolicyIpRule(policyId, rule)));
     }
 }

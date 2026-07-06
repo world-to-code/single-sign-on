@@ -1,22 +1,11 @@
 package com.example.sso.session.internal.domain;
 
-import com.example.sso.session.IpRuleSpec;
-import com.example.sso.session.SessionPolicyDetails;
 import com.example.sso.shared.domain.AbstractEntity;
 import com.example.sso.tenancy.OrgOwned;
-import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
-import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
-import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -29,6 +18,11 @@ import lombok.NoArgsConstructor;
  * policy that applies to a user wins. The seeded {@code Default} (priority 0, unassigned/global) is
  * the non-editable fallback. No setters — mutated via intention-revealing methods.
  *
+ * <p>This entity carries only its own columns. The user/role assignments and IP rules live in their own
+ * {@link SessionPolicyUser}/{@link SessionPolicyRole}/{@link SessionPolicyIpRule} rows, written explicitly by
+ * the service (no JPA collection cascade). The service composes those rows with this entity into the public
+ * {@code SessionPolicyDetails} view.
+ *
  * <p>Note: {@code cookieSameSite} is GLOBAL — only the Default policy's value is applied (the session
  * cookie is established before the user is known), so a per-policy SameSite is not meaningful. The
  * cookie's {@code Secure} attribute is not a policy field: it is enforced by deployment config
@@ -38,7 +32,7 @@ import lombok.NoArgsConstructor;
 @Table(name = "session_policy")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
-public class SessionPolicy extends AbstractEntity implements SessionPolicyDetails, OrgOwned {
+public class SessionPolicy extends AbstractEntity implements OrgOwned {
 
     // Tier-aware uniqueness (partial indexes in V47): global name, or (org_id, name) per tenant.
     @Column(nullable = false, length = 100)
@@ -58,20 +52,6 @@ public class SessionPolicy extends AbstractEntity implements SessionPolicyDetail
 
     @Embedded
     private SessionRules rules = SessionRules.defaults();
-
-    @ElementCollection
-    @CollectionTable(name = "session_policy_user", joinColumns = @JoinColumn(name = "policy_id"))
-    @Column(name = "user_id")
-    private Set<UUID> assignedUserIds = new HashSet<>();
-
-    @ElementCollection
-    @CollectionTable(name = "session_policy_role", joinColumns = @JoinColumn(name = "policy_id"))
-    @Column(name = "role_id")
-    private Set<UUID> assignedRoleIds = new HashSet<>();
-
-    @ElementCollection
-    @CollectionTable(name = "session_policy_ip_rule", joinColumns = @JoinColumn(name = "policy_id"))
-    private Set<IpRuleEntry> ipRules = new HashSet<>();
 
     /** A global/default policy (no owning org). */
     public SessionPolicy(String name, int priority) {
@@ -104,92 +84,5 @@ public class SessionPolicy extends AbstractEntity implements SessionPolicyDetail
 
     public void disable() {
         this.enabled = false;
-    }
-
-    public void assignUsers(Collection<UUID> userIds) {
-        this.assignedUserIds.clear();
-        this.assignedUserIds.addAll(userIds);
-    }
-
-    public void assignRoles(Collection<UUID> roleIds) {
-        this.assignedRoleIds.clear();
-        this.assignedRoleIds.addAll(roleIds);
-    }
-
-    public void assignIpRules(Collection<IpRuleEntry> rules) {
-        this.ipRules.clear();
-        this.ipRules.addAll(rules);
-    }
-
-    // The session rules live in the embedded value object; these delegate to satisfy SessionPolicyDetails.
-    @Override
-    public int getAbsoluteTimeoutMinutes() {
-        return rules.absoluteTimeoutMinutes();
-    }
-
-    @Override
-    public int getIdleTimeoutMinutes() {
-        return rules.idleTimeoutMinutes();
-    }
-
-    @Override
-    public int getReauthIntervalMinutes() {
-        return rules.reauthIntervalMinutes();
-    }
-
-    @Override
-    public String getReauthFactors() {
-        return rules.reauthFactors();
-    }
-
-    @Override
-    public int getSensitiveReauthWindowMinutes() {
-        return rules.sensitiveReauthWindowMinutes();
-    }
-
-    @Override
-    public String getStepUpFactors() {
-        return rules.stepUpFactors();
-    }
-
-    @Override
-    public boolean isBindClient() {
-        return rules.bindClient();
-    }
-
-    @Override
-    public int getMaxConcurrentSessions() {
-        return rules.maxConcurrentSessions();
-    }
-
-    @Override
-    public boolean isRotateOnReauth() {
-        return rules.rotateOnReauth();
-    }
-
-    @Override
-    public String getCookieSameSite() {
-        return rules.cookieSameSite();
-    }
-
-    // Read-only views (override Lombok's @Getter); mutate via the behavior methods above.
-
-    @Override
-    public Set<UUID> getAssignedUserIds() {
-        return Collections.unmodifiableSet(assignedUserIds);
-    }
-
-    @Override
-    public Set<UUID> getAssignedRoleIds() {
-        return Collections.unmodifiableSet(assignedRoleIds);
-    }
-
-    /** IP rules in evaluation order (priority asc) — first match decides; see {@link IpRuleEntry}. */
-    @Override
-    public List<IpRuleSpec> getIpRules() {
-        return ipRules.stream()
-                .sorted(Comparator.comparingInt(IpRuleEntry::priority))
-                .map(r -> new IpRuleSpec(r.zoneId().toString(), r.action().name(), r.priority()))
-                .toList();
     }
 }

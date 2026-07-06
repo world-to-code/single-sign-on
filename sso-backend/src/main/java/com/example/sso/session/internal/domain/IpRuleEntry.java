@@ -8,9 +8,11 @@ import jakarta.persistence.Enumerated;
 import java.util.UUID;
 
 /**
- * One IP rule of a {@link SessionPolicy}: a reference to a {@link NetworkZone} (by id), whether to ALLOW or
- * BLOCK it, and a {@code priority} ordering evaluation (lower first). Rules are evaluated first-match — the
- * first rule any of whose zone CIDRs contains the client IP decides; if none match, access is allowed.
+ * One IP rule of a {@link SessionPolicy} as a cohesive {@code @Embeddable} value object: a reference to a
+ * {@link NetworkZone} (by id), whether to ALLOW or BLOCK it, and a {@code priority} ordering evaluation
+ * (lower first). Embedded inside {@link SessionPolicyIpRule} (which adds the owning policy). Rules are
+ * evaluated first-match — the first rule whose zone CIDRs contain the client IP decides; if none match,
+ * access is allowed (the matching itself is resolved against the zone catalog in the security layer).
  */
 @Embeddable
 public record IpRuleEntry(
