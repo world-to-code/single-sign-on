@@ -255,6 +255,12 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
+    public void setPassword(UUID id, String rawPassword) {
+        require(id).changePassword(passwordEncoder.encode(rawPassword));
+    }
+
+    @Override
+    @Transactional
     public void disable(UUID id) {
         AppUser user = require(id);
         user.disable();

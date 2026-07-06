@@ -111,6 +111,8 @@ sso:
   email-otp:
     ttl-minutes: 10                                  # email one-time-code validity
     max-attempts: 5                                  # wrong guesses before the code is burned
+  onboarding:
+    min-password-length: 8                           # minimum length an invitee's chosen password must meet
   demo-client:
     enabled: true                                    # local-testing OIDC client (known secret); false in prod
     access-token-ttl-minutes: 30

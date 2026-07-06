@@ -122,6 +122,9 @@ public class SecurityConfig {
                         .access(AuthorityAuthorizationManager.hasAuthority(Factors.MFA_COMPLETE))
                         // Public auth/bootstrap + passwordless passkey login endpoints.
                         .requestMatchers("/api/auth/**", "/webauthn/**", "/login/webauthn").permitAll()
+                        // Onboarding invitation redeem: the invitee has no credentials yet; the single-use,
+                        // high-entropy, time-boxed token is the authorization (CSRF + rate-limit still apply).
+                        .requestMatchers("/api/onboarding/**").permitAll()
                         .requestMatchers("/actuator/health/**", "/error").permitAll()
                         // SAML metadata is public; the SSO endpoint requires a completed policy. Single
                         // Logout is public — the SP signature is the real check, and it only ends the

@@ -111,6 +111,11 @@ public class AppUser extends AuditedEntity implements UserAccount {
         this.enabled = true;
     }
 
+    /** Sets the (already-encoded) password hash — self-service change, admin reset, or onboarding activation. */
+    public void changePassword(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
     public void disable() {
         this.enabled = false;
     }

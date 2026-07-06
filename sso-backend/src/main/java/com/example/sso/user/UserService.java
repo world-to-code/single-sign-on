@@ -65,6 +65,9 @@ public interface UserService {
 
     void disable(UUID id);
 
+    /** Sets the user's password (encodes the raw value). Used by admin reset and onboarding activation. */
+    void setPassword(UUID id, String rawPassword);
+
     /** Replaces the user's directly-granted permissions with the given permission names. */
     UserAccount setDirectPermissions(UUID id, Set<String> permissionNames);
 
