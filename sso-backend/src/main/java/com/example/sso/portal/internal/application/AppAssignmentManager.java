@@ -22,6 +22,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -103,6 +104,18 @@ class AppAssignmentManager {
         Map<UUID, String> names = subjectNames(list);
 
         return list.stream().map(a -> AppAssignmentView.of(a, appName, subjectName(names, a))).toList();
+    }
+
+    /** Projects one assignment (RLS-scoped read), so the admin layer can gate an unassign by its app. */
+    @Transactional(readOnly = true)
+    Optional<AppAssignmentView> findAssignment(UUID assignmentId) {
+        return assignments.findById(assignmentId).map(this::toView);
+    }
+
+    private AppAssignmentView toView(AppAssignment assignment) {
+        ApplicationView app = catalog.index().get(AppKey.of(assignment.getAppType(), assignment.getAppId()));
+        String appName = app == null ? assignment.getAppId() : app.name();
+        return AppAssignmentView.of(assignment, appName, subjectName(subjectNames(List.of(assignment)), assignment));
     }
 
     @Transactional

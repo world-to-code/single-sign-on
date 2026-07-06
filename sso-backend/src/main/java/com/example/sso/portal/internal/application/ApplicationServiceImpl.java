@@ -9,6 +9,7 @@ import com.example.sso.portal.ApplicationView;
 import com.example.sso.portal.AssignAppRequest;
 import com.example.sso.user.UserAccount;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -59,6 +60,11 @@ public class ApplicationServiceImpl implements ApplicationService {
     @Override
     public List<AppAssignmentView> assignmentsForApp(AppType appType, String appId) {
         return assignments.assignmentsForApp(appType, appId);
+    }
+
+    @Override
+    public Optional<AppAssignmentView> findAssignment(UUID assignmentId) {
+        return assignments.findAssignment(assignmentId);
     }
 
     @Override

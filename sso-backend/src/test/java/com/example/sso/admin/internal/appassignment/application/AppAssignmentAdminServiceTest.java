@@ -1,6 +1,7 @@
 package com.example.sso.admin.internal.appassignment.application;
 
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
+import com.example.sso.portal.AppAssignmentView;
 import com.example.sso.portal.ApplicationService;
 import com.example.sso.portal.ApplicationView;
 import com.example.sso.portal.AppType;
@@ -10,9 +11,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -92,6 +96,44 @@ class AppAssignmentAdminServiceTest {
 
         assertThat(service.listApplications(0, 100).items()).hasSize(2);
         verify(accessPolicy, never()).currentScopedAppIds();
+    }
+
+    @Test
+    void unassignOutsideScopeIsForbiddenAndDoesNotDelegate() {
+        UUID assignmentId = UUID.randomUUID();
+        when(applications.findAssignment(assignmentId)).thenReturn(Optional.of(assignmentOf(APP_ID)));
+        when(accessPolicy.canAccessApp(APP_ID)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.unassign(assignmentId)).isInstanceOf(ForbiddenException.class);
+        verify(applications, never()).unassign(any());
+    }
+
+    @Test
+    void unassignInScopeDelegates() {
+        UUID assignmentId = UUID.randomUUID();
+        when(applications.findAssignment(assignmentId)).thenReturn(Optional.of(assignmentOf(APP_ID)));
+        when(accessPolicy.canAccessApp(APP_ID)).thenReturn(true);
+
+        service.unassign(assignmentId);
+
+        verify(applications).unassign(assignmentId);
+    }
+
+    @Test
+    void unassignOfAMissingAssignmentSkipsTheScopeGateAndLetsThePortalReportIt() {
+        // A missing/foreign assignment resolves empty here; the portal's own tier check then reports the 404.
+        UUID assignmentId = UUID.randomUUID();
+        when(applications.findAssignment(assignmentId)).thenReturn(Optional.empty());
+
+        assertThatCode(() -> service.unassign(assignmentId)).doesNotThrowAnyException();
+
+        verify(accessPolicy, never()).canAccessApp(any());
+        verify(applications).unassign(assignmentId);
+    }
+
+    private AppAssignmentView assignmentOf(String appId) {
+        return new AppAssignmentView(UUID.randomUUID().toString(), "OIDC", appId, "name-" + appId,
+                "USER", UUID.randomUUID().toString(), "user", null);
     }
 
     private ApplicationView app(String id) {

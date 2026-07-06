@@ -4,6 +4,7 @@ import com.example.sso.portal.AppType;
 import com.example.sso.user.UserAccount;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -35,6 +36,9 @@ public interface ApplicationService {
     List<ApplicationView> appsForGroup(UUID groupId);
 
     List<AppAssignmentView> assignmentsForApp(AppType appType, String appId);
+
+    /** The assignment by id (RLS-scoped to the caller's tier), for gating an unassign by its app. */
+    Optional<AppAssignmentView> findAssignment(UUID assignmentId);
 
     AppAssignmentView assign(AssignAppRequest request);
 

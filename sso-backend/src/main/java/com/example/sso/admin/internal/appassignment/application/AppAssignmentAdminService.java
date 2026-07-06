@@ -17,13 +17,10 @@ import org.springframework.stereotype.Service;
 /**
  * Scope-enforcing adapter over the portal {@link ApplicationService} for the admin app-assignment API:
  * filters the app list and gates every by-app read/mutation to the acting admin's resource subtree
- * (super admin bypasses). Two deliberate non-confinements: {@code assign} scopes the app but not the
- * SUBJECT (an app owner may grant it to any principal), and {@code unassign} carries only the assignment
- * id — it is now org-tier confined in the portal ({@code OrgTierGuard.requireInTier}, so a tenant admin
- * can only remove its OWN org's assignments), but not yet resource-subtree confined WITHIN a tenant.
- * Since {@code app-assignment:unassign} became tenant-grantable, two delegated admins in one org with
- * disjoint subtrees can each remove the other's assignment; closing that needs a portal assignment→app
- * lookup to gate {@code unassign} through {@code requireAccess} like {@code assign} (tracked follow-up).
+ * (super admin bypasses). {@code assign} scopes the app but deliberately NOT the SUBJECT (an app owner may
+ * grant it to any principal). {@code unassign} resolves the assignment's app first and gates it through the
+ * same {@code requireAccess} as {@code assign}, so a delegated admin can only remove assignments for apps in
+ * its managed subtree (the portal additionally org-tier confines via {@code OrgTierGuard.requireInTier}).
  */
 @Service
 @RequiredArgsConstructor
@@ -52,6 +49,10 @@ public class AppAssignmentAdminService {
     }
 
     public void unassign(UUID assignmentId) {
+        // Subtree-confine within a tenant: resolve the assignment's app and gate it like assign, so a delegated
+        // admin only removes assignments for apps it manages. A missing/foreign assignment resolves empty here
+        // and the portal's tier check then returns a non-revealing 404.
+        applications.findAssignment(assignmentId).ifPresent(assignment -> requireAccess(assignment.appId()));
         applications.unassign(assignmentId);
     }
 
