@@ -4,8 +4,10 @@ import com.example.sso.admin.internal.client.domain.OAuth2RegisteredClientEntity
 import com.example.sso.admin.internal.client.domain.OAuth2RegisteredClientRepository;
 import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.portal.ApplicationDeletedEvent;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import java.util.Set;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.tenancy.OrgTierGuard;
 import java.util.UUID;
@@ -73,10 +75,25 @@ class ClientAdminServiceTest {
     }
 
     @Test
+    void createRejectsAClientAuthenticationMethodTheTokenEndpointCannotEnforce() {
+        // tls_client_auth has a framework provider but no mTLS is terminated at the edge, so a client saved
+        // with it could never authenticate — reject it rather than persist a silently-unusable client.
+        assertThatThrownBy(() -> service.createClient(request(Set.of("tls_client_auth"))))
+                .isInstanceOf(BadRequestException.class);
+        verify(registeredClients, never()).save(any());
+    }
+
+    @Test
     void deletingAnUnknownClientIsA404() {
         when(clientRows.findById(CLIENT_ROW_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.deleteClient(CLIENT_ROW_ID)).isInstanceOf(NotFoundException.class);
+    }
+
+    private CreateClientRequest request(Set<String> authMethods) {
+        return new CreateClientRequest("cid", null, Set.of(), Set.of(), Set.of(), Set.of(), authMethods,
+                false, false, false, null, null, null, null, false, null, null, null, null, null, false, null,
+                null, null, false);
     }
 
     private OAuth2RegisteredClientEntity entity(String clientId) {

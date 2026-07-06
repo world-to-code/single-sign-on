@@ -3,7 +3,9 @@ package com.example.sso.admin.internal.client.application;
 import static org.springframework.security.oauth2.core.AuthorizationGrantType.AUTHORIZATION_CODE;
 import static org.springframework.security.oauth2.core.AuthorizationGrantType.REFRESH_TOKEN;
 import static org.springframework.security.oauth2.core.ClientAuthenticationMethod.CLIENT_SECRET_BASIC;
+import static org.springframework.security.oauth2.core.ClientAuthenticationMethod.CLIENT_SECRET_JWT;
 import static org.springframework.security.oauth2.core.ClientAuthenticationMethod.CLIENT_SECRET_POST;
+import static org.springframework.security.oauth2.core.ClientAuthenticationMethod.PRIVATE_KEY_JWT;
 import static org.springframework.security.oauth2.core.oidc.OidcScopes.EMAIL;
 import static org.springframework.security.oauth2.core.oidc.OidcScopes.OPENID;
 import static org.springframework.security.oauth2.core.oidc.OidcScopes.PROFILE;
@@ -57,6 +59,13 @@ public class ClientAdminService {
 
     private static final Set<String> DEFAULT_AUTH_METHODS =
             Set.of(CLIENT_SECRET_BASIC.getValue(), CLIENT_SECRET_POST.getValue());
+    // The methods the token endpoint can actually enforce at runtime. The framework also ships providers for
+    // tls_client_auth / self_signed_tls_client_auth, but no mutual-TLS is terminated at the edge (no
+    // server.ssl.client-auth / X509 converter), so a client saved with those could never authenticate —
+    // reject them here instead of persisting a silently-unusable client. ('none' is a public client.)
+    private static final Set<String> SUPPORTED_AUTH_METHODS = Set.of(
+            CLIENT_SECRET_BASIC.getValue(), CLIENT_SECRET_POST.getValue(),
+            CLIENT_SECRET_JWT.getValue(), PRIVATE_KEY_JWT.getValue());
     private static final Set<String> DEFAULT_GRANT_TYPES =
             Set.of(AUTHORIZATION_CODE.getValue(), REFRESH_TOKEN.getValue());
     private static final Set<String> DEFAULT_SCOPES = Set.of(OPENID, PROFILE, EMAIL);
@@ -109,7 +118,14 @@ public class ClientAdminService {
         if (request.publicClient()) {
             clientBuilder.clientAuthenticationMethod(ClientAuthenticationMethod.NONE);
         } else {
-            authMethods.forEach(m -> clientBuilder.clientAuthenticationMethod(new ClientAuthenticationMethod(m)));
+            authMethods.forEach(m -> {
+                if (!SUPPORTED_AUTH_METHODS.contains(m)) {
+                    throw new BadRequestException("unsupported client authentication method '" + m
+                            + "'; enforceable methods are " + SUPPORTED_AUTH_METHODS
+                            + " (use a public client for 'none')");
+                }
+                clientBuilder.clientAuthenticationMethod(new ClientAuthenticationMethod(m));
+            });
             boolean needsSecret = authMethods.stream()
                     .anyMatch(m -> m.startsWith("client_secret"));
 
