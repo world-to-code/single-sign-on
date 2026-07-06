@@ -121,6 +121,10 @@ public class OrganizationServiceImpl implements OrganizationService {
             // downstream session-termination the event drives.
             if (memberships.existsByOrgIdAndUserId(orgId, userId)) {
                 memberships.deleteByOrgIdAndUserId(orgId, userId);
+                // Flush the DELETE INSIDE this runInOrg scope (GUC = orgId): the derived delete otherwise defers
+                // to tx commit, by which point runInOrg has restored the outer context and RLS USING no longer
+                // matches the row (0 rows -> StaleStateException). Mirrors addMember's saveAndFlush.
+                memberships.flush();
                 events.publishEvent(new OrganizationAccessRevokedEvent(orgId, userId));
             }
         });
