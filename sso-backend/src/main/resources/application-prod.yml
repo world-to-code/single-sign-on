@@ -11,6 +11,9 @@ spring:
     password: ${DB_APP_PASSWORD:${DB_PASSWORD}}
   flyway:
     # Migrations run as the schema owner (keeps DDL); the placeholder names the runtime role V54 grants to.
+    # Explicit url (same target as the app datasource): the primary DataSource is the OrgAwareDataSource RLS
+    # wrapper, which Flyway cannot derive a migration DataSource from — it needs its own owner connection.
+    url: ${DB_URL:jdbc:postgresql://postgres:5432/sso}
     user: ${DB_USERNAME:sso}
     password: ${DB_PASSWORD}
     placeholders:

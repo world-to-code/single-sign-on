@@ -41,6 +41,9 @@ spring:
     enabled: true
     locations: classpath:db/migration
     # Migrations run as the schema OWNER (keeps full DDL); the runtime datasource above is a non-superuser.
+    # An explicit url is required: the app's primary DataSource is the OrgAwareDataSource RLS wrapper, which
+    # Flyway cannot derive a migration DataSource from (no url setter) — so give it its own owner connection.
+    url: jdbc:postgresql://localhost:5432/sso
     user: sso
     password: sso
     placeholders:
