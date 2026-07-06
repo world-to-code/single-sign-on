@@ -10,6 +10,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -21,12 +22,15 @@ import lombok.NoArgsConstructor;
  * methods.
  */
 @Entity
-@Table(name = "organization")
+@Table(name = "organization",
+        uniqueConstraints = @UniqueConstraint(columnNames = {"customer_id", "slug"}))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
 public class Organization extends AuditedEntity implements OrganizationRef {
 
-    @Column(nullable = false, unique = true, length = 63)
+    // Unique PER CUSTOMER, not globally (see the table constraint) — branches under different customers may
+    // share a slug; {branch}.{customer} keeps them apart.
+    @Column(nullable = false, length = 63)
     private String slug;
 
     @Column(nullable = false, length = 255)

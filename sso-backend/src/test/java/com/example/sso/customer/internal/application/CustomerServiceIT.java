@@ -8,6 +8,7 @@ import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationView;
 import com.example.sso.organization.internal.domain.OrganizationRepository;
+import com.example.sso.shared.error.ConflictException;
 import com.example.sso.support.AbstractIntegrationTest;
 import java.util.Set;
 import java.util.UUID;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The customer (고객사) registry against a real DB: the V61 default-customer seed, a CRUD round-trip, and the
@@ -78,5 +80,42 @@ class CustomerServiceIT extends AbstractIntegrationTest {
         assertThat(organizations.isBranchOf(branchA, Set.of())).isFalse();            // empty scope: denied
         assertThat(organizations.branchIdsForCustomers(Set.of(customerA)))
                 .contains(branchA).doesNotContain(branchB);
+    }
+
+    @Test
+    void twoCustomersMayEachOwnABranchWithTheSameSlug() {
+        // The keystone of 3-level addressing: {branch}.{customer} keeps same-named branches apart, so the DB
+        // UNIQUE is (customer_id, slug), not a global slug. Both creates must succeed and resolve independently.
+        String r = UUID.randomUUID().toString().substring(0, 8);
+        UUID customerA = customers.create(new NewCustomer("cust-a-" + r, "Customer A")).id();
+        UUID customerB = customers.create(new NewCustomer("cust-b-" + r, "Customer B")).id();
+
+        UUID seoulA = organizations.create(new NewOrganization("seoul", "Seoul (A)", customerA)).id();
+        UUID seoulB = organizations.create(new NewOrganization("seoul", "Seoul (B)", customerB)).id();
+
+        assertThat(seoulA).isNotEqualTo(seoulB);
+        assertThat(organizations.findBranch(customerA, "seoul")).get().extracting(o -> o.getId()).isEqualTo(seoulA);
+        assertThat(organizations.findBranch(customerB, "seoul")).get().extracting(o -> o.getId()).isEqualTo(seoulB);
+    }
+
+    @Test
+    void aDuplicateBranchSlugUnderTheSameCustomerIsRejected() {
+        String r = UUID.randomUUID().toString().substring(0, 8);
+        UUID customerA = customers.create(new NewCustomer("cust-a-" + r, "Customer A")).id();
+        organizations.create(new NewOrganization("dup", "First", customerA));
+
+        assertThatThrownBy(() -> organizations.create(new NewOrganization("dup", "Second", customerA)))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void findBySlugResolvesOnlyWithinTheDefaultCustomerNamespace() {
+        // The legacy single-label {org}.base host + tenant-first login go through findBySlug, which must scope to
+        // the DEFAULT customer — a branch of another customer that happens to share a slug must NOT leak in.
+        String slug = "iso-" + UUID.randomUUID().toString().substring(0, 8);
+        UUID other = customers.create(new NewCustomer("other-" + slug, "Other")).id();
+        organizations.create(new NewOrganization(slug, "Only Under Other", other));
+
+        assertThat(organizations.findBySlug(slug)).isEmpty(); // exists, but not under the default customer
     }
 }

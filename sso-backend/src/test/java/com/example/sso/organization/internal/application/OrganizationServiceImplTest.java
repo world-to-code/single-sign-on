@@ -71,8 +71,8 @@ class OrganizationServiceImplTest {
 
     @Test
     void createNormalizesTheSlugToLowercaseAndPersists() {
-        stubDefaultCustomer();
-        when(organizations.existsBySlug("acme")).thenReturn(false);
+        UUID cid = stubDefaultCustomer();
+        when(organizations.existsByCustomerIdAndSlug(cid, "acme")).thenReturn(false);
         when(organizations.save(any(Organization.class))).thenAnswer(i -> i.getArgument(0));
 
         OrganizationView view = service.create(new NewOrganization("  ACME  ", "Acme Inc"));
@@ -84,8 +84,8 @@ class OrganizationServiceImplTest {
 
     @Test
     void createPersistsAndReturnsTheCompanyProfile() {
-        stubDefaultCustomer();
-        when(organizations.existsBySlug("acme")).thenReturn(false);
+        UUID cid = stubDefaultCustomer();
+        when(organizations.existsByCustomerIdAndSlug(cid, "acme")).thenReturn(false);
         when(organizations.save(any(Organization.class))).thenAnswer(i -> i.getArgument(0));
         CompanyProfile profile = new CompanyProfile("51-200", "US", "SaaS", "+1-555-0100");
 
@@ -97,7 +97,7 @@ class OrganizationServiceImplTest {
     @Test
     void createAssignsTheNewOrgToTheDefaultCustomer() {
         UUID defaultCustomerId = stubDefaultCustomer();
-        when(organizations.existsBySlug("acme")).thenReturn(false);
+        when(organizations.existsByCustomerIdAndSlug(defaultCustomerId, "acme")).thenReturn(false);
         when(organizations.save(any(Organization.class))).thenAnswer(i -> i.getArgument(0));
 
         service.create(new NewOrganization("acme", "Acme"));
@@ -111,7 +111,7 @@ class OrganizationServiceImplTest {
     void createUnderAChosenActiveCustomerAssignsThatCustomer() {
         UUID customerId = UUID.randomUUID();
         when(customers.isActive(customerId)).thenReturn(true);
-        when(organizations.existsBySlug("acme")).thenReturn(false);
+        when(organizations.existsByCustomerIdAndSlug(customerId, "acme")).thenReturn(false);
         when(organizations.save(any(Organization.class))).thenAnswer(i -> i.getArgument(0));
 
         service.create(new NewOrganization("acme", "Acme", customerId));
@@ -124,7 +124,6 @@ class OrganizationServiceImplTest {
     @Test
     void createUnderAnUnknownOrSuspendedCustomerIsRejected() {
         UUID customerId = UUID.randomUUID();
-        when(organizations.existsBySlug("acme")).thenReturn(false);
         when(customers.isActive(customerId)).thenReturn(false); // unknown or suspended
 
         assertThatThrownBy(() -> service.create(new NewOrganization("acme", "Acme", customerId)))
@@ -147,12 +146,28 @@ class OrganizationServiceImplTest {
     }
 
     @Test
-    void createRejectsADuplicateSlug() {
-        when(organizations.existsBySlug("acme")).thenReturn(true);
+    void createRejectsASlugThatAlreadyExistsUnderTheSameCustomer() {
+        UUID cid = stubDefaultCustomer();
+        when(organizations.existsByCustomerIdAndSlug(cid, "acme")).thenReturn(true);
 
         assertThatThrownBy(() -> service.create(new NewOrganization("acme", "Acme")))
                 .isInstanceOf(ConflictException.class);
         verify(organizations, never()).save(any());
+    }
+
+    @Test
+    void createAllowsTheSameSlugUnderADifferentCustomer() {
+        // Slugs are unique only WITHIN a customer: "seoul" already taken under customer A does not block
+        // creating "seoul" under customer B — the (customer_id, slug) pair is what must be unique.
+        UUID customerB = UUID.randomUUID();
+        when(customers.isActive(customerB)).thenReturn(true);
+        when(organizations.existsByCustomerIdAndSlug(customerB, "seoul")).thenReturn(false);
+        when(organizations.save(any(Organization.class))).thenAnswer(i -> i.getArgument(0));
+
+        OrganizationView view = service.create(new NewOrganization("seoul", "Seoul Branch", customerB));
+
+        assertThat(view.slug()).isEqualTo("seoul");
+        verify(organizations).save(any(Organization.class));
     }
 
     @Test
@@ -165,10 +180,22 @@ class OrganizationServiceImplTest {
 
     @Test
     void createRejectsABlankName() {
-        when(organizations.existsBySlug("acme")).thenReturn(false);
+        UUID cid = stubDefaultCustomer();
+        when(organizations.existsByCustomerIdAndSlug(cid, "acme")).thenReturn(false);
 
         assertThatThrownBy(() -> service.create(new NewOrganization("acme", "  ")))
                 .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void findBySlugResolvesWithinTheDefaultCustomerNamespace() {
+        // The legacy single-label {org}.base host and tenant-first login resolve a bare slug within the
+        // DEFAULT customer's namespace, so findBySlug must query (defaultCustomerId, slug) — never globally.
+        UUID defaultCustomerId = stubDefaultCustomer();
+        Organization org = new Organization("acme", "Acme");
+        when(organizations.findByCustomerIdAndSlug(defaultCustomerId, "acme")).thenReturn(Optional.of(org));
+
+        assertThat(service.findBySlug("  ACME ")).containsSame(org);
     }
 
     @Test

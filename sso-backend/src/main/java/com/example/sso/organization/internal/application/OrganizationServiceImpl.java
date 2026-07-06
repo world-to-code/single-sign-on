@@ -42,13 +42,15 @@ public class OrganizationServiceImpl implements OrganizationService {
     @Transactional
     public OrganizationView create(NewOrganization command) {
         String slug = Slug.normalize(command.slug());
-        if (organizations.existsBySlug(slug)) {
+        // Every organization is a branch of a customer (고객사): the requested one (if it exists and is ACTIVE)
+        // or the default customer, keeping the FK non-null. Slugs are unique PER CUSTOMER, so resolve the parent
+        // first, then reject a collision only within that customer's namespace.
+        UUID customerId = resolveCustomer(command.customerId());
+        if (organizations.existsByCustomerIdAndSlug(customerId, slug)) {
             throw new ConflictException("organization slug '" + slug + "' already exists");
         }
-        // Every organization is a branch of a customer (고객사): the requested one (if it exists and is ACTIVE)
-        // or the default customer, keeping the FK non-null.
         Organization org = new Organization(slug, requireName(command.name()), command.profile());
-        org.assignCustomer(resolveCustomer(command.customerId()));
+        org.assignCustomer(customerId);
         return view(organizations.save(org));
     }
 
@@ -89,7 +91,10 @@ public class OrganizationServiceImpl implements OrganizationService {
     @Override
     @Transactional(readOnly = true)
     public Optional<OrganizationRef> findBySlug(String slug) {
-        return organizations.findBySlug(Slug.normalize(slug)).map(o -> o);
+        // The single-label {org}.base host and tenant-first login resolve within the DEFAULT customer's
+        // namespace, keeping that legacy path unambiguous now that slugs are unique only per customer.
+        return organizations.findByCustomerIdAndSlug(customers.defaultCustomer().getId(), Slug.normalize(slug))
+                .map(o -> o);
     }
 
     @Override

@@ -8,11 +8,9 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface OrganizationRepository extends JpaRepository<Organization, UUID> {
 
-    Optional<Organization> findBySlug(String slug);
-
-    boolean existsBySlug(String slug);
-
     Optional<Organization> findByCustomerIdAndSlug(UUID customerId, String slug);
+
+    boolean existsByCustomerIdAndSlug(UUID customerId, String slug);
 
     boolean existsByIdAndCustomerIdIn(UUID id, Set<UUID> customerIds);
 
