@@ -84,7 +84,12 @@ export default function Organizations() {
       <PageHeader
         title="Organizations"
         description="Tenants served by this identity provider. Create and manage organizations; drill into one to configure its users, roles, and policies."
-        actions={<Button onClick={openCreate}><Plus /> New organization</Button>}
+        actions={
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={openCreate}><Plus /> New organization</Button>
+            <Button onClick={() => navigate("/admin/onboarding")}><Building2 /> Onboard tenant</Button>
+          </div>
+        }
       />
 
       <DataList

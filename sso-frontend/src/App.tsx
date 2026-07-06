@@ -5,6 +5,7 @@ import OrgSelect from "./pages/OrgSelect";
 import Login from "./pages/Login";
 import MfaStep from "./pages/MfaStep";
 import AppStepUp from "./pages/AppStepUp";
+import SetPassword from "./pages/SetPassword";
 import Console from "./Console";
 import LoadingScreen from "./components/LoadingScreen";
 
@@ -37,6 +38,12 @@ export default function App() {
       }))
       .finally(() => setLoading(false));
   }, [apply]);
+
+  // Public onboarding invitation landing — reached from an emailed link with no session; render it before
+  // the session/loading gate so an invited admin can set their password without signing in first.
+  if (window.location.pathname === "/set-password") {
+    return <SetPassword />;
+  }
 
   if (loading || !session) {
     return <LoadingScreen />;

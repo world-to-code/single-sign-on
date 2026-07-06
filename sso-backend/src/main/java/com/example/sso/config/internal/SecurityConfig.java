@@ -132,7 +132,7 @@ public class SecurityConfig {
                         .requestMatchers("/saml2/idp/metadata", "/saml2/idp/slo", "/saml2/idp/slo/**").permitAll()
                         // SPA shell + static assets (the SPA itself gates content via /api/auth/session).
                         .requestMatchers(HttpMethod.GET, "/", "/index.html", "/favicon.ico", "/assets/**",
-                                "/login", "/stepup", "/apps", "/passkeys", "/applications", "/users", "/groups", "/auth-policies", "/clients",
+                                "/login", "/set-password", "/stepup", "/apps", "/passkeys", "/applications", "/users", "/groups", "/auth-policies", "/clients",
                                 "/relying-parties", "/scim-tokens", "/session-policy",
                                 "/audit", "/profile",
                                 // Admin console SPA shell (the OIDC flow + admin API still enforce auth).

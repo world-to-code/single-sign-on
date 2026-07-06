@@ -10,6 +10,7 @@ import Users from "./pages/Users";
 import UserCreate from "./pages/UserCreate";
 import UserDetail from "./pages/UserDetail";
 import Organizations from "./pages/Organizations";
+import Onboarding from "./pages/Onboarding";
 import PlatformDashboard from "./pages/PlatformDashboard";
 import OrgDashboard from "./pages/OrgDashboard";
 import Roles from "./pages/Roles";
@@ -58,6 +59,7 @@ export default function Console({ session }: { session: SessionView }) {
                   <Route index element={<Navigate to={isPlatformAdmin(session) ? "dashboard" : "users"} replace />} />
                   <Route path="dashboard" element={<PlatformDashboard />} />
                   <Route path="organizations" element={<Organizations />} />
+                  <Route path="onboarding" element={<Onboarding />} />
                   <Route path="organizations/:id" element={<OrgDashboard />} />
                   <Route path="users" element={<Users />} />
                   <Route path="users/new" element={<UserCreate />} />
