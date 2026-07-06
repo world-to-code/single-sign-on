@@ -5,6 +5,9 @@ import com.example.sso.user.internal.domain.Permission;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.RbacService;
 import com.example.sso.user.internal.domain.Role;
+import com.example.sso.user.internal.domain.RolePermission;
+import com.example.sso.user.internal.domain.RolePermissionId;
+import com.example.sso.user.internal.domain.RolePermissionRepository;
 import com.example.sso.user.internal.domain.RoleRepository;
 import com.example.sso.user.internal.domain.PermissionRepository;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.UUID;
 
 /** Default {@link RbacService}: manages the permission catalog (PBAC) and its assignment to roles. */
 @Service
@@ -33,6 +37,7 @@ public class RbacServiceImpl implements RbacService {
             Permissions.ORG_READ, Permissions.ORG_MEMBER_MANAGE);
 
     private final PermissionRepository permissions;
+    private final RolePermissionRepository rolePermissions;
     private final RoleRepository roles;
 
     @Override
@@ -41,8 +46,7 @@ public class RbacServiceImpl implements RbacService {
         Role admin = roles.findByNameAndOrgIdIsNull(Roles.ADMIN)
                 .orElseThrow(() -> new IllegalStateException("ROLE_ADMIN must exist before granting permissions"));
 
-        ALL_PERMISSIONS.forEach(name -> admin.addPermission(getOrCreatePermission(name)));
-        roles.save(admin);
+        grantEach(admin.getId(), ALL_PERMISSIONS);
     }
 
     @Override
@@ -51,8 +55,7 @@ public class RbacServiceImpl implements RbacService {
         Role groupAdmin = roles.findByNameAndOrgIdIsNull(Roles.GROUP_ADMIN)
                 .orElseThrow(() -> new IllegalStateException("ROLE_GROUP_ADMIN must exist before granting permissions"));
 
-        GROUP_ADMIN_PERMISSIONS.forEach(name -> groupAdmin.addPermission(getOrCreatePermission(name)));
-        roles.save(groupAdmin);
+        grantEach(groupAdmin.getId(), GROUP_ADMIN_PERMISSIONS);
     }
 
     @Override
@@ -61,14 +64,23 @@ public class RbacServiceImpl implements RbacService {
         Role orgAdmin = roles.findByNameAndOrgIdIsNull(Roles.ORG_ADMIN)
                 .orElseThrow(() -> new IllegalStateException("ROLE_ORG_ADMIN must exist before granting permissions"));
 
-        ORG_ADMIN_PERMISSIONS.forEach(name -> orgAdmin.addPermission(getOrCreatePermission(name)));
-        roles.save(orgAdmin);
+        grantEach(orgAdmin.getId(), ORG_ADMIN_PERMISSIONS);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<String> allPermissions() {
         return ALL_PERMISSIONS;
+    }
+
+    /** Inserts an explicit {@code role_permission} row per permission (get-or-created), idempotently. */
+    private void grantEach(UUID roleId, List<String> permissionNames) {
+        permissionNames.forEach(name -> {
+            UUID permissionId = getOrCreatePermission(name).getId();
+            if (!rolePermissions.existsById(new RolePermissionId(roleId, permissionId))) {
+                rolePermissions.save(new RolePermission(roleId, permissionId));
+            }
+        });
     }
 
     private Permission getOrCreatePermission(String name) {

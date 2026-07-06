@@ -10,12 +10,15 @@ import com.example.sso.user.Permissions;
 import com.example.sso.user.UserAccessChangedEvent;
 import com.example.sso.user.UserDeletedEvent;
 import com.example.sso.user.UserUpdate;
-import com.example.sso.user.internal.domain.UserGroupRepository;
 import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.internal.domain.PermissionRepository;
-import com.example.sso.user.internal.domain.Role;
 import com.example.sso.user.internal.domain.RoleRepository;
+import com.example.sso.user.internal.domain.UserDirectPermissionRepository;
+import com.example.sso.user.internal.domain.UserGroupMemberRepository;
+import com.example.sso.user.internal.domain.UserGroupRepository;
+import com.example.sso.user.internal.domain.UserRoleRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -33,6 +36,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -40,8 +44,9 @@ import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link UserServiceImpl}: duplicate rejection on create, role/permission resolution
- * guards, and the delete side effects. The service's job here IS the collaborator interaction, so
- * persistence and the {@link UserDeletedEvent} publish are asserted with {@code verify(...)}.
+ * guards, and the delete side effects. The service's job here IS the collaborator interaction, so the
+ * explicit join-row cleanup, persistence and the {@link UserDeletedEvent} publish are asserted with
+ * {@code verify(...)}.
  */
 @ExtendWith(MockitoExtension.class)
 class UserServiceImplTest {
@@ -49,12 +54,22 @@ class UserServiceImplTest {
     @Mock private AppUserRepository users;
     @Mock private RoleRepository roles;
     @Mock private PermissionRepository permissions;
+    @Mock private UserRoleRepository userRoles;
+    @Mock private UserDirectPermissionRepository userDirectPermissions;
     @Mock private UserGroupRepository groups;
+    @Mock private UserGroupMemberRepository userGroupMembers;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private ApplicationEventPublisher events;
     @Mock private PermissionGrantPolicy grantPolicy;
+    @Mock private RbacHydrator hydrator;
 
     @InjectMocks private UserServiceImpl service;
+
+    @BeforeEach
+    void defaults() {
+        // The hydrator only populates the read-view; return the same user for projection.
+        lenient().when(hydrator.hydrateUser(any())).thenAnswer(inv -> inv.getArgument(0));
+    }
 
     private NewUser newUser(Set<String> roleNames) {
         return new NewUser("alice", "alice@example.com", "Alice", "pw", roleNames);
@@ -100,6 +115,7 @@ class UserServiceImplTest {
 
         assertThatThrownBy(() -> service.createUser(newUser(Set.of("ROLE_GHOST"))))
                 .isInstanceOf(BadRequestException.class);
+        verify(users, never()).save(any());
     }
 
     @Test
@@ -113,7 +129,7 @@ class UserServiceImplTest {
     }
 
     @Test
-    void deleteRemovesTheUserAndPublishesUserDeletedEvent() {
+    void deleteRemovesTheUserItsJoinRowsAndPublishesUserDeletedEvent() {
         UUID id = UUID.randomUUID();
         AppUser user = mock(AppUser.class);
         when(user.getUsername()).thenReturn("bob");
@@ -121,6 +137,8 @@ class UserServiceImplTest {
 
         service.delete(id);
 
+        verify(userRoles).deleteByUserId(id); // explicit join cleanup, not JPA cascade
+        verify(userDirectPermissions).deleteByUserId(id);
         verify(users).deleteById(id);
         verify(events).publishEvent(new UserDeletedEvent(id));
         verify(events).publishEvent(new UserAccessChangedEvent("bob")); // terminate the deleted user's sessions
@@ -160,9 +178,8 @@ class UserServiceImplTest {
     @Test
     void hasRoleTrueWhenTheUserHoldsIt() {
         UUID id = UUID.randomUUID();
-        AppUser user = new AppUser("alice", "a@x", "A", "h");
-        user.addRole(new Role("ROLE_ADMIN"));
-        when(users.findById(id)).thenReturn(Optional.of(user));
+        when(userRoles.existsByUserIdAndRoleName(id, "ROLE_ADMIN")).thenReturn(true);
+        when(userRoles.existsByUserIdAndRoleName(id, "ROLE_USER")).thenReturn(false);
 
         assertThat(service.hasRole(id, "ROLE_ADMIN")).isTrue();
         assertThat(service.hasRole(id, "ROLE_USER")).isFalse();
@@ -171,7 +188,6 @@ class UserServiceImplTest {
     @Test
     void hasRoleFalseForAMissingUser() {
         UUID id = UUID.randomUUID();
-        when(users.findById(id)).thenReturn(Optional.empty());
 
         assertThat(service.hasRole(id, "ROLE_ADMIN")).isFalse();
     }

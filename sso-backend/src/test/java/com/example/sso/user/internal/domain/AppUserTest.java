@@ -12,8 +12,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Unit test for {@link AppUser} behavior methods (no setters): enable/disable, email verification,
- * profile edits, wholesale role/permission assignment, and the brute-force lockout delegated to the
- * embedded {@link AccountLockout}. Pure aggregate rules — asserts on resulting state.
+ * profile edits, the read-only hydrated role/permission views, and the brute-force lockout delegated to
+ * the embedded {@link AccountLockout}. Assignment itself is a service concern (explicit join rows), so the
+ * aggregate only exposes the hydrated views here. Pure aggregate rules — asserts on resulting state.
  */
 class AppUserTest {
 
@@ -64,13 +65,11 @@ class AppUserTest {
     }
 
     @Test
-    void assignRolesReplacesTheSetWholesaleAndExposesAnUnmodifiableView() {
+    void hydratedRolesExposeAnUnmodifiableView() {
         AppUser user = newUser();
-        Role admin = new Role("ROLE_ADMIN");
         Role userRole = new Role("ROLE_USER");
-        user.addRole(admin);
 
-        user.assignRoles(List.of(userRole));
+        user.hydrateRoles(List.of(userRole));
 
         assertThat(user.getRoles()).containsExactly(userRole);
         assertThatThrownBy(() -> user.getRoles().add(new Role("x")))
@@ -78,23 +77,14 @@ class AppUserTest {
     }
 
     @Test
-    void removeRoleDropsASingleAssignment() {
-        AppUser user = newUser();
-        Role admin = new Role("ROLE_ADMIN");
-        user.addRole(admin);
-
-        user.removeRole(admin);
-
-        assertThat(user.getRoles()).isEmpty();
-    }
-
-    @Test
-    void assignDirectPermissionsExposesNamesView() {
+    void hydratedDirectPermissionNamesExposeAnUnmodifiableView() {
         AppUser user = newUser();
 
-        user.assignDirectPermissions(Set.of(new Permission("user:read"), new Permission("user:update")));
+        user.hydrateDirectPermissionNames(Set.of("user:read", "user:update"));
 
         assertThat(user.getDirectPermissionNames()).containsExactlyInAnyOrder("user:read", "user:update");
+        assertThatThrownBy(() -> user.getDirectPermissionNames().add("x"))
+                .isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test

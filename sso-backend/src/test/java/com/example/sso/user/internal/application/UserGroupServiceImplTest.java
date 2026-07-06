@@ -6,10 +6,12 @@ import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.GroupDeletedEvent;
 import com.example.sso.user.GroupSpec;
-import com.example.sso.user.internal.domain.UserGroupRepository;
 import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.internal.domain.RoleRepository;
 import com.example.sso.user.internal.domain.UserGroup;
+import com.example.sso.user.internal.domain.UserGroupMemberRepository;
+import com.example.sso.user.internal.domain.UserGroupRepository;
+import com.example.sso.user.internal.domain.UserGroupRoleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,11 +20,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
@@ -36,23 +38,31 @@ import static org.mockito.Mockito.when;
  * Unit tests for {@link UserGroupServiceImpl}: system-group protection across every mutator, the
  * duplicate-name guard, and the delete side effect. The delete publishing a {@link GroupDeletedEvent}
  * (and the system-group path publishing NOTHING) are the unit's contract, so both use {@code verify}.
+ * Membership/role rows are now managed through the explicit join repositories.
  */
 @ExtendWith(MockitoExtension.class)
 class UserGroupServiceImplTest {
 
     @Mock private UserGroupRepository repository;
+    @Mock private UserGroupMemberRepository members;
+    @Mock private UserGroupRoleRepository groupRoles;
     @Mock private AppUserRepository users;
     @Mock private RoleRepository roles;
     @Mock private ApplicationEventPublisher events;
     @Mock private AccessChangePublisher accessChanges;
     @Mock private OrgContext orgContext;
+    @Mock private RbacHydrator hydrator;
 
     @InjectMocks private UserGroupServiceImpl service;
 
     @BeforeEach
-    void noTenantContext() {
+    void defaults() {
         // Default to the global tier (no bound org) for group creation; tests may override.
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.empty());
+        // Empty join-table views by default so toView() can project without extra stubbing.
+        lenient().when(members.findUserIdsByGroupId(any())).thenReturn(List.of());
+        lenient().when(groupRoles.findRoleIdsByGroupId(any())).thenReturn(List.of());
+        lenient().when(roles.findAllById(any())).thenReturn(List.of());
     }
 
     private UserGroup systemGroup() {
@@ -64,7 +74,8 @@ class UserGroupServiceImplTest {
     @Test
     void createRejectsADuplicateName() {
         GroupSpec spec = new GroupSpec("Engineering", "d", null, Set.of());
-        when(repository.findByNameAndOrgIdIsNull("Engineering")).thenReturn(Optional.of(new UserGroup("Engineering", "d", null)));
+        when(repository.findByNameAndOrgIdIsNull("Engineering"))
+                .thenReturn(Optional.of(new UserGroup("Engineering", "d", null)));
 
         assertThatThrownBy(() -> service.create(spec)).isInstanceOf(ConflictException.class);
         verify(repository, never()).save(any());
@@ -99,11 +110,13 @@ class UserGroupServiceImplTest {
         UUID id = UUID.randomUUID();
         UUID memberId = UUID.randomUUID();
         UserGroup group = new UserGroup("Engineering", "d", null);
-        group.setMembers(Set.of(memberId));
         when(repository.findById(id)).thenReturn(Optional.of(group));
+        when(members.findUserIdsByGroupId(id)).thenReturn(List.of(memberId));
 
         service.delete(id);
 
+        verify(members).deleteByGroupId(id); // explicit join cleanup before the group row
+        verify(groupRoles).deleteByGroupId(id);
         verify(repository).delete(group);
         verify(events).publishEvent(new GroupDeletedEvent(id));
         verify(accessChanges).forUserIds(Set.of(memberId)); // members lose the group's delegated roles
@@ -144,5 +157,4 @@ class UserGroupServiceImplTest {
         assertThatThrownBy(() -> service.update(id, new GroupSpec("x", "d", null, Set.of())))
                 .isInstanceOf(ConflictException.class);
     }
-
 }

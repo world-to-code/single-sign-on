@@ -13,8 +13,12 @@ import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.internal.domain.Permission;
 import com.example.sso.user.internal.domain.PermissionRepository;
 import com.example.sso.user.internal.domain.Role;
+import com.example.sso.user.internal.domain.RolePermissionRepository;
 import com.example.sso.user.internal.domain.RoleRepository;
 import com.example.sso.user.internal.domain.UserGroupRepository;
+import com.example.sso.user.internal.domain.UserGroupRoleRepository;
+import com.example.sso.user.internal.domain.UserRole;
+import com.example.sso.user.internal.domain.UserRoleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,8 +42,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for {@link RoleServiceImpl}: the system/ADMIN-role guards on rename/edit/delete and the
- * reserved-authority-name rejection that stops a role from minting a security-significant authority.
+ * Unit tests for {@link RoleServiceImpl}: the system/ADMIN-role guards on rename/edit/delete, the
+ * reserved-authority-name rejection that stops a role from minting a security-significant authority, and
+ * that membership/permission changes are driven through the EXPLICIT join repositories.
  */
 @ExtendWith(MockitoExtension.class)
 class RoleServiceImplTest {
@@ -47,20 +52,26 @@ class RoleServiceImplTest {
     @Mock private RoleRepository roles;
     @Mock private AppUserRepository users;
     @Mock private PermissionRepository permissions;
+    @Mock private RolePermissionRepository rolePermissions;
+    @Mock private UserRoleRepository userRoles;
+    @Mock private UserGroupRoleRepository userGroupRoles;
     @Mock private UserGroupRepository groups;
     @Mock private AccessChangePublisher accessChanges;
     @Mock private PermissionGrantPolicy grantPolicy;
     @Mock private OrgContext orgContext;
+    @Mock private RbacHydrator hydrator;
 
     @InjectMocks private RoleServiceImpl service;
 
     @BeforeEach
-    void noTenantContext() {
+    void defaults() {
         // Default to the global tier (no bound org) for role creation; individual tests may override.
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.empty());
         // callAsPlatform just runs its supplier (session-revocation fan-out reads groups as platform).
         lenient().when(orgContext.callAsPlatform(any()))
                 .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(0)).get());
+        // The hydrator only populates the read-view; return the same role for projection.
+        lenient().when(hydrator.hydrateRole(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
     private Role systemRole(String name) {
@@ -130,6 +141,7 @@ class RoleServiceImplTest {
 
         assertThatThrownBy(() -> service.create("ROLE_EDITOR", Set.of("not:a-permission")))
                 .isInstanceOf(BadRequestException.class);
+        verify(roles, never()).save(any());
     }
 
     @Test
@@ -156,7 +168,7 @@ class RoleServiceImplTest {
     }
 
     @Test
-    void creatingWithAGrantablePermissionSavesTheRole() {
+    void creatingWithAGrantablePermissionSavesTheRoleAndGrantsIt() {
         when(roles.findByNameAndOrgIdIsNull("ROLE_EDITOR")).thenReturn(Optional.empty());
         when(grantPolicy.mayGrant(Permissions.USER_READ)).thenReturn(true);
         when(permissions.findByName(Permissions.USER_READ))
@@ -166,6 +178,7 @@ class RoleServiceImplTest {
         service.create("ROLE_EDITOR", Set.of(Permissions.USER_READ));
 
         verify(roles).save(any());
+        verify(rolePermissions).save(any());
     }
 
     @Test
@@ -180,32 +193,32 @@ class RoleServiceImplTest {
     }
 
     @Test
-    void addingAMemberGrantsTheRoleToThatUser() {
+    void addingAMemberInsertsAnAssignmentRowForThatUser() {
         UUID roleId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
-        Role role = new Role("ROLE_EDITOR");
         AppUser user = mock(AppUser.class);
-        when(roles.findById(roleId)).thenReturn(Optional.of(role));
+        when(user.getId()).thenReturn(userId);
+        when(roles.findById(roleId)).thenReturn(Optional.of(new Role("ROLE_EDITOR")));
         when(users.findById(userId)).thenReturn(Optional.of(user));
 
         service.addMember(roleId, userId);
 
-        verify(user).addRole(role);
+        verify(userRoles).save(any(UserRole.class));
         verify(accessChanges).forUserIds(Set.of(userId)); // refresh the user's authorities
     }
 
     @Test
-    void removingAMemberRevokesTheRoleFromThatUser() {
+    void removingAMemberDeletesTheAssignmentRow() {
         UUID roleId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
-        Role role = new Role("ROLE_EDITOR");
         AppUser user = mock(AppUser.class);
-        when(roles.findById(roleId)).thenReturn(Optional.of(role));
+        when(user.getId()).thenReturn(userId);
+        when(roles.findById(roleId)).thenReturn(Optional.of(new Role("ROLE_EDITOR")));
         when(users.findById(userId)).thenReturn(Optional.of(user));
 
         service.removeMember(roleId, userId);
 
-        verify(user).removeRole(role);
+        verify(userRoles).deleteByUserIdAndRoleId(userId, roleId);
         verify(accessChanges).forUserIds(Set.of(userId)); // end the demoted user's sessions
     }
 
@@ -215,14 +228,15 @@ class RoleServiceImplTest {
         UUID directHolder = UUID.randomUUID();
         UUID groupHolder = UUID.randomUUID();
         Role role = new Role("ROLE_EDITOR");
-        AppUser direct = mock(AppUser.class);
-        when(direct.getId()).thenReturn(directHolder);
         when(roles.findById(roleId)).thenReturn(Optional.of(role));
-        when(users.findByRoles_Id(roleId)).thenReturn(List.of(direct));
+        when(userRoles.findUserIdsByRoleId(roleId)).thenReturn(List.of(directHolder));
         when(groups.findMemberIdsByRoleId(roleId)).thenReturn(List.of(groupHolder));
 
         service.deleteRole(roleId);
 
+        verify(rolePermissions).deleteByRoleId(roleId); // explicit join cleanup, not JPA cascade
+        verify(userRoles).deleteByRoleId(roleId);
+        verify(userGroupRoles).deleteByRoleId(roleId);
         verify(roles).delete(role);
         verify(accessChanges).forUserIds(Set.of(directHolder, groupHolder));
     }

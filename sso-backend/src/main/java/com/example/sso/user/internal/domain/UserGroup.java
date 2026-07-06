@@ -6,10 +6,6 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -20,6 +16,10 @@ import java.util.UUID;
  * <p>Sync-ready: an optional {@code externalId} carries the source id from a future LDAP/SCIM
  * integration. State is never mutated through setters — the entity is created fully-formed via its
  * constructor and changes only through intention-revealing domain methods.
+ *
+ * <p>Membership ({@code user_group_member}) and delegated roles ({@code group_role}) are NOT mapped
+ * here: they live in the explicit {@code UserGroupMember} / {@code UserGroupRole} join entities and are
+ * written and read through their repositories in the service layer, so every insert/delete is visible.
  */
 @Entity
 @Table(name = "user_group")
@@ -50,20 +50,6 @@ public class UserGroup extends AuditedEntity {
     @Column(name = "external_id", length = 255)
     private String externalId;
 
-    @ElementCollection(fetch = FetchType.LAZY)
-    @CollectionTable(name = "user_group_member", joinColumns = @JoinColumn(name = "group_id"))
-    @Column(name = "user_id")
-    private Set<UUID> memberUserIds = new HashSet<>();
-
-    // Roles delegated to the whole group: every member inherits these roles (and their permissions).
-    // LAZY: needed only when building a member's authorities or rendering the group/user detail views.
-    @ManyToMany(fetch = FetchType.LAZY, cascade = {CascadeType.PERSIST, CascadeType.MERGE})
-    @JoinTable(
-            name = "group_role",
-            joinColumns = @JoinColumn(name = "group_id"),
-            inverseJoinColumns = @JoinColumn(name = "role_id"))
-    private Set<Role> roles = new HashSet<>();
-
     /** A global/system group (no owning org). */
     public UserGroup(String name, String description, String externalId) {
         this.name = name;
@@ -82,11 +68,6 @@ public class UserGroup extends AuditedEntity {
         this.system = true;
     }
 
-    /** Adds a single member (used for auto-join into the default group). */
-    public void addMember(UUID userId) {
-        this.memberUserIds.add(userId);
-    }
-
     public void rename(String name) {
         this.name = name;
     }
@@ -97,27 +78,5 @@ public class UserGroup extends AuditedEntity {
 
     public void assignExternalId(String externalId) {
         this.externalId = externalId;
-    }
-
-    /** Replaces the group's membership wholesale (admin-driven update). */
-    public void setMembers(Collection<UUID> memberUserIds) {
-        this.memberUserIds.clear();
-        this.memberUserIds.addAll(memberUserIds);
-    }
-
-    /** Replaces the group's delegated roles wholesale (admin-driven update). */
-    public void replaceRoles(Collection<Role> newRoles) {
-        this.roles.clear();
-        this.roles.addAll(newRoles);
-    }
-
-    // Read-only views (override Lombok's @Getter); mutate via the domain methods above.
-
-    public Set<UUID> getMemberUserIds() {
-        return Collections.unmodifiableSet(memberUserIds);
-    }
-
-    public Set<Role> getRoles() {
-        return Collections.unmodifiableSet(roles);
     }
 }

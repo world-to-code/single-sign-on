@@ -36,30 +36,40 @@ public interface UserGroupRepository extends JpaRepository<UserGroup, UUID> {
 
     Optional<UserGroup> findFirstBySystemTrue();
 
-    /** Groups the given user is a member of (matched at the join table). */
-    @Query("select g from UserGroup g where :userId member of g.memberUserIds")
+    /**
+     * Groups the given user is a member of. Joined from {@code UserGroup} (not the raw join table) so the
+     * result is tenant-scoped by RLS: groups not visible in the current context are excluded.
+     */
+    @Query("select g from UserGroup g where g.id in "
+            + "(select m.id.groupId from UserGroupMember m where m.id.userId = :userId)")
     List<UserGroup> findByMember(@Param("userId") UUID userId);
 
-    /** Ids of the groups the given user belongs to. */
-    @Query("select g.id from UserGroup g where :userId member of g.memberUserIds")
+    /** Ids of the (visible) groups the given user belongs to. */
+    @Query("select g.id from UserGroup g where g.id in "
+            + "(select m.id.groupId from UserGroupMember m where m.id.userId = :userId)")
     List<UUID> findGroupIdsByMember(@Param("userId") UUID userId);
 
-    /** Distinct ids of all users who are members of ANY of the given groups (bulk scope expansion). */
-    @Query("select distinct m from UserGroup g join g.memberUserIds m where g.id in :groupIds")
+    /** Distinct ids of all users who are members of ANY of the given (visible) groups (bulk scope expansion). */
+    @Query("select distinct mem.id.userId from UserGroup g "
+            + "join UserGroupMember mem on mem.id.groupId = g.id where g.id in :groupIds")
     List<UUID> findMemberIdsByGroupIds(@Param("groupIds") Collection<UUID> groupIds);
 
     /** Distinct ids of all users who hold the given role via ANY group that delegates it (group-delegated
      *  holders) — used to end their sessions when the role's permissions or existence change. */
-    @Query("select distinct m from UserGroup g join g.memberUserIds m join g.roles r where r.id = :roleId")
+    @Query("select distinct mem.id.userId from UserGroup g "
+            + "join UserGroupRole gr on gr.id.groupId = g.id "
+            + "join UserGroupMember mem on mem.id.groupId = g.id where gr.id.roleId = :roleId")
     List<UUID> findMemberIdsByRoleId(@Param("roleId") UUID roleId);
 
     /**
-     * Distinct roles delegated to the user via any group they belong to, with permissions fetched —
-     * used when building the member's effective authorities at login.
+     * Distinct ids of the roles delegated to the user via any (visible) group they belong to — used when
+     * building the member's effective authorities at login. The role entities (and their permission names)
+     * are then loaded/hydrated explicitly by the caller.
      */
-    @Query("select distinct r from UserGroup g join g.roles r left join fetch r.permissions "
-            + "where :userId member of g.memberUserIds")
-    List<Role> findRolesForMember(@Param("userId") UUID userId);
+    @Query("select distinct gr.id.roleId from UserGroup g "
+            + "join UserGroupRole gr on gr.id.groupId = g.id where g.id in "
+            + "(select m.id.groupId from UserGroupMember m where m.id.userId = :userId)")
+    List<UUID> findDelegatedRoleIdsForMember(@Param("userId") UUID userId);
 
     /** (id, name) for the given groups — batch name lookup without loading membership. */
     @Query("select g.id as id, g.name as name from UserGroup g where g.id in :ids")
@@ -70,7 +80,8 @@ public interface UserGroupRepository extends JpaRepository<UserGroup, UUID> {
             + "where lower(g.name) like lower(concat('%', :q, '%')) order by g.name asc")
     List<IdName> search(@Param("q") String q, Pageable limit);
 
-    /** Member count without loading the membership collection. */
-    @Query("select size(g.memberUserIds) from UserGroup g where g.id = :gid")
+    /** Member count for a (visible) group, joined through {@code UserGroup} to stay RLS-scoped. */
+    @Query("select count(mem) from UserGroup g "
+            + "join UserGroupMember mem on mem.id.groupId = g.id where g.id = :gid")
     int countMembers(@Param("gid") UUID gid);
 }

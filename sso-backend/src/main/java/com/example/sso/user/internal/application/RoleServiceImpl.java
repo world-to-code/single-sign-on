@@ -13,10 +13,14 @@ import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.internal.domain.Permission;
 import com.example.sso.user.internal.domain.PermissionRepository;
 import com.example.sso.user.internal.domain.Role;
-import com.example.sso.user.internal.domain.RoleMemberRow;
+import com.example.sso.user.internal.domain.RolePermission;
+import com.example.sso.user.internal.domain.RolePermissionRepository;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.internal.domain.RoleRepository;
 import com.example.sso.user.internal.domain.UserGroupRepository;
+import com.example.sso.user.internal.domain.UserGroupRoleRepository;
+import com.example.sso.user.internal.domain.UserRole;
+import com.example.sso.user.internal.domain.UserRoleRepository;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.RoleService;
 import com.example.sso.user.UserAccount;
@@ -26,6 +30,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -35,8 +40,8 @@ import java.util.stream.Collectors;
 
 /**
  * Default {@link RoleService}: roles and role membership (RBAC groups) for admin and SCIM. Returns the
- * {@link RoleRef}/{@link UserAccount} projections; the user-role link mutation lives here so callers
- * never touch the entities.
+ * {@link RoleRef}/{@link UserAccount} projections; role-permission grants and user-role links are managed
+ * here as EXPLICIT join-table inserts/deletes (no JPA cascade), so callers never touch the entities.
  */
 @Service
 @RequiredArgsConstructor
@@ -57,10 +62,14 @@ public class RoleServiceImpl implements RoleService {
     private final RoleRepository roles;
     private final AppUserRepository users;
     private final PermissionRepository permissions;
+    private final RolePermissionRepository rolePermissions;
+    private final UserRoleRepository userRoles;
+    private final UserGroupRoleRepository userGroupRoles;
     private final UserGroupRepository groups;
     private final AccessChangePublisher accessChanges;
     private final PermissionGrantPolicy grantPolicy;
     private final OrgContext orgContext;
+    private final RbacHydrator hydrator;
 
     /** The org a newly-created role belongs to: the active tenant context, or null (global/system role). */
     private UUID creationOrg() {
@@ -71,28 +80,30 @@ public class RoleServiceImpl implements RoleService {
     @Transactional(readOnly = true)
     public Optional<RoleRef> findByName(String name) {
         // Name-based lookup targets the global tier; tenant roles are addressed by id.
-        return roles.findByNameAndOrgIdIsNull(name).map(r -> r);
+        return roles.findByNameAndOrgIdIsNull(name).map(hydrator::hydrateRole).map(r -> r);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Optional<RoleRef> findById(UUID id) {
-        return roles.findById(id).map(r -> r);
+        return roles.findById(id).map(hydrator::hydrateRole).map(r -> r);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Set<String> permissionNames(UUID roleId) {
-        // Initialize the LAZY permissions inside this tx so callers (e.g. @adminAccessPolicy SpEL, which
-        // runs outside the method tx) can read them without a LazyInitializationException.
-        return roles.findById(roleId).map(Role::getPermissionNames).orElse(Set.of());
+        // The permission names are read from role_permission (explicit join) inside this tx so callers
+        // (e.g. @adminAccessPolicy SpEL, which runs outside the method tx) get a fully-materialized set.
+        return roles.findById(roleId)
+                .map(role -> Set.copyOf(hydrator.hydrateRole(role).getPermissionNames()))
+                .orElse(Set.of());
     }
 
     @Override
     @Transactional
     public RoleRef getOrCreate(String name) {
         // A name-addressed role is a global one (SCIM group→role, etc.); tenant roles are created via the id path.
-        return roles.findByNameAndOrgIdIsNull(name).orElseGet(() -> roles.save(new Role(name)));
+        return hydrator.hydrateRole(roles.findByNameAndOrgIdIsNull(name).orElseGet(() -> roles.save(new Role(name))));
     }
 
     @Override
@@ -103,14 +114,14 @@ public class RoleServiceImpl implements RoleService {
             role.markSystem();
         }
 
-        return roles.save(role);
+        return hydrator.hydrateRole(roles.save(role));
     }
 
     @Override
     @Transactional
     public RoleRef create(String name) {
         validateRoleName(name);
-        return roles.save(new Role(name, creationOrg()));
+        return hydrator.hydrateRole(roles.save(new Role(name, creationOrg())));
     }
 
     @Override
@@ -128,10 +139,13 @@ public class RoleServiceImpl implements RoleService {
             throw new ConflictException("role '" + name + "' already exists");
         }
 
-        Role role = new Role(name, org);
-        role.replacePermissions(resolvePermissions(permissionNames, org));
+        // Resolve (and validate) permissions BEFORE persisting the role, so an unknown/forbidden
+        // permission never leaves a half-created role behind.
+        Set<Permission> resolved = resolvePermissions(permissionNames, org);
+        Role role = roles.save(new Role(name, org));
+        grantPermissions(role.getId(), resolved);
 
-        return roles.save(role);
+        return hydrator.hydrateRole(role);
     }
 
     @Override
@@ -154,14 +168,15 @@ public class RoleServiceImpl implements RoleService {
                 throw new ConflictException("role '" + name + "' already exists");
             }
             role.rename(name);
+            roles.save(role);
         }
 
-        role.replacePermissions(resolvePermissions(permissionNames, role.getOrgId()));
+        replacePermissions(roleId, resolvePermissions(permissionNames, role.getOrgId()));
 
         // A rename changes the emitted role-name authority and a permission edit changes granted
         // permissions, so end every holder's sessions to shed the now-stale authorities.
         accessChanges.forUserIds(holdersOf(roleId));
-        return role;
+        return hydrator.hydrateRole(role);
     }
 
     @Override
@@ -173,6 +188,7 @@ public class RoleServiceImpl implements RoleService {
         }
 
         Set<UUID> affected = holdersOf(roleId); // resolve before the delete removes the associations
+        deleteJoinRows(roleId);
         roles.delete(role);
         accessChanges.forUserIds(affected);
     }
@@ -182,9 +198,22 @@ public class RoleServiceImpl implements RoleService {
     public void delete(UUID roleId) {
         roles.findById(roleId).ifPresent(role -> {
             Set<UUID> affected = holdersOf(roleId);
+            deleteJoinRows(roleId);
             roles.delete(role);
             accessChanges.forUserIds(affected);
         });
+    }
+
+    /**
+     * Explicitly removes every join row referencing the role before it is deleted: its permission grants
+     * ({@code role_permission}), direct user assignments ({@code app_user_role}) and group delegations
+     * ({@code group_role}). The DB has ON DELETE CASCADE FKs too, but the deletes are spelled out here so
+     * the code — not the schema — documents exactly what disappears with a role.
+     */
+    private void deleteJoinRows(UUID roleId) {
+        rolePermissions.deleteByRoleId(roleId);
+        userRoles.deleteByRoleId(roleId);
+        userGroupRoles.deleteByRoleId(roleId);
     }
 
     /**
@@ -233,6 +262,22 @@ public class RoleServiceImpl implements RoleService {
         }).collect(Collectors.toSet());
     }
 
+    /** Inserts a {@code role_permission} row per resolved permission (idempotent). */
+    private void grantPermissions(UUID roleId, Set<Permission> resolved) {
+        resolved.forEach(permission -> rolePermissions.save(new RolePermission(roleId, permission.getId())));
+    }
+
+    /** Replaces a role's permission grants: explicitly delete the removed rows and insert the added ones. */
+    private void replacePermissions(UUID roleId, Set<Permission> desired) {
+        Set<UUID> current = new HashSet<>(rolePermissions.findPermissionIdsByRoleId(roleId));
+        Set<UUID> desiredIds = desired.stream().map(Permission::getId).collect(Collectors.toSet());
+
+        current.stream().filter(id -> !desiredIds.contains(id))
+                .forEach(id -> rolePermissions.deleteByRoleIdAndPermissionId(roleId, id));
+        desired.stream().filter(permission -> !current.contains(permission.getId()))
+                .forEach(permission -> rolePermissions.save(new RolePermission(roleId, permission.getId())));
+    }
+
     @Override
     @Transactional(readOnly = true)
     public long count() {
@@ -242,7 +287,7 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional(readOnly = true)
     public List<RoleRef> findAll() {
-        return roles.findAll().stream().map(RoleRef.class::cast).toList();
+        return hydrator.hydrateRoles(roles.findAll()).stream().map(RoleRef.class::cast).toList();
     }
 
     @Override
@@ -261,13 +306,16 @@ public class RoleServiceImpl implements RoleService {
         long zeroBased = Math.max(startIndex - 1, 0);
         int pageNumber = (int) (zeroBased / count);
 
-        return roles.findAll(PageRequest.of(pageNumber, count)).stream().map(RoleRef.class::cast).toList();
+        return hydrator.hydrateRoles(roles.findAll(PageRequest.of(pageNumber, count)).getContent())
+                .stream().map(RoleRef.class::cast).toList();
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<UserAccount> members(UUID roleId) {
-        return users.findByRoles_Id(roleId).stream().map(UserAccount.class::cast).toList();
+        // Member views expose only scalar identity (id/username/…), so no role/permission hydration is needed.
+        return users.findAllById(userRoles.findUserIdsByRoleId(roleId)).stream()
+                .map(UserAccount.class::cast).toList();
     }
 
     @Override
@@ -277,26 +325,32 @@ public class RoleServiceImpl implements RoleService {
             return Map.of();
         }
 
-        return users.findMembersByRoleIdIn(roleIds).stream()
-                .collect(Collectors.groupingBy(RoleMemberRow::roleId,
-                        Collectors.mapping(row -> (UserAccount) row.member(), Collectors.toList())));
+        List<UserRole> rows = userRoles.findByRoleIdIn(roleIds);
+        Map<UUID, AppUser> byId = users.findAllById(rows.stream().map(UserRole::getUserId).collect(Collectors.toSet()))
+                .stream().collect(Collectors.toMap(AppUser::getId, user -> user));
+
+        return rows.stream()
+                .filter(row -> byId.containsKey(row.getUserId()))
+                .collect(Collectors.groupingBy(UserRole::getRoleId,
+                        Collectors.mapping(row -> (UserAccount) byId.get(row.getUserId()), Collectors.toList())));
     }
 
     @Override
     @Transactional
     public void setMembers(UUID roleId, Set<UUID> userIds) {
-        Role role = roles.findById(roleId).orElseThrow(() -> new NotFoundException("role not found"));
-        List<AppUser> current = users.findByRoles_Id(roleId);
-        Set<UUID> currentIds = current.stream().map(AppUser::getId).collect(Collectors.toSet());
+        roles.findById(roleId).orElseThrow(() -> new NotFoundException("role not found"));
+        Set<UUID> currentIds = new HashSet<>(userRoles.findUserIdsByRoleId(roleId));
 
-        // Managed entities inside this @Transactional method — dirty checking flushes; no explicit saves.
-        current.stream().filter(u -> !userIds.contains(u.getId())).forEach(u -> u.removeRole(role));
+        // Explicitly delete the assignments of members no longer wanted...
+        Set<UUID> removed = currentIds.stream().filter(id -> !userIds.contains(id)).collect(Collectors.toSet());
+        removed.forEach(id -> userRoles.deleteByUserIdAndRoleId(id, roleId));
+
+        // ...and insert one for each newly-selected user that actually exists (unknown ids are dropped).
         Set<UUID> toAdd = userIds.stream().filter(id -> !currentIds.contains(id)).collect(Collectors.toSet());
-        users.findAllById(toAdd).forEach(u -> u.addRole(role));
+        users.findAllById(toAdd).forEach(user -> userRoles.save(new UserRole(user.getId(), roleId)));
 
         // End sessions of everyone whose membership changed (gained or lost the role) to refresh authorities.
-        Set<UUID> affected = current.stream().map(AppUser::getId).filter(id -> !userIds.contains(id))
-                .collect(Collectors.toSet());
+        Set<UUID> affected = new HashSet<>(removed);
         affected.addAll(toAdd);
         accessChanges.forUserIds(affected);
     }
@@ -304,18 +358,18 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional
     public void addMember(UUID roleId, UUID userId) {
-        Role role = roles.findById(roleId).orElseThrow(() -> new NotFoundException("role not found"));
+        roles.findById(roleId).orElseThrow(() -> new NotFoundException("role not found"));
         AppUser user = users.findById(userId).orElseThrow(() -> new NotFoundException("user not found"));
-        user.addRole(role); // idempotent (Set); managed entity, dirty checking flushes
+        userRoles.save(new UserRole(user.getId(), roleId)); // idempotent (composite PK)
         accessChanges.forUserIds(Set.of(userId));
     }
 
     @Override
     @Transactional
     public void removeMember(UUID roleId, UUID userId) {
-        Role role = roles.findById(roleId).orElseThrow(() -> new NotFoundException("role not found"));
+        roles.findById(roleId).orElseThrow(() -> new NotFoundException("role not found"));
         AppUser user = users.findById(userId).orElseThrow(() -> new NotFoundException("user not found"));
-        user.removeRole(role); // idempotent; managed entity, dirty checking flushes
+        userRoles.deleteByUserIdAndRoleId(user.getId(), roleId); // idempotent
         accessChanges.forUserIds(Set.of(userId));
     }
 
@@ -326,7 +380,7 @@ public class RoleServiceImpl implements RoleService {
      * to terminate their members' sessions. Session revocation on a role change must span every affected org.
      */
     private Set<UUID> holdersOf(UUID roleId) {
-        Set<UUID> ids = users.findByRoles_Id(roleId).stream().map(AppUser::getId).collect(Collectors.toSet());
+        Set<UUID> ids = new HashSet<>(userRoles.findUserIdsByRoleId(roleId));
         ids.addAll(orgContext.callAsPlatform(() -> groups.findMemberIdsByRoleId(roleId)));
         return ids;
     }

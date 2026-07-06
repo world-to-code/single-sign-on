@@ -4,12 +4,14 @@ import com.example.sso.user.Permissions;
 import com.example.sso.user.internal.domain.UserGroupRepository;
 import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
-import com.example.sso.user.internal.domain.Permission;
 import com.example.sso.user.internal.domain.Role;
+import com.example.sso.user.internal.domain.RoleRepository;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
@@ -35,19 +37,25 @@ public class SsoUserDetailsService implements UserDetailsService {
 
     private final AppUserRepository users;
     private final UserGroupRepository groups;
+    private final RoleRepository roles;
+    private final RbacHydrator hydrator;
 
     @Override
     @Transactional(readOnly = true)
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        AppUser user = users.findWithAuthoritiesByUsername(username)
+        AppUser user = users.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("Unknown user: " + username));
 
         // RBAC: role names (ROLE_*) from roles assigned directly AND delegated via the user's groups.
         // PBAC: permissions carried by those roles AND granted directly to the user. Finally, each
-        // resource:action permission implies resource:read (see Permissions.expandImplied).
+        // resource:action permission implies resource:read (see Permissions.expandImplied). Every read is
+        // an EXPLICIT join query — hydrator loads the roles (with permission names) from the join tables.
+        hydrator.hydrateUser(user); // direct roles (+ their permission names) and direct permission names
+        List<Role> groupRoles = groupDelegatedRoles(user.getId());
+
         Stream<String> directRoleAuthorities = roleAuthorities(user.getRoles());
-        Stream<String> groupRoleAuthorities = roleAuthorities(groups.findRolesForMember(user.getId()));
-        Stream<String> directPermissions = user.getDirectPermissions().stream().map(Permission::getName);
+        Stream<String> groupRoleAuthorities = roleAuthorities(groupRoles);
+        Stream<String> directPermissions = user.getDirectPermissionNames().stream();
 
         Set<String> granted = Stream.of(directRoleAuthorities, groupRoleAuthorities, directPermissions)
                 .flatMap(s -> s)
@@ -57,6 +65,12 @@ public class SsoUserDetailsService implements UserDetailsService {
                 .toList();
 
         return principal(user, authorities);
+    }
+
+    /** Roles delegated to the user via any (RLS-visible) group they belong to, with permission names hydrated. */
+    private List<Role> groupDelegatedRoles(UUID userId) {
+        List<UUID> roleIds = groups.findDelegatedRoleIdsForMember(userId);
+        return roleIds.isEmpty() ? List.of() : hydrator.hydrateRoles(roles.findAllById(new HashSet<>(roleIds)));
     }
 
     /**
@@ -69,7 +83,7 @@ public class SsoUserDetailsService implements UserDetailsService {
     private Stream<String> roleAuthorities(Collection<Role> roles) {
         return roles.stream().flatMap(role -> Stream.concat(
                 role.getOrgId() == null ? Stream.of(role.getName()) : Stream.empty(),
-                role.getPermissions().stream().map(Permission::getName)));
+                role.getPermissionNames().stream()));
     }
 
     private UserDetails principal(AppUser user, List<SimpleGrantedAuthority> authorities) {

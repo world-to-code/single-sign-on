@@ -15,7 +15,11 @@ import com.example.sso.user.GroupSpec;
 import com.example.sso.user.GroupView;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.Suggestion;
+import com.example.sso.user.internal.domain.UserGroupMember;
+import com.example.sso.user.internal.domain.UserGroupMemberRepository;
 import com.example.sso.user.internal.domain.UserGroupRepository;
+import com.example.sso.user.internal.domain.UserGroupRole;
+import com.example.sso.user.internal.domain.UserGroupRoleRepository;
 import com.example.sso.user.UserGroupService;
 import com.example.sso.user.internal.domain.Role;
 import com.example.sso.user.internal.domain.RoleRepository;
@@ -36,19 +40,23 @@ import java.util.stream.Collectors;
 
 /**
  * Default {@link UserGroupService}: admin CRUD plus membership management. Membership is validated
- * against {@link AppUserRepository}; ids that do not resolve to a user are dropped. Returns the public
- * {@link GroupView} projection so the {@code UserGroup} entity never leaves the module.
+ * against {@link AppUserRepository}; ids that do not resolve to a user are dropped. Membership rows
+ * ({@code user_group_member}) and delegated-role rows ({@code group_role}) are written explicitly through
+ * their repositories — no JPA-managed collection with cascade. Returns the public {@link GroupView}.
  */
 @Service
 @RequiredArgsConstructor
 public class UserGroupServiceImpl implements UserGroupService {
 
     private final UserGroupRepository repository;
+    private final UserGroupMemberRepository members;
+    private final UserGroupRoleRepository groupRoles;
     private final AppUserRepository users;
     private final RoleRepository roles;
     private final ApplicationEventPublisher events;
     private final AccessChangePublisher accessChanges;
     private final OrgContext orgContext;
+    private final RbacHydrator hydrator;
 
     /** The org a newly-created group belongs to: the active tenant context, or null (global/system group). */
     private UUID creationOrg() {
@@ -122,10 +130,10 @@ public class UserGroupServiceImpl implements UserGroupService {
             throw new ConflictException("group name already exists");
         }
 
-        UserGroup group = new UserGroup(spec.name(), spec.description(), spec.externalId(), org);
-        group.setMembers(existingUserIds(spec.memberIds()));
+        UserGroup group = repository.save(new UserGroup(spec.name(), spec.description(), spec.externalId(), org));
+        addMembers(group.getId(), existingUserIds(spec.memberIds()));
 
-        return toView(repository.save(group));
+        return toView(group);
     }
 
     @Override
@@ -140,13 +148,13 @@ public class UserGroupServiceImpl implements UserGroupService {
                 .filter(other -> !other.getId().equals(id))
                 .ifPresent(other -> { throw new ConflictException("group name already exists"); });
 
-        Set<UUID> affected = new HashSet<>(group.getMemberUserIds()); // former members (roles may change too)
+        Set<UUID> affected = new HashSet<>(members.findUserIdsByGroupId(id)); // former members (roles may change too)
         group.rename(spec.name());
         group.describe(spec.description());
         group.assignExternalId(spec.externalId());
-        group.setMembers(existingUserIds(spec.memberIds()));
+        replaceMembers(id, existingUserIds(spec.memberIds()));
 
-        affected.addAll(group.getMemberUserIds()); // and current members — both sets' delegated roles shift
+        affected.addAll(members.findUserIdsByGroupId(id)); // and current members — both sets' delegated roles shift
         GroupView view = toView(repository.save(group));
         accessChanges.forUserIds(affected);
         return view;
@@ -160,7 +168,10 @@ public class UserGroupServiceImpl implements UserGroupService {
             throw new ConflictException("the '" + group.getName() + "' system group cannot be deleted");
         }
 
-        Set<UUID> affected = new HashSet<>(group.getMemberUserIds()); // members lose the group's delegated roles
+        Set<UUID> affected = new HashSet<>(members.findUserIdsByGroupId(id)); // members lose the group's delegated roles
+        // Explicitly drop the group's membership and delegation rows before the group itself.
+        members.deleteByGroupId(id);
+        groupRoles.deleteByGroupId(id);
         repository.delete(group);
         events.publishEvent(new GroupDeletedEvent(id));
         accessChanges.forUserIds(affected);
@@ -174,11 +185,11 @@ public class UserGroupServiceImpl implements UserGroupService {
             throw new ConflictException("membership of the '" + group.getName() + "' system group is managed automatically");
         }
 
-        Set<UUID> affected = new HashSet<>(group.getMemberUserIds());
-        group.setMembers(existingUserIds(memberIds));
+        Set<UUID> affected = new HashSet<>(members.findUserIdsByGroupId(id));
+        replaceMembers(id, existingUserIds(memberIds));
 
-        affected.addAll(group.getMemberUserIds()); // gained-or-lost members refresh their delegated roles
-        GroupView view = toView(repository.save(group));
+        affected.addAll(members.findUserIdsByGroupId(id)); // gained-or-lost members refresh their delegated roles
+        GroupView view = toView(group);
         accessChanges.forUserIds(affected);
         return view;
     }
@@ -191,10 +202,11 @@ public class UserGroupServiceImpl implements UserGroupService {
             throw new ConflictException("roles of the '" + group.getName() + "' system group cannot be edited");
         }
 
-        group.replaceRoles(resolveRoles(roleNames));
+        replaceRoles(id, resolveRoleIds(roleNames));
 
-        GroupView view = toView(repository.save(group));
-        accessChanges.forUserIds(group.getMemberUserIds()); // every member's delegated roles just changed
+        GroupView view = toView(group);
+        // every member's delegated roles just changed
+        accessChanges.forUserIds(new HashSet<>(members.findUserIdsByGroupId(id)));
         return view;
     }
 
@@ -203,7 +215,7 @@ public class UserGroupServiceImpl implements UserGroupService {
     public List<GroupMembership> membershipsForUser(UUID userId) {
         return repository.findByMember(userId).stream()
                 .map(group -> new GroupMembership(group.getId(), group.getName(),
-                        group.getRoles().stream().map(RoleRef.class::cast).toList()))
+                        delegatedRoles(group.getId()).stream().map(RoleRef.class::cast).toList()))
                 .toList();
     }
 
@@ -232,8 +244,37 @@ public class UserGroupServiceImpl implements UserGroupService {
         return repository.findById(id).orElseThrow(() -> new NotFoundException("group not found"));
     }
 
-    /** Resolves role names to existing {@link Role} entities; rejects an unknown name (400). */
-    private Set<Role> resolveRoles(Set<String> roleNames) {
+    /** The group's delegated roles, with permission names hydrated (consumed by the user-detail view). */
+    private List<Role> delegatedRoles(UUID groupId) {
+        List<UUID> roleIds = groupRoles.findRoleIdsByGroupId(groupId);
+        return roleIds.isEmpty() ? List.of() : hydrator.hydrateRoles(roles.findAllById(new HashSet<>(roleIds)));
+    }
+
+    /** Adds an explicit membership row per user (idempotent via the composite PK). */
+    private void addMembers(UUID groupId, Set<UUID> userIds) {
+        userIds.forEach(userId -> members.save(new UserGroupMember(groupId, userId)));
+    }
+
+    /** Replaces a group's membership wholesale: explicitly delete the removed rows, insert the added ones. */
+    private void replaceMembers(UUID groupId, Set<UUID> desired) {
+        Set<UUID> current = new HashSet<>(members.findUserIdsByGroupId(groupId));
+        current.stream().filter(userId -> !desired.contains(userId))
+                .forEach(userId -> members.deleteByGroupIdAndUserId(groupId, userId));
+        desired.stream().filter(userId -> !current.contains(userId))
+                .forEach(userId -> members.save(new UserGroupMember(groupId, userId)));
+    }
+
+    /** Replaces a group's delegated roles wholesale: explicitly delete the removed rows, insert the added ones. */
+    private void replaceRoles(UUID groupId, Set<UUID> desired) {
+        Set<UUID> current = new HashSet<>(groupRoles.findRoleIdsByGroupId(groupId));
+        current.stream().filter(roleId -> !desired.contains(roleId))
+                .forEach(roleId -> groupRoles.deleteByGroupIdAndRoleId(groupId, roleId));
+        desired.stream().filter(roleId -> !current.contains(roleId))
+                .forEach(roleId -> groupRoles.save(new UserGroupRole(groupId, roleId)));
+    }
+
+    /** Resolves role names to existing global {@link Role} ids; rejects an unknown name (400). */
+    private Set<UUID> resolveRoleIds(Set<String> roleNames) {
         if (roleNames == null || roleNames.isEmpty()) {
             return Set.of();
         }
@@ -241,7 +282,7 @@ public class UserGroupServiceImpl implements UserGroupService {
         return roleNames.stream()
                 // Groups delegate GLOBAL roles by name; tenant roles are managed per-org by id.
                 .map(name -> roles.findByNameAndOrgIdIsNull(name)
-                        .orElseThrow(() -> new BadRequestException("unknown role: " + name)))
+                        .orElseThrow(() -> new BadRequestException("unknown role: " + name)).getId())
                 .collect(Collectors.toSet());
     }
 
@@ -255,8 +296,9 @@ public class UserGroupServiceImpl implements UserGroupService {
     }
 
     private GroupView toView(UserGroup group) {
-        List<String> memberIds = group.getMemberUserIds().stream().map(UUID::toString).toList();
-        List<String> roleNames = group.getRoles().stream().map(Role::getName).sorted().toList();
+        List<String> memberIds = members.findUserIdsByGroupId(group.getId()).stream().map(UUID::toString).toList();
+        List<String> roleNames = roles.findAllById(groupRoles.findRoleIdsByGroupId(group.getId())).stream()
+                .map(Role::getName).sorted().toList();
 
         return new GroupView(group.getId().toString(), group.getName(), group.getDescription(),
                 group.getExternalId(), memberIds, memberIds.size(), group.isSystem(), roleNames);

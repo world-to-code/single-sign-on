@@ -19,10 +19,16 @@ import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserAccessChangedEvent;
 import com.example.sso.user.UserDeletedEvent;
 import com.example.sso.user.UserUpdate;
+import com.example.sso.user.internal.domain.UserGroupMember;
+import com.example.sso.user.internal.domain.UserGroupMemberRepository;
 import com.example.sso.user.internal.domain.UserGroupRepository;
 import com.example.sso.user.internal.domain.UserGroup;
 import com.example.sso.user.UserService;
 import com.example.sso.user.internal.domain.PermissionRepository;
+import com.example.sso.user.internal.domain.UserDirectPermission;
+import com.example.sso.user.internal.domain.UserDirectPermissionRepository;
+import com.example.sso.user.internal.domain.UserRole;
+import com.example.sso.user.internal.domain.UserRoleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
@@ -33,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -41,8 +48,9 @@ import java.util.stream.Collectors;
 
 /**
  * Default {@link UserService}: owns all user reads and state changes. Callers receive the
- * {@link UserAccount} projection (the {@code AppUser} entity is upcast, so lazy associations keep their
- * existing transaction semantics) and drive mutations through intention-revealing methods only.
+ * {@link UserAccount} projection (the {@code AppUser} entity is upcast, its role/permission views hydrated
+ * from the explicit join tables) and drive mutations — including role assignment and direct-permission
+ * grants — through intention-revealing methods that write those join rows explicitly, never via JPA cascade.
  */
 @Service
 @RequiredArgsConstructor
@@ -51,33 +59,38 @@ public class UserServiceImpl implements UserService {
     private final AppUserRepository users;
     private final RoleRepository roles;
     private final PermissionRepository permissions;
+    private final UserRoleRepository userRoles;
+    private final UserDirectPermissionRepository userDirectPermissions;
     private final UserGroupRepository groups;
+    private final UserGroupMemberRepository userGroupMembers;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher events;
     private final PermissionGrantPolicy grantPolicy;
+    private final RbacHydrator hydrator;
 
     @Override
     @Transactional(readOnly = true)
     public Optional<UserAccount> findByUsername(String username) {
-        return users.findByUsername(username).map(u -> u);
+        return users.findByUsername(username).map(hydrator::hydrateUser).map(u -> u);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Optional<UserAccount> findByLogin(String identifier) {
-        return users.findByEmail(identifier).or(() -> users.findByUsername(identifier)).map(u -> u);
+        return users.findByEmail(identifier).or(() -> users.findByUsername(identifier))
+                .map(hydrator::hydrateUser).map(u -> u);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Optional<UserAccount> findById(UUID id) {
-        return users.findById(id).map(u -> u);
+        return users.findById(id).map(hydrator::hydrateUser).map(u -> u);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<UserAccount> findAll() {
-        return users.findAll().stream().map(UserAccount.class::cast).toList();
+        return hydrator.hydrateUsers(users.findAll()).stream().map(UserAccount.class::cast).toList();
     }
 
     @Override
@@ -98,8 +111,9 @@ public class UserServiceImpl implements UserService {
     }
 
     private Page<UserAccount> toPage(org.springframework.data.domain.Page<AppUser> found) {
-        return new Page<>(found.getTotalElements(), found.getNumber(), found.getSize(),
-                found.getContent().stream().map(UserAccount.class::cast).toList());
+        List<UserAccount> content = hydrator.hydrateUsers(found.getContent()).stream()
+                .map(UserAccount.class::cast).toList();
+        return new Page<>(found.getTotalElements(), found.getNumber(), found.getSize(), content);
     }
 
     @Override
@@ -112,7 +126,8 @@ public class UserServiceImpl implements UserService {
         long zeroBased = Math.max(startIndex - 1, 0);
         int pageNumber = (int) (zeroBased / count);
 
-        return users.findAll(PageRequest.of(pageNumber, count)).stream().map(UserAccount.class::cast).toList();
+        return hydrator.hydrateUsers(users.findAll(PageRequest.of(pageNumber, count)).getContent())
+                .stream().map(UserAccount.class::cast).toList();
     }
 
     @Override
@@ -136,9 +151,7 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public boolean hasRole(UUID userId, String roleName) {
-        return users.findById(userId)
-                .map(user -> user.getRoles().stream().anyMatch(role -> roleName.equals(role.getName())))
-                .orElse(false);
+        return userRoles.existsByUserIdAndRoleName(userId, roleName);
     }
 
     @Override
@@ -167,23 +180,23 @@ public class UserServiceImpl implements UserService {
             throw new ConflictException("email already exists: " + email);
         }
 
+        // Resolve (and validate) the requested roles BEFORE persisting anything, so an unknown role name
+        // never leaves a half-created user behind.
+        List<Role> assignedRoles = newUser.roleNames().stream().map(this::requireRole).toList();
+
         String rawPassword = newUser.rawPassword();
         String encodedPassword = rawPassword == null ? null : passwordEncoder.encode(rawPassword);
-        AppUser user = new AppUser(username, email, newUser.displayName(), encodedPassword);
-        newUser.roleNames().forEach(name -> user.addRole(requireRole(name)));
-
-        AppUser saved = users.save(user);
+        AppUser saved = users.save(new AppUser(username, email, newUser.displayName(), encodedPassword));
+        assignedRoles.forEach(role -> userRoles.save(new UserRole(saved.getId(), role.getId())));
         addToDefaultGroup(saved.getId());
 
-        return saved;
+        return hydrator.hydrateUser(saved);
     }
 
-    /** Adds a user to the platform "All Users" group (within the caller's transaction). */
+    /** Adds a user to the platform "All Users" group via an explicit membership row (caller's transaction). */
     private void addToDefaultGroup(UUID userId) {
-        groups.findByNameAndOrgIdIsNull(UserGroup.ALL_USERS).ifPresent(group -> {
-            group.addMember(userId);
-            groups.save(group);
-        });
+        groups.findByNameAndOrgIdIsNull(UserGroup.ALL_USERS)
+                .ifPresent(group -> userGroupMembers.save(new UserGroupMember(group.getId(), userId)));
     }
 
     @Override
@@ -199,12 +212,22 @@ public class UserServiceImpl implements UserService {
 
         Set<String> roleNames = update.roleNames();
         if (roleNames != null) {
-            user.assignRoles(roleNames.stream().map(this::requireRole).collect(Collectors.toSet()));
+            Set<UUID> desired = roleNames.stream().map(name -> requireRole(name).getId()).collect(Collectors.toSet());
+            replaceUserRoles(id, desired);
         }
 
         AppUser saved = users.save(user);
         events.publishEvent(new UserAccessChangedEvent(saved.getUsername())); // roles/enabled may have changed
-        return saved;
+        return hydrator.hydrateUser(saved);
+    }
+
+    /** Replaces a user's role assignments: explicitly delete the removed rows and insert the added ones. */
+    private void replaceUserRoles(UUID userId, Set<UUID> desiredRoleIds) {
+        Set<UUID> current = new HashSet<>(userRoles.findRoleIdsByUserId(userId));
+        current.stream().filter(roleId -> !desiredRoleIds.contains(roleId))
+                .forEach(roleId -> userRoles.deleteByUserIdAndRoleId(userId, roleId));
+        desiredRoleIds.stream().filter(roleId -> !current.contains(roleId))
+                .forEach(roleId -> userRoles.save(new UserRole(userId, roleId)));
     }
 
     @Override
@@ -221,7 +244,7 @@ public class UserServiceImpl implements UserService {
         if (!enabled) {
             events.publishEvent(new UserAccessChangedEvent(saved.getUsername())); // disabled -> kill sessions
         }
-        return saved;
+        return hydrator.hydrateUser(saved);
     }
 
     @Override
@@ -242,13 +265,22 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public UserAccount setDirectPermissions(UUID id, Set<String> permissionNames) {
         AppUser user = require(id);
-        Set<Permission> resolved = permissionNames == null ? Set.of()
-                : permissionNames.stream().map(this::getOrCreatePermission).collect(Collectors.toSet());
-        user.assignDirectPermissions(resolved);
+        Set<UUID> desired = permissionNames == null ? Set.of()
+                : permissionNames.stream().map(name -> getOrCreatePermission(name).getId()).collect(Collectors.toSet());
+        replaceUserDirectPermissions(id, desired);
 
         AppUser saved = users.save(user);
         events.publishEvent(new UserAccessChangedEvent(saved.getUsername()));
-        return saved;
+        return hydrator.hydrateUser(saved);
+    }
+
+    /** Replaces a user's direct permission grants: explicitly delete the removed rows and insert the added ones. */
+    private void replaceUserDirectPermissions(UUID userId, Set<UUID> desiredPermissionIds) {
+        Set<UUID> current = new HashSet<>(userDirectPermissions.findPermissionIdsByUserId(userId));
+        current.stream().filter(permissionId -> !desiredPermissionIds.contains(permissionId))
+                .forEach(permissionId -> userDirectPermissions.deleteByUserIdAndPermissionId(userId, permissionId));
+        desiredPermissionIds.stream().filter(permissionId -> !current.contains(permissionId))
+                .forEach(permissionId -> userDirectPermissions.save(new UserDirectPermission(userId, permissionId)));
     }
 
     @Override
@@ -270,6 +302,11 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new NotFoundException("User not found"));
         String username = user.getUsername();
 
+        // Explicitly remove the user's join rows (formerly done by Hibernate's @ManyToMany collection
+        // cleanup / DB FK cascade). Group membership rows are owned by the group and are left untouched,
+        // matching the previous behavior.
+        userRoles.deleteByUserId(id);
+        userDirectPermissions.deleteByUserId(id);
         users.deleteById(id);
         events.publishEvent(new UserDeletedEvent(id));
         events.publishEvent(new UserAccessChangedEvent(username)); // terminate the deleted user's sessions

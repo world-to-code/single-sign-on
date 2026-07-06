@@ -13,8 +13,8 @@ import java.time.Instant;
 import java.util.Collections;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * The core identity aggregate (table {@code app_user}).
@@ -23,6 +23,12 @@ import java.util.stream.Collectors;
  * constructor and changes only through intention-revealing domain methods
  * ({@link #enable}, {@link #disable}, {@link #registerFailedLogin}, …). Hibernate uses field
  * access, so no setters are required for persistence.
+ *
+ * <p>Role and direct-permission assignments are NOT mapped here: they live in the explicit
+ * {@code app_user_role} / {@code app_user_permission} join entities, written and read through their
+ * repositories in the service layer. The {@code @Transient} views below are read-only projections the
+ * service hydrates ({@link #hydrateRoles}, {@link #hydrateDirectPermissionNames}) before handing the
+ * aggregate out as a {@link UserAccount}; they never drive persistence.
  */
 @Entity
 @Table(name = "app_user")
@@ -63,23 +69,13 @@ public class AppUser extends AuditedEntity implements UserAccount {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    // LAZY: load roles explicitly (via @EntityGraph on the auth queries or within a tx) — never on
-    // every user fetch. default_batch_fetch_size batches the load when several users are read.
-    @ManyToMany(fetch = FetchType.LAZY, cascade = {CascadeType.PERSIST, CascadeType.MERGE})
-    @JoinTable(
-            name = "app_user_role",
-            joinColumns = @JoinColumn(name = "user_id"),
-            inverseJoinColumns = @JoinColumn(name = "role_id"))
+    /** Read-only view hydrated from {@code app_user_role} by the service; not persisted. */
+    @Transient
     private Set<Role> roles = new HashSet<>();
 
-    /** Permissions granted directly to this user (Okta/AWS-style), in addition to role-derived ones. */
-    // LAZY: only the authority-building login path and admin user views need these, both within a tx.
-    @ManyToMany(fetch = FetchType.LAZY, cascade = {CascadeType.PERSIST, CascadeType.MERGE})
-    @JoinTable(
-            name = "app_user_permission",
-            joinColumns = @JoinColumn(name = "user_id"),
-            inverseJoinColumns = @JoinColumn(name = "permission_id"))
-    private Set<Permission> directPermissions = new HashSet<>();
+    /** Read-only view hydrated from {@code app_user_permission} by the service; not persisted. */
+    @Transient
+    private Set<String> directPermissionNames = new HashSet<>();
 
     public AppUser(String username, String email, String displayName, String passwordHash) {
         this.username = username;
@@ -88,24 +84,14 @@ public class AppUser extends AuditedEntity implements UserAccount {
         this.passwordHash = passwordHash;
     }
 
-    public void addRole(Role role) {
-        this.roles.add(role);
+    /** Populates the transient role view from the explicit join rows (read-only; see class doc). */
+    public void hydrateRoles(Collection<Role> roles) {
+        this.roles = new LinkedHashSet<>(roles);
     }
 
-    public void removeRole(Role role) {
-        this.roles.remove(role);
-    }
-
-    /** Replaces the user's role assignments wholesale (admin-driven update). */
-    public void assignRoles(Collection<Role> newRoles) {
-        this.roles.clear();
-        this.roles.addAll(newRoles);
-    }
-
-    /** Replaces the user's directly-granted permissions wholesale. */
-    public void assignDirectPermissions(Collection<Permission> newPermissions) {
-        this.directPermissions.clear();
-        this.directPermissions.addAll(newPermissions);
+    /** Populates the transient direct-permission-name view from the explicit join rows (read-only). */
+    public void hydrateDirectPermissionNames(Collection<String> names) {
+        this.directPermissionNames = new LinkedHashSet<>(names);
     }
 
     public void verifyEmail() {
@@ -144,19 +130,16 @@ public class AppUser extends AuditedEntity implements UserAccount {
         return this.lockout.isTemporarilyLocked(now);
     }
 
-    // Read-only views — callers mutate aggregate state only through the behavior methods above,
-    // never by reaching into the backing collections (these override Lombok's @Getter).
+    // Read-only hydrated views (override Lombok's @Getter). Role/permission assignments are managed
+    // as explicit join rows in the service layer, never by reaching into these collections.
 
+    @Override
     public Set<Role> getRoles() {
         return Collections.unmodifiableSet(roles);
     }
 
-    public Set<Permission> getDirectPermissions() {
-        return Collections.unmodifiableSet(directPermissions);
-    }
-
     @Override
     public Set<String> getDirectPermissionNames() {
-        return directPermissions.stream().map(Permission::getName).collect(Collectors.toUnmodifiableSet());
+        return Collections.unmodifiableSet(directPermissionNames);
     }
 }

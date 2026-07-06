@@ -2,16 +2,12 @@ package com.example.sso.user.internal.domain;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
-
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Unit test for {@link UserGroup} domain behavior: member add/replace, delegated role and manager
- * replacement, rename/describe, and the system-group marker. Pure state assertions, unmodifiable views.
+ * Unit test for {@link UserGroup} domain behavior: attribute construction, rename/describe, and the
+ * system-group marker. Membership and delegated roles are managed as explicit join rows in the service
+ * layer, not on the aggregate, so they are covered by the service/integration tests.
  */
 class UserGroupTest {
 
@@ -27,30 +23,6 @@ class UserGroupTest {
         assertThat(group.getDescription()).isEqualTo("Eng dept");
         assertThat(group.getExternalId()).isEqualTo("ext-1");
         assertThat(group.isSystem()).isFalse();
-        assertThat(group.getMemberUserIds()).isEmpty();
-    }
-
-    @Test
-    void addMemberThenSetMembersReplacesWholesale() {
-        UserGroup group = newGroup();
-        UUID first = UUID.randomUUID();
-        group.addMember(first);
-
-        UUID a = UUID.randomUUID();
-        UUID b = UUID.randomUUID();
-        group.setMembers(List.of(a, b));
-
-        assertThat(group.getMemberUserIds()).containsExactlyInAnyOrder(a, b).doesNotContain(first);
-    }
-
-    @Test
-    void replaceRolesSwapsDelegatedRoles() {
-        UserGroup group = newGroup();
-        Role editor = new Role("ROLE_EDITOR");
-
-        group.replaceRoles(List.of(editor));
-
-        assertThat(group.getRoles()).containsExactly(editor);
     }
 
     @Test
@@ -71,13 +43,5 @@ class UserGroupTest {
         group.markSystem();
 
         assertThat(group.isSystem()).isTrue();
-    }
-
-    @Test
-    void memberViewIsUnmodifiable() {
-        UserGroup group = newGroup();
-
-        assertThatThrownBy(() -> group.getMemberUserIds().add(UUID.randomUUID()))
-                .isInstanceOf(UnsupportedOperationException.class);
     }
 }

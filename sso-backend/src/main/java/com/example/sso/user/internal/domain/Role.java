@@ -11,10 +11,10 @@ import com.example.sso.user.RoleRef;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Entity
 @Table(name = "role")
@@ -37,14 +37,11 @@ public class Role extends AbstractEntity implements RoleRef {
     @Column(nullable = false)
     private boolean system;
 
-    // LAZY: role permissions are needed only when building authorities (login) or in admin role/user
-    // views — all within a transaction; default_batch_fetch_size batches them across roles.
-    @ManyToMany(fetch = FetchType.LAZY, cascade = {CascadeType.PERSIST, CascadeType.MERGE})
-    @JoinTable(
-            name = "role_permission",
-            joinColumns = @JoinColumn(name = "role_id"),
-            inverseJoinColumns = @JoinColumn(name = "permission_id"))
-    private Set<Permission> permissions = new HashSet<>();
+    // Permissions are NOT mapped here: they live in the explicit `role_permission` join entity, written
+    // and read through its repository in the service layer. This transient view is a read-only projection
+    // the service hydrates (hydratePermissionNames) before handing the role out as a RoleRef; never persisted.
+    @Transient
+    private Set<String> permissionNames = new HashSet<>();
 
     /** A global/system role (no owning org). */
     public Role(String name) {
@@ -67,24 +64,14 @@ public class Role extends AbstractEntity implements RoleRef {
         this.name = newName;
     }
 
-    public void addPermission(Permission permission) {
-        this.permissions.add(permission);
-    }
-
-    /** Replaces the role's permission set wholesale (role builder edit). */
-    public void replacePermissions(Collection<Permission> newPermissions) {
-        this.permissions.clear();
-        this.permissions.addAll(newPermissions);
-    }
-
-    /** Read-only view (overrides Lombok's @Getter); mutate via {@link #addPermission}. */
-    public Set<Permission> getPermissions() {
-        return Collections.unmodifiableSet(permissions);
+    /** Populates the transient permission-name view from the explicit join rows (read-only). */
+    public void hydratePermissionNames(Collection<String> names) {
+        this.permissionNames = new LinkedHashSet<>(names);
     }
 
     @Override
     public Set<String> getPermissionNames() {
-        return permissions.stream().map(Permission::getName).collect(Collectors.toUnmodifiableSet());
+        return Collections.unmodifiableSet(permissionNames);
     }
 
     /**
