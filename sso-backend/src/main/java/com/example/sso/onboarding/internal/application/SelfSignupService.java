@@ -9,6 +9,7 @@ import com.example.sso.organization.CompanyProfile;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationView;
+import com.example.sso.shared.Slug;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.user.NewUser;
@@ -64,7 +65,9 @@ public class SelfSignupService {
      */
     @Transactional
     public SignupView request(OnboardingSpec spec) {
-        String slug = spec.slug() == null ? "" : spec.slug().strip().toLowerCase();
+        // Validate the shape up front (fail fast) so a malformed slug can't be recorded only to dead-end at
+        // activation — and store the SAME normalized value the customer registry will (single source of truth).
+        String slug = Slug.normalize(spec.slug());
         if (customers.findBySlug(slug).isPresent()) {
             throw new ConflictException("That subdomain is already taken. Choose another.");
         }

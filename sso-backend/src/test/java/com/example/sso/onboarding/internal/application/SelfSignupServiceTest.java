@@ -83,6 +83,17 @@ class SelfSignupServiceTest {
     }
 
     @Test
+    void requestRejectsAMalformedSlugUpFrontAndRecordsNothing() {
+        OnboardingSpec bad = new OnboardingSpec("Acme Corp!", "Acme", CompanyProfile.empty(),
+                "admin@acme.com", "Acme Admin");
+
+        assertThatThrownBy(() -> service.request(bad)).isInstanceOf(BadRequestException.class);
+
+        verify(signups, never()).save(any());
+        verify(email, never()).sendVerification(any(), any(), any());
+    }
+
+    @Test
     void requestRecordsAPendingSignupAndEmailsVerificationWithoutCreatingAnything() {
         when(customers.findBySlug("acme")).thenReturn(Optional.empty());
 
