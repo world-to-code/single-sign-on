@@ -6,6 +6,7 @@ import com.example.sso.resource.internal.domain.ResourceEdgeRepository;
 import com.example.sso.resource.internal.domain.ResourceRepository;
 import com.example.sso.resource.internal.domain.ResourceType;
 import com.example.sso.resource.internal.domain.ResourceTypeAllowedMemberRepository;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import java.util.List;
@@ -82,6 +83,35 @@ class ResourceGraphServiceTest {
                 .isInstanceOf(ConflictException.class);
 
         verify(resources).lockEdgeMutations();
+        verify(edges, never()).save(any());
+    }
+
+    @Test
+    void attachChildRejectsACrossOrgEdge() {
+        // Single-org invariant: an edge may not bridge two tenants (nor global↔tenant). The graph service
+        // guarantees this itself — a domain invariant, not merely the admin-layer tier gate — and rejects
+        // before the reachability query, as a clean 4xx rather than an RLS WITH CHECK 500.
+        bothResourcesExist();
+        when(parent.getOrgId()).thenReturn(UUID.randomUUID());
+        when(child.getOrgId()).thenReturn(UUID.randomUUID());
+
+        assertThatThrownBy(() -> graph.attachChild(parentId, childId))
+                .isInstanceOf(BadRequestException.class);
+
+        verify(scope, never()).reaches(any(), any());
+        verify(edges, never()).save(any());
+    }
+
+    @Test
+    void attachChildRejectsAGlobalToTenantBridge() {
+        // A global (org null) node linked under a tenant node (or vice versa) is a bridge — also rejected.
+        bothResourcesExist();
+        when(parent.getOrgId()).thenReturn(null);
+        when(child.getOrgId()).thenReturn(UUID.randomUUID());
+
+        assertThatThrownBy(() -> graph.attachChild(parentId, childId))
+                .isInstanceOf(BadRequestException.class);
+
         verify(edges, never()).save(any());
     }
 

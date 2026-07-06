@@ -7,8 +7,10 @@ import com.example.sso.resource.internal.domain.ResourceEdgeRepository;
 import com.example.sso.resource.internal.domain.ResourceRepository;
 import com.example.sso.resource.internal.domain.ResourceTypeAllowedMember;
 import com.example.sso.resource.internal.domain.ResourceTypeAllowedMemberRepository;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -43,15 +45,22 @@ public class ResourceGraphService {
         resources.lockEdgeMutations();
         Resource parent = resources.findById(parentId)
                 .orElseThrow(() -> new NotFoundException("Resource not found."));
-        resources.findById(childId)
+        Resource child = resources.findById(childId)
                 .orElseThrow(() -> new NotFoundException("Resource not found."));
+
+        // Single-org invariant: an edge must stay within ONE tenant (or link two global nodes) — never bridge
+        // two orgs, nor a global node to a tenant one. Enforced here as a domain guarantee (independent of the
+        // admin-layer tier gate), turning what RLS would otherwise reject as a WITH CHECK 500 into a clean 4xx.
+        if (!Objects.equals(parent.getOrgId(), child.getOrgId())) {
+            throw new BadRequestException("Cannot link resources across organizations.");
+        }
 
         // Reachability covers self-loops too (a node reaches itself), so a parent==child edge is a cycle.
         if (scope.reaches(childId, parentId)) {
             throw new ConflictException("Attaching this child would create a cycle in the resource graph.");
         }
         parent.requireCanNest(allowedMemberTypes(parent.getType().getId()));
-        // The edge is owned by the parent's tenant (both endpoints share one org — enforced separately); RLS
+        // Both endpoints share the parent's tenant (enforced above), so the edge is owned by that org; RLS
         // then confines the subtree CTEs over resource_edge to that tenant + global.
         edges.save(new ResourceEdge(parentId, childId, parent.getOrgId())); // (parent, child) PK → idempotent
     }
