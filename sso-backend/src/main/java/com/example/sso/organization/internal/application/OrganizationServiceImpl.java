@@ -1,7 +1,7 @@
 package com.example.sso.organization.internal.application;
 
 import com.example.sso.organization.NewOrganization;
-import com.example.sso.organization.OrganizationMembershipChangedEvent;
+import com.example.sso.organization.OrganizationAccessRevokedEvent;
 import com.example.sso.organization.OrganizationRef;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationStatus;
@@ -58,10 +58,10 @@ public class OrganizationServiceImpl implements OrganizationService {
         org.changeStatus(status);
         if (status == OrganizationStatus.SUSPENDED) {
             // Suspending an org must END its members' live sessions bound to it, not merely block new logins
-            // (the login-flow status gate). Fan out the same membership-changed event the session module
-            // already terminates on — one per member, resolved in the platform context (RLS-crossing read).
+            // (the login-flow status gate). Fan out the same access-revoked event the session module already
+            // terminates on — one per member, resolved in the platform context (RLS-crossing read).
             orgContext.callAsPlatform(() -> memberships.findUserIdsByOrgId(id))
-                    .forEach(userId -> events.publishEvent(new OrganizationMembershipChangedEvent(id, userId)));
+                    .forEach(userId -> events.publishEvent(new OrganizationAccessRevokedEvent(id, userId)));
         }
         return view(org);
     }
@@ -121,7 +121,7 @@ public class OrganizationServiceImpl implements OrganizationService {
             // downstream session-termination the event drives.
             if (memberships.existsByOrgIdAndUserId(orgId, userId)) {
                 memberships.deleteByOrgIdAndUserId(orgId, userId);
-                events.publishEvent(new OrganizationMembershipChangedEvent(orgId, userId));
+                events.publishEvent(new OrganizationAccessRevokedEvent(orgId, userId));
             }
         });
     }

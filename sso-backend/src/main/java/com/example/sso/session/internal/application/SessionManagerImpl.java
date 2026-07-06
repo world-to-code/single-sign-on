@@ -1,7 +1,7 @@
 package com.example.sso.session.internal.application;
 
 import com.example.sso.authpolicy.Factors;
-import com.example.sso.organization.OrganizationMembershipChangedEvent;
+import com.example.sso.organization.OrganizationAccessRevokedEvent;
 import com.example.sso.session.SessionLifecycle;
 import com.example.sso.session.UserSessions;
 import com.example.sso.session.SessionMetadata;
@@ -162,7 +162,7 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
      * belong to must survive. AFTER_COMMIT so a rolled-back membership change never terminates sessions.
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
-    public void onOrganizationMembershipChanged(OrganizationMembershipChangedEvent event) {
+    public void onOrganizationAccessRevoked(OrganizationAccessRevokedEvent event) {
         users.findById(event.userId())
                 .map(UserAccount::getUsername)
                 .ifPresent(username -> terminateInOrg(username, event.orgId()));

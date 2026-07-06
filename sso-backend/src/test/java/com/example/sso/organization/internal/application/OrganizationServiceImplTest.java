@@ -1,7 +1,7 @@
 package com.example.sso.organization.internal.application;
 
 import com.example.sso.organization.NewOrganization;
-import com.example.sso.organization.OrganizationMembershipChangedEvent;
+import com.example.sso.organization.OrganizationAccessRevokedEvent;
 import com.example.sso.organization.OrganizationStatus;
 import com.example.sso.organization.OrganizationView;
 import com.example.sso.organization.internal.domain.Organization;
@@ -39,7 +39,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link OrganizationServiceImpl}: slug normalization/validation, uniqueness, the
- * not-found paths, membership idempotency, and the membership-changed event on removal.
+ * not-found paths, membership idempotency, and the access-revoked event on removal/suspension.
  */
 @ExtendWith(MockitoExtension.class)
 class OrganizationServiceImplTest {
@@ -106,8 +106,8 @@ class OrganizationServiceImplTest {
     }
 
     @Test
-    void suspendingAnOrgFansOutAMembershipChangedEventPerMember() {
-        // Suspension must end every member's org-bound session, so it publishes one membership-changed event
+    void suspendingAnOrgFansOutAnAccessRevokedEventPerMember() {
+        // Suspension must end every member's org-bound session, so it publishes one access-revoked event
         // per member (the session module terminates on it). Activating/renaming publishes nothing.
         UUID id = UUID.randomUUID();
         UUID memberA = UUID.randomUUID();
@@ -117,11 +117,11 @@ class OrganizationServiceImplTest {
 
         service.update(id, "Acme", OrganizationStatus.SUSPENDED);
 
-        ArgumentCaptor<OrganizationMembershipChangedEvent> event =
-                ArgumentCaptor.forClass(OrganizationMembershipChangedEvent.class);
+        ArgumentCaptor<OrganizationAccessRevokedEvent> event =
+                ArgumentCaptor.forClass(OrganizationAccessRevokedEvent.class);
         verify(events, times(2)).publishEvent(event.capture());
         assertThat(event.getAllValues())
-                .extracting(OrganizationMembershipChangedEvent::orgId, OrganizationMembershipChangedEvent::userId)
+                .extracting(OrganizationAccessRevokedEvent::orgId, OrganizationAccessRevokedEvent::userId)
                 .containsExactlyInAnyOrder(tuple(id, memberA), tuple(id, memberB));
     }
 
@@ -209,8 +209,8 @@ class OrganizationServiceImplTest {
         service.removeMember(orgId, userId);
 
         verify(memberships).deleteByOrgIdAndUserId(orgId, userId);
-        ArgumentCaptor<OrganizationMembershipChangedEvent> event =
-                ArgumentCaptor.forClass(OrganizationMembershipChangedEvent.class);
+        ArgumentCaptor<OrganizationAccessRevokedEvent> event =
+                ArgumentCaptor.forClass(OrganizationAccessRevokedEvent.class);
         verify(events).publishEvent(event.capture());
         assertThat(event.getValue().orgId()).isEqualTo(orgId);
         assertThat(event.getValue().userId()).isEqualTo(userId);

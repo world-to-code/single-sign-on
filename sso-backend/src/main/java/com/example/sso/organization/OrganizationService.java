@@ -36,7 +36,7 @@ public interface OrganizationService {
     /** Adds the user to the organization (idempotent). */
     void addMember(UUID orgId, UUID userId);
 
-    /** Removes the user from the organization; publishes {@link OrganizationMembershipChangedEvent}. */
+    /** Removes the user from the organization; publishes {@link OrganizationAccessRevokedEvent}. */
     void removeMember(UUID orgId, UUID userId);
 
     /** The ids of every organization the user belongs to. */

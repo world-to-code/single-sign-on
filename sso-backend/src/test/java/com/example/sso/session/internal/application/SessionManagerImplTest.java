@@ -1,7 +1,7 @@
 package com.example.sso.session.internal.application;
 
 import com.example.sso.authpolicy.Factors;
-import com.example.sso.organization.OrganizationMembershipChangedEvent;
+import com.example.sso.organization.OrganizationAccessRevokedEvent;
 import com.example.sso.session.SessionMetadata;
 import com.example.sso.session.SessionMetadataStore;
 import com.example.sso.session.SessionPolicyDetails;
@@ -220,7 +220,7 @@ class SessionManagerImplTest {
         when(sessionRepository.findByPrincipalName(USER))
                 .thenReturn(Map.of("sid-a", sessionBoundTo(orgA), "sid-b", sessionBoundTo(orgB)));
 
-        manager.onOrganizationMembershipChanged(new OrganizationMembershipChangedEvent(orgA, userId));
+        manager.onOrganizationAccessRevoked(new OrganizationAccessRevokedEvent(orgA, userId));
 
         verify(sessionRepository).deleteById("sid-a");
         verify(sessionRepository, never()).deleteById("sid-b");
@@ -231,7 +231,7 @@ class SessionManagerImplTest {
         UUID userId = UUID.randomUUID();
         when(users.findById(userId)).thenReturn(Optional.empty());
 
-        manager.onOrganizationMembershipChanged(new OrganizationMembershipChangedEvent(UUID.randomUUID(), userId));
+        manager.onOrganizationAccessRevoked(new OrganizationAccessRevokedEvent(UUID.randomUUID(), userId));
 
         verify(sessionRepository, never()).deleteById(anyString());
         verify(sessionRepository, never()).findByPrincipalName(anyString());
@@ -248,7 +248,7 @@ class SessionManagerImplTest {
         when(sessionRepository.findByPrincipalName(USER))
                 .thenReturn(Map.of("sid-none", new MapSession())); // no security context attribute
 
-        manager.onOrganizationMembershipChanged(new OrganizationMembershipChangedEvent(orgA, userId));
+        manager.onOrganizationAccessRevoked(new OrganizationAccessRevokedEvent(orgA, userId));
 
         verify(sessionRepository, never()).deleteById(anyString());
     }
