@@ -87,11 +87,14 @@ export default function Signup() {
 
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="slug">Workspace subdomain</Label>
+          <Label htmlFor="slug">Company subdomain</Label>
           <Input id="slug" value={form.slug} required autoFocus
                  autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="acme"
                  onChange={(e) => set({ slug: e.target.value.toLowerCase() })} />
-          <p className="text-xs text-muted-foreground">Lowercase letters, digits, and hyphens — your stable workspace identifier.</p>
+          <p className="text-xs text-muted-foreground">
+            Lowercase letters, digits, and hyphens. Your first workspace will live at{" "}
+            <span className="font-mono">main.{form.slug || "acme"}</span> — add more later.
+          </p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="company">Company name</Label>

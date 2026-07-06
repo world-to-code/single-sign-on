@@ -32,9 +32,12 @@ export interface CreateOnboardingRequest {
 export const startOnboarding = (body: CreateOnboardingRequest) =>
   apiPost<OnboardingView>("/api/admin/onboarding", body);
 
-/** The public self-service signup result — just the normalized workspace slug. */
+/** The public self-service signup result. {@code slug} is the normalized customer (고객사) subdomain;
+ *  {@code workspaceHost} is the first branch's address ({@code main.{customer}}), present only after
+ *  activation so the success screen can link the new admin to their tenant login. */
 export interface SignupResult {
   slug: string;
+  workspaceHost: string | null;
 }
 
 /** Public self-service signup: request a workspace. NOTHING is created yet — a one-time verification link is

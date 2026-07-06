@@ -20,7 +20,7 @@ export default function Activate() {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState<string | null>(null);
+  const [done, setDone] = useState<{ slug: string; workspaceHost: string | null } | null>(null);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -36,7 +36,7 @@ export default function Activate() {
     setBusy(true);
     try {
       const result = await activateWorkspace(token, password);
-      setDone(result.slug);
+      setDone({ slug: result.slug, workspaceHost: result.workspaceHost });
     } catch (e) {
       setError(e instanceof ApiError
         ? errorMessage(e)
@@ -46,15 +46,26 @@ export default function Activate() {
   }
 
   if (done) {
+    // The tenant lives at {branch}.{customer} under the base domain the marketing site is served on, so
+    // prepend the workspace host to the current apex host to reach its sign-in.
+    const loginUrl = done.workspaceHost
+      ? `${window.location.protocol}//${done.workspaceHost}.${window.location.host}/login`
+      : "/login";
     return (
-      <AuthLayout title="Your workspace is ready" description={`${done} is all set up.`}>
+      <AuthLayout title="Your workspace is ready" description={`${done.slug} is all set up.`}>
         <div className="space-y-4 text-center">
           <CheckCircle2 className="mx-auto size-10 text-primary" />
           <p className="text-sm text-muted-foreground">
-            Your email is verified and <span className="font-medium text-foreground">{done}</span> has been
-            created with your admin account. Sign in to start connecting your applications.
+            Your email is verified and <span className="font-medium text-foreground">{done.slug}</span> has been
+            created with your admin account.
           </p>
-          <Button className="w-full" onClick={() => { window.location.href = "/login"; }}>
+          {done.workspaceHost && (
+            <p className="text-sm text-muted-foreground">
+              Your workspace address is{" "}
+              <span className="font-mono font-medium text-foreground">{done.workspaceHost}.{window.location.host}</span>.
+            </p>
+          )}
+          <Button className="w-full" onClick={() => { window.location.href = loginUrl; }}>
             Continue to sign in
           </Button>
         </div>
