@@ -42,6 +42,9 @@ public interface OrganizationService {
     /** The ids of every organization the user belongs to. */
     Set<UUID> orgIdsForUser(UUID userId);
 
+    /** The ids of every user that belongs to the organization (for scoping tenant-bound listings, e.g. SCIM). */
+    Set<UUID> memberIds(UUID orgId);
+
     /** The number of members in an organization (analytics). */
     long memberCount(UUID orgId);
 }

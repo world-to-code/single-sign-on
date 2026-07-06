@@ -1,5 +1,7 @@
 package com.example.sso.scim.internal.application;
 
+import com.example.sso.organization.OrganizationService;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.Roles;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.UserAccount;
@@ -24,12 +26,19 @@ import java.util.UUID;
  * Transactional persistence for the SCIM User endpoint. Delegates all user state to the user module
  * ({@link UserService}) — it never touches the {@code AppUser} entity — and maps the returned
  * {@link UserAccount} projection to SCIM {@link User} resources.
+ *
+ * <p>Users are GLOBAL identities (non-RLS), so tenant isolation is by MEMBERSHIP: a SCIM token bound to an
+ * org (the filter binds {@link OrgContext}) provisions INTO that org (create adds membership) and may only
+ * see/mutate its own members — a non-member is a non-revealing 404. A global/platform token (no bound org)
+ * manages every user, as before.
  */
 @Service
 @RequiredArgsConstructor
 public class ScimUserService {
 
     private final UserService userService;
+    private final OrgContext orgContext;
+    private final OrganizationService organizations;
 
     @Transactional
     public User create(User resource) {
@@ -48,29 +57,48 @@ public class ScimUserService {
         if (!resource.isActive().orElse(Boolean.TRUE)) {
             userService.disable(created.getId());
         }
+        // Provision INTO the token's tenant: a global identity is created, then joined to the org so it can
+        // log in there. A global/platform token leaves the user unattached (no bound org).
+        tokenOrg().ifPresent(orgId -> organizations.addMember(orgId, created.getId()));
 
         return ScimUserMapper.toScim(reload(created.getId()));
     }
 
     @Transactional(readOnly = true)
     public User get(String id) {
-        return userService.findById(parseId(id))
+        UUID userId = parseId(id);
+        requireInTokenOrg(userId);
+        return userService.findById(userId)
                 .map(ScimUserMapper::toScim)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + id));
     }
 
     @Transactional(readOnly = true)
     public PartialListResponse<User> list(long startIndex, int count) {
-        long total = userService.count();
-        List<User> page = userService.page(startIndex, count).stream().map(ScimUserMapper::toScim).toList();
+        Optional<UUID> org = tokenOrg();
+        if (org.isEmpty()) {
+            long total = userService.count();
+            List<User> page = userService.page(startIndex, count).stream().map(ScimUserMapper::toScim).toList();
+            return PartialListResponse.<User>builder().resources(page).totalResults(total).build();
+        }
 
-        return PartialListResponse.<User>builder().resources(page).totalResults(total).build();
+        // Tenant-bound token: page over THIS org's members only (username-ordered for stable paging).
+        Set<UUID> memberIds = organizations.memberIds(org.get());
+        if (count <= 0) { // RFC 7644 count=0 = "return only totalResults"; never divide by zero
+            return PartialListResponse.<User>builder().resources(List.of()).totalResults(memberIds.size()).build();
+        }
+        int page = (int) ((startIndex - 1) / count);
+        List<User> resources = userService.findByIds(memberIds, page, count).items().stream()
+                .map(ScimUserMapper::toScim).toList();
+        return PartialListResponse.<User>builder().resources(resources).totalResults(memberIds.size()).build();
     }
 
     @Transactional
     public User update(User resource) {
-        UserAccount user = reload(parseId(resource.getId()
-                .orElseThrow(() -> new ResourceNotFoundException("missing id on update"))));
+        UUID userId = parseId(resource.getId()
+                .orElseThrow(() -> new ResourceNotFoundException("missing id on update")));
+        requireInTokenOrg(userId);
+        UserAccount user = reload(userId);
         String email = primaryEmail(resource).orElse(user.getEmail());
         String displayName = resource.getDisplayName().orElse(user.getDisplayName());
 
@@ -88,10 +116,32 @@ public class ScimUserService {
 
     @Transactional
     public void delete(String id) {
-        UserAccount user = reload(parseId(id));
-        ensureNotPrivileged(user, "deleted");
-
+        UUID userId = parseId(id);
+        requireInTokenOrg(userId);
+        Optional<UUID> org = tokenOrg();
+        if (org.isPresent()) {
+            // Deprovision from THIS tenant: remove membership, not the global identity (the user may still
+            // belong to other orgs). MT-5's listener then ends the user's sessions bound to this org.
+            organizations.removeMember(org.get(), userId);
+            return;
+        }
+        UserAccount user = reload(userId);
+        ensureNotPrivileged(user, "deleted"); // a global token deletes the identity — never an admin's
         userService.delete(user.getId());
+    }
+
+    /** The tenant this SCIM request is bound to (from the token), or empty for a global/platform token. */
+    private Optional<UUID> tokenOrg() {
+        return orgContext.currentOrg();
+    }
+
+    /** A tenant-bound token may only act on its own members; a non-member (or unknown user) is a 404. */
+    private void requireInTokenOrg(UUID userId) {
+        tokenOrg().ifPresent(orgId -> {
+            if (!organizations.isMember(orgId, userId)) {
+                throw new ResourceNotFoundException("User not found");
+            }
+        });
     }
 
     /** Admin-bearing accounts can't be deleted/disabled via SCIM (machine credentials must not lock out admins). */

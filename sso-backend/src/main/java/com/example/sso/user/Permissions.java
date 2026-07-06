@@ -100,7 +100,8 @@ public final class Permissions {
     /**
      * Platform-only permissions: the tenant registry itself ({@code organization:create/update/delete}),
      * the global admin-console security config ({@code portal-settings:*}), and shared cross-tenant
-     * INFRASTRUCTURE — global provisioning ({@code scim:manage}), cross-tenant audit ({@code audit:read}),
+     * INFRASTRUCTURE — global provisioning ({@code scim:manage} — stays platform until the SCIM GROUP
+     * endpoint is org-isolated too; the User endpoint already is), cross-tenant audit ({@code audit:read}),
      * and the global OIDC client registry ({@code oidc-client:*}). A tenant (org) admin can neither see
      * these in the catalog nor grant them (enforced by {@link PermissionGrantPolicy}) — granting one would
      * cross tenant boundaries.
