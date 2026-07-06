@@ -113,6 +113,8 @@ sso:
     max-attempts: 5                                  # wrong guesses before the code is burned
   onboarding:
     min-password-length: 8                           # minimum length an invitee's chosen password must meet
+    invitation-ttl: 72h                              # how long a set-password invitation stays redeemable
+    set-password-url: http://localhost:9000/set-password  # SPA route the emailed invitation link points at
   demo-client:
     enabled: true                                    # local-testing OIDC client (known secret); false in prod
     access-token-ttl-minutes: 30
