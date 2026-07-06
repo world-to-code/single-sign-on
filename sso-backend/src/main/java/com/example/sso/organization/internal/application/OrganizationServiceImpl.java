@@ -11,17 +11,16 @@ import com.example.sso.organization.internal.domain.Organization;
 import com.example.sso.organization.internal.domain.OrganizationMembership;
 import com.example.sso.organization.internal.domain.OrganizationMembershipRepository;
 import com.example.sso.organization.internal.domain.OrganizationRepository;
+import com.example.sso.shared.Slug;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.UserService;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -31,9 +30,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class OrganizationServiceImpl implements OrganizationService {
-
-    // 2-63 chars, lowercase alphanumerics and hyphens, starting and ending alphanumeric.
-    private static final Pattern SLUG = Pattern.compile("[a-z0-9][a-z0-9-]{0,61}[a-z0-9]");
 
     private final OrganizationRepository organizations;
     private final OrganizationMembershipRepository memberships;
@@ -45,7 +41,7 @@ public class OrganizationServiceImpl implements OrganizationService {
     @Override
     @Transactional
     public OrganizationView create(NewOrganization command) {
-        String slug = normalizeSlug(command.slug());
+        String slug = Slug.normalize(command.slug());
         if (organizations.existsBySlug(slug)) {
             throw new ConflictException("organization slug '" + slug + "' already exists");
         }
@@ -93,13 +89,13 @@ public class OrganizationServiceImpl implements OrganizationService {
     @Override
     @Transactional(readOnly = true)
     public Optional<OrganizationRef> findBySlug(String slug) {
-        return organizations.findBySlug(normalizeSlug(slug)).map(o -> o);
+        return organizations.findBySlug(Slug.normalize(slug)).map(o -> o);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Optional<OrganizationRef> findBranch(UUID customerId, String slug) {
-        return organizations.findByCustomerIdAndSlug(customerId, normalizeSlug(slug)).map(o -> o);
+        return organizations.findByCustomerIdAndSlug(customerId, Slug.normalize(slug)).map(o -> o);
     }
 
     @Override
@@ -183,14 +179,6 @@ public class OrganizationServiceImpl implements OrganizationService {
 
     private OrganizationView view(Organization org) {
         return OrganizationView.of(org, org.getCreatedAt(), org.getCompanyProfile());
-    }
-
-    private String normalizeSlug(String raw) {
-        String slug = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
-        if (!SLUG.matcher(slug).matches()) {
-            throw new BadRequestException("slug must be 2-63 chars: lowercase letters, digits, or hyphens");
-        }
-        return slug;
     }
 
     private String requireName(String name) {

@@ -7,8 +7,10 @@ import com.example.sso.customer.NewCustomer;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationView;
+import com.example.sso.organization.internal.domain.Organization;
 import com.example.sso.organization.internal.domain.OrganizationRepository;
 import com.example.sso.support.AbstractIntegrationTest;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -59,5 +61,30 @@ class CustomerServiceIT extends AbstractIntegrationTest {
         // customer_id is NOT NULL — read the persisted branch back and confirm it points at the default customer.
         assertThat(organizationRepository.findById(org.id()).orElseThrow().getCustomerId())
                 .isEqualTo(defaultCustomerId);
+    }
+
+    @Test
+    void branchResolutionIsIsolatedByCustomerAgainstARealDatabase() {
+        // The load-bearing cross-customer isolation, proven against Postgres (the derived SQL the delegated-admin
+        // authorization relies on): a branch of customer A must never be seen when scoped to customer B.
+        String r = UUID.randomUUID().toString().substring(0, 8);
+        UUID customerA = customers.create(new NewCustomer("cust-a-" + r, "Customer A")).id();
+        UUID customerB = customers.create(new NewCustomer("cust-b-" + r, "Customer B")).id();
+        UUID branchA = reassign(organizations.create(new NewOrganization("branch-a-" + r, "Branch A")).id(), customerA);
+        UUID branchB = reassign(organizations.create(new NewOrganization("branch-b-" + r, "Branch B")).id(), customerB);
+
+        assertThat(organizations.isBranchOf(branchA, Set.of(customerA))).isTrue();
+        assertThat(organizations.isBranchOf(branchA, Set.of(customerB))).isFalse();   // cross-customer: denied
+        assertThat(organizations.isBranchOf(branchA, Set.of())).isFalse();            // empty scope: denied
+        assertThat(organizations.branchIdsForCustomers(Set.of(customerA)))
+                .contains(branchA).doesNotContain(branchB);
+    }
+
+    /** Reassign an org (branch) to a customer directly — customer selection isn't wired through the API yet. */
+    private UUID reassign(UUID orgId, UUID customerId) {
+        Organization org = organizationRepository.findById(orgId).orElseThrow();
+        org.assignCustomer(customerId);
+        organizationRepository.save(org);
+        return orgId;
     }
 }
