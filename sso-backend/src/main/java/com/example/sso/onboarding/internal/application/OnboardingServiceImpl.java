@@ -38,7 +38,7 @@ public class OnboardingServiceImpl {
     @Value("${sso.onboarding.invitation-ttl:72h}")
     private Duration invitationTtl;
 
-    /** Accepts an onboarding request: records it PENDING and fires the async provisioning. Returns immediately. */
+    /** Platform-admin entry: records the job PENDING and fires the async provisioning. Returns immediately. */
     @Transactional
     public OnboardingView start(OnboardingSpec spec) {
         Onboarding onboarding = onboardings.save(new Onboarding(spec.slug()));
@@ -68,7 +68,9 @@ public class OnboardingServiceImpl {
         organizations.addMember(org.id(), admin.getId());
         String token = invitations.issue(admin.getId(), invitationTtl);
         onboarding.linkProvisioned(org.id(), admin.getId());
-        return new ProvisionResult(spec.adminEmail(), token);
+        // Use the org's CANONICAL slug (normalized on create), not the raw request, so the emailed
+        // workspace URL matches the real subdomain.
+        return new ProvisionResult(spec.adminEmail(), token, org.slug());
     }
 
     @Transactional
@@ -91,6 +93,6 @@ public class OnboardingServiceImpl {
     }
 
     /** The result the async worker needs after provisioning to send the invitation email. */
-    record ProvisionResult(String adminEmail, String rawToken) {
+    record ProvisionResult(String adminEmail, String rawToken, String slug) {
     }
 }

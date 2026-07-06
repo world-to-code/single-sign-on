@@ -40,7 +40,7 @@ class OnboardingProvisioner {
         // The tenant is now provisioned (committed). Emailing the invite is a best-effort follow-up: a
         // failure here must NOT mark the whole job FAILED (the admin exists) — it needs a fresh invitation.
         try {
-            email.sendInvitation(result.adminEmail(), result.rawToken());
+            email.sendInvitation(result.adminEmail(), result.rawToken(), result.slug());
             service.markInvited(id);
         } catch (Exception e) {
             log.warn("onboarding {} invitation email failed: {}", id, e.getMessage());

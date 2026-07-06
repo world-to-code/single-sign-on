@@ -11,6 +11,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -35,14 +36,14 @@ class OnboardingProvisionerTest {
     @Test
     void successProvisionsSendsTheInviteThenMarksInvited() {
         UUID id = UUID.randomUUID();
-        when(service.provision(id, spec)).thenReturn(new OnboardingServiceImpl.ProvisionResult("admin@acme.com", "tok"));
+        when(service.provision(id, spec)).thenReturn(new OnboardingServiceImpl.ProvisionResult("admin@acme.com", "tok", "acme"));
 
         provisioner.onRequested(new OnboardingRequested(id, spec));
 
         InOrder order = inOrder(service, email);
         order.verify(service).markProvisioning(id);
         order.verify(service).provision(id, spec);
-        order.verify(email).sendInvitation("admin@acme.com", "tok");
+        order.verify(email).sendInvitation("admin@acme.com", "tok", "acme");
         order.verify(service).markInvited(id);
         verify(service, never()).markFailed(any(), any());
     }
@@ -55,7 +56,7 @@ class OnboardingProvisionerTest {
         provisioner.onRequested(new OnboardingRequested(id, spec));
 
         verify(service).markFailed(eq(id), any());
-        verify(email, never()).sendInvitation(any(), any());
+        verify(email, never()).sendInvitation(any(), any(), any());
         verify(service, never()).markInvited(any());
         verify(service, never()).markInviteFailed(any());
     }
@@ -65,9 +66,9 @@ class OnboardingProvisionerTest {
         // The tenant is already provisioned (committed); a bounced invite email must not undo it — it becomes
         // INVITE_FAILED (re-invitable), never FAILED (which would imply nothing was created).
         UUID id = UUID.randomUUID();
-        when(service.provision(id, spec)).thenReturn(new OnboardingServiceImpl.ProvisionResult("admin@acme.com", "tok"));
-        org.mockito.Mockito.doThrow(new RuntimeException("smtp down"))
-                .when(email).sendInvitation("admin@acme.com", "tok");
+        when(service.provision(id, spec)).thenReturn(new OnboardingServiceImpl.ProvisionResult("admin@acme.com", "tok", "acme"));
+        doThrow(new RuntimeException("smtp down"))
+                .when(email).sendInvitation("admin@acme.com", "tok", "acme");
 
         provisioner.onRequested(new OnboardingRequested(id, spec));
 

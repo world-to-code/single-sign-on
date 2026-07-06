@@ -6,6 +6,9 @@ import Login from "./pages/Login";
 import MfaStep from "./pages/MfaStep";
 import AppStepUp from "./pages/AppStepUp";
 import SetPassword from "./pages/SetPassword";
+import MarketingSite, { MARKETING_PATHS } from "./MarketingSite";
+import Signup from "./pages/Signup";
+import Activate from "./pages/Activate";
 import Console from "./Console";
 import LoadingScreen from "./components/LoadingScreen";
 
@@ -45,6 +48,16 @@ export default function App() {
     return <SetPassword />;
   }
 
+  // Public self-service signup — a prospective customer applies for a workspace; no session required.
+  if (window.location.pathname === "/signup") {
+    return <Signup />;
+  }
+
+  // Public signup verification landing — the emailed link that actually creates the workspace on redeem.
+  if (window.location.pathname === "/activate") {
+    return <Activate />;
+  }
+
   if (loading || !session) {
     return <LoadingScreen />;
   }
@@ -52,6 +65,12 @@ export default function App() {
   // Per-app step-up: a signed-in user redirected here must clear extra factors, then resume.
   if (session.next === "DONE" && window.location.pathname === "/stepup") {
     return <AppStepUp />;
+  }
+
+  // Public marketing site for an organic signed-out visit to a marketing path. RP-initiated OIDC/SAML logins
+  // are bounced to /login (never a marketing path), so this never intercepts them.
+  if (session.next === "ORGANIZATION" && MARKETING_PATHS.includes(window.location.pathname)) {
+    return <MarketingSite />;
   }
 
   switch (session.next) {

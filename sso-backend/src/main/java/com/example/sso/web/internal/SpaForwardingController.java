@@ -12,7 +12,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 public class SpaForwardingController {
 
     @GetMapping(value = {
-            "/", "/login", "/set-password", "/stepup", "/apps", "/passkeys", "/applications", "/users", "/groups", "/auth-policies", "/clients",
+            "/", "/login", "/signup", "/activate", "/set-password", "/product", "/integrations", "/security", "/how-it-works",
+            "/stepup", "/apps", "/passkeys", "/applications", "/users", "/groups", "/auth-policies", "/clients",
             "/relying-parties", "/scim-tokens", "/session-policy", "/audit", "/profile",
             // Admin console entry points (client-side routes): the OIDC callback and every /admin/* page.
             "/admin", "/admin/**"

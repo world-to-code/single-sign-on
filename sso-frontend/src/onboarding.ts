@@ -32,6 +32,22 @@ export interface CreateOnboardingRequest {
 export const startOnboarding = (body: CreateOnboardingRequest) =>
   apiPost<OnboardingView>("/api/admin/onboarding", body);
 
+/** The public self-service signup result — just the normalized workspace slug. */
+export interface SignupResult {
+  slug: string;
+}
+
+/** Public self-service signup: request a workspace. NOTHING is created yet — a one-time verification link is
+ *  emailed; the org + admin are provisioned only when it's redeemed via {@link activateWorkspace}. 409 if the
+ *  subdomain is taken. Returns the normalized slug so the "check your email" screen can echo it. */
+export const applyForWorkspace = (body: CreateOnboardingRequest) =>
+  apiPost<SignupResult>("/api/onboarding/apply", body);
+
+/** Public: redeem the emailed verification link — proves email ownership and creates the workspace + admin
+ *  with the chosen password. Returns the workspace slug on success. */
+export const activateWorkspace = (token: string, password: string) =>
+  apiPost<SignupResult>("/api/onboarding/activate", { token, password });
+
 export const onboardingStatus = (id: string) =>
   apiGet<OnboardingView>(`/api/admin/onboarding/${id}`);
 

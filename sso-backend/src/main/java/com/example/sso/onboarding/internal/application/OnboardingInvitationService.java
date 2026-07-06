@@ -6,14 +6,8 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
-import java.util.HexFormat;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,11 +24,9 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class OnboardingInvitationService {
 
-    private static final SecureRandom RANDOM = new SecureRandom();
-    private static final int TOKEN_BYTES = 32; // 256-bit
-
     private final OnboardingInvitationRepository invitations;
     private final UserService users;
+    private final OneTimeTokens tokens;
 
     @Value("${sso.onboarding.min-password-length:8}")
     private int minPasswordLength;
@@ -51,10 +43,8 @@ public class OnboardingInvitationService {
         if (user.isEnabled() || users.hasPassword(userId)) {
             throw new BadRequestException("an invitation can only be issued for an inactive, password-less account");
         }
-        byte[] raw = new byte[TOKEN_BYTES];
-        RANDOM.nextBytes(raw);
-        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
-        invitations.save(new OnboardingInvitation(userId, hash(token), Instant.now().plus(ttl)));
+        String token = tokens.mint();
+        invitations.save(new OnboardingInvitation(userId, tokens.hash(token), Instant.now().plus(ttl)));
         return token;
     }
 
@@ -65,7 +55,7 @@ public class OnboardingInvitationService {
      */
     @Transactional
     public void redeem(String rawToken, String newPassword) {
-        OnboardingInvitation invitation = invitations.findByTokenHash(hash(rawToken))
+        OnboardingInvitation invitation = invitations.findByTokenHash(tokens.hash(rawToken))
                 .filter(existing -> existing.isRedeemable(Instant.now()))
                 .orElseThrow(() -> new BadRequestException("invalid or expired invitation"));
         if (newPassword == null || newPassword.length() < minPasswordLength) {
@@ -78,14 +68,5 @@ public class OnboardingInvitationService {
         }
         users.setPassword(invitation.getUserId(), newPassword);
         users.enable(invitation.getUserId());
-    }
-
-    private String hash(String raw) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(raw.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 unavailable", e);
-        }
     }
 }
