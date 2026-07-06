@@ -45,10 +45,10 @@ public class OrganizationServiceImpl implements OrganizationService {
         if (organizations.existsBySlug(slug)) {
             throw new ConflictException("organization slug '" + slug + "' already exists");
         }
-        // Every organization is a branch of a customer (고객사). Until customer selection is wired, new orgs
-        // join the default customer, keeping the FK non-null.
+        // Every organization is a branch of a customer (고객사): the requested one (if it exists and is ACTIVE)
+        // or the default customer, keeping the FK non-null.
         Organization org = new Organization(slug, requireName(command.name()), command.profile());
-        org.assignCustomer(customers.defaultCustomer().getId());
+        org.assignCustomer(resolveCustomer(command.customerId()));
         return view(organizations.save(org));
     }
 
@@ -186,5 +186,17 @@ public class OrganizationServiceImpl implements OrganizationService {
             throw new BadRequestException("organization name is required");
         }
         return name.trim();
+    }
+
+    // Resolve the parent customer for a new branch: the requested one (which must exist and be ACTIVE — no
+    // creating branches under an unknown or suspended customer), or the default customer when none is given.
+    private UUID resolveCustomer(UUID requested) {
+        if (requested == null) {
+            return customers.defaultCustomer().getId();
+        }
+        if (!customers.isActive(requested)) {
+            throw new BadRequestException("customer not found or not active");
+        }
+        return requested;
     }
 }

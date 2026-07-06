@@ -1,9 +1,11 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BarChart3, Building2, LogIn, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import {
   createOrganization, updateOrganization,
   type Organization, type OrganizationStatus,
 } from "@/organizations";
+import { listCustomers, type Customer } from "@/customers";
 import { setDrillIn } from "@/drillIn";
 import { usePaginated } from "@/usePaginated";
 import { errorMessage } from "@/api";
@@ -17,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DataList, EmptyState } from "@/components/states";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
@@ -27,9 +30,10 @@ interface Editor {
   slug: string;
   name: string;
   status: OrganizationStatus;
+  customerId: string; // parent customer; "" means the default customer
 }
 
-const blankEditor: Editor = { id: null, slug: "", name: "", status: "ACTIVE" };
+const blankEditor: Editor = { id: null, slug: "", name: "", status: "ACTIVE", customerId: "" };
 
 /**
  * Platform super-admin registry of tenants: create, rename, suspend/activate, and delete organizations.
@@ -42,13 +46,22 @@ export default function Organizations() {
   const confirmDelete = useDeleteConfirm();
   const { items: orgs, total, page, setPage, size, error: listError, reload } =
     usePaginated<Organization>("/api/admin/organizations");
+  const [customers, setCustomers] = useState<Customer[]>([]);
+
+  // The parent-customer choices for a new branch. Best-effort; if it fails the branch just joins the default.
+  useEffect(() => {
+    listCustomers().then((p) => setCustomers(p.items)).catch(() => setCustomers([]));
+  }, []);
 
   const {
     editor, set, setEditor, open, setOpen, error, openCreate, openEdit, save,
   } = useEditorForm<Editor>({
     blank: blankEditor,
     toRequest: (e) => ({ slug: e.slug, name: e.name, status: e.status }),
-    create: (body) => createOrganization({ slug: (body as Editor).slug, name: (body as Editor).name }),
+    create: (body) => createOrganization({
+      slug: (body as Editor).slug, name: (body as Editor).name,
+      customerId: (body as Editor).customerId || undefined,
+    }),
     update: (id, body) => updateOrganization(id, { name: (body as Editor).name, status: (body as Editor).status }),
     onSaved: reload,
   });
@@ -133,7 +146,7 @@ export default function Organizations() {
                         <LogIn /> Manage
                       </Button>
                       <Button variant="ghost" size="icon" title="Rename" onClick={() =>
-                        openEdit({ id: org.id, slug: org.slug, name: org.name, status: org.status })}>
+                        openEdit({ id: org.id, slug: org.slug, name: org.name, status: org.status, customerId: "" })}>
                         <Pencil />
                       </Button>
                       <Button variant="ghost" size="icon"
@@ -182,6 +195,16 @@ export default function Organizations() {
               <Input id="org-name" value={editor.name} required autoFocus={!!editor.id}
                      placeholder="Acme, Inc." onChange={(e) => set({ name: e.target.value })} />
             </div>
+            {!editor.id && customers.length > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="org-customer">Parent customer</Label>
+                <Select id="org-customer" value={editor.customerId}
+                        onChange={(e) => set({ customerId: e.target.value })}>
+                  <option value="">Default customer</option>
+                  {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </Select>
+              </div>
+            )}
 
             <DialogFooter>
               <Button type="button" variant="outline"

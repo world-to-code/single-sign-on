@@ -108,6 +108,31 @@ class OrganizationServiceImplTest {
     }
 
     @Test
+    void createUnderAChosenActiveCustomerAssignsThatCustomer() {
+        UUID customerId = UUID.randomUUID();
+        when(customers.isActive(customerId)).thenReturn(true);
+        when(organizations.existsBySlug("acme")).thenReturn(false);
+        when(organizations.save(any(Organization.class))).thenAnswer(i -> i.getArgument(0));
+
+        service.create(new NewOrganization("acme", "Acme", customerId));
+
+        ArgumentCaptor<Organization> saved = ArgumentCaptor.forClass(Organization.class);
+        verify(organizations).save(saved.capture());
+        assertThat(saved.getValue().getCustomerId()).isEqualTo(customerId);
+    }
+
+    @Test
+    void createUnderAnUnknownOrSuspendedCustomerIsRejected() {
+        UUID customerId = UUID.randomUUID();
+        when(organizations.existsBySlug("acme")).thenReturn(false);
+        when(customers.isActive(customerId)).thenReturn(false); // unknown or suspended
+
+        assertThatThrownBy(() -> service.create(new NewOrganization("acme", "Acme", customerId)))
+                .isInstanceOf(BadRequestException.class);
+        verify(organizations, never()).save(any());
+    }
+
+    @Test
     void isBranchOfIsFalseForAnEmptyCustomerSetWithoutQuerying() {
         // The guard keeps an unbounded `... customer_id in ()` off the DB and fails closed for a user who
         // administers no customers.

@@ -14,6 +14,7 @@ export interface Organization {
 export interface CreateOrganizationRequest {
   slug: string;
   name: string;
+  customerId?: string; // parent customer (고객사); omitted → the default customer
 }
 
 export interface UpdateOrganizationRequest {

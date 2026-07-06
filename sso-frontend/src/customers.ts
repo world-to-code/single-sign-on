@@ -1,4 +1,5 @@
-import { apiPost, apiPut, apiDelete } from "@/api";
+import { apiGet, apiPost, apiPut, apiDelete } from "@/api";
+import type { Page } from "@/api";
 
 export type CustomerStatus = "ACTIVE" | "SUSPENDED";
 
@@ -21,6 +22,9 @@ export interface UpdateCustomerRequest {
   name: string;
   status: CustomerStatus;
 }
+
+/** A modest page of customers, for the parent-customer picker when creating a branch. */
+export const listCustomers = () => apiGet<Page<Customer>>("/api/admin/customers?size=100");
 
 export const createCustomer = (body: CreateCustomerRequest) =>
   apiPost<Customer>("/api/admin/customers", body);
