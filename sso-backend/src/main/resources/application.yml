@@ -16,6 +16,10 @@ spring:
     redis:
       host: localhost
       port: 6379
+      repositories:
+        # No @RedisHash repositories exist (Redis is used only for Spring Session). Disabling the scan
+        # stops Spring Data Redis from mis-inspecting every JPA repository ("could not identify store").
+        enabled: false
   session:
     # Sessions in Redis (see RedisSessionConfig): the key TTL fires SessionExpiredEvent on idle
     # expiry with no request. Mirror the servlet idle timeout; per-policy idle is applied per-request
