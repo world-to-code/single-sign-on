@@ -31,17 +31,25 @@ public class RbacServiceImpl implements RbacService {
     private static final List<String> GROUP_ADMIN_PERMISSIONS = List.of(
             Permissions.USER_READ, Permissions.USER_UPDATE, Permissions.USER_DELETE);
 
-    // Baseline for the scoped ROLE_ORG_ADMIN: read their org and manage its membership. Deliberately
-    // minimal until org-scoped authorization lands — no directory-wide or org create/delete authority.
-    private static final List<String> ORG_ADMIN_PERMISSIONS = List.of(
-            Permissions.ORG_READ, Permissions.ORG_MEMBER_MANAGE);
+    // What a tenant admin may manage WITHIN their own org (bound by OrgContextFilter to their login org, or by
+    // a drill-in they are authorized for). Every permission here is tenant-grantable (never a PLATFORM one), and
+    // its endpoints are branch-isolated by RLS + OrgTierGuard (a scoped actor's tier is never null, so it cannot
+    // touch a global or another tenant's row). This is the single source of truth SHARED by ROLE_ORG_ADMIN and
+    // ROLE_CUSTOMER_ADMIN so the two tenant-admin roles never diverge (a divergence would be an isolation bug);
+    // the scope difference between them (one org vs all a customer's branches) lives in the drill-in
+    // authorization (OrgDrillInFilter/OrganizationAuthorization.canManage), NOT in this set. Grown one capability
+    // at a time as each is verified branch-isolated (Workstream C): baseline org read/member-manage + session
+    // controls (session policies, network zones) so far.
+    private static final List<String> TENANT_ADMIN_PERMISSIONS = List.of(
+            Permissions.ORG_READ, Permissions.ORG_MEMBER_MANAGE,
+            Permissions.SESSION_POLICY_READ, Permissions.SESSION_POLICY_CREATE,
+            Permissions.SESSION_POLICY_UPDATE, Permissions.SESSION_POLICY_DELETE,
+            Permissions.NETWORK_ZONE_READ, Permissions.NETWORK_ZONE_CREATE,
+            Permissions.NETWORK_ZONE_UPDATE, Permissions.NETWORK_ZONE_DELETE);
 
-    // Baseline for the scoped ROLE_CUSTOMER_ADMIN: manage the branches under their customer, exactly like an
-    // org-admin manages an org (read + member-manage, scoped to their branches by customer membership).
-    // Deliberately EXCLUDES every PLATFORM permission — no customer:* registry authority, no org create/delete
-    // — so a customer-admin can never mutate the registry nor cross into another customer.
-    private static final List<String> CUSTOMER_ADMIN_PERMISSIONS = List.of(
-            Permissions.ORG_READ, Permissions.ORG_MEMBER_MANAGE);
+    private static final List<String> ORG_ADMIN_PERMISSIONS = TENANT_ADMIN_PERMISSIONS;
+
+    private static final List<String> CUSTOMER_ADMIN_PERMISSIONS = TENANT_ADMIN_PERMISSIONS;
 
     private final PermissionRepository permissions;
     private final RolePermissionRepository rolePermissions;
