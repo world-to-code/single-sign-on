@@ -5,6 +5,7 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.ratelimit.AuthRateLimitFilter;
 import com.example.sso.oidc.AdminPortalSeeder;
+import com.example.sso.oidc.ConsentPage;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.security.AdminElevationFilter;
 import com.example.sso.security.PolicyIpAccessFilter;
@@ -134,6 +135,11 @@ public class SecurityConfig {
                                 // Admin console SPA shell (the OIDC flow + admin API still enforce auth).
                                 "/admin", "/admin/**").permitAll()
                         .requestMatchers("/saml2/idp/sso", "/saml2/idp/sso/init")
+                        .access(AuthorityAuthorizationManager.hasAuthority(Factors.MFA_COMPLETE))
+                        // The custom OIDC consent page renders account data (the user's prior consent) mid-flow,
+                        // so it demands a completed login — the same bar the /oauth2/authorize grant it feeds
+                        // enforces (defence in depth: the normal flow always arrives here past that gate).
+                        .requestMatchers(HttpMethod.GET, ConsentPage.URI)
                         .access(AuthorityAuthorizationManager.hasAuthority(Factors.MFA_COMPLETE))
                         // Console entry is an APP ASSIGNMENT, not a role: AppAssignmentFilter gates the
                         // admin-console token at /oauth2/authorize, the elevation filter requires that
