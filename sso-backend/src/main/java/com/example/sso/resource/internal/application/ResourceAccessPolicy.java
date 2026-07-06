@@ -39,11 +39,29 @@ public class ResourceAccessPolicy {
     private final ApplicationAuthorization appAuth;
     private final UserAuthorization userAuth;
 
-    /** A direct or group-delegated {@code ROLE_ADMIN} sees and does everything. */
+    /**
+     * A platform super-admin: a direct or group-delegated {@code ROLE_ADMIN}. Bypasses everything across
+     * ALL tenants. Kept distinct from {@link #isTierAdmin()} because super-only operations (managing the
+     * GLOBAL resource-type vocabulary, delegating resource-admin to a user) must NOT open to a tenant admin.
+     */
     public boolean isUnscoped() {
+        return hasAuthority(Roles.ADMIN);
+    }
+
+    /**
+     * A tenant tier-admin: a platform super ({@code ROLE_ADMIN}) OR an org admin ({@code ROLE_ORG_ADMIN}).
+     * Manages the ENTIRE resource tree of the current org tier; RLS provides the org boundary, so a tenant
+     * tier-admin only ever loads/mutates their own org's resources (a foreign resource is a 404). Used for
+     * STRUCTURE management (create/rename/delete/edge), NOT for user-referencing delegation.
+     */
+    public boolean isTierAdmin() {
+        return isUnscoped() || hasAuthority(Roles.ORG_ADMIN);
+    }
+
+    private boolean hasAuthority(String role) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         return authentication != null && authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority).anyMatch(Roles.ADMIN::equals);
+                .map(GrantedAuthority::getAuthority).anyMatch(role::equals);
     }
 
     /** Resources this caller administers (empty for a scoped caller with no resolvable actor/grants). */
@@ -51,15 +69,34 @@ public class ResourceAccessPolicy {
         return actorId().map(resourceAuth::managedResourceIds).orElseGet(Set::of);
     }
 
-    /** True if the caller is unscoped OR the resource is within their managed subtree. */
+    /** True if the caller is a tier-admin (own-org, RLS-bounded) OR the resource is in their managed subtree. */
     public boolean canManage(UUID resourceId) {
-        return isUnscoped() || actorId().map(id -> resourceAuth.canManage(id, resourceId)).orElse(false);
+        return isTierAdmin() || actorId().map(id -> resourceAuth.canManage(id, resourceId)).orElse(false);
     }
 
-    /** Denies (403) unless the caller manages the resource. */
+    /** Denies (403) unless the caller manages the resource (tier-admin or subtree). */
     public void requireManage(UUID resourceId) {
         if (!canManage(resourceId)) {
             throw new ForbiddenException("Outside your managed resources.");
+        }
+    }
+
+    /**
+     * Delegation reach: a platform super OR a subtree-delegated admin — but NOT a plain tenant tier-admin.
+     * Delegating resource-admin references a global user id, so a tenant tier-admin must not do it via tier
+     * alone (it could grant a non-org-member admin over the subtree); that awaits the org-membership check.
+     */
+    public void requireDelegate(UUID resourceId) {
+        boolean allowed = isUnscoped() || actorId().map(id -> resourceAuth.canManage(id, resourceId)).orElse(false);
+        if (!allowed) {
+            throw new ForbiddenException("Outside your managed resources.");
+        }
+    }
+
+    /** Denies (403) unless the caller is a platform super-admin (for global resource-type vocabulary ops). */
+    public void requireUnscoped() {
+        if (!isUnscoped()) {
+            throw new ForbiddenException("Only a platform administrator may manage resource types.");
         }
     }
 

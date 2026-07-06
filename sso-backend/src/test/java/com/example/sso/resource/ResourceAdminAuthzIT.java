@@ -6,8 +6,11 @@ import com.example.sso.resource.internal.api.CreateResourceTypeRequest;
 import com.example.sso.resource.internal.api.MemberRequest;
 import com.example.sso.resource.internal.api.ResourceAdminController;
 import com.example.sso.resource.internal.api.ResourceRequest;
+import com.example.sso.shared.error.ForbiddenException;
+import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.Permissions;
+import com.example.sso.user.Roles;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -86,15 +89,39 @@ class ResourceAdminAuthzIT extends AbstractIntegrationTest {
     @Test
     void eachPermissionUnlocksOnlyItsOwnActions() {
         actAs(Permissions.RESOURCE_CREATE);
-        String type = "IT-Type-" + suffix();
-        assertThatCode(() -> controller.createType(new CreateResourceTypeRequest(type, Set.of("GROUP"))))
-                .doesNotThrowAnyException();
         assertDenied(() -> controller.delete(UUID.randomUUID())); // create ≠ delete
 
         actAs(Permissions.RESOURCE_ASSIGN_ADMIN);
-        // assign-admin holder may delegate but not create/delete structure
-        assertDenied(() -> controller.create(new ResourceRequest("X", type)));
+        // assign-admin does not confer create/delete structure
+        assertDenied(() -> controller.create(new ResourceRequest("X", "T")));
         assertDenied(() -> controller.delete(UUID.randomUUID()));
+    }
+
+    @Test
+    void anOrgAdminIsATierAdminForStructureButMayNotDelegateAdministration() {
+        // NARROW: a ROLE_ORG_ADMIN manages its org's resource STRUCTURE (a tier-admin — RLS bounds it to their
+        // org), but delegating resource-admin references a GLOBAL user id, so a plain tier-admin must NOT do it
+        // (super or subtree only, this slice). Structure ops reach the resource load (a 404 for a missing id),
+        // never a 403 from the scope check — proving the tier-admin bypass; delegation stays a 403.
+        actAs(Roles.ORG_ADMIN, Permissions.RESOURCE_ASSIGN_ADMIN, Permissions.RESOURCE_UPDATE);
+        assertThatThrownBy(() -> controller.assignAdmin(UUID.randomUUID(), new AdminGrantRequest(UUID.randomUUID())))
+                .isInstanceOf(ForbiddenException.class); // delegation denied for a tier-admin
+        assertThatThrownBy(() -> controller.rename(UUID.randomUUID(), new ResourceRequest("X", null)))
+                .isInstanceOf(NotFoundException.class); // structure reaches the load, not a 403
+    }
+
+    @Test
+    void resourceTypeVocabularyIsPlatformSuperOnly() {
+        // resource:* is now tenant-grantable (org-scoped DAG), but the GLOBAL resource-type vocabulary must
+        // stay platform-super only: a tenant admin creating/deleting a shared type would affect other tenants
+        // (and delete's in-use check is RLS-blind to another org's resources). The perm gate passes; the
+        // service's super-only guard rejects a non-super holder with a 403.
+        actAs(Permissions.RESOURCE_CREATE);
+        assertThatThrownBy(() -> controller.createType(new CreateResourceTypeRequest("T-" + suffix(), Set.of("GROUP"))))
+                .isInstanceOf(ForbiddenException.class);
+        actAs(Permissions.RESOURCE_DELETE);
+        assertThatThrownBy(() -> controller.deleteType(UUID.randomUUID()))
+                .isInstanceOf(ForbiddenException.class);
     }
 
     private void assertDenied(ThrowingCallable call) {

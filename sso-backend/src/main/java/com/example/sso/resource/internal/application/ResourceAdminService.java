@@ -83,6 +83,7 @@ public class ResourceAdminService {
     // edges, conferring no reach — a scoped admin can only wire it in later via the (both-endpoints) edge guard.
     @Transactional
     public ResourceTypeView createType(String name, Set<MemberType> allowedMemberTypes) {
+        access.requireUnscoped(); // resource types are a GLOBAL vocabulary — platform super-admin only
         if (types.findByName(name).isPresent()) {
             throw new ConflictException("A resource type with this name already exists.");
         }
@@ -95,6 +96,7 @@ public class ResourceAdminService {
     /** Deletes an unused resource type; rejects deletion while any resource still uses it (409). */
     @Transactional
     public void deleteType(UUID id) {
+        access.requireUnscoped(); // global vocabulary — platform super-admin only
         ResourceType type = types.findById(id)
                 .orElseThrow(() -> new NotFoundException("Resource type not found."));
         if (resources.existsByTypeId(id)) {
@@ -328,7 +330,9 @@ public class ResourceAdminService {
 
     @Transactional
     public ResourceView assignAdmin(UUID id, UUID userId) {
-        access.requireManage(id); // delegate admin only WITHIN your managed subtree
+        // requireDelegate (super or subtree), NOT tier: delegating references a global user id, so a plain
+        // tenant tier-admin must not grant resource-admin to a possibly-non-org-member (awaits org-membership).
+        access.requireDelegate(id);
         users.findById(userId).orElseThrow(() -> new NotFoundException("User not found."));
         Resource resource = require(id);
         grant(id, ResourceGrant.admin(userId), resource.getOrgId());
@@ -337,7 +341,7 @@ public class ResourceAdminService {
 
     @Transactional
     public ResourceView revokeAdmin(UUID id, UUID userId) {
-        access.requireManage(id);
+        access.requireDelegate(id); // symmetric with assignAdmin — delegation stays super/subtree this slice
         require(id);
         grantRows.deleteByResourceIdAndUserIdAndTier(id, userId, ResourceRoleTier.ADMIN);
         return viewOf(id);
