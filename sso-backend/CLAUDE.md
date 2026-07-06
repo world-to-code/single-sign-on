@@ -3,6 +3,11 @@
 Spring Boot **modular monolith** IdP. Read the root `../CLAUDE.md` first; this file adds backend rules
 and OVERRIDES defaults.
 
+Detailed backend rules are managed one-per-topic in **`../.claude/rules/backend/`** (path-scoped:
+each loads automatically when a matching file enters context). This file keeps the stack, the
+layout, and a one-line index — **the rule file is the authoritative, full statement**; do not
+restate rule details here.
+
 ## Stack
 
 Java 21 · Spring Boot 4.0.x · Spring Security 7 (OAuth2 Auth Server + WebAuthn) · Spring Modulith 2.0.x ·
@@ -11,10 +16,9 @@ OpenSAML 5 · scim-sdk · PostgreSQL + Flyway · Lombok · Gradle. Versions are 
 Run from `sso-backend/`: `./gradlew compileJava | test | bootRun`
 (`SPRING_DEVTOOLS_RESTART_ENABLED=false` when driving live scripts).
 
-## Architecture — modular monolith (NON-NEGOTIABLE)
+## Architecture sketch (NON-NEGOTIABLE — details in rules)
 
-Each direct sub-package of `com.example.sso` is a `@ApplicationModule` (declared in `package-info.java`).
-Keep `ModularityTests` green.
+Each direct sub-package of `com.example.sso` is a `@ApplicationModule`; keep `ModularityTests` green.
 
 ```
 <module>/                PUBLIC API only: interfaces + record DTOs + enums/constants
@@ -24,62 +28,41 @@ Keep `ModularityTests` green.
 ```
 Infra modules (`config, security, ratelimit, bootstrap, web, shared`) are not 3-tiered.
 
-- **DIP:** public services are root interfaces; impls are `internal/application/<Name>Impl`. A
-  module-private service needs no interface.
-- **Thin controllers:** bind HTTP, call ONE service method, shape the response — nothing else (no
-  orchestration, try/catch on domain outcomes, mapping, auditing, session work). Extract a service if none fits.
-- **DTO placement** (`application` must NEVER depend on `api`): request DTOs with `@Valid` live in
-  `internal/api` and self-map to a *public* command via `toSpec()`/`toCommand()`; view/output DTOs live in
-  `internal/application`. Exception: genuine app I/O a non-controller consumes (e.g. `FactorVerificationRequest`)
-  stays in `application`.
-- **No HTTP-status branching on domain results** — services throw `ApiException` subtypes,
-  `GlobalExceptionHandler` maps them. Never `ResponseEntity.status(4xx)` for a domain outcome.
-- **4+ constructor params → factory/conversion at the layer boundary** (`request.toSpec()`,
-  `View.of(domain)`), never `new X(a,b,c,d,…)` at a call site. Genuine multi-source parameter objects
-  (`AppAccessQuery`, `AuditRecord`) stay constructors.
-- **Never expose a JPA entity/repository across a module.** Other modules consume only root read-model
-  interfaces (`UserAccount`, `AuthPolicyView`, …), record DTOs, or service methods; use `shared.IdName`
-  for id/name lookups.
+## Rule index (`../.claude/rules/backend/`)
 
-## Code style (STRICT)
+Architecture:
+- `module-structure.md` — module/3-tier layout, `package-info.java`, ModularityTests
+- `entity-hiding.md` — never expose a JPA entity/repository across a module
+- `services-dip.md` — public service = root interface + `internal/application/<Name>Impl`
+- `thin-controllers.md` — bind → ONE service call → shape response; nothing else
+- `dto-placement.md` — request DTOs in `api` (`toSpec()`/`toCommand()`); `application` never depends on `api`
+- `error-handling.md` — `ApiException` subtypes + `GlobalExceptionHandler`; no `ResponseEntity.status(4xx)`
+- `constructors-factories.md` — 4+ ctor params → factory at the layer boundary
 
-- **Import — never inline fully-qualified names** (incl. `package-info.java`).
-- **No setters** anywhere; mutate via intention-revealing methods + fully-initializing constructors
-  (JPA uses field access + a `protected` no-arg ctor).
-- **Records for immutables** (DTOs/views/commands); a class only when a record can't express it (entities).
-- **Lombok** `@Getter/@RequiredArgsConstructor/@Slf4j/@Builder` — never `@Setter`/`@Data`.
-- One public type per file; avoid nested classes.
-- **No `private static` unless `static` is required** (`private static final` constants are fine).
-- **4xx → shared `ApiException` subtypes** (`NotFound/BadRequest/Conflict/Forbidden/Unauthorized/Locked`
-  in `shared.error`); reserve `IllegalState/IllegalArgument` for 500-class invariants.
-- **No magic strings/numbers** — protocol values → enum/constant (reuse `OidcScopes`, `HttpMethod`, …);
-  tunables → config (below).
+Code style:
+- `imports.md` — never inline fully-qualified names
+- `immutability.md` — no setters; records for immutables; Lombok whitelist (never `@Setter`/`@Data`)
+- `file-layout.md` — one public type per file; no gratuitous `private static`
+- `no-magic-values.md` — protocol values → enum/constant; tunables → config
 
-## Persistence & config
+Security posture:
+- `owasp.md` — OWASP Top 10 (2021) coding rules tailored to this IdP (deny-by-default authz,
+  crypto, injection/XXE, non-revealing errors, token/assertion integrity, SSRF)
+- `zero-trust.md` — verify explicitly per request; no implicit trust zones; least privilege;
+  assume breach (time-boxed privilege, revocation propagates); re-verify state on sensitive ops
+- `step-up.md` — `@RequireStepUp` on destructive/privilege-escalating admin endpoints
 
-- **Flyway owns the schema; `ddl-auto=validate`.** Schema change = a new `V<n>__*.sql`; keep physical
-  columns identical across mapping refactors (`validate` is the gate).
-- **Entities extend `shared.domain` bases:** `AbstractEntity` (UUID id) or `AuditedEntity` (+`created_at`).
-  Don't re-declare id/created-at.
-- **Group cohesive columns into an `@Embeddable`** value object carrying its own behaviour (e.g.
-  `AccountLockout` in `AppUser`).
-- **Collections are LAZY — never `EAGER`.** Load with `join fetch` (over `@EntityGraph`); 2+ `Set`s in one
-  query is fine, `List` bags are not (MultipleBagFetchException). QueryDSL when dynamic/complex.
-- **A detached read must have every needed collection fetch-joined.** An entity read after its tx (cached
-  policy, a resolve result read off the request path, or a view projected in a non-`@Transactional` adapter)
-  throws `LazyInitializationException`. Fix by fetch-joining, or run load+projection in one tx (make the
-  adapter `@Transactional`). Cover adapter projections with an IT that runs OUTSIDE a tx (an ambient tx masks it).
-- **Externalize tunables** to `application.yml` + `@Value` — including annotation defaults (make the
-  annotation a marker and read the value from config), never a hardcoded number. Protocol constants stay constants.
-- **Step-up for sensitive admin actions:** mark destructive/privilege-escalating endpoints (all `*:delete`,
-  policy create/update, role/permission grants, group role/manager delegation, key/secret rotation) with
-  `@RequireStepUp`; `StepUpInterceptor` enforces `sso.security.step-up.sensitive-max-age` (the stricter of it
-  and the session re-auth window) via the `X-Step-Up-Required` 401.
-- **Boot 4 splits autoconfig:** a feature needs its `spring-boot-<feature>` module on the classpath (e.g. Flyway).
+Persistence & config:
+- `flyway.md` — Flyway owns schema; `ddl-auto=validate`; migration + mapping change together
+- `entity-design.md` — `AbstractEntity`/`AuditedEntity` bases; `@Embeddable` value objects
+- `lazy-loading.md` — LAZY collections, `join fetch`, detached reads, OSIV-off traps, HHH000104
+- `config-tunables.md` — externalize tunables; marker annotations read config, no baked defaults
+- `boot4-autoconfig.md` — features need their `spring-boot-<feature>` module
 
-## Testing
+Testing:
+- `testing.md` — Testcontainers, MockMvc limits (OAuth2/SAML → `scripts/*.py`), TDD case matrix,
+  structural-change checklist
 
-- `./gradlew test` (Testcontainers, needs Docker); context startup runs Hibernate `validate`.
-- MockMvc misparses `/oauth2/authorize` & SAML query strings — verify those with `scripts/*.py`.
-- After structural changes: `compileJava` + `ModularityTests` + full `test` green; `rg` for zero inline
-  FQNs / cross-module entity imports.
+Reviewer agents (purpose-routed, see `../.claude/agents/README.md`) complement these rules:
+rules state the law, reviewers audit compliance. `security-reviewer` maps findings to OWASP
+Top 10 and enforces `owasp.md` + `zero-trust.md`.

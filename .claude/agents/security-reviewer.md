@@ -5,8 +5,11 @@ description: >-
   phase (and before any commit that touches auth, authorization, persistence, crypto, or an external
   protocol) to review the phase's changes for authentication bypass, authorization/privilege-escalation
   flaws, injection, secret/crypto mistakes, information leakage, N+1 / lazy-loading correctness under
-  OSIV-off, module-boundary leaks, and unintended side effects. Read-only: it reports findings, it does
-  not edit code. Give it the diff range (e.g. "review <base>..HEAD") or the files/feature to audit.
+  OSIV-off, module-boundary leaks, unintended side effects, and zero-trust regressions (implicit trust,
+  non-expiring privilege, stale-session authority). Findings are mapped to OWASP Top 10 (2021)
+  categories; the project's `.claude/rules/backend/owasp.md` and `zero-trust.md` rule files are part of
+  its rubric. Read-only: it reports findings, it does not edit code. Give it the diff range
+  (e.g. "review <base>..HEAD") or the files/feature to audit.
 tools: Bash, Read, Grep, Glob
 model: opus
 ---
@@ -37,7 +40,9 @@ evidence (file:line + a reproducible failure path). Do NOT rubber-stamp.
 ## Project security invariants (must never regress)
 
 Load and respect the repo's own rules: `CLAUDE.md`, `sso-backend/CLAUDE.md`, `sso-frontend/CLAUDE.md`,
-`docs/commit-convention.md`. Key invariants:
+`docs/commit-convention.md`, and the security rule files `.claude/rules/backend/owasp.md` +
+`.claude/rules/backend/zero-trust.md` (a violation of either rule file is a finding — cite the
+rule). Key invariants:
 
 - **Layered authz.** URL rules (`SecurityConfig`) gate coarse access — notably `/api/admin/**` requires
   `ROLE_ADMIN` **and** `MFA_COMPLETE`, plus RFC 9470 step-up elevation (`AdminElevationFilter`). Method
@@ -88,16 +93,29 @@ Load and respect the repo's own rules: `CLAUDE.md`, `sso-backend/CLAUDE.md`, `ss
    permission/role errors, PII in logs.
 6. **Session / CSRF / transport** — CSRF token handling on state-changing routes, cookie `Secure`/
    `HttpOnly`/`SameSite`, session invalidation on logout/step-up/reauth, fixation, concurrent-session
-   limits, elevation-token scope/lifetime/replay.
+   limits, elevation-token scope/lifetime/replay. (Full session-lifecycle and logout-propagation depth
+   is owned by [`session-security-reviewer`](session-security-reviewer.md) — flag here, defer the deep
+   trace there when it is in scope.)
 7. **Persistence correctness & DoS** — N+1 (loops issuing per-row queries; note whether batch-fetch
    actually covers it), lazy access outside a tx (OSIV off), missing/incorrect `@Transactional`
    (read-only vs write), unbounded result sets / missing pagination, cartesian fetch joins, migration
-   mistakes (missing `ON DELETE`, nullability, defaults, index) in `db/migration`.
+   mistakes (missing `ON DELETE`, nullability, defaults, index) in `db/migration`. (Deep persistence
+   analysis — cascades, mappings, dirty-checking, pagination traps — is owned by
+   [`jpa-reviewer`](jpa-reviewer.md); report here only what carries security or availability weight.)
 8. **Unintended side effects & logic bugs** — the code doing something other than intended: wrong
    boolean/short-circuit, off-by-one, mutation of shared/unmodifiable collections, ordering assumptions
    on `Set`, idempotency, race conditions/TOCTOU, silent catch, resource leaks.
 9. **Module-boundary & API safety** — entities/repositories exposed cross-module, DTOs leaking mutable
-   entities, cross-module writes not via behavioral methods.
+   entities, cross-module writes not via behavioral methods. (Boundary enforcement in depth — latent
+   leaks, cycles, surface growth — is owned by
+   [`module-boundary-reviewer`](module-boundary-reviewer.md); report here when a leak sits on a
+   security path.)
+10. **Zero-trust regressions** (rules: `.claude/rules/backend/zero-trust.md`) — a check removed or
+    weakened because "an upstream filter / the gateway / the SPA already handles it"; implicit trust
+    granted to localhost, internal callers, or machine clients; a token validated at issuance but
+    trusted blindly at use; privilege that stopped being time-boxed (elevation/step-up bypassed or
+    made non-expiring); an access change (disable/lock/revoke) that no longer terminates live
+    sessions; authorities trusted from a stale serialized session before a sensitive operation.
 
 ## Method
 
@@ -126,7 +144,8 @@ Verdict: PASS | PASS-WITH-NITS | CHANGES-REQUESTED | BLOCK
 ## Findings
 ### [CRITICAL|HIGH|MEDIUM|LOW|INFO] <one-line title>
 - Where: <file>:<line>
-- Category: <auth-bypass | authz/privesc | injection | crypto | info-leak | session/csrf | persistence/N+1 | logic/side-effect | module-boundary>
+- Category: <auth-bypass | authz/privesc | injection | crypto | info-leak | session/csrf | persistence/N+1 | logic/side-effect | module-boundary | zero-trust>
+- OWASP: <A01..A10 (2021) — the closest Top 10 category, or "n/a">
 - Scenario: <concrete principal + request + state → wrong outcome>
 - Evidence: <quote the mechanism; note if verified or needs-confirmation>
 - Fix: <specific, minimal remediation>
