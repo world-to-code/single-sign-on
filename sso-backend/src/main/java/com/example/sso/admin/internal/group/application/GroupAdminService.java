@@ -39,7 +39,10 @@ public class GroupAdminService {
     private final AdminAuditLogger auditLogger;
 
     public Page<GroupView> list(int page, int size) {
-        return accessPolicy.isCurrentActorUnscoped()
+        // A super admin, or a tenant admin acting within their own org, sees the whole directory RLS returns
+        // (all orgs for a super; the bound org's groups for a tenant admin). A mere resource delegate is limited
+        // to the groups inside their subtree.
+        return accessPolicy.isCurrentActorUnscoped() || accessPolicy.administersBoundOrg()
                 ? userGroups.listAll(page, size)
                 : userGroups.listByIds(accessPolicy.currentScopedGroupIds(), page, size);
     }
@@ -85,7 +88,9 @@ public class GroupAdminService {
 
     public List<Suggestion> search(String query, int limit) {
         List<Suggestion> results = userGroups.search(query, limit);
-        if (accessPolicy.isCurrentActorUnscoped()) {
+        // The search itself runs under RLS, so a super admin and a tenant admin in their own org already get a
+        // correctly-scoped result set; only a resource delegate is further narrowed to its subtree.
+        if (accessPolicy.isCurrentActorUnscoped() || accessPolicy.administersBoundOrg()) {
             return results;
         }
 

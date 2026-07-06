@@ -4,6 +4,7 @@ import com.example.sso.shared.IdName;
 import com.example.sso.shared.Page;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -52,4 +53,11 @@ public interface UserGroupService {
 
     /** Ids of the groups the user belongs to — no role/detail loading (authorization hot path). */
     Set<UUID> groupIdsOf(UUID userId);
+
+    /**
+     * The org that administers the group, for authorization only: present ONLY when the group exists AND is
+     * org-owned. A global (org_id null) or unknown group yields empty — no tenant admin administers it — so a
+     * tenant admin can never reach a global/foreign group through an org-scope check.
+     */
+    Optional<UUID> orgIdOf(UUID groupId);
 }

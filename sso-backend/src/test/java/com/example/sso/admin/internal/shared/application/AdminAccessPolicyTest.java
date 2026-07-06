@@ -6,10 +6,12 @@ import com.example.sso.resource.GroupAuthorization;
 import com.example.sso.resource.ResourceAuthorization;
 import com.example.sso.organization.OrganizationAuthorization;
 import com.example.sso.resource.UserAuthorization;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.RoleService;
 import com.example.sso.user.Roles;
+import com.example.sso.user.UserGroupService;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
 import org.junit.jupiter.api.AfterEach;
@@ -42,23 +44,28 @@ class AdminAccessPolicyTest {
 
     private UserService userService;
     private RoleService roleService;
+    private UserGroupService userGroups;
     private UserAuthorization userAuth;
     private GroupAuthorization groupAuth;
     private ApplicationAuthorization appAuth;
     private ResourceAuthorization resourceAuth;
     private OrganizationAuthorization orgAuth;
+    private OrgContext orgContext;
     private AdminAccessPolicy policy;
 
     @BeforeEach
     void setUp() {
         userService = mock(UserService.class);
         roleService = mock(RoleService.class);
+        userGroups = mock(UserGroupService.class);
         userAuth = mock(UserAuthorization.class);
         groupAuth = mock(GroupAuthorization.class);
         appAuth = mock(ApplicationAuthorization.class);
         resourceAuth = mock(ResourceAuthorization.class);
         orgAuth = mock(OrganizationAuthorization.class);
-        policy = new AdminAccessPolicy(userService, roleService, userAuth, groupAuth, appAuth, resourceAuth, orgAuth);
+        orgContext = mock(OrgContext.class);
+        policy = new AdminAccessPolicy(userService, roleService, userGroups, userAuth, groupAuth,
+                appAuth, resourceAuth, orgAuth, orgContext);
 
         UserAccount actor = mock(UserAccount.class);
         when(actor.getId()).thenReturn(ACTOR_ID);
@@ -109,6 +116,43 @@ class AdminAccessPolicyTest {
         when(groupAuth.canManage(ACTOR_ID, groupId)).thenReturn(true);
         assertThat(policy.canAccessGroup(groupId)).isTrue();
         assertThat(policy.canAccessGroup(UUID.randomUUID())).isFalse();
+    }
+
+    @Test
+    void canAccessGroupAllowsATenantAdminOfTheGroupsOwningOrg() {
+        // No resource-subtree delegation, but the actor administers the org that owns the group → allowed.
+        UUID groupId = UUID.randomUUID();
+        UUID orgId = UUID.randomUUID();
+        when(groupAuth.canManage(ACTOR_ID, groupId)).thenReturn(false);
+        when(userGroups.orgIdOf(groupId)).thenReturn(Optional.of(orgId));
+        when(orgAuth.canManage(ACTOR_ID, orgId)).thenReturn(true);
+
+        assertThat(policy.canAccessGroup(groupId)).isTrue();
+    }
+
+    @Test
+    void canAccessGroupDeniesAGlobalGroupForANonSuperActor() {
+        // A global group has no administering org (orgIdOf empty), so a tenant admin cannot mutate it even
+        // though RLS lets them read it — keeps a platform-wide group out of a tenant's reach.
+        UUID groupId = UUID.randomUUID();
+        when(groupAuth.canManage(ACTOR_ID, groupId)).thenReturn(false);
+        when(userGroups.orgIdOf(groupId)).thenReturn(Optional.empty());
+
+        assertThat(policy.canAccessGroup(groupId)).isFalse();
+    }
+
+    @Test
+    void administersBoundOrgOnlyWhenActingWithinAnOrgTheActorManages() {
+        UUID orgId = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgId));
+        when(orgAuth.canManage(ACTOR_ID, orgId)).thenReturn(true);
+        assertThat(policy.administersBoundOrg()).isTrue();
+
+        when(orgAuth.canManage(ACTOR_ID, orgId)).thenReturn(false); // bound, but not an admin of it (e.g. delegate)
+        assertThat(policy.administersBoundOrg()).isFalse();
+
+        when(orgContext.currentOrg()).thenReturn(Optional.empty()); // unbound (platform) context
+        assertThat(policy.administersBoundOrg()).isFalse();
     }
 
     @Test

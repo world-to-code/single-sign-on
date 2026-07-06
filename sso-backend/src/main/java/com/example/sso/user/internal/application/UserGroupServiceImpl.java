@@ -240,6 +240,14 @@ public class UserGroupServiceImpl implements UserGroupService {
         return ids.isEmpty() ? List.of() : repository.findIdNames(ids);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<UUID> orgIdOf(UUID groupId) {
+        // Map#map drops a null org, so a global group (org_id null) and an unknown id both yield empty: exactly
+        // the "no org administers this group" answer the org-scope authorization check wants.
+        return orgContext.callAsPlatform(() -> repository.findById(groupId).map(UserGroup::getOrgId));
+    }
+
     private UserGroup require(UUID id) {
         return repository.findById(id).orElseThrow(() -> new NotFoundException("group not found"));
     }

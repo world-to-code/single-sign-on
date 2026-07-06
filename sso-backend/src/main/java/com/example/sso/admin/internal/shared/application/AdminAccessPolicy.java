@@ -6,11 +6,13 @@ import com.example.sso.resource.GroupAuthorization;
 import com.example.sso.resource.ResourceAuthorization;
 import com.example.sso.organization.OrganizationAuthorization;
 import com.example.sso.resource.UserAuthorization;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.RoleService;
 import com.example.sso.user.Roles;
 import com.example.sso.user.UserAccount;
+import com.example.sso.user.UserGroupService;
 import com.example.sso.user.UserService;
 import java.util.Collection;
 import java.util.Optional;
@@ -49,11 +51,13 @@ public class AdminAccessPolicy {
 
     private final UserService userService;
     private final RoleService roleService;
+    private final UserGroupService userGroups;
     private final UserAuthorization userAuth;
     private final GroupAuthorization groupAuth;
     private final ApplicationAuthorization appAuth;
     private final ResourceAuthorization resourceAuth;
     private final OrganizationAuthorization orgAuth;
+    private final OrgContext orgContext;
 
     /**
      * User scope: whether the acting admin may act on {@code targetId} at all. A super admin
@@ -116,9 +120,26 @@ public class AdminAccessPolicy {
         return currentUserId().map(userAuth::scopedUserIds).orElse(Set.of());
     }
 
-    /** Group scope: whether the acting admin may manage {@code groupId} (resource subtree; super bypasses). */
+    /**
+     * Group scope: whether the acting admin may manage {@code groupId}. A super admin bypasses; a resource
+     * delegate reaches groups in its subtree; a TENANT admin (org/customer-admin) reaches a group when it is
+     * owned by an org they administer. A global (org_id null) group has no administering org, so a tenant admin
+     * is denied — which is what keeps them from mutating a platform-wide group even though RLS lets them read it.
+     */
     public boolean canAccessGroup(UUID groupId) {
-        return currentUserId().map(actorId -> groupAuth.canManage(actorId, groupId)).orElse(false);
+        return currentUserId().map(actorId -> groupAuth.canManage(actorId, groupId)
+                || userGroups.orgIdOf(groupId).map(orgId -> orgAuth.canManage(actorId, orgId)).orElse(false)
+        ).orElse(false);
+    }
+
+    /**
+     * Whether the acting admin administers the org they are currently bound to (their login org, or one they
+     * drilled into) — i.e. an org/customer-admin acting within their own tenant, NOT a mere resource delegate.
+     * Such an actor sees their whole org's directory (RLS scopes it) rather than only a resource subtree.
+     */
+    public boolean administersBoundOrg() {
+        return currentUserId().flatMap(actorId ->
+                orgContext.currentOrg().map(orgId -> orgAuth.canManage(actorId, orgId))).orElse(false);
     }
 
     /** For a scoped acting admin, the ids of the groups inside their resource subtree. */
