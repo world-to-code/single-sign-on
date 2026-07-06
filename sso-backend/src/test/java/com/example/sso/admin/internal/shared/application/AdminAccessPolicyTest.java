@@ -21,6 +21,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -241,6 +242,40 @@ class AdminAccessPolicyTest {
     @Test
     void nonSuperAdminMayAssignOrdinaryRoles() {
         assertThat(policy.mayAssignRoles(Set.of("ROLE_SUPPORT"))).isTrue();
+    }
+
+    @Test
+    void nonSuperAdminMayNotAssignARoleCarryingAPermissionTheyDoNotHold() {
+        // Grant-only-what-you-hold: the actor does not hold user:read, so they may not assign a role that
+        // carries it (which would let them, or a group they join, inherit an authority they lack).
+        UUID roleId = UUID.randomUUID();
+        RoleRef reader = mock(RoleRef.class);
+        when(reader.getId()).thenReturn(roleId);
+        when(roleService.findByName("ROLE_READER")).thenReturn(Optional.of(reader));
+        when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.USER_READ));
+
+        assertThat(policy.mayAssignRoles(Set.of("ROLE_READER"))).isFalse();
+    }
+
+    @Test
+    void nonSuperAdminMayAssignARoleWhosePermissionsTheyAllHold() {
+        signInWith(Permissions.USER_READ); // holds user:read, but is not a super admin (hasRole not stubbed)
+        UUID roleId = UUID.randomUUID();
+        RoleRef reader = mock(RoleRef.class);
+        when(reader.getId()).thenReturn(roleId);
+        when(roleService.findByName("ROLE_READER")).thenReturn(Optional.of(reader));
+        when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.USER_READ));
+
+        assertThat(policy.mayAssignRoles(Set.of("ROLE_READER"))).isTrue();
+    }
+
+    @Test
+    void scopedAdminMayNotGrantARoleCarryingAPermissionTheyDoNotHold() {
+        UUID roleId = stubRole("ROLE_READER");
+        when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.USER_READ));
+        when(userAuth.canManage(ACTOR_ID, OTHER_ID)).thenReturn(true);
+
+        assertThat(policy.canGrantRole(OTHER_ID, roleId)).isFalse();
     }
 
     @Test
@@ -471,7 +506,12 @@ class AdminAccessPolicyTest {
     }
 
     private void signIn() {
+        signInWith(Roles.ADMIN);
+    }
+
+    /** Signs the actor in holding exactly the given authorities (role names and/or permission strings). */
+    private void signInWith(String... authorities) {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
-                ACTOR_NAME, null, List.of(new SimpleGrantedAuthority(Roles.ADMIN))));
+                ACTOR_NAME, null, Arrays.stream(authorities).map(SimpleGrantedAuthority::new).toList()));
     }
 }

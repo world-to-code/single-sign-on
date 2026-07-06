@@ -18,8 +18,10 @@ import java.util.Collection;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
@@ -96,7 +98,11 @@ public class AdminAccessPolicy {
         if (containsPrivilegedRole(roleNames)) {
             return false;
         }
-        return roleNames == null || roleNames.stream().noneMatch(this::roleCarriesPlatformPermission);
+        if (roleNames == null) {
+            return true;
+        }
+        return roleNames.stream().noneMatch(this::roleCarriesPlatformPermission)
+                && roleNames.stream().allMatch(this::actorHoldsAllPermissionsOfRole);
     }
 
     /**
@@ -274,9 +280,11 @@ public class AdminAccessPolicy {
     private boolean canManageRoleMembership(UUID userId, UUID roleId) {
         if (!currentIsSuperAdmin()
                 && (isAdmin(userId) || PRIVILEGED_ROLES.contains(roleName(roleId))
-                        || roleCarriesPlatformPermission(roleId))) {
-            // A scoped admin may never touch admin accounts, hand out a privileged role, nor grant a role
-            // that carries a platform-only permission (which would escalate the target — or themselves).
+                        || roleCarriesPlatformPermission(roleId)
+                        || !actorHoldsAllPermissionsOf(roleId))) {
+            // A scoped admin may never touch admin accounts, hand out a privileged role, grant a role that
+            // carries a platform-only permission, nor grant a role carrying any permission they do not
+            // themselves hold (all of which would escalate the target — or themselves).
             return false;
         }
         return canAccessUser(userId);
@@ -292,6 +300,33 @@ public class AdminAccessPolicy {
         return roleService.findByName(roleName)
                 .map(role -> roleCarriesPlatformPermission(role.getId()))
                 .orElse(false);
+    }
+
+    /**
+     * Grant-only-what-you-hold: whether the acting admin holds EVERY permission the role (by id) carries. A
+     * non-super admin may not hand out an authority they lack — otherwise a tenant admin could assign a
+     * super-created role bearing a permission they don't have (e.g. {@code user:read}) and escalate. A super
+     * admin holds the whole catalog, so this is a no-op for them (and privileged-role gates short-circuit first).
+     */
+    private boolean actorHoldsAllPermissionsOf(UUID roleId) {
+        return currentAuthorities().containsAll(roleService.permissionNames(roleId));
+    }
+
+    /** Grant-only-what-you-hold by role name; an unknown name is left for the service to reject (404), not blocked here. */
+    private boolean actorHoldsAllPermissionsOfRole(String roleName) {
+        return roleService.findByName(roleName)
+                .map(role -> actorHoldsAllPermissionsOf(role.getId()))
+                .orElse(true);
+    }
+
+    /** The authority strings the acting admin currently holds (role names, permissions, and session markers). */
+    private Set<String> currentAuthorities() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            return Set.of();
+        }
+        return authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority).collect(Collectors.toSet());
     }
 
     /** The role's name, or {@code null} if it no longer exists (the caller's service then 404s). */
