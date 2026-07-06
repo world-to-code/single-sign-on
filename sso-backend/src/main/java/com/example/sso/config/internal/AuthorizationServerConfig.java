@@ -4,6 +4,7 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.crypto.RsaKeyService;
 import com.example.sso.oidc.BackChannelLogout;
+import com.example.sso.oidc.ConsentPage;
 import com.example.sso.oidc.OidcBackchannelSessionIndex;
 import com.example.sso.portal.AppAssignmentFilter;
 import com.example.sso.portal.AppStepUpFilter;
@@ -94,11 +95,15 @@ public class AuthorizationServerConfig {
                 .securityMatcher(authorizationServer.getEndpointsMatcher())
                 // Enable OIDC and advertise back-channel logout support in the discovery metadata (the
                 // end_session endpoint is already enabled by the OIDC defaults).
-                .with(authorizationServer, as -> as.oidc(oidc -> oidc
-                        .providerConfigurationEndpoint(providerConfig -> providerConfig
-                                .providerConfigurationCustomizer(metadata -> metadata
-                                        .claim(BackChannelLogout.METADATA_SUPPORTED, true)
-                                        .claim(BackChannelLogout.METADATA_SESSION_SUPPORTED, true)))))
+                .with(authorizationServer, as -> as
+                        // Replace the framework whitelabel consent screen with our branded, server-rendered
+                        // page (same SPA visual identity); the endpoint still owns the scope/consent contract.
+                        .authorizationEndpoint(endpoint -> endpoint.consentPage(ConsentPage.URI))
+                        .oidc(oidc -> oidc
+                                .providerConfigurationEndpoint(providerConfig -> providerConfig
+                                        .providerConfigurationCustomizer(metadata -> metadata
+                                                .claim(BackChannelLogout.METADATA_SUPPORTED, true)
+                                                .claim(BackChannelLogout.METADATA_SESSION_SUPPORTED, true)))))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/oauth2/authorize").access(mfaComplete)
                         .anyRequest().access(plainAuthenticated))

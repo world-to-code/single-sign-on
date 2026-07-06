@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Authorize access · Mini SSO</title>
+  <!--
+    Server-rendered consent screen. Styled to match the React SPA's login/MFA pages using the same
+    design tokens (see sso-frontend/src/index.css). Styles are inlined because the CSP allows
+    'unsafe-inline' for style-src but forbids external stylesheets and inline scripts; the Allow /
+    Cancel actions are therefore two plain forms — no JavaScript.
+  -->
+  <style>
+    :root {
+      --background: 210 40% 98%;
+      --foreground: 222 47% 11%;
+      --card: 0 0% 100%;
+      --primary: 243 75% 59%;
+      --primary-foreground: 0 0% 100%;
+      --muted: 210 40% 96%;
+      --muted-foreground: 215 16% 47%;
+      --accent: 243 75% 96%;
+      --accent-foreground: 243 75% 40%;
+      --success: 142 71% 45%;
+      --border: 214 32% 91%;
+      --radius: 0.65rem;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --background: 222 47% 9%;
+        --foreground: 210 40% 98%;
+        --card: 222 47% 12%;
+        --primary: 243 75% 66%;
+        --primary-foreground: 222 47% 11%;
+        --muted: 217 33% 18%;
+        --muted-foreground: 215 20% 65%;
+        --accent: 217 33% 20%;
+        --accent-foreground: 210 40% 98%;
+        --border: 217 33% 20%;
+      }
+    }
+
+    * { box-sizing: border-box; border-color: hsl(var(--border)); }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2.5rem 1rem;
+      background-color: hsl(var(--background));
+      color: hsl(var(--foreground));
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-feature-settings: "rlig" 1, "calt" 1;
+      -webkit-font-smoothing: antialiased;
+      /* Decorative backdrop: radial glow + faint grid, masked toward the top (mirrors AuthLayout). */
+      background-image:
+        radial-gradient(60rem 40rem at 50% -10%, hsl(var(--primary) / 0.12), transparent),
+        linear-gradient(to right, hsl(var(--border) / 0.4) 1px, transparent 1px),
+        linear-gradient(to bottom, hsl(var(--border) / 0.4) 1px, transparent 1px);
+      background-size: 100% 100%, 36px 36px, 36px 36px;
+    }
+
+    .shell { width: 100%; max-width: 28rem; }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.625rem;
+      margin-bottom: 1.5rem;
+    }
+    .brand-mark {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 0.5rem;
+      background-color: hsl(var(--primary));
+      color: hsl(var(--primary-foreground));
+      box-shadow: 0 1px 2px 0 hsl(var(--foreground) / 0.05);
+    }
+    .brand-name { font-size: 0.875rem; font-weight: 600; letter-spacing: -0.01em; line-height: 1.1; }
+    .brand-sub { font-size: 0.6875rem; color: hsl(var(--muted-foreground)); }
+
+    .card {
+      background-color: hsl(var(--card));
+      border: 1px solid hsl(var(--border));
+      border-radius: var(--radius);
+      box-shadow: 0 20px 25px -5px hsl(var(--foreground) / 0.1), 0 8px 10px -6px hsl(var(--foreground) / 0.1);
+      overflow: hidden;
+    }
+    .card-body { padding: 1.5rem; }
+
+    .step {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: hsl(var(--primary));
+      margin-bottom: 0.5rem;
+    }
+
+    h1 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 0.25rem; }
+    h1 .app { color: hsl(var(--primary)); }
+    .lead { font-size: 0.875rem; color: hsl(var(--muted-foreground)); margin: 0; }
+
+    .identity {
+      display: flex;
+      align-items: center;
+      gap: 0.625rem;
+      margin: 1.25rem 0;
+      padding: 0.75rem;
+      border: 1px solid hsl(var(--border));
+      border-radius: calc(var(--radius) - 0.15rem);
+      background-color: hsl(var(--muted) / 0.5);
+      font-size: 0.8125rem;
+    }
+    .identity svg { color: hsl(var(--muted-foreground)); flex-shrink: 0; }
+    .identity .who { color: hsl(var(--muted-foreground)); }
+    .identity .who strong { color: hsl(var(--foreground)); font-weight: 600; }
+
+    .section-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: hsl(var(--muted-foreground));
+      margin: 0 0 0.5rem;
+    }
+
+    .scopes { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: 0.5rem; }
+    .scope {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      padding: 0.75rem;
+      border: 1px solid hsl(var(--border));
+      border-radius: calc(var(--radius) - 0.15rem);
+      background-color: hsl(var(--card));
+      transition: border-color 0.15s ease, background-color 0.15s ease;
+    }
+    .scope:focus-within { border-color: hsl(var(--primary)); background-color: hsl(var(--accent) / 0.4); }
+    .scope input[type="checkbox"] {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 1.15rem;
+      height: 1.15rem;
+      margin: 0.05rem 0 0;
+      border: 1.5px solid hsl(var(--border));
+      border-radius: 0.35rem;
+      background-color: hsl(var(--card));
+      display: inline-grid;
+      place-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .scope input[type="checkbox"]::before {
+      content: "";
+      width: 0.65rem;
+      height: 0.65rem;
+      transform: scale(0);
+      transition: transform 0.12s ease-in-out;
+      box-shadow: inset 1rem 1rem hsl(var(--primary-foreground));
+      clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+    }
+    .scope input[type="checkbox"]:checked {
+      background-color: hsl(var(--primary));
+      border-color: hsl(var(--primary));
+    }
+    .scope input[type="checkbox"]:checked::before { transform: scale(1); }
+    .scope input[type="checkbox"]:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+    .scope label { cursor: pointer; }
+    .scope .name { display: block; font-size: 0.875rem; font-weight: 500; line-height: 1.3; }
+    .scope .code { display: block; font-size: 0.6875rem; color: hsl(var(--muted-foreground)); margin-top: 0.15rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+    .granted { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0; font-size: 0.8125rem; color: hsl(var(--muted-foreground)); }
+    .granted svg { color: hsl(var(--success)); flex-shrink: 0; }
+
+    .actions { display: grid; gap: 0.5rem; margin-top: 1.25rem; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      width: 100%;
+      height: 2.75rem;
+      padding: 0 1rem;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      border-radius: calc(var(--radius) - 0.1rem);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+    .btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+    .btn-primary { background-color: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+    .btn-primary:hover { background-color: hsl(var(--primary) / 0.9); }
+    .btn-ghost { background-color: transparent; color: hsl(var(--muted-foreground)); border-color: hsl(var(--border)); }
+    .btn-ghost:hover { background-color: hsl(var(--muted) / 0.6); color: hsl(var(--foreground)); }
+
+    .reassure {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      margin-top: 1.25rem;
+      padding-top: 1rem;
+      border-top: 1px solid hsl(var(--border));
+      font-size: 0.75rem;
+      color: hsl(var(--muted-foreground));
+      line-height: 1.45;
+    }
+    .reassure svg { color: hsl(var(--success)); flex-shrink: 0; margin-top: 0.1rem; }
+
+    .footer { margin-top: 1.5rem; text-align: center; font-size: 0.75rem; color: hsl(var(--muted-foreground)); }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
+          <path d="m9 12 2 2 4-4"/>
+        </svg>
+      </span>
+      <span>
+        <span class="brand-name">Mini SSO</span>
+        <span class="brand-sub">Identity Provider</span>
+      </span>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <div class="step">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+          Authorize access
+        </div>
+        <h1><span class="app" th:text="${clientName}">The app</span> wants to access your account</h1>
+        <p class="lead">Review the information this application is requesting before you approve.</p>
+
+        <div class="identity">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
+            <circle cx="12" cy="7" r="4"/>
+          </svg>
+          <span class="who">Signed in as <strong th:text="${principalName}">user</strong></span>
+        </div>
+
+        <form method="post" th:action="@{/oauth2/authorize}">
+          <input type="hidden" name="client_id" th:value="${clientId}">
+          <input type="hidden" name="state" th:value="${state}">
+          <input type="hidden" name="user_code" th:value="${userCode}" th:if="${userCode != null}">
+
+          <div th:if="${!scopes.isEmpty()}">
+            <p class="section-label">Permissions requested</p>
+            <ul class="scopes">
+              <li class="scope" th:each="s : ${scopes}">
+                <input type="checkbox" name="scope" th:value="${s.scope}" th:id="'scope-' + ${s.scope}" checked>
+                <label th:for="'scope-' + ${s.scope}">
+                  <span class="name" th:text="${s.description}">A permission</span>
+                  <span class="code" th:text="${s.scope}">scope</span>
+                </label>
+              </li>
+            </ul>
+          </div>
+
+          <div th:if="${!previouslyGrantedScopes.isEmpty()}">
+            <p class="section-label">Already granted</p>
+            <div class="granted" th:each="s : ${previouslyGrantedScopes}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20 6 9 17l-5-5"/>
+              </svg>
+              <span th:text="${s.description}">A permission</span>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn btn-primary" type="submit" id="submit-consent">Allow access</button>
+          </div>
+        </form>
+
+        <!-- Cancel is a separate form that submits no scopes, which the authorization endpoint treats
+             as a denial (access_denied). Kept out of the Allow form so it can never carry checked scopes. -->
+        <form method="post" th:action="@{/oauth2/authorize}" class="actions">
+          <input type="hidden" name="client_id" th:value="${clientId}">
+          <input type="hidden" name="state" th:value="${state}">
+          <input type="hidden" name="user_code" th:value="${userCode}" th:if="${userCode != null}">
+          <button class="btn btn-ghost" type="submit" id="cancel-consent">Cancel</button>
+        </form>
+
+        <div class="reassure">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
+          </svg>
+          <span>Only the permissions you leave checked are shared. You can revoke this access at any time from your account.</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="footer">Secured by Mini SSO · single-node Identity Provider</p>
+  </main>
+</body>
+</html>
