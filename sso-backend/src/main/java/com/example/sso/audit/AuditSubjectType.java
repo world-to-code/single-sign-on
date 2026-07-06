@@ -6,5 +6,5 @@ package com.example.sso.audit;
  * admin or to the acting principal themselves.
  */
 public enum AuditSubjectType {
-    USER, GROUP, APPLICATION, RESOURCE, ORGANIZATION, NONE
+    USER, GROUP, APPLICATION, RESOURCE, ORGANIZATION, CUSTOMER, NONE
 }

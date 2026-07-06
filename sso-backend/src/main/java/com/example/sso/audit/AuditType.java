@@ -75,6 +75,11 @@ public enum AuditType {
     ORGANIZATION_MEMBER_REMOVED(AuditCategory.ADMIN),
     ORGANIZATION_CONTEXT_ENTERED(AuditCategory.ADMIN),
 
+    // Administrative operations on customers (고객사 — the top tenancy tier)
+    CUSTOMER_CREATED(AuditCategory.ADMIN),
+    CUSTOMER_UPDATED(AuditCategory.ADMIN),
+    CUSTOMER_DELETED(AuditCategory.ADMIN),
+
     // Platform / system
     SERVER_ERROR(AuditCategory.SYSTEM);
 

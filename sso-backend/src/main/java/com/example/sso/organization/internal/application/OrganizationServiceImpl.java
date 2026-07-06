@@ -1,5 +1,6 @@
 package com.example.sso.organization.internal.application;
 
+import com.example.sso.customer.CustomerService;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationAccessRevokedEvent;
 import com.example.sso.organization.OrganizationRef;
@@ -39,6 +40,7 @@ public class OrganizationServiceImpl implements OrganizationService {
     private final ApplicationEventPublisher events;
     private final UserService users;
     private final OrgContext orgContext;
+    private final CustomerService customers;
 
     @Override
     @Transactional
@@ -47,7 +49,11 @@ public class OrganizationServiceImpl implements OrganizationService {
         if (organizations.existsBySlug(slug)) {
             throw new ConflictException("organization slug '" + slug + "' already exists");
         }
-        return view(organizations.save(new Organization(slug, requireName(command.name()), command.profile())));
+        // Every organization is a branch of a customer (고객사). Until customer selection is wired, new orgs
+        // join the default customer, keeping the FK non-null.
+        Organization org = new Organization(slug, requireName(command.name()), command.profile());
+        org.assignCustomer(customers.defaultCustomer().getId());
+        return view(organizations.save(org));
     }
 
     @Override

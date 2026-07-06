@@ -10,6 +10,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -38,6 +39,11 @@ public class Organization extends AuditedEntity implements OrganizationRef {
     @Embedded
     private CompanyProfileData companyProfile;
 
+    // The parent customer (고객사) this organization is a branch of. A bare UUID — the customer module owns the
+    // Customer entity (entity-hiding); set at creation via assignCustomer, so it is non-null by the first save.
+    @Column(name = "customer_id", nullable = false)
+    private UUID customerId;
+
     public Organization(String slug, String name) {
         this(slug, name, CompanyProfile.empty());
     }
@@ -47,6 +53,11 @@ public class Organization extends AuditedEntity implements OrganizationRef {
         this.name = name;
         this.status = OrganizationStatus.ACTIVE;
         this.companyProfile = CompanyProfileData.of(profile);
+    }
+
+    /** Assign the parent customer (고객사). Set once at creation; the FK is non-null. */
+    public void assignCustomer(UUID customerId) {
+        this.customerId = customerId;
     }
 
     public void rename(String name) {

@@ -69,6 +69,11 @@ public final class Permissions {
     public static final String RESOURCE_DELETE = "resource:delete";
     public static final String RESOURCE_ASSIGN_ADMIN = "resource:assign-admin";
     // Organizations (tenants) — platform-admin registry management + membership
+    public static final String CUSTOMER_READ = "customer:read";
+    public static final String CUSTOMER_CREATE = "customer:create";
+    public static final String CUSTOMER_UPDATE = "customer:update";
+    public static final String CUSTOMER_DELETE = "customer:delete";
+
     public static final String ORG_READ = "organization:read";
     public static final String ORG_CREATE = "organization:create";
     public static final String ORG_UPDATE = "organization:update";
@@ -92,13 +97,15 @@ public final class Permissions {
             PORTAL_SETTINGS_READ, PORTAL_SETTINGS_UPDATE,
             APP_ASSIGNMENT_READ, APP_ASSIGNMENT_ASSIGN, APP_ASSIGNMENT_UNASSIGN,
             RESOURCE_READ, RESOURCE_CREATE, RESOURCE_UPDATE, RESOURCE_DELETE, RESOURCE_ASSIGN_ADMIN,
+            CUSTOMER_READ, CUSTOMER_CREATE, CUSTOMER_UPDATE, CUSTOMER_DELETE,
             ORG_READ, ORG_CREATE, ORG_UPDATE, ORG_DELETE, ORG_MEMBER_MANAGE,
             AUDIT_READ, SCIM_MANAGE, KEY_ROTATE);
 
     private static final Set<String> CATALOG = Set.copyOf(ALL);
 
     /**
-     * Platform-only permissions: the tenant registry itself ({@code organization:create/update/delete}),
+     * Platform-only permissions: the customer + organization registries ({@code customer:*},
+     * {@code organization:create/update/delete}),
      * the global admin-console security config ({@code portal-settings:*}), and shared cross-tenant
      * INFRASTRUCTURE — cross-tenant audit ({@code audit:read}) and the global OIDC client registry
      * ({@code oidc-client:*}). A tenant (org) admin can neither see these in the catalog nor grant them
@@ -119,6 +126,7 @@ public final class Permissions {
      * by default (the ROLE_ORG_ADMIN baseline is only {@code organization:read} + {@code member-manage}).
      */
     public static final Set<String> PLATFORM = Set.of(
+            CUSTOMER_READ, CUSTOMER_CREATE, CUSTOMER_UPDATE, CUSTOMER_DELETE,
             ORG_CREATE, ORG_UPDATE, ORG_DELETE,
             PORTAL_SETTINGS_READ, PORTAL_SETTINGS_UPDATE,
             AUDIT_READ,

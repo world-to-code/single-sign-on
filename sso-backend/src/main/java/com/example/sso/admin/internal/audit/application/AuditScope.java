@@ -25,9 +25,9 @@ public record AuditScope(boolean unscoped, String actorUsername, Set<UUID> userI
             case GROUP -> containsUuid(groupIds, entry.subjectId());
             case APPLICATION -> entry.subjectId() != null && appIds.contains(entry.subjectId());
             case RESOURCE -> containsUuid(resourceIds, entry.subjectId());
-            // Organizations are a platform-level concern — only a super admin (unscoped, handled above)
-            // sees org audit entries; a scoped delegate does not. Org-scoped visibility arrives with MT-4.
-            case ORGANIZATION, NONE -> false;
+            // Organizations and customers are platform-level — only a super admin (unscoped, handled above)
+            // sees their audit entries; a scoped delegate does not.
+            case ORGANIZATION, CUSTOMER, NONE -> false;
         };
     }
 
