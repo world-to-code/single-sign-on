@@ -29,10 +29,14 @@ public interface CustomerService {
     /** The seeded default customer — the parent assigned to a newly created organization for now. */
     CustomerRef defaultCustomer();
 
+    /** Whether the customer exists and is ACTIVE — a SUSPENDED (or missing) customer gates all its branches. */
+    boolean isActive(UUID customerId);
+
     /** Whether the user is an administrator of the customer (holds a customer_membership row for it). */
     boolean isCustomerAdmin(UUID userId, UUID customerId);
 
-    /** The ids of the customers this user administers — their customer-admin scope. */
+    /** The ids of the ACTIVE customers this user administers — their customer-admin scope. Suspending a
+     *  customer revokes delegated management of its branches (they drop out of this set). */
     Set<UUID> customersForUser(UUID userId);
 
     /** Appoints the user as an administrator of the customer (idempotent). Grant {@code ROLE_CUSTOMER_ADMIN}

@@ -6,6 +6,7 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.organization.OrganizationRef;
+import com.example.sso.customer.CustomerService;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationStatus;
 import com.example.sso.saml.SamlFrontChannelLogout;
@@ -53,6 +54,7 @@ public class AuthenticationService {
     private final LoginAttemptService loginAttempts;
     private final SamlFrontChannelLogout samlFrontChannel;
     private final OrganizationService organizations;
+    private final CustomerService customers;
     private final PreAuthOrgSession preAuthOrg;
     private final AuditService audit;
 
@@ -80,8 +82,11 @@ public class AuthenticationService {
         if (identified()) {
             throw new BadRequestException("Sign-in is already in progress; restart to change organization.");
         }
+        // The org must be ACTIVE and so must its parent customer (고객사) — suspending a customer gates login
+        // to all of its branches. Rejected uniformly (no enumeration of which orgs/customers exist).
         OrganizationRef org = organizations.findBySlug(slug)
                 .filter(o -> o.getStatus() == OrganizationStatus.ACTIVE)
+                .filter(o -> customers.isActive(o.getCustomerId()))
                 .orElseThrow(() -> new NotFoundException("No such organization."));
         preAuthOrg.stash(request, org.getId(), org.getSlug());
         audit.record(AuditType.AUTH_ORGANIZATION, org.getSlug(), true);

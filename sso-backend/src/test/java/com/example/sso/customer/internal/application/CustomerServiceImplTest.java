@@ -108,9 +108,41 @@ class CustomerServiceImplTest {
         UUID customerId = UUID.randomUUID();
         when(memberships.existsByCustomerIdAndUserId(customerId, userId)).thenReturn(true);
         when(memberships.findCustomerIdsByUserId(userId)).thenReturn(Set.of(customerId));
+        when(customers.findById(customerId)).thenReturn(Optional.of(new Customer("acme", "Acme"))); // ACTIVE
 
         assertThat(service.isCustomerAdmin(userId, customerId)).isTrue();
         assertThat(service.customersForUser(userId)).containsExactly(customerId);
+    }
+
+    @Test
+    void customersForUserExcludesSuspendedCustomers() {
+        // Suspending a customer must revoke its admins' delegated scope — it drops out of customersForUser.
+        UUID userId = UUID.randomUUID();
+        UUID activeId = UUID.randomUUID();
+        UUID suspendedId = UUID.randomUUID();
+        Customer suspended = new Customer("beta", "Beta");
+        suspended.changeStatus(CustomerStatus.SUSPENDED);
+        when(memberships.findCustomerIdsByUserId(userId)).thenReturn(Set.of(activeId, suspendedId));
+        when(customers.findById(activeId)).thenReturn(Optional.of(new Customer("acme", "Acme")));
+        when(customers.findById(suspendedId)).thenReturn(Optional.of(suspended));
+
+        assertThat(service.customersForUser(userId)).containsExactly(activeId);
+    }
+
+    @Test
+    void isActiveIsTrueOnlyForAnExistingActiveCustomer() {
+        UUID id = UUID.randomUUID();
+        Customer suspended = new Customer("beta", "Beta");
+        suspended.changeStatus(CustomerStatus.SUSPENDED);
+
+        when(customers.findById(id)).thenReturn(Optional.of(new Customer("acme", "Acme")));
+        assertThat(service.isActive(id)).isTrue();
+
+        when(customers.findById(id)).thenReturn(Optional.of(suspended));
+        assertThat(service.isActive(id)).isFalse();
+
+        when(customers.findById(id)).thenReturn(Optional.empty());
+        assertThat(service.isActive(id)).isFalse();
     }
 
     @Test

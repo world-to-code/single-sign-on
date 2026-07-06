@@ -19,6 +19,7 @@ import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -104,6 +105,20 @@ class OrganizationServiceImplTest {
         ArgumentCaptor<Organization> saved = ArgumentCaptor.forClass(Organization.class);
         verify(organizations).save(saved.capture());
         assertThat(saved.getValue().getCustomerId()).isEqualTo(defaultCustomerId);
+    }
+
+    @Test
+    void isBranchOfIsFalseForAnEmptyCustomerSetWithoutQuerying() {
+        // The guard keeps an unbounded `... customer_id in ()` off the DB and fails closed for a user who
+        // administers no customers.
+        assertThat(service.isBranchOf(UUID.randomUUID(), Set.of())).isFalse();
+        verify(organizations, never()).existsByIdAndCustomerIdIn(any(), any());
+    }
+
+    @Test
+    void branchIdsForCustomersIsEmptyForAnEmptyCustomerSetWithoutQuerying() {
+        assertThat(service.branchIdsForCustomers(Set.of())).isEmpty();
+        verify(organizations, never()).findIdsByCustomerIdIn(any());
     }
 
     @Test

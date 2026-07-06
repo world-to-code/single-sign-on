@@ -22,6 +22,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -60,7 +61,7 @@ class TenantHostFilterTest {
         OrganizationRef o = mock(OrganizationRef.class);
         when(o.getStatus()).thenReturn(status);
         if (status == OrganizationStatus.ACTIVE) {
-            when(o.getId()).thenReturn(id);
+            lenient().when(o.getId()).thenReturn(id); // not read when a later filter (e.g. customer) rejects first
         }
         return o;
     }
@@ -84,17 +85,38 @@ class TenantHostFilterTest {
     }
 
     @Test
-    void aSingleLabelHostBindsTheOrgDirectly() throws Exception {
+    void aSingleLabelHostBindsTheOrgWhenBothOrgAndCustomerAreActive() throws Exception {
         UUID orgId = UUID.randomUUID();
+        UUID customerId = UUID.randomUUID();
         request.setServerName("acme.localhost");
         OrganizationRef activeOrg = org(OrganizationStatus.ACTIVE, orgId);
+        when(activeOrg.getCustomerId()).thenReturn(customerId);
         when(resolver.resolve("acme.localhost")).thenReturn(Optional.of(new TenantHost("acme", null)));
         when(organizations.findBySlug("acme")).thenReturn(Optional.of(activeOrg));
+        when(customers.isActive(customerId)).thenReturn(true);
 
         filter.doFilter(request, response, chain);
 
         verify(orgContext).bindOrg(orgId);
         verify(chain).doFilter(request, response);
+    }
+
+    @Test
+    void aSingleLabelBranchOfASuspendedCustomerIsRefused() throws Exception {
+        // The kill-switch: suspending a customer gates its branches on the legacy {org}.base host too.
+        UUID orgId = UUID.randomUUID();
+        UUID customerId = UUID.randomUUID();
+        request.setServerName("acme.localhost");
+        OrganizationRef activeOrg = org(OrganizationStatus.ACTIVE, orgId);
+        when(activeOrg.getCustomerId()).thenReturn(customerId);
+        when(resolver.resolve("acme.localhost")).thenReturn(Optional.of(new TenantHost("acme", null)));
+        when(organizations.findBySlug("acme")).thenReturn(Optional.of(activeOrg));
+        when(customers.isActive(customerId)).thenReturn(false); // parent customer suspended
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(404);
+        verify(orgContext, never()).bindOrg(any());
     }
 
     @Test

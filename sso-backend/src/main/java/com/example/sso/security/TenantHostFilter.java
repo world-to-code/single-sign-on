@@ -88,8 +88,11 @@ public class TenantHostFilter extends OncePerRequestFilter {
                 .orElse(null);
     }
 
+    // The single-label {org}.base path — the org AND its parent customer must be ACTIVE, so suspending a
+    // customer (고객사) gates all of its branches on the legacy host too, not only on {branch}.{customer}.base.
     private UUID activeOrgId(Optional<OrganizationRef> org) {
         return org.filter(o -> o.getStatus() == OrganizationStatus.ACTIVE)
+                .filter(o -> customers.isActive(o.getCustomerId()))
                 .map(OrganizationRef::getId)
                 .orElse(null);
     }

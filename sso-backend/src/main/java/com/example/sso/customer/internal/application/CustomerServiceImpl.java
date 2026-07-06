@@ -17,6 +17,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -85,6 +86,12 @@ public class CustomerServiceImpl implements CustomerService {
 
     @Override
     @Transactional(readOnly = true)
+    public boolean isActive(UUID customerId) {
+        return customers.findById(customerId).map(c -> c.getStatus() == CustomerStatus.ACTIVE).orElse(false);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public boolean isCustomerAdmin(UUID userId, UUID customerId) {
         return memberships.existsByCustomerIdAndUserId(customerId, userId);
     }
@@ -92,7 +99,10 @@ public class CustomerServiceImpl implements CustomerService {
     @Override
     @Transactional(readOnly = true)
     public Set<UUID> customersForUser(UUID userId) {
-        return memberships.findCustomerIdsByUserId(userId);
+        // A SUSPENDED customer must not be manageable by its admins — drop it from the delegated-admin scope.
+        return memberships.findCustomerIdsByUserId(userId).stream()
+                .filter(this::isActive)
+                .collect(Collectors.toSet());
     }
 
     @Override

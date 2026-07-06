@@ -68,12 +68,13 @@ public final class Permissions {
     public static final String RESOURCE_UPDATE = "resource:update";
     public static final String RESOURCE_DELETE = "resource:delete";
     public static final String RESOURCE_ASSIGN_ADMIN = "resource:assign-admin";
-    // Organizations (tenants) — platform-admin registry management + membership
+    // Customers (고객사 — the top tenancy tier above organizations)
     public static final String CUSTOMER_READ = "customer:read";
     public static final String CUSTOMER_CREATE = "customer:create";
     public static final String CUSTOMER_UPDATE = "customer:update";
     public static final String CUSTOMER_DELETE = "customer:delete";
 
+    // Organizations (tenants) — platform-admin registry management + membership
     public static final String ORG_READ = "organization:read";
     public static final String ORG_CREATE = "organization:create";
     public static final String ORG_UPDATE = "organization:update";
