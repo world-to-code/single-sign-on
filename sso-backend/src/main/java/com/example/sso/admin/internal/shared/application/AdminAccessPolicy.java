@@ -44,7 +44,8 @@ public class AdminAccessPolicy {
     static final String ADMIN_ROLE = Roles.ADMIN;
 
     /** Roles that grant admin-console reach; only a super admin may assign them. */
-    private static final Set<String> PRIVILEGED_ROLES = Set.of(Roles.ADMIN, Roles.GROUP_ADMIN, Roles.ORG_ADMIN);
+    private static final Set<String> PRIVILEGED_ROLES =
+            Set.of(Roles.ADMIN, Roles.CUSTOMER_ADMIN, Roles.GROUP_ADMIN, Roles.ORG_ADMIN);
 
     private final UserService userService;
     private final RoleService roleService;

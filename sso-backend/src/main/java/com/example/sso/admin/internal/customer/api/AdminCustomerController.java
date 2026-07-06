@@ -64,4 +64,20 @@ public class AdminCustomerController {
         customers.delete(id);
         return ResponseEntity.noContent().build();
     }
+
+    @PostMapping("/{id}/admins")
+    @RequirePermission(Permissions.CUSTOMER_UPDATE)
+    @RequireStepUp
+    public ResponseEntity<Void> addAdmin(@PathVariable UUID id, @Valid @RequestBody CustomerAdminRequest request) {
+        customers.addAdmin(id, request.userId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{id}/admins/{userId}")
+    @RequirePermission(Permissions.CUSTOMER_UPDATE)
+    @RequireStepUp
+    public ResponseEntity<Void> removeAdmin(@PathVariable UUID id, @PathVariable UUID userId) {
+        customers.removeAdmin(id, userId);
+        return ResponseEntity.noContent().build();
+    }
 }

@@ -36,6 +36,13 @@ public class RbacServiceImpl implements RbacService {
     private static final List<String> ORG_ADMIN_PERMISSIONS = List.of(
             Permissions.ORG_READ, Permissions.ORG_MEMBER_MANAGE);
 
+    // Baseline for the scoped ROLE_CUSTOMER_ADMIN: manage the branches under their customer, exactly like an
+    // org-admin manages an org (read + member-manage, scoped to their branches by customer membership).
+    // Deliberately EXCLUDES every PLATFORM permission — no customer:* registry authority, no org create/delete
+    // — so a customer-admin can never mutate the registry nor cross into another customer.
+    private static final List<String> CUSTOMER_ADMIN_PERMISSIONS = List.of(
+            Permissions.ORG_READ, Permissions.ORG_MEMBER_MANAGE);
+
     private final PermissionRepository permissions;
     private final RolePermissionRepository rolePermissions;
     private final RoleRepository roles;
@@ -65,6 +72,15 @@ public class RbacServiceImpl implements RbacService {
                 .orElseThrow(() -> new IllegalStateException("ROLE_ORG_ADMIN must exist before granting permissions"));
 
         grantEach(orgAdmin.getId(), ORG_ADMIN_PERMISSIONS);
+    }
+
+    @Override
+    @Transactional
+    public void grantCustomerAdminPermissions() {
+        Role customerAdmin = roles.findByNameAndOrgIdIsNull(Roles.CUSTOMER_ADMIN)
+                .orElseThrow(() -> new IllegalStateException("ROLE_CUSTOMER_ADMIN must exist before granting permissions"));
+
+        grantEach(customerAdmin.getId(), CUSTOMER_ADMIN_PERMISSIONS);
     }
 
     @Override

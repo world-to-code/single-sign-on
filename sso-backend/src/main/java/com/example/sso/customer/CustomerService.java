@@ -2,6 +2,7 @@ package com.example.sso.customer;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -27,4 +28,17 @@ public interface CustomerService {
 
     /** The seeded default customer — the parent assigned to a newly created organization for now. */
     CustomerRef defaultCustomer();
+
+    /** Whether the user is an administrator of the customer (holds a customer_membership row for it). */
+    boolean isCustomerAdmin(UUID userId, UUID customerId);
+
+    /** The ids of the customers this user administers — their customer-admin scope. */
+    Set<UUID> customersForUser(UUID userId);
+
+    /** Appoints the user as an administrator of the customer (idempotent). Grant {@code ROLE_CUSTOMER_ADMIN}
+     *  separately so their branches actually resolve. */
+    void addAdmin(UUID customerId, UUID userId);
+
+    /** Removes the user's administration of the customer. */
+    void removeAdmin(UUID customerId, UUID userId);
 }

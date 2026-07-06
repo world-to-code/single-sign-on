@@ -48,4 +48,16 @@ public class CustomerAdminService {
         customers.delete(id);
         audit.log(AuditType.CUSTOMER_DELETED, AuditSubjectType.CUSTOMER, id.toString(), null);
     }
+
+    /** Appoint a user as an administrator of the customer (its customer_membership). The user must also hold
+     *  {@code ROLE_CUSTOMER_ADMIN} — granted via user-role management — for their branches to resolve. */
+    public void addAdmin(UUID customerId, UUID userId) {
+        customers.addAdmin(customerId, userId);
+        audit.log(AuditType.CUSTOMER_ADMIN_ADDED, AuditSubjectType.CUSTOMER, customerId.toString(), userId.toString());
+    }
+
+    public void removeAdmin(UUID customerId, UUID userId) {
+        customers.removeAdmin(customerId, userId);
+        audit.log(AuditType.CUSTOMER_ADMIN_REMOVED, AuditSubjectType.CUSTOMER, customerId.toString(), userId.toString());
+    }
 }

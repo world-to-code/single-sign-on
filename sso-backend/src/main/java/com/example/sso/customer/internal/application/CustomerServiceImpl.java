@@ -6,6 +6,8 @@ import com.example.sso.customer.CustomerStatus;
 import com.example.sso.customer.CustomerView;
 import com.example.sso.customer.NewCustomer;
 import com.example.sso.customer.internal.domain.Customer;
+import com.example.sso.customer.internal.domain.CustomerMembership;
+import com.example.sso.customer.internal.domain.CustomerMembershipRepository;
 import com.example.sso.customer.internal.domain.CustomerRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
@@ -13,6 +15,7 @@ import com.example.sso.shared.error.NotFoundException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +31,7 @@ public class CustomerServiceImpl implements CustomerService {
     private static final Pattern SLUG = Pattern.compile("[a-z0-9][a-z0-9-]{0,61}[a-z0-9]");
 
     private final CustomerRepository customers;
+    private final CustomerMembershipRepository memberships;
 
     @Override
     @Transactional
@@ -77,6 +81,33 @@ public class CustomerServiceImpl implements CustomerService {
     public CustomerRef defaultCustomer() {
         return customers.findBySlug(DEFAULT_CUSTOMER_SLUG)
                 .orElseThrow(() -> new IllegalStateException("default customer missing — V61 seed did not run"));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isCustomerAdmin(UUID userId, UUID customerId) {
+        return memberships.existsByCustomerIdAndUserId(customerId, userId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Set<UUID> customersForUser(UUID userId) {
+        return memberships.findCustomerIdsByUserId(userId);
+    }
+
+    @Override
+    @Transactional
+    public void addAdmin(UUID customerId, UUID userId) {
+        require(customerId); // the customer must exist
+        if (!memberships.existsByCustomerIdAndUserId(customerId, userId)) {
+            memberships.save(new CustomerMembership(customerId, userId));
+        }
+    }
+
+    @Override
+    @Transactional
+    public void removeAdmin(UUID customerId, UUID userId) {
+        memberships.deleteByCustomerIdAndUserId(customerId, userId);
     }
 
     private Customer require(UUID id) {

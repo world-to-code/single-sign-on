@@ -79,6 +79,8 @@ public enum AuditType {
     CUSTOMER_CREATED(AuditCategory.ADMIN),
     CUSTOMER_UPDATED(AuditCategory.ADMIN),
     CUSTOMER_DELETED(AuditCategory.ADMIN),
+    CUSTOMER_ADMIN_ADDED(AuditCategory.ADMIN),
+    CUSTOMER_ADMIN_REMOVED(AuditCategory.ADMIN),
 
     // Platform / system
     SERVER_ERROR(AuditCategory.SYSTEM);

@@ -14,6 +14,8 @@ public final class Roles {
 
     /** Super administrator: unscoped, self-heals to the full permission catalog. */
     public static final String ADMIN = "ROLE_ADMIN";
+    /** Customer (고객사) administrator: manages every organization (branch) under the customers they administer. */
+    public static final String CUSTOMER_ADMIN = "ROLE_CUSTOMER_ADMIN";
     /** Scoped delegated administrator: manages only the members of groups they manage. */
     public static final String GROUP_ADMIN = "ROLE_GROUP_ADMIN";
     /** Organization (tenant) administrator: manages only their own org's members (scoped in a later phase). */
