@@ -8,12 +8,17 @@ import com.example.sso.resource.internal.domain.Resource;
 import com.example.sso.resource.internal.domain.ResourceRepository;
 import com.example.sso.resource.internal.domain.ResourceType;
 import com.example.sso.resource.internal.domain.ResourceTypeRepository;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.user.NewUser;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.Roles;
+import com.example.sso.user.UserService;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,7 +56,10 @@ class ResourceTierIsolationIT extends AbstractIntegrationTest {
     OrganizationService organizations;
     @Autowired
     OrgContext orgContext;
+    @Autowired
+    UserService users;
 
+    private final List<UUID> createdUsers = new ArrayList<>();
     private UUID typeId;
     private UUID globalResource;
     private UUID orgResource;
@@ -73,11 +81,13 @@ class ResourceTierIsolationIT extends AbstractIntegrationTest {
     void cleanup() {
         SecurityContextHolder.clearContext();
         orgContext.runAsPlatform(() -> {
-            resources.deleteById(orgResource);
+            resources.deleteById(orgResource); // resource_grant/member rows cascade off the resource FK
             resources.deleteById(globalResource);
             types.deleteById(typeId);
         });
-        ownerJdbc().update("delete from organization where id = ?", orgId);
+        ownerJdbc().update("delete from organization where id = ?", orgId); // memberships cascade off the org FK
+        createdUsers.forEach(users::delete);
+        createdUsers.clear();
     }
 
     @Test
@@ -112,6 +122,23 @@ class ResourceTierIsolationIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void aTenantAdminMayDelegateResourceAdminOnlyToAnOrgMember() {
+        // FULL reconciliation: a tenant tier-admin may now delegate resource-admin on its own org's resource,
+        // but ONLY to a user who is a MEMBER of that org — never a global outsider (which would hand a
+        // non-member admin over the tenant's subtree). Non-member is a non-revealing 400.
+        UUID member = user();
+        UUID outsider = user();
+        organizations.addMember(orgId, member);
+
+        actAsTenantAdmin();
+        orgContext.runInOrg(orgId, () -> {
+            assertThatCode(() -> service.assignAdmin(orgResource, member)).doesNotThrowAnyException();
+            assertThatThrownBy(() -> service.assignAdmin(orgResource, outsider))
+                    .isInstanceOf(BadRequestException.class);
+        });
+    }
+
+    @Test
     void aTenantAdminManagesItsOwnOrgResource() {
         // Positive control: the tier backstop must NOT over-tighten — a tenant admin still manages its own row.
         actAsTenantAdmin();
@@ -123,6 +150,15 @@ class ResourceTierIsolationIT extends AbstractIntegrationTest {
 
     private static String suffix() {
         return UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    /** A real global user (identity), tracked for cleanup; caller decides org membership. */
+    private UUID user() {
+        String name = "tier-user-" + suffix();
+        UUID id = users.createUser(new NewUser(name, name + "@example.com", name, "S3cret!pw9",
+                Set.of("ROLE_USER"))).getId();
+        createdUsers.add(id);
+        return id;
     }
 
     private void actAsTenantAdmin() {

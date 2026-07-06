@@ -4,7 +4,9 @@ import com.example.sso.resource.ApplicationAuthorization;
 import com.example.sso.resource.GroupAuthorization;
 import com.example.sso.resource.ResourceAuthorization;
 import com.example.sso.resource.UserAuthorization;
+import com.example.sso.organization.OrganizationService;
 import com.example.sso.resource.internal.domain.MemberType;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.UnauthorizedException;
 import com.example.sso.user.Roles;
@@ -52,6 +54,8 @@ class ResourceAccessPolicyTest {
     private ApplicationAuthorization appAuth;
     @Mock
     private UserAuthorization userAuth;
+    @Mock
+    private OrganizationService organizations;
 
     @InjectMocks
     private ResourceAccessPolicy policy;
@@ -148,5 +152,43 @@ class ResourceAccessPolicyTest {
 
         assertThatThrownBy(() -> policy.requireManagesMember(MemberType.RESOURCE, "anything"))
                 .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void requireGranteeInOrgAllowsAMemberOfTheResourcesOrg() {
+        authenticateAs("orgadmin", Roles.ORG_ADMIN);
+        UUID orgId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(organizations.isMember(orgId, userId)).thenReturn(true);
+
+        assertThatCode(() -> policy.requireGranteeInOrg(orgId, userId)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void requireGranteeInOrgRejectsANonMember() {
+        authenticateAs("orgadmin", Roles.ORG_ADMIN);
+        UUID orgId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(organizations.isMember(orgId, userId)).thenReturn(false);
+
+        assertThatThrownBy(() -> policy.requireGranteeInOrg(orgId, userId))
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void requireGranteeInOrgSkipsTheMembershipCheckForASuperAdmin() {
+        authenticateAs("admin", Roles.ADMIN);
+
+        assertThatCode(() -> policy.requireGranteeInOrg(UUID.randomUUID(), UUID.randomUUID()))
+                .doesNotThrowAnyException();
+        verify(organizations, never()).isMember(any(), any());
+    }
+
+    @Test
+    void requireGranteeInOrgSkipsTheMembershipCheckForAGlobalResource() {
+        authenticateAs("orgadmin", Roles.ORG_ADMIN);
+
+        assertThatCode(() -> policy.requireGranteeInOrg(null, UUID.randomUUID())).doesNotThrowAnyException();
+        verify(organizations, never()).isMember(any(), any());
     }
 }

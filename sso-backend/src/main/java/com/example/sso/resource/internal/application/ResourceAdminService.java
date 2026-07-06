@@ -334,19 +334,23 @@ public class ResourceAdminService {
 
     @Transactional
     public ResourceView assignAdmin(UUID id, UUID userId) {
-        // requireDelegate (super or subtree), NOT tier: delegating references a global user id, so a plain
-        // tenant tier-admin must not grant resource-admin to a possibly-non-org-member (awaits org-membership).
-        access.requireDelegate(id);
+        // A tier-admin (or subtree admin, or super) may delegate — but only on a resource in their own tier
+        // (requireInTier) and only to a user who belongs to that resource's org (requireGranteeInOrg), so a
+        // tenant can never make a global outsider an admin over its subtree.
+        access.requireManage(id);
+        Resource resource = requireInTier(id);
         users.findById(userId).orElseThrow(() -> new NotFoundException("User not found."));
-        Resource resource = require(id);
+        access.requireGranteeInOrg(resource.getOrgId(), userId);
         grant(id, ResourceGrant.admin(userId), resource.getOrgId());
         return viewOf(id);
     }
 
     @Transactional
     public ResourceView revokeAdmin(UUID id, UUID userId) {
-        access.requireDelegate(id); // symmetric with assignAdmin — delegation stays super/subtree this slice
-        require(id);
+        // Symmetric reach with assignAdmin; no grantee-membership check — revoking a grant only ever removes
+        // reach (safe even for a user who has since left the org).
+        access.requireManage(id);
+        requireInTier(id);
         grantRows.deleteByResourceIdAndUserIdAndTier(id, userId, ResourceRoleTier.ADMIN);
         return viewOf(id);
     }
@@ -359,10 +363,6 @@ public class ResourceAdminService {
     private void grant(UUID resourceId, ResourceGrant grant, UUID orgId) {
         grantRows.deleteByResourceIdAndUserIdAndTier(resourceId, grant.userId(), grant.tier());
         grantRows.save(ResourceGrantRow.of(resourceId, grant, orgId));
-    }
-
-    private Resource require(UUID id) {
-        return resources.findById(id).orElseThrow(() -> new NotFoundException("Resource not found."));
     }
 
     private Resource requireFetchingType(UUID id) {

@@ -4,7 +4,9 @@ import com.example.sso.resource.ApplicationAuthorization;
 import com.example.sso.resource.GroupAuthorization;
 import com.example.sso.resource.ResourceAuthorization;
 import com.example.sso.resource.UserAuthorization;
+import com.example.sso.organization.OrganizationService;
 import com.example.sso.resource.internal.domain.MemberType;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.UnauthorizedException;
 import com.example.sso.user.Roles;
@@ -38,6 +40,7 @@ public class ResourceAccessPolicy {
     private final GroupAuthorization groupAuth;
     private final ApplicationAuthorization appAuth;
     private final UserAuthorization userAuth;
+    private final OrganizationService organizations;
 
     /**
      * A platform super-admin: a direct or group-delegated {@code ROLE_ADMIN}. Bypasses everything across
@@ -82,14 +85,18 @@ public class ResourceAccessPolicy {
     }
 
     /**
-     * Delegation reach: a platform super OR a subtree-delegated admin — but NOT a plain tenant tier-admin.
-     * Delegating resource-admin references a global user id, so a tenant tier-admin must not do it via tier
-     * alone (it could grant a non-org-member admin over the subtree); that awaits the org-membership check.
+     * Grantee eligibility for resource-admin delegation. Delegating references a GLOBAL user id, so on an
+     * org-scoped resource the grantee must be a MEMBER of that org — a tenant admin may delegate only to its
+     * own org's members, never grant a global outsider admin over the subtree. A platform super delegates
+     * freely; a global resource ({@code orgId == null}) has no membership to check. Composes on top of the
+     * caller's manage-reach ({@link #requireManage}) + the resource's own tier check, checked by the service.
      */
-    public void requireDelegate(UUID resourceId) {
-        boolean allowed = isUnscoped() || actorId().map(id -> resourceAuth.canManage(id, resourceId)).orElse(false);
-        if (!allowed) {
-            throw new ForbiddenException("Outside your managed resources.");
+    public void requireGranteeInOrg(UUID orgId, UUID userId) {
+        if (isUnscoped() || orgId == null) {
+            return;
+        }
+        if (!organizations.isMember(orgId, userId)) {
+            throw new BadRequestException("The user must be a member of this resource's organization.");
         }
     }
 

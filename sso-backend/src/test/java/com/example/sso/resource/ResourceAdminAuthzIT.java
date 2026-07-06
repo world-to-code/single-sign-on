@@ -98,16 +98,16 @@ class ResourceAdminAuthzIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void anOrgAdminIsATierAdminForStructureButMayNotDelegateAdministration() {
-        // NARROW: a ROLE_ORG_ADMIN manages its org's resource STRUCTURE (a tier-admin — RLS bounds it to their
-        // org), but delegating resource-admin references a GLOBAL user id, so a plain tier-admin must NOT do it
-        // (super or subtree only, this slice). Structure ops reach the resource load (a 404 for a missing id),
-        // never a 403 from the scope check — proving the tier-admin bypass; delegation stays a 403.
+    void anOrgAdminIsATierAdminForBothStructureAndDelegation() {
+        // A ROLE_ORG_ADMIN manages its org's resource STRUCTURE and may now DELEGATE resource-admin (bounded
+        // to its own org's members — see ResourceTierIsolationIT). Both paths are tier-admin ops, so they reach
+        // the resource load (a 404 for a missing id) rather than a 403 from the scope check — proving the
+        // tier-admin bypass for delegation too, no longer a blanket 403.
         actAs(Roles.ORG_ADMIN, Permissions.RESOURCE_ASSIGN_ADMIN, Permissions.RESOURCE_UPDATE);
         assertThatThrownBy(() -> controller.assignAdmin(UUID.randomUUID(), new AdminGrantRequest(UUID.randomUUID())))
-                .isInstanceOf(ForbiddenException.class); // delegation denied for a tier-admin
+                .isInstanceOf(NotFoundException.class); // delegation reaches the load (tier-admin), not a 403
         assertThatThrownBy(() -> controller.rename(UUID.randomUUID(), new ResourceRequest("X", null)))
-                .isInstanceOf(NotFoundException.class); // structure reaches the load, not a 403
+                .isInstanceOf(NotFoundException.class); // structure likewise reaches the load
     }
 
     @Test
