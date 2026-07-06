@@ -69,6 +69,15 @@ class ModelBAssignmentIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void seededRoleCustomerAdminAssignmentGrantsConsoleEntry() {
+        // A self-service customer (고객사) admin reaches the console via the SEEDED ROLE_CUSTOMER_ADMIN
+        // assignment — no manual grant. Console entry only; what they can do stays scoped downstream.
+        user("mb-custadmin", Roles.CUSTOMER_ADMIN);
+        UserAccount custAdmin = users.findByUsername("mb-custadmin").orElseThrow();
+        assertThat(applications.hasAssignment(custAdmin, AppType.OIDC, consoleId())).isTrue();
+    }
+
+    @Test
     void unassignedUserIsRefused() {
         user("mb-plain", "ROLE_USER");
         UserAccount plain = users.findByUsername("mb-plain").orElseThrow();

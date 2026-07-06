@@ -17,10 +17,12 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Seeds the assignment that keeps super admins in the console under the assignment-based entry model:
- * {@code admin-console} assigned to {@code ROLE_ADMIN} (every direct admin inherits it; revocable like
- * any other assignment). Runs on {@link ApplicationReadyEvent} so it deterministically follows both the
- * role seeding and the {@link AdminPortalSeeder} client seeding, whatever their runner order.
+ * Seeds the assignments that grant console entry under the assignment-based entry model: {@code admin-console}
+ * assigned to {@code ROLE_ADMIN} (super admins) and to {@code ROLE_CUSTOMER_ADMIN} (self-service customer 고객사
+ * admins, who manage their own branches). Every holder inherits it via role resolution; it is revocable like any
+ * other assignment. The assignment only lets a user REACH the console — what they can DO there stays gated by
+ * their scoped permissions + drill-in authorization. Runs on {@link ApplicationReadyEvent} so it deterministically
+ * follows both the role seeding and the {@link AdminPortalSeeder} client seeding, whatever their runner order.
  */
 @Component
 @RequiredArgsConstructor
@@ -36,17 +38,21 @@ public class AdminConsoleAccessSeeder {
     public void seed() {
         RegisteredClient console = clients.findByClientId(AdminPortalSeeder.CLIENT_ID);
         if (console == null) {
-            log.warn("Admin console client is not seeded; skipping the ROLE_ADMIN console assignment.");
+            log.warn("Admin console client is not seeded; skipping the console role assignments.");
             return;
         }
+        assignConsoleToRole(console, Roles.ADMIN);
+        assignConsoleToRole(console, Roles.CUSTOMER_ADMIN);
+    }
 
-        UUID adminRoleId = roles.getOrCreateSystem(Roles.ADMIN).getId(); // idempotent, order-proof
+    private void assignConsoleToRole(RegisteredClient console, String roleName) {
+        UUID roleId = roles.getOrCreateSystem(roleName).getId(); // idempotent, order-proof
         boolean exists = assignments.existsByAppTypeAndAppIdAndSubjectTypeAndSubjectId(
-                AppType.OIDC, console.getId(), AppAssignment.SubjectType.ROLE, adminRoleId);
+                AppType.OIDC, console.getId(), AppAssignment.SubjectType.ROLE, roleId);
         if (!exists) {
             assignments.save(new AppAssignment(AppType.OIDC, console.getId(),
-                    AppAssignment.SubjectType.ROLE, adminRoleId, null));
-            log.info("Assigned the admin console to ROLE_ADMIN (assignment-based console entry).");
+                    AppAssignment.SubjectType.ROLE, roleId, null));
+            log.info("Assigned the admin console to {} (assignment-based console entry).", roleName);
         }
     }
 }
