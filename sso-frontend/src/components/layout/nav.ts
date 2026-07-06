@@ -15,6 +15,7 @@ export interface NavItem {
 export interface NavSection {
   heading: string;
   items: NavItem[];
+  requiresOrg?: boolean; // org-scoped resources: hidden from a super-admin until they drill into a tenant
 }
 
 export interface NavGroup {
@@ -53,6 +54,7 @@ export const NAV: NavGroup[] = [
       },
       {
         heading: "Directory",
+        requiresOrg: true,
         items: [
           { to: "/admin/users", label: "Users", icon: Users, permission: "user:read" },
           { to: "/admin/groups", label: "Groups", icon: UsersRound, permission: "group:read" },
@@ -61,6 +63,7 @@ export const NAV: NavGroup[] = [
       },
       {
         heading: "Applications",
+        requiresOrg: true,
         items: [
           { to: "/admin/applications", label: "Applications", icon: Boxes, permission: "app-assignment:read" },
           { to: "/admin/clients", label: "OAuth2 Clients", icon: AppWindow, permission: "oidc-client:read" },
@@ -69,6 +72,7 @@ export const NAV: NavGroup[] = [
       },
       {
         heading: "Access & Security",
+        requiresOrg: true,
         items: [
           { to: "/admin/roles", label: "Roles", icon: KeySquare, permission: "role:read" },
           { to: "/admin/auth-policies", label: "Auth Policies", icon: ShieldCheck, permission: "auth-policy:read" },
@@ -78,6 +82,7 @@ export const NAV: NavGroup[] = [
       },
       {
         heading: "System",
+        requiresOrg: true,
         items: [
           { to: "/admin/scim-tokens", label: "SCIM Tokens", icon: Coins, permission: "scim:manage" },
           { to: "/admin/audit", label: "Audit Log", icon: ScrollText, permission: "audit:read" },

@@ -114,8 +114,11 @@ export default function AppShell(
               </div>
             );
           }
-          // Accordion group (e.g. Administration): collapsible sections by domain.
+          // Accordion group (e.g. Administration): collapsible sections by domain. An org-scoped section
+          // is hidden from a super-admin until they drill into a tenant (a tenant admin is always in-org,
+          // so it shows for them directly) — platform vs. org management stay visually separate.
           const sections = (group.sections ?? [])
+            .filter((s) => !s.requiresOrg || !isPlatformAdmin(session) || drill)
             .map((s) => ({ heading: s.heading, items: s.items.filter(canSee) }))
             .filter((s) => s.items.length);
           if (!sections.length) return null;
