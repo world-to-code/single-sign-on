@@ -5,8 +5,12 @@ import com.example.sso.resource.internal.application.ResourceView;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.Resource;
 import com.example.sso.resource.internal.domain.ResourceGrant;
+import com.example.sso.resource.internal.domain.ResourceGrantRow;
+import com.example.sso.resource.internal.domain.ResourceGrantRowRepository;
 import com.example.sso.resource.internal.domain.ResourceRepository;
 import com.example.sso.resource.internal.domain.ResourceType;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMember;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMemberRepository;
 import com.example.sso.resource.internal.domain.ResourceTypeRepository;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.support.AbstractIntegrationTest;
@@ -52,6 +56,10 @@ class ResourceNestedDelegationIT extends AbstractIntegrationTest {
     @Autowired
     ResourceTypeRepository types;
     @Autowired
+    ResourceGrantRowRepository grantRows;
+    @Autowired
+    ResourceTypeAllowedMemberRepository allowedMembers;
+    @Autowired
     UserService users;
 
     private final List<UUID> createdUsers = new ArrayList<>();
@@ -65,22 +73,18 @@ class ResourceNestedDelegationIT extends AbstractIntegrationTest {
 
     @BeforeEach
     void buildTree() {
-        ResourceType any = types.save(new ResourceType("NEST-ANY",
-                Set.of(MemberType.RESOURCE, MemberType.GROUP, MemberType.APPLICATION, MemberType.USER)));
+        ResourceType any = saveType("NEST-ANY",
+                MemberType.RESOURCE, MemberType.GROUP, MemberType.APPLICATION, MemberType.USER);
 
         devLead = user("nest-devlead");
         backendLead = user("nest-backendlead");
 
-        Resource rootRes = new Resource("Nest-Root", any);
-        Resource devRes = new Resource("Nest-Dev", any);
-        Resource backendRes = new Resource("Nest-Backend", any);
-        Resource frontendRes = new Resource("Nest-Frontend", any);
-        devRes.grant(ResourceGrant.admin(devLead));
+        root = resources.save(new Resource("Nest-Root", any)).getId();
+        dev = resources.save(new Resource("Nest-Dev", any)).getId();
+        backend = resources.save(new Resource("Nest-Backend", any)).getId();
+        frontend = resources.save(new Resource("Nest-Frontend", any)).getId();
 
-        root = resources.save(rootRes).getId();
-        dev = resources.save(devRes).getId();
-        backend = resources.save(backendRes).getId();
-        frontend = resources.save(frontendRes).getId();
+        grantRows.save(ResourceGrantRow.of(dev, ResourceGrant.admin(devLead)));
 
         asRole(Roles.ADMIN, "admin");
         service.attachChild(root, dev);
@@ -204,6 +208,14 @@ class ResourceNestedDelegationIT extends AbstractIntegrationTest {
 
     private void assertForbidden(ThrowingCallable call) {
         assertThatThrownBy(call).isInstanceOf(ForbiddenException.class);
+    }
+
+    private ResourceType saveType(String name, MemberType... allowed) {
+        ResourceType type = types.save(new ResourceType(name));
+        for (MemberType memberType : allowed) {
+            allowedMembers.save(new ResourceTypeAllowedMember(type.getId(), memberType));
+        }
+        return type;
     }
 
     private void asDelegate(UUID userId) {

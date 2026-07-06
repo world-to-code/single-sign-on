@@ -2,32 +2,26 @@ package com.example.sso.resource.internal.domain;
 
 import com.example.sso.shared.domain.AuditedEntity;
 import com.example.sso.shared.error.BadRequestException;
-import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
-import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.JoinTable;
-import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.Set;
-import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.UpdateTimestamp;
 
 /**
- * An organizational unit (table {@code resource}) in the resource DAG: bundles child resources
- * (edges in {@code resource_edge}, multi-parent) plus polymorphic leaf members and delegation
- * grants. The aggregate enforces LOCAL invariants (self-loop, member-kind constraints of its
- * {@link ResourceType}); the GLOBAL cycle check needs graph reachability and is enforced by
- * {@code ResourceGraphService} before an edge is added. No setters — mutate via behavior methods.
+ * An organizational unit (table {@code resource}) in the resource DAG. The edges ({@code resource_edge}),
+ * leaf members ({@code resource_member}) and delegation grants ({@code resource_role}) are EXPLICIT
+ * child entities the service reads/writes directly — this aggregate holds only the node's own columns.
+ * It still owns the member-kind invariants of its {@link ResourceType} as pure validation methods that
+ * take the type's allowed kinds as an argument; the GLOBAL cycle check needs graph reachability and is
+ * enforced by {@code ResourceGraphService} before an edge is inserted. No setters — mutate via behavior.
  */
 @Entity
 @Table(name = "resource")
@@ -46,21 +40,6 @@ public class Resource extends AuditedEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    /** Direct child resources (DAG edges; a child may have several parents). */
-    @ManyToMany(fetch = FetchType.LAZY)
-    @JoinTable(name = "resource_edge",
-            joinColumns = @JoinColumn(name = "parent_id"),
-            inverseJoinColumns = @JoinColumn(name = "child_id"))
-    private Set<Resource> children = new HashSet<>();
-
-    @ElementCollection
-    @CollectionTable(name = "resource_member", joinColumns = @JoinColumn(name = "resource_id"))
-    private Set<ResourceMember> members = new HashSet<>();
-
-    @ElementCollection
-    @CollectionTable(name = "resource_role", joinColumns = @JoinColumn(name = "resource_id"))
-    private Set<ResourceGrant> grants = new HashSet<>();
-
     public Resource(String name, ResourceType type) {
         this.name = name;
         this.type = type;
@@ -71,67 +50,26 @@ public class Resource extends AuditedEntity {
     }
 
     /**
-     * Attaches a direct child (a {@code resource_edge}). Enforces the local invariants only — callers
-     * must have run the global cycle check ({@code ResourceGraphService.attachChild}) first.
+     * Validates that a child resource may be nested under this one: this type must allow {@code RESOURCE}
+     * members. Callers pass the type's allowed kinds (loaded explicitly) and must have run the global
+     * cycle check ({@code ResourceGraphService.attachChild}) first.
      */
-    public void addChild(Resource child) {
-        if (this.equals(child)) {
-            throw new BadRequestException("A resource cannot be its own child.");
-        }
-        requireAllowed(MemberType.RESOURCE);
-        this.children.add(child);
+    public void requireCanNest(Set<MemberType> allowedMemberTypes) {
+        requireAllowed(MemberType.RESOURCE, allowedMemberTypes);
     }
 
-    public void removeChild(Resource child) {
-        this.children.remove(child);
-    }
-
-    /** Attaches a leaf member, enforcing the type's member-kind constraints. */
-    public void attachMember(ResourceMember member) {
-        if (member.memberType() == MemberType.RESOURCE) {
+    /** Validates that a leaf member of the given kind may be attached, per this type's allowed kinds. */
+    public void requireCanAttachMember(MemberType memberType, Set<MemberType> allowedMemberTypes) {
+        if (memberType == MemberType.RESOURCE) {
             throw new BadRequestException("Child resources are attached as edges, not members.");
         }
-        requireAllowed(member.memberType());
-        this.members.add(member);
+        requireAllowed(memberType, allowedMemberTypes);
     }
 
-    public void detachMember(ResourceMember member) {
-        this.members.remove(member);
-    }
-
-    /**
-     * Grants a delegation tier, replacing any existing grant of the same user+tier. Replacement is
-     * explicit because the DB primary key is {@code (resource, user, tier)} while the record's
-     * identity also includes {@code roleId} — relying on set semantics would let two rows with the
-     * same PK coexist in memory and blow up on flush.
-     */
-    public void grant(ResourceGrant grant) {
-        revoke(grant.userId(), grant.tier());
-        this.grants.add(grant);
-    }
-
-    public void revoke(UUID userId, ResourceRoleTier tier) {
-        this.grants.removeIf(g -> g.userId().equals(userId) && g.tier() == tier);
-    }
-
-    private void requireAllowed(MemberType memberType) {
-        if (!type.allows(memberType)) {
+    private void requireAllowed(MemberType memberType, Set<MemberType> allowedMemberTypes) {
+        if (!allowedMemberTypes.contains(memberType)) {
             throw new BadRequestException(
                     "Resource type '" + type.getName() + "' does not allow " + memberType + " members.");
         }
-    }
-
-    // Read-only views (override Lombok's @Getter); mutate via the behavior methods above.
-
-    public Set<Resource> getChildren() {
-        return Collections.unmodifiableSet(children);
-    }
-
-    public Set<ResourceMember> getMembers() {
-        return Collections.unmodifiableSet(members);
-    }
-
-    public Set<ResourceGrant> getGrants() {
-        return Collections.unmodifiableSet(grants);
     }
 }

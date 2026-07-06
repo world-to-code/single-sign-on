@@ -7,9 +7,15 @@ import com.example.sso.resource.internal.application.ResourceNodeView;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.Resource;
 import com.example.sso.resource.internal.domain.ResourceGrant;
+import com.example.sso.resource.internal.domain.ResourceGrantRow;
+import com.example.sso.resource.internal.domain.ResourceGrantRowRepository;
 import com.example.sso.resource.internal.domain.ResourceMember;
+import com.example.sso.resource.internal.domain.ResourceMemberRow;
+import com.example.sso.resource.internal.domain.ResourceMemberRowRepository;
 import com.example.sso.resource.internal.domain.ResourceRepository;
 import com.example.sso.resource.internal.domain.ResourceType;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMember;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMemberRepository;
 import com.example.sso.resource.internal.domain.ResourceTypeRepository;
 import com.example.sso.saml.RelyingPartyRequest;
 import com.example.sso.saml.SamlRelyingPartyAdminService;
@@ -62,6 +68,12 @@ class ResourceDetailIT extends AbstractIntegrationTest {
     UserGroupService userGroups;
     @Autowired
     SamlRelyingPartyAdminService relyingParties;
+    @Autowired
+    ResourceMemberRowRepository memberRows;
+    @Autowired
+    ResourceGrantRowRepository grantRows;
+    @Autowired
+    ResourceTypeAllowedMemberRepository allowedMembers;
 
     private final List<UUID> createdUsers = new ArrayList<>();
     private final List<UUID> createdGroups = new ArrayList<>();
@@ -79,8 +91,8 @@ class ResourceDetailIT extends AbstractIntegrationTest {
 
     @BeforeEach
     void buildTree() {
-        ResourceType any = types.save(new ResourceType("DET-ANY",
-                Set.of(MemberType.RESOURCE, MemberType.GROUP, MemberType.APPLICATION, MemberType.USER)));
+        ResourceType any = saveType("DET-ANY",
+                MemberType.RESOURCE, MemberType.GROUP, MemberType.APPLICATION, MemberType.USER);
 
         backendLead = user("det-backendlead");
         memberUser = user("det-memberuser");
@@ -90,22 +102,17 @@ class ResourceDetailIT extends AbstractIntegrationTest {
                 false, false, false, null, null, null, false, false, null, null, null, null, null)).id();
         createdApps.add(UUID.fromString(appId));
 
-        Resource devRes = new Resource("Det-Dev", any);
-        Resource backendRes = new Resource("Det-Backend", any);
-        Resource frontendRes = new Resource("Det-Frontend", any);
-        Resource sharedRes = new Resource("Det-Shared", any);
+        dev = resources.save(new Resource("Det-Dev", any)).getId();
+        backend = resources.save(new Resource("Det-Backend", any)).getId();
+        frontend = resources.save(new Resource("Det-Frontend", any)).getId();
+        shared = resources.save(new Resource("Det-Shared", any)).getId();
 
-        backendRes.grant(ResourceGrant.admin(backendLead));
-        backendRes.grant(ResourceGrant.viewer(viewerUser));
-        backendRes.attachMember(ResourceMember.group(backendGroup));
-        backendRes.attachMember(ResourceMember.user(memberUser));
-        backendRes.attachMember(ResourceMember.application(appId));
-        backendRes.attachMember(ResourceMember.application("ghost-app")); // no such app → null label
-
-        dev = resources.save(devRes).getId();
-        backend = resources.save(backendRes).getId();
-        frontend = resources.save(frontendRes).getId();
-        shared = resources.save(sharedRes).getId();
+        grantRows.save(ResourceGrantRow.of(backend, ResourceGrant.admin(backendLead)));
+        grantRows.save(ResourceGrantRow.of(backend, ResourceGrant.viewer(viewerUser)));
+        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.group(backendGroup)));
+        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.user(memberUser)));
+        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.application(appId)));
+        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.application("ghost-app"))); // no such app → null label
 
         asRole(Roles.ADMIN, "admin");
         service.attachChild(dev, backend);
@@ -200,6 +207,14 @@ class ResourceDetailIT extends AbstractIntegrationTest {
     private void asRole(String role, String username) {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 username, null, List.of(new SimpleGrantedAuthority(role))));
+    }
+
+    private ResourceType saveType(String name, MemberType... allowed) {
+        ResourceType type = types.save(new ResourceType(name));
+        for (MemberType memberType : allowed) {
+            allowedMembers.save(new ResourceTypeAllowedMember(type.getId(), memberType));
+        }
+        return type;
     }
 
     private UUID user(String username) {

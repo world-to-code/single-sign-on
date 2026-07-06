@@ -4,9 +4,15 @@ import com.example.sso.resource.internal.application.ResourceAdminService;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.Resource;
 import com.example.sso.resource.internal.domain.ResourceGrant;
+import com.example.sso.resource.internal.domain.ResourceGrantRow;
+import com.example.sso.resource.internal.domain.ResourceGrantRowRepository;
 import com.example.sso.resource.internal.domain.ResourceMember;
+import com.example.sso.resource.internal.domain.ResourceMemberRow;
+import com.example.sso.resource.internal.domain.ResourceMemberRowRepository;
 import com.example.sso.resource.internal.domain.ResourceRepository;
 import com.example.sso.resource.internal.domain.ResourceType;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMember;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMemberRepository;
 import com.example.sso.resource.internal.domain.ResourceTypeRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
@@ -61,6 +67,12 @@ class ResourceScopeEnforcementIT extends AbstractIntegrationTest {
     @Autowired
     ResourceTypeRepository types;
     @Autowired
+    ResourceMemberRowRepository memberRows;
+    @Autowired
+    ResourceGrantRowRepository grantRows;
+    @Autowired
+    ResourceTypeAllowedMemberRepository allowedMembers;
+    @Autowired
     UserService users;
     @Autowired
     UserGroupService groups;
@@ -81,30 +93,25 @@ class ResourceScopeEnforcementIT extends AbstractIntegrationTest {
 
     @BeforeEach
     void buildTree() {
-        ResourceType any = types.save(new ResourceType("SCOPE-ANY",
-                Set.of(MemberType.RESOURCE, MemberType.GROUP, MemberType.APPLICATION, MemberType.USER)));
+        ResourceType any = saveType("SCOPE-ANY",
+                MemberType.RESOURCE, MemberType.GROUP, MemberType.APPLICATION, MemberType.USER);
 
         backendLead = user("scope-backendlead");
         frontendLead = user("scope-frontendlead");
         backendGroup = group("Scope-Backend");
         frontendGroup = group("Scope-Frontend");
 
-        Resource rootRes = new Resource("Scope-Root", any);
-        Resource backendRes = new Resource("Scope-Backend", any);
-        Resource backendSubRes = new Resource("Scope-BackendSub", any);
-        Resource frontendRes = new Resource("Scope-Frontend", any);
+        root = resources.save(new Resource("Scope-Root", any)).getId();
+        backend = resources.save(new Resource("Scope-Backend", any)).getId();
+        backendSub = resources.save(new Resource("Scope-BackendSub", any)).getId();
+        frontend = resources.save(new Resource("Scope-Frontend", any)).getId();
 
-        backendRes.grant(ResourceGrant.admin(backendLead));
-        backendRes.attachMember(ResourceMember.group(backendGroup));
-        backendRes.attachMember(ResourceMember.application("app-backend"));
-        frontendRes.grant(ResourceGrant.admin(frontendLead));
-        frontendRes.attachMember(ResourceMember.group(frontendGroup));
-        frontendRes.attachMember(ResourceMember.application("app-frontend"));
-
-        root = resources.save(rootRes).getId();
-        backend = resources.save(backendRes).getId();
-        backendSub = resources.save(backendSubRes).getId();
-        frontend = resources.save(frontendRes).getId();
+        grantRows.save(ResourceGrantRow.of(backend, ResourceGrant.admin(backendLead)));
+        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.group(backendGroup)));
+        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.application("app-backend")));
+        grantRows.save(ResourceGrantRow.of(frontend, ResourceGrant.admin(frontendLead)));
+        memberRows.save(ResourceMemberRow.of(frontend, ResourceMember.group(frontendGroup)));
+        memberRows.save(ResourceMemberRow.of(frontend, ResourceMember.application("app-frontend")));
 
         // edges built as super admin (bypasses scope)
         asRole(Roles.ADMIN, "admin");
@@ -207,7 +214,7 @@ class ResourceScopeEnforcementIT extends AbstractIntegrationTest {
     void aViewerTierGrantConfersNoManagement() {
         // A VIEWER grant must not enter the managed set (the CTE seeds ADMIN only).
         asRole(Roles.ADMIN, "admin");
-        inTx(() -> resources.findById(frontend).orElseThrow().grant(ResourceGrant.viewer(backendLead)));
+        inTx(() -> grantRows.save(ResourceGrantRow.of(frontend, ResourceGrant.viewer(backendLead))));
 
         asDelegate(backendLead);
         assertThat(service.list().stream().map(r -> UUID.fromString(r.id()))).doesNotContain(frontend);
@@ -263,10 +270,10 @@ class ResourceScopeEnforcementIT extends AbstractIntegrationTest {
         UUID viewedGroup = group("Scope-Viewed");
         asRole(Roles.ADMIN, "admin");
         inTx(() -> {
-            Resource viewed = new Resource("Scope-ViewedRes", types.findByNameFetchingKinds("SCOPE-ANY").orElseThrow());
-            viewed.grant(ResourceGrant.viewer(backendLead));
-            viewed.attachMember(ResourceMember.group(viewedGroup));
-            resources.save(viewed);
+            UUID viewedId = resources.save(
+                    new Resource("Scope-ViewedRes", types.findByName("SCOPE-ANY").orElseThrow())).getId();
+            grantRows.save(ResourceGrantRow.of(viewedId, ResourceGrant.viewer(backendLead)));
+            memberRows.save(ResourceMemberRow.of(viewedId, ResourceMember.group(viewedGroup)));
         });
         asDelegate(backendLead);
         assertForbidden(() -> service.attachMember(backend, MemberType.GROUP, viewedGroup.toString()));
@@ -312,6 +319,14 @@ class ResourceScopeEnforcementIT extends AbstractIntegrationTest {
 
     private void inTx(Runnable mutation) {
         new TransactionTemplate(txManager).executeWithoutResult(status -> mutation.run());
+    }
+
+    private ResourceType saveType(String name, MemberType... allowed) {
+        ResourceType type = types.save(new ResourceType(name));
+        for (MemberType memberType : allowed) {
+            allowedMembers.save(new ResourceTypeAllowedMember(type.getId(), memberType));
+        }
+        return type;
     }
 
     /** Act as a delegated resource admin: a real user with resource:* permissions but NOT ROLE_ADMIN. */

@@ -3,8 +3,12 @@ package com.example.sso.resource;
 import com.example.sso.resource.internal.application.ResourceAdminService;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.Resource;
+import com.example.sso.resource.internal.domain.ResourceGrantRowRepository;
+import com.example.sso.resource.internal.domain.ResourceMemberRowRepository;
 import com.example.sso.resource.internal.domain.ResourceRepository;
 import com.example.sso.resource.internal.domain.ResourceType;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMember;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMemberRepository;
 import com.example.sso.resource.internal.domain.ResourceTypeRepository;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.NewUser;
@@ -30,10 +34,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Concurrency on the resource aggregate's embedded collections — the adversary being a LOST UPDATE:
- * two admins mutating one resource's grants/members at once must not silently drop each other's write.
- * Grants and members are {@code @ElementCollection}s, so this proves Hibernate emits incremental
- * INSERTs (not a collection-wide delete+reinsert that would clobber a concurrent row).
+ * Concurrency on a resource's grant/member rows — the adversary being a LOST UPDATE: two admins
+ * mutating one resource's grants/members at once must not silently drop each other's write. Grants and
+ * members are now explicit entity rows, so this proves the service emits incremental per-row INSERTs
+ * (not a collection-wide delete+reinsert that would clobber a concurrent row).
  */
 class ResourceConcurrencyIT extends AbstractIntegrationTest {
 
@@ -44,6 +48,12 @@ class ResourceConcurrencyIT extends AbstractIntegrationTest {
     @Autowired
     ResourceTypeRepository types;
     @Autowired
+    ResourceGrantRowRepository grantRows;
+    @Autowired
+    ResourceMemberRowRepository memberRows;
+    @Autowired
+    ResourceTypeAllowedMemberRepository allowedMembers;
+    @Autowired
     UserService users;
 
     private final List<UUID> createdUsers = new ArrayList<>();
@@ -52,8 +62,7 @@ class ResourceConcurrencyIT extends AbstractIntegrationTest {
     @BeforeEach
     void setUp() {
         asSuperAdmin(); // main thread; the concurrency workers set their own thread-local context
-        ResourceType any = types.save(new ResourceType("CONC-ANY",
-                Set.of(MemberType.GROUP, MemberType.USER, MemberType.APPLICATION)));
+        ResourceType any = saveType("CONC-ANY", MemberType.GROUP, MemberType.USER, MemberType.APPLICATION);
         resourceId = resources.save(new Resource("Conc-Res", any)).getId();
     }
 
@@ -75,8 +84,7 @@ class ResourceConcurrencyIT extends AbstractIntegrationTest {
                 () -> { service.assignAdmin(resourceId, a); return null; },
                 () -> { service.assignAdmin(resourceId, b); return null; });
 
-        Resource after = resources.findByIdForAdminView(resourceId).orElseThrow();
-        assertThat(after.getGrants().stream().map(g -> g.userId()))
+        assertThat(grantRows.findByResourceId(resourceId).stream().map(g -> g.getUserId()))
                 .containsExactlyInAnyOrder(a, b); // neither grant lost
     }
 
@@ -90,8 +98,7 @@ class ResourceConcurrencyIT extends AbstractIntegrationTest {
                 () -> service.attachMember(resourceId, MemberType.USER, u1),
                 () -> service.attachMember(resourceId, MemberType.USER, u2));
 
-        Resource after = resources.findByIdForAdminView(resourceId).orElseThrow();
-        assertThat(after.getMembers().stream().map(m -> m.memberId()))
+        assertThat(memberRows.findByResourceId(resourceId).stream().map(m -> m.getMemberId()))
                 .containsExactlyInAnyOrder(u1, u2);
     }
 
@@ -106,8 +113,7 @@ class ResourceConcurrencyIT extends AbstractIntegrationTest {
 
         // Whatever the interleaving, the end state is well-defined (0 or 1 grant) and no row is
         // duplicated/corrupted — reloading and re-reading must not error.
-        Resource after = resources.findByIdForAdminView(resourceId).orElseThrow();
-        assertThat(after.getGrants().size()).isBetween(0, 1);
+        assertThat(grantRows.findByResourceId(resourceId).size()).isBetween(0, 1);
         assertThat(results).hasSize(2);
     }
 
@@ -148,6 +154,14 @@ class ResourceConcurrencyIT extends AbstractIntegrationTest {
         } finally {
             pool.shutdown();
         }
+    }
+
+    private ResourceType saveType(String name, MemberType... allowed) {
+        ResourceType type = types.save(new ResourceType(name));
+        for (MemberType memberType : allowed) {
+            allowedMembers.save(new ResourceTypeAllowedMember(type.getId(), memberType));
+        }
+        return type;
     }
 
     private void asSuperAdmin() {

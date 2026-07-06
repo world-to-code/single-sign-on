@@ -7,9 +7,11 @@ import jakarta.persistence.Enumerated;
 import java.util.UUID;
 
 /**
- * A polymorphic leaf member of a resource (row of {@code resource_member}). {@code memberId} is text
- * so it can hold both uuids (users/groups) and application ids (OIDC client / SAML RP), mirroring
- * {@code app_assignment.app_id}.
+ * A polymorphic leaf member value object (type + id): the cohesive, behavior-carrying core of a
+ * {@link ResourceMemberRow}, embedded inside its composite id. {@code memberId} is text so it can hold
+ * both uuids (users/groups) and application ids (OIDC client / SAML RP), mirroring
+ * {@code app_assignment.app_id}. The factories and the compact-constructor UUID check keep the value
+ * bounded — a malformed group/user id is rejected here, not deep in the authorization ports.
  */
 @Embeddable
 public record ResourceMember(

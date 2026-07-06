@@ -9,9 +9,15 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.Resource;
 import com.example.sso.resource.internal.domain.ResourceGrant;
+import com.example.sso.resource.internal.domain.ResourceGrantRow;
+import com.example.sso.resource.internal.domain.ResourceGrantRowRepository;
 import com.example.sso.resource.internal.domain.ResourceMember;
+import com.example.sso.resource.internal.domain.ResourceMemberRow;
+import com.example.sso.resource.internal.domain.ResourceMemberRowRepository;
 import com.example.sso.resource.internal.domain.ResourceRepository;
 import com.example.sso.resource.internal.domain.ResourceType;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMember;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMemberRepository;
 import com.example.sso.resource.internal.domain.ResourceTypeRepository;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.GroupSpec;
@@ -49,6 +55,12 @@ class ScopedAuditIT extends AbstractIntegrationTest {
     @Autowired
     ResourceTypeRepository types;
     @Autowired
+    ResourceMemberRowRepository memberRows;
+    @Autowired
+    ResourceGrantRowRepository grantRows;
+    @Autowired
+    ResourceTypeAllowedMemberRepository allowedMembers;
+    @Autowired
     UserService userService;
     @Autowired
     UserGroupService userGroups;
@@ -62,16 +74,14 @@ class ScopedAuditIT extends AbstractIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        ResourceType any = types.save(new ResourceType("AUDIT-ANY",
-                Set.of(MemberType.GROUP, MemberType.USER)));
+        ResourceType any = saveType("AUDIT-ANY", MemberType.GROUP, MemberType.USER);
         delegate = user("audit-delegate");
         inScopeGroup = group("Audit-InScope");
         outOfScopeGroup = group("Audit-OutOfScope");
 
-        Resource team = new Resource("Audit-Team", any);
-        team.grant(ResourceGrant.admin(delegate));
-        team.attachMember(ResourceMember.group(inScopeGroup));
-        resources.save(team);
+        UUID team = resources.save(new Resource("Audit-Team", any)).getId();
+        grantRows.save(ResourceGrantRow.of(team, ResourceGrant.admin(delegate)));
+        memberRows.save(ResourceMemberRow.of(team, ResourceMember.group(inScopeGroup)));
         SecurityContextHolder.clearContext();
     }
 
@@ -152,5 +162,13 @@ class ScopedAuditIT extends AbstractIntegrationTest {
         UUID id = UUID.fromString(userGroups.create(new GroupSpec(name, null, null, Set.of())).id());
         createdGroups.add(id);
         return id;
+    }
+
+    private ResourceType saveType(String name, MemberType... allowed) {
+        ResourceType type = types.save(new ResourceType(name));
+        for (MemberType memberType : allowed) {
+            allowedMembers.save(new ResourceTypeAllowedMember(type.getId(), memberType));
+        }
+        return type;
     }
 }

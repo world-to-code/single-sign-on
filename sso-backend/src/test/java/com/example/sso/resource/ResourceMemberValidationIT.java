@@ -3,8 +3,12 @@ package com.example.sso.resource;
 import com.example.sso.resource.internal.application.ResourceAdminService;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.Resource;
+import com.example.sso.resource.internal.domain.ResourceMemberRow;
+import com.example.sso.resource.internal.domain.ResourceMemberRowRepository;
 import com.example.sso.resource.internal.domain.ResourceRepository;
 import com.example.sso.resource.internal.domain.ResourceType;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMember;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMemberRepository;
 import com.example.sso.resource.internal.domain.ResourceTypeRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.NotFoundException;
@@ -40,6 +44,10 @@ class ResourceMemberValidationIT extends AbstractIntegrationTest {
     @Autowired
     ResourceTypeRepository types;
     @Autowired
+    ResourceMemberRowRepository memberRows;
+    @Autowired
+    ResourceTypeAllowedMemberRepository allowedMembers;
+    @Autowired
     UserService users;
 
     private final List<UUID> createdUsers = new ArrayList<>();
@@ -50,9 +58,16 @@ class ResourceMemberValidationIT extends AbstractIntegrationTest {
         // Run as a super admin (unscoped): this suite exercises validation, not subtree scope.
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 "admin", null, List.of(new SimpleGrantedAuthority(Roles.ADMIN))));
-        ResourceType any = types.save(new ResourceType("VAL-ANY",
-                Set.of(MemberType.GROUP, MemberType.USER, MemberType.APPLICATION)));
+        ResourceType any = saveType("VAL-ANY", MemberType.GROUP, MemberType.USER, MemberType.APPLICATION);
         resourceId = resources.save(new Resource("Val-Res", any)).getId();
+    }
+
+    private ResourceType saveType(String name, MemberType... allowed) {
+        ResourceType type = types.save(new ResourceType(name));
+        for (MemberType memberType : allowed) {
+            allowedMembers.save(new ResourceTypeAllowedMember(type.getId(), memberType));
+        }
+        return type;
     }
 
     @AfterEach
@@ -88,7 +103,7 @@ class ResourceMemberValidationIT extends AbstractIntegrationTest {
 
         service.attachMember(resourceId, MemberType.USER, id.toString());
 
-        Resource after = resources.findByIdForAdminView(resourceId).orElseThrow();
-        assertThat(after.getMembers().stream().map(m -> m.memberId())).containsExactly(id.toString());
+        assertThat(memberRows.findByResourceId(resourceId).stream().map(ResourceMemberRow::getMemberId))
+                .containsExactly(id.toString());
     }
 }

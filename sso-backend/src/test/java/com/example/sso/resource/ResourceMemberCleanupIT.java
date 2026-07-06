@@ -3,8 +3,12 @@ package com.example.sso.resource;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.Resource;
 import com.example.sso.resource.internal.domain.ResourceMember;
+import com.example.sso.resource.internal.domain.ResourceMemberRow;
+import com.example.sso.resource.internal.domain.ResourceMemberRowRepository;
 import com.example.sso.resource.internal.domain.ResourceRepository;
 import com.example.sso.resource.internal.domain.ResourceType;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMember;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMemberRepository;
 import com.example.sso.resource.internal.domain.ResourceTypeRepository;
 import com.example.sso.saml.RelyingPartyRequest;
 import com.example.sso.saml.SamlRelyingPartyAdminService;
@@ -32,6 +36,10 @@ class ResourceMemberCleanupIT extends AbstractIntegrationTest {
     ResourceRepository resources;
     @Autowired
     ResourceTypeRepository types;
+    @Autowired
+    ResourceMemberRowRepository memberRows;
+    @Autowired
+    ResourceTypeAllowedMemberRepository allowedMembers;
     @Autowired
     UserService userService;
     @Autowired
@@ -83,11 +91,17 @@ class ResourceMemberCleanupIT extends AbstractIntegrationTest {
     }
 
     private void seedResourceWith(ResourceMember member) {
-        ResourceType any = types.save(new ResourceType("CLEAN-ANY",
-                Set.of(MemberType.GROUP, MemberType.APPLICATION, MemberType.USER)));
-        Resource resource = new Resource("Clean-Res", any);
-        resource.attachMember(member);
-        resourceId = resources.save(resource).getId();
+        ResourceType any = saveType("CLEAN-ANY", MemberType.GROUP, MemberType.APPLICATION, MemberType.USER);
+        resourceId = resources.save(new Resource("Clean-Res", any)).getId();
+        memberRows.save(ResourceMemberRow.of(resourceId, member));
+    }
+
+    private ResourceType saveType(String name, MemberType... allowed) {
+        ResourceType type = types.save(new ResourceType(name));
+        for (MemberType memberType : allowed) {
+            allowedMembers.save(new ResourceTypeAllowedMember(type.getId(), memberType));
+        }
+        return type;
     }
 
     private Set<String> members(MemberType type) {

@@ -2,8 +2,12 @@ package com.example.sso.resource.internal.application;
 
 import com.example.sso.portal.ApplicationService;
 import com.example.sso.resource.internal.domain.Resource;
+import com.example.sso.resource.internal.domain.ResourceEdgeRepository;
+import com.example.sso.resource.internal.domain.ResourceGrantRowRepository;
+import com.example.sso.resource.internal.domain.ResourceMemberRowRepository;
 import com.example.sso.resource.internal.domain.ResourceRepository;
 import com.example.sso.resource.internal.domain.ResourceType;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMemberRepository;
 import com.example.sso.resource.internal.domain.ResourceTypeRepository;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
@@ -22,6 +26,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -31,9 +36,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for the resource-admin service's SCOPE enforcement and label assembly. Where the unit's
+ * Unit tests for the resource-admin service's SCOPE enforcement and view assembly. Where the unit's
  * job is an interaction (the edge guard checks BOTH endpoints; sub-resource creation checks only the
  * parent; detail avoids the app registry when there are no app members) it asserts with {@code verify}.
+ * The explicit edge/member/grant repos are stubbed empty so the view projection is exercised.
  */
 @ExtendWith(MockitoExtension.class)
 class ResourceAdminServiceTest {
@@ -42,6 +48,14 @@ class ResourceAdminServiceTest {
     private ResourceRepository resources;
     @Mock
     private ResourceTypeRepository types;
+    @Mock
+    private ResourceTypeAllowedMemberRepository allowedMembers;
+    @Mock
+    private ResourceEdgeRepository edges;
+    @Mock
+    private ResourceMemberRowRepository memberRows;
+    @Mock
+    private ResourceGrantRowRepository grantRows;
     @Mock
     private ResourceGraphService graph;
     @Mock
@@ -64,10 +78,11 @@ class ResourceAdminServiceTest {
 
         assertThatThrownBy(() -> service.deleteType(typeId)).isInstanceOf(ConflictException.class);
         verify(types, never()).delete(any());
+        verify(allowedMembers, never()).deleteByTypeId(any());
     }
 
     @Test
-    void deleteTypeRemovesAnUnusedType() {
+    void deleteTypeRemovesAnUnusedTypeAndItsMemberKinds() {
         UUID typeId = UUID.randomUUID();
         ResourceType type = mock(ResourceType.class);
         when(types.findById(typeId)).thenReturn(Optional.of(type));
@@ -75,6 +90,7 @@ class ResourceAdminServiceTest {
 
         service.deleteType(typeId);
 
+        verify(allowedMembers).deleteByTypeId(typeId);
         verify(types).delete(type);
     }
 
@@ -86,7 +102,7 @@ class ResourceAdminServiceTest {
         assertThatThrownBy(() -> service.deleteType(typeId)).isInstanceOf(NotFoundException.class);
     }
 
-    /** Stubs a mock Resource so {@code ResourceView.of} can project it (all collections empty). */
+    /** Stubs a mock Resource plus its empty edge/member/grant rows so a single view can be projected. */
     private Resource viewable(UUID id) {
         Resource resource = mock(Resource.class);
         ResourceType type = mock(ResourceType.class);
@@ -94,9 +110,11 @@ class ResourceAdminServiceTest {
         lenient().when(resource.getId()).thenReturn(id);
         lenient().when(resource.getName()).thenReturn("node-" + id);
         lenient().when(resource.getType()).thenReturn(type);
-        lenient().when(resource.getChildren()).thenReturn(Set.of());
-        lenient().when(resource.getMembers()).thenReturn(Set.of());
-        lenient().when(resource.getGrants()).thenReturn(Set.of());
+        lenient().when(resources.findByIdFetchingType(id)).thenReturn(Optional.of(resource));
+        lenient().when(edges.findByParentId(id)).thenReturn(List.of());
+        lenient().when(memberRows.findByResourceId(id)).thenReturn(List.of());
+        lenient().when(grantRows.findByResourceId(id)).thenReturn(List.of());
+        lenient().when(resources.findAllById(anyCollection())).thenReturn(List.of());
         return resource;
     }
 
@@ -117,10 +135,8 @@ class ResourceAdminServiceTest {
         UUID parentId = UUID.randomUUID();
         UUID childId = UUID.randomUUID();
         Resource child = viewable(childId);
-        when(types.findByNameFetchingKinds("TEAM"))
-                .thenReturn(Optional.of(mock(ResourceType.class)));
+        when(types.findByName("TEAM")).thenReturn(Optional.of(mock(ResourceType.class)));
         when(resources.save(any(Resource.class))).thenReturn(child);
-        when(resources.findByIdForAdminView(childId)).thenReturn(Optional.of(child));
 
         service.createSubResource(parentId, "Sub", "TEAM");
 
@@ -132,10 +148,9 @@ class ResourceAdminServiceTest {
     @Test
     void detailDoesNotQueryTheAppRegistryWhenThereAreNoApplicationMembers() {
         UUID id = UUID.randomUUID();
-        Resource resource = viewable(id); // build (and stub) the mock BEFORE the outer when(...)
-        when(resources.findByIdForAdminView(id)).thenReturn(Optional.of(resource));
+        viewable(id); // build (and stub) the mock BEFORE the outer when(...)
         when(access.isUnscoped()).thenReturn(true);
-        when(resources.findParentIdNames(id)).thenReturn(List.of());
+        when(edges.findByChildId(id)).thenReturn(List.of());
         when(groups.idNames(anySet())).thenReturn(List.of());
         when(users.idNames(anySet())).thenReturn(List.of());
 
@@ -152,7 +167,10 @@ class ResourceAdminServiceTest {
         Resource other = viewable(otherId);
         when(access.isUnscoped()).thenReturn(false);
         when(access.managedResourceIds()).thenReturn(Set.of(managedId));
-        when(resources.findAllForAdminView()).thenReturn(List.of(managed, other));
+        when(resources.findAllFetchingType()).thenReturn(List.of(managed, other));
+        when(edges.findByParentIdIn(anyCollection())).thenReturn(List.of());
+        when(memberRows.findByResourceIdIn(anyCollection())).thenReturn(List.of());
+        when(grantRows.findByResourceIdIn(anyCollection())).thenReturn(List.of());
 
         List<ResourceView> result = service.list();
 

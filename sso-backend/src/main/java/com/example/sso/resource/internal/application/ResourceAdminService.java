@@ -3,11 +3,19 @@ package com.example.sso.resource.internal.application;
 import com.example.sso.portal.ApplicationService;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.Resource;
+import com.example.sso.resource.internal.domain.ResourceEdge;
+import com.example.sso.resource.internal.domain.ResourceEdgeRepository;
 import com.example.sso.resource.internal.domain.ResourceGrant;
+import com.example.sso.resource.internal.domain.ResourceGrantRow;
+import com.example.sso.resource.internal.domain.ResourceGrantRowRepository;
 import com.example.sso.resource.internal.domain.ResourceMember;
+import com.example.sso.resource.internal.domain.ResourceMemberRow;
+import com.example.sso.resource.internal.domain.ResourceMemberRowRepository;
 import com.example.sso.resource.internal.domain.ResourceRepository;
 import com.example.sso.resource.internal.domain.ResourceRoleTier;
 import com.example.sso.resource.internal.domain.ResourceType;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMember;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMemberRepository;
 import com.example.sso.resource.internal.domain.ResourceTypeRepository;
 import com.example.sso.shared.IdName;
 import com.example.sso.shared.error.BadRequestException;
@@ -29,8 +37,9 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Admin management of the resource DAG: types, nodes, edges, members, and delegation grants. Every
  * referenced entity (member group/user/application, grantee) is validated to EXIST before it is
- * attached, so scope rows can never point at ids that were never real. Views are projected inside
- * the loading transaction (the collections are LAZY).
+ * attached, so scope rows can never point at ids that were never real. Edges, members, grants and
+ * type member-kinds are EXPLICIT rows this service inserts/deletes directly (no hidden JPA cascade),
+ * so each write and each delete is visible here.
  *
  * <p>Enforcement is layered: the controller's {@code @RequirePermission} gates PBAC, then THIS service
  * enforces subtree SCOPE per method through {@link ResourceAccessPolicy} (a super admin bypasses; a
@@ -44,6 +53,10 @@ public class ResourceAdminService {
 
     private final ResourceRepository resources;
     private final ResourceTypeRepository types;
+    private final ResourceTypeAllowedMemberRepository allowedMembers;
+    private final ResourceEdgeRepository edges;
+    private final ResourceMemberRowRepository memberRows;
+    private final ResourceGrantRowRepository grantRows;
     private final ResourceGraphService graph;
     private final ResourceAccessPolicy access;
     private final UserService users;
@@ -54,17 +67,27 @@ public class ResourceAdminService {
 
     @Transactional(readOnly = true)
     public List<ResourceTypeView> listTypes() {
-        return types.findAllWithKinds().stream().map(ResourceTypeView::of).toList();
+        List<ResourceType> all = types.findAllByOrderByName();
+        List<UUID> typeIds = all.stream().map(ResourceType::getId).toList();
+        Map<UUID, List<MemberType>> allowedByType = allowedMembers.findByTypeIdIn(typeIds).stream()
+                .collect(Collectors.groupingBy(ResourceTypeAllowedMember::getTypeId,
+                        Collectors.mapping(ResourceTypeAllowedMember::getMemberType, Collectors.toList())));
+        return all.stream()
+                .map(type -> ResourceTypeView.of(type, allowedByType.getOrDefault(type.getId(), List.of())))
+                .toList();
     }
 
     // create/createType are intentionally unscoped: they mint a DETACHED node/type with no grants or
     // edges, conferring no reach — a scoped admin can only wire it in later via the (both-endpoints) edge guard.
     @Transactional
     public ResourceTypeView createType(String name, Set<MemberType> allowedMemberTypes) {
-        if (types.findByNameFetchingKinds(name).isPresent()) {
+        if (types.findByName(name).isPresent()) {
             throw new ConflictException("A resource type with this name already exists.");
         }
-        return ResourceTypeView.of(types.save(new ResourceType(name, allowedMemberTypes)));
+        ResourceType type = types.save(new ResourceType(name));
+        allowedMemberTypes.forEach(memberType ->
+                allowedMembers.save(new ResourceTypeAllowedMember(type.getId(), memberType)));
+        return ResourceTypeView.of(type, allowedMemberTypes);
     }
 
     /** Deletes an unused resource type; rejects deletion while any resource still uses it (409). */
@@ -75,6 +98,7 @@ public class ResourceAdminService {
         if (resources.existsByTypeId(id)) {
             throw new ConflictException("This type is still in use by one or more resources.");
         }
+        allowedMembers.deleteByTypeId(id); // explicit: drop the member-kind rows before the type
         types.delete(type);
     }
 
@@ -84,15 +108,36 @@ public class ResourceAdminService {
     public List<ResourceView> list() {
         boolean unscoped = access.isUnscoped();
         Set<UUID> managed = unscoped ? Set.of() : access.managedResourceIds();
-        return resources.findAllForAdminView().stream()
+        List<Resource> all = resources.findAllFetchingType();
+        List<Resource> visible = all.stream()
                 .filter(resource -> unscoped || managed.contains(resource.getId()))
-                .map(ResourceView::of).toList();
+                .toList();
+        if (visible.isEmpty()) {
+            return List.of();
+        }
+
+        // Child labels resolve against ALL resources (a child of a managed node is itself managed).
+        Map<UUID, String> names = all.stream().collect(Collectors.toMap(Resource::getId, Resource::getName));
+        List<UUID> ids = visible.stream().map(Resource::getId).toList();
+        Map<UUID, List<ResourceEdge>> childEdges = edges.findByParentIdIn(ids).stream()
+                .collect(Collectors.groupingBy(ResourceEdge::getParentId));
+        Map<UUID, List<ResourceMemberRow>> membersByResource = memberRows.findByResourceIdIn(ids).stream()
+                .collect(Collectors.groupingBy(ResourceMemberRow::getResourceId));
+        Map<UUID, List<ResourceGrantRow>> grantsByResource = grantRows.findByResourceIdIn(ids).stream()
+                .collect(Collectors.groupingBy(ResourceGrantRow::getResourceId));
+
+        return visible.stream()
+                .map(resource -> ResourceView.of(resource,
+                        childEdges.getOrDefault(resource.getId(), List.of()), names,
+                        membersByResource.getOrDefault(resource.getId(), List.of()),
+                        grantsByResource.getOrDefault(resource.getId(), List.of())))
+                .toList();
     }
 
     @Transactional(readOnly = true)
     public ResourceView get(UUID id) {
         access.requireManage(id);
-        return ResourceView.of(requireForView(id));
+        return viewOf(id);
     }
 
     /**
@@ -102,55 +147,67 @@ public class ResourceAdminService {
     @Transactional(readOnly = true)
     public ResourceDetailView detail(UUID id) {
         access.requireManage(id);
-        Resource resource = requireForView(id);
+        Resource resource = requireFetchingType(id);
+        List<ResourceMemberRow> members = memberRows.findByResourceId(id);
+        List<ResourceGrantRow> grants = grantRows.findByResourceId(id);
 
         // Parents are ANCESTORS — above the actor's grant. A scoped delegate must not learn about
         // ancestors outside their subtree, so filter to the ones they manage (a super admin sees all).
         boolean unscoped = access.isUnscoped();
         Set<UUID> managed = unscoped ? Set.of() : access.managedResourceIds();
-        List<ResourceNodeView> parents = resources.findParentIdNames(id).stream()
-                .filter(node -> unscoped || managed.contains(node.getId()))
-                .map(node -> new ResourceNodeView(node.getId().toString(), node.getName()))
+        List<UUID> parentIds = edges.findByChildId(id).stream()
+                .map(ResourceEdge::getParentId)
+                .filter(parentId -> unscoped || managed.contains(parentId))
                 .toList();
-        List<ResourceNodeView> children = resource.getChildren().stream()
-                .map(child -> new ResourceNodeView(child.getId().toString(), child.getName()))
-                .sorted(Comparator.comparing(ResourceNodeView::name))
-                .toList();
+        List<ResourceNodeView> parents = nodes(parentIds);
+        List<ResourceNodeView> children = nodes(edges.findByParentId(id).stream()
+                .map(ResourceEdge::getChildId).toList());
 
-        Map<String, String> groupNames = labels(groups.idNames(memberUuids(resource, MemberType.GROUP)));
-        Map<String, String> userNames = labels(users.idNames(userIdsToResolve(resource)));
-        Map<String, String> appNames = appLabels(resource);
+        Map<String, String> groupNames = labels(groups.idNames(memberUuids(members, MemberType.GROUP)));
+        Map<String, String> userNames = labels(users.idNames(userIdsToResolve(members, grants)));
+        Map<String, String> appNames = appLabels(members);
 
-        List<ResourceMemberDetailView> members = resource.getMembers().stream()
-                .map(member -> new ResourceMemberDetailView(member.memberType().name(), member.memberId(),
-                        memberLabel(member.memberType(), member.memberId(), groupNames, userNames, appNames)))
+        List<ResourceMemberDetailView> memberViews = members.stream()
+                .map(member -> new ResourceMemberDetailView(member.getMemberType().name(), member.getMemberId(),
+                        memberLabel(member.getMemberType(), member.getMemberId(), groupNames, userNames, appNames)))
                 .sorted(Comparator.comparing(ResourceMemberDetailView::memberType)
                         .thenComparing(ResourceMemberDetailView::memberId))
                 .toList();
-        List<ResourceGrantDetailView> grants = resource.getGrants().stream()
-                .map(grant -> new ResourceGrantDetailView(grant.userId().toString(),
-                        userNames.get(grant.userId().toString()), grant.tier().name()))
+        List<ResourceGrantDetailView> grantViews = grants.stream()
+                .map(grant -> new ResourceGrantDetailView(grant.getUserId().toString(),
+                        userNames.get(grant.getUserId().toString()), grant.getTier().name()))
                 .sorted(Comparator.comparing(ResourceGrantDetailView::userId))
                 .toList();
 
         return new ResourceDetailView(resource.getId().toString(), resource.getName(),
-                resource.getType().getName(), parents, children, members, grants);
+                resource.getType().getName(), parents, children, memberViews, grantViews);
+    }
+
+    /** Resolves the given resource ids to sorted (id, name) node views. */
+    private List<ResourceNodeView> nodes(List<UUID> resourceIds) {
+        if (resourceIds.isEmpty()) {
+            return List.of();
+        }
+        return resources.findAllById(resourceIds).stream()
+                .map(resource -> new ResourceNodeView(resource.getId().toString(), resource.getName()))
+                .sorted(Comparator.comparing(ResourceNodeView::name))
+                .toList();
     }
 
     private Map<String, String> labels(List<IdName> idNames) {
         return idNames.stream().collect(Collectors.toMap(idName -> idName.getId().toString(), IdName::getName));
     }
 
-    private Set<UUID> memberUuids(Resource resource, MemberType type) {
-        return resource.getMembers().stream()
-                .filter(member -> member.memberType() == type)
-                .map(member -> UUID.fromString(member.memberId()))
+    private Set<UUID> memberUuids(List<ResourceMemberRow> members, MemberType type) {
+        return members.stream()
+                .filter(member -> member.getMemberType() == type)
+                .map(member -> UUID.fromString(member.getMemberId()))
                 .collect(Collectors.toSet());
     }
 
-    private Set<UUID> userIdsToResolve(Resource resource) {
-        Set<UUID> ids = memberUuids(resource, MemberType.USER);
-        resource.getGrants().forEach(grant -> ids.add(grant.userId()));
+    private Set<UUID> userIdsToResolve(List<ResourceMemberRow> members, List<ResourceGrantRow> grants) {
+        Set<UUID> ids = memberUuids(members, MemberType.USER);
+        grants.forEach(grant -> ids.add(grant.getUserId()));
         return ids;
     }
 
@@ -165,9 +222,8 @@ public class ResourceAdminService {
     }
 
     /** App id→name labels, loaded only when the resource actually has APPLICATION members. */
-    private Map<String, String> appLabels(Resource resource) {
-        boolean hasApps = resource.getMembers().stream()
-                .anyMatch(member -> member.memberType() == MemberType.APPLICATION);
+    private Map<String, String> appLabels(List<ResourceMemberRow> members) {
+        boolean hasApps = members.stream().anyMatch(member -> member.getMemberType() == MemberType.APPLICATION);
         if (!hasApps) {
             return Map.of();
         }
@@ -178,10 +234,10 @@ public class ResourceAdminService {
 
     @Transactional
     public ResourceView create(String name, String typeName) {
-        ResourceType type = types.findByNameFetchingKinds(typeName)
+        ResourceType type = types.findByName(typeName)
                 .orElseThrow(() -> new NotFoundException("Resource type not found."));
         Resource saved = resources.save(new Resource(name, type));
-        return ResourceView.of(saved);
+        return viewOf(saved.getId());
     }
 
     /**
@@ -193,25 +249,31 @@ public class ResourceAdminService {
     @Transactional
     public ResourceView createSubResource(UUID parentId, String name, String typeName) {
         access.requireManage(parentId);
-        ResourceType type = types.findByNameFetchingKinds(typeName)
+        ResourceType type = types.findByName(typeName)
                 .orElseThrow(() -> new NotFoundException("Resource type not found."));
         Resource child = resources.save(new Resource(name, type));
         graph.attachChild(parentId, child.getId());
-        return ResourceView.of(requireForView(child.getId()));
+        return viewOf(child.getId());
     }
 
     @Transactional
     public ResourceView rename(UUID id, String name) {
         access.requireManage(id);
-        Resource resource = requireForView(id);
+        Resource resource = requireFetchingType(id);
         resource.rename(name);
-        return ResourceView.of(resource);
+        return viewOf(id);
     }
 
     @Transactional
     public void delete(UUID id) {
         access.requireManage(id);
-        resources.delete(require(id)); // edges/members/grants go with it (DB cascade)
+        Resource resource = require(id);
+        // Explicit teardown of everything the node owns before the node itself — no reliance on JPA
+        // cascade (the DB FKs also cascade, but the deletes are spelled out here to be self-documenting).
+        edges.deleteByParentIdOrChildId(id, id);
+        memberRows.deleteByResourceId(id);
+        grantRows.deleteByResourceId(id);
+        resources.delete(resource);
     }
 
     // --- Edges (cycle-checked + serialized in ResourceGraphService) ---
@@ -238,27 +300,22 @@ public class ResourceAdminService {
     public ResourceView attachMember(UUID id, MemberType memberType, String memberId) {
         access.requireManage(id);
         access.requireManagesMember(memberType, memberId); // pull-in guard
-        Resource resource = resources.findByIdWithTypeKinds(id)
-                .orElseThrow(() -> new NotFoundException("Resource not found."));
+        Resource resource = requireFetchingType(id);
+        resource.requireCanAttachMember(memberType, allowedMemberTypes(resource.getType().getId()));
         requireMemberExists(memberType, memberId);
-        resource.attachMember(new ResourceMember(memberType, memberId));
-        return ResourceView.of(requireForView(id));
+        memberRows.save(ResourceMemberRow.of(id, new ResourceMember(memberType, memberId))); // PK → idempotent
+        return viewOf(id);
     }
 
     @Transactional
     public ResourceView detachMember(UUID id, MemberType memberType, String memberId) {
         access.requireManage(id);
-        Resource resource = require(id);
-        resource.detachMember(member(memberType, memberId));
-        return ResourceView.of(requireForView(id));
-    }
-
-    /** Builds a member value, turning a malformed GROUP/USER uuid into a 400 rather than a 500. */
-    private ResourceMember member(MemberType memberType, String memberId) {
+        require(id);
         if (memberType == MemberType.GROUP || memberType == MemberType.USER) {
-            MemberIds.requireUuid(memberId);
+            MemberIds.requireUuid(memberId); // malformed id → 400, not a 500 on the delete
         }
-        return new ResourceMember(memberType, memberId);
+        memberRows.deleteMember(id, memberType, memberId); // no-op when absent
+        return viewOf(id);
     }
 
     // --- Delegation grants ---
@@ -267,25 +324,52 @@ public class ResourceAdminService {
     public ResourceView assignAdmin(UUID id, UUID userId) {
         access.requireManage(id); // delegate admin only WITHIN your managed subtree
         users.findById(userId).orElseThrow(() -> new NotFoundException("User not found."));
-        Resource resource = require(id);
-        resource.grant(ResourceGrant.admin(userId));
-        return ResourceView.of(requireForView(id));
+        require(id);
+        grant(id, ResourceGrant.admin(userId));
+        return viewOf(id);
     }
 
     @Transactional
     public ResourceView revokeAdmin(UUID id, UUID userId) {
         access.requireManage(id);
-        Resource resource = require(id);
-        resource.revoke(userId, ResourceRoleTier.ADMIN);
-        return ResourceView.of(requireForView(id));
+        require(id);
+        grantRows.deleteByResourceIdAndUserIdAndTier(id, userId, ResourceRoleTier.ADMIN);
+        return viewOf(id);
+    }
+
+    /**
+     * Persists a grant, replacing any existing row of the same user+tier. Replacement is explicit —
+     * delete the old row, then insert the new — because the DB primary key is {@code (resource, user,
+     * tier)} while a grant also carries {@code roleId}: two rows with the same PK could not coexist.
+     */
+    private void grant(UUID resourceId, ResourceGrant grant) {
+        grantRows.deleteByResourceIdAndUserIdAndTier(resourceId, grant.userId(), grant.tier());
+        grantRows.save(ResourceGrantRow.of(resourceId, grant));
     }
 
     private Resource require(UUID id) {
         return resources.findById(id).orElseThrow(() -> new NotFoundException("Resource not found."));
     }
 
-    private Resource requireForView(UUID id) {
-        return resources.findByIdForAdminView(id).orElseThrow(() -> new NotFoundException("Resource not found."));
+    private Resource requireFetchingType(UUID id) {
+        return resources.findByIdFetchingType(id).orElseThrow(() -> new NotFoundException("Resource not found."));
+    }
+
+    /** Projects the single-resource admin view, loading its explicit edge/member/grant rows. */
+    private ResourceView viewOf(UUID id) {
+        Resource resource = requireFetchingType(id);
+        List<ResourceEdge> childEdges = edges.findByParentId(id);
+        Map<UUID, String> childNames = resources.findAllById(childEdges.stream()
+                        .map(ResourceEdge::getChildId).toList()).stream()
+                .collect(Collectors.toMap(Resource::getId, Resource::getName));
+        return ResourceView.of(resource, childEdges, childNames,
+                memberRows.findByResourceId(id), grantRows.findByResourceId(id));
+    }
+
+    private Set<MemberType> allowedMemberTypes(UUID typeId) {
+        return allowedMembers.findByTypeId(typeId).stream()
+                .map(ResourceTypeAllowedMember::getMemberType)
+                .collect(Collectors.toSet());
     }
 
     /** The referenced member must actually exist in its own directory/registry. */

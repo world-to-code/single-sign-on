@@ -9,9 +9,15 @@ import com.example.sso.resource.internal.application.ResourceGraphService;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.Resource;
 import com.example.sso.resource.internal.domain.ResourceGrant;
+import com.example.sso.resource.internal.domain.ResourceGrantRow;
+import com.example.sso.resource.internal.domain.ResourceGrantRowRepository;
 import com.example.sso.resource.internal.domain.ResourceMember;
+import com.example.sso.resource.internal.domain.ResourceMemberRow;
+import com.example.sso.resource.internal.domain.ResourceMemberRowRepository;
 import com.example.sso.resource.internal.domain.ResourceRepository;
 import com.example.sso.resource.internal.domain.ResourceType;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMember;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMemberRepository;
 import com.example.sso.resource.internal.domain.ResourceTypeRepository;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.support.AbstractIntegrationTest;
@@ -64,6 +70,12 @@ class ScopedAdminSurfaceIsolationIT extends AbstractIntegrationTest {
     @Autowired
     ResourceGraphService graph;
     @Autowired
+    ResourceMemberRowRepository memberRows;
+    @Autowired
+    ResourceGrantRowRepository grantRows;
+    @Autowired
+    ResourceTypeAllowedMemberRepository allowedMembers;
+    @Autowired
     UserService userService;
     @Autowired
     UserGroupService userGroups;
@@ -79,8 +91,8 @@ class ScopedAdminSurfaceIsolationIT extends AbstractIntegrationTest {
 
     @BeforeEach
     void buildTree() {
-        ResourceType any = types.save(new ResourceType("SURF-ANY",
-                Set.of(MemberType.RESOURCE, MemberType.GROUP, MemberType.APPLICATION, MemberType.USER)));
+        ResourceType any = saveType("SURF-ANY",
+                MemberType.RESOURCE, MemberType.GROUP, MemberType.APPLICATION, MemberType.USER);
 
         backendLead = user("surf-backendlead");
         backendUser = user("surf-backenduser");
@@ -88,18 +100,18 @@ class ScopedAdminSurfaceIsolationIT extends AbstractIntegrationTest {
         backendGroup = group("Surf-Backend", backendUser);
         frontendGroup = group("Surf-Frontend", frontendUser);
 
-        Resource dev = new Resource("Surf-Dev", any);
-        Resource backend = new Resource("Surf-Backend", any);
-        Resource frontend = new Resource("Surf-Frontend", any);
-        backend.grant(ResourceGrant.admin(backendLead));
-        backend.attachMember(ResourceMember.group(backendGroup));
-        backend.attachMember(ResourceMember.application("surf-app-backend"));
-        frontend.attachMember(ResourceMember.group(frontendGroup));
-        frontend.attachMember(ResourceMember.application("surf-app-frontend"));
+        UUID devId = resources.save(new Resource("Surf-Dev", any)).getId();
+        UUID backendId = resources.save(new Resource("Surf-Backend", any)).getId();
+        UUID frontendId = resources.save(new Resource("Surf-Frontend", any)).getId();
 
-        UUID devId = resources.save(dev).getId();
-        graph.attachChild(devId, resources.save(backend).getId());
-        graph.attachChild(devId, resources.save(frontend).getId());
+        grantRows.save(ResourceGrantRow.of(backendId, ResourceGrant.admin(backendLead)));
+        memberRows.save(ResourceMemberRow.of(backendId, ResourceMember.group(backendGroup)));
+        memberRows.save(ResourceMemberRow.of(backendId, ResourceMember.application("surf-app-backend")));
+        memberRows.save(ResourceMemberRow.of(frontendId, ResourceMember.group(frontendGroup)));
+        memberRows.save(ResourceMemberRow.of(frontendId, ResourceMember.application("surf-app-frontend")));
+
+        graph.attachChild(devId, backendId);
+        graph.attachChild(devId, frontendId);
         SecurityContextHolder.clearContext();
     }
 
@@ -207,5 +219,13 @@ class ScopedAdminSurfaceIsolationIT extends AbstractIntegrationTest {
         UUID id = UUID.fromString(userGroups.create(new GroupSpec(name, null, null, Set.of(memberId))).id());
         createdGroups.add(id);
         return id;
+    }
+
+    private ResourceType saveType(String name, MemberType... allowed) {
+        ResourceType type = types.save(new ResourceType(name));
+        for (MemberType memberType : allowed) {
+            allowedMembers.save(new ResourceTypeAllowedMember(type.getId(), memberType));
+        }
+        return type;
     }
 }

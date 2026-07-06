@@ -5,10 +5,16 @@ import com.example.sso.resource.internal.application.ResourceScope;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.Resource;
 import com.example.sso.resource.internal.domain.ResourceGrant;
+import com.example.sso.resource.internal.domain.ResourceGrantRow;
+import com.example.sso.resource.internal.domain.ResourceGrantRowRepository;
 import com.example.sso.resource.internal.domain.ResourceMember;
+import com.example.sso.resource.internal.domain.ResourceMemberRow;
+import com.example.sso.resource.internal.domain.ResourceMemberRowRepository;
 import com.example.sso.resource.internal.domain.ResourceRepository;
 import com.example.sso.resource.internal.domain.ResourceRoleTier;
 import com.example.sso.resource.internal.domain.ResourceType;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMember;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMemberRepository;
 import com.example.sso.resource.internal.domain.ResourceTypeRepository;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
@@ -63,6 +69,12 @@ class ResourceGraphIT extends AbstractIntegrationTest {
     @Autowired
     ResourceScope scope;
     @Autowired
+    ResourceMemberRowRepository memberRows;
+    @Autowired
+    ResourceGrantRowRepository grantRows;
+    @Autowired
+    ResourceTypeAllowedMemberRepository allowedMembers;
+    @Autowired
     ResourceAuthorization resourceAuthz;
     @Autowired
     GroupAuthorization groupAuthz;
@@ -92,8 +104,8 @@ class ResourceGraphIT extends AbstractIntegrationTest {
 
     @BeforeEach
     void buildGraph() {
-        ResourceType any = types.save(new ResourceType("ANY",
-                Set.of(MemberType.RESOURCE, MemberType.GROUP, MemberType.APPLICATION, MemberType.USER)));
+        ResourceType any = saveType("ANY",
+                MemberType.RESOURCE, MemberType.GROUP, MemberType.APPLICATION, MemberType.USER);
 
         backendLead = user("res-backendlead");
         backendDev = user("res-backenddev");
@@ -101,21 +113,16 @@ class ResourceGraphIT extends AbstractIntegrationTest {
         backendGroup = group("Res-Backend", backendDev);
         frontendGroup = group("Res-Frontend", frontendDev);
 
-        Resource devRes = new Resource("Res-Dev", any);
-        Resource backendRes = new Resource("Res-BackendTeam", any);
-        Resource frontendRes = new Resource("Res-FrontendTeam", any);
-        Resource sharedRes = new Resource("Res-Shared", any);
+        dev = resources.save(new Resource("Res-Dev", any)).getId();
+        backend = resources.save(new Resource("Res-BackendTeam", any)).getId();
+        frontend = resources.save(new Resource("Res-FrontendTeam", any)).getId();
+        shared = resources.save(new Resource("Res-Shared", any)).getId();
 
-        backendRes.grant(ResourceGrant.admin(backendLead));
-        backendRes.attachMember(ResourceMember.group(backendGroup));
-        backendRes.attachMember(ResourceMember.application("res-app-backend"));
-        frontendRes.attachMember(ResourceMember.group(frontendGroup));
-        frontendRes.attachMember(ResourceMember.application("res-app-frontend"));
-
-        dev = resources.save(devRes).getId();
-        backend = resources.save(backendRes).getId();
-        frontend = resources.save(frontendRes).getId();
-        shared = resources.save(sharedRes).getId();
+        grantRows.save(ResourceGrantRow.of(backend, ResourceGrant.admin(backendLead)));
+        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.group(backendGroup)));
+        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.application("res-app-backend")));
+        memberRows.save(ResourceMemberRow.of(frontend, ResourceMember.group(frontendGroup)));
+        memberRows.save(ResourceMemberRow.of(frontend, ResourceMember.application("res-app-frontend")));
 
         graph.attachChild(dev, backend);
         graph.attachChild(dev, frontend);
@@ -180,9 +187,8 @@ class ResourceGraphIT extends AbstractIntegrationTest {
     @Test
     void directUserMembersAreInScopeWithoutAGroup() {
         // A sub-resource inside the managed subtree carrying a DIRECT user member (no group involved).
-        Resource directRes = new Resource("Res-Direct", types.findByNameFetchingKinds("ANY").orElseThrow());
-        directRes.attachMember(ResourceMember.user(frontendDev));
-        UUID direct = resources.save(directRes).getId();
+        UUID direct = resources.save(new Resource("Res-Direct", types.findByName("ANY").orElseThrow())).getId();
+        memberRows.save(ResourceMemberRow.of(direct, ResourceMember.user(frontendDev)));
         graph.attachChild(backend, direct);
 
         assertThat(userAuthz.canManage(backendLead, frontendDev)).isTrue();
@@ -204,7 +210,7 @@ class ResourceGraphIT extends AbstractIntegrationTest {
 
     @Test
     void scopeWalksArbitrarilyDeepChains() {
-        ResourceType any = types.findByNameFetchingKinds("ANY").orElseThrow();
+        ResourceType any = types.findByName("ANY").orElseThrow();
         UUID deep = resources.save(new Resource("Res-Deep", any)).getId();
         UUID deeper = resources.save(new Resource("Res-Deeper", any)).getId();
         graph.attachChild(shared, deep);   // backend → shared → deep → deeper (3 below the grant)
@@ -217,9 +223,8 @@ class ResourceGraphIT extends AbstractIntegrationTest {
 
     @Test
     void multipleAdminGrantsUnionDisjointSubtrees() {
-        Resource island = new Resource("Res-Island", types.findByNameFetchingKinds("ANY").orElseThrow());
-        island.grant(ResourceGrant.admin(backendLead));
-        UUID islandId = resources.save(island).getId();
+        UUID islandId = resources.save(new Resource("Res-Island", types.findByName("ANY").orElseThrow())).getId();
+        grantRows.save(ResourceGrantRow.of(islandId, ResourceGrant.admin(backendLead)));
 
         assertThat(scope.managedResourceIds(backendLead))
                 .containsExactlyInAnyOrder(backend, shared, islandId);
@@ -227,9 +232,8 @@ class ResourceGraphIT extends AbstractIntegrationTest {
 
     @Test
     void viewerTierConfersNoScopeInPhase0() {
-        Resource watched = new Resource("Res-Watched", types.findByNameFetchingKinds("ANY").orElseThrow());
-        watched.grant(ResourceGrant.viewer(backendLead));
-        UUID watchedId = resources.save(watched).getId();
+        UUID watchedId = resources.save(new Resource("Res-Watched", types.findByName("ANY").orElseThrow())).getId();
+        grantRows.save(ResourceGrantRow.of(watchedId, ResourceGrant.viewer(backendLead)));
 
         assertThat(scope.managedResourceIds(backendLead)).doesNotContain(watchedId);
         assertThat(resourceAuthz.canManage(backendLead, watchedId)).isFalse();
@@ -238,7 +242,7 @@ class ResourceGraphIT extends AbstractIntegrationTest {
 
     @Test
     void revokingTheAdminGrantEmptiesTheScope() {
-        inTx(() -> resources.findById(backend).orElseThrow().revoke(backendLead, ResourceRoleTier.ADMIN));
+        grantRows.deleteByResourceIdAndUserIdAndTier(backend, backendLead, ResourceRoleTier.ADMIN);
 
         assertThat(scope.managedResourceIds(backendLead)).isEmpty();
         assertThat(resourceAuthz.canManage(backendLead, backend)).isFalse();
@@ -307,8 +311,11 @@ class ResourceGraphIT extends AbstractIntegrationTest {
                 .flatMap(membership -> membership.roles().stream())
                 .findFirst().orElseThrow().getId();
 
-        inTx(() -> resources.findById(backend).orElseThrow()
-                .grant(new ResourceGrant(backendLead, ResourceRoleTier.ADMIN, catalogRole)));
+        inTx(() -> {
+            grantRows.deleteByResourceIdAndUserIdAndTier(backend, backendLead, ResourceRoleTier.ADMIN);
+            grantRows.save(ResourceGrantRow.of(backend,
+                    new ResourceGrant(backendLead, ResourceRoleTier.ADMIN, catalogRole)));
+        });
 
         assertThat(scope.managedResourceIds(backendLead)).containsExactlyInAnyOrder(backend, shared);
     }
@@ -331,7 +338,7 @@ class ResourceGraphIT extends AbstractIntegrationTest {
     void concurrentOppositeEdgeAttachesCannotFormACycle() throws Exception {
         // Regression for the check-then-act race the advisory lock closes: without it, both attaches
         // pass the reachability check and insert the two halves of a cycle.
-        ResourceType any = types.findByNameFetchingKinds("ANY").orElseThrow();
+        ResourceType any = types.findByName("ANY").orElseThrow();
         UUID x = resources.save(new Resource("Res-X", any)).getId();
         UUID y = resources.save(new Resource("Res-Y", any)).getId();
 
@@ -360,7 +367,7 @@ class ResourceGraphIT extends AbstractIntegrationTest {
             assertThat(scope.managedResourceIds(backendDev)).isEmpty(); // per-user keys: no bleed-over
 
             // Stale-by-design inside one request: a new grant shows up only on the next request.
-            inTx(() -> resources.findById(frontend).orElseThrow().grant(ResourceGrant.admin(backendLead)));
+            inTx(() -> grantRows.save(ResourceGrantRow.of(frontend, ResourceGrant.admin(backendLead))));
             assertThat(scope.managedResourceIds(backendLead)).doesNotContain(frontend);
         } finally {
             RequestContextHolder.resetRequestAttributes();
@@ -380,6 +387,14 @@ class ResourceGraphIT extends AbstractIntegrationTest {
 
     private void inTx(Runnable mutation) {
         new TransactionTemplate(txManager).executeWithoutResult(status -> mutation.run());
+    }
+
+    private ResourceType saveType(String name, MemberType... allowed) {
+        ResourceType type = types.save(new ResourceType(name));
+        for (MemberType memberType : allowed) {
+            allowedMembers.save(new ResourceTypeAllowedMember(type.getId(), memberType));
+        }
+        return type;
     }
 
     private UUID user(String username) {

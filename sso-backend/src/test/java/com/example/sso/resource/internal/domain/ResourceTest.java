@@ -5,28 +5,33 @@ import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** Local invariants of the {@link Resource} aggregate (global cycle checks live in the graph service). */
+/**
+ * Local member-kind invariants of the {@link Resource} aggregate — now pure validation methods that
+ * take the type's allowed kinds as an argument (the kinds live in explicit
+ * {@code resource_type_allowed_member} rows, loaded by the service). Self-loop and cycle rejection are
+ * graph-reachability concerns enforced by {@code ResourceGraphService} and covered by its tests.
+ */
 class ResourceTest {
 
-    private final ResourceType team = new ResourceType("TEAM",
-            Set.of(MemberType.RESOURCE, MemberType.GROUP, MemberType.APPLICATION));
+    private final ResourceType team = new ResourceType("TEAM");
+    private final Set<MemberType> teamAllows =
+            Set.of(MemberType.RESOURCE, MemberType.GROUP, MemberType.APPLICATION);
 
     @Test
-    void rejectsSelfAsChild() {
+    void allowsNestingWhenTheTypePermitsResourceMembers() {
         Resource dev = new Resource("Dev", team);
 
-        assertThatThrownBy(() -> dev.addChild(dev)).isInstanceOf(BadRequestException.class);
+        assertThatCode(() -> dev.requireCanNest(teamAllows)).doesNotThrowAnyException();
     }
 
     @Test
-    void rejectsChildWhenTypeDisallowsNesting() {
-        ResourceType flat = new ResourceType("FLAT", Set.of(MemberType.GROUP));
-        Resource parent = new Resource("Flat", flat);
+    void rejectsNestingWhenTheTypeDisallowsIt() {
+        Resource parent = new Resource("Flat", new ResourceType("FLAT"));
 
-        assertThatThrownBy(() -> parent.addChild(new Resource("Sub", flat)))
+        assertThatThrownBy(() -> parent.requireCanNest(Set.of(MemberType.GROUP)))
                 .isInstanceOf(BadRequestException.class);
     }
 
@@ -34,63 +39,18 @@ class ResourceTest {
     void enforcesMemberKindConstraints() {
         Resource dev = new Resource("Dev", team);
 
-        dev.attachMember(ResourceMember.group(UUID.randomUUID()));      // allowed
-        dev.attachMember(ResourceMember.application("client-1"));       // allowed
-        assertThatThrownBy(() -> dev.attachMember(ResourceMember.user(UUID.randomUUID())))
-                .isInstanceOf(BadRequestException.class);               // TEAM does not allow USER
-
-        assertThat(dev.getMembers()).hasSize(2);
+        assertThatCode(() -> dev.requireCanAttachMember(MemberType.GROUP, teamAllows)).doesNotThrowAnyException();
+        assertThatCode(() -> dev.requireCanAttachMember(MemberType.APPLICATION, teamAllows)).doesNotThrowAnyException();
+        assertThatThrownBy(() -> dev.requireCanAttachMember(MemberType.USER, teamAllows))
+                .isInstanceOf(BadRequestException.class); // TEAM does not allow USER
     }
 
     @Test
     void rejectsResourceKindAsLeafMember() {
         Resource dev = new Resource("Dev", team);
 
-        assertThatThrownBy(() -> dev.attachMember(new ResourceMember(MemberType.RESOURCE, "x")))
+        assertThatThrownBy(() -> dev.requireCanAttachMember(MemberType.RESOURCE, teamAllows))
                 .isInstanceOf(BadRequestException.class);
-    }
-
-    @Test
-    void removeChildAndDetachMemberUndoTheirAttach() {
-        Resource dev = new Resource("Dev", team);
-        Resource sub = new Resource("Sub", team);
-        dev.addChild(sub);
-        dev.removeChild(sub);
-        assertThat(dev.getChildren()).isEmpty();
-
-        ResourceMember group = ResourceMember.group(UUID.randomUUID());
-        dev.attachMember(group);
-        dev.attachMember(group); // duplicate attach — set semantics, no double entry
-        assertThat(dev.getMembers()).hasSize(1);
-        dev.detachMember(group);
-        assertThat(dev.getMembers()).isEmpty();
-    }
-
-    @Test
-    void grantAndRevokeByUserAndTier() {
-        Resource dev = new Resource("Dev", team);
-        UUID lead = UUID.randomUUID();
-
-        dev.grant(ResourceGrant.admin(lead));
-        dev.grant(ResourceGrant.viewer(lead));
-        assertThat(dev.getGrants()).hasSize(2);
-
-        dev.revoke(lead, ResourceRoleTier.VIEWER);
-        assertThat(dev.getGrants()).containsExactly(ResourceGrant.admin(lead));
-    }
-
-    @Test
-    void regrantingSameUserAndTierReplacesInsteadOfDuplicating() {
-        // The DB PK is (resource, user, tier) but the record's identity also includes roleId —
-        // grant() must replace, or two rows with the same PK would coexist and blow up on flush.
-        Resource dev = new Resource("Dev", team);
-        UUID lead = UUID.randomUUID();
-        UUID catalogRole = UUID.randomUUID();
-
-        dev.grant(ResourceGrant.admin(lead));
-        dev.grant(new ResourceGrant(lead, ResourceRoleTier.ADMIN, catalogRole));
-
-        assertThat(dev.getGrants()).containsExactly(new ResourceGrant(lead, ResourceRoleTier.ADMIN, catalogRole));
     }
 
     @Test
@@ -99,6 +59,7 @@ class ResourceTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new ResourceMember(MemberType.USER, "not-a-uuid"))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThat(new ResourceMember(MemberType.APPLICATION, "client-abc").memberId()).isEqualTo("client-abc");
+        assertThatCode(() -> new ResourceMember(MemberType.APPLICATION, "client-abc")).doesNotThrowAnyException();
+        assertThatCode(() -> ResourceMember.user(UUID.randomUUID())).doesNotThrowAnyException();
     }
 }
