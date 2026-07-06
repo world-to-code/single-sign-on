@@ -47,7 +47,9 @@ public class RbacServiceImpl implements RbacService {
             Permissions.NETWORK_ZONE_READ, Permissions.NETWORK_ZONE_CREATE,
             Permissions.NETWORK_ZONE_UPDATE, Permissions.NETWORK_ZONE_DELETE,
             Permissions.SAML_READ, Permissions.SAML_CREATE,
-            Permissions.SAML_UPDATE, Permissions.SAML_DELETE);
+            Permissions.SAML_UPDATE, Permissions.SAML_DELETE,
+            Permissions.GROUP_READ, Permissions.GROUP_CREATE,
+            Permissions.GROUP_UPDATE, Permissions.GROUP_DELETE);
 
     private static final List<String> ORG_ADMIN_PERMISSIONS = TENANT_ADMIN_PERMISSIONS;
 
