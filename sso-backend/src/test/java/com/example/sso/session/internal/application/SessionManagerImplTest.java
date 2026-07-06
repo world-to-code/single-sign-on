@@ -1,11 +1,15 @@
 package com.example.sso.session.internal.application;
 
+import com.example.sso.authpolicy.Factors;
+import com.example.sso.organization.OrganizationMembershipChangedEvent;
 import com.example.sso.session.SessionMetadata;
 import com.example.sso.session.SessionMetadataStore;
 import com.example.sso.session.SessionPolicyDetails;
 import com.example.sso.session.SessionPolicyService;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.UserAccessChangedEvent;
+import com.example.sso.user.UserAccount;
+import com.example.sso.user.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,15 +17,22 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.security.core.session.SessionInformation;
 import org.springframework.security.core.session.SessionRegistry;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.session.FindByIndexNameSessionRepository;
+import org.springframework.session.MapSession;
 import org.springframework.session.Session;
 
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -55,12 +66,14 @@ class SessionManagerImplTest {
     private SessionPolicyService sessionPolicy;
     @Mock
     private FindByIndexNameSessionRepository<Session> sessionRepository;
+    @Mock
+    private UserService users;
 
     private SessionManagerImpl manager;
 
     @BeforeEach
     void setUp() {
-        manager = new SessionManagerImpl(sessionRegistry, sessionMetadata, sessionPolicy, sessionRepository);
+        manager = new SessionManagerImpl(sessionRegistry, sessionMetadata, sessionPolicy, sessionRepository, users);
     }
 
     private MockHttpServletRequest requestWithSession() {
@@ -192,6 +205,62 @@ class SessionManagerImplTest {
         manager.onUserAccessChanged(new UserAccessChangedEvent(USER));
 
         verify(sessionRepository).deleteById("sid-a");
+    }
+
+    @Test
+    void membershipRevokeDeletesOnlyThatOrgsSessions() {
+        // The user is a member of two orgs and has a live session in each. Revoking membership in org A must
+        // kill only the org-A session; the org-B session (still a valid membership) survives.
+        UUID orgA = UUID.randomUUID();
+        UUID orgB = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UserAccount account = mock(UserAccount.class);
+        when(account.getUsername()).thenReturn(USER);
+        when(users.findById(userId)).thenReturn(Optional.of(account));
+        when(sessionRepository.findByPrincipalName(USER))
+                .thenReturn(Map.of("sid-a", sessionBoundTo(orgA), "sid-b", sessionBoundTo(orgB)));
+
+        manager.onOrganizationMembershipChanged(new OrganizationMembershipChangedEvent(orgA, userId));
+
+        verify(sessionRepository).deleteById("sid-a");
+        verify(sessionRepository, never()).deleteById("sid-b");
+    }
+
+    @Test
+    void membershipRevokeForAnUnresolvableUserIsANoOp() {
+        UUID userId = UUID.randomUUID();
+        when(users.findById(userId)).thenReturn(Optional.empty());
+
+        manager.onOrganizationMembershipChanged(new OrganizationMembershipChangedEvent(UUID.randomUUID(), userId));
+
+        verify(sessionRepository, never()).deleteById(anyString());
+        verify(sessionRepository, never()).findByPrincipalName(anyString());
+    }
+
+    @Test
+    void aSessionWithoutTheOrgMarkerIsNeverTerminated() {
+        // A session whose SecurityContext carries no ORG_ marker (or none at all) must be left alone.
+        UUID orgA = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UserAccount account = mock(UserAccount.class);
+        when(account.getUsername()).thenReturn(USER);
+        when(users.findById(userId)).thenReturn(Optional.of(account));
+        when(sessionRepository.findByPrincipalName(USER))
+                .thenReturn(Map.of("sid-none", new MapSession())); // no security context attribute
+
+        manager.onOrganizationMembershipChanged(new OrganizationMembershipChangedEvent(orgA, userId));
+
+        verify(sessionRepository, never()).deleteById(anyString());
+    }
+
+    /** A session whose stored SecurityContext carries the {@code ORG_<orgId>} authority (the login-org marker). */
+    private Session sessionBoundTo(UUID orgId) {
+        MapSession session = new MapSession();
+        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(USER, null,
+                List.of(new SimpleGrantedAuthority(Factors.ORG_PREFIX + orgId)));
+        session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
+                new SecurityContextImpl(auth));
+        return session;
     }
 
     @Test

@@ -56,6 +56,13 @@ public class OrganizationServiceImpl implements OrganizationService {
         Organization org = require(id);
         org.rename(requireName(name));
         org.changeStatus(status);
+        if (status == OrganizationStatus.SUSPENDED) {
+            // Suspending an org must END its members' live sessions bound to it, not merely block new logins
+            // (the login-flow status gate). Fan out the same membership-changed event the session module
+            // already terminates on — one per member, resolved in the platform context (RLS-crossing read).
+            orgContext.callAsPlatform(() -> memberships.findUserIdsByOrgId(id))
+                    .forEach(userId -> events.publishEvent(new OrganizationMembershipChangedEvent(id, userId)));
+        }
         return view(org);
     }
 

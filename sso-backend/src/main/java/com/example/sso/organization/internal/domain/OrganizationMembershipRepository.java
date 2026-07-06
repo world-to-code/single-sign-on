@@ -16,4 +16,7 @@ public interface OrganizationMembershipRepository extends JpaRepository<Organiza
 
     @Query("select m.orgId from OrganizationMembership m where m.userId = :userId")
     List<UUID> findOrgIdsByUserId(@Param("userId") UUID userId);
+
+    @Query("select m.userId from OrganizationMembership m where m.orgId = :orgId")
+    List<UUID> findUserIdsByOrgId(@Param("orgId") UUID orgId);
 }

@@ -1,5 +1,7 @@
 package com.example.sso.session.internal.application;
 
+import com.example.sso.authpolicy.Factors;
+import com.example.sso.organization.OrganizationMembershipChangedEvent;
 import com.example.sso.session.SessionLifecycle;
 import com.example.sso.session.UserSessions;
 import com.example.sso.session.SessionMetadata;
@@ -9,15 +11,21 @@ import com.example.sso.session.SessionPolicyService;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.shared.web.ClientIp;
 import com.example.sso.user.UserAccessChangedEvent;
+import com.example.sso.user.UserAccount;
+import com.example.sso.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.session.SessionInformation;
 import org.springframework.security.core.session.SessionRegistry;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.session.Session;
 import org.springframework.stereotype.Service;
@@ -39,6 +47,7 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
     private final SessionMetadataStore sessionMetadata;
     private final SessionPolicyService sessionPolicy;
     private final FindByIndexNameSessionRepository<? extends Session> sessionRepository;
+    private final UserService users;
 
     @Override
     public void registerAndEnforceLimit(HttpServletRequest request, String username) {
@@ -145,6 +154,40 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onUserAccessChanged(UserAccessChangedEvent event) {
         terminateAll(event.username());
+    }
+
+    /**
+     * A user's membership in an org was revoked (or the org was suspended, which fans this out per member).
+     * End that user's live sessions bound to THAT org only — a session logged into another org they still
+     * belong to must survive. AFTER_COMMIT so a rolled-back membership change never terminates sessions.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onOrganizationMembershipChanged(OrganizationMembershipChangedEvent event) {
+        users.findById(event.userId())
+                .map(UserAccount::getUsername)
+                .ifPresent(username -> terminateInOrg(username, event.orgId()));
+    }
+
+    /** Deletes the user's sessions carrying the {@code ORG_<orgId>} marker (their login org), leaving others. */
+    private void terminateInOrg(String username, UUID orgId) {
+        String marker = Factors.ORG_PREFIX + orgId;
+        sessionRepository.findByPrincipalName(username).forEach((sessionId, session) -> {
+            if (isBoundToOrg(session, marker)) {
+                sessionRepository.deleteById(sessionId); // fires SessionDeletedEvent -> BCL/SLO + metadata cleanup
+            }
+        });
+    }
+
+    /** True when the session's stored SecurityContext carries the given org marker as an authority. */
+    private boolean isBoundToOrg(Session session, String marker) {
+        SecurityContext context = session.getAttribute(
+                HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY);
+        if (context == null || context.getAuthentication() == null) {
+            return false;
+        }
+        return context.getAuthentication().getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(marker::equals);
     }
 
     private boolean isLive(SessionMetadata metadata) {

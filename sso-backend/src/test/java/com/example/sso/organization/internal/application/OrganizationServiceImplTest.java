@@ -14,6 +14,7 @@ import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -28,9 +29,11 @@ import org.springframework.context.ApplicationEventPublisher;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -94,11 +97,42 @@ class OrganizationServiceImplTest {
         UUID id = UUID.randomUUID();
         Organization org = new Organization("acme", "Acme");
         when(organizations.findById(id)).thenReturn(Optional.of(org));
+        when(memberships.findUserIdsByOrgId(id)).thenReturn(List.of()); // suspend fan-out over (no) members
 
         OrganizationView view = service.update(id, "Acme Renamed", OrganizationStatus.SUSPENDED);
 
         assertThat(view.name()).isEqualTo("Acme Renamed");
         assertThat(view.status()).isEqualTo(OrganizationStatus.SUSPENDED);
+    }
+
+    @Test
+    void suspendingAnOrgFansOutAMembershipChangedEventPerMember() {
+        // Suspension must end every member's org-bound session, so it publishes one membership-changed event
+        // per member (the session module terminates on it). Activating/renaming publishes nothing.
+        UUID id = UUID.randomUUID();
+        UUID memberA = UUID.randomUUID();
+        UUID memberB = UUID.randomUUID();
+        when(organizations.findById(id)).thenReturn(Optional.of(new Organization("acme", "Acme")));
+        when(memberships.findUserIdsByOrgId(id)).thenReturn(List.of(memberA, memberB));
+
+        service.update(id, "Acme", OrganizationStatus.SUSPENDED);
+
+        ArgumentCaptor<OrganizationMembershipChangedEvent> event =
+                ArgumentCaptor.forClass(OrganizationMembershipChangedEvent.class);
+        verify(events, times(2)).publishEvent(event.capture());
+        assertThat(event.getAllValues())
+                .extracting(OrganizationMembershipChangedEvent::orgId, OrganizationMembershipChangedEvent::userId)
+                .containsExactlyInAnyOrder(tuple(id, memberA), tuple(id, memberB));
+    }
+
+    @Test
+    void activatingAnOrgPublishesNoTerminationEvents() {
+        UUID id = UUID.randomUUID();
+        when(organizations.findById(id)).thenReturn(Optional.of(new Organization("acme", "Acme")));
+
+        service.update(id, "Acme", OrganizationStatus.ACTIVE);
+
+        verify(events, never()).publishEvent(any());
     }
 
     @Test
