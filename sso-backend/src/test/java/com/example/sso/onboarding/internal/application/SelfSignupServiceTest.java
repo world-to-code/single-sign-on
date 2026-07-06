@@ -1,9 +1,12 @@
 package com.example.sso.onboarding.internal.application;
 
+import com.example.sso.customer.CustomerRef;
+import com.example.sso.customer.CustomerService;
+import com.example.sso.customer.CustomerStatus;
+import com.example.sso.customer.CustomerView;
 import com.example.sso.onboarding.internal.domain.SignupRequest;
 import com.example.sso.onboarding.internal.domain.SignupRequestRepository;
 import com.example.sso.organization.CompanyProfile;
-import com.example.sso.organization.OrganizationRef;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationStatus;
 import com.example.sso.organization.OrganizationView;
@@ -37,13 +40,15 @@ import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for email-verification-first self-service signup: {@code request} provisions nothing (records a
- * pending signup + emails a verification link, and rejects a taken slug up front); {@code activate} creates
- * the org + an ENABLED admin with the chosen password only when the one-time token is redeemed.
+ * pending signup + emails a verification link, and rejects a taken customer slug up front); {@code activate}
+ * creates a NEW customer (고객사) + its first branch ({@code main}) + an ENABLED ROLE_CUSTOMER_ADMIN with the
+ * chosen password, member of the first branch, only when the one-time token is redeemed.
  */
 @ExtendWith(MockitoExtension.class)
 class SelfSignupServiceTest {
 
     @Mock private SignupRequestRepository signups;
+    @Mock private CustomerService customers;
     @Mock private OrganizationService organizations;
     @Mock private UserService users;
     @Mock private OnboardingEmailSender email;
@@ -69,7 +74,7 @@ class SelfSignupServiceTest {
 
     @Test
     void requestRejectsATakenSubdomainAndProvisionsNothing() {
-        when(organizations.findBySlug("acme")).thenReturn(Optional.of(mockRef()));
+        when(customers.findBySlug("acme")).thenReturn(Optional.of(mock(CustomerRef.class)));
 
         assertThatThrownBy(() -> service.request(spec())).isInstanceOf(ConflictException.class);
 
@@ -79,13 +84,15 @@ class SelfSignupServiceTest {
 
     @Test
     void requestRecordsAPendingSignupAndEmailsVerificationWithoutCreatingAnything() {
-        when(organizations.findBySlug("acme")).thenReturn(Optional.empty());
+        when(customers.findBySlug("acme")).thenReturn(Optional.empty());
 
         SignupView view = service.request(spec());
 
         assertThat(view.slug()).isEqualTo("acme"); // normalized (trimmed + lowercased)
+        assertThat(view.workspaceHost()).isNull();  // nothing created yet — no address to link to
         verify(signups).save(argThat(s -> s.getSlug().equals("acme") && s.getAdminEmail().equals("admin@acme.com")));
         verify(email).sendVerification(eq("admin@acme.com"), any(), eq("acme"));
+        verify(customers, never()).create(any());
         verify(organizations, never()).create(any());
         verify(users, never()).createUser(any());
     }
@@ -96,6 +103,7 @@ class SelfSignupServiceTest {
 
         assertThatThrownBy(() -> service.activate("bad", "password123")).isInstanceOf(BadRequestException.class);
 
+        verify(customers, never()).create(any());
         verify(organizations, never()).create(any());
         verify(signups, never()).consume(any(), any());
     }
@@ -107,16 +115,19 @@ class SelfSignupServiceTest {
         assertThatThrownBy(() -> service.activate("tok", "short")).isInstanceOf(BadRequestException.class);
 
         verify(signups, never()).consume(any(), any());
-        verify(organizations, never()).create(any());
+        verify(customers, never()).create(any());
     }
 
     @Test
-    void activateProvisionsAnEnabledOrgAdminWithTheChosenPasswordWhenRedeemed() {
-        UUID orgId = UUID.randomUUID();
+    void activateProvisionsACustomerFirstBranchAndCustomerAdminWhenRedeemed() {
+        UUID customerId = UUID.randomUUID();
+        UUID branchId = UUID.randomUUID();
         UUID adminId = UUID.randomUUID();
         when(signups.findByTokenHash(any())).thenReturn(Optional.of(redeemable()));
         when(signups.consume(any(), any())).thenReturn(1);
-        when(organizations.create(any())).thenReturn(new OrganizationView(orgId, "acme", "Acme",
+        when(customers.create(any())).thenReturn(
+                new CustomerView(customerId, "acme", "Acme", CustomerStatus.ACTIVE, Instant.now()));
+        when(organizations.create(any())).thenReturn(new OrganizationView(branchId, "main", "Acme",
                 OrganizationStatus.ACTIVE, Instant.now(), CompanyProfile.empty()));
         UserAccount admin = mock(UserAccount.class);
         when(admin.getId()).thenReturn(adminId);
@@ -125,11 +136,16 @@ class SelfSignupServiceTest {
         SignupView view = service.activate("tok", "password123");
 
         assertThat(view.slug()).isEqualTo("acme");
-        // the admin is a ROLE_ORG_ADMIN created WITH the chosen password (enabled — never disabled)
-        verify(users).createUser(argThat(u -> u.roleNames().contains(Roles.ORG_ADMIN)
+        assertThat(view.workspaceHost()).isEqualTo("main.acme"); // {branch}.{customer}
+        // The first branch is created UNDER the new customer, with the conventional "main" slug.
+        verify(organizations).create(argThat(o -> "main".equals(o.slug()) && customerId.equals(o.customerId())));
+        // The admin is an ENABLED ROLE_CUSTOMER_ADMIN created WITH the chosen password (never disabled).
+        verify(users).createUser(argThat(u -> u.roleNames().contains(Roles.CUSTOMER_ADMIN)
                 && "password123".equals(u.rawPassword())));
         verify(users, never()).disable(any());
-        verify(organizations).addMember(orgId, adminId);
+        // Scoped to their own new customer, and a member of the first branch so they can sign in to it.
+        verify(customers).addAdmin(customerId, adminId);
+        verify(organizations).addMember(branchId, adminId);
     }
 
     @Test
@@ -139,12 +155,12 @@ class SelfSignupServiceTest {
 
         assertThatThrownBy(() -> service.activate("tok", "password123")).isInstanceOf(BadRequestException.class);
 
-        verify(organizations, never()).create(any());
+        verify(customers, never()).create(any());
     }
 
     @Test
     void requestWithinTheResendCooldownDoesNotEmailAgain() {
-        when(organizations.findBySlug("acme")).thenReturn(Optional.empty());
+        when(customers.findBySlug("acme")).thenReturn(Optional.empty());
         SignupRequest live = redeemable();
         ReflectionTestUtils.setField(live, "createdAt", Instant.now()); // a verification mail just went out
         when(signups.findFirstByAdminEmailIgnoreCaseAndUsedAtIsNullOrderByCreatedAtDesc("admin@acme.com"))
@@ -164,14 +180,10 @@ class SelfSignupServiceTest {
         // swallowed or mistranslated, and that consume was attempted first.
         when(signups.findByTokenHash(any())).thenReturn(Optional.of(redeemable()));
         when(signups.consume(any(), any())).thenReturn(1);
-        when(organizations.create(any())).thenThrow(new ConflictException("taken"));
+        when(customers.create(any())).thenThrow(new ConflictException("taken"));
 
         assertThatThrownBy(() -> service.activate("tok", "password123")).isInstanceOf(ConflictException.class);
 
         verify(signups).consume(any(), any());
-    }
-
-    private OrganizationRef mockRef() {
-        return mock(OrganizationRef.class);
     }
 }

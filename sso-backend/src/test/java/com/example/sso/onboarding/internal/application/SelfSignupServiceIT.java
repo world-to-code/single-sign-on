@@ -1,5 +1,7 @@
 package com.example.sso.onboarding.internal.application;
 
+import com.example.sso.customer.CustomerRef;
+import com.example.sso.customer.CustomerService;
 import com.example.sso.onboarding.internal.domain.SignupRequestRepository;
 import com.example.sso.organization.CompanyProfile;
 import com.example.sso.organization.OrganizationRef;
@@ -35,8 +37,12 @@ import static org.mockito.Mockito.verify;
  */
 class SelfSignupServiceIT extends AbstractIntegrationTest {
 
+    private static final String FIRST_BRANCH_SLUG = "main";
+
     @Autowired
     SelfSignupService signup;
+    @Autowired
+    CustomerService customers;
     @Autowired
     OrganizationService organizations;
     @Autowired
@@ -52,14 +58,14 @@ class SelfSignupServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void requestProvisionsNothing_thenActivateCreatesAnEnabledOrgAdmin_singleUse() {
+    void requestProvisionsNothing_thenActivateCreatesACustomerBranchAndCustomerAdmin_singleUse() {
         String slug = "signup-" + UUID.randomUUID().toString().substring(0, 8);
         String adminEmail = slug + "@example.com";
 
         signup.request(spec(slug, adminEmail));
 
         // request() must have provisioned NOTHING — the anti-squatting invariant.
-        assertThat(organizations.findBySlug(slug)).isEmpty();
+        assertThat(customers.findBySlug(slug)).isEmpty();
         assertThat(users.findByLogin(adminEmail)).isEmpty();
 
         // The raw token lives only in the emailed link — capture it, and confirm only the HASH is stored.
@@ -68,14 +74,19 @@ class SelfSignupServiceIT extends AbstractIntegrationTest {
         String raw = token.getValue();
         assertThat(signups.findByTokenHash(raw)).isEmpty(); // stored value is the hash, not the raw token
 
-        // activate() proves email ownership and NOW creates the org + an ENABLED admin with the chosen password.
+        // activate() proves email ownership and NOW creates the customer + its first branch + an ENABLED admin.
         signup.activate(raw, "chosen-passphrase-1");
 
-        OrganizationRef org = organizations.findBySlug(slug).orElseThrow();
+        CustomerRef customer = customers.findBySlug(slug).orElseThrow();
+        // The first branch is "main", created UNDER the new customer — NOT globally (findBySlug is default-scoped).
+        assertThat(organizations.findBySlug(FIRST_BRANCH_SLUG)).isEmpty();
+        OrganizationRef branch = organizations.findBranch(customer.getId(), FIRST_BRANCH_SLUG).orElseThrow();
         UserAccount admin = users.findByLogin(adminEmail).orElseThrow();
         assertThat(admin.isEnabled()).isTrue(); // self-signup is enabled immediately (differs from admin-invite)
         assertThat(users.verifyPassword(admin.getUsername(), "chosen-passphrase-1")).isTrue();
-        assertThat(organizations.isMember(org.getId(), admin.getId())).isTrue();
+        // The admin administers their OWN new customer (delegated-admin scope) and is a member of the first branch.
+        assertThat(customers.isCustomerAdmin(admin.getId(), customer.getId())).isTrue();
+        assertThat(organizations.isMember(branch.getId(), admin.getId())).isTrue();
 
         // Single-use at the DB: the same token can't create a second workspace.
         assertThatThrownBy(() -> signup.activate(raw, "chosen-passphrase-1"))
@@ -88,7 +99,7 @@ class SelfSignupServiceIT extends AbstractIntegrationTest {
         String firstEmail = "first-" + slug + "@example.com";
         String secondEmail = "second-" + slug + "@example.com";
 
-        // request() only checks REAL orgs, so two pending requests for the same slug are both accepted.
+        // request() only checks REAL customers, so two pending requests for the same slug are both accepted.
         signup.request(spec(slug, firstEmail));
         signup.request(spec(slug, secondEmail));
 
@@ -96,7 +107,7 @@ class SelfSignupServiceIT extends AbstractIntegrationTest {
         verify(email, times(2)).sendVerification(any(), token.capture(), eq(slug));
         List<String> raws = token.getAllValues();
 
-        signup.activate(raws.get(0), "chosen-passphrase-1"); // first wins → org now exists
+        signup.activate(raws.get(0), "chosen-passphrase-1"); // first wins → customer now exists
 
         // The second activation finds the slug taken → 409, and the whole transaction (including the token
         // consume) rolls back, so the second applicant can still retry with a different subdomain.
