@@ -98,6 +98,12 @@ public class OrganizationServiceImpl implements OrganizationService {
 
     @Override
     @Transactional(readOnly = true)
+    public Optional<OrganizationRef> findBranch(UUID customerId, String slug) {
+        return organizations.findByCustomerIdAndSlug(customerId, normalizeSlug(slug)).map(o -> o);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public boolean isMember(UUID orgId, UUID userId) {
         // Bind the org so the RLS-guarded membership read is scoped to it.
         return orgContext.callInOrg(orgId, () -> memberships.existsByOrgIdAndUserId(orgId, userId));

@@ -30,6 +30,10 @@ public interface OrganizationService {
     /** Entry-point lookup by slug (login resolves the active org before identity). */
     Optional<OrganizationRef> findBySlug(String slug);
 
+    /** Resolve a branch (organization) by slug WITHIN a parent customer — the {@code {branch}.{customer}}
+     *  host lookup, so branches under different customers may share a slug. */
+    Optional<OrganizationRef> findBranch(UUID customerId, String slug);
+
     /** Whether the user is a member of the organization. */
     boolean isMember(UUID orgId, UUID userId);
 
