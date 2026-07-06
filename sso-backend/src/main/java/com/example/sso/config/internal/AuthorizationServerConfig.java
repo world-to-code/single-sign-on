@@ -9,13 +9,11 @@ import com.example.sso.oidc.OidcBackchannelSessionIndex;
 import com.example.sso.portal.AppAssignmentFilter;
 import com.example.sso.portal.AppStepUpFilter;
 import com.example.sso.portal.ApplicationService;
-import com.example.sso.customer.CustomerService;
-import com.example.sso.organization.OrganizationService;
 import com.example.sso.security.OrgContextFilter;
 import com.example.sso.security.PolicyIpAccessFilter;
+import com.example.sso.security.HostOrgResolver;
 import com.example.sso.security.TenantHostFilter;
 import com.example.sso.tenancy.OrgContext;
-import com.example.sso.tenancy.SubdomainTenantResolver;
 import com.example.sso.session.NetworkZoneService;
 import com.example.sso.session.SessionPolicyService;
 import com.example.sso.user.RoleRef;
@@ -80,8 +78,7 @@ public class AuthorizationServerConfig {
             HttpSecurity http, JWKSource<SecurityContext> jwkSource,
             RegisteredClientRepository registeredClients, UserService users, ApplicationService applications,
             SessionPolicyService policyService, NetworkZoneService networkZones, AuditService audit,
-            OrgContext orgContext, SubdomainTenantResolver subdomainResolver, OrganizationService organizations,
-            CustomerService customers)
+            OrgContext orgContext, HostOrgResolver hostOrgResolver)
             throws Exception {
 
         OAuth2AuthorizationServerConfigurer authorizationServer = new OAuth2AuthorizationServerConfigurer();
@@ -122,7 +119,7 @@ public class AuthorizationServerConfig {
                 // OIDC issuer is backed by that tenant's signing key and its own JWKS/discovery — even for the
                 // unauthenticated discovery/JWKS endpoints. An unknown subdomain is refused (404). A bare host
                 // passes through to the session-based OrgContextFilter below.
-                .addFilterAfter(new TenantHostFilter(subdomainResolver, organizations, customers, orgContext),
+                .addFilterAfter(new TenantHostFilter(hostOrgResolver, orgContext),
                         SecurityContextHolderFilter.class)
                 // Then bind the tenant context from the logged-in session (bare host), so the IP filter's
                 // policy resolution sees the user's ORG-scoped session policy (not just global rules).

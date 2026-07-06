@@ -11,10 +11,12 @@ import com.example.sso.organization.OrganizationService;
 import com.example.sso.user.UserService;
 import com.example.sso.security.AdminElevationFilter;
 import com.example.sso.security.PolicyIpAccessFilter;
+import com.example.sso.security.HostOrgResolver;
 import com.example.sso.security.OrgContextFilter;
 import com.example.sso.security.OrgDrillInFilter;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.security.SessionIntegrityFilter;
+import com.example.sso.security.TenantSessionHostGuard;
 import com.example.sso.session.NetworkZoneService;
 import com.example.sso.session.SessionPolicyService;
 import org.springframework.beans.factory.annotation.Value;
@@ -92,7 +94,7 @@ public class SecurityConfig {
     @Order(Ordered.LOWEST_PRECEDENCE)
     SecurityFilterChain appSecurityFilterChain(
             HttpSecurity http, AuthRateLimitFilter authRateLimitFilter,
-            SessionIntegrityFilter sessionIntegrityFilter, OrgContext orgContext,
+            SessionIntegrityFilter sessionIntegrityFilter, OrgContext orgContext, HostOrgResolver hostOrgResolver,
             OrganizationService organizations, OrganizationAuthorization orgAuthorization, UserService users,
             SessionPolicyService policyService,
             NetworkZoneService networkZones, JwtDecoder jwtDecoder,
@@ -167,9 +169,13 @@ public class SecurityConfig {
                 // that follow resolve the caller's ORG-scoped policy, not just the global default. Ordering is
                 // explicit (each filter anchored on the previous) — the tenant's session controls depend on it.
                 .addFilterAfter(new OrgContextFilter(orgContext), CsrfFilter.class)
+                // Zero-Trust tenant↔session binding: a session bound to org A must not be honoured on a DIFFERENT
+                // tenant's subdomain host (defence in depth over host-only cookie scoping). Runs right after the
+                // org is bound; the apex and the platform/super-admin context are exempt.
+                .addFilterAfter(new TenantSessionHostGuard(hostOrgResolver, orgContext, audit), OrgContextFilter.class)
                 // Zero-Trust: re-verify session integrity (client binding + absolute lifetime + idle + reauth)
                 // on every request — under the bound org, so a tenant's stricter session policy actually applies.
-                .addFilterAfter(sessionIntegrityFilter, OrgContextFilter.class)
+                .addFilterAfter(sessionIntegrityFilter, TenantSessionHostGuard.class)
                 // Per-policy network (IP) access, post-authentication (also registered on the OIDC chain).
                 .addFilterAfter(new PolicyIpAccessFilter(policyService, networkZones, audit), SessionIntegrityFilter.class)
                 // Platform super-admin drill-in: an X-Org-Context header on /api/admin/** scopes the request
