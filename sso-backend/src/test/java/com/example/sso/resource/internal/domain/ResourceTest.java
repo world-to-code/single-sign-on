@@ -22,14 +22,14 @@ class ResourceTest {
 
     @Test
     void allowsNestingWhenTheTypePermitsResourceMembers() {
-        Resource dev = new Resource("Dev", team);
+        Resource dev = new Resource("Dev", team, null);
 
         assertThatCode(() -> dev.requireCanNest(teamAllows)).doesNotThrowAnyException();
     }
 
     @Test
     void rejectsNestingWhenTheTypeDisallowsIt() {
-        Resource parent = new Resource("Flat", new ResourceType("FLAT"));
+        Resource parent = new Resource("Flat", new ResourceType("FLAT"), null);
 
         assertThatThrownBy(() -> parent.requireCanNest(Set.of(MemberType.GROUP)))
                 .isInstanceOf(BadRequestException.class);
@@ -37,7 +37,7 @@ class ResourceTest {
 
     @Test
     void enforcesMemberKindConstraints() {
-        Resource dev = new Resource("Dev", team);
+        Resource dev = new Resource("Dev", team, null);
 
         assertThatCode(() -> dev.requireCanAttachMember(MemberType.GROUP, teamAllows)).doesNotThrowAnyException();
         assertThatCode(() -> dev.requireCanAttachMember(MemberType.APPLICATION, teamAllows)).doesNotThrowAnyException();
@@ -47,7 +47,7 @@ class ResourceTest {
 
     @Test
     void rejectsResourceKindAsLeafMember() {
-        Resource dev = new Resource("Dev", team);
+        Resource dev = new Resource("Dev", team, null);
 
         assertThatThrownBy(() -> dev.requireCanAttachMember(MemberType.RESOURCE, teamAllows))
                 .isInstanceOf(BadRequestException.class);

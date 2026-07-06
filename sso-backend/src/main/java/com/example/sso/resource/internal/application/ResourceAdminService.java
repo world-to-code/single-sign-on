@@ -22,6 +22,7 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.UserGroupService;
+import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.UserService;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -62,6 +63,7 @@ public class ResourceAdminService {
     private final UserService users;
     private final UserGroupService groups;
     private final ApplicationService applications;
+    private final OrgTierGuard tierGuard;
 
     // --- Types ---
 
@@ -236,7 +238,9 @@ public class ResourceAdminService {
     public ResourceView create(String name, String typeName) {
         ResourceType type = types.findByName(typeName)
                 .orElseThrow(() -> new NotFoundException("Resource type not found."));
-        Resource saved = resources.save(new Resource(name, type));
+        // Stamp the acting admin's tier: a drilled-in super-admin creates the resource in that org, a platform
+        // super-admin (no bound org) creates a GLOBAL one (org null).
+        Resource saved = resources.save(new Resource(name, type, tierGuard.currentTier()));
         return viewOf(saved.getId());
     }
 
@@ -249,9 +253,11 @@ public class ResourceAdminService {
     @Transactional
     public ResourceView createSubResource(UUID parentId, String name, String typeName) {
         access.requireManage(parentId);
+        Resource parent = require(parentId);
         ResourceType type = types.findByName(typeName)
                 .orElseThrow(() -> new NotFoundException("Resource type not found."));
-        Resource child = resources.save(new Resource(name, type));
+        // A sub-resource inherits its parent's tenant (the tree stays within one org).
+        Resource child = resources.save(new Resource(name, type, parent.getOrgId()));
         graph.attachChild(parentId, child.getId());
         return viewOf(child.getId());
     }
@@ -303,7 +309,7 @@ public class ResourceAdminService {
         Resource resource = requireFetchingType(id);
         resource.requireCanAttachMember(memberType, allowedMemberTypes(resource.getType().getId()));
         requireMemberExists(memberType, memberId);
-        memberRows.save(ResourceMemberRow.of(id, new ResourceMember(memberType, memberId))); // PK → idempotent
+        memberRows.save(ResourceMemberRow.of(id, new ResourceMember(memberType, memberId), resource.getOrgId()));
         return viewOf(id);
     }
 
@@ -324,8 +330,8 @@ public class ResourceAdminService {
     public ResourceView assignAdmin(UUID id, UUID userId) {
         access.requireManage(id); // delegate admin only WITHIN your managed subtree
         users.findById(userId).orElseThrow(() -> new NotFoundException("User not found."));
-        require(id);
-        grant(id, ResourceGrant.admin(userId));
+        Resource resource = require(id);
+        grant(id, ResourceGrant.admin(userId), resource.getOrgId());
         return viewOf(id);
     }
 
@@ -342,9 +348,9 @@ public class ResourceAdminService {
      * delete the old row, then insert the new — because the DB primary key is {@code (resource, user,
      * tier)} while a grant also carries {@code roleId}: two rows with the same PK could not coexist.
      */
-    private void grant(UUID resourceId, ResourceGrant grant) {
+    private void grant(UUID resourceId, ResourceGrant grant, UUID orgId) {
         grantRows.deleteByResourceIdAndUserIdAndTier(resourceId, grant.userId(), grant.tier());
-        grantRows.save(ResourceGrantRow.of(resourceId, grant));
+        grantRows.save(ResourceGrantRow.of(resourceId, grant, orgId));
     }
 
     private Resource require(UUID id) {

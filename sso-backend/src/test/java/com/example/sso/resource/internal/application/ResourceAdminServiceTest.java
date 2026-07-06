@@ -135,6 +135,7 @@ class ResourceAdminServiceTest {
         UUID parentId = UUID.randomUUID();
         UUID childId = UUID.randomUUID();
         Resource child = viewable(childId);
+        when(resources.findById(parentId)).thenReturn(Optional.of(mock(Resource.class))); // require(parentId) for its org
         when(types.findByName("TEAM")).thenReturn(Optional.of(mock(ResourceType.class)));
         when(resources.save(any(Resource.class))).thenReturn(child);
 

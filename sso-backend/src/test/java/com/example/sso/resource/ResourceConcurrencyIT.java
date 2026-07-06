@@ -63,7 +63,7 @@ class ResourceConcurrencyIT extends AbstractIntegrationTest {
     void setUp() {
         asSuperAdmin(); // main thread; the concurrency workers set their own thread-local context
         ResourceType any = saveType("CONC-ANY", MemberType.GROUP, MemberType.USER, MemberType.APPLICATION);
-        resourceId = resources.save(new Resource("Conc-Res", any)).getId();
+        resourceId = resources.save(new Resource("Conc-Res", any, null)).getId();
     }
 
     @AfterEach

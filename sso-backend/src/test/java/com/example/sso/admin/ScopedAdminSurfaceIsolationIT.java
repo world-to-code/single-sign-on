@@ -100,15 +100,15 @@ class ScopedAdminSurfaceIsolationIT extends AbstractIntegrationTest {
         backendGroup = group("Surf-Backend", backendUser);
         frontendGroup = group("Surf-Frontend", frontendUser);
 
-        UUID devId = resources.save(new Resource("Surf-Dev", any)).getId();
-        UUID backendId = resources.save(new Resource("Surf-Backend", any)).getId();
-        UUID frontendId = resources.save(new Resource("Surf-Frontend", any)).getId();
+        UUID devId = resources.save(new Resource("Surf-Dev", any, null)).getId();
+        UUID backendId = resources.save(new Resource("Surf-Backend", any, null)).getId();
+        UUID frontendId = resources.save(new Resource("Surf-Frontend", any, null)).getId();
 
-        grantRows.save(ResourceGrantRow.of(backendId, ResourceGrant.admin(backendLead)));
-        memberRows.save(ResourceMemberRow.of(backendId, ResourceMember.group(backendGroup)));
-        memberRows.save(ResourceMemberRow.of(backendId, ResourceMember.application("surf-app-backend")));
-        memberRows.save(ResourceMemberRow.of(frontendId, ResourceMember.group(frontendGroup)));
-        memberRows.save(ResourceMemberRow.of(frontendId, ResourceMember.application("surf-app-frontend")));
+        grantRows.save(ResourceGrantRow.of(backendId, ResourceGrant.admin(backendLead), null));
+        memberRows.save(ResourceMemberRow.of(backendId, ResourceMember.group(backendGroup), null));
+        memberRows.save(ResourceMemberRow.of(backendId, ResourceMember.application("surf-app-backend"), null));
+        memberRows.save(ResourceMemberRow.of(frontendId, ResourceMember.group(frontendGroup), null));
+        memberRows.save(ResourceMemberRow.of(frontendId, ResourceMember.application("surf-app-frontend"), null));
 
         graph.attachChild(devId, backendId);
         graph.attachChild(devId, frontendId);

@@ -101,17 +101,17 @@ class ResourceScopeEnforcementIT extends AbstractIntegrationTest {
         backendGroup = group("Scope-Backend");
         frontendGroup = group("Scope-Frontend");
 
-        root = resources.save(new Resource("Scope-Root", any)).getId();
-        backend = resources.save(new Resource("Scope-Backend", any)).getId();
-        backendSub = resources.save(new Resource("Scope-BackendSub", any)).getId();
-        frontend = resources.save(new Resource("Scope-Frontend", any)).getId();
+        root = resources.save(new Resource("Scope-Root", any, null)).getId();
+        backend = resources.save(new Resource("Scope-Backend", any, null)).getId();
+        backendSub = resources.save(new Resource("Scope-BackendSub", any, null)).getId();
+        frontend = resources.save(new Resource("Scope-Frontend", any, null)).getId();
 
-        grantRows.save(ResourceGrantRow.of(backend, ResourceGrant.admin(backendLead)));
-        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.group(backendGroup)));
-        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.application("app-backend")));
-        grantRows.save(ResourceGrantRow.of(frontend, ResourceGrant.admin(frontendLead)));
-        memberRows.save(ResourceMemberRow.of(frontend, ResourceMember.group(frontendGroup)));
-        memberRows.save(ResourceMemberRow.of(frontend, ResourceMember.application("app-frontend")));
+        grantRows.save(ResourceGrantRow.of(backend, ResourceGrant.admin(backendLead), null));
+        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.group(backendGroup), null));
+        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.application("app-backend"), null));
+        grantRows.save(ResourceGrantRow.of(frontend, ResourceGrant.admin(frontendLead), null));
+        memberRows.save(ResourceMemberRow.of(frontend, ResourceMember.group(frontendGroup), null));
+        memberRows.save(ResourceMemberRow.of(frontend, ResourceMember.application("app-frontend"), null));
 
         // edges built as super admin (bypasses scope)
         asRole(Roles.ADMIN, "admin");
@@ -214,7 +214,7 @@ class ResourceScopeEnforcementIT extends AbstractIntegrationTest {
     void aViewerTierGrantConfersNoManagement() {
         // A VIEWER grant must not enter the managed set (the CTE seeds ADMIN only).
         asRole(Roles.ADMIN, "admin");
-        inTx(() -> grantRows.save(ResourceGrantRow.of(frontend, ResourceGrant.viewer(backendLead))));
+        inTx(() -> grantRows.save(ResourceGrantRow.of(frontend, ResourceGrant.viewer(backendLead), null)));
 
         asDelegate(backendLead);
         assertThat(service.list().stream().map(r -> UUID.fromString(r.id()))).doesNotContain(frontend);
@@ -271,9 +271,9 @@ class ResourceScopeEnforcementIT extends AbstractIntegrationTest {
         asRole(Roles.ADMIN, "admin");
         inTx(() -> {
             UUID viewedId = resources.save(
-                    new Resource("Scope-ViewedRes", types.findByName("SCOPE-ANY").orElseThrow())).getId();
-            grantRows.save(ResourceGrantRow.of(viewedId, ResourceGrant.viewer(backendLead)));
-            memberRows.save(ResourceMemberRow.of(viewedId, ResourceMember.group(viewedGroup)));
+                    new Resource("Scope-ViewedRes", types.findByName("SCOPE-ANY").orElseThrow(), null)).getId();
+            grantRows.save(ResourceGrantRow.of(viewedId, ResourceGrant.viewer(backendLead), null));
+            memberRows.save(ResourceMemberRow.of(viewedId, ResourceMember.group(viewedGroup), null));
         });
         asDelegate(backendLead);
         assertForbidden(() -> service.attachMember(backend, MemberType.GROUP, viewedGroup.toString()));

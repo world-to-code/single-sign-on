@@ -102,17 +102,17 @@ class ResourceDetailIT extends AbstractIntegrationTest {
                 false, false, false, null, null, null, false, false, null, null, null, null, null)).id();
         createdApps.add(UUID.fromString(appId));
 
-        dev = resources.save(new Resource("Det-Dev", any)).getId();
-        backend = resources.save(new Resource("Det-Backend", any)).getId();
-        frontend = resources.save(new Resource("Det-Frontend", any)).getId();
-        shared = resources.save(new Resource("Det-Shared", any)).getId();
+        dev = resources.save(new Resource("Det-Dev", any, null)).getId();
+        backend = resources.save(new Resource("Det-Backend", any, null)).getId();
+        frontend = resources.save(new Resource("Det-Frontend", any, null)).getId();
+        shared = resources.save(new Resource("Det-Shared", any, null)).getId();
 
-        grantRows.save(ResourceGrantRow.of(backend, ResourceGrant.admin(backendLead)));
-        grantRows.save(ResourceGrantRow.of(backend, ResourceGrant.viewer(viewerUser)));
-        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.group(backendGroup)));
-        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.user(memberUser)));
-        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.application(appId)));
-        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.application("ghost-app"))); // no such app → null label
+        grantRows.save(ResourceGrantRow.of(backend, ResourceGrant.admin(backendLead), null));
+        grantRows.save(ResourceGrantRow.of(backend, ResourceGrant.viewer(viewerUser), null));
+        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.group(backendGroup), null));
+        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.user(memberUser), null));
+        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.application(appId), null));
+        memberRows.save(ResourceMemberRow.of(backend, ResourceMember.application("ghost-app"), null)); // no such app → null label
 
         asRole(Roles.ADMIN, "admin");
         service.attachChild(dev, backend);

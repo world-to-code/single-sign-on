@@ -1,5 +1,6 @@
 package com.example.sso.resource.internal.domain;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -21,12 +22,17 @@ public class ResourceMemberRow {
     @EmbeddedId
     private ResourceMemberRowId id;
 
-    public ResourceMemberRow(UUID resourceId, ResourceMember member) {
+    /** Owning tenant (= the member's resource org), or {@code null} for a global resource. */
+    @Column(name = "org_id")
+    private UUID orgId;
+
+    public ResourceMemberRow(UUID resourceId, ResourceMember member, UUID orgId) {
         this.id = new ResourceMemberRowId(resourceId, member);
+        this.orgId = orgId;
     }
 
-    public static ResourceMemberRow of(UUID resourceId, ResourceMember member) {
-        return new ResourceMemberRow(resourceId, member);
+    public static ResourceMemberRow of(UUID resourceId, ResourceMember member, UUID orgId) {
+        return new ResourceMemberRow(resourceId, member, orgId);
     }
 
     public UUID getResourceId() {

@@ -31,8 +31,14 @@ public class ResourceEdge {
     @Column(name = "child_id", nullable = false)
     private UUID childId;
 
-    public ResourceEdge(UUID parentId, UUID childId) {
+    /** Owning tenant (= the org of both endpoint resources, which share one org), or {@code null} for a
+     *  global edge. Carried so the RLS-scoped subtree CTEs over {@code resource_edge} confine to the tenant. */
+    @Column(name = "org_id")
+    private UUID orgId;
+
+    public ResourceEdge(UUID parentId, UUID childId, UUID orgId) {
         this.parentId = parentId;
         this.childId = childId;
+        this.orgId = orgId;
     }
 }

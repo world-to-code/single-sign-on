@@ -79,9 +79,9 @@ class ScopedAuditIT extends AbstractIntegrationTest {
         inScopeGroup = group("Audit-InScope");
         outOfScopeGroup = group("Audit-OutOfScope");
 
-        UUID team = resources.save(new Resource("Audit-Team", any)).getId();
-        grantRows.save(ResourceGrantRow.of(team, ResourceGrant.admin(delegate)));
-        memberRows.save(ResourceMemberRow.of(team, ResourceMember.group(inScopeGroup)));
+        UUID team = resources.save(new Resource("Audit-Team", any, null)).getId();
+        grantRows.save(ResourceGrantRow.of(team, ResourceGrant.admin(delegate), null));
+        memberRows.save(ResourceMemberRow.of(team, ResourceMember.group(inScopeGroup), null));
         SecurityContextHolder.clearContext();
     }
 

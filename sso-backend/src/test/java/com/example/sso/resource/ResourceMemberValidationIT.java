@@ -59,7 +59,7 @@ class ResourceMemberValidationIT extends AbstractIntegrationTest {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 "admin", null, List.of(new SimpleGrantedAuthority(Roles.ADMIN))));
         ResourceType any = saveType("VAL-ANY", MemberType.GROUP, MemberType.USER, MemberType.APPLICATION);
-        resourceId = resources.save(new Resource("Val-Res", any)).getId();
+        resourceId = resources.save(new Resource("Val-Res", any, null)).getId();
     }
 
     private ResourceType saveType(String name, MemberType... allowed) {

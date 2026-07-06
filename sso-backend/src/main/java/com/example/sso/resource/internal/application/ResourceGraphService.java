@@ -51,7 +51,9 @@ public class ResourceGraphService {
             throw new ConflictException("Attaching this child would create a cycle in the resource graph.");
         }
         parent.requireCanNest(allowedMemberTypes(parent.getType().getId()));
-        edges.save(new ResourceEdge(parentId, childId)); // (parent, child) PK → re-attach is idempotent
+        // The edge is owned by the parent's tenant (both endpoints share one org — enforced separately); RLS
+        // then confines the subtree CTEs over resource_edge to that tenant + global.
+        edges.save(new ResourceEdge(parentId, childId, parent.getOrgId())); // (parent, child) PK → idempotent
     }
 
     @Transactional

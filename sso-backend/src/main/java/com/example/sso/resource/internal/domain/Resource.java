@@ -2,6 +2,7 @@ package com.example.sso.resource.internal.domain;
 
 import com.example.sso.shared.domain.AuditedEntity;
 import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.tenancy.OrgOwned;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -10,6 +11,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.Set;
+import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -27,7 +29,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 @Table(name = "resource")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
-public class Resource extends AuditedEntity {
+public class Resource extends AuditedEntity implements OrgOwned {
 
     @Column(nullable = false, length = 200)
     private String name;
@@ -36,13 +38,19 @@ public class Resource extends AuditedEntity {
     @JoinColumn(name = "type_id")
     private ResourceType type;
 
+    /** Owning tenant, or {@code null} for a GLOBAL/platform resource (RLS-isolated per {@code V56}). A child
+     *  resource, edge, member and grant all inherit this org from their owning resource. Fixed at creation. */
+    @Column(name = "org_id")
+    private UUID orgId;
+
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    public Resource(String name, ResourceType type) {
+    public Resource(String name, ResourceType type, UUID orgId) {
         this.name = name;
         this.type = type;
+        this.orgId = orgId;
     }
 
     public void rename(String name) {

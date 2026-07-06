@@ -49,14 +49,19 @@ public class ResourceGrantRow {
     @Column(name = "role_id")
     private UUID roleId;
 
-    public ResourceGrantRow(UUID resourceId, UUID userId, ResourceRoleTier tier, UUID roleId) {
+    /** Owning tenant (= the granted resource's org), or {@code null} for a global resource. */
+    @Column(name = "org_id")
+    private UUID orgId;
+
+    public ResourceGrantRow(UUID resourceId, UUID userId, ResourceRoleTier tier, UUID roleId, UUID orgId) {
         this.resourceId = resourceId;
         this.userId = userId;
         this.tier = tier;
         this.roleId = roleId;
+        this.orgId = orgId;
     }
 
-    public static ResourceGrantRow of(UUID resourceId, ResourceGrant grant) {
-        return new ResourceGrantRow(resourceId, grant.userId(), grant.tier(), grant.roleId());
+    public static ResourceGrantRow of(UUID resourceId, ResourceGrant grant, UUID orgId) {
+        return new ResourceGrantRow(resourceId, grant.userId(), grant.tier(), grant.roleId(), orgId);
     }
 }

@@ -79,12 +79,12 @@ class ResourceNestedDelegationIT extends AbstractIntegrationTest {
         devLead = user("nest-devlead");
         backendLead = user("nest-backendlead");
 
-        root = resources.save(new Resource("Nest-Root", any)).getId();
-        dev = resources.save(new Resource("Nest-Dev", any)).getId();
-        backend = resources.save(new Resource("Nest-Backend", any)).getId();
-        frontend = resources.save(new Resource("Nest-Frontend", any)).getId();
+        root = resources.save(new Resource("Nest-Root", any, null)).getId();
+        dev = resources.save(new Resource("Nest-Dev", any, null)).getId();
+        backend = resources.save(new Resource("Nest-Backend", any, null)).getId();
+        frontend = resources.save(new Resource("Nest-Frontend", any, null)).getId();
 
-        grantRows.save(ResourceGrantRow.of(dev, ResourceGrant.admin(devLead)));
+        grantRows.save(ResourceGrantRow.of(dev, ResourceGrant.admin(devLead), null));
 
         asRole(Roles.ADMIN, "admin");
         service.attachChild(root, dev);

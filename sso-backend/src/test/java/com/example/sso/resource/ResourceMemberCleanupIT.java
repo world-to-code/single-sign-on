@@ -92,8 +92,8 @@ class ResourceMemberCleanupIT extends AbstractIntegrationTest {
 
     private void seedResourceWith(ResourceMember member) {
         ResourceType any = saveType("CLEAN-ANY", MemberType.GROUP, MemberType.APPLICATION, MemberType.USER);
-        resourceId = resources.save(new Resource("Clean-Res", any)).getId();
-        memberRows.save(ResourceMemberRow.of(resourceId, member));
+        resourceId = resources.save(new Resource("Clean-Res", any, null)).getId();
+        memberRows.save(ResourceMemberRow.of(resourceId, member, null));
     }
 
     private ResourceType saveType(String name, MemberType... allowed) {
