@@ -96,9 +96,12 @@ class RbacServiceImplTest {
                         Permissions.SESSION_POLICY_READ, Permissions.SESSION_POLICY_CREATE,
                         Permissions.SESSION_POLICY_UPDATE, Permissions.SESSION_POLICY_DELETE,
                         Permissions.NETWORK_ZONE_READ, Permissions.NETWORK_ZONE_CREATE,
-                        Permissions.NETWORK_ZONE_UPDATE, Permissions.NETWORK_ZONE_DELETE)
+                        Permissions.NETWORK_ZONE_UPDATE, Permissions.NETWORK_ZONE_DELETE,
+                        Permissions.SAML_READ, Permissions.SAML_CREATE,
+                        Permissions.SAML_UPDATE, Permissions.SAML_DELETE)
                 .doesNotContain(Permissions.ORG_CREATE)  // PLATFORM — never granted to a tenant admin
-                .doesNotContain(Permissions.USER_READ);   // a later Workstream-C phase, not this slice
+                .doesNotContain(Permissions.USER_READ)   // a later Workstream-C phase, not this slice
+                .doesNotContain(Permissions.ROLE_CREATE); // deferred: role creation can mint arbitrary perms
     }
 
     @Test
