@@ -6,7 +6,9 @@ import com.example.sso.authpolicy.Factors;
 import com.example.sso.ratelimit.AuthRateLimitFilter;
 import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.oidc.ConsentPage;
+import com.example.sso.organization.OrganizationAuthorization;
 import com.example.sso.organization.OrganizationService;
+import com.example.sso.user.UserService;
 import com.example.sso.security.AdminElevationFilter;
 import com.example.sso.security.PolicyIpAccessFilter;
 import com.example.sso.security.OrgContextFilter;
@@ -91,7 +93,7 @@ public class SecurityConfig {
     SecurityFilterChain appSecurityFilterChain(
             HttpSecurity http, AuthRateLimitFilter authRateLimitFilter,
             SessionIntegrityFilter sessionIntegrityFilter, OrgContext orgContext,
-            OrganizationService organizations,
+            OrganizationService organizations, OrganizationAuthorization orgAuthorization, UserService users,
             SessionPolicyService policyService,
             NetworkZoneService networkZones, JwtDecoder jwtDecoder,
             AdminPortalSettingsService adminPortalSettingsService, AuditService audit,
@@ -174,7 +176,8 @@ public class SecurityConfig {
                 // to one tenant (super-admin only; a tenant admin sending it is refused). Runs AFTER the
                 // session-security filters so the super-admin's OWN session still follows its base/platform
                 // policy; the rebind scopes only the admin CRUD that follows.
-                .addFilterAfter(new OrgDrillInFilter(orgContext, organizations, audit), PolicyIpAccessFilter.class)
+                .addFilterAfter(new OrgDrillInFilter(orgContext, organizations, orgAuthorization, users, audit),
+                        PolicyIpAccessFilter.class)
                 // RFC 9470 elevation gate: require a fresh admin-console bearer token on /api/admin/**.
                 // Anchored AFTER the authorization filter so the session MFA_COMPLETE check
                 // (and @RequirePermission) still run first — a non-admin gets 403 there, never the 401 challenge.

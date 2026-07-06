@@ -34,6 +34,12 @@ public interface OrganizationService {
      *  host lookup, so branches under different customers may share a slug. */
     Optional<OrganizationRef> findBranch(UUID customerId, String slug);
 
+    /** Whether the organization is a branch of any of the given customers — the customer-admin access check. */
+    boolean isBranchOf(UUID orgId, Set<UUID> customerIds);
+
+    /** The ids of every branch (organization) under any of the given customers — the customer-admin org scope. */
+    Set<UUID> branchIdsForCustomers(Set<UUID> customerIds);
+
     /** Whether the user is a member of the organization. */
     boolean isMember(UUID orgId, UUID userId);
 

@@ -4,18 +4,24 @@ import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
 import com.example.sso.organization.CompanyProfile;
+import com.example.sso.organization.OrganizationAuthorization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationView;
 import com.example.sso.organization.OrganizationStatus;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.user.UserAccount;
+import com.example.sso.user.UserService;
 import jakarta.servlet.FilterChain;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -34,9 +40,17 @@ class OrgDrillInFilterTest {
 
     private final OrgContext orgContext = mock(OrgContext.class);
     private final OrganizationService organizations = mock(OrganizationService.class);
+    private final OrganizationAuthorization orgAuthorization = mock(OrganizationAuthorization.class);
+    private final UserService users = mock(UserService.class);
     private final AuditService audit = mock(AuditService.class);
-    private final OrgDrillInFilter filter = new OrgDrillInFilter(orgContext, organizations, audit);
+    private final OrgDrillInFilter filter =
+            new OrgDrillInFilter(orgContext, organizations, orgAuthorization, users, audit);
     private final FilterChain chain = mock(FilterChain.class);
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
 
     private MockHttpServletRequest adminRequest(String orgHeader) {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/admin/users");
@@ -128,5 +142,47 @@ class OrgDrillInFilterTest {
         assertThat(response.getStatus()).isEqualTo(404);
         verify(orgContext, never()).bindOrg(any());
         verify(chain, never()).doFilter(any(), any());
+    }
+
+    @Test
+    void aCustomerAdminDrillsIntoABranchTheyAdminister() throws Exception {
+        UUID orgId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+        authenticateAs("alice", actorId);
+        when(orgContext.isPlatform()).thenReturn(false);          // a customer-admin is not platform
+        when(orgAuthorization.canManage(actorId, orgId)).thenReturn(true); // they administer this branch
+        when(organizations.findView(orgId)).thenReturn(Optional.of(
+                new OrganizationView(orgId, "seoul", "Seoul", OrganizationStatus.ACTIVE, Instant.now(),
+                        CompanyProfile.empty())));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(adminRequest(orgId.toString()), response, chain);
+
+        verify(orgContext).bindOrg(orgId);
+        verify(chain).doFilter(any(), any());
+    }
+
+    @Test
+    void aCustomerAdminCannotDrillIntoAnotherCustomersBranch() throws Exception {
+        UUID orgId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+        authenticateAs("alice", actorId);
+        when(orgContext.isPlatform()).thenReturn(false);
+        when(orgAuthorization.canManage(actorId, orgId)).thenReturn(false); // NOT a branch they administer
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(adminRequest(orgId.toString()), response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(403);
+        verify(orgContext, never()).bindOrg(any());
+        verify(chain, never()).doFilter(any(), any());
+    }
+
+    private void authenticateAs(String username, UUID userId) {
+        UserAccount account = mock(UserAccount.class);
+        when(account.getId()).thenReturn(userId);
+        when(users.findByLogin(username)).thenReturn(Optional.of(account));
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(username, null));
     }
 }

@@ -3,32 +3,36 @@ package com.example.sso.security;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
+import com.example.sso.organization.OrganizationAuthorization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.shared.web.ClientIp;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.user.UserAccount;
+import com.example.sso.user.UserService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Lets a platform super-admin "drill into" one tenant: when an admin-API request carries an
- * {@code X-Org-Context: <orgId>} header, the request runs bound to that org so RLS scopes every
- * org-scoped read/write to that tenant (the super-admin keeps their full permissions — only the DATA is
- * scoped). Runs AFTER {@link OrgContextFilter}, which has already bound the platform context for a
- * super-admin; this overrides it for the target org. The outer filter clears the context at request end,
- * so no restore is needed here.
+ * Lets an admin "drill into" one tenant: when an admin-API request carries an {@code X-Org-Context: <orgId>}
+ * header, the request runs bound to that org so RLS scopes every org-scoped read/write to that tenant. Runs
+ * AFTER {@link OrgContextFilter}, which has already bound the base context; this overrides it for the target
+ * org. The outer filter clears the context at request end, so no restore is needed here.
  *
- * <p>Zero-trust: a drill-in is a super-admin operation ONLY. {@code OrgContext.isPlatform()} is true iff
- * the caller is a fully-authenticated super-admin (else they are org-bound or unauthenticated), so a
- * tenant admin (or anyone) sending the header is refused with 403 — no caller may switch into an org they
- * are not a platform admin of. Instantiated (not a {@code @Component}) so it runs only on the app chain it
- * is added to. Only acts on {@code /api/admin/**}; every other request passes through untouched.
+ * <p>Zero-trust, deny-by-default: a caller may drill into an org ONLY if they are a platform super-admin
+ * ({@code OrgContext.isPlatform()}) OR they administer that org — an org-admin of it, or a
+ * {@code ROLE_CUSTOMER_ADMIN} of the customer that owns it ({@link OrganizationAuthorization#canManage}). A
+ * tenant admin cannot switch into an org they do not administer (a customer-admin is bounded to their own
+ * customer's branches; a bare role with no membership is bounded to nothing). Membership is re-checked LIVE
+ * here (not trusted from a frozen session). Instantiated (not a {@code @Component}); only acts on
+ * {@code /api/admin/**}.
  */
 public class OrgDrillInFilter extends OncePerRequestFilter {
 
@@ -37,11 +41,16 @@ public class OrgDrillInFilter extends OncePerRequestFilter {
 
     private final OrgContext orgContext;
     private final OrganizationService organizations;
+    private final OrganizationAuthorization orgAuthorization;
+    private final UserService users;
     private final AuditService audit;
 
-    public OrgDrillInFilter(OrgContext orgContext, OrganizationService organizations, AuditService audit) {
+    public OrgDrillInFilter(OrgContext orgContext, OrganizationService organizations,
+                            OrganizationAuthorization orgAuthorization, UserService users, AuditService audit) {
         this.orgContext = orgContext;
         this.organizations = organizations;
+        this.orgAuthorization = orgAuthorization;
+        this.users = users;
         this.audit = audit;
     }
 
@@ -54,35 +63,45 @@ public class OrgDrillInFilter extends OncePerRequestFilter {
             return;
         }
 
-        // A drill-in is a platform super-admin operation only. isPlatform() is true iff a fully-authenticated
-        // super-admin; a tenant admin is org-bound, so this refuses any attempt to switch tenants.
-        if (!orgContext.isPlatform()) {
-            audit.record(new AuditRecord(AuditType.AUTHORIZATION_DENIED, principal(), false,
-                    "org drill-in refused (not a platform admin) org=" + raw, ClientIp.of(request)));
-            response.sendError(HttpServletResponse.SC_FORBIDDEN);
-            return;
-        }
-
         UUID orgId;
         try {
             orgId = UUID.fromString(raw.trim());
         } catch (IllegalArgumentException e) {
-            audit.record(new AuditRecord(AuditType.AUTHORIZATION_DENIED, principal(), false,
-                    "org drill-in refused (malformed org) org=" + raw, ClientIp.of(request)));
-            response.sendError(HttpServletResponse.SC_BAD_REQUEST);
-            return;
-        }
-        if (organizations.findView(orgId).isEmpty()) {
-            audit.record(new AuditRecord(AuditType.AUTHORIZATION_DENIED, principal(), false,
-                    "org drill-in refused (unknown org) org=" + orgId, ClientIp.of(request)));
-            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            deny(request, response, "malformed org", raw, HttpServletResponse.SC_BAD_REQUEST);
             return;
         }
 
-        orgContext.bindOrg(orgId); // override platform → scope RLS to this tenant for the request
+        // Deny-by-default: only a platform super-admin, or someone who administers this org (org-admin member
+        // or customer-admin of its customer), may switch into it. canManage re-checks membership live.
+        if (!orgContext.isPlatform() && !mayDrillInto(orgId)) {
+            deny(request, response, "not authorized for org", orgId.toString(), HttpServletResponse.SC_FORBIDDEN);
+            return;
+        }
+        if (organizations.findView(orgId).isEmpty()) {
+            deny(request, response, "unknown org", orgId.toString(), HttpServletResponse.SC_NOT_FOUND);
+            return;
+        }
+
+        orgContext.bindOrg(orgId); // override the base context → scope RLS to this tenant for the request
         audit.record(new AuditRecord(AuditType.ORGANIZATION_CONTEXT_ENTERED, principal(), true,
                 "org=" + orgId, ClientIp.of(request)));
         chain.doFilter(request, response);
+    }
+
+    private boolean mayDrillInto(UUID orgId) {
+        return currentUserId().map(userId -> orgAuthorization.canManage(userId, orgId)).orElse(false);
+    }
+
+    private Optional<UUID> currentUserId() {
+        String username = principal();
+        return username == null ? Optional.empty() : users.findByLogin(username).map(UserAccount::getId);
+    }
+
+    private void deny(HttpServletRequest request, HttpServletResponse response, String reason, String org, int status)
+            throws IOException {
+        audit.record(new AuditRecord(AuditType.AUTHORIZATION_DENIED, principal(), false,
+                "org drill-in refused (" + reason + ") org=" + org, ClientIp.of(request)));
+        response.sendError(status);
     }
 
     private String principal() {

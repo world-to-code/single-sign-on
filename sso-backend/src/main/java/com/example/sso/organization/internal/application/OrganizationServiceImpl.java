@@ -104,6 +104,18 @@ public class OrganizationServiceImpl implements OrganizationService {
 
     @Override
     @Transactional(readOnly = true)
+    public boolean isBranchOf(UUID orgId, Set<UUID> customerIds) {
+        return !customerIds.isEmpty() && organizations.existsByIdAndCustomerIdIn(orgId, customerIds);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Set<UUID> branchIdsForCustomers(Set<UUID> customerIds) {
+        return customerIds.isEmpty() ? Set.of() : organizations.findIdsByCustomerIdIn(customerIds);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public boolean isMember(UUID orgId, UUID userId) {
         // Bind the org so the RLS-guarded membership read is scoped to it.
         return orgContext.callInOrg(orgId, () -> memberships.existsByOrgIdAndUserId(orgId, userId));
