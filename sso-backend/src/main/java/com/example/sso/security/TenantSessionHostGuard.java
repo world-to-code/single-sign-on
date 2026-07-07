@@ -49,10 +49,15 @@ public class TenantSessionHostGuard extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
+        // Platform (super-admin) is exempt — it operates cross-org and drills in via X-Org-Context.
+        if (orgContext.isPlatform()) {
+            chain.doFilter(request, response);
+            return;
+        }
         Optional<UUID> sessionOrg = orgContext.currentOrg();
-        // Only a session bound to ONE tenant needs pinning. Platform (super-admin) and unbound (pre-MFA /
-        // anonymous) sessions have no single tenant to protect.
-        if (orgContext.isPlatform() || sessionOrg.isEmpty()) {
+        Optional<UUID> sessionCustomer = orgContext.currentCustomer();
+        // Unbound (pre-MFA / anonymous): no single tenant to protect.
+        if (sessionOrg.isEmpty() && sessionCustomer.isEmpty()) {
             chain.doFilter(request, response);
             return;
         }
@@ -61,15 +66,20 @@ public class TenantSessionHostGuard extends OncePerRequestFilter {
             chain.doFilter(request, response); // the apex hosts tenant-first login + the SPA — no host pin
             return;
         }
-        Optional<UUID> hostOrg = hostOrgResolver.resolveOrg(host);
-        if (hostOrg.isPresent() && hostOrg.get().equals(sessionOrg.get())) {
-            chain.doFilter(request, response); // the session's tenant matches the host it is being used on
+        // A customer-console session may operate on ANY host of its OWN customer (the console and its orgs); an
+        // org-bound session only on its own org's host. Anything else — another tenant's host, or a host that is
+        // not an active tenant — is refused.
+        boolean matches = sessionCustomer.isPresent()
+                ? hostOrgResolver.resolveHostCustomer(host).filter(sessionCustomer.get()::equals).isPresent()
+                : hostOrgResolver.resolveOrg(host).filter(sessionOrg.get()::equals).isPresent();
+        if (matches) {
+            chain.doFilter(request, response);
             return;
         }
-        // The session belongs to a different tenant than this host serves (or the host is not an active tenant):
-        // refuse the request WITHOUT touching the session (it remains valid on its own host).
+        // Refuse the request WITHOUT touching the session (it remains valid on its own host).
+        String bound = sessionCustomer.map(c -> "customer=" + c).orElseGet(() -> "org=" + sessionOrg.get());
         audit.record(new AuditRecord(AuditType.SESSION_CONTEXT_MISMATCH, principal(), false,
-                "session org=" + sessionOrg.get() + " used on host=" + host, ClientIp.of(request)));
+                "session " + bound + " used on host=" + host, ClientIp.of(request)));
         response.sendError(HttpStatus.UNAUTHORIZED.value());
     }
 

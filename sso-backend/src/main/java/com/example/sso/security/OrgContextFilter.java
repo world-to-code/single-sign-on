@@ -71,12 +71,24 @@ public class OrgContextFilter extends OncePerRequestFilter {
             orgContext.enterPlatform();
             return true;
         }
-        Optional<UUID> org = authorities.stream()
-                .filter(a -> a.startsWith(Factors.ORG_PREFIX))
-                .map(a -> a.substring(Factors.ORG_PREFIX.length()))
-                .map(UUID::fromString)
-                .findFirst();
+        // A customer (고객사) console session: NOT platform, NOT org-bound — manages the customer's orgs on
+        // global tables and drills into one at a time (org-scoped RLS stays fail-closed until an explicit
+        // bindOrg). Checked before the ORG_ marker; a session carries one or the other, never both.
+        Optional<UUID> customer = markerId(authorities, Factors.CUSTOMER_PREFIX);
+        if (customer.isPresent()) {
+            orgContext.enterCustomer(customer.get());
+            return true;
+        }
+        Optional<UUID> org = markerId(authorities, Factors.ORG_PREFIX);
         org.ifPresent(orgContext::bindOrg);
         return org.isPresent();
+    }
+
+    private Optional<UUID> markerId(Set<String> authorities, String prefix) {
+        return authorities.stream()
+                .filter(a -> a.startsWith(prefix))
+                .map(a -> a.substring(prefix.length()))
+                .map(UUID::fromString)
+                .findFirst();
     }
 }

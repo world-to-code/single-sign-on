@@ -1,5 +1,6 @@
 package com.example.sso.security;
 
+import com.example.sso.customer.CustomerRef;
 import com.example.sso.customer.CustomerService;
 import com.example.sso.customer.CustomerStatus;
 import com.example.sso.organization.OrganizationRef;
@@ -37,6 +38,21 @@ public class HostOrgResolver {
     /** The ACTIVE branch (organization) id this host addresses, or empty for the apex / an unknown / suspended tenant. */
     public Optional<UUID> resolveOrg(String host) {
         return resolver.resolve(host).map(this::resolveTenantOrg);
+    }
+
+    /**
+     * The ACTIVE customer (고객사) a host belongs to, or empty for the apex / an unknown / suspended customer. A
+     * single-label {@code {customer}.base} is the customer's console; a two-level {@code {org}.{customer}.base}
+     * belongs to its {@code customer}. Used by the tenant-session guard to keep a customer-console session on its
+     * own customer's hosts (its console and its orgs), not another customer's.
+     */
+    public Optional<UUID> resolveHostCustomer(String host) {
+        return resolver.resolve(host).flatMap(tenant -> {
+            String customerSlug = tenant.hasCustomer() ? tenant.customerSlug() : tenant.orgSlug();
+            return customers.findBySlug(customerSlug)
+                    .filter(customer -> customer.getStatus() == CustomerStatus.ACTIVE)
+                    .map(CustomerRef::getId);
+        });
     }
 
     private UUID resolveTenantOrg(TenantHost tenant) {

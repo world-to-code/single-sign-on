@@ -120,6 +120,35 @@ class HostOrgResolverTest {
     }
 
     @Test
+    void resolveHostCustomerFromASingleLabelConsoleHost() {
+        UUID customerId = UUID.randomUUID();
+        CustomerRef active = customer(CustomerStatus.ACTIVE, customerId); // build mock first (no nested stubbing)
+        when(resolver.resolve("octatco.localhost")).thenReturn(Optional.of(new TenantHost("octatco", null)));
+        when(customers.findBySlug("octatco")).thenReturn(Optional.of(active));
+
+        assertThat(hostOrgResolver.resolveHostCustomer("octatco.localhost")).contains(customerId);
+    }
+
+    @Test
+    void resolveHostCustomerFromATwoLabelOrgHostReturnsItsCustomer() {
+        UUID customerId = UUID.randomUUID();
+        CustomerRef active = customer(CustomerStatus.ACTIVE, customerId);
+        when(resolver.resolve("sales.octatco.localhost")).thenReturn(Optional.of(new TenantHost("sales", "octatco")));
+        when(customers.findBySlug("octatco")).thenReturn(Optional.of(active));
+
+        assertThat(hostOrgResolver.resolveHostCustomer("sales.octatco.localhost")).contains(customerId);
+    }
+
+    @Test
+    void resolveHostCustomerIsEmptyForASuspendedCustomer() {
+        CustomerRef suspended = customer(CustomerStatus.SUSPENDED, null);
+        when(resolver.resolve("octatco.localhost")).thenReturn(Optional.of(new TenantHost("octatco", null)));
+        when(customers.findBySlug("octatco")).thenReturn(Optional.of(suspended));
+
+        assertThat(hostOrgResolver.resolveHostCustomer("octatco.localhost")).isEmpty();
+    }
+
+    @Test
     void isBaseDomainDelegatesToTheResolver() {
         when(resolver.isBaseDomain("localhost")).thenReturn(true);
         when(resolver.isBaseDomain("evil.com")).thenReturn(false);

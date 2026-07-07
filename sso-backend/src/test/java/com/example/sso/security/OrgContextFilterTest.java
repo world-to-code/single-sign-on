@@ -62,6 +62,18 @@ class OrgContextFilterTest {
     }
 
     @Test
+    void aCustomerConsoleSessionGetsTheCustomerContext() throws Exception {
+        UUID customer = UUID.randomUUID();
+        authenticate("carol", "ROLE_CUSTOMER_ADMIN", Factors.MFA_COMPLETE, Factors.CUSTOMER_PREFIX + customer);
+
+        filter.doFilter(request, response, chain);
+
+        verify(orgContext).enterCustomer(customer);
+        verify(orgContext, never()).bindOrg(any());
+        verify(orgContext, never()).enterPlatform();
+    }
+
+    @Test
     void anUnauthenticatedRequestBindsNothing() throws Exception {
         filter.doFilter(request, response, chain);
 
