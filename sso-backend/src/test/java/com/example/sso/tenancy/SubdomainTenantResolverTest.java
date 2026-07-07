@@ -59,23 +59,8 @@ class SubdomainTenantResolverTest {
     }
 
     @Test
-    void resolveReturnsASingleLabelHostAsAnOrgWithNoCustomer() {
-        assertThat(resolver.resolve("acme.localhost")).contains(new TenantHost("acme", null));
-        assertThat(resolver.resolve("globex.idp.example.com")).contains(new TenantHost("globex", null));
-    }
-
-    @Test
-    void resolveReturnsAThreeLevelHostAsABranchWithinItsCustomer() {
-        assertThat(resolver.resolve("seoul.acme.localhost:9000")).contains(new TenantHost("seoul", "acme"));
-        assertThat(resolver.resolve("hr.globex.idp.example.com")).contains(new TenantHost("hr", "globex"));
-    }
-
-    @Test
-    void resolveRejectsFourPlusLabelsEmptyLabelsBareBasesAndUnknownDomains() {
-        assertThat(resolver.resolve("a.b.c.localhost")).isEmpty();     // three labels under the base
-        assertThat(resolver.resolve(".acme.localhost")).isEmpty();     // an empty label
-        assertThat(resolver.resolve("localhost")).isEmpty();           // the bare platform host
-        assertThat(resolver.resolve("seoul.acme.evil.com")).isEmpty(); // unrecognised base domain
+    void anEmptyLabelIsNotATenant() {
+        assertThat(resolver.tenantSlug(".acme.localhost")).isEmpty(); // an empty leading label
     }
 
     @Test

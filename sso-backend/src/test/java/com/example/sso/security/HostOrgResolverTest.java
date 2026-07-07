@@ -1,13 +1,9 @@
 package com.example.sso.security;
 
-import com.example.sso.customer.CustomerRef;
-import com.example.sso.customer.CustomerService;
-import com.example.sso.customer.CustomerStatus;
 import com.example.sso.organization.OrganizationRef;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationStatus;
 import com.example.sso.tenancy.SubdomainTenantResolver;
-import com.example.sso.tenancy.TenantHost;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -22,130 +18,57 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * The single source of truth for host→org resolution: a single-label {@code {org}.base} resolves the org
- * directly (org AND its parent customer must be ACTIVE); a three-level {@code {branch}.{customer}.base}
- * resolves the branch only when both the customer and the branch are ACTIVE; a suspended/unknown customer,
- * branch, or arbitrary host resolves to empty; and a bare base domain is reported as such.
+ * The single source of truth for host→org resolution now that the organization IS the tenant: a
+ * {@code {org}.base} host resolves the org when ACTIVE; a suspended/unknown org or an arbitrary host resolves
+ * to empty; and a bare base domain is reported as such.
  */
 @ExtendWith(MockitoExtension.class)
 class HostOrgResolverTest {
 
     @Mock private SubdomainTenantResolver resolver;
     @Mock private OrganizationService organizations;
-    @Mock private CustomerService customers;
 
     @InjectMocks private HostOrgResolver hostOrgResolver;
-
-    private CustomerRef customer(CustomerStatus status, UUID id) {
-        CustomerRef c = mock(CustomerRef.class);
-        when(c.getStatus()).thenReturn(status);
-        if (status == CustomerStatus.ACTIVE) {
-            when(c.getId()).thenReturn(id);
-        }
-        return c;
-    }
 
     private OrganizationRef org(OrganizationStatus status, UUID id) {
         OrganizationRef o = mock(OrganizationRef.class);
         when(o.getStatus()).thenReturn(status);
-        lenient().when(o.getId()).thenReturn(id); // not read when an earlier filter (status/customer) rejects
+        lenient().when(o.getId()).thenReturn(id); // not read when the status filter rejects
         return o;
     }
 
     @Test
-    void aThreeLevelHostResolvesTheBranchUnderItsActiveCustomer() {
-        UUID customerId = UUID.randomUUID();
+    void aTenantHostResolvesTheOrgWhenActive() {
         UUID orgId = UUID.randomUUID();
-        CustomerRef activeCustomer = customer(CustomerStatus.ACTIVE, customerId);
-        OrganizationRef activeBranch = org(OrganizationStatus.ACTIVE, orgId);
-        when(resolver.resolve("seoul.acme.localhost")).thenReturn(Optional.of(new TenantHost("seoul", "acme")));
-        when(customers.findBySlug("acme")).thenReturn(Optional.of(activeCustomer));
-        when(organizations.findBranch(customerId, "seoul")).thenReturn(Optional.of(activeBranch));
-
-        assertThat(hostOrgResolver.resolveOrg("seoul.acme.localhost")).contains(orgId);
-    }
-
-    @Test
-    void aSingleLabelHostResolvesTheOrgWhenBothOrgAndCustomerAreActive() {
-        UUID orgId = UUID.randomUUID();
-        UUID customerId = UUID.randomUUID();
-        OrganizationRef activeOrg = org(OrganizationStatus.ACTIVE, orgId);
-        when(activeOrg.getCustomerId()).thenReturn(customerId);
-        when(resolver.resolve("acme.localhost")).thenReturn(Optional.of(new TenantHost("acme", null)));
-        when(organizations.findBySlug("acme")).thenReturn(Optional.of(activeOrg));
-        when(customers.isActive(customerId)).thenReturn(true);
+        OrganizationRef active = org(OrganizationStatus.ACTIVE, orgId); // build the mock first (no nested stubbing)
+        when(resolver.tenantSlug("acme.localhost")).thenReturn(Optional.of("acme"));
+        when(organizations.findBySlug("acme")).thenReturn(Optional.of(active));
 
         assertThat(hostOrgResolver.resolveOrg("acme.localhost")).contains(orgId);
     }
 
     @Test
-    void aSingleLabelBranchOfASuspendedCustomerResolvesToEmpty() {
-        // The kill-switch: suspending a customer gates its branches on the legacy {org}.base host too.
-        UUID orgId = UUID.randomUUID();
-        UUID customerId = UUID.randomUUID();
-        OrganizationRef activeOrg = org(OrganizationStatus.ACTIVE, orgId);
-        when(activeOrg.getCustomerId()).thenReturn(customerId);
-        when(resolver.resolve("acme.localhost")).thenReturn(Optional.of(new TenantHost("acme", null)));
-        when(organizations.findBySlug("acme")).thenReturn(Optional.of(activeOrg));
-        when(customers.isActive(customerId)).thenReturn(false); // parent customer suspended
+    void aSuspendedOrgResolvesToEmpty() {
+        OrganizationRef suspended = org(OrganizationStatus.SUSPENDED, null);
+        when(resolver.tenantSlug("acme.localhost")).thenReturn(Optional.of("acme"));
+        when(organizations.findBySlug("acme")).thenReturn(Optional.of(suspended));
 
         assertThat(hostOrgResolver.resolveOrg("acme.localhost")).isEmpty();
     }
 
     @Test
-    void aSuspendedCustomerResolvesToEmpty() {
-        CustomerRef suspended = customer(CustomerStatus.SUSPENDED, null);
-        when(resolver.resolve("seoul.acme.localhost")).thenReturn(Optional.of(new TenantHost("seoul", "acme")));
-        when(customers.findBySlug("acme")).thenReturn(Optional.of(suspended));
+    void anUnknownOrgResolvesToEmpty() {
+        when(resolver.tenantSlug("nope.localhost")).thenReturn(Optional.of("nope"));
+        when(organizations.findBySlug("nope")).thenReturn(Optional.empty());
 
-        assertThat(hostOrgResolver.resolveOrg("seoul.acme.localhost")).isEmpty();
-    }
-
-    @Test
-    void anUnknownBranchUnderAKnownCustomerResolvesToEmpty() {
-        UUID customerId = UUID.randomUUID();
-        CustomerRef activeCustomer = customer(CustomerStatus.ACTIVE, customerId);
-        when(resolver.resolve("nope.acme.localhost")).thenReturn(Optional.of(new TenantHost("nope", "acme")));
-        when(customers.findBySlug("acme")).thenReturn(Optional.of(activeCustomer));
-        when(organizations.findBranch(customerId, "nope")).thenReturn(Optional.empty());
-
-        assertThat(hostOrgResolver.resolveOrg("nope.acme.localhost")).isEmpty();
+        assertThat(hostOrgResolver.resolveOrg("nope.localhost")).isEmpty();
     }
 
     @Test
     void anArbitraryHostThatIsNotATenantResolvesToEmpty() {
-        when(resolver.resolve("evil.com")).thenReturn(Optional.empty());
+        when(resolver.tenantSlug("evil.com")).thenReturn(Optional.empty());
 
         assertThat(hostOrgResolver.resolveOrg("evil.com")).isEmpty();
-    }
-
-    @Test
-    void resolveHostCustomerFromASingleLabelConsoleHost() {
-        UUID customerId = UUID.randomUUID();
-        CustomerRef active = customer(CustomerStatus.ACTIVE, customerId); // build mock first (no nested stubbing)
-        when(resolver.resolve("octatco.localhost")).thenReturn(Optional.of(new TenantHost("octatco", null)));
-        when(customers.findBySlug("octatco")).thenReturn(Optional.of(active));
-
-        assertThat(hostOrgResolver.resolveHostCustomer("octatco.localhost")).contains(customerId);
-    }
-
-    @Test
-    void resolveHostCustomerFromATwoLabelOrgHostReturnsItsCustomer() {
-        UUID customerId = UUID.randomUUID();
-        CustomerRef active = customer(CustomerStatus.ACTIVE, customerId);
-        when(resolver.resolve("sales.octatco.localhost")).thenReturn(Optional.of(new TenantHost("sales", "octatco")));
-        when(customers.findBySlug("octatco")).thenReturn(Optional.of(active));
-
-        assertThat(hostOrgResolver.resolveHostCustomer("sales.octatco.localhost")).contains(customerId);
-    }
-
-    @Test
-    void resolveHostCustomerIsEmptyForASuspendedCustomer() {
-        CustomerRef suspended = customer(CustomerStatus.SUSPENDED, null);
-        when(resolver.resolve("octatco.localhost")).thenReturn(Optional.of(new TenantHost("octatco", null)));
-        when(customers.findBySlug("octatco")).thenReturn(Optional.of(suspended));
-
-        assertThat(hostOrgResolver.resolveHostCustomer("octatco.localhost")).isEmpty();
     }
 
     @Test

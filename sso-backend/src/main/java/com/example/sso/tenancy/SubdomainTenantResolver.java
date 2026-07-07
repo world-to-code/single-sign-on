@@ -27,11 +27,11 @@ public class SubdomainTenantResolver {
     }
 
     /**
-     * Parse {@code host} into tenancy labels: a single-label {@code {org}.base} → {@code (orgSlug, null)}
-     * (backward compatible), a two-label {@code {branch}.{customer}.base} → {@code (branchSlug, customerSlug)}.
-     * Empty when the host is a bare base domain, carries no recognised base domain, or has 3+ or empty labels.
+     * The tenant (organization) subdomain of {@code host} — the single label of {@code {org}.base} — or empty
+     * when the host is a bare base domain, carries no recognised base domain, or has an empty or multi-label
+     * subdomain. The organization IS the tenant, so a single label fully addresses it.
      */
-    public Optional<TenantHost> resolve(String host) {
+    public Optional<String> tenantSlug(String host) {
         if (host == null || host.isBlank()) {
             return Optional.empty();
         }
@@ -43,29 +43,11 @@ public class SubdomainTenantResolver {
             String suffix = "." + base;
             if (hostname.endsWith(suffix)) {
                 String prefix = hostname.substring(0, hostname.length() - suffix.length());
-                String[] labels = prefix.split("\\.", -1); // -1 keeps trailing empties so ".base" is rejected
-                for (String label : labels) {
-                    if (label.isEmpty()) {
-                        return Optional.empty();
-                    }
-                }
-                return switch (labels.length) {
-                    case 1 -> Optional.of(new TenantHost(labels[0], null));          // {org}.base
-                    case 2 -> Optional.of(new TenantHost(labels[0], labels[1]));     // {branch}.{customer}.base
-                    default -> Optional.empty();                                     // 3+ labels unsupported
-                };
+                // A tenant host is exactly ONE non-empty label: reject "" (".base"), "a.b" (multi-label).
+                return prefix.isEmpty() || prefix.indexOf('.') >= 0 ? Optional.empty() : Optional.of(prefix);
             }
         }
         return Optional.empty();
-    }
-
-    /**
-     * The single-label tenant subdomain of {@code host}, or empty when it is a bare base domain, an unknown
-     * host, or a two-label {@code {branch}.{customer}} host. Retained for callers that only handle the
-     * single-label per-tenant host (e.g. SAML metadata); the OIDC chain uses {@link #resolve} for both forms.
-     */
-    public Optional<String> tenantSlug(String host) {
-        return resolve(host).filter(t -> !t.hasCustomer()).map(TenantHost::orgSlug);
     }
 
     /**

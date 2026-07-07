@@ -107,40 +107,6 @@ class TenantSessionHostGuardTest {
     }
 
     @Test
-    void aCustomerConsoleSessionPassesOnItsOwnCustomersHost() throws Exception {
-        UUID customerId = UUID.randomUUID();
-        when(orgContext.isPlatform()).thenReturn(false);
-        when(orgContext.currentOrg()).thenReturn(Optional.empty());
-        when(orgContext.currentCustomer()).thenReturn(Optional.of(customerId));
-        request.setServerName("sales.octatco.localhost"); // an org host under the session's own customer
-        when(hostOrgResolver.isBaseDomain("sales.octatco.localhost")).thenReturn(false);
-        when(hostOrgResolver.resolveHostCustomer("sales.octatco.localhost")).thenReturn(Optional.of(customerId));
-
-        guard.doFilter(request, response, chain);
-
-        verify(chain).doFilter(request, response);
-        verify(audit, never()).record(any());
-    }
-
-    @Test
-    void aCustomerConsoleSessionOnAnotherCustomersHostIsRefused() throws Exception {
-        UUID sessionCustomer = UUID.randomUUID();
-        UUID otherCustomer = UUID.randomUUID();
-        when(orgContext.isPlatform()).thenReturn(false);
-        when(orgContext.currentOrg()).thenReturn(Optional.empty());
-        when(orgContext.currentCustomer()).thenReturn(Optional.of(sessionCustomer));
-        request.setServerName("other.localhost");
-        when(hostOrgResolver.isBaseDomain("other.localhost")).thenReturn(false);
-        when(hostOrgResolver.resolveHostCustomer("other.localhost")).thenReturn(Optional.of(otherCustomer));
-
-        guard.doFilter(request, response, chain);
-
-        assertThat(response.getStatus()).isEqualTo(401);
-        verify(chain, never()).doFilter(any(), any());
-        verify(audit).record(any(AuditRecord.class));
-    }
-
-    @Test
     void aSessionOnAnUnknownOrSuspendedTenantHostIsRefused() throws Exception {
         UUID sessionOrg = UUID.randomUUID();
         when(orgContext.currentOrg()).thenReturn(Optional.of(sessionOrg));

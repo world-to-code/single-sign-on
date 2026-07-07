@@ -55,9 +55,8 @@ public class TenantSessionHostGuard extends OncePerRequestFilter {
             return;
         }
         Optional<UUID> sessionOrg = orgContext.currentOrg();
-        Optional<UUID> sessionCustomer = orgContext.currentCustomer();
         // Unbound (pre-MFA / anonymous): no single tenant to protect.
-        if (sessionOrg.isEmpty() && sessionCustomer.isEmpty()) {
+        if (sessionOrg.isEmpty()) {
             chain.doFilter(request, response);
             return;
         }
@@ -66,20 +65,15 @@ public class TenantSessionHostGuard extends OncePerRequestFilter {
             chain.doFilter(request, response); // the apex hosts tenant-first login + the SPA — no host pin
             return;
         }
-        // A customer-console session may operate on ANY host of its OWN customer (the console and its orgs); an
-        // org-bound session only on its own org's host. Anything else — another tenant's host, or a host that is
-        // not an active tenant — is refused.
-        boolean matches = sessionCustomer.isPresent()
-                ? hostOrgResolver.resolveHostCustomer(host).filter(sessionCustomer.get()::equals).isPresent()
-                : hostOrgResolver.resolveOrg(host).filter(sessionOrg.get()::equals).isPresent();
-        if (matches) {
+        // An org-bound session may operate only on its own organization's host. Anything else — another
+        // tenant's host, or a host that is not an active tenant — is refused.
+        if (hostOrgResolver.resolveOrg(host).filter(sessionOrg.get()::equals).isPresent()) {
             chain.doFilter(request, response);
             return;
         }
         // Refuse the request WITHOUT touching the session (it remains valid on its own host).
-        String bound = sessionCustomer.map(c -> "customer=" + c).orElseGet(() -> "org=" + sessionOrg.get());
         audit.record(new AuditRecord(AuditType.SESSION_CONTEXT_MISMATCH, principal(), false,
-                "session " + bound + " used on host=" + host, ClientIp.of(request)));
+                "session org=" + sessionOrg.get() + " used on host=" + host, ClientIp.of(request)));
         response.sendError(HttpStatus.UNAUTHORIZED.value());
     }
 
