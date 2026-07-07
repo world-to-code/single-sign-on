@@ -14,6 +14,9 @@ public interface UserAccount {
 
     UUID getId();
 
+    /** The customer (고객사) that owns this user's identity, or {@code null} for the global platform super-admin. */
+    UUID getCustomerId();
+
     String getUsername();
 
     String getEmail();

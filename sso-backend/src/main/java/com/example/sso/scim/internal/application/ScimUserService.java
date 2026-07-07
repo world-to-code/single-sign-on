@@ -51,8 +51,11 @@ public class ScimUserService {
         String displayName = resource.getDisplayName()
                 .orElse(resource.getName().flatMap(Name::getFormatted).orElse(null));
 
+        // The SCIM client is bound to an org (the token's tenant); the provisioned user belongs to that org's
+        // customer (고객사).
+        UUID customerId = orgContext.currentOrg().flatMap(organizations::customerIdOf).orElse(null);
         UserAccount created = userService.createUser(new NewUser(userName, email, displayName, null,
-                Set.of(Roles.USER)));
+                Set.of(Roles.USER)), customerId);
         resource.getExternalId().ifPresent(ext -> userService.assignExternalId(created.getId(), ext));
         if (!resource.isActive().orElse(Boolean.TRUE)) {
             userService.disable(created.getId());

@@ -34,6 +34,10 @@ public interface OrganizationService {
      *  host lookup, so branches under different customers may share a slug. */
     Optional<OrganizationRef> findBranch(UUID customerId, String slug);
 
+    /** The parent customer (고객사) of an organization — used to attribute a user created in an org to its
+     *  owning customer. Empty if the org is unknown. */
+    Optional<UUID> customerIdOf(UUID orgId);
+
     /** Whether the organization is a branch of any of the given customers — the customer-admin access check. */
     boolean isBranchOf(UUID orgId, Set<UUID> customerIds);
 

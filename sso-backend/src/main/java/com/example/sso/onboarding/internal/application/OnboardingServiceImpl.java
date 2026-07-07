@@ -61,9 +61,11 @@ public class OnboardingServiceImpl {
     public ProvisionResult provision(UUID id, OnboardingSpec spec) {
         Onboarding onboarding = require(id);
         OrganizationView org = organizations.create(new NewOrganization(spec.slug(), spec.name(), spec.profile()));
-        // The admin is a global identity, created INACTIVE (disabled, no password) — the invitation activates it.
+        // The admin belongs to the new org's customer (고객사), created INACTIVE (disabled, no password) — the
+        // invitation activates it.
+        UUID customerId = organizations.customerIdOf(org.id()).orElse(null);
         UserAccount admin = users.createUser(new NewUser(spec.adminEmail(), spec.adminEmail(), spec.adminName(),
-                null, Set.of(Roles.USER, Roles.ORG_ADMIN)));
+                null, Set.of(Roles.USER, Roles.ORG_ADMIN)), customerId);
         users.disable(admin.getId());
         organizations.addMember(org.id(), admin.getId());
         String token = invitations.issue(admin.getId(), invitationTtl);

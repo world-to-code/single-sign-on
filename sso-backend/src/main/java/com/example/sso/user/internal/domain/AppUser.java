@@ -86,10 +86,16 @@ public class AppUser extends AuditedEntity implements UserAccount {
     private Set<String> directPermissionNames = new HashSet<>();
 
     public AppUser(String username, String email, String displayName, String passwordHash) {
+        this(username, email, displayName, passwordHash, null);
+    }
+
+    /** A user owned by {@code customerId} (고객사); {@code null} = the global platform super-admin. */
+    public AppUser(String username, String email, String displayName, String passwordHash, UUID customerId) {
         this.username = username;
         this.email = email;
         this.displayName = displayName;
         this.passwordHash = passwordHash;
+        this.customerId = customerId;
     }
 
     /** Populates the transient role view from the explicit join rows (read-only; see class doc). */

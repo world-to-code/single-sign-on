@@ -105,7 +105,7 @@ class SelfSignupServiceTest {
         verify(email).sendVerification(eq("admin@acme.com"), any(), eq("acme"));
         verify(customers, never()).create(any());
         verify(organizations, never()).create(any());
-        verify(users, never()).createUser(any());
+        verify(users, never()).createUser(any(), any());
     }
 
     @Test
@@ -142,7 +142,7 @@ class SelfSignupServiceTest {
                 OrganizationStatus.ACTIVE, Instant.now(), CompanyProfile.empty()));
         UserAccount admin = mock(UserAccount.class);
         when(admin.getId()).thenReturn(adminId);
-        when(users.createUser(any())).thenReturn(admin);
+        when(users.createUser(any(), any())).thenReturn(admin);
 
         SignupView view = service.activate("tok", "password123");
 
@@ -152,7 +152,7 @@ class SelfSignupServiceTest {
         verify(organizations).create(argThat(o -> "main".equals(o.slug()) && customerId.equals(o.customerId())));
         // The admin is an ENABLED ROLE_CUSTOMER_ADMIN created WITH the chosen password (never disabled).
         verify(users).createUser(argThat(u -> u.roleNames().contains(Roles.CUSTOMER_ADMIN)
-                && "password123".equals(u.rawPassword())));
+                && "password123".equals(u.rawPassword())), any());
         verify(users, never()).disable(any());
         // Scoped to their own new customer, and a member of the first branch so they can sign in to it.
         verify(customers).addAdmin(customerId, adminId);

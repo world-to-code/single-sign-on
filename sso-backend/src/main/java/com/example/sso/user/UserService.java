@@ -54,7 +54,12 @@ public interface UserService {
 
     // --- create / update (intention-revealing; no entity leaves the module) ---
 
+    /** Creates a GLOBAL user (no owning customer) — the platform super-admin and any tenant-agnostic account. */
     UserAccount createUser(NewUser newUser);
+
+    /** Creates a user owned by {@code customerId} (고객사), the per-customer identity boundary. Uniqueness of
+     *  username/email is still GLOBAL for now; a later phase moves it to per-customer. {@code null} = global. */
+    UserAccount createUser(NewUser newUser, UUID customerId);
 
     /** Admin full update: profile, enabled state, and (when non-null) the exact role-name set. */
     UserAccount updateUser(UUID id, UserUpdate update);

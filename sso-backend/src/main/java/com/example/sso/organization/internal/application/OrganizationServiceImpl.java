@@ -105,6 +105,12 @@ public class OrganizationServiceImpl implements OrganizationService {
 
     @Override
     @Transactional(readOnly = true)
+    public Optional<UUID> customerIdOf(UUID orgId) {
+        return organizations.findById(orgId).map(Organization::getCustomerId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public boolean isBranchOf(UUID orgId, Set<UUID> customerIds) {
         return !customerIds.isEmpty() && organizations.existsByIdAndCustomerIdIn(orgId, customerIds);
     }

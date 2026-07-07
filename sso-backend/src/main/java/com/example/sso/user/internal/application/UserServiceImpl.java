@@ -171,6 +171,12 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public UserAccount createUser(NewUser newUser) {
+        return createUser(newUser, null);
+    }
+
+    @Override
+    @Transactional
+    public UserAccount createUser(NewUser newUser, UUID customerId) {
         String username = newUser.username();
         String email = newUser.email();
         if (users.existsByUsername(username)) {
@@ -186,7 +192,7 @@ public class UserServiceImpl implements UserService {
 
         String rawPassword = newUser.rawPassword();
         String encodedPassword = rawPassword == null ? null : passwordEncoder.encode(rawPassword);
-        AppUser saved = users.save(new AppUser(username, email, newUser.displayName(), encodedPassword));
+        AppUser saved = users.save(new AppUser(username, email, newUser.displayName(), encodedPassword, customerId));
         assignedRoles.forEach(role -> userRoles.save(new UserRole(saved.getId(), role.getId())));
         addToDefaultGroup(saved.getId());
 

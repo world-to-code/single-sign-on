@@ -83,6 +83,7 @@ class SelfSignupServiceIT extends AbstractIntegrationTest {
         OrganizationRef branch = organizations.findBranch(customer.getId(), FIRST_BRANCH_SLUG).orElseThrow();
         UserAccount admin = users.findByLogin(adminEmail).orElseThrow();
         assertThat(admin.isEnabled()).isTrue(); // self-signup is enabled immediately (differs from admin-invite)
+        assertThat(admin.getCustomerId()).isEqualTo(customer.getId()); // the admin is owned by the new customer
         assertThat(users.verifyPassword(admin.getUsername(), "chosen-passphrase-1")).isTrue();
         // The admin administers their OWN new customer (delegated-admin scope) and is a member of the first branch.
         assertThat(customers.isCustomerAdmin(admin.getId(), customer.getId())).isTrue();

@@ -53,7 +53,7 @@ class ScimUserServiceTest {
         UserAccount created = userAccount(newId);
         when(orgContext.currentOrg()).thenReturn(Optional.of(orgId));
         when(userService.existsByUsername("scim-u")).thenReturn(false);
-        when(userService.createUser(any())).thenReturn(created);
+        when(userService.createUser(any(), any())).thenReturn(created);
         when(userService.findById(newId)).thenReturn(Optional.of(created));
 
         service.create(User.builder().userName("scim-u").build());
@@ -67,7 +67,7 @@ class ScimUserServiceTest {
         UserAccount created = userAccount(newId);
         when(orgContext.currentOrg()).thenReturn(Optional.empty());
         when(userService.existsByUsername("scim-u")).thenReturn(false);
-        when(userService.createUser(any())).thenReturn(created);
+        when(userService.createUser(any(), any())).thenReturn(created);
         when(userService.findById(newId)).thenReturn(Optional.of(created));
 
         service.create(User.builder().userName("scim-u").build());

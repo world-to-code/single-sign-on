@@ -3,6 +3,8 @@ package com.example.sso.admin.internal.user.application;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.shared.application.LastAdminGuard;
+import com.example.sso.organization.OrganizationService;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.mfa.MfaService;
@@ -45,6 +47,8 @@ class UserAdminServiceTest {
     private AdminAccessPolicy accessPolicy;
     private AdminAuditLogger auditLogger;
     private LastAdminGuard lastAdminGuard;
+    private OrgContext orgContext;
+    private OrganizationService organizations;
     private UserAdminService service;
 
     @BeforeEach
@@ -55,7 +59,10 @@ class UserAdminServiceTest {
         accessPolicy = mock(AdminAccessPolicy.class);
         auditLogger = mock(AdminAuditLogger.class);
         lastAdminGuard = mock(LastAdminGuard.class);
-        service = new UserAdminService(userService, mfaService, userGroups, accessPolicy, auditLogger, lastAdminGuard);
+        orgContext = mock(OrgContext.class);
+        organizations = mock(OrganizationService.class);
+        service = new UserAdminService(userService, mfaService, userGroups, accessPolicy, auditLogger,
+                lastAdminGuard, orgContext, organizations);
     }
 
     @Test
@@ -98,7 +105,7 @@ class UserAdminServiceTest {
     @Test
     void createUserSurfacesDomainIllegalArgumentAsConflict() {
         NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "pw", Set.of());
-        when(userService.createUser(newUser)).thenThrow(new IllegalArgumentException("username taken"));
+        when(userService.createUser(eq(newUser), any())).thenThrow(new IllegalArgumentException("username taken"));
 
         assertThatThrownBy(() -> service.createUser(newUser)).isInstanceOf(ConflictException.class);
     }
@@ -107,7 +114,7 @@ class UserAdminServiceTest {
     void createUserAuditsTheCreation() {
         NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "pw", Set.of(Roles.USER));
         UserAccount created = user(UUID.randomUUID());
-        when(userService.createUser(newUser)).thenReturn(created);
+        when(userService.createUser(eq(newUser), any())).thenReturn(created);
 
         service.createUser(newUser);
 

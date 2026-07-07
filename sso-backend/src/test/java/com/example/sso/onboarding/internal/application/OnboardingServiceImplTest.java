@@ -73,14 +73,14 @@ class OnboardingServiceImplTest {
                 OrganizationStatus.ACTIVE, Instant.now(), CompanyProfile.empty()));
         UserAccount admin = mock(UserAccount.class);
         when(admin.getId()).thenReturn(adminId);
-        when(users.createUser(any())).thenReturn(admin);
+        when(users.createUser(any(), any())).thenReturn(admin);
         when(invitations.issue(eq(adminId), any())).thenReturn("raw-token");
 
         OnboardingServiceImpl.ProvisionResult result = service.provision(id, spec());
 
         // the admin is a ROLE_ORG_ADMIN, created WITHOUT a password, and immediately disabled (inactive)
         verify(users).createUser(argThat(u -> u.roleNames().contains(Roles.ORG_ADMIN)
-                && u.roleNames().contains(Roles.USER) && u.rawPassword() == null));
+                && u.roleNames().contains(Roles.USER) && u.rawPassword() == null), any());
         verify(users).disable(adminId);
         verify(organizations).addMember(orgId, adminId);
         verify(invitations).issue(eq(adminId), any());

@@ -115,7 +115,7 @@ public class SelfSignupService {
                 new CompanyProfile(signup.getCompanySize(), signup.getCompanyCountry(),
                         signup.getCompanyIndustry(), signup.getCompanyPhone()), customer.id()));
         UserAccount admin = users.createUser(new NewUser(signup.getAdminEmail(), signup.getAdminEmail(),
-                signup.getAdminName(), password, Set.of(Roles.USER, Roles.CUSTOMER_ADMIN)));
+                signup.getAdminName(), password, Set.of(Roles.USER, Roles.CUSTOMER_ADMIN)), customer.id());
         // The applicant administers ONLY their brand-new customer (its membership scopes canManage to its
         // branches) and is a member of the first branch so they can sign in to it via {main}.{customer}.base.
         customers.addAdmin(customer.id(), admin.getId());
