@@ -13,6 +13,8 @@ export interface SessionView {
   mfaEnrollmentAllowed: boolean;
   /** The active organization (tenant) slug once resolved via the tenant-first entry step, else null. */
   org: string | null;
+  /** Whether the resolved tenant permits passwordless passkey sign-in as the first factor (admin opt-in). */
+  passwordlessLoginAllowed: boolean;
 }
 
 /** Pre-step data for a factor: TOTP enrollment secret + QR, or a WebAuthn options document. */

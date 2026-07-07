@@ -51,6 +51,30 @@ export async function registerFactorCredential(prepared: FactorChallenge): Promi
 export async function passwordlessLogin(): Promise<SessionView> {
   const options = await apiPost<any>("/webauthn/authenticate/options");
   const credential = await getCredential(options);
+  return finishPasswordlessLogin(credential);
+}
+
+/** Whether the browser can surface passkeys inline in form autofill (conditional mediation). */
+export async function conditionalMediationAvailable(): Promise<boolean> {
+  const api = PublicKeyCredential as any;
+  return typeof api?.isConditionalMediationAvailable === "function"
+    && !!(await api.isConditionalMediationAvailable());
+}
+
+/**
+ * Start a conditional-UI (autofill) passkey login: the browser offers the user's passkeys inside the
+ * email field's autofill dropdown; resolves to the session only if the user picks one. Returns null when
+ * aborted (e.g. the component unmounts, or the user types a password instead) — callers ignore that.
+ */
+export async function conditionalPasswordlessLogin(signal: AbortSignal): Promise<SessionView | null> {
+  const options = await apiPost<any>("/webauthn/authenticate/options");
+  const publicKey = (PublicKeyCredential as any).parseRequestOptionsFromJSON(options);
+  const credential: any = await navigator.credentials.get({ publicKey, mediation: "conditional", signal } as any);
+  return credential ? finishPasswordlessLogin(credential) : null;
+}
+
+/** Posts a resolved assertion to Spring's /login/webauthn and finalizes the MFA-complete session. */
+async function finishPasswordlessLogin(credential: any): Promise<SessionView> {
   const result = await apiPost<{ authenticated: boolean }>("/login/webauthn", credential.toJSON());
   if (!result.authenticated) {
     throw new Error("Passkey authentication was rejected.");

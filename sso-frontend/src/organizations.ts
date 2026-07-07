@@ -9,6 +9,8 @@ export interface Organization {
   name: string;
   status: OrganizationStatus;
   createdAt: string;
+  /** Admin opt-in: allow passwordless passkey (WebAuthn) sign-in as the first factor for this tenant. */
+  passwordlessLoginEnabled: boolean;
 }
 
 export interface CreateOrganizationRequest {
@@ -25,4 +27,6 @@ export const createOrganization = (body: CreateOrganizationRequest) =>
   apiPost<Organization>("/api/admin/organizations", body);
 export const updateOrganization = (id: string, body: UpdateOrganizationRequest) =>
   apiPut<Organization>(`/api/admin/organizations/${id}`, body);
+export const updatePasswordlessLogin = (id: string, enabled: boolean) =>
+  apiPut<Organization>(`/api/admin/organizations/${id}/passwordless-login`, { enabled });
 export const deleteOrganization = (id: string) => apiDelete(`/api/admin/organizations/${id}`);

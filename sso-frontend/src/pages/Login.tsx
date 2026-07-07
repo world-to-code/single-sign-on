@@ -1,9 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Loader2 } from "lucide-react";
+import { KeyRound, Loader2 } from "lucide-react";
 import { ApiError } from "../api";
 import { getSession, identify, logout } from "../auth";
 import type { SessionView } from "../auth";
+import {
+  conditionalMediationAvailable,
+  conditionalPasswordlessLogin,
+  passwordlessLogin,
+  webAuthnSupported,
+} from "../webauthn";
 import { lastEmail, rememberEmail } from "../lib/loginMemory";
 import AuthLayout from "../components/layout/AuthLayout";
 import { Alert, AlertDescription } from "../components/ui/alert";
@@ -19,9 +25,39 @@ import { Label } from "../components/ui/label";
  */
 export default function Login({ session, onDone }: { session: SessionView; onDone: (s: SessionView) => void }) {
   const org = session.org;
+  const passkeyOffered = session.passwordlessLoginAllowed && webAuthnSupported();
   const [email, setEmail] = useState(() => (org ? lastEmail(org) ?? "" : ""));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+
+  // Conditional-UI (autofill): when the tenant allows passwordless login, let the browser surface the
+  // user's passkeys inline in the email field's autofill. Best-effort — silently ignored if unsupported or
+  // aborted (the user types instead / the component unmounts).
+  useEffect(() => {
+    if (!passkeyOffered) return;
+    const controller = new AbortController();
+    let active = true;
+    (async () => {
+      try {
+        if (!(await conditionalMediationAvailable())) return;
+        const next = await conditionalPasswordlessLogin(controller.signal);
+        if (active && next) onDone(next);
+      } catch { /* conditional UI is best-effort */ }
+    })();
+    return () => { active = false; controller.abort(); };
+  }, [passkeyOffered, onDone]);
+
+  async function signInWithPasskey() {
+    setError(null);
+    setPasskeyBusy(true);
+    try {
+      onDone(await passwordlessLogin());
+    } catch {
+      setError("Passkey sign-in did not complete. You can continue with your email instead.");
+      setPasskeyBusy(false);
+    }
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -74,6 +110,21 @@ export default function Login({ session, onDone }: { session: SessionView; onDon
           Continue
         </Button>
       </form>
+
+      {passkeyOffered && (
+        <>
+          <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="h-px flex-1 bg-border" />
+            or
+            <span className="h-px flex-1 bg-border" />
+          </div>
+          <Button type="button" variant="outline" className="w-full" disabled={passkeyBusy}
+                  onClick={signInWithPasskey}>
+            {passkeyBusy ? <Loader2 className="animate-spin" /> : <KeyRound />}
+            Sign in with a passkey
+          </Button>
+        </>
+      )}
 
       <p className="mt-3 text-xs text-muted-foreground">
         We'll ask for your password or other factors based on your sign-in policy.

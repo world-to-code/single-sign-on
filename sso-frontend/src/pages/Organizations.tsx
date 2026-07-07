@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { BarChart3, Building2, LogIn, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import {
-  createOrganization, updateOrganization,
+  createOrganization, updateOrganization, updatePasswordlessLogin,
   type Organization, type OrganizationStatus,
 } from "@/organizations";
 import { setDrillIn } from "@/drillIn";
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Toggle } from "@/components/form/fields";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DataList, EmptyState } from "@/components/states";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
@@ -27,9 +28,10 @@ interface Editor {
   slug: string;
   name: string;
   status: OrganizationStatus;
+  passwordlessLoginEnabled: boolean;
 }
 
-const blankEditor: Editor = { id: null, slug: "", name: "", status: "ACTIVE" };
+const blankEditor: Editor = { id: null, slug: "", name: "", status: "ACTIVE", passwordlessLoginEnabled: false };
 
 /**
  * Platform super-admin registry of tenants: create, rename, suspend/activate, and delete organizations.
@@ -49,7 +51,12 @@ export default function Organizations() {
     blank: blankEditor,
     toRequest: (e) => ({ slug: e.slug, name: e.name, status: e.status }),
     create: (body) => createOrganization({ slug: (body as Editor).slug, name: (body as Editor).name }),
-    update: (id, body) => updateOrganization(id, { name: (body as Editor).name, status: (body as Editor).status }),
+    update: async (id, body) => {
+      const e = body as Editor;
+      await updateOrganization(id, { name: e.name, status: e.status });
+      // Passwordless login is a distinct, step-up-gated setting with its own endpoint.
+      return updatePasswordlessLogin(id, e.passwordlessLoginEnabled);
+    },
     onSaved: reload,
   });
 
@@ -132,8 +139,9 @@ export default function Organizations() {
                               disabled={org.status !== "ACTIVE"} onClick={() => manage(org)}>
                         <LogIn /> Manage
                       </Button>
-                      <Button variant="ghost" size="icon" title="Rename" onClick={() =>
-                        openEdit({ id: org.id, slug: org.slug, name: org.name, status: org.status })}>
+                      <Button variant="ghost" size="icon" title="Edit" onClick={() =>
+                        openEdit({ id: org.id, slug: org.slug, name: org.name, status: org.status,
+                          passwordlessLoginEnabled: org.passwordlessLoginEnabled })}>
                         <Pencil />
                       </Button>
                       <Button variant="ghost" size="icon"
@@ -158,10 +166,10 @@ export default function Organizations() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editor.id ? `Rename: ${editor.slug}` : "Create organization"}</DialogTitle>
+            <DialogTitle>{editor.id ? `Edit: ${editor.slug}` : "Create organization"}</DialogTitle>
             <DialogDescription>
               {editor.id
-                ? "The identifier is permanent; only the display name can change."
+                ? "The identifier is permanent; change the display name and sign-in options."
                 : "The identifier is what users enter first to sign in — lowercase, no spaces."}
             </DialogDescription>
           </DialogHeader>
@@ -182,6 +190,14 @@ export default function Organizations() {
               <Input id="org-name" value={editor.name} required autoFocus={!!editor.id}
                      placeholder="Acme, Inc." onChange={(e) => set({ name: e.target.value })} />
             </div>
+            {editor.id && (
+              <Toggle
+                label="Passwordless passkey sign-in"
+                hint="Let this tenant's members sign in with a passkey as the first factor (no password)."
+                checked={editor.passwordlessLoginEnabled}
+                onChange={(v) => set({ passwordlessLoginEnabled: v })}
+              />
+            )}
 
             <DialogFooter>
               <Button type="button" variant="outline"
