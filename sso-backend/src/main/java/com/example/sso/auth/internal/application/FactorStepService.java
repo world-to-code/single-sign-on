@@ -9,7 +9,6 @@ import com.example.sso.authpolicy.AuthPolicyView;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.organization.OrganizationService;
-import com.example.sso.organization.OrganizationView;
 import com.example.sso.portal.AppStepUp;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
@@ -103,12 +102,6 @@ public class FactorStepService {
     }
 
     /**
-     * During the initial (pre-MFA_COMPLETE) login, rejects acting on a factor that is not the policy's
-     * current step — preventing step-skipping or planting a factor before authentication. Once fully
-     * authenticated, the /factors endpoints are reused for per-app step-up, where login step-ordering no
-     * longer applies — so allow it.
-     */
-    /**
      * When FIDO2 is verified as the FIRST factor (none granted yet), that is passwordless passkey sign-in —
      * allowed only if the login org opted in. A FIDO2 SECOND factor (step-up, after another factor) is
      * unaffected. Mirrors the {@code /login/webauthn} enforcement so the toggle governs every passkey-first path.
@@ -122,13 +115,17 @@ public class FactorStepService {
         if (!firstFactor) {
             return;
         }
-        boolean allowed = loginOrgId != null
-                && organizations.findView(loginOrgId).map(OrganizationView::passwordlessLoginEnabled).orElse(false);
-        if (!allowed) {
+        if (!organizations.isPasswordlessLoginEnabled(loginOrgId)) {
             throw new ForbiddenException("Passwordless passkey sign-in is not enabled for this organization.");
         }
     }
 
+    /**
+     * During the initial (pre-MFA_COMPLETE) login, rejects acting on a factor that is not the policy's
+     * current step — preventing step-skipping or planting a factor before authentication. Once fully
+     * authenticated, the /factors endpoints are reused for per-app step-up, where login step-ordering no
+     * longer applies — so allow it.
+     */
     private void requireCurrentStep(AuthFactor factor, UUID loginOrgId) {
         // only next() is read; resolved in the login org so step-ordering follows the tenant's own policy
         AuthSessionView view = authState.describe(currentUser.authentication(), null, loginOrgId);

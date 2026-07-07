@@ -22,6 +22,13 @@ public interface OrganizationService {
     /** Enables or disables passwordless passkey (WebAuthn) first-factor sign-in for the organization. */
     OrganizationView updatePasswordlessLogin(UUID id, boolean enabled);
 
+    /**
+     * Whether the organization permits passwordless passkey (WebAuthn) first-factor sign-in. The single
+     * source of truth for this kill-switch — every login path that gates passkey-first re-checks it here, so
+     * the rule cannot drift out of sync. {@code false} for a null or unknown org.
+     */
+    boolean isPasswordlessLoginEnabled(UUID orgId);
+
     /** Deletes an organization and (via FK cascade) its memberships. */
     void delete(UUID id);
 

@@ -3,10 +3,7 @@ package com.example.sso.auth.internal.application;
 import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.mfa.FactorAuthorizationService;
-import com.example.sso.organization.CompanyProfile;
 import com.example.sso.organization.OrganizationService;
-import com.example.sso.organization.OrganizationStatus;
-import com.example.sso.organization.OrganizationView;
 import com.example.sso.saml.SamlFrontChannelLogout;
 import com.example.sso.shared.error.UnauthorizedException;
 import com.example.sso.user.LoginResolutionScope;
@@ -15,7 +12,6 @@ import com.example.sso.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -81,9 +77,7 @@ class AuthenticationServiceTest {
         when(request.getSession(false)).thenReturn(session);
         when(users.findByUsernameInOrg("alice", orgId)).thenReturn(Optional.of(user));
         when(organizations.isMember(orgId, userId)).thenReturn(true); // authorized for the target org
-        when(organizations.findView(orgId)).thenReturn(Optional.of(new OrganizationView(
-                orgId, "acme", "Acme", OrganizationStatus.ACTIVE, Instant.now(), CompanyProfile.empty(),
-                orgAllowsPasswordless)));
+        when(organizations.isPasswordlessLoginEnabled(orgId)).thenReturn(orgAllowsPasswordless);
     }
 
     @Test
@@ -104,6 +98,27 @@ class AuthenticationServiceTest {
 
         verify(factorAuth).grantFactor(eq(request), eq(response), eq(Factors.FIDO2));
         verify(completionService).completeIfSatisfied(request, response);
+    }
+
+    @Test
+    void completeRejectsAndTearsDownAPasskeyLoginIntoAnOrgTheUserDoesNotBelongTo() {
+        UUID orgId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        WebAuthnAuthentication auth = mock(WebAuthnAuthentication.class);
+        when(auth.isAuthenticated()).thenReturn(true);
+        when(auth.getName()).thenReturn("alice");
+        when(currentUser.authentication()).thenReturn(auth);
+        UserAccount user = mock(UserAccount.class);
+        when(user.getId()).thenReturn(userId);
+        when(preAuthOrg.orgId(request)).thenReturn(Optional.of(orgId));
+        when(request.getSession(false)).thenReturn(session);
+        when(users.findByUsernameInOrg("alice", orgId)).thenReturn(Optional.of(user));
+        when(organizations.isMember(orgId, userId)).thenReturn(false); // NOT a member of the selected org
+
+        assertThatThrownBy(() -> service.complete(request, response)).isInstanceOf(UnauthorizedException.class);
+        verify(session).invalidate(); // the half-authenticated passkey session must not linger
+        verify(factorAuth, never()).grantFactor(any(), any(), any());
+        verify(completionService, never()).completeIfSatisfied(any(), any());
     }
 
     @Test

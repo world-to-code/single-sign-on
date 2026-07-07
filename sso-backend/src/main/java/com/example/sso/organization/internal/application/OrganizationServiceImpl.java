@@ -93,6 +93,13 @@ public class OrganizationServiceImpl implements OrganizationService {
 
     @Override
     @Transactional(readOnly = true)
+    public boolean isPasswordlessLoginEnabled(UUID orgId) {
+        return orgId != null
+                && organizations.findById(orgId).map(Organization::isPasswordlessLoginEnabled).orElse(false);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<OrganizationView> listAll() {
         return organizations.findAll().stream().map(this::view).toList();
     }

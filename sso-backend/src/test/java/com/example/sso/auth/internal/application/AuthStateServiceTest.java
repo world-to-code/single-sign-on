@@ -6,10 +6,7 @@ import com.example.sso.authpolicy.AuthPolicyResolver;
 import com.example.sso.authpolicy.AuthPolicyStepView;
 import com.example.sso.authpolicy.AuthPolicyView;
 import com.example.sso.authpolicy.Factors;
-import com.example.sso.organization.CompanyProfile;
 import com.example.sso.organization.OrganizationService;
-import com.example.sso.organization.OrganizationStatus;
-import com.example.sso.organization.OrganizationView;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
@@ -56,11 +53,6 @@ class AuthStateServiceTest {
     @Mock private OrganizationService organizations;
 
     @InjectMocks private AuthStateService service;
-
-    private OrganizationView org(UUID id, boolean passwordless) {
-        return new OrganizationView(id, "acme", "Acme", OrganizationStatus.ACTIVE, java.time.Instant.now(),
-                CompanyProfile.empty(), passwordless);
-    }
 
     private Authentication authed(String... authorities) {
         List<SimpleGrantedAuthority> granted = List.of(authorities).stream()
@@ -163,7 +155,7 @@ class AuthStateServiceTest {
         UUID loginOrg = UUID.randomUUID();
         when(policyService.defaultPolicy()).thenReturn(policy);
         when(policy.isAllowEnrollmentAtLogin()).thenReturn(true);
-        when(organizations.findView(loginOrg)).thenReturn(Optional.of(org(loginOrg, true)));
+        when(organizations.isPasswordlessLoginEnabled(loginOrg)).thenReturn(true);
 
         AuthSessionView view = service.describe(null, "acme", loginOrg); // org selected, not yet identified
 
@@ -176,7 +168,7 @@ class AuthStateServiceTest {
         UUID loginOrg = UUID.randomUUID();
         when(policyService.defaultPolicy()).thenReturn(policy);
         when(policy.isAllowEnrollmentAtLogin()).thenReturn(true);
-        when(organizations.findView(loginOrg)).thenReturn(Optional.of(org(loginOrg, false)));
+        when(organizations.isPasswordlessLoginEnabled(loginOrg)).thenReturn(false);
 
         assertThat(service.describe(null, "acme", loginOrg).passwordlessLoginAllowed()).isFalse();
     }

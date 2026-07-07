@@ -7,7 +7,6 @@ import com.example.sso.authpolicy.AuthPolicyStepView;
 import com.example.sso.authpolicy.AuthPolicyView;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.organization.OrganizationService;
-import com.example.sso.organization.OrganizationView;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.Roles;
 import com.example.sso.user.UserAccount;
@@ -95,8 +94,7 @@ public class AuthStateService {
 
     /** Whether the resolved login org (if any) has an admin enabled passwordless passkey sign-in. */
     private boolean passwordlessAllowed(UUID loginOrgId) {
-        return loginOrgId != null
-                && organizations.findView(loginOrgId).map(OrganizationView::passwordlessLoginEnabled).orElse(false);
+        return organizations.isPasswordlessLoginEnabled(loginOrgId);
     }
 
     /** True once the user's policy is fully satisfied (used to grant the MFA-complete marker). */

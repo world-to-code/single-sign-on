@@ -198,6 +198,29 @@ class AuthPolicyAdminServiceImplTest {
     }
 
     @Test
+    void createAcceptsAUserAndRoleInThePolicysOwnOrg() {
+        // The accept branch: a subject whose org EQUALS the policy's org is assignable (the reject tests cover
+        // the other-org path; global subjects are covered by createAcceptsAGlobalRole).
+        UUID orgA = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgA)); // the policy is created in org A
+        when(repository.findByNameAndOrgId("MFA", orgA)).thenReturn(Optional.empty());
+        when(repository.save(any(AuthPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(stepRepository.save(any(AuthPolicyStep.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(users.orgIdOf(userId)).thenReturn(Optional.of(orgA)); // both subjects live in the SAME org
+        when(roles.orgIdOf(roleId)).thenReturn(Optional.of(orgA));
+
+        AuthPolicySpec spec = new AuthPolicySpec("MFA", 10, true, true, true,
+                List.of(Set.of(AuthFactor.PASSWORD)), Set.of(userId), Set.of(roleId), 15);
+
+        service.create(spec);
+
+        verify(userRepository).save(any());
+        verify(roleRepository).save(any());
+    }
+
+    @Test
     void createRejectsADuplicateWithinTheSameTenant() {
         UUID orgA = UUID.randomUUID();
         when(orgContext.currentOrg()).thenReturn(Optional.of(orgA));

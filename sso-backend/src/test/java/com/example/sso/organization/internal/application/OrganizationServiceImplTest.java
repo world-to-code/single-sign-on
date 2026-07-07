@@ -170,6 +170,17 @@ class OrganizationServiceImplTest {
     }
 
     @Test
+    void isPasswordlessLoginEnabledReflectsTheFlagAndIsFalseForANullOrg() {
+        UUID id = UUID.randomUUID();
+        Organization org = new Organization("acme", "Acme");
+        org.allowPasswordlessLogin(true);
+        when(organizations.findById(id)).thenReturn(Optional.of(org));
+
+        assertThat(service.isPasswordlessLoginEnabled(id)).isTrue();
+        assertThat(service.isPasswordlessLoginEnabled(null)).isFalse(); // null org short-circuits to false
+    }
+
+    @Test
     void updatePasswordlessLoginOfAMissingOrgThrowsNotFound() {
         UUID id = UUID.randomUUID();
         when(organizations.findById(id)).thenReturn(Optional.empty());

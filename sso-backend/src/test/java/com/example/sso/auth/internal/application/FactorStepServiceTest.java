@@ -3,13 +3,11 @@ package com.example.sso.auth.internal.application;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.AuthFactor;
+import com.example.sso.authpolicy.Factors;
 import com.example.sso.authpolicy.AuthPolicyResolver;
 import com.example.sso.authpolicy.AuthPolicyView;
 import com.example.sso.mfa.FactorAuthorizationService;
-import com.example.sso.organization.CompanyProfile;
 import com.example.sso.organization.OrganizationService;
-import com.example.sso.organization.OrganizationStatus;
-import com.example.sso.organization.OrganizationView;
 import com.example.sso.portal.AppStepUp;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
@@ -25,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.time.Instant;
 import java.util.List;
@@ -181,11 +180,51 @@ class FactorStepServiceTest {
         when(currentUser.authentication())
                 .thenReturn(UsernamePasswordAuthenticationToken.authenticated("alice", null, List.of()));
         when(preAuthOrg.orgId(request)).thenReturn(Optional.of(loginOrg));
-        when(organizations.findView(loginOrg)).thenReturn(Optional.of(new OrganizationView(
-                loginOrg, "acme", "Acme", OrganizationStatus.ACTIVE, Instant.now(), CompanyProfile.empty(), false)));
+        when(organizations.isPasswordlessLoginEnabled(loginOrg)).thenReturn(false);
 
         assertThatThrownBy(() -> service.verify(AuthFactor.FIDO2, code(null), request, response))
                 .isInstanceOf(ForbiddenException.class);
         verify(factorAuth, never()).grantFactor(any(), any(), any());
+    }
+
+    @Test
+    void verifyAllowsAPasskeyAsTheFirstFactorWhenTheOrgEnablesPasswordless() {
+        UUID loginOrg = UUID.randomUUID();
+        when(authState.describe(any(), any(), any())).thenReturn(AuthSessionView.pending(
+                "alice", false, true, List.of(), List.of(), List.of(), List.of("FIDO2"), true, null, true));
+        when(currentUser.authentication())
+                .thenReturn(UsernamePasswordAuthenticationToken.authenticated("alice", null, List.of()));
+        when(preAuthOrg.orgId(request)).thenReturn(Optional.of(loginOrg));
+        when(organizations.isPasswordlessLoginEnabled(loginOrg)).thenReturn(true);
+        when(user.isTemporarilyLocked(any())).thenReturn(false);
+        when(user.isAccountNonLocked()).thenReturn(true);
+        when(factorHandlers.get(AuthFactor.FIDO2)).thenReturn(handler);
+        when(handler.verify(eq(user), any(), eq(request))).thenReturn(true);
+        when(completionService.completeIfSatisfied(request, response))
+                .thenReturn(AuthSessionView.organizationPending(true));
+
+        service.verify(AuthFactor.FIDO2, code(null), request, response);
+
+        verify(factorAuth).grantFactor(request, response, AuthFactor.FIDO2.authority());
+    }
+
+    @Test
+    void verifyAllowsFido2AsASecondFactorEvenWhenPasswordlessIsDisabled() {
+        // FIDO2 AFTER another factor is step-up MFA, not passwordless-first — the org toggle must not block it.
+        when(authState.describe(any(), any(), any())).thenReturn(AuthSessionView.pending(
+                "alice", false, true, List.of(), List.of(), List.of(), List.of("FIDO2"), true, null, false));
+        when(currentUser.authentication()).thenReturn(UsernamePasswordAuthenticationToken.authenticated(
+                "alice", null, List.of(new SimpleGrantedAuthority(Factors.PASSWORD)))); // a factor already granted
+        when(user.isTemporarilyLocked(any())).thenReturn(false);
+        when(user.isAccountNonLocked()).thenReturn(true);
+        when(factorHandlers.get(AuthFactor.FIDO2)).thenReturn(handler);
+        when(handler.verify(eq(user), any(), eq(request))).thenReturn(true);
+        when(completionService.completeIfSatisfied(request, response))
+                .thenReturn(AuthSessionView.organizationPending(true));
+
+        service.verify(AuthFactor.FIDO2, code(null), request, response);
+
+        verify(factorAuth).grantFactor(request, response, AuthFactor.FIDO2.authority());
+        verify(organizations, never()).isPasswordlessLoginEnabled(any()); // the gate returns early for a 2nd factor
     }
 }

@@ -7,7 +7,6 @@ import com.example.sso.authpolicy.Factors;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.organization.OrganizationRef;
 import com.example.sso.organization.OrganizationService;
-import com.example.sso.organization.OrganizationView;
 import com.example.sso.organization.OrganizationStatus;
 import com.example.sso.saml.SamlFrontChannelLogout;
 import com.example.sso.shared.error.BadRequestException;
@@ -219,9 +218,7 @@ public class AuthenticationService {
             // passwordless sign-in. Re-checked here, never trusted from the SPA's gated button — the flag may
             // have been disabled after the passkey was registered, or the endpoint hit directly.
             if (passwordlessPasskey) {
-                boolean passwordlessAllowed = organizations.findView(orgId)
-                        .map(OrganizationView::passwordlessLoginEnabled).orElse(false);
-                if (!passwordlessAllowed) {
+                if (!organizations.isPasswordlessLoginEnabled(orgId)) {
                     throw rejectPasswordless(request, true);
                 }
                 boolean hasFido2 = authentication.getAuthorities().stream()
