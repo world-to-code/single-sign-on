@@ -73,6 +73,13 @@ public class AuthStateService {
         boolean enrollAllowed = policy.isAllowEnrollmentAtLogin(); // per the user's winning login policy
         Optional<AuthPolicyStepView> step = evaluator.currentStep(policy, granted);
         if (step.isEmpty()) {
+            // First-login password reset is the LAST gate: an admin-created user given a TEMPORARY password
+            // must set their own before the session is DONE. Reported here (the single source of session
+            // state) so every surface — login completion AND the /api/auth/session re-poll — agrees, and
+            // isPolicySatisfied stays false so completion never grants MFA_COMPLETE while it is pending.
+            if (user.isPasswordResetRequired()) {
+                return AuthSessionView.mustResetPassword(user.getUsername(), activeOrgSlug);
+            }
             return AuthSessionView.complete(user.getUsername(), totpEnrolled, fido2Enrolled, factors, roles, permissions, enrollAllowed, activeOrgSlug, passwordless);
         }
 

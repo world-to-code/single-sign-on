@@ -133,6 +133,19 @@ class AuthStateServiceTest {
     }
 
     @Test
+    void aUserWithATemporaryPasswordReportsMustResetInsteadOfDone() {
+        identifiedAlice();
+        when(user.isPasswordResetRequired()).thenReturn(true); // admin-issued temporary password
+        when(evaluator.currentStep(eq(policy), any())).thenReturn(Optional.empty()); // all factors satisfied
+
+        AuthSessionView view = service.describe(authed(Factors.PASSWORD, Factors.TOTP), "acme", null);
+
+        assertThat(view.next()).isEqualTo(AuthSessionView.NEXT_MUST_RESET_PASSWORD);
+        assertThat(view.authenticated()).isFalse();
+        assertThat(view.username()).isEqualTo("alice");
+    }
+
+    @Test
     void aRemainingStepReportsFactorWithChoicesOrderedByPreference() {
         identifiedAlice();
         when(evaluator.currentStep(eq(policy), any())).thenReturn(Optional.of(step));
