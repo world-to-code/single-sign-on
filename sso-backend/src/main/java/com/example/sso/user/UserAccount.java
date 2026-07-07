@@ -17,6 +17,10 @@ public interface UserAccount {
     /** The customer (고객사) that owns this user's identity, or {@code null} for the global platform super-admin. */
     UUID getCustomerId();
 
+    /** The organization (the tenant) that owns this user's identity; {@code null} = the global platform
+     *  super-admin. The customer-tier collapse makes the organization the identity boundary. */
+    UUID getOrgId();
+
     String getUsername();
 
     String getEmail();
