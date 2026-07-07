@@ -67,7 +67,7 @@ class FactorStepServiceTest {
     /** The policy currently expects TOTP (next=FACTOR, pending=[TOTP]). */
     private void expectTotpStep() {
         lenient().when(authState.describe(any(), any(), any())).thenReturn(AuthSessionView.pending(
-                "alice", true, false, List.of(), List.of(), List.of(), List.of("TOTP"), true, null));
+                "alice", true, false, List.of(), List.of(), List.of(), List.of("TOTP"), true, null, false));
     }
 
     private FactorVerificationRequest code(String value) {

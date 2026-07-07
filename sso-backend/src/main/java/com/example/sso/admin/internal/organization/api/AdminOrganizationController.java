@@ -59,6 +59,14 @@ public class AdminOrganizationController {
         return organizations.update(id, request.name(), request.status());
     }
 
+    @PutMapping("/{id}/passwordless-login")
+    @RequirePermission(Permissions.ORG_UPDATE)
+    @RequireStepUp
+    public OrganizationView updatePasswordlessLogin(@PathVariable UUID id,
+                                                    @Valid @RequestBody PasswordlessLoginRequest request) {
+        return organizations.updatePasswordlessLogin(id, request.enabled());
+    }
+
     @DeleteMapping("/{id}")
     @RequirePermission(Permissions.ORG_DELETE)
     @RequireStepUp

@@ -7,6 +7,7 @@ import com.example.sso.authpolicy.Factors;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.organization.OrganizationRef;
 import com.example.sso.organization.OrganizationService;
+import com.example.sso.organization.OrganizationView;
 import com.example.sso.organization.OrganizationStatus;
 import com.example.sso.saml.SamlFrontChannelLogout;
 import com.example.sso.shared.error.BadRequestException;
@@ -203,15 +204,27 @@ public class AuthenticationService {
             // as any failed sign-in.
             // Authorize the authenticated passkey principal, resolved by username within the target organization
             // (matching the completion step), so the authorized identity is provably the authenticated one.
-            UUID userId = users.findByUsernameInOrg(authentication.getName(), preAuthOrg.orgId(request).orElse(null))
+            UUID orgId = preAuthOrg.orgId(request).orElse(null);
+            UUID userId = users.findByUsernameInOrg(authentication.getName(), orgId)
                     .map(UserAccount::getId).orElse(null);
             if (!targetSelected(request) || userId == null || !authorizedForTarget(request, userId)) {
                 throw new UnauthorizedException();
             }
-            boolean hasFido2 = authentication.getAuthorities().stream()
-                    .map(GrantedAuthority::getAuthority).anyMatch(Factors.FIDO2::equals);
-            if (authentication instanceof WebAuthnAuthentication && !hasFido2) {
-                factorAuth.grantFactor(request, response, Factors.FIDO2);
+            // Zero-trust server enforcement: a passwordless passkey login (a WebAuthnAuthentication reached
+            // /login/webauthn without a prior password) is honored ONLY if the resolved tenant still permits
+            // passwordless sign-in. Re-checked here, never trusted from the SPA's gated button — the flag may
+            // have been disabled after the passkey was registered, or the endpoint hit directly.
+            if (authentication instanceof WebAuthnAuthentication) {
+                boolean passwordlessAllowed = organizations.findView(orgId)
+                        .map(OrganizationView::passwordlessLoginEnabled).orElse(false);
+                if (!passwordlessAllowed) {
+                    throw new UnauthorizedException();
+                }
+                boolean hasFido2 = authentication.getAuthorities().stream()
+                        .map(GrantedAuthority::getAuthority).anyMatch(Factors.FIDO2::equals);
+                if (!hasFido2) {
+                    factorAuth.grantFactor(request, response, Factors.FIDO2);
+                }
             }
         }
 

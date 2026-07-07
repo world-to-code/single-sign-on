@@ -6,6 +6,10 @@ import com.example.sso.authpolicy.AuthPolicyResolver;
 import com.example.sso.authpolicy.AuthPolicyStepView;
 import com.example.sso.authpolicy.AuthPolicyView;
 import com.example.sso.authpolicy.Factors;
+import com.example.sso.organization.CompanyProfile;
+import com.example.sso.organization.OrganizationService;
+import com.example.sso.organization.OrganizationStatus;
+import com.example.sso.organization.OrganizationView;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
@@ -49,8 +53,14 @@ class AuthStateServiceTest {
     @Mock private AuthPolicyStepView step;
     @Mock private UserAccount user;
     @Mock private OrgContext orgContext;
+    @Mock private OrganizationService organizations;
 
     @InjectMocks private AuthStateService service;
+
+    private OrganizationView org(UUID id, boolean passwordless) {
+        return new OrganizationView(id, "acme", "Acme", OrganizationStatus.ACTIVE, java.time.Instant.now(),
+                CompanyProfile.empty(), passwordless);
+    }
 
     private Authentication authed(String... authorities) {
         List<SimpleGrantedAuthority> granted = List.of(authorities).stream()
@@ -133,6 +143,29 @@ class AuthStateServiceTest {
         assertThat(view.next()).isEqualTo(AuthSessionView.NEXT_FACTOR);
         // PASSWORD precedes TOTP by the enum's declared preference order (not alphabetical).
         assertThat(view.pendingFactors()).containsExactly("PASSWORD", "TOTP");
+    }
+
+    @Test
+    void reportsPasswordlessLoginAllowedWhenTheSelectedOrgEnablesIt() {
+        UUID loginOrg = UUID.randomUUID();
+        when(policyService.defaultPolicy()).thenReturn(policy);
+        when(policy.isAllowEnrollmentAtLogin()).thenReturn(true);
+        when(organizations.findView(loginOrg)).thenReturn(Optional.of(org(loginOrg, true)));
+
+        AuthSessionView view = service.describe(null, "acme", loginOrg); // org selected, not yet identified
+
+        assertThat(view.next()).isEqualTo(AuthSessionView.NEXT_IDENTIFY);
+        assertThat(view.passwordlessLoginAllowed()).isTrue();
+    }
+
+    @Test
+    void reportsPasswordlessLoginDisallowedWhenTheSelectedOrgDisablesIt() {
+        UUID loginOrg = UUID.randomUUID();
+        when(policyService.defaultPolicy()).thenReturn(policy);
+        when(policy.isAllowEnrollmentAtLogin()).thenReturn(true);
+        when(organizations.findView(loginOrg)).thenReturn(Optional.of(org(loginOrg, false)));
+
+        assertThat(service.describe(null, "acme", loginOrg).passwordlessLoginAllowed()).isFalse();
     }
 
     @Test

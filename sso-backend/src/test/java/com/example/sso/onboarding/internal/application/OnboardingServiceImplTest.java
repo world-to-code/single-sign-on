@@ -70,7 +70,7 @@ class OnboardingServiceImplTest {
         Onboarding onboarding = mock(Onboarding.class);
         when(onboardings.findById(id)).thenReturn(Optional.of(onboarding));
         when(organizations.create(any())).thenReturn(new OrganizationView(orgId, "acme", "Acme",
-                OrganizationStatus.ACTIVE, Instant.now(), CompanyProfile.empty()));
+                OrganizationStatus.ACTIVE, Instant.now(), CompanyProfile.empty(), false));
         UserAccount admin = mock(UserAccount.class);
         when(admin.getId()).thenReturn(adminId);
         when(users.createUser(any(), any())).thenReturn(admin);

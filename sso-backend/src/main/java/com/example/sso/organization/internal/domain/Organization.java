@@ -39,6 +39,10 @@ public class Organization extends AuditedEntity implements OrganizationRef {
     @Embedded
     private CompanyProfileData companyProfile;
 
+    // Admin opt-in: allow passwordless passkey (WebAuthn/FIDO2) sign-in as the first factor for this tenant.
+    @Column(name = "passwordless_login_enabled", nullable = false)
+    private boolean passwordlessLoginEnabled = false;
+
     public Organization(String slug, String name) {
         this(slug, name, CompanyProfile.empty());
     }
@@ -56,6 +60,10 @@ public class Organization extends AuditedEntity implements OrganizationRef {
 
     public void changeStatus(OrganizationStatus status) {
         this.status = status;
+    }
+
+    public void allowPasswordlessLogin(boolean enabled) {
+        this.passwordlessLoginEnabled = enabled;
     }
 
     /**

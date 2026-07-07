@@ -16,4 +16,7 @@ public interface OrganizationRef {
     String getName();
 
     OrganizationStatus getStatus();
+
+    /** Whether an admin has enabled passwordless passkey (WebAuthn) sign-in as the first factor for this tenant. */
+    boolean isPasswordlessLoginEnabled();
 }

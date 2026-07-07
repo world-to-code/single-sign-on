@@ -11,7 +11,7 @@ import java.util.List;
 public record AuthSessionView(boolean authenticated, String username, boolean totpEnrolled,
                               boolean fido2Enrolled, List<String> factors, List<String> roles,
                               List<String> permissions, String next, List<String> pendingFactors,
-                              boolean mfaEnrollmentAllowed, String org) {
+                              boolean mfaEnrollmentAllowed, String org, boolean passwordlessLoginAllowed) {
 
     /** {@code next}: the SPA must collect the organization (tenant) slug before anything else. */
     public static final String NEXT_ORGANIZATION = "ORGANIZATION";
@@ -25,28 +25,30 @@ public record AuthSessionView(boolean authenticated, String username, boolean to
     /** No organization resolved yet — the SPA must collect the tenant slug (tenant-first entry). */
     public static AuthSessionView organizationPending(boolean mfaEnrollmentAllowed) {
         return new AuthSessionView(false, null, false, false, List.of(), List.of(), List.of(),
-                NEXT_ORGANIZATION, List.of(), mfaEnrollmentAllowed, null);
+                NEXT_ORGANIZATION, List.of(), mfaEnrollmentAllowed, null, false);
     }
 
     /** Organization resolved, no identified user yet — the SPA must collect the email. */
-    public static AuthSessionView identifyPending(String org, boolean mfaEnrollmentAllowed) {
+    public static AuthSessionView identifyPending(String org, boolean mfaEnrollmentAllowed,
+                                                  boolean passwordlessLoginAllowed) {
         return new AuthSessionView(false, null, false, false, List.of(), List.of(), List.of(),
-                NEXT_IDENTIFY, List.of(), mfaEnrollmentAllowed, org);
+                NEXT_IDENTIFY, List.of(), mfaEnrollmentAllowed, org, passwordlessLoginAllowed);
     }
 
     /** The policy is fully satisfied — the session is complete. */
     public static AuthSessionView complete(String username, boolean totpEnrolled, boolean fido2Enrolled,
                                            List<String> factors, List<String> roles, List<String> permissions,
-                                           boolean mfaEnrollmentAllowed, String org) {
+                                           boolean mfaEnrollmentAllowed, String org, boolean passwordlessLoginAllowed) {
         return new AuthSessionView(true, username, totpEnrolled, fido2Enrolled, factors, roles, permissions,
-                NEXT_DONE, List.of(), mfaEnrollmentAllowed, org);
+                NEXT_DONE, List.of(), mfaEnrollmentAllowed, org, passwordlessLoginAllowed);
     }
 
     /** A current policy step remains — the SPA completes one of {@code pendingFactors}. */
     public static AuthSessionView pending(String username, boolean totpEnrolled, boolean fido2Enrolled,
                                           List<String> factors, List<String> roles, List<String> permissions,
-                                          List<String> pendingFactors, boolean mfaEnrollmentAllowed, String org) {
+                                          List<String> pendingFactors, boolean mfaEnrollmentAllowed, String org,
+                                          boolean passwordlessLoginAllowed) {
         return new AuthSessionView(false, username, totpEnrolled, fido2Enrolled, factors, roles, permissions,
-                NEXT_FACTOR, pendingFactors, mfaEnrollmentAllowed, org);
+                NEXT_FACTOR, pendingFactors, mfaEnrollmentAllowed, org, passwordlessLoginAllowed);
     }
 }

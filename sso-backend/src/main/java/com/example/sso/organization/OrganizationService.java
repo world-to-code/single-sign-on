@@ -19,6 +19,9 @@ public interface OrganizationService {
     /** Renames and/or changes the status of an organization. */
     OrganizationView update(UUID id, String name, OrganizationStatus status);
 
+    /** Enables or disables passwordless passkey (WebAuthn) first-factor sign-in for the organization. */
+    OrganizationView updatePasswordlessLogin(UUID id, boolean enabled);
+
     /** Deletes an organization and (via FK cascade) its memberships. */
     void delete(UUID id);
 

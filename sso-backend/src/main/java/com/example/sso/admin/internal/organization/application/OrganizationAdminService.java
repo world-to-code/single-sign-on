@@ -53,6 +53,13 @@ public class OrganizationAdminService {
         return view;
     }
 
+    public OrganizationView updatePasswordlessLogin(UUID id, boolean enabled) {
+        OrganizationView view = organizations.updatePasswordlessLogin(id, enabled);
+        audit.log(AuditType.ORGANIZATION_UPDATED, AuditSubjectType.ORGANIZATION, id.toString(),
+                "passwordlessLogin=" + enabled);
+        return view;
+    }
+
     public void delete(UUID id) {
         organizations.delete(id);
         audit.log(AuditType.ORGANIZATION_DELETED, AuditSubjectType.ORGANIZATION, id.toString(), null);

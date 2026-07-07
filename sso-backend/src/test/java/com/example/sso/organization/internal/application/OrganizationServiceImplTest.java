@@ -160,6 +160,25 @@ class OrganizationServiceImplTest {
     }
 
     @Test
+    void updatePasswordlessLoginTogglesTheFlagAndReturnsItInTheView() {
+        UUID id = UUID.randomUUID();
+        Organization org = new Organization("acme", "Acme");
+        when(organizations.findById(id)).thenReturn(Optional.of(org));
+
+        assertThat(service.updatePasswordlessLogin(id, true).passwordlessLoginEnabled()).isTrue();
+        assertThat(service.updatePasswordlessLogin(id, false).passwordlessLoginEnabled()).isFalse();
+    }
+
+    @Test
+    void updatePasswordlessLoginOfAMissingOrgThrowsNotFound() {
+        UUID id = UUID.randomUUID();
+        when(organizations.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.updatePasswordlessLogin(id, true))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
     void updateOfAMissingOrgThrowsNotFound() {
         UUID id = UUID.randomUUID();
         when(organizations.findById(id)).thenReturn(Optional.empty());

@@ -90,7 +90,7 @@ class OrgDrillInFilterTest {
         when(orgContext.isPlatform()).thenReturn(true);
         when(organizations.findView(orgId)).thenReturn(Optional.of(
                 new OrganizationView(orgId, "acme", "Acme", OrganizationStatus.ACTIVE, Instant.now(),
-                        CompanyProfile.empty())));
+                        CompanyProfile.empty(), false)));
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         filter.doFilter(adminRequest(orgId.toString()), response, chain);
@@ -153,7 +153,7 @@ class OrgDrillInFilterTest {
         when(orgAuthorization.canManage(actorId, orgId)).thenReturn(true); // they administer this branch
         when(organizations.findView(orgId)).thenReturn(Optional.of(
                 new OrganizationView(orgId, "seoul", "Seoul", OrganizationStatus.ACTIVE, Instant.now(),
-                        CompanyProfile.empty())));
+                        CompanyProfile.empty(), false)));
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         filter.doFilter(adminRequest(orgId.toString()), response, chain);

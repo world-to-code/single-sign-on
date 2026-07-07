@@ -6,6 +6,8 @@ import com.example.sso.authpolicy.AuthPolicyResolver;
 import com.example.sso.authpolicy.AuthPolicyStepView;
 import com.example.sso.authpolicy.AuthPolicyView;
 import com.example.sso.authpolicy.Factors;
+import com.example.sso.organization.OrganizationService;
+import com.example.sso.organization.OrganizationView;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.Roles;
 import com.example.sso.user.UserAccount;
@@ -36,6 +38,7 @@ public class AuthStateService {
     private final AuthPolicyResolver policyService;
     private final AuthPolicyEvaluator evaluator;
     private final OrgContext orgContext;
+    private final OrganizationService organizations;
 
     /**
      * @param loginOrgId the tenant-first login org (null before it is resolved, or for post-login
@@ -43,15 +46,18 @@ public class AuthStateService {
      *                   (RLS-scoped) participate alongside the global/default policy.
      */
     public AuthSessionView describe(Authentication authentication, String activeOrgSlug, UUID loginOrgId) {
+        // Whether the selected tenant permits passwordless passkey sign-in, so the SPA can offer it before
+        // (and after) identifying the account. Enforced again server-side at login completion (zero trust).
+        boolean passwordless = passwordlessAllowed(loginOrgId);
         if (authentication == null || !authentication.isAuthenticated()
                 || authentication instanceof AnonymousAuthenticationToken) {
-            return anonymous(activeOrgSlug);
+            return anonymous(activeOrgSlug, passwordless);
         }
         // Resolve the principal WITHIN the login's organization (the session's org isn't bound until MFA
         // completes), so an org-scoped user's factor state is read for the right account, not a same-named one.
         UserAccount user = users.findByUsernameInOrg(authentication.getName(), loginOrgId).orElse(null);
         if (user == null) {
-            return anonymous(activeOrgSlug);
+            return anonymous(activeOrgSlug, passwordless);
         }
 
         Set<String> granted = authentication.getAuthorities().stream()
@@ -67,7 +73,7 @@ public class AuthStateService {
         boolean enrollAllowed = policy.isAllowEnrollmentAtLogin(); // per the user's winning login policy
         Optional<AuthPolicyStepView> step = evaluator.currentStep(policy, granted);
         if (step.isEmpty()) {
-            return AuthSessionView.complete(user.getUsername(), totpEnrolled, fido2Enrolled, factors, roles, permissions, enrollAllowed, activeOrgSlug);
+            return AuthSessionView.complete(user.getUsername(), totpEnrolled, fido2Enrolled, factors, roles, permissions, enrollAllowed, activeOrgSlug, passwordless);
         }
 
         // Order by the factor's natural preference (PASSWORD, TOTP, EMAIL, FIDO2) so the SPA defaults
@@ -77,7 +83,13 @@ public class AuthStateService {
         List<String> pending = step.get().getAllowedFactors().stream()
                 .sorted(Comparator.comparingInt(Enum::ordinal))
                 .map(AuthFactor::name).toList();
-        return AuthSessionView.pending(user.getUsername(), totpEnrolled, fido2Enrolled, factors, roles, permissions, pending, enrollAllowed, activeOrgSlug);
+        return AuthSessionView.pending(user.getUsername(), totpEnrolled, fido2Enrolled, factors, roles, permissions, pending, enrollAllowed, activeOrgSlug, passwordless);
+    }
+
+    /** Whether the resolved login org (if any) has an admin enabled passwordless passkey sign-in. */
+    private boolean passwordlessAllowed(UUID loginOrgId) {
+        return loginOrgId != null
+                && organizations.findView(loginOrgId).map(OrganizationView::passwordlessLoginEnabled).orElse(false);
     }
 
     /** True once the user's policy is fully satisfied (used to grant the MFA-complete marker). */
@@ -93,12 +105,12 @@ public class AuthStateService {
                 : orgContext.callInOrg(loginOrgId, () -> policyService.resolveForUser(user));
     }
 
-    private AuthSessionView anonymous(String activeOrgSlug) {
+    private AuthSessionView anonymous(String activeOrgSlug, boolean passwordless) {
         // Tenant-first: collect the org slug, then the email, then the policy drives the factors. No user
         // yet, so report the default policy's enroll-at-login flag.
         boolean enroll = policyService.defaultPolicy().isAllowEnrollmentAtLogin();
         return activeOrgSlug == null
                 ? AuthSessionView.organizationPending(enroll)
-                : AuthSessionView.identifyPending(activeOrgSlug, enroll);
+                : AuthSessionView.identifyPending(activeOrgSlug, enroll, passwordless);
     }
 }

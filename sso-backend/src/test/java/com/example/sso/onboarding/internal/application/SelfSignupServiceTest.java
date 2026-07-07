@@ -130,7 +130,7 @@ class SelfSignupServiceTest {
         when(signups.findByTokenHash(any())).thenReturn(Optional.of(redeemable()));
         when(signups.consume(any(), any())).thenReturn(1);
         when(organizations.create(any())).thenReturn(new OrganizationView(orgId, "acme", "Acme",
-                OrganizationStatus.ACTIVE, Instant.now(), CompanyProfile.empty()));
+                OrganizationStatus.ACTIVE, Instant.now(), CompanyProfile.empty(), false));
         UserAccount admin = mock(UserAccount.class);
         when(admin.getId()).thenReturn(adminId);
         when(users.createUser(any(), any())).thenReturn(admin);

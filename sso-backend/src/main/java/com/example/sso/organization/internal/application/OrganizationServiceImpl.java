@@ -66,6 +66,14 @@ public class OrganizationServiceImpl implements OrganizationService {
 
     @Override
     @Transactional
+    public OrganizationView updatePasswordlessLogin(UUID id, boolean enabled) {
+        Organization org = require(id);
+        org.allowPasswordlessLogin(enabled);
+        return view(org);
+    }
+
+    @Override
+    @Transactional
     public void delete(UUID id) {
         organizations.delete(require(id));
     }
