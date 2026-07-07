@@ -10,8 +10,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
-import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -22,14 +20,12 @@ import lombok.NoArgsConstructor;
  * methods.
  */
 @Entity
-@Table(name = "organization",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"customer_id", "slug"}))
+@Table(name = "organization")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
 public class Organization extends AuditedEntity implements OrganizationRef {
 
-    // Unique PER CUSTOMER, not globally (see the table constraint) — branches under different customers may
-    // share a slug; {branch}.{customer} keeps them apart.
+    // The organization IS the tenant; its slug is globally unique (see the DB UNIQUE(slug) constraint).
     @Column(nullable = false, length = 63)
     private String slug;
 
@@ -43,11 +39,6 @@ public class Organization extends AuditedEntity implements OrganizationRef {
     @Embedded
     private CompanyProfileData companyProfile;
 
-    // The parent customer (고객사) this organization is a branch of. A bare UUID — the customer module owns the
-    // Customer entity (entity-hiding); set at creation via assignCustomer, so it is non-null by the first save.
-    @Column(name = "customer_id", nullable = false)
-    private UUID customerId;
-
     public Organization(String slug, String name) {
         this(slug, name, CompanyProfile.empty());
     }
@@ -57,11 +48,6 @@ public class Organization extends AuditedEntity implements OrganizationRef {
         this.name = name;
         this.status = OrganizationStatus.ACTIVE;
         this.companyProfile = CompanyProfileData.of(profile);
-    }
-
-    /** Assign the parent customer (고객사). Set once at creation; the FK is non-null. */
-    public void assignCustomer(UUID customerId) {
-        this.customerId = customerId;
     }
 
     public void rename(String name) {

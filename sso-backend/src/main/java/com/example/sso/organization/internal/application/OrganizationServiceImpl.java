@@ -1,6 +1,5 @@
 package com.example.sso.organization.internal.application;
 
-import com.example.sso.customer.CustomerService;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationAccessRevokedEvent;
 import com.example.sso.organization.OrganizationRef;
@@ -36,7 +35,6 @@ public class OrganizationServiceImpl implements OrganizationService {
     private final ApplicationEventPublisher events;
     private final UserService users;
     private final OrgContext orgContext;
-    private final CustomerService customers;
 
     @Override
     @Transactional
@@ -46,11 +44,7 @@ public class OrganizationServiceImpl implements OrganizationService {
         if (organizations.existsBySlug(slug)) {
             throw new ConflictException("organization slug '" + slug + "' already exists");
         }
-        // Every organization currently still hangs under a customer (고객사) wrapper — the requested one (if it
-        // exists and is ACTIVE) or the default customer — keeping the FK non-null until that column is dropped.
-        UUID customerId = resolveCustomer(command.customerId());
         Organization org = new Organization(slug, requireName(command.name()), command.profile());
-        org.assignCustomer(customerId);
         return view(organizations.save(org));
     }
 
@@ -94,30 +88,6 @@ public class OrganizationServiceImpl implements OrganizationService {
         // The organization IS the tenant, resolved by its globally-unique slug (the {org}.base host and
         // tenant-first login both use this).
         return organizations.findBySlug(Slug.normalize(slug)).map(o -> o);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public Optional<OrganizationRef> findBranch(UUID customerId, String slug) {
-        return organizations.findByCustomerIdAndSlug(customerId, Slug.normalize(slug)).map(o -> o);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public Optional<UUID> customerIdOf(UUID orgId) {
-        return organizations.findById(orgId).map(Organization::getCustomerId);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public boolean isBranchOf(UUID orgId, Set<UUID> customerIds) {
-        return !customerIds.isEmpty() && organizations.existsByIdAndCustomerIdIn(orgId, customerIds);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public Set<UUID> branchIdsForCustomers(Set<UUID> customerIds) {
-        return customerIds.isEmpty() ? Set.of() : organizations.findIdsByCustomerIdIn(customerIds);
     }
 
     @Override
@@ -196,17 +166,5 @@ public class OrganizationServiceImpl implements OrganizationService {
             throw new BadRequestException("organization name is required");
         }
         return name.trim();
-    }
-
-    // Resolve the parent customer for a new branch: the requested one (which must exist and be ACTIVE — no
-    // creating branches under an unknown or suspended customer), or the default customer when none is given.
-    private UUID resolveCustomer(UUID requested) {
-        if (requested == null) {
-            return customers.defaultCustomer().getId();
-        }
-        if (!customers.isActive(requested)) {
-            throw new BadRequestException("customer not found or not active");
-        }
-        return requested;
     }
 }

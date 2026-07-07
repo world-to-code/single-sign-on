@@ -13,11 +13,6 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li><b>org-bound</b> — scoped to one organization; RLS shows only that org's rows;</li>
  *   <li><b>platform</b> — cross-org (super-admin, seeder, background jobs); RLS shows all rows;</li>
- *   <li><b>customer</b> — a customer (고객사) console: manages the customer's orgs on GLOBAL tables and drills
- *       into one org at a time. It carries NO org GUC, so for org-scoped tables RLS is fail-closed exactly like
- *       <em>unset</em> — a customer context can read no org's scoped rows without an explicit {@link #bindOrg}
- *       (gated by {@code canManage}). The {@code customerId} is an authz/session-layer marker only, NEVER a GUC,
- *       so no org-scoped RLS policy changes and the per-org boundary is untouched;</li>
  *   <li><b>unset</b> — no context; RLS is fail-closed (no GUC → no rows) for org-scoped tables.</li>
  * </ul>
  * Scoped operations run inside {@link #callInOrg}/{@link #callAsPlatform}, which save and restore the
@@ -26,7 +21,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class OrgContext {
 
-    private record State(UUID orgId, boolean platform, UUID customerId) {
+    private record State(UUID orgId, boolean platform) {
     }
 
     private final ThreadLocal<State> holder = new ThreadLocal<>();
@@ -51,33 +46,18 @@ public class OrgContext {
         return state != null && state.platform();
     }
 
-    /** The customer (고객사) whose console this context is, or empty when org-bound / platform / unset. */
-    public Optional<UUID> currentCustomer() {
-        State state = holder.get();
-        return state == null ? Optional.empty() : Optional.ofNullable(state.customerId());
-    }
-
     // --- request-lifecycle binding (a servlet filter sets one at request start and clears at the end;
     //     nested callInOrg/callAsPlatform scopes still save-and-restore around it) --------------------
 
     /** Binds the thread to {@code orgId} for the rest of the request. */
     public void bindOrg(UUID orgId) {
-        holder.set(new State(orgId, false, null));
+        holder.set(new State(orgId, false));
         syncConnection();
     }
 
     /** Binds the thread to the cross-org platform context for the rest of the request. */
     public void enterPlatform() {
-        holder.set(new State(null, true, null));
-        syncConnection();
-    }
-
-    /**
-     * Binds the thread to a customer (고객사) console context for the rest of the request: NOT platform, and no
-     * org GUC (org-scoped RLS stays fail-closed). The {@code customerId} is a session/authz marker only.
-     */
-    public void enterCustomer(UUID customerId) {
-        holder.set(new State(null, false, customerId));
+        holder.set(new State(null, true));
         syncConnection();
     }
 
@@ -97,12 +77,12 @@ public class OrgContext {
 
     /** Runs {@code action} bound to {@code orgId} (RLS scoped to that org), restoring the prior context. */
     public <T> T callInOrg(UUID orgId, Supplier<T> action) {
-        return withState(new State(orgId, false, null), action);
+        return withState(new State(orgId, false), action);
     }
 
     /** Runs {@code action} in the cross-org platform context (RLS bypass), restoring the prior context. */
     public <T> T callAsPlatform(Supplier<T> action) {
-        return withState(new State(null, true, null), action);
+        return withState(new State(null, true), action);
     }
 
     public void runInOrg(UUID orgId, Runnable action) {

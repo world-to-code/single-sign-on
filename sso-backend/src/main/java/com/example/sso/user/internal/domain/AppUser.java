@@ -45,13 +45,6 @@ public class AppUser extends AuditedEntity implements UserAccount {
     @Column(nullable = false, length = 320)
     private String email;
 
-    // The customer (고객사) that owns this user's identity — the tenant boundary for per-customer user isolation
-    // (the same email may be a different user in different customers). NULL = the global platform super-admin.
-    // Backfilled for existing users (V65); stamped at creation in a later phase. Uniqueness of username/email is
-    // still GLOBAL for now (the @Column unique=true above) — a later phase moves it to per-customer.
-    @Column(name = "customer_id")
-    private UUID customerId;
-
     // The organization (the tenant) that owns this user's identity — the identity boundary after the customer
     // tier collapsed. NULL = the global platform super-admin. Backfilled for existing users (V67); enforced by
     // org-scoped resolution and per-organization username/email uniqueness (partial unique indexes, V68).

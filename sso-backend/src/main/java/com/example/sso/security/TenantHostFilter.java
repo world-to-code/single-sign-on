@@ -12,10 +12,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * Binds the request's tenant context from the request HOST on the OIDC chain, so that the per-tenant issuer
- * (host-derived) is backed by the matching tenant's signing key. Two host forms resolve to the branch
- * (organization): the established single-label {@code {org}.base}, and the three-level
- * {@code {branch}.{customer}.base} where a branch is addressed within its parent customer (고객사) — so
- * branches under different customers may share a slug. Runs even for unauthenticated discovery/JWKS.
+ * (host-derived) is backed by the matching tenant's signing key. A single-label {@code {org}.base} host
+ * resolves to its organization (the tenant). Runs even for unauthenticated discovery/JWKS.
  *
  * <p>Zero-trust: because the host derives the OIDC issuer, this filter is a strict host allowlist. Only a
  * configured bare (platform) base domain, a subdomain that resolves to an ACTIVE organization, or a branch

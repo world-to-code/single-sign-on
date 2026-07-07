@@ -16,7 +16,4 @@ public interface OrganizationRef {
     String getName();
 
     OrganizationStatus getStatus();
-
-    /** The id of the parent customer (고객사) this org is a branch of. */
-    UUID getCustomerId();
 }

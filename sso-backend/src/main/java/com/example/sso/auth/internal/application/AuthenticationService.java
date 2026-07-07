@@ -198,7 +198,7 @@ public class AuthenticationService {
         Authentication authentication = currentUser.authentication();
         if (authentication != null && authentication.isAuthenticated()) {
             // Tenant-first applies to passwordless passkey login too: the passkey authenticates the user, but
-            // the session must not finalize without a resolved target (org or customer console) they belong to
+            // the session must not finalize without a resolved organization they belong to
             // (else login bypasses tenant selection via /login/webauthn). Reject the unauthorized the same way
             // as any failed sign-in.
             // Authorize the authenticated passkey principal, resolved by username within the target organization

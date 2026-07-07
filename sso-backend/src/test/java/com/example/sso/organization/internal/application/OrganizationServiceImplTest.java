@@ -1,7 +1,5 @@
 package com.example.sso.organization.internal.application;
 
-import com.example.sso.customer.CustomerRef;
-import com.example.sso.customer.CustomerService;
 import com.example.sso.organization.CompanyProfile;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationAccessRevokedEvent;
@@ -52,7 +50,6 @@ class OrganizationServiceImplTest {
     @Mock private OrganizationMembershipRepository memberships;
     @Mock private ApplicationEventPublisher events;
     @Mock private UserService users;
-    @Mock private CustomerService customers;
     // A real OrgContext (not a mock) so runInOrg/callAsPlatform actually execute the wrapped action. No
     // active transaction in a unit test, so the connection binder is never consulted (raw no-op provider).
     @SuppressWarnings("unchecked")
@@ -60,18 +57,8 @@ class OrganizationServiceImplTest {
 
     @InjectMocks private OrganizationServiceImpl service;
 
-    // Every org is created as a branch of the default customer until customer selection is wired.
-    private UUID stubDefaultCustomer() {
-        UUID id = UUID.randomUUID();
-        CustomerRef ref = mock(CustomerRef.class);
-        when(ref.getId()).thenReturn(id);
-        when(customers.defaultCustomer()).thenReturn(ref);
-        return id;
-    }
-
     @Test
     void createNormalizesTheSlugToLowercaseAndPersists() {
-        stubDefaultCustomer();
         when(organizations.existsBySlug("acme")).thenReturn(false);
         when(organizations.save(any(Organization.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -84,7 +71,6 @@ class OrganizationServiceImplTest {
 
     @Test
     void createPersistsAndReturnsTheCompanyProfile() {
-        stubDefaultCustomer();
         when(organizations.existsBySlug("acme")).thenReturn(false);
         when(organizations.save(any(Organization.class))).thenAnswer(i -> i.getArgument(0));
         CompanyProfile profile = new CompanyProfile("51-200", "US", "SaaS", "+1-555-0100");
@@ -95,60 +81,8 @@ class OrganizationServiceImplTest {
     }
 
     @Test
-    void createAssignsTheNewOrgToTheDefaultCustomer() {
-        UUID defaultCustomerId = stubDefaultCustomer();
-        when(organizations.existsBySlug("acme")).thenReturn(false);
-        when(organizations.save(any(Organization.class))).thenAnswer(i -> i.getArgument(0));
-
-        service.create(new NewOrganization("acme", "Acme"));
-
-        ArgumentCaptor<Organization> saved = ArgumentCaptor.forClass(Organization.class);
-        verify(organizations).save(saved.capture());
-        assertThat(saved.getValue().getCustomerId()).isEqualTo(defaultCustomerId);
-    }
-
-    @Test
-    void createUnderAChosenActiveCustomerAssignsThatCustomer() {
-        UUID customerId = UUID.randomUUID();
-        when(customers.isActive(customerId)).thenReturn(true);
-        when(organizations.existsBySlug("acme")).thenReturn(false);
-        when(organizations.save(any(Organization.class))).thenAnswer(i -> i.getArgument(0));
-
-        service.create(new NewOrganization("acme", "Acme", customerId));
-
-        ArgumentCaptor<Organization> saved = ArgumentCaptor.forClass(Organization.class);
-        verify(organizations).save(saved.capture());
-        assertThat(saved.getValue().getCustomerId()).isEqualTo(customerId);
-    }
-
-    @Test
-    void createUnderAnUnknownOrSuspendedCustomerIsRejected() {
-        UUID customerId = UUID.randomUUID();
-        when(customers.isActive(customerId)).thenReturn(false); // unknown or suspended
-
-        assertThatThrownBy(() -> service.create(new NewOrganization("acme", "Acme", customerId)))
-                .isInstanceOf(BadRequestException.class);
-        verify(organizations, never()).save(any());
-    }
-
-    @Test
-    void isBranchOfIsFalseForAnEmptyCustomerSetWithoutQuerying() {
-        // The guard keeps an unbounded `... customer_id in ()` off the DB and fails closed for a user who
-        // administers no customers.
-        assertThat(service.isBranchOf(UUID.randomUUID(), Set.of())).isFalse();
-        verify(organizations, never()).existsByIdAndCustomerIdIn(any(), any());
-    }
-
-    @Test
-    void branchIdsForCustomersIsEmptyForAnEmptyCustomerSetWithoutQuerying() {
-        assertThat(service.branchIdsForCustomers(Set.of())).isEmpty();
-        verify(organizations, never()).findIdsByCustomerIdIn(any());
-    }
-
-    @Test
     void createRejectsASlugThatAlreadyExistsGlobally() {
-        // The organization is the tenant: its slug is globally unique, so a taken slug is rejected before the
-        // parent customer is even resolved.
+        // The organization is the tenant: its slug is globally unique, so a taken slug is rejected.
         when(organizations.existsBySlug("acme")).thenReturn(true);
 
         assertThatThrownBy(() -> service.create(new NewOrganization("acme", "Acme")))
@@ -166,7 +100,6 @@ class OrganizationServiceImplTest {
 
     @Test
     void createRejectsABlankName() {
-        stubDefaultCustomer();
         when(organizations.existsBySlug("acme")).thenReturn(false);
 
         assertThatThrownBy(() -> service.create(new NewOrganization("acme", "  ")))

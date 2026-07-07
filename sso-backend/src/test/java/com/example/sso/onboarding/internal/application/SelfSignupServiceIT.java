@@ -1,6 +1,5 @@
 package com.example.sso.onboarding.internal.application;
 
-import com.example.sso.customer.CustomerService;
 import com.example.sso.onboarding.internal.domain.SignupRequestRepository;
 import com.example.sso.organization.CompanyProfile;
 import com.example.sso.organization.OrganizationRef;
@@ -40,8 +39,6 @@ class SelfSignupServiceIT extends AbstractIntegrationTest {
     @Autowired
     SelfSignupService signup;
     @Autowired
-    CustomerService customers;
-    @Autowired
     OrganizationService organizations;
     @Autowired
     UserService users;
@@ -65,7 +62,7 @@ class SelfSignupServiceIT extends AbstractIntegrationTest {
         signup.request(spec(slug, adminEmail));
 
         // request() must have provisioned NOTHING — the anti-squatting invariant.
-        assertThat(customers.findBySlug(slug)).isEmpty();
+        assertThat(organizations.findBySlug(slug)).isEmpty();
         assertThat(users.findByLogin(adminEmail)).isEmpty();
 
         // The raw token lives only in the emailed link — capture it, and confirm only the HASH is stored.

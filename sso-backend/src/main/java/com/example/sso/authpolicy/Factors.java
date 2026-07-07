@@ -37,11 +37,6 @@ public final class Factors {
      *  context. Set at login completion from the tenant-first entry step; carried across re-auth. */
     public static final String ORG_PREFIX = "ORG_";
 
-    /** Marker-authority prefix carrying the id of the customer (고객사) whose CONSOLE the session logged into —
-     *  a customer-level session that manages the customer's orgs and drills into them, distinct from an
-     *  {@code ORG_} session bound to a single org. Set at login completion from the customer-first entry step. */
-    public static final String CUSTOMER_PREFIX = "CUSTOMER_";
-
     private Factors() {
     }
 }

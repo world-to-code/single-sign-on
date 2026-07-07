@@ -32,7 +32,7 @@ public class PreAuthOrgSession {
         return attribute(request, ORG_SLUG);
     }
 
-    /** Removes any stashed org selection (a customer entry clears it, so the two never coexist). */
+    /** Removes any stashed org selection. */
     void clear(HttpServletRequest request) {
         HttpSession session = request.getSession(false);
         if (session != null) {

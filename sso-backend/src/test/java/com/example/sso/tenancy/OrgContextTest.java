@@ -36,20 +36,6 @@ class OrgContextTest {
     }
 
     @Test
-    void enterCustomerIsACustomerContextThatIsNeitherOrgBoundNorPlatform() {
-        UUID customer = UUID.randomUUID();
-
-        context.enterCustomer(customer);
-
-        assertThat(context.currentCustomer()).contains(customer);
-        assertThat(context.currentOrg()).isEmpty();   // no org GUC — org-scoped RLS stays fail-closed
-        assertThat(context.isPlatform()).isFalse();    // and it is NOT platform
-
-        context.clear();
-        assertThat(context.currentCustomer()).isEmpty();
-    }
-
-    @Test
     void callAsPlatformSetsPlatformAndRestoresAfterwards() {
         context.callAsPlatform(() -> {
             assertThat(context.isPlatform()).isTrue();

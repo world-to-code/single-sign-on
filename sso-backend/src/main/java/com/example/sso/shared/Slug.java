@@ -6,7 +6,7 @@ import java.util.regex.Pattern;
 
 /**
  * A URL/subdomain-safe slug: 2-63 characters, lowercase alphanumerics and hyphens, starting and ending with
- * an alphanumeric. Shared by the customer and organization registries so the one rule (and its error message)
+ * an alphanumeric. Shared by the organization registry so the one rule (and its error message)
  * lives in a single place rather than being duplicated per tenancy tier.
  */
 public final class Slug {

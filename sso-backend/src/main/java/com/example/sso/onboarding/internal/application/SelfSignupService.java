@@ -1,8 +1,5 @@
 package com.example.sso.onboarding.internal.application;
 
-import com.example.sso.customer.CustomerService;
-import com.example.sso.customer.CustomerView;
-import com.example.sso.customer.NewCustomer;
 import com.example.sso.onboarding.internal.domain.SignupRequest;
 import com.example.sso.onboarding.internal.domain.SignupRequestRepository;
 import com.example.sso.organization.CompanyProfile;
@@ -39,7 +36,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class SelfSignupService {
 
     private final SignupRequestRepository signups;
-    private final CustomerService customers;
     private final OrganizationService organizations;
     private final UserService users;
     private final OnboardingEmailSender email;
@@ -62,9 +58,9 @@ public class SelfSignupService {
     @Transactional
     public SignupView request(OnboardingSpec spec) {
         // Validate the shape up front (fail fast) so a malformed slug can't be recorded only to dead-end at
-        // activation — and store the SAME normalized value the customer registry will (single source of truth).
+        // activation — and store the SAME normalized value the organization registry will (single source of truth).
         String slug = Slug.normalize(spec.slug());
-        if (customers.findBySlug(slug).isPresent()) {
+        if (organizations.findBySlug(slug).isPresent()) {
             throw new ConflictException("That subdomain is already taken. Choose another.");
         }
         // Anti-bomb: don't email an address again while a live verification is still fresh. Bounds a
@@ -87,7 +83,7 @@ public class SelfSignupService {
     }
 
     /**
-     * Redeems a verification link: NOW creates the customer (고객사) + its first branch ({@code main}) + an
+     * Redeems a verification link: NOW creates the organization (the company) + an
      * ENABLED admin (ROLE_ORG_ADMIN, member of the organization) with the chosen password, then consumes
      * the token (single-use, race-safe). Invalid/expired/used → a non-revealing 400; a too-short password is
      * rejected WITHOUT consuming so the applicant can retry. A slug taken since the request rolls the whole
@@ -106,11 +102,10 @@ public class SelfSignupService {
         if (signups.consume(signup.getId(), Instant.now()) == 0) {
             throw new BadRequestException("invalid or expired verification link");
         }
-        // One organization IS the company (the tenant); its slug is the company slug the applicant chose.
-        CustomerView customer = customers.create(new NewCustomer(signup.getSlug(), signup.getName()));
+        // The organization IS the company (the tenant); its slug is the company slug the applicant chose.
         OrganizationView org = organizations.create(new NewOrganization(signup.getSlug(), signup.getName(),
                 new CompanyProfile(signup.getCompanySize(), signup.getCompanyCountry(),
-                        signup.getCompanyIndustry(), signup.getCompanyPhone()), customer.id()));
+                        signup.getCompanyIndustry(), signup.getCompanyPhone())));
         UserAccount admin = users.createUser(new NewUser(signup.getAdminEmail(), signup.getAdminEmail(),
                 signup.getAdminName(), password, Set.of(Roles.USER, Roles.ORG_ADMIN)), org.id());
         // The applicant is the org admin and a member, so they sign in to their organization at {slug}.base.

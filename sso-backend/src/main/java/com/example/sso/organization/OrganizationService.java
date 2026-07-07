@@ -30,20 +30,6 @@ public interface OrganizationService {
     /** Entry-point lookup by slug (login resolves the active org before identity). */
     Optional<OrganizationRef> findBySlug(String slug);
 
-    /** Resolve a branch (organization) by slug WITHIN a parent customer — the {@code {branch}.{customer}}
-     *  host lookup, so branches under different customers may share a slug. */
-    Optional<OrganizationRef> findBranch(UUID customerId, String slug);
-
-    /** The parent customer (고객사) of an organization — used to attribute a user created in an org to its
-     *  owning customer. Empty if the org is unknown. */
-    Optional<UUID> customerIdOf(UUID orgId);
-
-    /** Whether the organization is a branch of any of the given customers — the customer-admin access check. */
-    boolean isBranchOf(UUID orgId, Set<UUID> customerIds);
-
-    /** The ids of every branch (organization) under any of the given customers — the customer-admin org scope. */
-    Set<UUID> branchIdsForCustomers(Set<UUID> customerIds);
-
     /** Whether the user is a member of the organization. */
     boolean isMember(UUID orgId, UUID userId);
 

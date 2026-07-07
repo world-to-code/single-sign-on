@@ -70,8 +70,8 @@ public class OrgDrillInFilter extends OncePerRequestFilter {
             return;
         }
 
-        // Deny-by-default: only a platform super-admin, or someone who administers this org (org-admin member
-        // or customer-admin of its customer), may switch into it. canManage re-checks membership live.
+        // Deny-by-default: only a platform super-admin, or someone who administers this org (an org-admin who
+        // is a member of it), may switch into it. canManage re-checks membership live.
         if (!orgContext.isPlatform() && !mayDrillInto(orgId)) {
             deny(request, response, "not authorized for org", orgId.toString(), HttpServletResponse.SC_FORBIDDEN);
             return;
