@@ -6,6 +6,7 @@ import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.GroupDeletedEvent;
 import com.example.sso.user.GroupSpec;
+import com.example.sso.user.internal.domain.AppUser;
 import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.internal.domain.RoleRepository;
 import com.example.sso.user.internal.domain.UserGroup;
@@ -156,5 +157,50 @@ class UserGroupServiceImplTest {
 
         assertThatThrownBy(() -> service.update(id, new GroupSpec("x", "d", null, Set.of())))
                 .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void setMembersRejectsAUserFromADifferentOrg() {
+        UUID id = UUID.randomUUID();
+        UUID orgA = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(repository.findById(id)).thenReturn(Optional.of(new UserGroup("Engineering", "d", null, orgA)));
+        AppUser other = new AppUser("bob", "bob@x.io", "Bob", "hash", UUID.randomUUID()); // a different org
+        when(users.findAllById(Set.of(userId))).thenReturn(List.of(other));
+
+        assertThatThrownBy(() -> service.setMembers(id, Set.of(userId)))
+                .isInstanceOf(BadRequestException.class);
+        verify(members, never()).save(any());
+    }
+
+    @Test
+    void setMembersRejectsAGlobalUserForATenantGroup() {
+        UUID id = UUID.randomUUID();
+        UUID orgA = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(repository.findById(id)).thenReturn(Optional.of(new UserGroup("Engineering", "d", null, orgA)));
+        AppUser global = new AppUser("root", "root@x.io", "Root", "hash", null); // a global (super-admin) user
+        when(users.findAllById(Set.of(userId))).thenReturn(List.of(global));
+
+        assertThatThrownBy(() -> service.setMembers(id, Set.of(userId)))
+                .isInstanceOf(BadRequestException.class);
+        verify(members, never()).save(any());
+    }
+
+    @Test
+    void setMembersAcceptsASameOrgUser() {
+        UUID id = UUID.randomUUID();
+        UUID orgA = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UserGroup group = spy(new UserGroup("Engineering", "d", null, orgA));
+        doReturn(id).when(group).getId();
+        when(repository.findById(id)).thenReturn(Optional.of(group));
+        AppUser member = spy(new AppUser("alice", "alice@x.io", "Alice", "hash", orgA)); // same org
+        doReturn(userId).when(member).getId();
+        when(users.findAllById(Set.of(userId))).thenReturn(List.of(member));
+
+        service.setMembers(id, Set.of(userId));
+
+        verify(members).save(any());
     }
 }

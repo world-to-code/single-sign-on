@@ -33,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
@@ -131,7 +132,7 @@ public class UserGroupServiceImpl implements UserGroupService {
         }
 
         UserGroup group = repository.save(new UserGroup(spec.name(), spec.description(), spec.externalId(), org));
-        addMembers(group.getId(), existingUserIds(spec.memberIds()));
+        addMembers(group.getId(), existingUserIds(group, spec.memberIds()));
 
         return toView(group);
     }
@@ -152,7 +153,7 @@ public class UserGroupServiceImpl implements UserGroupService {
         group.rename(spec.name());
         group.describe(spec.description());
         group.assignExternalId(spec.externalId());
-        replaceMembers(id, existingUserIds(spec.memberIds()));
+        replaceMembers(id, existingUserIds(group, spec.memberIds()));
 
         affected.addAll(members.findUserIdsByGroupId(id)); // and current members — both sets' delegated roles shift
         GroupView view = toView(repository.save(group));
@@ -186,7 +187,7 @@ public class UserGroupServiceImpl implements UserGroupService {
         }
 
         Set<UUID> affected = new HashSet<>(members.findUserIdsByGroupId(id));
-        replaceMembers(id, existingUserIds(memberIds));
+        replaceMembers(id, existingUserIds(group, memberIds));
 
         affected.addAll(members.findUserIdsByGroupId(id)); // gained-or-lost members refresh their delegated roles
         GroupView view = toView(group);
@@ -294,13 +295,22 @@ public class UserGroupServiceImpl implements UserGroupService {
                 .collect(Collectors.toSet());
     }
 
-    /** Keeps only the ids that resolve to an existing user (unknown ids are dropped). */
-    private Set<UUID> existingUserIds(Set<UUID> memberIds) {
+    /** Keeps only the ids that resolve to an existing user in the group's org (unknown ids are dropped). */
+    private Set<UUID> existingUserIds(UserGroup group, Set<UUID> memberIds) {
         if (memberIds == null || memberIds.isEmpty()) {
             return Set.of();
         }
 
-        return users.findAllById(memberIds).stream().map(AppUser::getId).collect(Collectors.toSet());
+        // A group may contain only principals of its OWN org — never another tenant's user, nor (for a tenant
+        // group) a global user. Ids that resolve to no user are dropped, as before; a resolved user in the
+        // wrong org is a boundary violation (a clean 400, not a silent RLS reject on the member-row insert).
+        List<AppUser> found = users.findAllById(memberIds);
+        for (AppUser user : found) {
+            if (!Objects.equals(user.getOrgId(), group.getOrgId())) {
+                throw new BadRequestException("Cannot add a user from a different organization to this group.");
+            }
+        }
+        return found.stream().map(AppUser::getId).collect(Collectors.toSet());
     }
 
     private GroupView toView(UserGroup group) {
