@@ -197,6 +197,28 @@ class OrganizationServiceImplTest {
     }
 
     @Test
+    void deletingAnOrgTerminatesEachMembersSessions() {
+        // Deleting an org (like suspending) must end its members' live sessions — the org and its memberships
+        // are about to cascade away, so a member's Redis session would otherwise survive until expiry.
+        UUID id = UUID.randomUUID();
+        UUID memberA = UUID.randomUUID();
+        UUID memberB = UUID.randomUUID();
+        Organization org = new Organization("acme", "Acme");
+        when(organizations.findById(id)).thenReturn(Optional.of(org));
+        when(memberships.findUserIdsByOrgId(id)).thenReturn(List.of(memberA, memberB));
+
+        service.delete(id);
+
+        verify(organizations).delete(org);
+        ArgumentCaptor<OrganizationAccessRevokedEvent> event =
+                ArgumentCaptor.forClass(OrganizationAccessRevokedEvent.class);
+        verify(events, times(2)).publishEvent(event.capture());
+        assertThat(event.getAllValues())
+                .extracting(OrganizationAccessRevokedEvent::orgId, OrganizationAccessRevokedEvent::userId)
+                .containsExactlyInAnyOrder(tuple(id, memberA), tuple(id, memberB));
+    }
+
+    @Test
     void addMemberPersistsWhenNotAlreadyAMember() {
         UUID orgId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();

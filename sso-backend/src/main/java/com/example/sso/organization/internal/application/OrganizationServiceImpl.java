@@ -75,7 +75,14 @@ public class OrganizationServiceImpl implements OrganizationService {
     @Override
     @Transactional
     public void delete(UUID id) {
-        organizations.delete(require(id));
+        Organization org = require(id);
+        // Deleting an org must also END its members' live sessions: the org and its memberships are about to
+        // be cascade-removed, so without this a member's Redis session would survive until expiry. Capture the
+        // members BEFORE the delete cascades them away, then fan out the same access-revoked event suspension
+        // uses (one per member, resolved in the platform context — an RLS-crossing read).
+        orgContext.callAsPlatform(() -> memberships.findUserIdsByOrgId(id))
+                .forEach(userId -> events.publishEvent(new OrganizationAccessRevokedEvent(id, userId)));
+        organizations.delete(org);
     }
 
     @Override
