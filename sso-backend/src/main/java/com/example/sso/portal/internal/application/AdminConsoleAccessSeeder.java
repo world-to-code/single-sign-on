@@ -18,8 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Seeds the assignments that grant console entry under the assignment-based entry model: {@code admin-console}
- * assigned to {@code ROLE_ADMIN} (super admins) and to {@code ROLE_CUSTOMER_ADMIN} (self-service customer 고객사
- * admins, who manage their own branches). Every holder inherits it via role resolution; it is revocable like any
+ * assigned to {@code ROLE_ADMIN} (super admins) and to {@code ROLE_ORG_ADMIN} (tenant admins, who manage their
+ * own organization). Every holder inherits it via role resolution; it is revocable like any
  * other assignment. The assignment only lets a user REACH the console — what they can DO there stays gated by
  * their scoped permissions + drill-in authorization. Runs on {@link ApplicationReadyEvent} so it deterministically
  * follows both the role seeding and the {@link AdminPortalSeeder} client seeding, whatever their runner order.
@@ -42,7 +42,7 @@ public class AdminConsoleAccessSeeder {
             return;
         }
         assignConsoleToRole(console, Roles.ADMIN);
-        assignConsoleToRole(console, Roles.CUSTOMER_ADMIN);
+        assignConsoleToRole(console, Roles.ORG_ADMIN);
     }
 
     private void assignConsoleToRole(RegisteredClient console, String roleName) {

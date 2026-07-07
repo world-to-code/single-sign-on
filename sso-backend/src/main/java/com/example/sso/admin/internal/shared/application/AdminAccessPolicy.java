@@ -49,7 +49,7 @@ public class AdminAccessPolicy {
 
     /** Roles that grant admin-console reach; only a super admin may assign them. */
     private static final Set<String> PRIVILEGED_ROLES =
-            Set.of(Roles.ADMIN, Roles.CUSTOMER_ADMIN, Roles.GROUP_ADMIN, Roles.ORG_ADMIN);
+            Set.of(Roles.ADMIN, Roles.GROUP_ADMIN, Roles.ORG_ADMIN);
 
     private final UserService userService;
     private final RoleService roleService;
@@ -128,7 +128,7 @@ public class AdminAccessPolicy {
 
     /**
      * Group scope: whether the acting admin may manage {@code groupId}. A super admin bypasses; a resource
-     * delegate reaches groups in its subtree; a TENANT admin (org/customer-admin) reaches a group when it is
+     * delegate reaches groups in its subtree; a TENANT (org) admin reaches a group when it is
      * owned by an org they administer. A global (org_id null) group has no administering org, so a tenant admin
      * is denied — which is what keeps them from mutating a platform-wide group even though RLS lets them read it.
      */
@@ -140,7 +140,7 @@ public class AdminAccessPolicy {
 
     /**
      * Whether the acting admin administers the org they are currently bound to (their login org, or one they
-     * drilled into) — i.e. an org/customer-admin acting within their own tenant, NOT a mere resource delegate.
+     * drilled into) — i.e. an org admin acting within their own tenant, NOT a mere resource delegate.
      * Such an actor sees their whole org's directory (RLS scopes it) rather than only a resource subtree.
      */
     public boolean administersBoundOrg() {

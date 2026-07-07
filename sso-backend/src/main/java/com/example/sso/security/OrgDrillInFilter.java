@@ -27,10 +27,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * org. The outer filter clears the context at request end, so no restore is needed here.
  *
  * <p>Zero-trust, deny-by-default: a caller may drill into an org ONLY if they are a platform super-admin
- * ({@code OrgContext.isPlatform()}) OR they administer that org — an org-admin of it, or a
- * {@code ROLE_CUSTOMER_ADMIN} of the customer that owns it ({@link OrganizationAuthorization#canManage}). A
- * tenant admin cannot switch into an org they do not administer (a customer-admin is bounded to their own
- * customer's branches; a bare role with no membership is bounded to nothing). Membership is re-checked LIVE
+ * ({@code OrgContext.isPlatform()}) OR they administer that org — an org-admin AND a member of it
+ * ({@link OrganizationAuthorization#canManage}). A tenant admin cannot switch into an org they do not
+ * administer (a bare role with no membership is bounded to nothing). Membership is re-checked LIVE
  * here (not trusted from a frozen session). Instantiated (not a {@code @Component}); only acts on
  * {@code /api/admin/**}.
  */

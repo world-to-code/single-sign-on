@@ -52,9 +52,9 @@ public class AppUser extends AuditedEntity implements UserAccount {
     @Column(name = "customer_id")
     private UUID customerId;
 
-    // The organization (the tenant) that owns this user's identity — the collapse of the customer tier makes the
-    // organization the identity boundary. NULL = the global platform super-admin. Backfilled for existing users
-    // (V67); read/enforced (org-scoped resolution + per-org uniqueness) in a following phase — inert for now.
+    // The organization (the tenant) that owns this user's identity — the identity boundary after the customer
+    // tier collapsed. NULL = the global platform super-admin. Backfilled for existing users (V67); enforced by
+    // org-scoped resolution and per-organization username/email uniqueness (partial unique indexes, V68).
     @Column(name = "org_id")
     private UUID orgId;
 

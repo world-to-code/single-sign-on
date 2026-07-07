@@ -80,8 +80,8 @@ public interface UserService {
     /** Creates a GLOBAL user (no owning organization) — the platform super-admin and any tenant-agnostic account. */
     UserAccount createUser(NewUser newUser);
 
-    /** Creates a user owned by {@code orgId} (the tenant), the per-organization identity boundary. Uniqueness of
-     *  username/email is still GLOBAL for now; a later phase moves it to per-organization. {@code null} = global. */
+    /** Creates a user owned by {@code orgId} (the tenant), the per-organization identity boundary — username and
+     *  email are unique WITHIN that org. {@code null} = a global account (the platform super-admin). */
     UserAccount createUser(NewUser newUser, UUID orgId);
 
     /** Admin full update: profile, enabled state, and (when non-null) the exact role-name set. */

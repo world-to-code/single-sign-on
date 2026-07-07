@@ -17,8 +17,5 @@ public interface RbacService {
     /** Grants the scoped ROLE_ORG_ADMIN its baseline organization-management permissions (idempotent). */
     void grantOrgAdminPermissions();
 
-    /** Grants the scoped ROLE_CUSTOMER_ADMIN its baseline branch-management permissions (idempotent). */
-    void grantCustomerAdminPermissions();
-
     List<String> allPermissions();
 }

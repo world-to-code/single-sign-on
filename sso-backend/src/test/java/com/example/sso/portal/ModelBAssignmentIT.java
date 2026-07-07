@@ -69,12 +69,12 @@ class ModelBAssignmentIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void seededRoleCustomerAdminAssignmentGrantsConsoleEntry() {
-        // A self-service customer (고객사) admin reaches the console via the SEEDED ROLE_CUSTOMER_ADMIN
-        // assignment — no manual grant. Console entry only; what they can do stays scoped downstream.
-        user("mb-custadmin", Roles.CUSTOMER_ADMIN);
-        UserAccount custAdmin = users.findByUsername("mb-custadmin").orElseThrow();
-        assertThat(applications.hasAssignment(custAdmin, AppType.OIDC, consoleId())).isTrue();
+    void seededRoleOrgAdminAssignmentGrantsConsoleEntry() {
+        // A tenant (org) admin reaches the console via the SEEDED ROLE_ORG_ADMIN assignment — no manual grant.
+        // Console entry only; what they can do stays scoped downstream.
+        user("mb-orgadmin", Roles.ORG_ADMIN);
+        UserAccount orgAdmin = users.findByUsername("mb-orgadmin").orElseThrow();
+        assertThat(applications.hasAssignment(orgAdmin, AppType.OIDC, consoleId())).isTrue();
     }
 
     @Test

@@ -33,13 +33,11 @@ public class RbacServiceImpl implements RbacService {
 
     // What a tenant admin may manage WITHIN their own org (bound by OrgContextFilter to their login org, or by
     // a drill-in they are authorized for). Every permission here is tenant-grantable (never a PLATFORM one), and
-    // its endpoints are branch-isolated by RLS + OrgTierGuard (a scoped actor's tier is never null, so it cannot
-    // touch a global or another tenant's row). This is the single source of truth SHARED by ROLE_ORG_ADMIN and
-    // ROLE_CUSTOMER_ADMIN so the two tenant-admin roles never diverge (a divergence would be an isolation bug);
-    // the scope difference between them (one org vs all a customer's branches) lives in the drill-in
-    // authorization (OrgDrillInFilter/OrganizationAuthorization.canManage), NOT in this set. Grown one capability
-    // at a time as each is verified branch-isolated (Workstream C): baseline org read/member-manage + session
-    // controls (session policies, network zones) so far.
+    // its endpoints are org-isolated by RLS + OrgTierGuard (a scoped actor's tier is never null, so it cannot
+    // touch a global or another tenant's row). The organization is the tenant, managed by ROLE_ORG_ADMIN; the
+    // acting org is set by login (the ORG_ marker) or drill-in (OrganizationAuthorization.canManage), NOT by this
+    // set. Grown one capability at a time as each is verified org-isolated (Workstream C): baseline org
+    // read/member-manage + session controls (session policies, network zones) so far.
     private static final List<String> TENANT_ADMIN_PERMISSIONS = List.of(
             Permissions.ORG_READ, Permissions.ORG_MEMBER_MANAGE,
             Permissions.SESSION_POLICY_READ, Permissions.SESSION_POLICY_CREATE,
@@ -52,8 +50,6 @@ public class RbacServiceImpl implements RbacService {
             Permissions.GROUP_UPDATE, Permissions.GROUP_DELETE);
 
     private static final List<String> ORG_ADMIN_PERMISSIONS = TENANT_ADMIN_PERMISSIONS;
-
-    private static final List<String> CUSTOMER_ADMIN_PERMISSIONS = TENANT_ADMIN_PERMISSIONS;
 
     private final PermissionRepository permissions;
     private final RolePermissionRepository rolePermissions;
@@ -84,15 +80,6 @@ public class RbacServiceImpl implements RbacService {
                 .orElseThrow(() -> new IllegalStateException("ROLE_ORG_ADMIN must exist before granting permissions"));
 
         grantEach(orgAdmin.getId(), ORG_ADMIN_PERMISSIONS);
-    }
-
-    @Override
-    @Transactional
-    public void grantCustomerAdminPermissions() {
-        Role customerAdmin = roles.findByNameAndOrgIdIsNull(Roles.CUSTOMER_ADMIN)
-                .orElseThrow(() -> new IllegalStateException("ROLE_CUSTOMER_ADMIN must exist before granting permissions"));
-
-        grantEach(customerAdmin.getId(), CUSTOMER_ADMIN_PERMISSIONS);
     }
 
     @Override

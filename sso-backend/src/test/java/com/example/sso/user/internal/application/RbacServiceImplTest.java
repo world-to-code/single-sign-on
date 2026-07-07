@@ -84,29 +84,6 @@ class RbacServiceImplTest {
     }
 
     @Test
-    void grantCustomerAdminPermissionsIncludesScopedSessionControlsButNoPlatformPerms() {
-        when(roles.findByNameAndOrgIdIsNull(Roles.CUSTOMER_ADMIN))
-                .thenReturn(Optional.of(new Role(Roles.CUSTOMER_ADMIN)));
-        permissionsAreGetOrCreated();
-
-        service.grantCustomerAdminPermissions();
-
-        assertThat(grantedPermissionNames())
-                .contains(Permissions.ORG_READ, Permissions.ORG_MEMBER_MANAGE,
-                        Permissions.SESSION_POLICY_READ, Permissions.SESSION_POLICY_CREATE,
-                        Permissions.SESSION_POLICY_UPDATE, Permissions.SESSION_POLICY_DELETE,
-                        Permissions.NETWORK_ZONE_READ, Permissions.NETWORK_ZONE_CREATE,
-                        Permissions.NETWORK_ZONE_UPDATE, Permissions.NETWORK_ZONE_DELETE,
-                        Permissions.SAML_READ, Permissions.SAML_CREATE,
-                        Permissions.SAML_UPDATE, Permissions.SAML_DELETE,
-                        Permissions.GROUP_READ, Permissions.GROUP_CREATE,
-                        Permissions.GROUP_UPDATE, Permissions.GROUP_DELETE)
-                .doesNotContain(Permissions.ORG_CREATE)  // PLATFORM — never granted to a tenant admin
-                .doesNotContain(Permissions.USER_READ)   // a later Workstream-C phase, not this slice
-                .doesNotContain(Permissions.ROLE_CREATE); // deferred: role creation can mint arbitrary perms
-    }
-
-    @Test
     void grantOrgAdminPermissionsGrantsTheSameScopedTenantAdminSet() {
         // The two tenant-admin roles share one permission set (their scope differs only in drill-in), so an
         // org-admin gets the same session controls — a divergence here would be an isolation bug.
