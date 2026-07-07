@@ -19,6 +19,13 @@ import static org.mockito.Mockito.when;
 /**
  * Unit tests for {@link SessionCacheRedisBridge}: a local cache change is broadcast to the Redis channel,
  * and an inbound message re-fires the matching local {@code *CacheChanged} event so this node rebuilds too.
+ *
+ * <p>NOTE — the anti-loop invariant is NOT exercised here. It rests on the outbound publishers being plain
+ * {@code @TransactionalEventListener} (default {@code fallbackExecution = false}), so the non-transactional
+ * event this bridge re-fires on receipt does NOT trigger another Redis publish. These unit tests call the
+ * listener methods directly, which bypasses that annotation semantics — so they would still pass if the
+ * annotation regressed to {@code @EventListener} (an actual infinite fan-out). That property is enforced
+ * structurally by the annotation and must be verified in a full-context/integration run, not asserted here.
  */
 @ExtendWith(MockitoExtension.class)
 class SessionCacheRedisBridgeTest {
