@@ -87,4 +87,24 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
     boolean existsByUsername(String username);
 
     boolean existsByEmail(String email);
+
+    boolean existsByUsernameAndOrgId(String username, UUID orgId);
+
+    boolean existsByUsernameAndOrgIdIsNull(String username);
+
+    boolean existsByEmailAndOrgId(String email, UUID orgId);
+
+    boolean existsByEmailAndOrgIdIsNull(String email);
+
+    /** Whether a user with this username already exists WITHIN the organization (or globally when
+     *  {@code orgId} is null) — the per-organization uniqueness check for {@code createUser}. */
+    default boolean existsByUsernameInOrg(String username, UUID orgId) {
+        return orgId == null ? existsByUsernameAndOrgIdIsNull(username) : existsByUsernameAndOrgId(username, orgId);
+    }
+
+    /** Whether a user with this email already exists WITHIN the organization (or globally when {@code orgId}
+     *  is null). */
+    default boolean existsByEmailInOrg(String email, UUID orgId) {
+        return orgId == null ? existsByEmailAndOrgIdIsNull(email) : existsByEmailAndOrgId(email, orgId);
+    }
 }

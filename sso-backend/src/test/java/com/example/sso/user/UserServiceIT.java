@@ -103,6 +103,35 @@ class UserServiceIT extends AbstractIntegrationTest {
         assertThat(userService.findByLoginInOrg("admin", null)).isPresent();
     }
 
+    @Test
+    void allowsTheSameEmailAndUsernameInDifferentOrganizations() {
+        UUID orgA = org();
+        UUID orgB = org();
+        String username = "dup-" + UUID.randomUUID().toString().substring(0, 8);
+        String email = username + "@example.com";
+        userService.createUser(new NewUser(username, email, "In A", "S3cret!pw", Set.of("ROLE_USER")), orgA);
+
+        // The SAME username+email under a DIFFERENT org is a DIFFERENT user — the point of per-org identity
+        // (signing up with an email already used in another company now succeeds).
+        UserAccount inB = userService.createUser(new NewUser(username, email, "In B", "S3cret!pw",
+                Set.of("ROLE_USER")), orgB);
+        assertThat(inB.getId()).isNotNull();
+        // Each resolves to its OWN org's account.
+        assertThat(userService.findByLoginInOrg(email, orgA)).get().extracting(UserAccount::getOrgId).isEqualTo(orgA);
+        assertThat(userService.findByLoginInOrg(email, orgB)).get().extracting(UserAccount::getOrgId).isEqualTo(orgB);
+    }
+
+    @Test
+    void rejectsADuplicateEmailWithinTheSameOrganization() {
+        UUID orgId = org();
+        String s = UUID.randomUUID().toString().substring(0, 8);
+        String email = "same-" + s + "@example.com";
+        userService.createUser(new NewUser("u1-" + s, email, "One", "S3cret!pw", Set.of("ROLE_USER")), orgId);
+
+        assertThatThrownBy(() -> userService.createUser(new NewUser("u2-" + s, email, "Two", "S3cret!pw",
+                Set.of("ROLE_USER")), orgId)).isInstanceOf(ConflictException.class);
+    }
+
     private UUID org() {
         String slug = "o-" + UUID.randomUUID().toString().substring(0, 8);
         return organizations.create(new NewOrganization(slug, slug)).id();

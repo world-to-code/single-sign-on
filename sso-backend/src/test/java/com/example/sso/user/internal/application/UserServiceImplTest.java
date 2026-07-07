@@ -85,8 +85,8 @@ class UserServiceImplTest {
 
     @Test
     void createUserEncodesPasswordSavesAndJoinsDefaultGroup() {
-        when(users.existsByUsername("alice")).thenReturn(false);
-        when(users.existsByEmail("alice@example.com")).thenReturn(false);
+        when(users.existsByUsernameInOrg("alice", null)).thenReturn(false);
+        when(users.existsByEmailInOrg("alice@example.com", null)).thenReturn(false);
         when(passwordEncoder.encode("pw")).thenReturn("hash");
         when(users.save(any(AppUser.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -98,7 +98,7 @@ class UserServiceImplTest {
 
     @Test
     void createUserWithDuplicateUsernameThrowsConflict() {
-        when(users.existsByUsername("alice")).thenReturn(true);
+        when(users.existsByUsernameInOrg("alice", null)).thenReturn(true);
 
         assertThatThrownBy(() -> service.createUser(newUser(Set.of())))
                 .isInstanceOf(ConflictException.class);
@@ -107,8 +107,8 @@ class UserServiceImplTest {
 
     @Test
     void createUserWithDuplicateEmailThrowsConflict() {
-        when(users.existsByUsername("alice")).thenReturn(false);
-        when(users.existsByEmail("alice@example.com")).thenReturn(true);
+        when(users.existsByUsernameInOrg("alice", null)).thenReturn(false);
+        when(users.existsByEmailInOrg("alice@example.com", null)).thenReturn(true);
 
         assertThatThrownBy(() -> service.createUser(newUser(Set.of())))
                 .isInstanceOf(ConflictException.class);
@@ -117,8 +117,8 @@ class UserServiceImplTest {
 
     @Test
     void createUserWithUnknownRoleThrowsBadRequest() {
-        when(users.existsByUsername("alice")).thenReturn(false);
-        when(users.existsByEmail("alice@example.com")).thenReturn(false);
+        when(users.existsByUsernameInOrg("alice", null)).thenReturn(false);
+        when(users.existsByEmailInOrg("alice@example.com", null)).thenReturn(false);
         when(roles.findByNameAndOrgIdIsNull("ROLE_GHOST")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.createUser(newUser(Set.of("ROLE_GHOST"))))

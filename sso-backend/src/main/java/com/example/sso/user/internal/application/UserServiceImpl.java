@@ -205,10 +205,12 @@ public class UserServiceImpl implements UserService {
     public UserAccount createUser(NewUser newUser, UUID orgId) {
         String username = newUser.username();
         String email = newUser.email();
-        if (users.existsByUsername(username)) {
+        // Uniqueness is per-organization (the tenant): the same username/email may be a different user in a
+        // different org. A null orgId is the global platform super-admin, unique across all such accounts.
+        if (users.existsByUsernameInOrg(username, orgId)) {
             throw new ConflictException("username already exists: " + username);
         }
-        if (users.existsByEmail(email)) {
+        if (users.existsByEmailInOrg(email, orgId)) {
             throw new ConflictException("email already exists: " + email);
         }
 

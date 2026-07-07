@@ -37,10 +37,12 @@ import java.util.Set;
 @NoArgsConstructor(access = AccessLevel.PROTECTED) // for Hibernate only
 public class AppUser extends AuditedEntity implements UserAccount {
 
-    @Column(nullable = false, unique = true, length = 100)
+    // Uniqueness is per-organization (partial unique indexes in the schema, org_id + username/email), so it is
+    // NOT expressed here — the columns themselves are not globally unique.
+    @Column(nullable = false, length = 100)
     private String username;
 
-    @Column(nullable = false, unique = true, length = 320)
+    @Column(nullable = false, length = 320)
     private String email;
 
     // The customer (고객사) that owns this user's identity — the tenant boundary for per-customer user isolation
