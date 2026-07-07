@@ -49,6 +49,17 @@ public class OnboardingInvitationService {
     }
 
     /**
+     * Re-issues an invitation, SUPERSEDING any prior (failed-to-send or expired) tokens for the user so only
+     * the fresh one is valid. Same guard as {@link #issue}: the account must still be inactive and
+     * password-less — an already-activated admin can never be re-invited.
+     */
+    @Transactional
+    public String reissue(UUID userId, Duration ttl) {
+        invitations.deleteByUserId(userId);
+        return issue(userId, ttl);
+    }
+
+    /**
      * Redeems an invitation: sets the user's password and enables the account, then consumes the token.
      * An invalid/expired/used token is a non-revealing 400. A too-short password is rejected WITHOUT
      * consuming the token, so the invitee can retry with a stronger one.

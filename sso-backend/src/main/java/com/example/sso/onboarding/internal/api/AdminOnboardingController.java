@@ -42,4 +42,12 @@ class AdminOnboardingController {
     public OnboardingView status(@PathVariable UUID id) {
         return onboarding.status(id);
     }
+
+    /** Re-invite a provisioned admin whose invitation email failed or expired: mints a fresh token + re-sends. */
+    @PostMapping("/{id}/reinvite")
+    @RequirePermission(Permissions.ORG_CREATE)
+    @RequireStepUp
+    public OnboardingView reinvite(@PathVariable UUID id) {
+        return onboarding.requestReinvite(id);
+    }
 }

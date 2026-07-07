@@ -2,9 +2,11 @@ package com.example.sso.onboarding.internal.application;
 
 import com.example.sso.onboarding.internal.domain.Onboarding;
 import com.example.sso.onboarding.internal.domain.OnboardingRepository;
+import com.example.sso.onboarding.internal.domain.OnboardingStatus;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationView;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.Roles;
@@ -74,6 +76,44 @@ public class OnboardingServiceImpl {
         return new ProvisionResult(spec.adminEmail(), token, org.slug());
     }
 
+    /**
+     * Admin re-invite: for a provisioned-but-not-activated admin whose invitation email failed (INVITE_FAILED)
+     * or whose token expired (INVITED, unredeemed), mint a fresh invitation and re-send. Validates the admin
+     * still exists and is inactive, moves the job to PROVISIONING ("working"), and fires the async worker.
+     */
+    @Transactional
+    public OnboardingView requestReinvite(UUID id) {
+        Onboarding onboarding = require(id);
+        if (onboarding.getAdminUserId() == null || !awaitingInvitation(onboarding.getStatus())) {
+            throw new BadRequestException("this onboarding has no admin awaiting an invitation");
+        }
+        UserAccount admin = users.findById(onboarding.getAdminUserId())
+                .orElseThrow(() -> new NotFoundException("onboarding admin not found"));
+        if (admin.isEnabled()) {
+            throw new BadRequestException("the admin has already activated their account");
+        }
+        onboarding.markProvisioning(); // signal "working" while the async worker re-invites
+        events.publishEvent(new ReinviteRequested(id));
+        return OnboardingView.of(onboarding);
+    }
+
+    /** Supersedes any prior tokens and mints a fresh invitation; returns what the async worker needs to email. */
+    @Transactional
+    public ReinviteResult reissueInvitation(UUID id) {
+        Onboarding onboarding = require(id);
+        UserAccount admin = users.findById(onboarding.getAdminUserId())
+                .orElseThrow(() -> new NotFoundException("onboarding admin not found"));
+        String token = invitations.reissue(admin.getId(), invitationTtl);
+        // Use the org's CANONICAL slug for the workspace URL, matching the original invitation email.
+        String slug = organizations.findView(onboarding.getOrgId())
+                .map(OrganizationView::slug).orElse(onboarding.getSlug());
+        return new ReinviteResult(admin.getEmail(), token, slug);
+    }
+
+    private boolean awaitingInvitation(OnboardingStatus status) {
+        return status == OnboardingStatus.INVITE_FAILED || status == OnboardingStatus.INVITED;
+    }
+
     @Transactional
     public void markInvited(UUID id) {
         require(id).markInvited();
@@ -95,5 +135,9 @@ public class OnboardingServiceImpl {
 
     /** The result the async worker needs after provisioning to send the invitation email. */
     record ProvisionResult(String adminEmail, String rawToken, String slug) {
+    }
+
+    /** The result the async worker needs after re-issuing to re-send the invitation email. */
+    record ReinviteResult(String adminEmail, String rawToken, String slug) {
     }
 }

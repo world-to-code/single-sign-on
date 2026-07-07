@@ -47,4 +47,29 @@ class OnboardingProvisioner {
             service.markInviteFailed(id);
         }
     }
+
+    /**
+     * Admin re-invite: mint a fresh invitation (superseding the failed/expired one) and re-send the email —
+     * same best-effort semantics as the initial invite (INVITED on success, INVITE_FAILED if the mail fails).
+     */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onReinviteRequested(ReinviteRequested event) {
+        UUID id = event.onboardingId();
+        OnboardingServiceImpl.ReinviteResult result;
+        try {
+            result = service.reissueInvitation(id);
+        } catch (Exception e) {
+            log.warn("onboarding {} re-invite could not issue a token: {}", id, e.getMessage());
+            service.markInviteFailed(id);
+            return;
+        }
+        try {
+            email.sendInvitation(result.adminEmail(), result.rawToken(), result.slug());
+            service.markInvited(id);
+        } catch (Exception e) {
+            log.warn("onboarding {} re-invitation email failed: {}", id, e.getMessage());
+            service.markInviteFailed(id);
+        }
+    }
 }

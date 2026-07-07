@@ -12,6 +12,11 @@ public interface OnboardingInvitationRepository extends JpaRepository<Onboarding
 
     Optional<OnboardingInvitation> findByTokenHash(String tokenHash);
 
+    /** Removes every invitation for a user — used to SUPERSEDE prior tokens before re-issuing a fresh one. */
+    @Modifying
+    @Query("delete from OnboardingInvitation i where i.userId = :userId")
+    void deleteByUserId(@Param("userId") UUID userId);
+
     /**
      * Atomically consumes an unused invitation: sets {@code used_at} only if still null, returning the number
      * of rows affected. A concurrent second redeem of the same token gets 0 (single-use, race-safe) — the
