@@ -118,7 +118,7 @@ public class AuthenticationService {
                 .orElseThrow(() -> new NotFoundException("No such workspace."));
         preAuthOrg.clear(request); // a customer selection and an org selection are mutually exclusive
         preAuthCustomer.stash(request, customer.getId(), customer.getSlug());
-        audit.record(AuditType.AUTH_ORGANIZATION, customer.getSlug(), true);
+        audit.record(AuditType.AUTH_CUSTOMER, customer.getSlug(), true);
         return authState.describe(currentUser.authentication(), customer.getSlug(), null);
     }
 
