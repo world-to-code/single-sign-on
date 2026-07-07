@@ -73,9 +73,17 @@ public class SamlSsoService {
                 .map(a -> a.substring(Factors.SID_PREFIX.length()))
                 .findFirst().orElse(null);
 
+        // The organization (tenant) this session logged into, from the shared ORG_ marker — same source as the
+        // OIDC `org` claim, so the SAML `org` attribute is symmetric. Null for a global (org-less) session.
+        String org = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .filter(a -> a.startsWith(Factors.ORG_PREFIX))
+                .map(a -> a.substring(Factors.ORG_PREFIX.length()))
+                .findFirst().orElse(null);
+
         // The IdP entityID follows the host the SP reached, matching the tenant's own signing credential.
-        Response response = responseBuilder.issueResponse(
-                relyingParty, inResponseTo, user.getEmail(), user.getDisplayName(), sid,
+        Response response = responseBuilder.issueResponse(relyingParty, inResponseTo,
+                new AssertionSubject(user.getEmail(), user.getDisplayName(), org), sid,
                 samlEntityId.resolve(httpRequest));
         String encoded = codec.encode(response);
         if (sid != null) {

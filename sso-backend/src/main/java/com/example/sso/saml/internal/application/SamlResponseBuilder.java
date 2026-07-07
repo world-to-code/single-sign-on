@@ -48,10 +48,10 @@ public class SamlResponseBuilder {
      * assertion to the SP's certificate (modern or legacy algorithms). Order matters: sign the
      * assertion first, then encrypt it, then sign the response.
      */
-    public Response issueResponse(SamlRelyingParty sp, String inResponseTo, String email, String displayName,
+    public Response issueResponse(SamlRelyingParty sp, String inResponseTo, AssertionSubject subject,
                                   String sessionIndex, String idpEntityId) {
         try {
-            Response response = buildResponse(sp, inResponseTo, email, displayName, sessionIndex, idpEntityId);
+            Response response = buildResponse(sp, inResponseTo, subject, sessionIndex, idpEntityId);
             Assertion assertion = response.getAssertions().get(0);
 
             if (sp.isSignAssertion()) {
@@ -74,12 +74,12 @@ public class SamlResponseBuilder {
     }
 
     private Response buildResponse(SamlRelyingParty sp, String inResponseTo,
-                                   String email, String displayName, String sessionIndex, String idpEntityId) {
+                                   AssertionSubject assertionSubject, String sessionIndex, String idpEntityId) {
         Instant now = Instant.now();
         Instant expiry = now.plusSeconds(validitySeconds);
 
         NameID nameId = build(NameID.DEFAULT_ELEMENT_NAME);
-        nameId.setValue(email);
+        nameId.setValue(assertionSubject.email());
         nameId.setFormat(sp.getNameIdFormat());
 
         SubjectConfirmationData confirmationData = build(SubjectConfirmationData.DEFAULT_ELEMENT_NAME);
@@ -115,9 +115,14 @@ public class SamlResponseBuilder {
         authnStatement.setAuthnContext(authnContext);
 
         AttributeStatement attributeStatement = build(AttributeStatement.DEFAULT_ELEMENT_NAME);
-        attributeStatement.getAttributes().add(stringAttribute("email", email));
-        if (displayName != null) {
-            attributeStatement.getAttributes().add(stringAttribute("displayName", displayName));
+        attributeStatement.getAttributes().add(stringAttribute("email", assertionSubject.email()));
+        if (assertionSubject.displayName() != null) {
+            attributeStatement.getAttributes().add(stringAttribute("displayName", assertionSubject.displayName()));
+        }
+        // `org`: the organization (tenant) id this session logged into — symmetric with the OIDC `org` claim,
+        // so a SAML relying party can scope the user to the tenant. Omitted for a global (org-less) session.
+        if (assertionSubject.org() != null) {
+            attributeStatement.getAttributes().add(stringAttribute("org", assertionSubject.org()));
         }
 
         Issuer assertionIssuer = build(Issuer.DEFAULT_ELEMENT_NAME);

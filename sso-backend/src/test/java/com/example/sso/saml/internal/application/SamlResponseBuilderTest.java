@@ -1,13 +1,22 @@
 package com.example.sso.saml.internal.application;
 
+import com.example.sso.saml.internal.domain.SamlRelyingParty;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.opensaml.core.config.InitializationService;
+import org.opensaml.saml.saml2.core.Assertion;
+import org.opensaml.saml.saml2.core.Attribute;
+import org.opensaml.saml.saml2.core.NameID;
+import org.opensaml.saml.saml2.core.Response;
 import org.opensaml.xmlsec.encryption.support.EncryptionConstants;
 
 import java.lang.reflect.Method;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for the pure algorithm-name -> XMLSec encryption-URI resolution switches in
@@ -20,9 +29,47 @@ class SamlResponseBuilderTest {
 
     private SamlResponseBuilder builder;
 
+    @BeforeAll
+    static void bootstrapOpenSaml() throws Exception {
+        InitializationService.initialize(); // idempotent; registers the OpenSAML builders the assertion uses
+    }
+
     @BeforeEach
     void setUp() {
         builder = new SamlResponseBuilder(mock(SamlSigner.class), 300L);
+    }
+
+    /** A relying party with no signing/encryption so issueResponse yields an inspectable, unsigned assertion. */
+    private SamlRelyingParty plainSp() {
+        SamlRelyingParty sp = mock(SamlRelyingParty.class);
+        when(sp.getNameIdFormat()).thenReturn(NameID.EMAIL);
+        when(sp.getAcsUrl()).thenReturn("https://sp.example/acs");
+        when(sp.getEntityId()).thenReturn("urn:example:sp");
+        return sp; // isSignAssertion / isEncryptAssertion / isSignResponse default to false on the mock
+    }
+
+    private List<String> attributeNames(Response response) {
+        Assertion assertion = response.getAssertions().get(0);
+        return assertion.getAttributeStatements().get(0).getAttributes().stream()
+                .map(Attribute::getName).toList();
+    }
+
+    @Test
+    void issueResponseEmitsTheOrgAttributeSymmetricWithOidc() {
+        AssertionSubject subject = new AssertionSubject("u@x.io", "User", "11111111-1111-1111-1111-111111111111");
+
+        Response response = builder.issueResponse(plainSp(), "req-1", subject, "sid-1", "https://idp.example");
+
+        assertThat(attributeNames(response)).contains("email", "displayName", "org");
+    }
+
+    @Test
+    void issueResponseOmitsTheOrgAttributeForAGlobalSession() {
+        AssertionSubject subject = new AssertionSubject("root@x.io", "Root", null); // a global (org-less) session
+
+        Response response = builder.issueResponse(plainSp(), "req-2", subject, "sid-2", "https://idp.example");
+
+        assertThat(attributeNames(response)).contains("email", "displayName").doesNotContain("org");
     }
 
     private String invoke(String methodName, String algorithm) throws Exception {
