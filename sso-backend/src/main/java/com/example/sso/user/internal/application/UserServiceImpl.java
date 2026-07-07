@@ -115,6 +115,14 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
+    public Optional<UUID> orgIdOf(UUID userId) {
+        // Authoritative (RLS-bypassing) org lookup for cross-module same-org checks: Optional#map drops a null
+        // org, so a global user and an unknown id both yield empty — exactly "no org owns this principal".
+        return orgContext.callAsPlatform(() -> users.findById(userId).map(AppUser::getOrgId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<UserAccount> findAll() {
         return hydrator.hydrateUsers(users.findAll()).stream().map(UserAccount.class::cast).toList();
     }

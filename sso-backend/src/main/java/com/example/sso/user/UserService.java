@@ -45,6 +45,13 @@ public interface UserService {
 
     Optional<UserAccount> findById(UUID id);
 
+    /**
+     * The org that owns a user (null = a global/platform account), resolved authoritatively regardless of the
+     * caller's RLS context. Empty for an unknown id or a global user — the "no org owns this principal" answer
+     * a cross-module same-org authorization check needs.
+     */
+    Optional<UUID> orgIdOf(UUID userId);
+
     List<UserAccount> findAll();
 
     /** A DB-paged slice of all users (0-based page), ordered by username — for the admin directory. */

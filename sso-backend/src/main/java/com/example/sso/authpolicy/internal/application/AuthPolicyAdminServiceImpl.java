@@ -20,11 +20,15 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgTierGuard;
+import com.example.sso.user.RoleService;
+import com.example.sso.user.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -49,6 +53,8 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
     private final AuthPolicyStepFactorRepository stepFactorRepository;
     private final AuthPolicyUserRepository userRepository;
     private final AuthPolicyRoleRepository roleRepository;
+    private final UserService users;
+    private final RoleService roles;
 
     @Override
     @Transactional
@@ -182,19 +188,33 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         stepRepository.flush(); // ensure the old rows are gone before re-inserting
     }
 
-    /** Diff-based reassignment: drop the policy's user rows, then insert the requested set. */
+    /** Diff-based reassignment: drop the policy's user rows, then insert the requested (same-org) set. */
     private void replaceUserAssignments(AuthPolicy policy, Set<UUID> userIds) {
         userRepository.deleteByPolicyId(policy.getId());
         for (UUID userId : userIds) {
+            requireAssignable(policy, users.orgIdOf(userId), "user");
             userRepository.save(new AuthPolicyUser(policy, userId));
         }
     }
 
-    /** Diff-based reassignment: drop the policy's role rows, then insert the requested set. */
+    /** Diff-based reassignment: drop the policy's role rows, then insert the requested (same-org) set. */
     private void replaceRoleAssignments(AuthPolicy policy, Set<UUID> roleIds) {
         roleRepository.deleteByPolicyId(policy.getId());
         for (UUID roleId : roleIds) {
+            requireAssignable(policy, roles.orgIdOf(roleId), "role");
             roleRepository.save(new AuthPolicyRole(policy, roleId));
+        }
+    }
+
+    /**
+     * A policy may target a subject that is GLOBAL (org null — e.g. the shared ROLE_USER) or belongs to the
+     * policy's OWN org; never another tenant's user or role. This stops a tenant admin from binding a policy to
+     * a foreign-tenant principal — a reference RLS would leave inert at resolution but which should not exist.
+     */
+    private void requireAssignable(AuthPolicy policy, Optional<UUID> subjectOrg, String kind) {
+        UUID org = subjectOrg.orElse(null);
+        if (org != null && !Objects.equals(org, policy.getOrgId())) {
+            throw new BadRequestException("Cannot assign a " + kind + " from a different organization to this policy.");
         }
     }
 }

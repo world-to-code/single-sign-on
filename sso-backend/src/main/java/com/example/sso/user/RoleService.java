@@ -19,6 +19,13 @@ public interface RoleService {
 
     Optional<RoleRef> findById(UUID id);
 
+    /**
+     * The org that owns a role (null = a global/system role), resolved authoritatively regardless of the
+     * caller's RLS context. Empty for an unknown id or a global role — the "no org owns this role" answer a
+     * cross-module same-org authorization check needs.
+     */
+    Optional<UUID> orgIdOf(UUID roleId);
+
     /** The role's permission names, resolved inside a transaction (safe to read outside one). */
     Set<String> permissionNames(UUID roleId);
 

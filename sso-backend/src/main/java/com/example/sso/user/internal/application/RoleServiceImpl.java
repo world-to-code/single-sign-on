@@ -91,6 +91,14 @@ public class RoleServiceImpl implements RoleService {
 
     @Override
     @Transactional(readOnly = true)
+    public Optional<UUID> orgIdOf(UUID roleId) {
+        // Authoritative (RLS-bypassing) org lookup for cross-module same-org checks: Optional#map drops a null
+        // org, so a global/system role and an unknown id both yield empty — exactly "no org owns this role".
+        return orgContext.callAsPlatform(() -> roles.findById(roleId).map(Role::getOrgId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Set<String> permissionNames(UUID roleId) {
         // The permission names are read from role_permission (explicit join) inside this tx so callers
         // (e.g. @adminAccessPolicy SpEL, which runs outside the method tx) get a fully-materialized set.

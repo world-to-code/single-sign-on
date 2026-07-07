@@ -18,6 +18,8 @@ import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.tenancy.OrgTierGuard;
+import com.example.sso.user.RoleService;
+import com.example.sso.user.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -57,6 +59,8 @@ class AuthPolicyAdminServiceImplTest {
     @Mock private AuthPolicyStepFactorRepository stepFactorRepository;
     @Mock private AuthPolicyUserRepository userRepository;
     @Mock private AuthPolicyRoleRepository roleRepository;
+    @Mock private UserService users;
+    @Mock private RoleService roles;
 
     private AuthPolicyAdminServiceImpl service;
 
@@ -67,7 +71,7 @@ class AuthPolicyAdminServiceImplTest {
         // Exercise the REAL tier guard (driven by the mocked OrgContext) so the isolation checks are genuine.
         service = new AuthPolicyAdminServiceImpl(
                 repository, new OrgTierGuard(orgContext),
-                stepRepository, stepFactorRepository, userRepository, roleRepository);
+                stepRepository, stepFactorRepository, userRepository, roleRepository, users, roles);
     }
 
     private AuthPolicySpec spec(String name, List<Set<AuthFactor>> steps) {
@@ -301,6 +305,67 @@ class AuthPolicyAdminServiceImplTest {
         service.delete(id);
 
         verify(repository).delete(orgDefault);
+    }
+
+    @Test
+    void createRejectsAUserFromAnotherOrg() {
+        UUID userB = UUID.randomUUID();
+        when(repository.findByNameAndOrgIdIsNull("MFA")).thenReturn(Optional.empty());
+        when(repository.save(any(AuthPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(stepRepository.save(any(AuthPolicyStep.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(users.orgIdOf(userB)).thenReturn(Optional.of(UUID.randomUUID())); // a different tenant
+
+        AuthPolicySpec spec = new AuthPolicySpec("MFA", 10, true, true, true,
+                List.of(Set.of(AuthFactor.PASSWORD)), Set.of(userB), Set.of(), 15);
+
+        assertThatThrownBy(() -> service.create(spec)).isInstanceOf(BadRequestException.class);
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void createRejectsARoleFromAnotherOrg() {
+        UUID roleB = UUID.randomUUID();
+        when(repository.findByNameAndOrgIdIsNull("MFA")).thenReturn(Optional.empty());
+        when(repository.save(any(AuthPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(stepRepository.save(any(AuthPolicyStep.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(roles.orgIdOf(roleB)).thenReturn(Optional.of(UUID.randomUUID())); // a different tenant
+
+        AuthPolicySpec spec = new AuthPolicySpec("MFA", 10, true, true, true,
+                List.of(Set.of(AuthFactor.PASSWORD)), Set.of(), Set.of(roleB), 15);
+
+        assertThatThrownBy(() -> service.create(spec)).isInstanceOf(BadRequestException.class);
+        verify(roleRepository, never()).save(any());
+    }
+
+    @Test
+    void createAcceptsAGlobalRole() {
+        UUID globalRole = UUID.randomUUID();
+        when(repository.findByNameAndOrgIdIsNull("MFA")).thenReturn(Optional.empty());
+        when(repository.save(any(AuthPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(stepRepository.save(any(AuthPolicyStep.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(roles.orgIdOf(globalRole)).thenReturn(Optional.empty()); // a global/system role applies everywhere
+
+        AuthPolicySpec spec = new AuthPolicySpec("MFA", 10, true, true, true,
+                List.of(Set.of(AuthFactor.PASSWORD)), Set.of(), Set.of(globalRole), 15);
+
+        service.create(spec);
+
+        verify(roleRepository).save(any());
+    }
+
+    @Test
+    void updateRejectsAUserFromAnotherOrg() {
+        UUID id = UUID.randomUUID();
+        UUID userB = UUID.randomUUID();
+        when(repository.findById(id)).thenReturn(Optional.of(new AuthPolicy("MFA", 10))); // a global policy
+        when(stepRepository.save(any(AuthPolicyStep.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(users.orgIdOf(userB)).thenReturn(Optional.of(UUID.randomUUID())); // a different tenant
+
+        AuthPolicyUpdate upd = new AuthPolicyUpdate(20, true, true, true,
+                List.of(Set.of(AuthFactor.PASSWORD)), Set.of(userB), Set.of(), 30);
+
+        assertThatThrownBy(() -> service.update(id, upd)).isInstanceOf(BadRequestException.class);
+        verify(userRepository, never()).save(any());
     }
 
     private AuthPolicy orgScoped(String name, UUID orgId) {
