@@ -71,8 +71,8 @@ class OrganizationServiceImplTest {
 
     @Test
     void createNormalizesTheSlugToLowercaseAndPersists() {
-        UUID cid = stubDefaultCustomer();
-        when(organizations.existsByCustomerIdAndSlug(cid, "acme")).thenReturn(false);
+        stubDefaultCustomer();
+        when(organizations.existsBySlug("acme")).thenReturn(false);
         when(organizations.save(any(Organization.class))).thenAnswer(i -> i.getArgument(0));
 
         OrganizationView view = service.create(new NewOrganization("  ACME  ", "Acme Inc"));
@@ -84,8 +84,8 @@ class OrganizationServiceImplTest {
 
     @Test
     void createPersistsAndReturnsTheCompanyProfile() {
-        UUID cid = stubDefaultCustomer();
-        when(organizations.existsByCustomerIdAndSlug(cid, "acme")).thenReturn(false);
+        stubDefaultCustomer();
+        when(organizations.existsBySlug("acme")).thenReturn(false);
         when(organizations.save(any(Organization.class))).thenAnswer(i -> i.getArgument(0));
         CompanyProfile profile = new CompanyProfile("51-200", "US", "SaaS", "+1-555-0100");
 
@@ -97,7 +97,7 @@ class OrganizationServiceImplTest {
     @Test
     void createAssignsTheNewOrgToTheDefaultCustomer() {
         UUID defaultCustomerId = stubDefaultCustomer();
-        when(organizations.existsByCustomerIdAndSlug(defaultCustomerId, "acme")).thenReturn(false);
+        when(organizations.existsBySlug("acme")).thenReturn(false);
         when(organizations.save(any(Organization.class))).thenAnswer(i -> i.getArgument(0));
 
         service.create(new NewOrganization("acme", "Acme"));
@@ -111,7 +111,7 @@ class OrganizationServiceImplTest {
     void createUnderAChosenActiveCustomerAssignsThatCustomer() {
         UUID customerId = UUID.randomUUID();
         when(customers.isActive(customerId)).thenReturn(true);
-        when(organizations.existsByCustomerIdAndSlug(customerId, "acme")).thenReturn(false);
+        when(organizations.existsBySlug("acme")).thenReturn(false);
         when(organizations.save(any(Organization.class))).thenAnswer(i -> i.getArgument(0));
 
         service.create(new NewOrganization("acme", "Acme", customerId));
@@ -146,28 +146,14 @@ class OrganizationServiceImplTest {
     }
 
     @Test
-    void createRejectsASlugThatAlreadyExistsUnderTheSameCustomer() {
-        UUID cid = stubDefaultCustomer();
-        when(organizations.existsByCustomerIdAndSlug(cid, "acme")).thenReturn(true);
+    void createRejectsASlugThatAlreadyExistsGlobally() {
+        // The organization is the tenant: its slug is globally unique, so a taken slug is rejected before the
+        // parent customer is even resolved.
+        when(organizations.existsBySlug("acme")).thenReturn(true);
 
         assertThatThrownBy(() -> service.create(new NewOrganization("acme", "Acme")))
                 .isInstanceOf(ConflictException.class);
         verify(organizations, never()).save(any());
-    }
-
-    @Test
-    void createAllowsTheSameSlugUnderADifferentCustomer() {
-        // Slugs are unique only WITHIN a customer: "seoul" already taken under customer A does not block
-        // creating "seoul" under customer B — the (customer_id, slug) pair is what must be unique.
-        UUID customerB = UUID.randomUUID();
-        when(customers.isActive(customerB)).thenReturn(true);
-        when(organizations.existsByCustomerIdAndSlug(customerB, "seoul")).thenReturn(false);
-        when(organizations.save(any(Organization.class))).thenAnswer(i -> i.getArgument(0));
-
-        OrganizationView view = service.create(new NewOrganization("seoul", "Seoul Branch", customerB));
-
-        assertThat(view.slug()).isEqualTo("seoul");
-        verify(organizations).save(any(Organization.class));
     }
 
     @Test
@@ -180,8 +166,8 @@ class OrganizationServiceImplTest {
 
     @Test
     void createRejectsABlankName() {
-        UUID cid = stubDefaultCustomer();
-        when(organizations.existsByCustomerIdAndSlug(cid, "acme")).thenReturn(false);
+        stubDefaultCustomer();
+        when(organizations.existsBySlug("acme")).thenReturn(false);
 
         assertThatThrownBy(() -> service.create(new NewOrganization("acme", "  ")))
                 .isInstanceOf(BadRequestException.class);

@@ -83,19 +83,16 @@ class CustomerServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void twoCustomersMayEachOwnABranchWithTheSameSlug() {
-        // The keystone of 3-level addressing: {branch}.{customer} keeps same-named branches apart, so the DB
-        // UNIQUE is (customer_id, slug), not a global slug. Both creates must succeed and resolve independently.
+    void anOrganizationSlugIsGloballyUnique() {
+        // The organization IS the tenant: its slug is globally unique, so the same slug cannot be reused under
+        // another customer wrapper (rejected the same as a duplicate within one).
         String r = UUID.randomUUID().toString().substring(0, 8);
         UUID customerA = customers.create(new NewCustomer("cust-a-" + r, "Customer A")).id();
         UUID customerB = customers.create(new NewCustomer("cust-b-" + r, "Customer B")).id();
+        organizations.create(new NewOrganization("seoul-" + r, "Seoul (A)", customerA));
 
-        UUID seoulA = organizations.create(new NewOrganization("seoul", "Seoul (A)", customerA)).id();
-        UUID seoulB = organizations.create(new NewOrganization("seoul", "Seoul (B)", customerB)).id();
-
-        assertThat(seoulA).isNotEqualTo(seoulB);
-        assertThat(organizations.findBranch(customerA, "seoul")).get().extracting(o -> o.getId()).isEqualTo(seoulA);
-        assertThat(organizations.findBranch(customerB, "seoul")).get().extracting(o -> o.getId()).isEqualTo(seoulB);
+        assertThatThrownBy(() -> organizations.create(new NewOrganization("seoul-" + r, "Seoul (B)", customerB)))
+                .isInstanceOf(ConflictException.class);
     }
 
     @Test

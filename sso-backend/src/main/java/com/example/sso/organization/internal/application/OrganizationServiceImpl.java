@@ -42,13 +42,13 @@ public class OrganizationServiceImpl implements OrganizationService {
     @Transactional
     public OrganizationView create(NewOrganization command) {
         String slug = Slug.normalize(command.slug());
-        // Every organization is a branch of a customer (고객사): the requested one (if it exists and is ACTIVE)
-        // or the default customer, keeping the FK non-null. Slugs are unique PER CUSTOMER, so resolve the parent
-        // first, then reject a collision only within that customer's namespace.
-        UUID customerId = resolveCustomer(command.customerId());
-        if (organizations.existsByCustomerIdAndSlug(customerId, slug)) {
+        // The organization is the tenant: its slug is GLOBALLY unique, so reject a collision across all orgs.
+        if (organizations.existsBySlug(slug)) {
             throw new ConflictException("organization slug '" + slug + "' already exists");
         }
+        // Every organization currently still hangs under a customer (고객사) wrapper — the requested one (if it
+        // exists and is ACTIVE) or the default customer — keeping the FK non-null until that column is dropped.
+        UUID customerId = resolveCustomer(command.customerId());
         Organization org = new Organization(slug, requireName(command.name()), command.profile());
         org.assignCustomer(customerId);
         return view(organizations.save(org));

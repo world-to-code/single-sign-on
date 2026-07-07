@@ -13,7 +13,7 @@ public interface OrganizationRepository extends JpaRepository<Organization, UUID
     /** Resolves an organization by its (globally-unique) slug — the tenant is the organization. */
     Optional<Organization> findBySlug(String slug);
 
-    boolean existsByCustomerIdAndSlug(UUID customerId, String slug);
+    boolean existsBySlug(String slug);
 
     boolean existsByIdAndCustomerIdIn(UUID id, Set<UUID> customerIds);
 
