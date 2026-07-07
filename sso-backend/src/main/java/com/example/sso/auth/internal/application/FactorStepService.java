@@ -6,7 +6,10 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.authpolicy.AuthFactor;
 import com.example.sso.authpolicy.AuthPolicyResolver;
 import com.example.sso.authpolicy.AuthPolicyView;
+import com.example.sso.authpolicy.Factors;
 import com.example.sso.mfa.FactorAuthorizationService;
+import com.example.sso.organization.OrganizationService;
+import com.example.sso.organization.OrganizationView;
 import com.example.sso.portal.AppStepUp;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
@@ -18,6 +21,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 
 /**
@@ -40,6 +44,7 @@ public class FactorStepService {
     private final AuditService audit;
     private final PreAuthOrgSession preAuthOrg;
     private final OrgContext orgContext;
+    private final OrganizationService organizations;
 
     /** Issues any pre-step data for the factor (TOTP QR, WebAuthn options, or sends an email code). */
     public FactorChallenge prepare(AuthFactor factor, HttpServletRequest request) {
@@ -71,8 +76,12 @@ public class FactorStepService {
     public AuthSessionView verify(AuthFactor factor, FactorVerificationRequest verification,
                                   HttpServletRequest request, HttpServletResponse response) {
         UserAccount user = currentUser.require();
+        UUID loginOrgId = preAuthOrg.orgId(request).orElse(null);
         // reject factors out of policy order (e.g. TOTP before password), per the login org's own policy
-        requireCurrentStep(factor, preAuthOrg.orgId(request).orElse(null));
+        requireCurrentStep(factor, loginOrgId);
+        // A passkey as the FIRST factor is passwordless login — gate it on the org's opt-in, symmetric with
+        // /login/webauthn, so the admin toggle is a real kill-switch even when the policy allows FIDO2 first.
+        requirePasswordlessAllowedForPasskeyFirst(factor, loginOrgId);
 
         // Account lockout applies to every factor (password is verified here too, not just /login).
         if (user.isTemporarilyLocked(Instant.now()) || !user.isAccountNonLocked()) {
@@ -99,6 +108,27 @@ public class FactorStepService {
      * authenticated, the /factors endpoints are reused for per-app step-up, where login step-ordering no
      * longer applies — so allow it.
      */
+    /**
+     * When FIDO2 is verified as the FIRST factor (none granted yet), that is passwordless passkey sign-in —
+     * allowed only if the login org opted in. A FIDO2 SECOND factor (step-up, after another factor) is
+     * unaffected. Mirrors the {@code /login/webauthn} enforcement so the toggle governs every passkey-first path.
+     */
+    private void requirePasswordlessAllowedForPasskeyFirst(AuthFactor factor, UUID loginOrgId) {
+        if (factor != AuthFactor.FIDO2) {
+            return;
+        }
+        boolean firstFactor = currentUser.authentication().getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority).noneMatch(a -> a.startsWith(Factors.FACTOR_PREFIX));
+        if (!firstFactor) {
+            return;
+        }
+        boolean allowed = loginOrgId != null
+                && organizations.findView(loginOrgId).map(OrganizationView::passwordlessLoginEnabled).orElse(false);
+        if (!allowed) {
+            throw new ForbiddenException("Passwordless passkey sign-in is not enabled for this organization.");
+        }
+    }
+
     private void requireCurrentStep(AuthFactor factor, UUID loginOrgId) {
         // only next() is read; resolved in the login org so step-ordering follows the tenant's own policy
         AuthSessionView view = authState.describe(currentUser.authentication(), null, loginOrgId);

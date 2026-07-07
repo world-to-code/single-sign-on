@@ -19,6 +19,7 @@ import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -29,6 +30,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.logout.CookieClearingLogoutHandler;
 import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
 import org.springframework.security.web.webauthn.authentication.WebAuthnAuthentication;
@@ -204,21 +206,22 @@ public class AuthenticationService {
             // as any failed sign-in.
             // Authorize the authenticated passkey principal, resolved by username within the target organization
             // (matching the completion step), so the authorized identity is provably the authenticated one.
+            boolean passwordlessPasskey = authentication instanceof WebAuthnAuthentication;
             UUID orgId = preAuthOrg.orgId(request).orElse(null);
             UUID userId = users.findByUsernameInOrg(authentication.getName(), orgId)
                     .map(UserAccount::getId).orElse(null);
             if (!targetSelected(request) || userId == null || !authorizedForTarget(request, userId)) {
-                throw new UnauthorizedException();
+                throw rejectPasswordless(request, passwordlessPasskey);
             }
             // Zero-trust server enforcement: a passwordless passkey login (a WebAuthnAuthentication reached
             // /login/webauthn without a prior password) is honored ONLY if the resolved tenant still permits
             // passwordless sign-in. Re-checked here, never trusted from the SPA's gated button — the flag may
             // have been disabled after the passkey was registered, or the endpoint hit directly.
-            if (authentication instanceof WebAuthnAuthentication) {
+            if (passwordlessPasskey) {
                 boolean passwordlessAllowed = organizations.findView(orgId)
                         .map(OrganizationView::passwordlessLoginEnabled).orElse(false);
                 if (!passwordlessAllowed) {
-                    throw new UnauthorizedException();
+                    throw rejectPasswordless(request, true);
                 }
                 boolean hasFido2 = authentication.getAuthorities().stream()
                         .map(GrantedAuthority::getAuthority).anyMatch(Factors.FIDO2::equals);
@@ -229,5 +232,23 @@ public class AuthenticationService {
         }
 
         return completionService.completeIfSatisfied(request, response);
+    }
+
+    /**
+     * Builds the rejection for a failed {@link #complete}. For a passwordless passkey session the
+     * {@code /login/webauthn} filter has ALREADY persisted a {@link WebAuthnAuthentication} in the session,
+     * so tear that half-authenticated session down (invalidate + clear context) — otherwise it would linger
+     * until expiry and could be re-submitted to {@code /api/auth/complete} if the org later re-enables
+     * passwordless (ceremony-banking), completing without a fresh passkey assertion.
+     */
+    private UnauthorizedException rejectPasswordless(HttpServletRequest request, boolean passwordlessPasskey) {
+        if (passwordlessPasskey) {
+            HttpSession session = request.getSession(false);
+            if (session != null) {
+                session.invalidate();
+            }
+            SecurityContextHolder.clearContext();
+        }
+        return new UnauthorizedException();
     }
 }

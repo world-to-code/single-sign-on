@@ -42,9 +42,12 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.config.ObjectPostProcessor;
+import org.springframework.security.web.authentication.session.ChangeSessionIdAuthenticationStrategy;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.security.web.webauthn.authentication.WebAuthnAuthenticationFilter;
 import org.springframework.security.web.webauthn.registration.PublicKeyCredentialCreationOptionsRepository;
 import org.springframework.security.core.session.SessionRegistry;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
@@ -118,7 +121,19 @@ public class SecurityConfig {
                         .rpId(rpId)
                         .allowedOrigins(allowedOrigins)
                         .creationOptionsRepository(creationOptionsRepository)
-                        .disableDefaultRegistrationPage(true)) // the React SPA drives the passkey UI
+                        .disableDefaultRegistrationPage(true) // the React SPA drives the passkey UI
+                        // Rotate the session id when /login/webauthn authenticates a passkey (session-fixation
+                        // protection): the built-in filter defaults to NullAuthenticatedSessionStrategy, so
+                        // without this the rotation would be deferred to /api/auth/complete — a window in which
+                        // a fixed pre-auth session could be completed by whoever holds it. The password/factor
+                        // paths already rotate in-request via FactorAuthorizationService#establish.
+                        .withObjectPostProcessor(new ObjectPostProcessor<WebAuthnAuthenticationFilter>() {
+                            @Override
+                            public <O extends WebAuthnAuthenticationFilter> O postProcess(O filter) {
+                                filter.setSessionAuthenticationStrategy(new ChangeSessionIdAuthenticationStrategy());
+                                return filter;
+                            }
+                        }))
                 .authorizeHttpRequests(auth -> auth
                         // Passkey REGISTRATION (self-service "My Passkeys") requires a completed login —
                         // otherwise an identified-but-unauthenticated session could plant a passkey on the

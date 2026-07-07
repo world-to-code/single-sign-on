@@ -14,6 +14,7 @@ import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -64,6 +65,7 @@ class AuthenticationServiceTest {
 
     private final HttpServletRequest request = mock(HttpServletRequest.class);
     private final HttpServletResponse response = mock(HttpServletResponse.class);
+    private final HttpSession session = mock(HttpSession.class);
 
     /** Wires a passwordless passkey session that has already selected {@code orgId} and belongs to it. */
     private void passwordlessSession(UUID orgId, UUID userId, boolean orgAllowsPasswordless) {
@@ -75,6 +77,7 @@ class AuthenticationServiceTest {
         UserAccount user = mock(UserAccount.class);
         when(user.getId()).thenReturn(userId);
         when(preAuthOrg.orgId(request)).thenReturn(Optional.of(orgId));
+        when(request.getSession(false)).thenReturn(session);
         when(users.findByUsernameInOrg("alice", orgId)).thenReturn(Optional.of(user));
         when(organizations.isMember(orgId, userId)).thenReturn(true); // authorized for the target org
         when(organizations.findView(orgId)).thenReturn(Optional.of(new OrganizationView(
@@ -83,10 +86,11 @@ class AuthenticationServiceTest {
     }
 
     @Test
-    void completeRejectsAPasswordlessLoginWhenTheOrgDisablesIt() {
+    void completeRejectsAndTearsDownAPasswordlessLoginWhenTheOrgDisablesIt() {
         passwordlessSession(UUID.randomUUID(), UUID.randomUUID(), false);
 
         assertThatThrownBy(() -> service.complete(request, response)).isInstanceOf(UnauthorizedException.class);
+        verify(session).invalidate(); // the half-authenticated passkey session must not linger
         verify(factorAuth, never()).grantFactor(any(), any(), any());
         verify(completionService, never()).completeIfSatisfied(any(), any());
     }
