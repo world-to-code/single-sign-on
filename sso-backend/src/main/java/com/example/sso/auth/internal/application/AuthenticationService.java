@@ -16,6 +16,7 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.shared.error.UnauthorizedException;
 import com.example.sso.shared.web.ClientIp;
+import com.example.sso.user.LoginResolutionScope;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -59,6 +60,8 @@ public class AuthenticationService {
     private final CustomerService customers;
     private final PreAuthOrgSession preAuthOrg;
     private final PreAuthCustomerSession preAuthCustomer;
+    private final LoginTargetCustomer targetCustomer;
+    private final LoginResolutionScope loginScope;
     private final AuditService audit;
 
     public AuthSessionView session(HttpServletRequest request) {
@@ -132,7 +135,8 @@ public class AuthenticationService {
         if (!targetSelected(httpRequest)) {
             throw new BadRequestException("Select an organization first.");
         }
-        UserAccount user = users.findByLogin(email).filter(UserAccount::isEnabled).orElse(null);
+        UserAccount user = users.findByLoginInCustomer(email, targetCustomer.of(httpRequest))
+                .filter(UserAccount::isEnabled).orElse(null);
         // Gate on the selected target — org membership, or customer-admin membership for a console login. Reject
         // a non-member the SAME way as an unknown account so an attacker can't discover which emails exist (or
         // belong to another tenant) via the login form.
@@ -155,13 +159,17 @@ public class AuthenticationService {
             throw new BadRequestException("Select an organization first.");
         }
         UUID orgId = preAuthOrg.orgId(httpRequest).orElse(null); // audit tenant tag (null for a customer login)
+        UUID customerId = targetCustomer.of(httpRequest); // resolve the user within the selected target's customer
         try {
-            Authentication authentication = authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(username, password));
+            // Bind the resolution customer so the password provider's UserDetailsService resolves the user
+            // WITHIN this tenant — a username shared across customers must authenticate against THIS
+            // customer's account (falling back to a global super-admin), never another tenant's.
+            Authentication authentication = loginScope.within(customerId, () -> authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(username, password)));
             // Tenant-first: the account must be authorized for the selected target (an org member, or a
             // customer admin). Reject the unauthorized the same way as bad credentials, so login can neither
             // bypass tenant selection nor cross into another tenant.
-            UUID userId = users.findByLogin(username).map(UserAccount::getId).orElse(null);
+            UUID userId = users.findByLoginInCustomer(username, customerId).map(UserAccount::getId).orElse(null);
             if (userId == null || !authorizedForTarget(httpRequest, userId)) {
                 loginAttempts.onFailure(username);
                 audit.record(new AuditRecord(AuditType.AUTH_FAILURE, username, false, "not authorized for the target", null, orgId));
@@ -231,7 +239,8 @@ public class AuthenticationService {
             // the session must not finalize without a resolved target (org or customer console) they belong to
             // (else login bypasses tenant selection via /login/webauthn). Reject the unauthorized the same way
             // as any failed sign-in.
-            UUID userId = users.findByLogin(authentication.getName()).map(UserAccount::getId).orElse(null);
+            UUID userId = users.findByLoginInCustomer(authentication.getName(), targetCustomer.of(request))
+                    .map(UserAccount::getId).orElse(null);
             if (!targetSelected(request) || userId == null || !authorizedForTarget(request, userId)) {
                 throw new UnauthorizedException();
             }

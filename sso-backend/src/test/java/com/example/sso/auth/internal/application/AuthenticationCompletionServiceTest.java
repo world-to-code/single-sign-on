@@ -5,6 +5,7 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.session.SessionLifecycle;
+import com.example.sso.user.LoginResolutionScope;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -58,6 +59,11 @@ class AuthenticationCompletionServiceTest {
     @Spy private PreAuthCustomerSession preAuthCustomer = new PreAuthCustomerSession();
     @Mock private OrgContext orgContext;
     @Mock private AuditService audit;
+    // Derives the login's customer from the pre-auth session; these org-login tests stash no target, so it
+    // yields null (global resolution) — exercising the scope-wrapping without altering the resolved user.
+    @Mock private LoginTargetCustomer targetCustomer;
+    // Real (a spy) so within(...) actually runs the wrapped loadUserByUsername supplier.
+    @Spy private LoginResolutionScope loginScope = new LoginResolutionScope();
 
     @InjectMocks private AuthenticationCompletionService service;
 

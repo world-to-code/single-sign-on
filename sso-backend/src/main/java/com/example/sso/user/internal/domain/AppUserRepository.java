@@ -36,6 +36,43 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 
     Optional<AppUser> findByUsername(String username);
 
+    Optional<AppUser> findByUsernameAndCustomerId(String username, UUID customerId);
+
+    Optional<AppUser> findByUsernameAndCustomerIdIsNull(String username);
+
+    Optional<AppUser> findByEmailAndCustomerId(String email, UUID customerId);
+
+    Optional<AppUser> findByEmailAndCustomerIdIsNull(String email);
+
+    /**
+     * Resolves a user by username WITHIN a customer (고객사) for a scoped login, falling back to a global
+     * (customer-less) user so the platform super-admin still resolves through a tenant they belong to. A
+     * {@code null} customerId is the apex/platform path — only global accounts resolve.
+     */
+    default Optional<AppUser> findByUsernameInCustomer(String username, UUID customerId) {
+        if (customerId == null) {
+            return findByUsernameAndCustomerIdIsNull(username);
+        }
+        return findByUsernameAndCustomerId(username, customerId)
+                .or(() -> findByUsernameAndCustomerIdIsNull(username));
+    }
+
+    /**
+     * Resolves a user by email-or-username WITHIN a customer for a scoped login (email first, mirroring
+     * {@code findByLogin}), preferring an exact customer match and falling back to a global (customer-less)
+     * account. A {@code null} customerId resolves only global accounts (the apex/platform path).
+     */
+    default Optional<AppUser> findByLoginInCustomer(String identifier, UUID customerId) {
+        if (customerId == null) {
+            return findByEmailAndCustomerIdIsNull(identifier)
+                    .or(() -> findByUsernameAndCustomerIdIsNull(identifier));
+        }
+        return findByEmailAndCustomerId(identifier, customerId)
+                .or(() -> findByUsernameAndCustomerId(identifier, customerId))
+                .or(() -> findByEmailAndCustomerIdIsNull(identifier))
+                .or(() -> findByUsernameAndCustomerIdIsNull(identifier));
+    }
+
     /**
      * A page of users, ordered by username. Roles/permissions are hydrated separately (explicit join
      * repositories) by the service when it projects the page, so no collection fetch-join here.

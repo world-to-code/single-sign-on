@@ -9,6 +9,7 @@ import com.example.sso.session.SessionLifecycle;
 import com.example.sso.session.StepUpInterceptor;
 import com.example.sso.shared.web.ClientIp;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.user.LoginResolutionScope;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.Instant;
@@ -43,6 +44,8 @@ public class AuthenticationCompletionService {
     private final SessionLifecycle sessions;
     private final PreAuthOrgSession preAuthOrg;
     private final PreAuthCustomerSession preAuthCustomer;
+    private final LoginTargetCustomer targetCustomer;
+    private final LoginResolutionScope loginScope;
     private final OrgContext orgContext;
     private final AuditService audit;
 
@@ -64,10 +67,14 @@ public class AuthenticationCompletionService {
             // Resolve the FINAL session authorities bound to the LOGIN org, so the user's global roles AND
             // their roles in THIS org (RLS-scoped) both resolve — and no other org's roles leak in. This is
             // the single chokepoint every login path (password, passkey, factor) funnels through.
+            // Re-resolve the user WITHIN the login's customer (고객사), so a username shared across customers
+            // maps to THIS tenant's account (falling back to a global super-admin) when authorities are loaded.
+            UUID resolutionCustomer = targetCustomer.of(request);
             UserDetails principal = preAuthOrg.orgId(request)
-                    .map(orgId -> orgContext.callInOrg(orgId,
-                            () -> userDetailsService.loadUserByUsername(authentication.getName())))
-                    .orElseGet(() -> userDetailsService.loadUserByUsername(authentication.getName()));
+                    .map(orgId -> orgContext.callInOrg(orgId, () -> loginScope.within(resolutionCustomer,
+                            () -> userDetailsService.loadUserByUsername(authentication.getName()))))
+                    .orElseGet(() -> loginScope.within(resolutionCustomer,
+                            () -> userDetailsService.loadUserByUsername(authentication.getName())));
             Set<GrantedAuthority> authorities = new LinkedHashSet<>(principal.getAuthorities());
             authentication.getAuthorities().stream()
                     .filter(a -> a.getAuthority().startsWith(Factors.FACTOR_PREFIX)).forEach(authorities::add);

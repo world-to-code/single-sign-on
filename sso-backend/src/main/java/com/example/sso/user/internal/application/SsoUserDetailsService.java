@@ -1,5 +1,6 @@
 package com.example.sso.user.internal.application;
 
+import com.example.sso.user.LoginResolutionScope;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.internal.domain.UserGroupRepository;
 import com.example.sso.user.internal.domain.AppUser;
@@ -10,6 +11,7 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -39,11 +41,12 @@ public class SsoUserDetailsService implements UserDetailsService {
     private final UserGroupRepository groups;
     private final RoleRepository roles;
     private final RbacHydrator hydrator;
+    private final LoginResolutionScope loginScope;
 
     @Override
     @Transactional(readOnly = true)
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        AppUser user = users.findByUsername(username)
+        AppUser user = resolve(username)
                 .orElseThrow(() -> new UsernameNotFoundException("Unknown user: " + username));
 
         // RBAC: role names (ROLE_*) from roles assigned directly AND delegated via the user's groups.
@@ -65,6 +68,18 @@ public class SsoUserDetailsService implements UserDetailsService {
                 .toList();
 
         return principal(user, authorities);
+    }
+
+    /**
+     * Resolves the login within the customer (고객사) the orchestrator bound for this authentication: the
+     * password provider passes only a username, so once usernames are per-customer the resolver must scope
+     * to the login's customer (falling back to a global account) rather than pick a same-named user from
+     * another tenant. With no scope bound (a non-login caller), falls back to the plain global lookup.
+     */
+    private Optional<AppUser> resolve(String username) {
+        return loginScope.current()
+                .map(scope -> users.findByUsernameInCustomer(username, scope.customerId()))
+                .orElseGet(() -> users.findByUsername(username));
     }
 
     /** Roles delegated to the user via any (RLS-visible) group they belong to, with permission names hydrated. */

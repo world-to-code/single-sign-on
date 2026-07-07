@@ -24,6 +24,14 @@ public interface UserService {
     /** Resolves a login identifier (email preferred, falling back to username). */
     Optional<UserAccount> findByLogin(String identifier);
 
+    /**
+     * Resolves a login identifier (email then username) WITHIN a customer (고객사) — the per-customer login
+     * boundary. Prefers an exact customer match, falling back to a global (customer-less) account so the
+     * platform super-admin still resolves through a tenant they belong to. A {@code null} customerId is the
+     * apex/platform path — only global accounts resolve.
+     */
+    Optional<UserAccount> findByLoginInCustomer(String identifier, UUID customerId);
+
     Optional<UserAccount> findById(UUID id);
 
     List<UserAccount> findAll();
