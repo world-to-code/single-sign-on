@@ -168,8 +168,11 @@ public class AuthenticationService {
                     new UsernamePasswordAuthenticationToken(username, password)));
             // Tenant-first: the account must be authorized for the selected target (an org member, or a
             // customer admin). Reject the unauthorized the same way as bad credentials, so login can neither
-            // bypass tenant selection nor cross into another tenant.
-            UUID userId = users.findByLoginInCustomer(username, customerId).map(UserAccount::getId).orElse(null);
+            // bypass tenant selection nor cross into another tenant. Authorize the AUTHENTICATED principal,
+            // resolved by username exactly as the credential check was — never a fresh email-first lookup that
+            // could pick a different account (whose email equals this username) than the one authenticated.
+            UUID userId = users.findByUsernameInCustomer(authentication.getName(), customerId)
+                    .map(UserAccount::getId).orElse(null);
             if (userId == null || !authorizedForTarget(httpRequest, userId)) {
                 loginAttempts.onFailure(username);
                 audit.record(new AuditRecord(AuditType.AUTH_FAILURE, username, false, "not authorized for the target", null, orgId));
@@ -239,7 +242,9 @@ public class AuthenticationService {
             // the session must not finalize without a resolved target (org or customer console) they belong to
             // (else login bypasses tenant selection via /login/webauthn). Reject the unauthorized the same way
             // as any failed sign-in.
-            UUID userId = users.findByLoginInCustomer(authentication.getName(), targetCustomer.of(request))
+            // Authorize the authenticated passkey principal, resolved by username within the target's customer
+            // (matching the completion step), so the authorized identity is provably the authenticated one.
+            UUID userId = users.findByUsernameInCustomer(authentication.getName(), targetCustomer.of(request))
                     .map(UserAccount::getId).orElse(null);
             if (!targetSelected(request) || userId == null || !authorizedForTarget(request, userId)) {
                 throw new UnauthorizedException();

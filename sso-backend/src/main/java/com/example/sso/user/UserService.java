@@ -21,6 +21,14 @@ public interface UserService {
 
     Optional<UserAccount> findByUsername(String username);
 
+    /**
+     * Resolves a user by username WITHIN a customer (고객사), falling back to a global (customer-less) account
+     * — the same resolution the password provider uses. Authorize an already-authenticated principal through
+     * THIS (matching how they were authenticated), never a fresh email-or-username lookup, so the authorized
+     * identity is provably the authenticated one.
+     */
+    Optional<UserAccount> findByUsernameInCustomer(String username, UUID customerId);
+
     /** Resolves a login identifier (email preferred, falling back to username). */
     Optional<UserAccount> findByLogin(String identifier);
 

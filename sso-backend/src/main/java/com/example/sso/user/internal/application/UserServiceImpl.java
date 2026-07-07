@@ -89,6 +89,12 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
+    public Optional<UserAccount> findByUsernameInCustomer(String username, UUID customerId) {
+        return users.findByUsernameInCustomer(username, customerId).map(hydrator::hydrateUser).map(u -> u);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Optional<UserAccount> findById(UUID id) {
         return users.findById(id).map(hydrator::hydrateUser).map(u -> u);
     }
