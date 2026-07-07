@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, KeyRound, Users, ShieldCheck, AppWindow, Network, Coins, ScrollText,
-  Clock, Globe, LayoutGrid, Boxes, UsersRound, UserCog, KeySquare, Building2, Building,
+  Clock, Globe, LayoutGrid, Boxes, UsersRound, UserCog, KeySquare, Building2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -49,7 +49,6 @@ export const NAV: NavGroup[] = [
         heading: "Platform",
         items: [
           { to: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: "organization:read", superAdmin: true },
-          { to: "/admin/customers", label: "Customers", icon: Building, permission: "customer:read", superAdmin: true },
           { to: "/admin/organizations", label: "Organizations", icon: Building2, permission: "organization:read", superAdmin: true },
         ],
       },

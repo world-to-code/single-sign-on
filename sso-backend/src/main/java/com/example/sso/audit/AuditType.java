@@ -14,7 +14,6 @@ public enum AuditType {
 
     // Authentication
     AUTH_ORGANIZATION(AuditCategory.AUTHENTICATION),
-    AUTH_CUSTOMER(AuditCategory.AUTHENTICATION),
     AUTH_IDENTIFY(AuditCategory.AUTHENTICATION),
     AUTH_SUCCESS(AuditCategory.AUTHENTICATION),
     AUTH_FAILURE(AuditCategory.AUTHENTICATION),
@@ -75,13 +74,6 @@ public enum AuditType {
     ORGANIZATION_MEMBER_ADDED(AuditCategory.ADMIN),
     ORGANIZATION_MEMBER_REMOVED(AuditCategory.ADMIN),
     ORGANIZATION_CONTEXT_ENTERED(AuditCategory.ADMIN),
-
-    // Administrative operations on customers (고객사 — the top tenancy tier)
-    CUSTOMER_CREATED(AuditCategory.ADMIN),
-    CUSTOMER_UPDATED(AuditCategory.ADMIN),
-    CUSTOMER_DELETED(AuditCategory.ADMIN),
-    CUSTOMER_ADMIN_ADDED(AuditCategory.ADMIN),
-    CUSTOMER_ADMIN_REMOVED(AuditCategory.ADMIN),
 
     // Platform / system
     SERVER_ERROR(AuditCategory.SYSTEM);
