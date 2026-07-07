@@ -9,6 +9,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import com.example.sso.user.UserAccount;
 import java.time.Duration;
+import java.util.UUID;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.Collection;
@@ -41,6 +42,13 @@ public class AppUser extends AuditedEntity implements UserAccount {
 
     @Column(nullable = false, unique = true, length = 320)
     private String email;
+
+    // The customer (고객사) that owns this user's identity — the tenant boundary for per-customer user isolation
+    // (the same email may be a different user in different customers). NULL = the global platform super-admin.
+    // Backfilled for existing users (V65); stamped at creation in a later phase. Uniqueness of username/email is
+    // still GLOBAL for now (the @Column unique=true above) — a later phase moves it to per-customer.
+    @Column(name = "customer_id")
+    private UUID customerId;
 
     @Column(name = "display_name", length = 200)
     private String displayName;
