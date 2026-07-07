@@ -60,6 +60,10 @@ public interface UserService {
 
     boolean existsByUsername(String username);
 
+    /** Whether a user with this username exists WITHIN the organization (the tenant), or globally when
+     *  {@code orgId} is null — the per-organization uniqueness check (exact, no global fallback). */
+    boolean existsByUsernameInOrg(String username, UUID orgId);
+
     boolean hasPassword(UUID id);
 
     /** Whether the user has the named role assigned DIRECTLY (not inherited via a group). */

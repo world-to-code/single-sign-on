@@ -44,7 +44,10 @@ public class ScimUserService {
     public User create(User resource) {
         String userName = resource.getUserName()
                 .orElseThrow(() -> new BadRequestException("userName is required"));
-        if (userService.existsByUsername(userName)) {
+        // Uniqueness is per-organization: reject only a collision WITHIN the token's org (a global username in
+        // another org is fine), matching how createUser enforces it — so a SCIM ConflictException is raised (the
+        // right SCIM error shape) instead of createUser's generic one, and cross-org reuse is allowed.
+        if (userService.existsByUsernameInOrg(userName, tokenOrg().orElse(null))) {
             throw new ConflictException("userName already exists: " + userName);
         }
         String email = primaryEmail(resource).orElse(userName + "@scim.local");

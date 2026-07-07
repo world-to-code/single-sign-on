@@ -170,6 +170,12 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
+    public boolean existsByUsernameInOrg(String username, UUID orgId) {
+        return users.existsByUsernameInOrg(username, orgId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public boolean hasPassword(UUID id) {
         return require(id).getPasswordHash() != null;
     }

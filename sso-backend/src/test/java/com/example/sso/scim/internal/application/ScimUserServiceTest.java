@@ -52,7 +52,7 @@ class ScimUserServiceTest {
         UUID newId = UUID.randomUUID();
         UserAccount created = userAccount(newId);
         when(orgContext.currentOrg()).thenReturn(Optional.of(orgId));
-        when(userService.existsByUsername("scim-u")).thenReturn(false);
+        when(userService.existsByUsernameInOrg(eq("scim-u"), any())).thenReturn(false);
         when(userService.createUser(any(), any())).thenReturn(created);
         when(userService.findById(newId)).thenReturn(Optional.of(created));
 
@@ -66,7 +66,7 @@ class ScimUserServiceTest {
         UUID newId = UUID.randomUUID();
         UserAccount created = userAccount(newId);
         when(orgContext.currentOrg()).thenReturn(Optional.empty());
-        when(userService.existsByUsername("scim-u")).thenReturn(false);
+        when(userService.existsByUsernameInOrg(eq("scim-u"), any())).thenReturn(false);
         when(userService.createUser(any(), any())).thenReturn(created);
         when(userService.findById(newId)).thenReturn(Optional.of(created));
 
