@@ -1,6 +1,8 @@
 package com.example.sso.resource.internal.application;
 
 import com.example.sso.portal.ApplicationService;
+import com.example.sso.portal.ApplicationView;
+import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.Resource;
 import com.example.sso.resource.internal.domain.ResourceEdgeRepository;
 import com.example.sso.resource.internal.domain.ResourceGrantRowRepository;
@@ -9,10 +11,12 @@ import com.example.sso.resource.internal.domain.ResourceRepository;
 import com.example.sso.resource.internal.domain.ResourceType;
 import com.example.sso.resource.internal.domain.ResourceTypeAllowedMemberRepository;
 import com.example.sso.resource.internal.domain.ResourceTypeRepository;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.tenancy.OrgTierGuard;
+import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserGroupService;
 import com.example.sso.user.UserService;
 import java.util.List;
@@ -192,5 +196,78 @@ class ResourceAdminServiceTest {
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).id()).isEqualTo(managedId.toString());
+    }
+
+    @Test
+    void attachMemberRejectsAUserFromADifferentOrg() {
+        UUID resourceId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        viewable(resourceId); // a GLOBAL resource (org null)
+        UserAccount user = mock(UserAccount.class);
+        when(user.getOrgId()).thenReturn(UUID.randomUUID()); // the user belongs to a tenant
+        when(users.findById(userId)).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> service.attachMember(resourceId, MemberType.USER, userId.toString()))
+                .isInstanceOf(BadRequestException.class);
+        verify(memberRows, never()).save(any());
+    }
+
+    @Test
+    void attachMemberRejectsAGroupFromADifferentOrg() {
+        UUID resourceId = UUID.randomUUID();
+        UUID groupId = UUID.randomUUID();
+        viewable(resourceId); // a GLOBAL resource (org null)
+        when(groups.orgIdOf(groupId)).thenReturn(Optional.of(UUID.randomUUID())); // the group belongs to a tenant
+
+        assertThatThrownBy(() -> service.attachMember(resourceId, MemberType.GROUP, groupId.toString()))
+                .isInstanceOf(BadRequestException.class);
+        verify(memberRows, never()).save(any());
+    }
+
+    @Test
+    void attachMemberRejectsACrossTenantUserWhenDrilledIntoAnOrg() {
+        UUID orgA = UUID.randomUUID();
+        UUID resourceId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgA)); // caller is drilled into org A
+        Resource resource = viewable(resourceId);
+        when(resource.getOrgId()).thenReturn(orgA); // the resource lives in org A
+        UserAccount user = mock(UserAccount.class);
+        when(user.getOrgId()).thenReturn(UUID.randomUUID()); // the user lives in a different org
+        when(users.findById(userId)).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> service.attachMember(resourceId, MemberType.USER, userId.toString()))
+                .isInstanceOf(BadRequestException.class);
+        verify(memberRows, never()).save(any());
+    }
+
+    @Test
+    void attachMemberAttachesASameOrgUser() {
+        UUID resourceId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        viewable(resourceId); // a GLOBAL resource (org null)
+        UserAccount user = mock(UserAccount.class);
+        when(user.getOrgId()).thenReturn(null); // a global user matches the global resource
+        when(users.findById(userId)).thenReturn(Optional.of(user));
+
+        service.attachMember(resourceId, MemberType.USER, userId.toString());
+
+        verify(memberRows).save(any());
+    }
+
+    @Test
+    void attachMemberAttachesAnApplicationWithoutAnOrgCheck() {
+        UUID resourceId = UUID.randomUUID();
+        String appId = "oidc:demo-client";
+        viewable(resourceId);
+        ApplicationView app = mock(ApplicationView.class);
+        when(app.id()).thenReturn(appId);
+        when(applications.listApplications()).thenReturn(List.of(app));
+
+        service.attachMember(resourceId, MemberType.APPLICATION, appId);
+
+        verify(memberRows).save(any());
+        verify(users, never()).findById(any());
+        verify(groups, never()).orgIdOf(any());
     }
 }

@@ -21,6 +21,7 @@ import com.example.sso.shared.IdName;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserGroupService;
 import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.UserService;
@@ -28,6 +29,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -315,6 +317,7 @@ public class ResourceAdminService {
         Resource resource = requireInTierFetchingType(id);
         resource.requireCanAttachMember(memberType, allowedMemberTypes(resource.getType().getId()));
         requireMemberExists(memberType, memberId);
+        requireMemberInResourceOrg(resource, memberType, memberId);
         memberRows.save(ResourceMemberRow.of(id, new ResourceMember(memberType, memberId), resource.getOrgId()));
         return viewOf(id);
     }
@@ -413,6 +416,26 @@ public class ResourceAdminService {
         };
         if (!exists) {
             throw new NotFoundException("Member " + memberType + " not found.");
+        }
+    }
+
+    /**
+     * A referenced directory principal must live in the SAME org as the resource — a tenant's resource may
+     * reference only that tenant's users/groups, and a global resource only global ones; never bridge two
+     * tenants nor a global resource to a tenant principal. Mirrors the resource-graph single-org invariant,
+     * turning what RLS would otherwise reject as a WITH CHECK 500 into a clean 400. APPLICATIONs are a global
+     * shared catalog (already org-scoped by the existence lookup's RLS), so they carry no org to match.
+     */
+    private void requireMemberInResourceOrg(Resource resource, MemberType memberType, String memberId) {
+        if (memberType != MemberType.USER && memberType != MemberType.GROUP) {
+            return;
+        }
+        UUID member = MemberIds.requireUuid(memberId);
+        UUID memberOrg = memberType == MemberType.USER
+                ? users.findById(member).map(UserAccount::getOrgId).orElse(null)
+                : groups.orgIdOf(member).orElse(null);
+        if (!Objects.equals(resource.getOrgId(), memberOrg)) {
+            throw new BadRequestException("Cannot attach a member from a different organization.");
         }
     }
 }
