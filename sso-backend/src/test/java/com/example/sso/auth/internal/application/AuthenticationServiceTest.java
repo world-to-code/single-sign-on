@@ -8,6 +8,7 @@ import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationStatus;
 import com.example.sso.organization.OrganizationView;
 import com.example.sso.saml.SamlFrontChannelLogout;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.UnauthorizedException;
 import com.example.sso.user.LoginResolutionScope;
 import com.example.sso.user.UserAccount;
@@ -27,6 +28,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.web.webauthn.authentication.WebAuthnAuthentication;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -103,5 +105,37 @@ class AuthenticationServiceTest {
 
         verify(factorAuth).grantFactor(eq(request), eq(response), eq(Factors.FIDO2));
         verify(completionService).completeIfSatisfied(request, response);
+    }
+
+    /** An authenticated session for {@code alice} that has (or has not) a pending first-login reset. */
+    private void resetPendingSession(UUID orgId, UUID userId, boolean resetRequired) {
+        when(currentUser.authentication())
+                .thenReturn(UsernamePasswordAuthenticationToken.authenticated("alice", null, List.of()));
+        UserAccount user = mock(UserAccount.class);
+        when(user.getId()).thenReturn(userId);
+        when(user.isPasswordResetRequired()).thenReturn(resetRequired);
+        when(preAuthOrg.orgId(request)).thenReturn(Optional.of(orgId));
+        when(users.findByUsernameInOrg("alice", orgId)).thenReturn(Optional.of(user));
+    }
+
+    @Test
+    void changePasswordSetsTheNewPasswordAndFinalizesWhenAResetIsRequired() {
+        UUID orgId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        resetPendingSession(orgId, userId, true);
+
+        service.changePassword("new-strong-pass", request, response);
+
+        verify(users).setPassword(userId, "new-strong-pass"); // clears the reset-required flag
+        verify(completionService).completeIfSatisfied(request, response); // re-run finalizes the session
+    }
+
+    @Test
+    void changePasswordIsRejectedWhenNoResetIsRequired() {
+        resetPendingSession(UUID.randomUUID(), UUID.randomUUID(), false);
+
+        assertThatThrownBy(() -> service.changePassword("new-strong-pass", request, response))
+                .isInstanceOf(BadRequestException.class);
+        verify(users, never()).setPassword(any(), any());
     }
 }

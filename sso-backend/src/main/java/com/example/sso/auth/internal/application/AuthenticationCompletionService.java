@@ -10,6 +10,8 @@ import com.example.sso.session.StepUpInterceptor;
 import com.example.sso.shared.web.ClientIp;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.LoginResolutionScope;
+import com.example.sso.user.UserAccount;
+import com.example.sso.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.Instant;
@@ -39,6 +41,7 @@ import org.springframework.stereotype.Service;
 public class AuthenticationCompletionService {
 
     private final AuthStateService authState;
+    private final UserService users;
     private final UserDetailsService userDetailsService;
     private final FactorAuthorizationService factorAuth;
     private final SessionLifecycle sessions;
@@ -62,12 +65,21 @@ public class AuthenticationCompletionService {
                 .map(GrantedAuthority::getAuthority).collect(Collectors.toSet()).contains(Factors.MFA_COMPLETE);
 
         if (!alreadyComplete && authState.isPolicySatisfied(authentication, preAuthOrg.orgId(request).orElse(null))) {
+            UUID loginOrg = preAuthOrg.orgId(request).orElse(null);
+            // First-login password reset: an admin-created user given a TEMPORARY password must set their own
+            // before the session finalizes. Refuse MFA_COMPLETE and route to the reset step; the change-password
+            // endpoint clears the flag and re-runs this completion. Checked AFTER the policy is satisfied, so
+            // the reset is the last gate — all configured factors are already met.
+            if (users.findByUsernameInOrg(authentication.getName(), loginOrg)
+                    .map(UserAccount::isPasswordResetRequired).orElse(false)) {
+                return AuthSessionView.mustResetPassword(authentication.getName(),
+                        preAuthOrg.orgSlug(request).orElse(null));
+            }
             // Resolve the FINAL session authorities bound to the LOGIN org, so the user's global roles AND
             // their roles in THIS org (RLS-scoped) both resolve — and no other org's roles leak in. This is
             // the single chokepoint every login path (password, passkey, factor) funnels through.
             // Re-resolve the user WITHIN the login's organization, so a username shared across organizations
             // maps to THIS tenant's account (falling back to a global super-admin) when authorities are loaded.
-            UUID loginOrg = preAuthOrg.orgId(request).orElse(null);
             UserDetails principal = preAuthOrg.orgId(request)
                     .map(orgId -> orgContext.callInOrg(orgId, () -> loginScope.within(loginOrg,
                             () -> userDetailsService.loadUserByUsername(authentication.getName()))))

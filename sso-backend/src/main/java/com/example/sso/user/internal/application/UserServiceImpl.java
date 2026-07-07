@@ -309,6 +309,12 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
+    public void requirePasswordReset(UUID id) {
+        require(id).requirePasswordReset();
+    }
+
+    @Override
+    @Transactional
     public void disable(UUID id) {
         AppUser user = require(id);
         user.disable();

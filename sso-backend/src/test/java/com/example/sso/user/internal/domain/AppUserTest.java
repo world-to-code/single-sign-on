@@ -46,6 +46,23 @@ class AppUserTest {
     }
 
     @Test
+    void newUserDoesNotRequireAPasswordReset() {
+        assertThat(newUser().isPasswordResetRequired()).isFalse();
+    }
+
+    @Test
+    void requirePasswordResetSetsTheFlagAndChangePasswordClearsIt() {
+        AppUser user = newUser();
+
+        user.requirePasswordReset();
+        assertThat(user.isPasswordResetRequired()).isTrue();
+
+        user.changePassword("new-hash"); // the user setting their own password satisfies the requirement
+        assertThat(user.isPasswordResetRequired()).isFalse();
+        assertThat(user.getPasswordHash()).isEqualTo("new-hash");
+    }
+
+    @Test
     void verifyEmailSetsTheFlag() {
         AppUser user = newUser();
 

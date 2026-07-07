@@ -61,6 +61,13 @@ public class AuthenticationController {
         return authentication.complete(request, response);
     }
 
+    /** First-login forced reset: the authenticated user replaces their temporary password, finalizing login. */
+    @PostMapping("/change-password")
+    public AuthSessionView changePassword(@Valid @RequestBody ChangePasswordRequest request,
+                                          HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        return authentication.changePassword(request.password(), httpRequest, httpResponse);
+    }
+
     @GetMapping("/resume")
     public ResumeView resume(HttpServletRequest request, HttpServletResponse response) {
         return resumeService.resume(request, response);

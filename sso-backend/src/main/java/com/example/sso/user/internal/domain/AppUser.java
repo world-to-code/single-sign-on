@@ -70,6 +70,12 @@ public class AppUser extends AuditedEntity implements UserAccount {
     @Column(name = "email_verified", nullable = false)
     private boolean emailVerified = false;
 
+    // Admin-created users get a TEMPORARY password and must set their own on first login: while true, login
+    // completion refuses to finalize (no MFA_COMPLETE) and routes the user to a reset step. Cleared by
+    // changePassword — the user setting their own password is exactly what satisfies the requirement.
+    @Column(name = "password_reset_required", nullable = false)
+    private boolean passwordResetRequired = false;
+
     /** SCIM externalId — set when provisioned by an external IdP/HR system. */
     @Column(name = "external_id", length = 255)
     private String externalId;
@@ -126,9 +132,18 @@ public class AppUser extends AuditedEntity implements UserAccount {
         this.enabled = true;
     }
 
-    /** Sets the (already-encoded) password hash — self-service change, admin reset, or onboarding activation. */
+    /**
+     * Sets the (already-encoded) password hash — self-service change, admin reset, or onboarding activation.
+     * Clears any first-login reset requirement: the user setting a password is what the requirement demands.
+     */
     public void changePassword(String passwordHash) {
         this.passwordHash = passwordHash;
+        this.passwordResetRequired = false;
+    }
+
+    /** Marks that this user must set their own password on first login (admin-issued temporary password). */
+    public void requirePasswordReset() {
+        this.passwordResetRequired = true;
     }
 
     public void disable() {

@@ -235,6 +235,29 @@ public class AuthenticationService {
     }
 
     /**
+     * First-login password reset: the authenticated (but not-yet-finalized) user replaces the temporary
+     * password an admin gave them. Only valid while the session is in the {@code MUST_RESET_PASSWORD} state —
+     * i.e. the account still has the reset requirement — so this is not a general "change my password"
+     * backdoor (which would require the old password / step-up). Setting the password clears the flag, and
+     * re-running completion now finalizes the session.
+     */
+    public AuthSessionView changePassword(String newPassword, HttpServletRequest request,
+                                          HttpServletResponse response) {
+        Authentication authentication = currentUser.authentication();
+        if (!identified()) {
+            throw new UnauthorizedException();
+        }
+        UUID orgId = preAuthOrg.orgId(request).orElse(null);
+        UserAccount user = users.findByUsernameInOrg(authentication.getName(), orgId)
+                .orElseThrow(UnauthorizedException::new);
+        if (!user.isPasswordResetRequired()) {
+            throw new BadRequestException("No password reset is required for this session.");
+        }
+        users.setPassword(user.getId(), newPassword); // clears the reset-required flag
+        return completionService.completeIfSatisfied(request, response); // now finalizes → DONE
+    }
+
+    /**
      * Builds the rejection for a failed {@link #complete}. For a passwordless passkey session the
      * {@code /login/webauthn} filter has ALREADY persisted a {@link WebAuthnAuthentication} in the session,
      * so tear that half-authenticated session down (invalidate + clear context) — otherwise it would linger

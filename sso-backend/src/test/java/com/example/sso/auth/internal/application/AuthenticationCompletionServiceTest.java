@@ -6,6 +6,8 @@ import com.example.sso.authpolicy.Factors;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.session.SessionLifecycle;
 import com.example.sso.user.LoginResolutionScope;
+import com.example.sso.user.UserAccount;
+import com.example.sso.user.UserService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,6 +29,7 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import com.example.sso.tenancy.OrgContext;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -35,6 +38,7 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -49,6 +53,7 @@ import static org.mockito.Mockito.when;
 class AuthenticationCompletionServiceTest {
 
     @Mock private AuthStateService authState;
+    @Mock private UserService users;
     @Mock private UserDetailsService userDetailsService;
     @Mock private FactorAuthorizationService factorAuth;
     @Mock private SessionLifecycle sessions;
@@ -111,6 +116,21 @@ class AuthenticationCompletionServiceTest {
         verify(factorAuth).establish(eq(request), eq(response), any());
         verify(sessions).registerAndEnforceLimit(request, "alice");
         verify(audit).record(any(AuditRecord.class));
+    }
+
+    @Test
+    void aUserRequiringAPasswordResetIsRoutedToTheResetStepNotPromoted() {
+        signIn(Factors.PASSWORD, Factors.TOTP);
+        when(authState.isPolicySatisfied(any(), any())).thenReturn(true);
+        UserAccount user = mock(UserAccount.class);
+        when(user.isPasswordResetRequired()).thenReturn(true); // admin-issued temporary password
+        when(users.findByUsernameInOrg(eq("alice"), any())).thenReturn(Optional.of(user));
+
+        AuthSessionView view = service.completeIfSatisfied(request, response);
+
+        assertThat(view.next()).isEqualTo(AuthSessionView.NEXT_MUST_RESET_PASSWORD);
+        verify(factorAuth, never()).establish(any(), any(), any()); // no MFA_COMPLETE until the reset
+        verify(sessions, never()).registerAndEnforceLimit(any(), any());
     }
 
     @Test

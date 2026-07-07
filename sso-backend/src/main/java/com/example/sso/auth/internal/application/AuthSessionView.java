@@ -19,6 +19,8 @@ public record AuthSessionView(boolean authenticated, String username, boolean to
     public static final String NEXT_IDENTIFY = "IDENTIFY";
     /** {@code next}: the SPA must complete the current policy step (one of {@code pendingFactors}). */
     public static final String NEXT_FACTOR = "FACTOR";
+    /** {@code next}: the user authenticated with a temporary password and must set their own before finishing. */
+    public static final String NEXT_MUST_RESET_PASSWORD = "MUST_RESET_PASSWORD";
     /** {@code next}: the authentication policy is fully satisfied. */
     public static final String NEXT_DONE = "DONE";
 
@@ -33,6 +35,15 @@ public record AuthSessionView(boolean authenticated, String username, boolean to
                                                   boolean passwordlessLoginAllowed) {
         return new AuthSessionView(false, null, false, false, List.of(), List.of(), List.of(),
                 NEXT_IDENTIFY, List.of(), mfaEnrollmentAllowed, org, passwordlessLoginAllowed);
+    }
+
+    /**
+     * The user authenticated (all factors satisfied) but was given a temporary password and must set their
+     * own before the session finalizes. Not yet authenticated — no MFA_COMPLETE is granted until the reset.
+     */
+    public static AuthSessionView mustResetPassword(String username, String org) {
+        return new AuthSessionView(false, username, false, false, List.of(), List.of(), List.of(),
+                NEXT_MUST_RESET_PASSWORD, List.of(), false, org, false);
     }
 
     /** The policy is fully satisfied — the session is complete. */

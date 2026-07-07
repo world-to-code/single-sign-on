@@ -101,7 +101,13 @@ public class UserAdminService {
     @Transactional
     public AdminUserView createUser(NewUser newUser) {
         try {
-            AdminUserView created = AdminUserView.of(userService.createUser(newUser, actingOrg()));
+            UserAccount user = userService.createUser(newUser, actingOrg());
+            // An admin-console user is created with a TEMPORARY password the admin chose; require the user to
+            // set their own on first login (login completion refuses to finalize until they do).
+            if (newUser.rawPassword() != null) {
+                userService.requirePasswordReset(user.getId());
+            }
+            AdminUserView created = AdminUserView.of(user);
             auditLogger.log(AuditType.USER_CREATED, AuditSubjectType.USER, created.id(),
                     "username=" + created.username() + " roles=" + newUser.roleNames());
             return created;

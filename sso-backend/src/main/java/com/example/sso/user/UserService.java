@@ -103,6 +103,9 @@ public interface UserService {
     /** Sets the user's password (encodes the raw value). Used by admin reset and onboarding activation. */
     void setPassword(UUID id, String rawPassword);
 
+    /** Marks that the user must set their own password on first login (admin-issued temporary password). */
+    void requirePasswordReset(UUID id);
+
     /** Replaces the user's directly-granted permissions with the given permission names. */
     UserAccount setDirectPermissions(UUID id, Set<String> permissionNames);
 

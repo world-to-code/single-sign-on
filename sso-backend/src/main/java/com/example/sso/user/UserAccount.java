@@ -28,6 +28,9 @@ public interface UserAccount {
 
     boolean isEmailVerified();
 
+    /** True when this user was given a temporary password and must set their own on first login. */
+    boolean isPasswordResetRequired();
+
     boolean isAccountNonLocked();
 
     /** True while a temporary brute-force lockout is in effect. */

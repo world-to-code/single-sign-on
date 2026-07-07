@@ -119,6 +119,29 @@ class UserAdminServiceTest {
     }
 
     @Test
+    void createUserWithATemporaryPasswordRequiresAResetOnFirstLogin() {
+        NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "temp-pass", Set.of(Roles.USER));
+        UUID newId = UUID.randomUUID();
+        UserAccount created = user(newId);
+        when(userService.createUser(eq(newUser), any())).thenReturn(created);
+
+        service.createUser(newUser);
+
+        verify(userService).requirePasswordReset(newId);
+    }
+
+    @Test
+    void createUserWithoutAPasswordDoesNotRequireAReset() {
+        NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", null, Set.of(Roles.USER));
+        UserAccount created = user(UUID.randomUUID());
+        when(userService.createUser(eq(newUser), any())).thenReturn(created);
+
+        service.createUser(newUser);
+
+        verify(userService, never()).requirePasswordReset(any());
+    }
+
+    @Test
     void deleteUserDelegatesAndAuditsWhenNotTheLastAdmin() {
         UUID targetId = UUID.randomUUID();
 
