@@ -20,6 +20,7 @@ import com.example.sso.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -236,22 +237,27 @@ public class AuthenticationService {
 
     /**
      * First-login password reset: the authenticated (but not-yet-finalized) user replaces the temporary
-     * password an admin gave them. Only valid while the session is in the {@code MUST_RESET_PASSWORD} state —
-     * i.e. the account still has the reset requirement — so this is not a general "change my password"
-     * backdoor (which would require the old password / step-up). Setting the password clears the flag, and
-     * re-running completion now finalizes the session.
+     * password an admin gave them. Only valid from the {@code MUST_RESET_PASSWORD} state — which is reached
+     * ONLY once every policy factor (including the temporary PASSWORD) has been satisfied. This is NOT a
+     * general "change my password" backdoor, nor may it be entered from a credential-less step: gating on
+     * {@code identified()} + the flag would be exploitable, because the identifier-first IDENTIFY step
+     * establishes an authenticated principal with NO credential — so an attacker could set a not-yet-activated
+     * user's password without ever presenting the temporary one. Setting the password clears the flag, and
+     * re-running completion finalizes the session.
      */
     public AuthSessionView changePassword(String newPassword, HttpServletRequest request,
                                           HttpServletResponse response) {
         Authentication authentication = currentUser.authentication();
-        if (!identified()) {
+        UUID orgId = preAuthOrg.orgId(request).orElse(null);
+        if (!AuthSessionView.NEXT_MUST_RESET_PASSWORD.equals(
+                authState.describe(authentication, null, orgId).next())) {
             throw new UnauthorizedException();
         }
-        UUID orgId = preAuthOrg.orgId(request).orElse(null);
         UserAccount user = users.findByUsernameInOrg(authentication.getName(), orgId)
                 .orElseThrow(UnauthorizedException::new);
-        if (!user.isPasswordResetRequired()) {
-            throw new BadRequestException("No password reset is required for this session.");
+        // Zero-trust: re-verify the account is still live (enabled, not locked) before writing the password.
+        if (!user.isEnabled() || user.isTemporarilyLocked(Instant.now())) {
+            throw new UnauthorizedException();
         }
         users.setPassword(user.getId(), newPassword); // clears the reset-required flag
         return completionService.completeIfSatisfied(request, response); // now finalizes → DONE

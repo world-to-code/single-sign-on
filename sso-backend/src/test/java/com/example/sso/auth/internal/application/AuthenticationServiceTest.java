@@ -8,7 +8,6 @@ import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationStatus;
 import com.example.sso.organization.OrganizationView;
 import com.example.sso.saml.SamlFrontChannelLogout;
-import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.UnauthorizedException;
 import com.example.sso.user.LoginResolutionScope;
 import com.example.sso.user.UserAccount;
@@ -107,22 +106,20 @@ class AuthenticationServiceTest {
         verify(completionService).completeIfSatisfied(request, response);
     }
 
-    /** An authenticated session for {@code alice} that has (or has not) a pending first-login reset. */
-    private void resetPendingSession(UUID orgId, UUID userId, boolean resetRequired) {
-        when(currentUser.authentication())
-                .thenReturn(UsernamePasswordAuthenticationToken.authenticated("alice", null, List.of()));
-        UserAccount user = mock(UserAccount.class);
-        when(user.getId()).thenReturn(userId);
-        when(user.isPasswordResetRequired()).thenReturn(resetRequired);
-        when(preAuthOrg.orgId(request)).thenReturn(Optional.of(orgId));
-        when(users.findByUsernameInOrg("alice", orgId)).thenReturn(Optional.of(user));
-    }
-
     @Test
-    void changePasswordSetsTheNewPasswordAndFinalizesWhenAResetIsRequired() {
+    void changePasswordSetsTheNewPasswordAndFinalizesFromTheResetState() {
         UUID orgId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
-        resetPendingSession(orgId, userId, true);
+        when(currentUser.authentication())
+                .thenReturn(UsernamePasswordAuthenticationToken.authenticated("alice", null, List.of()));
+        when(preAuthOrg.orgId(request)).thenReturn(Optional.of(orgId));
+        // The session is genuinely in MUST_RESET_PASSWORD (all factors, incl. the temp password, satisfied).
+        when(authState.describe(any(), any(), any())).thenReturn(AuthSessionView.mustResetPassword("alice", "acme"));
+        UserAccount user = mock(UserAccount.class);
+        when(user.getId()).thenReturn(userId);
+        when(user.isEnabled()).thenReturn(true);
+        when(user.isTemporarilyLocked(any())).thenReturn(false);
+        when(users.findByUsernameInOrg("alice", orgId)).thenReturn(Optional.of(user));
 
         service.changePassword("new-strong-pass", request, response);
 
@@ -131,11 +128,19 @@ class AuthenticationServiceTest {
     }
 
     @Test
-    void changePasswordIsRejectedWhenNoResetIsRequired() {
-        resetPendingSession(UUID.randomUUID(), UUID.randomUUID(), false);
+    void changePasswordIsRejectedFromTheCredentialLessIdentifyState() {
+        // Pre-auth account-takeover regression: the identifier-first IDENTIFY step establishes an authenticated
+        // principal with NO credential. change-password must NOT be reachable from it — only from the real
+        // MUST_RESET_PASSWORD state (which requires the temporary password to have been presented).
+        UUID orgId = UUID.randomUUID();
+        when(currentUser.authentication())
+                .thenReturn(UsernamePasswordAuthenticationToken.authenticated("victim", null, List.of()));
+        when(preAuthOrg.orgId(request)).thenReturn(Optional.of(orgId));
+        when(authState.describe(any(), any(), any()))
+                .thenReturn(AuthSessionView.identifyPending("acme", true, false)); // next = IDENTIFY, no credential
 
-        assertThatThrownBy(() -> service.changePassword("new-strong-pass", request, response))
-                .isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.changePassword("attacker-pass", request, response))
+                .isInstanceOf(UnauthorizedException.class);
         verify(users, never()).setPassword(any(), any());
     }
 }
