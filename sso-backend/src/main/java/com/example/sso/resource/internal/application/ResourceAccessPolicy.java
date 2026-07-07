@@ -137,6 +137,14 @@ public class ResourceAccessPolicy {
         if (authentication == null || !authentication.isAuthenticated()) {
             throw new UnauthorizedException();
         }
-        return users.findByUsername(authentication.getName()).map(UserAccount::getId);
+        // Resolve the ACTING principal by their own identity, not the org they have drilled into: the platform
+        // super-admin is a GLOBAL account (org_id NULL, carrying ROLE_ADMIN), resolved globally so a same-named
+        // user planted in the drilled org can't be mistaken for the actor. A tenant admin is in their own org.
+        boolean platformAdmin = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority).anyMatch(Roles.ADMIN::equals);
+        return (platformAdmin
+                ? users.findByUsernameInOrg(authentication.getName(), null)
+                : users.findByUsername(authentication.getName()))
+                .map(UserAccount::getId);
     }
 }

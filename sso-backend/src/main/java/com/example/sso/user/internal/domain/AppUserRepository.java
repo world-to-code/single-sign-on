@@ -34,8 +34,6 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
             + "order by u.username asc")
     List<IdName> findGroupMembers(@Param("gid") UUID gid, Pageable page);
 
-    Optional<AppUser> findByUsername(String username);
-
     Optional<AppUser> findByUsernameAndOrgId(String username, UUID orgId);
 
     Optional<AppUser> findByUsernameAndOrgIdIsNull(String username);
@@ -82,11 +80,7 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
     /** A scoped page: users whose id is in {@code ids} (a delegate's subtree), ordered by username. */
     Page<AppUser> findByIdInOrderByUsernameAsc(Collection<UUID> ids, Pageable pageable);
 
-    Optional<AppUser> findByEmail(String email);
-
     boolean existsByUsername(String username);
-
-    boolean existsByEmail(String email);
 
     boolean existsByUsernameAndOrgId(String username, UUID orgId);
 

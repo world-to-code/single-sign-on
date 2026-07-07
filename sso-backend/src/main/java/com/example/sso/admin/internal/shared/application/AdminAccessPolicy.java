@@ -365,8 +365,15 @@ public class AdminAccessPolicy {
         if (authentication == null || !authentication.isAuthenticated()) {
             return Optional.empty();
         }
-
-        return userService.findByUsername(authentication.getName())
+        // Resolve the ACTING principal by their own identity, not the organization they have drilled into: the
+        // platform super-admin is a GLOBAL account (org_id NULL, carrying ROLE_ADMIN), so resolve them globally
+        // — otherwise a same-named user planted in the drilled org (allowed by per-org uniqueness) would be
+        // mistaken for the actor. A tenant admin is only ever in their own (bound) org.
+        boolean platformAdmin = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority).anyMatch(Roles.ADMIN::equals);
+        return (platformAdmin
+                ? userService.findByUsernameInOrg(authentication.getName(), null)
+                : userService.findByUsername(authentication.getName()))
                 .map(UserAccount::getId);
     }
 }

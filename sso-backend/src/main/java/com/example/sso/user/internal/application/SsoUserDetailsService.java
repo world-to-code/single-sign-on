@@ -77,9 +77,12 @@ public class SsoUserDetailsService implements UserDetailsService {
      * another tenant. With no scope bound (a non-login caller), falls back to the plain global lookup.
      */
     private Optional<AppUser> resolve(String username) {
+        // With no scope bound (a non-login caller — a login always binds one), resolve only a GLOBAL account:
+        // the plain findByUsername now queries a per-org, non-unique column, so a bare lookup could match
+        // several rows. Fail closed (empty → UsernameNotFoundException) for an org-scoped user rather than 500.
         return loginScope.current()
                 .map(scope -> users.findByUsernameInOrg(username, scope.orgId()))
-                .orElseGet(() -> users.findByUsername(username));
+                .orElseGet(() -> users.findByUsernameInOrg(username, null));
     }
 
     /** Roles delegated to the user via any (RLS-visible) group they belong to, with permission names hydrated. */

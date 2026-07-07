@@ -66,12 +66,15 @@ class SsoUserDetailsServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void unscopedResolutionUsesTheGlobalLookup() {
-        UUID orgId = org();
-        String username = createUserIn(orgId);
+    void unscopedResolutionResolvesOnlyGlobalUsers() {
+        // No scope bound (a non-login caller): only a GLOBAL account resolves (the seeded 'admin'). An
+        // org-scoped user is invisible — fail closed rather than risk a non-unique match on the now per-org
+        // username column.
+        assertThat(userDetailsService.loadUserByUsername("admin").getUsername()).isEqualTo("admin");
 
-        // No scope bound (a non-login caller) → the legacy global lookup, so behavior is preserved.
-        assertThat(userDetailsService.loadUserByUsername(username).getUsername()).isEqualTo(username);
+        String orgUser = createUserIn(org());
+        assertThatThrownBy(() -> userDetailsService.loadUserByUsername(orgUser))
+                .isInstanceOf(UsernameNotFoundException.class);
     }
 
     @Test

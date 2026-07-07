@@ -28,6 +28,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -70,7 +71,10 @@ class AdminAccessPolicyTest {
 
         UserAccount actor = mock(UserAccount.class);
         when(actor.getId()).thenReturn(ACTOR_ID);
-        when(userService.findByUsername(ACTOR_NAME)).thenReturn(Optional.of(actor));
+        // The actor resolves globally when they hold ROLE_ADMIN (the default super-admin sign-in), else within
+        // their own org — stub both paths leniently so each test's sign-in picks the right one.
+        lenient().when(userService.findByUsername(ACTOR_NAME)).thenReturn(Optional.of(actor));
+        lenient().when(userService.findByUsernameInOrg(ACTOR_NAME, null)).thenReturn(Optional.of(actor));
         signIn();
     }
 
@@ -105,8 +109,22 @@ class AdminAccessPolicyTest {
 
     @Test
     void unresolvedActorFailsClosedOnUserAccess() {
-        when(userService.findByUsername(ACTOR_NAME)).thenReturn(Optional.empty());
+        when(userService.findByUsernameInOrg(ACTOR_NAME, null)).thenReturn(Optional.empty());
         assertThat(policy.canAccessUser(OTHER_ID)).isFalse();
+    }
+
+    @Test
+    void aSuperAdminActorResolvesGloballyNotByADrilledOrgUsernameCollision() {
+        // Per-org uniqueness lets an attacker plant the super-admin's username in the org they drilled into.
+        // The acting super-admin (ROLE_ADMIN) MUST resolve to their GLOBAL account, never the org-scoped
+        // impostor — otherwise the guards would judge the wrong identity (a confused deputy).
+        UserAccount impostor = mock(UserAccount.class);
+        lenient().when(impostor.getId()).thenReturn(UUID.randomUUID());
+        lenient().when(userService.findByUsername(ACTOR_NAME)).thenReturn(Optional.of(impostor)); // drilled-org row
+        when(resourceAuth.isUnscoped(ACTOR_ID)).thenReturn(true); // the REAL (global) super-admin is unscoped
+
+        // Resolves ACTOR_ID (global super-admin) via findByUsernameInOrg(name, null), so the super bypass applies.
+        assertThat(policy.canAccessUser(OTHER_ID)).isTrue();
     }
 
     // --- group / app scope delegation ---
@@ -198,7 +216,7 @@ class AdminAccessPolicyTest {
 
     @Test
     void currentManagedUserIdsIsEmptyForUnresolvedActor() {
-        when(userService.findByUsername(ACTOR_NAME)).thenReturn(Optional.empty());
+        when(userService.findByUsernameInOrg(ACTOR_NAME, null)).thenReturn(Optional.empty());
         assertThat(policy.currentManagedUserIds()).isEmpty();
     }
 
@@ -415,7 +433,7 @@ class AdminAccessPolicyTest {
 
     @Test
     void auditScopeForAnUnresolvedActorIsEmptyAndNotUnscoped() {
-        when(userService.findByUsername(ACTOR_NAME)).thenReturn(Optional.empty());
+        when(userService.findByUsernameInOrg(ACTOR_NAME, null)).thenReturn(Optional.empty());
 
         AuditScope scope = policy.currentAuditScope();
 
