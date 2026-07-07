@@ -32,6 +32,15 @@ class PreAuthOrgSession {
         return attribute(request, ORG_SLUG);
     }
 
+    /** Removes any stashed org selection (a customer entry clears it, so the two never coexist). */
+    void clear(HttpServletRequest request) {
+        HttpSession session = request.getSession(false);
+        if (session != null) {
+            session.removeAttribute(ORG_ID);
+            session.removeAttribute(ORG_SLUG);
+        }
+    }
+
     private Optional<String> attribute(HttpServletRequest request, String key) {
         HttpSession session = request.getSession(false);
         return session == null ? Optional.empty() : Optional.ofNullable((String) session.getAttribute(key));

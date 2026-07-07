@@ -1,5 +1,7 @@
 package com.example.sso.auth;
 
+import com.example.sso.customer.CustomerService;
+import com.example.sso.customer.NewCustomer;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.support.AbstractIntegrationTest;
@@ -36,6 +38,8 @@ class TenantLoginIT extends AbstractIntegrationTest {
     MockMvc mvc;
     @Autowired
     OrganizationService organizations;
+    @Autowired
+    CustomerService customers;
     @Autowired
     UserService users;
 
@@ -118,6 +122,47 @@ class TenantLoginIT extends AbstractIntegrationTest {
         mvc.perform(post("/api/auth/organization").cookie(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content("{\"slug\":\"" + slug + "\"}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void customerFirstFlowResolvesCustomerThenGatesIdentifyOnCustomerAdmin() throws Exception {
+        // The customer-first entry: a company signs in to its workspace console BEFORE any org exists. Identify
+        // is scoped to the resolved customer and gates on customer-admin membership (not org membership).
+        String s = UUID.randomUUID().toString().substring(0, 8);
+        String slug = "octatco-" + s;
+        UUID customerId = customers.create(new NewCustomer(slug, "Octatco")).id();
+        UserAccount admin = newUser("cadmin-" + s);
+        UserAccount notAdmin = newUser("cnonadmin-" + s);
+        customers.addAdmin(customerId, admin.getId());
+        cleanups.add(() -> customers.delete(customerId));
+
+        // Resolving the customer advances to IDENTIFY and echoes the workspace slug.
+        Cookie session = sessionCookie(mvc.perform(post("/api/auth/customer").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"slug\":\"" + slug + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.next").value("IDENTIFY"))
+                .andExpect(jsonPath("$.org").value(slug))
+                .andReturn(), null);
+
+        // A customer admin proceeds past identify.
+        mvc.perform(post("/api/auth/identify").cookie(session).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"cadmin-" + s + "@example.com\"}"))
+                .andExpect(status().isOk());
+
+        // A user who is NOT a customer admin is rejected with the same 404 as an unknown account (no enumeration).
+        Cookie session2 = sessionCookie(mvc.perform(post("/api/auth/customer").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"slug\":\"" + slug + "\"}"))
+                .andReturn(), null);
+        mvc.perform(post("/api/auth/identify").cookie(session2).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"cnonadmin-" + s + "@example.com\"}"))
+                .andExpect(status().isNotFound());
+
+        // An unknown workspace slug is rejected uniformly.
+        mvc.perform(post("/api/auth/customer").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"slug\":\"no-such-workspace-" + s + "\"}"))
+                .andExpect(status().isNotFound());
     }
 
     private UserAccount newUser(String username) {

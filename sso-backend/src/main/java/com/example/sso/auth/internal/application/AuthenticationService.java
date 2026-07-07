@@ -4,6 +4,8 @@ import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
 import com.example.sso.authpolicy.Factors;
+import com.example.sso.customer.CustomerRef;
+import com.example.sso.customer.CustomerStatus;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.organization.OrganizationRef;
 import com.example.sso.customer.CustomerService;
@@ -56,9 +58,16 @@ public class AuthenticationService {
     private final OrganizationService organizations;
     private final CustomerService customers;
     private final PreAuthOrgSession preAuthOrg;
+    private final PreAuthCustomerSession preAuthCustomer;
     private final AuditService audit;
 
     public AuthSessionView session(HttpServletRequest request) {
+        // Show whichever tenant-first target was selected — a customer (고객사) console or an org. A customer
+        // login has no org, so its policy is the default (loginOrgId = null).
+        Optional<String> customerSlug = preAuthCustomer.customerSlug(request);
+        if (customerSlug.isPresent()) {
+            return authState.describe(currentUser.authentication(), customerSlug.get(), null);
+        }
         return authState.describe(currentUser.authentication(),
                 preAuthOrg.orgSlug(request).orElse(null), preAuthOrg.orgId(request).orElse(null));
     }
@@ -88,9 +97,29 @@ public class AuthenticationService {
                 .filter(o -> o.getStatus() == OrganizationStatus.ACTIVE)
                 .filter(o -> customers.isActive(o.getCustomerId()))
                 .orElseThrow(() -> new NotFoundException("No such organization."));
+        preAuthCustomer.clear(request); // an org selection and a customer selection are mutually exclusive
         preAuthOrg.stash(request, org.getId(), org.getSlug());
         audit.record(AuditType.AUTH_ORGANIZATION, org.getSlug(), true);
         return authState.describe(currentUser.authentication(), org.getSlug(), org.getId());
+    }
+
+    /**
+     * Customer-first entry: resolve the customer (고객사) by slug and stash it, so the subsequent identify step
+     * gates on customer-admin membership and login completion mints a {@code CUSTOMER_} console session. This is
+     * how a company signs in to its workspace BEFORE any org exists (a customer-admin manages orgs from the
+     * console). An unknown or suspended customer is rejected uniformly (no enumeration of which workspaces exist).
+     */
+    public AuthSessionView customer(String slug, HttpServletRequest request, HttpServletResponse response) {
+        if (identified()) {
+            throw new BadRequestException("Sign-in is already in progress; restart to change workspace.");
+        }
+        CustomerRef customer = customers.findBySlug(slug)
+                .filter(c -> c.getStatus() == CustomerStatus.ACTIVE)
+                .orElseThrow(() -> new NotFoundException("No such workspace."));
+        preAuthOrg.clear(request); // a customer selection and an org selection are mutually exclusive
+        preAuthCustomer.stash(request, customer.getId(), customer.getSlug());
+        audit.record(AuditType.AUTH_ORGANIZATION, customer.getSlug(), true);
+        return authState.describe(currentUser.authentication(), customer.getSlug(), null);
     }
 
     /**
@@ -100,13 +129,15 @@ public class AuthenticationService {
      */
     public AuthSessionView identify(String email, HttpServletRequest httpRequest,
                                     HttpServletResponse httpResponse) {
-        UUID orgId = preAuthOrg.orgId(httpRequest)
-                .orElseThrow(() -> new BadRequestException("Select an organization first."));
+        if (!targetSelected(httpRequest)) {
+            throw new BadRequestException("Select an organization first.");
+        }
         UserAccount user = users.findByLogin(email).filter(UserAccount::isEnabled).orElse(null);
-        // Gate on membership in the resolved org. Reject a non-member the SAME way as an unknown account so
-        // an attacker can't discover which emails exist (or belong to another tenant) via the login form.
-        if (user == null || !organizations.isMember(orgId, user.getId())) {
-            audit.record(new AuditRecord(AuditType.AUTH_IDENTIFY, email, false, "no active account in org", null));
+        // Gate on the selected target — org membership, or customer-admin membership for a console login. Reject
+        // a non-member the SAME way as an unknown account so an attacker can't discover which emails exist (or
+        // belong to another tenant) via the login form.
+        if (user == null || !authorizedForTarget(httpRequest, user.getId())) {
+            audit.record(new AuditRecord(AuditType.AUTH_IDENTIFY, email, false, "no active account for the target", null));
             throw new NotFoundException("No active account for that email. Contact your administrator.");
         }
 
@@ -120,15 +151,20 @@ public class AuthenticationService {
     /** Password sign-in; the password provider grants the password factor. Bad credentials → 401. */
     public AuthSessionView login(String username, String password, HttpServletRequest httpRequest,
                                  HttpServletResponse httpResponse) {
-        UUID orgId = requireResolvedOrg(httpRequest);
+        if (!targetSelected(httpRequest)) {
+            throw new BadRequestException("Select an organization first.");
+        }
+        UUID orgId = preAuthOrg.orgId(httpRequest).orElse(null); // audit tenant tag (null for a customer login)
         try {
             Authentication authentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(username, password));
-            // Tenant-first: the account must belong to the resolved org. Reject a non-member the same way
-            // as bad credentials, so login can neither bypass org selection nor cross into another tenant.
-            if (!isMemberOf(orgId, username)) {
+            // Tenant-first: the account must be authorized for the selected target (an org member, or a
+            // customer admin). Reject the unauthorized the same way as bad credentials, so login can neither
+            // bypass tenant selection nor cross into another tenant.
+            UUID userId = users.findByLogin(username).map(UserAccount::getId).orElse(null);
+            if (userId == null || !authorizedForTarget(httpRequest, userId)) {
                 loginAttempts.onFailure(username);
-                audit.record(new AuditRecord(AuditType.AUTH_FAILURE, username, false, "not a member of the org", null, orgId));
+                audit.record(new AuditRecord(AuditType.AUTH_FAILURE, username, false, "not authorized for the target", null, orgId));
                 throw new UnauthorizedException();
             }
             factorAuth.establish(httpRequest, httpResponse, authentication);
@@ -143,14 +179,21 @@ public class AuthenticationService {
         }
     }
 
-    /** The org resolved at the tenant-first entry step; sign-in is refused without one. */
-    private UUID requireResolvedOrg(HttpServletRequest request) {
-        return preAuthOrg.orgId(request)
-                .orElseThrow(() -> new BadRequestException("Select an organization first."));
+    /** Whether a tenant-first target — an organization or a customer (고객사) console — has been selected. */
+    private boolean targetSelected(HttpServletRequest request) {
+        return preAuthOrg.orgId(request).isPresent() || preAuthCustomer.customerId(request).isPresent();
     }
 
-    private boolean isMemberOf(UUID orgId, String username) {
-        return users.findByLogin(username).map(u -> organizations.isMember(orgId, u.getId())).orElse(false);
+    /** Whether the user is authorized for the selected target: a member of the resolved org, or an
+     *  administrator of the resolved customer (for a console login). */
+    private boolean authorizedForTarget(HttpServletRequest request, UUID userId) {
+        Optional<UUID> org = preAuthOrg.orgId(request);
+        if (org.isPresent()) {
+            return organizations.isMember(org.get(), userId);
+        }
+        return preAuthCustomer.customerId(request)
+                .map(customerId -> customers.isCustomerAdmin(userId, customerId))
+                .orElse(false);
     }
 
     /**
@@ -185,10 +228,11 @@ public class AuthenticationService {
         Authentication authentication = currentUser.authentication();
         if (authentication != null && authentication.isAuthenticated()) {
             // Tenant-first applies to passwordless passkey login too: the passkey authenticates the user, but
-            // the session must not finalize without a resolved org they belong to (else login bypasses org
-            // selection via /login/webauthn). Reject a non-member the same way as any failed sign-in.
-            UUID orgId = requireResolvedOrg(request);
-            if (!isMemberOf(orgId, authentication.getName())) {
+            // the session must not finalize without a resolved target (org or customer console) they belong to
+            // (else login bypasses tenant selection via /login/webauthn). Reject the unauthorized the same way
+            // as any failed sign-in.
+            UUID userId = users.findByLogin(authentication.getName()).map(UserAccount::getId).orElse(null);
+            if (!targetSelected(request) || userId == null || !authorizedForTarget(request, userId)) {
                 throw new UnauthorizedException();
             }
             boolean hasFido2 = authentication.getAuthorities().stream()

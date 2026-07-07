@@ -47,6 +47,9 @@ class AuthenticationCompletionServiceTest {
     @Mock private SessionLifecycle sessions;
     // Real (not mocked) so its Optional-returning reads work against the session-less MockHttpServletRequest.
     @Spy private PreAuthOrgSession preAuthOrg = new PreAuthOrgSession();
+    // Real (a spy) so its Optional-returning reads work against the session-less MockHttpServletRequest — a
+    // customer console login stashes nothing here in these org-login tests, so it yields empty (no CUSTOMER_).
+    @Spy private PreAuthCustomerSession preAuthCustomer = new PreAuthCustomerSession();
     @Mock private AuditService audit;
 
     @InjectMocks private AuthenticationCompletionService service;
