@@ -44,10 +44,6 @@ export const getAdminConsoleAccess = () =>
 /** Tenant-first: submit the organization slug; the response advances to IDENTIFY (or stays ORGANIZATION). */
 export const organization = (slug: string) =>
   apiPost<SessionView>("/api/auth/organization", { slug });
-/** Customer-first: submit the workspace (고객사) slug to sign in to its console — before any org exists.
- *  Advances to IDENTIFY (gated on customer-admin membership) or 404s if there is no such workspace. */
-export const customer = (slug: string) =>
-  apiPost<SessionView>("/api/auth/customer", { slug });
 /** Identifier-first: submit the email (scoped to the resolved org); the policy drives which factor comes first. */
 export const identify = (email: string) =>
   apiPost<SessionView>("/api/auth/identify", { email });

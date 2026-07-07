@@ -43,7 +43,6 @@ public class AuthenticationCompletionService {
     private final FactorAuthorizationService factorAuth;
     private final SessionLifecycle sessions;
     private final PreAuthOrgSession preAuthOrg;
-    private final PreAuthCustomerSession preAuthCustomer;
     private final LoginTargetCustomer targetCustomer;
     private final LoginResolutionScope loginScope;
     private final OrgContext orgContext;
@@ -90,16 +89,6 @@ public class AuthenticationCompletionService {
             // `org` claim/attribute and used to scope the request's tenant context.
             preAuthOrg.orgId(request)
                     .ifPresent(orgId -> authorities.add(new SimpleGrantedAuthority(Factors.ORG_PREFIX + orgId)));
-            // A customer-first (console) login has no org: bind the CUSTOMER_ marker instead, so the session
-            // enters the customer context. Its authorities are the user's GLOBAL roles only — loaded above with
-            // no org context (the fail-closed branch), so no org-scoped role leaks into a console session. Mint
-            // it ONLY when no org is stashed — mirroring authorizedForTarget's org-first precedence — so the
-            // target that was AUTHORIZED is provably the marker MINTED even if the two pre-auth stashes ever
-            // coexisted (defence in depth over the entries' mutual-exclusivity clearing).
-            if (preAuthOrg.orgId(request).isEmpty()) {
-                preAuthCustomer.customerId(request)
-                        .ifPresent(customerId -> authorities.add(new SimpleGrantedAuthority(Factors.CUSTOMER_PREFIX + customerId)));
-            }
             // Spring Authorization Server derives the OIDC `auth_time` from a FactorGrantedAuthority's
             // issuedAt (JwtGenerator asserts one is present, else the token endpoint 500s). Our custom
             // flow uses string factor markers, so add one explicitly — reusing an existing factor

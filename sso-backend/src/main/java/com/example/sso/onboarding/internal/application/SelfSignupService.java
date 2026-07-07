@@ -28,19 +28,15 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Public, anonymous self-service signup with EMAIL VERIFICATION FIRST. {@link #request} provisions NOTHING —
  * it records a pending {@link SignupRequest} and emails a one-time verification link, so an anonymous caller
- * can never squat a third party's email or customer slug. Only when the applicant redeems that link in
- * {@link #activate} (proving control of the email) is the tenant created: a NEW customer (고객사), its first
- * branch ({@code main}), and an ENABLED admin who is a {@code ROLE_CUSTOMER_ADMIN} of that customer (scoped to
- * their own new customer by its membership — never any other) and a member of the first branch. Distinct from
- * the admin-initiated {@link OnboardingServiceImpl} flow (which provisions up front and invites separately).
+ * can never squat a third party's email or organization slug. Only when the applicant redeems that link in
+ * {@link #activate} (proving control of the email) is the tenant created: a NEW organization (the company)
+ * and an ENABLED {@code ROLE_ORG_ADMIN} admin who is a member of it, so they sign in to their organization at
+ * {@code {slug}.base}. Distinct from the admin-initiated {@link OnboardingServiceImpl} flow (which provisions
+ * up front and invites separately).
  */
 @Service
 @RequiredArgsConstructor
 public class SelfSignupService {
-
-    /** The conventional slug of the first branch auto-created under a self-service customer. Two-label
-     *  addressing keeps it apart from every other customer's {@code main} ({@code main.{customer}.base}). */
-    private static final String FIRST_BRANCH_SLUG = "main";
 
     private final SignupRequestRepository signups;
     private final CustomerService customers;
@@ -92,11 +88,11 @@ public class SelfSignupService {
 
     /**
      * Redeems a verification link: NOW creates the customer (고객사) + its first branch ({@code main}) + an
-     * ENABLED admin (ROLE_CUSTOMER_ADMIN, member of the first branch) with the chosen password, then consumes
+     * ENABLED admin (ROLE_ORG_ADMIN, member of the organization) with the chosen password, then consumes
      * the token (single-use, race-safe). Invalid/expired/used → a non-revealing 400; a too-short password is
-     * rejected WITHOUT consuming so the applicant can retry. A subdomain taken since the request rolls the whole
-     * activation back (409) — the token is not burned. Returns the new branch's address ({@code main.{customer}})
-     * so the SPA can send the admin straight to their tenant login.
+     * rejected WITHOUT consuming so the applicant can retry. A slug taken since the request rolls the whole
+     * activation back (409) — the token is not burned. Returns the organization's address so the SPA can send
+     * the admin straight to their tenant login.
      */
     @Transactional
     public SignupView activate(String rawToken, String password) {
@@ -110,16 +106,15 @@ public class SelfSignupService {
         if (signups.consume(signup.getId(), Instant.now()) == 0) {
             throw new BadRequestException("invalid or expired verification link");
         }
+        // One organization IS the company (the tenant); its slug is the company slug the applicant chose.
         CustomerView customer = customers.create(new NewCustomer(signup.getSlug(), signup.getName()));
-        OrganizationView branch = organizations.create(new NewOrganization(FIRST_BRANCH_SLUG, signup.getName(),
+        OrganizationView org = organizations.create(new NewOrganization(signup.getSlug(), signup.getName(),
                 new CompanyProfile(signup.getCompanySize(), signup.getCompanyCountry(),
                         signup.getCompanyIndustry(), signup.getCompanyPhone()), customer.id()));
         UserAccount admin = users.createUser(new NewUser(signup.getAdminEmail(), signup.getAdminEmail(),
-                signup.getAdminName(), password, Set.of(Roles.USER, Roles.CUSTOMER_ADMIN)), customer.id());
-        // The applicant administers ONLY their brand-new customer (its membership scopes canManage to its
-        // branches) and is a member of the first branch so they can sign in to it via {main}.{customer}.base.
-        customers.addAdmin(customer.id(), admin.getId());
-        organizations.addMember(branch.id(), admin.getId());
-        return new SignupView(customer.slug(), branch.slug() + "." + customer.slug());
+                signup.getAdminName(), password, Set.of(Roles.USER, Roles.ORG_ADMIN)), customer.id());
+        // The applicant is the org admin and a member, so they sign in to their organization at {slug}.base.
+        organizations.addMember(org.id(), admin.getId());
+        return new SignupView(org.slug(), org.slug());
     }
 }

@@ -1,6 +1,5 @@
 package com.example.sso.onboarding.internal.application;
 
-import com.example.sso.customer.CustomerRef;
 import com.example.sso.customer.CustomerService;
 import com.example.sso.onboarding.internal.domain.SignupRequestRepository;
 import com.example.sso.organization.CompanyProfile;
@@ -37,8 +36,6 @@ import static org.mockito.Mockito.verify;
  */
 class SelfSignupServiceIT extends AbstractIntegrationTest {
 
-    private static final String FIRST_BRANCH_SLUG = "main";
-
     @Autowired
     SelfSignupService signup;
     @Autowired
@@ -58,7 +55,7 @@ class SelfSignupServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void requestProvisionsNothing_thenActivateCreatesACustomerBranchAndCustomerAdmin_singleUse() {
+    void requestProvisionsNothing_thenActivateCreatesAnOrganizationAndOrgAdmin_singleUse() {
         String slug = "signup-" + UUID.randomUUID().toString().substring(0, 8);
         String adminEmail = slug + "@example.com";
 
@@ -74,20 +71,16 @@ class SelfSignupServiceIT extends AbstractIntegrationTest {
         String raw = token.getValue();
         assertThat(signups.findByTokenHash(raw)).isEmpty(); // stored value is the hash, not the raw token
 
-        // activate() proves email ownership and NOW creates the customer + its first branch + an ENABLED admin.
+        // activate() proves email ownership and NOW creates the organization (the company) + an ENABLED admin.
         signup.activate(raw, "chosen-passphrase-1");
 
-        CustomerRef customer = customers.findBySlug(slug).orElseThrow();
-        // The first branch is "main", created UNDER the new customer — NOT globally (findBySlug is default-scoped).
-        assertThat(organizations.findBySlug(FIRST_BRANCH_SLUG)).isEmpty();
-        OrganizationRef branch = organizations.findBranch(customer.getId(), FIRST_BRANCH_SLUG).orElseThrow();
+        // The organization IS the company — created with the chosen company slug, resolvable globally.
+        OrganizationRef org = organizations.findBySlug(slug).orElseThrow();
         UserAccount admin = users.findByLogin(adminEmail).orElseThrow();
         assertThat(admin.isEnabled()).isTrue(); // self-signup is enabled immediately (differs from admin-invite)
-        assertThat(admin.getCustomerId()).isEqualTo(customer.getId()); // the admin is owned by the new customer
         assertThat(users.verifyPassword(admin.getUsername(), "chosen-passphrase-1")).isTrue();
-        // The admin administers their OWN new customer (delegated-admin scope) and is a member of the first branch.
-        assertThat(customers.isCustomerAdmin(admin.getId(), customer.getId())).isTrue();
-        assertThat(organizations.isMember(branch.getId(), admin.getId())).isTrue();
+        // The admin is a member of their new organization so they can sign in to it.
+        assertThat(organizations.isMember(org.getId(), admin.getId())).isTrue();
 
         // Single-use at the DB: the same token can't create a second workspace.
         assertThatThrownBy(() -> signup.activate(raw, "chosen-passphrase-1"))

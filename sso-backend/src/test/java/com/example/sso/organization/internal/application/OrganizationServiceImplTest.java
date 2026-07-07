@@ -188,12 +188,11 @@ class OrganizationServiceImplTest {
     }
 
     @Test
-    void findBySlugResolvesWithinTheDefaultCustomerNamespace() {
-        // The legacy single-label {org}.base host and tenant-first login resolve a bare slug within the
-        // DEFAULT customer's namespace, so findBySlug must query (defaultCustomerId, slug) — never globally.
-        UUID defaultCustomerId = stubDefaultCustomer();
+    void findBySlugResolvesTheOrganizationByItsGlobalSlug() {
+        // The organization IS the tenant: the {org}.base host and tenant-first login resolve a bare slug
+        // globally (normalized), so findBySlug queries by slug alone.
         Organization org = new Organization("acme", "Acme");
-        when(organizations.findByCustomerIdAndSlug(defaultCustomerId, "acme")).thenReturn(Optional.of(org));
+        when(organizations.findBySlug("acme")).thenReturn(Optional.of(org));
 
         assertThat(service.findBySlug("  ACME ")).containsSame(org);
     }

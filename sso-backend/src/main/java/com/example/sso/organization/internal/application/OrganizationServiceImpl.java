@@ -91,10 +91,9 @@ public class OrganizationServiceImpl implements OrganizationService {
     @Override
     @Transactional(readOnly = true)
     public Optional<OrganizationRef> findBySlug(String slug) {
-        // The single-label {org}.base host and tenant-first login resolve within the DEFAULT customer's
-        // namespace, keeping that legacy path unambiguous now that slugs are unique only per customer.
-        return organizations.findByCustomerIdAndSlug(customers.defaultCustomer().getId(), Slug.normalize(slug))
-                .map(o -> o);
+        // The organization IS the tenant, resolved by its globally-unique slug (the {org}.base host and
+        // tenant-first login both use this).
+        return organizations.findBySlug(Slug.normalize(slug)).map(o -> o);
     }
 
     @Override

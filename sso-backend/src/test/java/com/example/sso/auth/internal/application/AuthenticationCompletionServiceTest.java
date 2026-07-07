@@ -54,9 +54,6 @@ class AuthenticationCompletionServiceTest {
     @Mock private SessionLifecycle sessions;
     // Real (not mocked) so its Optional-returning reads work against the session-less MockHttpServletRequest.
     @Spy private PreAuthOrgSession preAuthOrg = new PreAuthOrgSession();
-    // Real (a spy) so its Optional-returning reads work against the session-less MockHttpServletRequest — a
-    // customer console login stashes nothing here in these org-login tests, so it yields empty (no CUSTOMER_).
-    @Spy private PreAuthCustomerSession preAuthCustomer = new PreAuthCustomerSession();
     @Mock private OrgContext orgContext;
     @Mock private AuditService audit;
     // Derives the login's customer from the pre-auth session; these org-login tests stash no target, so it
@@ -117,31 +114,6 @@ class AuthenticationCompletionServiceTest {
         verify(factorAuth).establish(eq(request), eq(response), any());
         verify(sessions).registerAndEnforceLimit(request, "alice");
         verify(audit).record(any(AuditRecord.class));
-    }
-
-    @Test
-    void whenBothAnOrgAndACustomerAreStashedOnlyTheOrgMarkerIsMinted() {
-        // Defence in depth (from the Phase-2 review): authorizedForTarget is org-first, so if a race ever left
-        // BOTH pre-auth stashes set, completion must mint ORG_ (the authorized target) and NOT CUSTOMER_ — so a
-        // user cannot ride an org login into a customer console they do not administer.
-        UUID orgId = UUID.randomUUID();
-        preAuthOrg.stash(request, orgId, "acme");
-        preAuthCustomer.stash(request, UUID.randomUUID(), "acme-workspace");
-        signIn(Factors.PASSWORD, Factors.TOTP);
-        when(orgContext.callInOrg(any(), any())).thenAnswer(inv -> ((Supplier<?>) inv.getArgument(1)).get());
-        when(authState.isPolicySatisfied(any(), any())).thenReturn(true);
-        when(userDetailsService.loadUserByUsername("alice"))
-                .thenReturn(new User("alice", "", List.of(new SimpleGrantedAuthority("ROLE_USER"))));
-        when(authState.describe(any(), any(), any())).thenReturn(AuthSessionView.organizationPending(true));
-
-        service.completeIfSatisfied(request, response);
-
-        ArgumentCaptor<Authentication> promoted = ArgumentCaptor.forClass(Authentication.class);
-        verify(factorAuth).establish(eq(request), eq(response), promoted.capture());
-        Set<String> authorities = promoted.getValue().getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority).collect(Collectors.toSet());
-        assertThat(authorities).contains(Factors.ORG_PREFIX + orgId);
-        assertThat(authorities).noneMatch(a -> a.startsWith(Factors.CUSTOMER_PREFIX));
     }
 
     @Test

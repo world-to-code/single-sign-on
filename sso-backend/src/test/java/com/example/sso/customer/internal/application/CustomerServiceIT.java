@@ -109,13 +109,13 @@ class CustomerServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void findBySlugResolvesOnlyWithinTheDefaultCustomerNamespace() {
-        // The legacy single-label {org}.base host + tenant-first login go through findBySlug, which must scope to
-        // the DEFAULT customer — a branch of another customer that happens to share a slug must NOT leak in.
+    void findBySlugResolvesAnOrganizationByItsGlobalSlug() {
+        // The organization IS the tenant: findBySlug (the {org}.base host + tenant-first login) resolves it by
+        // its globally-unique slug, regardless of which customer wrapper it currently hangs under.
         String slug = "iso-" + UUID.randomUUID().toString().substring(0, 8);
         UUID other = customers.create(new NewCustomer("other-" + slug, "Other")).id();
-        organizations.create(new NewOrganization(slug, "Only Under Other", other));
+        organizations.create(new NewOrganization(slug, "The Org", other));
 
-        assertThat(organizations.findBySlug(slug)).isEmpty(); // exists, but not under the default customer
+        assertThat(organizations.findBySlug(slug)).isPresent();
     }
 }

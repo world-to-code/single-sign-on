@@ -4,11 +4,8 @@ import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
 import com.example.sso.authpolicy.Factors;
-import com.example.sso.customer.CustomerRef;
-import com.example.sso.customer.CustomerStatus;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.organization.OrganizationRef;
-import com.example.sso.customer.CustomerService;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationStatus;
 import com.example.sso.saml.SamlFrontChannelLogout;
@@ -57,20 +54,12 @@ public class AuthenticationService {
     private final LoginAttemptService loginAttempts;
     private final SamlFrontChannelLogout samlFrontChannel;
     private final OrganizationService organizations;
-    private final CustomerService customers;
     private final PreAuthOrgSession preAuthOrg;
-    private final PreAuthCustomerSession preAuthCustomer;
     private final LoginTargetCustomer targetCustomer;
     private final LoginResolutionScope loginScope;
     private final AuditService audit;
 
     public AuthSessionView session(HttpServletRequest request) {
-        // Show whichever tenant-first target was selected — a customer (고객사) console or an org. A customer
-        // login has no org, so its policy is the default (loginOrgId = null).
-        Optional<String> customerSlug = preAuthCustomer.customerSlug(request);
-        if (customerSlug.isPresent()) {
-            return authState.describe(currentUser.authentication(), customerSlug.get(), null);
-        }
         return authState.describe(currentUser.authentication(),
                 preAuthOrg.orgSlug(request).orElse(null), preAuthOrg.orgId(request).orElse(null));
     }
@@ -94,35 +83,13 @@ public class AuthenticationService {
         if (identified()) {
             throw new BadRequestException("Sign-in is already in progress; restart to change organization.");
         }
-        // The org must be ACTIVE and so must its parent customer (고객사) — suspending a customer gates login
-        // to all of its branches. Rejected uniformly (no enumeration of which orgs/customers exist).
+        // The org (the tenant) must be ACTIVE. Rejected uniformly (no enumeration of which orgs exist).
         OrganizationRef org = organizations.findBySlug(slug)
                 .filter(o -> o.getStatus() == OrganizationStatus.ACTIVE)
-                .filter(o -> customers.isActive(o.getCustomerId()))
                 .orElseThrow(() -> new NotFoundException("No such organization."));
-        preAuthCustomer.clear(request); // an org selection and a customer selection are mutually exclusive
         preAuthOrg.stash(request, org.getId(), org.getSlug());
         audit.record(AuditType.AUTH_ORGANIZATION, org.getSlug(), true);
         return authState.describe(currentUser.authentication(), org.getSlug(), org.getId());
-    }
-
-    /**
-     * Customer-first entry: resolve the customer (고객사) by slug and stash it, so the subsequent identify step
-     * gates on customer-admin membership and login completion mints a {@code CUSTOMER_} console session. This is
-     * how a company signs in to its workspace BEFORE any org exists (a customer-admin manages orgs from the
-     * console). An unknown or suspended customer is rejected uniformly (no enumeration of which workspaces exist).
-     */
-    public AuthSessionView customer(String slug, HttpServletRequest request, HttpServletResponse response) {
-        if (identified()) {
-            throw new BadRequestException("Sign-in is already in progress; restart to change workspace.");
-        }
-        CustomerRef customer = customers.findBySlug(slug)
-                .filter(c -> c.getStatus() == CustomerStatus.ACTIVE)
-                .orElseThrow(() -> new NotFoundException("No such workspace."));
-        preAuthOrg.clear(request); // a customer selection and an org selection are mutually exclusive
-        preAuthCustomer.stash(request, customer.getId(), customer.getSlug());
-        audit.record(AuditType.AUTH_CUSTOMER, customer.getSlug(), true);
-        return authState.describe(currentUser.authentication(), customer.getSlug(), null);
     }
 
     /**
@@ -190,20 +157,15 @@ public class AuthenticationService {
         }
     }
 
-    /** Whether a tenant-first target — an organization or a customer (고객사) console — has been selected. */
+    /** Whether a tenant-first target — the organization (the tenant) — has been selected. */
     private boolean targetSelected(HttpServletRequest request) {
-        return preAuthOrg.orgId(request).isPresent() || preAuthCustomer.customerId(request).isPresent();
+        return preAuthOrg.orgId(request).isPresent();
     }
 
-    /** Whether the user is authorized for the selected target: a member of the resolved org, or an
-     *  administrator of the resolved customer (for a console login). */
+    /** Whether the user is authorized for the selected target: a member of the resolved organization. */
     private boolean authorizedForTarget(HttpServletRequest request, UUID userId) {
-        Optional<UUID> org = preAuthOrg.orgId(request);
-        if (org.isPresent()) {
-            return organizations.isMember(org.get(), userId);
-        }
-        return preAuthCustomer.customerId(request)
-                .map(customerId -> customers.isCustomerAdmin(userId, customerId))
+        return preAuthOrg.orgId(request)
+                .map(orgId -> organizations.isMember(orgId, userId))
                 .orElse(false);
     }
 

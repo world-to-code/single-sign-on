@@ -19,14 +19,9 @@ import org.springframework.stereotype.Component;
 class LoginTargetCustomer {
 
     private final PreAuthOrgSession preAuthOrg;
-    private final PreAuthCustomerSession preAuthCustomer;
     private final OrganizationService organizations;
 
     UUID of(HttpServletRequest request) {
-        Optional<UUID> org = preAuthOrg.orgId(request);
-        if (org.isPresent()) {
-            return organizations.customerIdOf(org.get()).orElse(null);
-        }
-        return preAuthCustomer.customerId(request).orElse(null);
+        return preAuthOrg.orgId(request).flatMap(organizations::customerIdOf).orElse(null);
     }
 }

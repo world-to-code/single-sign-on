@@ -34,12 +34,6 @@ public class AuthenticationController {
         return authentication.organization(request.slug(), httpRequest, httpResponse);
     }
 
-    @PostMapping("/customer")
-    public AuthSessionView customer(@Valid @RequestBody CustomerRequest request,
-                                    HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
-        return authentication.customer(request.slug(), httpRequest, httpResponse);
-    }
-
     @PostMapping("/identify")
     public AuthSessionView identify(@Valid @RequestBody IdentifyRequest request,
                                     HttpServletRequest httpRequest, HttpServletResponse httpResponse) {

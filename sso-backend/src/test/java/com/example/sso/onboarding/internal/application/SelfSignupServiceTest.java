@@ -130,15 +130,15 @@ class SelfSignupServiceTest {
     }
 
     @Test
-    void activateProvisionsACustomerFirstBranchAndCustomerAdminWhenRedeemed() {
+    void activateProvisionsAnOrganizationAndItsOrgAdminWhenRedeemed() {
         UUID customerId = UUID.randomUUID();
-        UUID branchId = UUID.randomUUID();
+        UUID orgId = UUID.randomUUID();
         UUID adminId = UUID.randomUUID();
         when(signups.findByTokenHash(any())).thenReturn(Optional.of(redeemable()));
         when(signups.consume(any(), any())).thenReturn(1);
         when(customers.create(any())).thenReturn(
                 new CustomerView(customerId, "acme", "Acme", CustomerStatus.ACTIVE, Instant.now()));
-        when(organizations.create(any())).thenReturn(new OrganizationView(branchId, "main", "Acme",
+        when(organizations.create(any())).thenReturn(new OrganizationView(orgId, "acme", "Acme",
                 OrganizationStatus.ACTIVE, Instant.now(), CompanyProfile.empty()));
         UserAccount admin = mock(UserAccount.class);
         when(admin.getId()).thenReturn(adminId);
@@ -147,16 +147,15 @@ class SelfSignupServiceTest {
         SignupView view = service.activate("tok", "password123");
 
         assertThat(view.slug()).isEqualTo("acme");
-        assertThat(view.workspaceHost()).isEqualTo("main.acme"); // {branch}.{customer}
-        // The first branch is created UNDER the new customer, with the conventional "main" slug.
-        verify(organizations).create(argThat(o -> "main".equals(o.slug()) && customerId.equals(o.customerId())));
-        // The admin is an ENABLED ROLE_CUSTOMER_ADMIN created WITH the chosen password (never disabled).
-        verify(users).createUser(argThat(u -> u.roleNames().contains(Roles.CUSTOMER_ADMIN)
+        assertThat(view.workspaceHost()).isEqualTo("acme"); // the organization IS the company (tenant)
+        // The organization is created with the company slug the applicant chose.
+        verify(organizations).create(argThat(o -> "acme".equals(o.slug())));
+        // The admin is an ENABLED ROLE_ORG_ADMIN created WITH the chosen password (never disabled).
+        verify(users).createUser(argThat(u -> u.roleNames().contains(Roles.ORG_ADMIN)
                 && "password123".equals(u.rawPassword())), any());
         verify(users, never()).disable(any());
-        // Scoped to their own new customer, and a member of the first branch so they can sign in to it.
-        verify(customers).addAdmin(customerId, adminId);
-        verify(organizations).addMember(branchId, adminId);
+        // A member of the organization so they can sign in to it.
+        verify(organizations).addMember(orgId, adminId);
     }
 
     @Test
