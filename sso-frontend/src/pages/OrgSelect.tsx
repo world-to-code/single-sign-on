@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { ArrowRight, Building2, Loader2 } from "lucide-react";
 import { ApiError } from "../api";
-import { organization } from "../auth";
+import { customer, organization } from "../auth";
 import type { SessionView } from "../auth";
 import { lastOrg, rememberOrg } from "../lib/loginMemory";
 import AuthLayout from "../components/layout/AuthLayout";
@@ -31,13 +31,24 @@ export default function OrgSelect({ onDone }: { onDone: (s: SessionView) => void
     setError(null);
     setBusy(true);
     try {
-      const session = await organization(trimmed);
+      // Customer-first: a workspace (고객사) slug signs in to its console. Fall back to an org slug (an org
+      // member signing in) when there is no such workspace, so both entry points share this one field.
+      let session: SessionView;
+      try {
+        session = await customer(trimmed);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) {
+          session = await organization(trimmed);
+        } else {
+          throw e;
+        }
+      }
       rememberOrg(trimmed);
       onDone(session);
     } catch (e) {
       if (e instanceof ApiError) {
         setError(e.status === 404
-          ? "We couldn't find that organization. Check the identifier with your administrator."
+          ? "We couldn't find that workspace or organization. Check the identifier with your administrator."
           : "Could not continue. Please try again.");
       }
       setManual(true); // let the user correct the slug
@@ -51,7 +62,7 @@ export default function OrgSelect({ onDone }: { onDone: (s: SessionView) => void
   }
 
   return (
-    <AuthLayout title="Sign in" description="Choose your organization to continue to its sign-in.">
+    <AuthLayout title="Sign in" description="Enter your workspace or organization to continue.">
       {error && (
         <Alert variant="destructive" className="mb-4">
           <AlertDescription>{error}</AlertDescription>
@@ -85,10 +96,10 @@ export default function OrgSelect({ onDone }: { onDone: (s: SessionView) => void
       ) : (
         <form onSubmit={submit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="org">Organization</Label>
+            <Label htmlFor="org">Workspace or organization</Label>
             <Input id="org" type="text" value={slug} autoFocus required
                    autoCapitalize="none" autoCorrect="off" spellCheck={false}
-                   placeholder="your-organization" onChange={(e) => setSlug(e.target.value)} />
+                   placeholder="your-workspace" onChange={(e) => setSlug(e.target.value)} />
           </div>
           <Button type="submit" className="w-full" disabled={busy}>
             {busy && <Loader2 className="animate-spin" />}
