@@ -127,6 +127,26 @@ class OnboardingServiceImplTest {
     }
 
     @Test
+    void requestReinviteIsRejectedForAnActivatedThenDisabledAdmin() {
+        // Disabled but WITH a password = the admin activated once and was later disabled — re-inviting would
+        // reset a real account's password, so it must be rejected at request time (not stuck mid-PROVISIONING).
+        UUID id = UUID.randomUUID();
+        UUID adminId = UUID.randomUUID();
+        Onboarding onboarding = mock(Onboarding.class);
+        when(onboarding.getAdminUserId()).thenReturn(adminId);
+        when(onboarding.getStatus()).thenReturn(OnboardingStatus.INVITED);
+        when(onboardings.findById(id)).thenReturn(Optional.of(onboarding));
+        UserAccount admin = mock(UserAccount.class);
+        when(admin.getId()).thenReturn(adminId);
+        when(admin.isEnabled()).thenReturn(false);
+        when(users.hasPassword(adminId)).thenReturn(true);
+        when(users.findById(adminId)).thenReturn(Optional.of(admin));
+
+        assertThatThrownBy(() -> service.requestReinvite(id)).isInstanceOf(BadRequestException.class);
+        verify(events, never()).publishEvent(any());
+    }
+
+    @Test
     void requestReinviteIsRejectedWhenNothingWasProvisioned() {
         UUID id = UUID.randomUUID();
         Onboarding onboarding = mock(Onboarding.class);

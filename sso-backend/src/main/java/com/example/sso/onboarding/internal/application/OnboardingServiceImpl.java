@@ -89,7 +89,10 @@ public class OnboardingServiceImpl {
         }
         UserAccount admin = users.findById(onboarding.getAdminUserId())
                 .orElseThrow(() -> new NotFoundException("onboarding admin not found"));
-        if (admin.isEnabled()) {
+        // Same gate as OnboardingInvitationService.issue (enabled OR has a password = already activated), so a
+        // once-activated-then-disabled admin is rejected HERE with an honest 400 rather than passing to the
+        // async worker, whose issue() would reject and leave the job stuck mid-PROVISIONING.
+        if (admin.isEnabled() || users.hasPassword(admin.getId())) {
             throw new BadRequestException("the admin has already activated their account");
         }
         onboarding.markProvisioning(); // signal "working" while the async worker re-invites
