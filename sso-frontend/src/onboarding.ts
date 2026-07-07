@@ -54,6 +54,10 @@ export const activateWorkspace = (token: string, password: string) =>
 export const onboardingStatus = (id: string) =>
   apiGet<OnboardingView>(`/api/admin/onboarding/${id}`);
 
+/** Re-invite a provisioned admin whose invitation email failed or expired: mints a fresh link + re-sends. */
+export const reinviteOnboarding = (id: string) =>
+  apiPost<OnboardingView>(`/api/admin/onboarding/${id}/reinvite`);
+
 /** Public: redeem an emailed invitation to set the password and activate the admin account. */
 export const setInvitationPassword = (token: string, password: string) =>
   apiPost<void>("/api/onboarding/set-password", { token, password });

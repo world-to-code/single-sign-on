@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, Loader2, XCircle } from "lucide-react";
 import { errorMessage } from "@/api";
-import { onboardingStatus, startOnboarding } from "@/onboarding";
+import { onboardingStatus, reinviteOnboarding, startOnboarding } from "@/onboarding";
 import type { OnboardingView } from "@/onboarding";
 import { EditorPage } from "@/components/EditorPage";
 import { SettingsSection } from "@/components/SettingsSection";
@@ -69,7 +69,15 @@ export default function Onboarding() {
 
   if (job) {
     const restart = () => { setJob(null); setForm({ ...blank }); setBusy(false); };
-    return <StatusView job={job} onDone={() => navigate("/admin/organizations")} onRestart={restart} />;
+    const reinvite = async () => {
+      try {
+        setJob(await reinviteOnboarding(job.id)); // → PROVISIONING; the poll picks up INVITED/INVITE_FAILED
+      } catch (e) {
+        window.alert(errorMessage(e)); // rare (e.g. the admin already activated); step-up handled by the client
+      }
+    };
+    return <StatusView job={job} onDone={() => navigate("/admin/organizations")}
+                       onRestart={restart} onReinvite={reinvite} />;
   }
 
   return (
@@ -117,8 +125,8 @@ export default function Onboarding() {
   );
 }
 
-function StatusView({ job, onDone, onRestart }: {
-  job: OnboardingView; onDone: () => void; onRestart: () => void;
+function StatusView({ job, onDone, onRestart, onReinvite }: {
+  job: OnboardingView; onDone: () => void; onRestart: () => void; onReinvite: () => void;
 }) {
   const provisioning = job.status === "PENDING" || job.status === "PROVISIONING";
   return (
@@ -154,7 +162,10 @@ function StatusView({ job, onDone, onRestart }: {
             The tenant and its administrator were provisioned, but the invitation email could not be sent.
             Re-invite the administrator to send a fresh link.
           </p>
-          <Button onClick={onDone}>Back to organizations</Button>
+          <div className="flex justify-center gap-2">
+            <Button onClick={onReinvite}>Resend invitation</Button>
+            <Button variant="outline" onClick={onDone}>Back to organizations</Button>
+          </div>
         </>
       )}
       {job.status === "FAILED" && (
