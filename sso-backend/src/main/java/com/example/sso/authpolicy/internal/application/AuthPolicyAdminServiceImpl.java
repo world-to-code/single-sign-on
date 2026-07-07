@@ -213,8 +213,10 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
      */
     private void requireAssignable(AuthPolicy policy, Optional<UUID> subjectOrg, String kind) {
         UUID org = subjectOrg.orElse(null);
+        // Org-agnostic message: don't confirm that the rejected id belongs to ANOTHER org (a foreign-tenant
+        // existence hint), only that it is not assignable here.
         if (org != null && !Objects.equals(org, policy.getOrgId())) {
-            throw new BadRequestException("Cannot assign a " + kind + " from a different organization to this policy.");
+            throw new BadRequestException("That " + kind + " cannot be assigned to this policy.");
         }
     }
 }
