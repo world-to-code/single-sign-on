@@ -36,9 +36,14 @@ def _mailhog_code() -> str:
 
 
 def authenticate(session: requests.Session, base: str,
-                 username: str = "admin", password: str = "admin123!") -> str:
+                 username: str = "admin", password: str = "admin123!", org: str = "default") -> str:
     """Logs in and completes MFA, returning the TOTP secret used. Raises on failure."""
     session.get(f"{base}/api/auth/session")  # establishes the XSRF cookie
+    # Tenant-first: select the organization before the account (the org is the tenant).
+    org_resp = session.post(f"{base}/api/auth/organization",
+                            json={"slug": org}, headers=_csrf_headers(session))
+    if org_resp.status_code != 200:
+        raise SystemExit(f"organization selection failed: {org_resp.status_code}")
     resp = session.post(f"{base}/api/auth/login",
                         json={"username": username, "password": password},
                         headers=_csrf_headers(session))

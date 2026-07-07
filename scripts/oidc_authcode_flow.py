@@ -11,10 +11,11 @@ import json
 import re
 import secrets
 import sys
+from urllib.parse import parse_qs, urlparse
 
 import requests
 
-from sso_auth import authenticate, cleanup
+from sso_auth import _csrf_headers, authenticate, cleanup
 
 BASE = "http://localhost:9000"
 CLIENT_ID, CLIENT_SECRET = "demo-client", "demo-secret"
@@ -34,11 +35,19 @@ def main() -> int:
         "code_challenge": challenge, "code_challenge_method": "S256",
     }, allow_redirects=False)
 
+    # Consent may be served inline (200 with a form) or as a redirect to the SPA consent page
+    # (302 to /oauth2/consent?...&state=...). Handle both, then POST the granted scopes back.
+    consent_location = authz.headers.get("Location", "")
     if authz.status_code == 200 and "consent" in authz.text.lower():
         state = re.search(r'name="state"[^>]*value="([^"]+)"', authz.text).group(1)
+    elif "/oauth2/consent" in consent_location:
+        state = parse_qs(urlparse(consent_location).query)["state"][0]
+    else:
+        state = None
+    if state is not None:
         authz = s.post(f"{BASE}/oauth2/authorize",
                        data={"client_id": CLIENT_ID, "state": state, "scope": ["profile", "email"]},
-                       allow_redirects=False)
+                       headers=_csrf_headers(s), allow_redirects=False)
 
     location = authz.headers.get("Location", "")
     match = re.search(r"[?&]code=([^&]+)", location)

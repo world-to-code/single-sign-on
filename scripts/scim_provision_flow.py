@@ -41,21 +41,26 @@ def call(method, url, body=None, token=TOKEN, ctype="application/scim+json"):
             return e.code, {"raw": txt[:200]}
 
 
-def identify(email):
+def identify(email, org="default"):
     # The app's identifier-first endpoint: 200 => active account exists, 404 => unknown/disabled.
     # It lives on the CSRF-protected session chain, so do the double-submit handshake: GET /session
-    # to obtain the XSRF-TOKEN cookie, then echo it in the X-XSRF-TOKEN header.
+    # to obtain the XSRF-TOKEN cookie, then echo it in the X-XSRF-TOKEN header. Login is tenant-first,
+    # so select the organization the SCIM token provisions into before probing the account.
     jar = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
     opener.open(f"{BASE}/api/auth/session")
     xsrf = next((c.value for c in jar if c.name == "XSRF-TOKEN"), None)
-    req = urllib.request.Request(f"{BASE}/api/auth/identify",
-                                 data=json.dumps({"email": email}).encode(), method="POST")
-    req.add_header("Content-Type", "application/json")
-    if xsrf:
-        req.add_header("X-XSRF-TOKEN", xsrf)
+
+    def post(path, body):
+        r = urllib.request.Request(f"{BASE}{path}", data=json.dumps(body).encode(), method="POST")
+        r.add_header("Content-Type", "application/json")
+        if xsrf:
+            r.add_header("X-XSRF-TOKEN", xsrf)
+        return r
+
+    opener.open(post("/api/auth/organization", {"slug": org}))  # tenant-first: bind the org
     try:
-        with opener.open(req) as r:
+        with opener.open(post("/api/auth/identify", {"email": email})) as r:
             return r.status
     except urllib.error.HTTPError as e:
         return e.code
