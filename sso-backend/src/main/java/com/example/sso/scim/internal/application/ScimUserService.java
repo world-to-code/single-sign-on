@@ -51,16 +51,14 @@ public class ScimUserService {
         String displayName = resource.getDisplayName()
                 .orElse(resource.getName().flatMap(Name::getFormatted).orElse(null));
 
-        // The SCIM client is bound to an org (the token's tenant); the provisioned user belongs to that org's
-        // customer (고객사).
-        UUID customerId = orgContext.currentOrg().flatMap(organizations::customerIdOf).orElse(null);
+        // The SCIM client is bound to an org (the token's tenant); the provisioned user belongs to that org.
         UserAccount created = userService.createUser(new NewUser(userName, email, displayName, null,
-                Set.of(Roles.USER)), customerId);
+                Set.of(Roles.USER)), tokenOrg().orElse(null));
         resource.getExternalId().ifPresent(ext -> userService.assignExternalId(created.getId(), ext));
         if (!resource.isActive().orElse(Boolean.TRUE)) {
             userService.disable(created.getId());
         }
-        // Provision INTO the token's tenant: a global identity is created, then joined to the org so it can
+        // Provision INTO the token's tenant: the user is created owned by that org, then joined to it so it can
         // log in there. A global/platform token leaves the user unattached (no bound org).
         tokenOrg().ifPresent(orgId -> organizations.addMember(orgId, created.getId()));
 

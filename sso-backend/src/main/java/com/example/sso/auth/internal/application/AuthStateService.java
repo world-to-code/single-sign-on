@@ -47,7 +47,9 @@ public class AuthStateService {
                 || authentication instanceof AnonymousAuthenticationToken) {
             return anonymous(activeOrgSlug);
         }
-        UserAccount user = users.findByUsername(authentication.getName()).orElse(null);
+        // Resolve the principal WITHIN the login's organization (the session's org isn't bound until MFA
+        // completes), so an org-scoped user's factor state is read for the right account, not a same-named one.
+        UserAccount user = users.findByUsernameInOrg(authentication.getName(), loginOrgId).orElse(null);
         if (user == null) {
             return anonymous(activeOrgSlug);
         }

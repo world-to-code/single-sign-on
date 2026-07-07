@@ -12,6 +12,7 @@ import com.example.sso.user.UserService;
 import com.example.sso.security.AdminElevationFilter;
 import com.example.sso.security.PolicyIpAccessFilter;
 import com.example.sso.security.HostOrgResolver;
+import com.example.sso.auth.LoginResolutionScopeFilter;
 import com.example.sso.security.OrgContextFilter;
 import com.example.sso.security.OrgDrillInFilter;
 import com.example.sso.tenancy.OrgContext;
@@ -93,7 +94,7 @@ public class SecurityConfig {
     @Bean
     @Order(Ordered.LOWEST_PRECEDENCE)
     SecurityFilterChain appSecurityFilterChain(
-            HttpSecurity http, AuthRateLimitFilter authRateLimitFilter,
+            HttpSecurity http, AuthRateLimitFilter authRateLimitFilter, LoginResolutionScopeFilter loginScopeFilter,
             SessionIntegrityFilter sessionIntegrityFilter, OrgContext orgContext, HostOrgResolver hostOrgResolver,
             OrganizationService organizations, OrganizationAuthorization orgAuthorization, UserService users,
             SessionPolicyService policyService,
@@ -169,6 +170,10 @@ public class SecurityConfig {
                 // that follow resolve the caller's ORG-scoped policy, not just the global default. Ordering is
                 // explicit (each filter anchored on the previous) — the tenant's session controls depend on it.
                 .addFilterAfter(new OrgContextFilter(orgContext), CsrfFilter.class)
+                // During the LOGIN phase (before MFA completes, when OrgContext is not yet bound), scope user
+                // resolution to the organization being signed into, so the password provider / factor-state /
+                // lockout target the right tenant's account and never a same-named user in another org.
+                .addFilterAfter(loginScopeFilter, OrgContextFilter.class)
                 // Zero-Trust tenant↔session binding: a session bound to org A must not be honoured on a DIFFERENT
                 // tenant's subdomain host (defence in depth over host-only cookie scoping). Runs right after the
                 // org is bound; the apex and the platform/super-admin context are exempt.

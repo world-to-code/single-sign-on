@@ -60,7 +60,7 @@ class AuthStateServiceTest {
 
     private void identifiedAlice() {
         lenient().when(user.getUsername()).thenReturn("alice");
-        when(users.findByUsername("alice")).thenReturn(Optional.of(user));
+        when(users.findByUsernameInOrg(eq("alice"), any())).thenReturn(Optional.of(user));
         when(policyService.resolveForUser(user)).thenReturn(policy);
         when(policy.isAllowEnrollmentAtLogin()).thenReturn(true);
         lenient().when(factorHandlers.isEnrolled(eq(AuthFactor.TOTP), any())).thenReturn(true);
@@ -102,7 +102,7 @@ class AuthStateServiceTest {
 
     @Test
     void anUnknownUsernameWithNoOrgReportsOrganization() {
-        when(users.findByUsername("alice")).thenReturn(Optional.empty());
+        when(users.findByUsernameInOrg(eq("alice"), any())).thenReturn(Optional.empty());
         when(policyService.defaultPolicy()).thenReturn(policy);
         when(policy.isAllowEnrollmentAtLogin()).thenReturn(true);
 

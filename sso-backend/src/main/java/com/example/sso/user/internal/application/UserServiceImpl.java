@@ -6,6 +6,8 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.tenancy.OrgContext;
+import com.example.sso.user.LoginResolutionScope;
 import com.example.sso.user.PermissionGrantPolicy;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.internal.domain.AppUser;
@@ -67,30 +69,42 @@ public class UserServiceImpl implements UserService {
     private final ApplicationEventPublisher events;
     private final PermissionGrantPolicy grantPolicy;
     private final RbacHydrator hydrator;
+    private final OrgContext orgContext;
+    private final LoginResolutionScope loginScope;
+
+    /**
+     * The organization to resolve a user WITHIN for the current request: the login's org while a sign-in is in
+     * progress ({@link LoginResolutionScope}), else the authenticated session's org ({@code OrgContext}), else
+     * {@code null} (global — the platform super-admin / bootstrap / no tenant context). So resolving a principal
+     * by username is scoped to the tenant they belong to, never a same-named user in another organization.
+     */
+    private UUID resolutionOrg() {
+        return loginScope.current().map(LoginResolutionScope.Scope::orgId)
+                .orElseGet(() -> orgContext.currentOrg().orElse(null));
+    }
 
     @Override
     @Transactional(readOnly = true)
     public Optional<UserAccount> findByUsername(String username) {
-        return users.findByUsername(username).map(hydrator::hydrateUser).map(u -> u);
+        return users.findByUsernameInOrg(username, resolutionOrg()).map(hydrator::hydrateUser).map(u -> u);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Optional<UserAccount> findByLogin(String identifier) {
-        return users.findByEmail(identifier).or(() -> users.findByUsername(identifier))
-                .map(hydrator::hydrateUser).map(u -> u);
+        return users.findByLoginInOrg(identifier, resolutionOrg()).map(hydrator::hydrateUser).map(u -> u);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Optional<UserAccount> findByLoginInCustomer(String identifier, UUID customerId) {
-        return users.findByLoginInCustomer(identifier, customerId).map(hydrator::hydrateUser).map(u -> u);
+    public Optional<UserAccount> findByLoginInOrg(String identifier, UUID orgId) {
+        return users.findByLoginInOrg(identifier, orgId).map(hydrator::hydrateUser).map(u -> u);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Optional<UserAccount> findByUsernameInCustomer(String username, UUID customerId) {
-        return users.findByUsernameInCustomer(username, customerId).map(hydrator::hydrateUser).map(u -> u);
+    public Optional<UserAccount> findByUsernameInOrg(String username, UUID orgId) {
+        return users.findByUsernameInOrg(username, orgId).map(hydrator::hydrateUser).map(u -> u);
     }
 
     @Override
@@ -188,7 +202,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    public UserAccount createUser(NewUser newUser, UUID customerId) {
+    public UserAccount createUser(NewUser newUser, UUID orgId) {
         String username = newUser.username();
         String email = newUser.email();
         if (users.existsByUsername(username)) {
@@ -204,7 +218,7 @@ public class UserServiceImpl implements UserService {
 
         String rawPassword = newUser.rawPassword();
         String encodedPassword = rawPassword == null ? null : passwordEncoder.encode(rawPassword);
-        AppUser saved = users.save(new AppUser(username, email, newUser.displayName(), encodedPassword, customerId));
+        AppUser saved = users.save(new AppUser(username, email, newUser.displayName(), encodedPassword, orgId));
         assignedRoles.forEach(role -> userRoles.save(new UserRole(saved.getId(), role.getId())));
         addToDefaultGroup(saved.getId());
 
@@ -345,7 +359,7 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public boolean verifyPassword(String username, String rawPassword) {
-        return users.findByUsername(username)
+        return users.findByUsernameInOrg(username, resolutionOrg())
                 .map(AppUser::getPasswordHash)
                 .filter(hash -> rawPassword != null && passwordEncoder.matches(rawPassword, hash))
                 .isPresent();
@@ -354,14 +368,14 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public void recordFailedLogin(String username, int maxAttempts, Duration lockFor) {
-        users.findByUsername(username)
+        users.findByUsernameInOrg(username, resolutionOrg())
                 .ifPresent(user -> user.registerFailedLogin(maxAttempts, lockFor, Instant.now()));
     }
 
     @Override
     @Transactional
     public void recordSuccessfulLogin(String username) {
-        users.findByUsername(username).ifPresent(AppUser::registerSuccessfulLogin);
+        users.findByUsernameInOrg(username, resolutionOrg()).ifPresent(AppUser::registerSuccessfulLogin);
     }
 
     private AppUser require(UUID id) {

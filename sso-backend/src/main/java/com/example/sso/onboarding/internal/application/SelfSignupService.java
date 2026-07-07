@@ -112,7 +112,7 @@ public class SelfSignupService {
                 new CompanyProfile(signup.getCompanySize(), signup.getCompanyCountry(),
                         signup.getCompanyIndustry(), signup.getCompanyPhone()), customer.id()));
         UserAccount admin = users.createUser(new NewUser(signup.getAdminEmail(), signup.getAdminEmail(),
-                signup.getAdminName(), password, Set.of(Roles.USER, Roles.ORG_ADMIN)), customer.id());
+                signup.getAdminName(), password, Set.of(Roles.USER, Roles.ORG_ADMIN)), org.id());
         // The applicant is the org admin and a member, so they sign in to their organization at {slug}.base.
         organizations.addMember(org.id(), admin.getId());
         return new SignupView(org.slug(), org.slug());

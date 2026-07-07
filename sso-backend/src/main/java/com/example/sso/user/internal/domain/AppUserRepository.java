@@ -36,41 +36,41 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 
     Optional<AppUser> findByUsername(String username);
 
-    Optional<AppUser> findByUsernameAndCustomerId(String username, UUID customerId);
+    Optional<AppUser> findByUsernameAndOrgId(String username, UUID orgId);
 
-    Optional<AppUser> findByUsernameAndCustomerIdIsNull(String username);
+    Optional<AppUser> findByUsernameAndOrgIdIsNull(String username);
 
-    Optional<AppUser> findByEmailAndCustomerId(String email, UUID customerId);
+    Optional<AppUser> findByEmailAndOrgId(String email, UUID orgId);
 
-    Optional<AppUser> findByEmailAndCustomerIdIsNull(String email);
+    Optional<AppUser> findByEmailAndOrgIdIsNull(String email);
 
     /**
-     * Resolves a user by username WITHIN a customer (고객사) for a scoped login, falling back to a global
-     * (customer-less) user so the platform super-admin still resolves through a tenant they belong to. A
-     * {@code null} customerId is the apex/platform path — only global accounts resolve.
+     * Resolves a user by username WITHIN an organization (the tenant) for a scoped lookup, falling back to a
+     * global (org-less) user so the platform super-admin still resolves through a tenant they belong to. A
+     * {@code null} orgId is the apex/platform path — only global accounts resolve.
      */
-    default Optional<AppUser> findByUsernameInCustomer(String username, UUID customerId) {
-        if (customerId == null) {
-            return findByUsernameAndCustomerIdIsNull(username);
+    default Optional<AppUser> findByUsernameInOrg(String username, UUID orgId) {
+        if (orgId == null) {
+            return findByUsernameAndOrgIdIsNull(username);
         }
-        return findByUsernameAndCustomerId(username, customerId)
-                .or(() -> findByUsernameAndCustomerIdIsNull(username));
+        return findByUsernameAndOrgId(username, orgId)
+                .or(() -> findByUsernameAndOrgIdIsNull(username));
     }
 
     /**
-     * Resolves a user by email-or-username WITHIN a customer for a scoped login (email first, mirroring
-     * {@code findByLogin}), preferring an exact customer match and falling back to a global (customer-less)
-     * account. A {@code null} customerId resolves only global accounts (the apex/platform path).
+     * Resolves a user by email-or-username WITHIN an organization for a scoped lookup (email first, mirroring
+     * {@code findByLogin}), preferring an exact org match and falling back to a global (org-less) account. A
+     * {@code null} orgId resolves only global accounts (the apex/platform path).
      */
-    default Optional<AppUser> findByLoginInCustomer(String identifier, UUID customerId) {
-        if (customerId == null) {
-            return findByEmailAndCustomerIdIsNull(identifier)
-                    .or(() -> findByUsernameAndCustomerIdIsNull(identifier));
+    default Optional<AppUser> findByLoginInOrg(String identifier, UUID orgId) {
+        if (orgId == null) {
+            return findByEmailAndOrgIdIsNull(identifier)
+                    .or(() -> findByUsernameAndOrgIdIsNull(identifier));
         }
-        return findByEmailAndCustomerId(identifier, customerId)
-                .or(() -> findByUsernameAndCustomerId(identifier, customerId))
-                .or(() -> findByEmailAndCustomerIdIsNull(identifier))
-                .or(() -> findByUsernameAndCustomerIdIsNull(identifier));
+        return findByEmailAndOrgId(identifier, orgId)
+                .or(() -> findByUsernameAndOrgId(identifier, orgId))
+                .or(() -> findByEmailAndOrgIdIsNull(identifier))
+                .or(() -> findByUsernameAndOrgIdIsNull(identifier));
     }
 
     /**

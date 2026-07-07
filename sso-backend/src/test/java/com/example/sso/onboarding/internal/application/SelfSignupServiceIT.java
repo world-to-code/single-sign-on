@@ -9,6 +9,7 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.UserAccount;
+import com.example.sso.user.LoginResolutionScope;
 import com.example.sso.user.UserService;
 import java.util.List;
 import java.util.UUID;
@@ -45,6 +46,8 @@ class SelfSignupServiceIT extends AbstractIntegrationTest {
     @Autowired
     UserService users;
     @Autowired
+    LoginResolutionScope loginScope;
+    @Autowired
     SignupRequestRepository signups;
 
     @MockitoBean
@@ -76,9 +79,13 @@ class SelfSignupServiceIT extends AbstractIntegrationTest {
 
         // The organization IS the company — created with the chosen company slug, resolvable globally.
         OrganizationRef org = organizations.findBySlug(slug).orElseThrow();
-        UserAccount admin = users.findByLogin(adminEmail).orElseThrow();
+        // The admin is owned by the new org, so resolve them WITHIN it (the identity boundary).
+        UserAccount admin = users.findByLoginInOrg(adminEmail, org.getId()).orElseThrow();
         assertThat(admin.isEnabled()).isTrue(); // self-signup is enabled immediately (differs from admin-invite)
-        assertThat(users.verifyPassword(admin.getUsername(), "chosen-passphrase-1")).isTrue();
+        // verifyPassword resolves the user within the current identity scope; bind the admin's org (as the
+        // login filter does at sign-in) so it targets the org-scoped account.
+        assertThat(loginScope.within(org.getId(), () -> users.verifyPassword(admin.getUsername(), "chosen-passphrase-1")))
+                .isTrue();
         // The admin is a member of their new organization so they can sign in to it.
         assertThat(organizations.isMember(org.getId(), admin.getId())).isTrue();
 

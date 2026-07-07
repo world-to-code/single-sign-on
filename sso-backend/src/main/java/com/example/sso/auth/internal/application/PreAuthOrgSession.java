@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
  * slug (for the SPA's display).
  */
 @Component
-class PreAuthOrgSession {
+public class PreAuthOrgSession {
 
     static final String ORG_ID = "AUTH_ORG_ID";
     static final String ORG_SLUG = "AUTH_ORG_SLUG";
@@ -24,7 +24,7 @@ class PreAuthOrgSession {
         session.setAttribute(ORG_SLUG, slug);
     }
 
-    Optional<UUID> orgId(HttpServletRequest request) {
+    public Optional<UUID> orgId(HttpServletRequest request) {
         return attribute(request, ORG_ID).map(UUID::fromString);
     }
 

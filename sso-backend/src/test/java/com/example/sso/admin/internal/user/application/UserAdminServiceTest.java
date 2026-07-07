@@ -3,7 +3,6 @@ package com.example.sso.admin.internal.user.application;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.shared.application.LastAdminGuard;
-import com.example.sso.organization.OrganizationService;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
@@ -48,7 +47,6 @@ class UserAdminServiceTest {
     private AdminAuditLogger auditLogger;
     private LastAdminGuard lastAdminGuard;
     private OrgContext orgContext;
-    private OrganizationService organizations;
     private UserAdminService service;
 
     @BeforeEach
@@ -60,9 +58,8 @@ class UserAdminServiceTest {
         auditLogger = mock(AdminAuditLogger.class);
         lastAdminGuard = mock(LastAdminGuard.class);
         orgContext = mock(OrgContext.class);
-        organizations = mock(OrganizationService.class);
         service = new UserAdminService(userService, mfaService, userGroups, accessPolicy, auditLogger,
-                lastAdminGuard, orgContext, organizations);
+                lastAdminGuard, orgContext);
     }
 
     @Test

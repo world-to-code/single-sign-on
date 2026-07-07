@@ -23,7 +23,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
+import com.example.sso.tenancy.OrgContext;
+import com.example.sso.user.LoginResolutionScope;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -62,6 +66,10 @@ class UserServiceImplTest {
     @Mock private ApplicationEventPublisher events;
     @Mock private PermissionGrantPolicy grantPolicy;
     @Mock private RbacHydrator hydrator;
+    // Real (spies) so resolution falls through to a global (null-org) lookup with no login/session scope bound.
+    @SuppressWarnings("unchecked")
+    @Spy private OrgContext orgContext = new OrgContext(mock(ObjectProvider.class));
+    @Spy private LoginResolutionScope loginScope = new LoginResolutionScope();
 
     @InjectMocks private UserServiceImpl service;
 
@@ -195,7 +203,7 @@ class UserServiceImplTest {
     @Test
     void recordFailedLoginDelegatesToTheDomainMethod() {
         AppUser user = new AppUser("alice", "a@x", "A", "h");
-        when(users.findByUsername("alice")).thenReturn(Optional.of(user));
+        when(users.findByUsernameInOrg("alice", null)).thenReturn(Optional.of(user));
 
         service.recordFailedLogin("alice", 1, Duration.ofMinutes(15));
 

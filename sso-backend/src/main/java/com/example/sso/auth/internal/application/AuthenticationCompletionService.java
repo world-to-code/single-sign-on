@@ -43,7 +43,6 @@ public class AuthenticationCompletionService {
     private final FactorAuthorizationService factorAuth;
     private final SessionLifecycle sessions;
     private final PreAuthOrgSession preAuthOrg;
-    private final LoginTargetCustomer targetCustomer;
     private final LoginResolutionScope loginScope;
     private final OrgContext orgContext;
     private final AuditService audit;
@@ -66,13 +65,13 @@ public class AuthenticationCompletionService {
             // Resolve the FINAL session authorities bound to the LOGIN org, so the user's global roles AND
             // their roles in THIS org (RLS-scoped) both resolve — and no other org's roles leak in. This is
             // the single chokepoint every login path (password, passkey, factor) funnels through.
-            // Re-resolve the user WITHIN the login's customer (고객사), so a username shared across customers
+            // Re-resolve the user WITHIN the login's organization, so a username shared across organizations
             // maps to THIS tenant's account (falling back to a global super-admin) when authorities are loaded.
-            UUID resolutionCustomer = targetCustomer.of(request);
+            UUID loginOrg = preAuthOrg.orgId(request).orElse(null);
             UserDetails principal = preAuthOrg.orgId(request)
-                    .map(orgId -> orgContext.callInOrg(orgId, () -> loginScope.within(resolutionCustomer,
+                    .map(orgId -> orgContext.callInOrg(orgId, () -> loginScope.within(loginOrg,
                             () -> userDetailsService.loadUserByUsername(authentication.getName()))))
-                    .orElseGet(() -> loginScope.within(resolutionCustomer,
+                    .orElseGet(() -> loginScope.within(loginOrg,
                             () -> userDetailsService.loadUserByUsername(authentication.getName())));
             Set<GrantedAuthority> authorities = new LinkedHashSet<>(principal.getAuthorities());
             authentication.getAuthorities().stream()

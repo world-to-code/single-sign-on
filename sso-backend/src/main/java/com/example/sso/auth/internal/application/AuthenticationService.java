@@ -55,7 +55,6 @@ public class AuthenticationService {
     private final SamlFrontChannelLogout samlFrontChannel;
     private final OrganizationService organizations;
     private final PreAuthOrgSession preAuthOrg;
-    private final LoginTargetCustomer targetCustomer;
     private final LoginResolutionScope loginScope;
     private final AuditService audit;
 
@@ -102,11 +101,10 @@ public class AuthenticationService {
         if (!targetSelected(httpRequest)) {
             throw new BadRequestException("Select an organization first.");
         }
-        UserAccount user = users.findByLoginInCustomer(email, targetCustomer.of(httpRequest))
+        UserAccount user = users.findByLoginInOrg(email, preAuthOrg.orgId(httpRequest).orElse(null))
                 .filter(UserAccount::isEnabled).orElse(null);
-        // Gate on the selected target — org membership, or customer-admin membership for a console login. Reject
-        // a non-member the SAME way as an unknown account so an attacker can't discover which emails exist (or
-        // belong to another tenant) via the login form.
+        // Gate on the selected target — organization membership. Reject a non-member the SAME way as an unknown
+        // account so an attacker can't discover which emails exist (or belong to another tenant) via the form.
         if (user == null || !authorizedForTarget(httpRequest, user.getId())) {
             audit.record(new AuditRecord(AuditType.AUTH_IDENTIFY, email, false, "no active account for the target", null));
             throw new NotFoundException("No active account for that email. Contact your administrator.");
@@ -125,20 +123,19 @@ public class AuthenticationService {
         if (!targetSelected(httpRequest)) {
             throw new BadRequestException("Select an organization first.");
         }
-        UUID orgId = preAuthOrg.orgId(httpRequest).orElse(null); // audit tenant tag (null for a customer login)
-        UUID customerId = targetCustomer.of(httpRequest); // resolve the user within the selected target's customer
+        UUID orgId = preAuthOrg.orgId(httpRequest).orElse(null); // the selected organization (the tenant)
         try {
-            // Bind the resolution customer so the password provider's UserDetailsService resolves the user
-            // WITHIN this tenant — a username shared across customers must authenticate against THIS
-            // customer's account (falling back to a global super-admin), never another tenant's.
-            Authentication authentication = loginScope.within(customerId, () -> authenticationManager.authenticate(
+            // Bind the resolution org so the password provider's UserDetailsService resolves the user WITHIN
+            // this tenant — a username shared across organizations must authenticate against THIS org's account
+            // (falling back to a global super-admin), never another tenant's.
+            Authentication authentication = loginScope.within(orgId, () -> authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(username, password)));
-            // Tenant-first: the account must be authorized for the selected target (an org member, or a
-            // customer admin). Reject the unauthorized the same way as bad credentials, so login can neither
-            // bypass tenant selection nor cross into another tenant. Authorize the AUTHENTICATED principal,
-            // resolved by username exactly as the credential check was — never a fresh email-first lookup that
-            // could pick a different account (whose email equals this username) than the one authenticated.
-            UUID userId = users.findByUsernameInCustomer(authentication.getName(), customerId)
+            // Tenant-first: the account must be a member of the selected organization. Reject the unauthorized
+            // the same way as bad credentials, so login can neither bypass tenant selection nor cross into
+            // another tenant. Authorize the AUTHENTICATED principal, resolved by username exactly as the
+            // credential check was — never a fresh email-first lookup that could pick a different account
+            // (whose email equals this username) than the one authenticated.
+            UUID userId = users.findByUsernameInOrg(authentication.getName(), orgId)
                     .map(UserAccount::getId).orElse(null);
             if (userId == null || !authorizedForTarget(httpRequest, userId)) {
                 loginAttempts.onFailure(username);
@@ -204,9 +201,9 @@ public class AuthenticationService {
             // the session must not finalize without a resolved target (org or customer console) they belong to
             // (else login bypasses tenant selection via /login/webauthn). Reject the unauthorized the same way
             // as any failed sign-in.
-            // Authorize the authenticated passkey principal, resolved by username within the target's customer
+            // Authorize the authenticated passkey principal, resolved by username within the target organization
             // (matching the completion step), so the authorized identity is provably the authenticated one.
-            UUID userId = users.findByUsernameInCustomer(authentication.getName(), targetCustomer.of(request))
+            UUID userId = users.findByUsernameInOrg(authentication.getName(), preAuthOrg.orgId(request).orElse(null))
                     .map(UserAccount::getId).orElse(null);
             if (!targetSelected(request) || userId == null || !authorizedForTarget(request, userId)) {
                 throw new UnauthorizedException();

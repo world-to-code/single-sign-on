@@ -3,7 +3,6 @@ package com.example.sso.admin.internal.user.application;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.shared.application.LastAdminGuard;
-import com.example.sso.organization.OrganizationService;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
@@ -53,14 +52,11 @@ public class UserAdminService {
     private final AdminAuditLogger auditLogger;
     private final LastAdminGuard lastAdminGuard;
     private final OrgContext orgContext;
-    private final OrganizationService organizations;
 
-    /** The customer (고객사) a user created by the acting admin belongs to: the customer console the admin is
-     *  in, else the customer of the org they are drilled into, else null (a platform super-admin's global user). */
-    private UUID actingCustomer() {
-        return orgContext.currentCustomer()
-                .or(() -> orgContext.currentOrg().flatMap(organizations::customerIdOf))
-                .orElse(null);
+    /** The organization (the tenant) a user created by the acting admin belongs to: the org the admin is
+     *  drilled into, else null (a platform super-admin's global user). */
+    private UUID actingOrg() {
+        return orgContext.currentOrg().orElse(null);
     }
 
     @Transactional(readOnly = true)
@@ -105,7 +101,7 @@ public class UserAdminService {
     @Transactional
     public AdminUserView createUser(NewUser newUser) {
         try {
-            AdminUserView created = AdminUserView.of(userService.createUser(newUser, actingCustomer()));
+            AdminUserView created = AdminUserView.of(userService.createUser(newUser, actingOrg()));
             auditLogger.log(AuditType.USER_CREATED, AuditSubjectType.USER, created.id(),
                     "username=" + created.username() + " roles=" + newUser.roleNames());
             return created;

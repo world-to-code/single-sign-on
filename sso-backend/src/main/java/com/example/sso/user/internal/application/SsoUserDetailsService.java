@@ -71,14 +71,14 @@ public class SsoUserDetailsService implements UserDetailsService {
     }
 
     /**
-     * Resolves the login within the customer (고객사) the orchestrator bound for this authentication: the
-     * password provider passes only a username, so once usernames are per-customer the resolver must scope
-     * to the login's customer (falling back to a global account) rather than pick a same-named user from
+     * Resolves the login within the organization (the tenant) the orchestrator bound for this authentication:
+     * the password provider passes only a username, so once usernames are per-organization the resolver must
+     * scope to the login's org (falling back to a global account) rather than pick a same-named user from
      * another tenant. With no scope bound (a non-login caller), falls back to the plain global lookup.
      */
     private Optional<AppUser> resolve(String username) {
         return loginScope.current()
-                .map(scope -> users.findByUsernameInCustomer(username, scope.customerId()))
+                .map(scope -> users.findByUsernameInOrg(username, scope.orgId()))
                 .orElseGet(() -> users.findByUsername(username));
     }
 

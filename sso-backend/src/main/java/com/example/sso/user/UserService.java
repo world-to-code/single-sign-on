@@ -19,26 +19,29 @@ public interface UserService {
 
     // --- reads ---
 
+    /** Resolves a user by username within the current identity scope (the login's org, else the session's
+     *  org, else global) — see {@link #findByUsernameInOrg}. */
     Optional<UserAccount> findByUsername(String username);
 
     /**
-     * Resolves a user by username WITHIN a customer (고객사), falling back to a global (customer-less) account
-     * — the same resolution the password provider uses. Authorize an already-authenticated principal through
-     * THIS (matching how they were authenticated), never a fresh email-or-username lookup, so the authorized
-     * identity is provably the authenticated one.
+     * Resolves a user by username WITHIN an organization (the tenant), falling back to a global (org-less)
+     * account — the same resolution the password provider uses. Authorize an already-authenticated principal
+     * through THIS (matching how they were authenticated), never a fresh email-or-username lookup, so the
+     * authorized identity is provably the authenticated one.
      */
-    Optional<UserAccount> findByUsernameInCustomer(String username, UUID customerId);
+    Optional<UserAccount> findByUsernameInOrg(String username, UUID orgId);
 
-    /** Resolves a login identifier (email preferred, falling back to username). */
+    /** Resolves a login identifier (email preferred, falling back to username) within the current identity
+     *  scope (the login's org, else the session's org, else global). */
     Optional<UserAccount> findByLogin(String identifier);
 
     /**
-     * Resolves a login identifier (email then username) WITHIN a customer (고객사) — the per-customer login
-     * boundary. Prefers an exact customer match, falling back to a global (customer-less) account so the
-     * platform super-admin still resolves through a tenant they belong to. A {@code null} customerId is the
-     * apex/platform path — only global accounts resolve.
+     * Resolves a login identifier (email then username) WITHIN an organization (the tenant) — the per-org login
+     * boundary. Prefers an exact org match, falling back to a global (org-less) account so the platform
+     * super-admin still resolves through a tenant they belong to. A {@code null} orgId is the apex/platform
+     * path — only global accounts resolve.
      */
-    Optional<UserAccount> findByLoginInCustomer(String identifier, UUID customerId);
+    Optional<UserAccount> findByLoginInOrg(String identifier, UUID orgId);
 
     Optional<UserAccount> findById(UUID id);
 
@@ -70,12 +73,12 @@ public interface UserService {
 
     // --- create / update (intention-revealing; no entity leaves the module) ---
 
-    /** Creates a GLOBAL user (no owning customer) — the platform super-admin and any tenant-agnostic account. */
+    /** Creates a GLOBAL user (no owning organization) — the platform super-admin and any tenant-agnostic account. */
     UserAccount createUser(NewUser newUser);
 
-    /** Creates a user owned by {@code customerId} (고객사), the per-customer identity boundary. Uniqueness of
-     *  username/email is still GLOBAL for now; a later phase moves it to per-customer. {@code null} = global. */
-    UserAccount createUser(NewUser newUser, UUID customerId);
+    /** Creates a user owned by {@code orgId} (the tenant), the per-organization identity boundary. Uniqueness of
+     *  username/email is still GLOBAL for now; a later phase moves it to per-organization. {@code null} = global. */
+    UserAccount createUser(NewUser newUser, UUID orgId);
 
     /** Admin full update: profile, enabled state, and (when non-null) the exact role-name set. */
     UserAccount updateUser(UUID id, UserUpdate update);
