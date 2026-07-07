@@ -4,6 +4,7 @@ import type { SessionView } from "./auth";
 import OrgSelect from "./pages/OrgSelect";
 import Login from "./pages/Login";
 import MfaStep from "./pages/MfaStep";
+import ForcePasswordReset from "./pages/ForcePasswordReset";
 import AppStepUp from "./pages/AppStepUp";
 import SetPassword from "./pages/SetPassword";
 import MarketingSite, { MARKETING_PATHS } from "./MarketingSite";
@@ -82,6 +83,11 @@ export default function App() {
       // A signed-out user who hasn't identified yet should see the entry screen, not a bare factor.
       return session.username
         ? <MfaStep session={session} onDone={apply} />
+        : <Login session={session} onDone={apply} />;
+    case "MUST_RESET_PASSWORD":
+      // Signed in with an admin-issued temporary password — force a reset before the session finalizes.
+      return session.username
+        ? <ForcePasswordReset session={session} onDone={apply} />
         : <Login session={session} onDone={apply} />;
     case "DONE":
       return <Console session={session} />;

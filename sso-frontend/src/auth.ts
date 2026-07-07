@@ -8,7 +8,7 @@ export interface SessionView {
   factors: string[];
   roles: string[];
   permissions: string[];
-  next: "ORGANIZATION" | "IDENTIFY" | "FACTOR" | "DONE";
+  next: "ORGANIZATION" | "IDENTIFY" | "FACTOR" | "MUST_RESET_PASSWORD" | "DONE";
   pendingFactors: string[];
   mfaEnrollmentAllowed: boolean;
   /** The active organization (tenant) slug once resolved via the tenant-first entry step, else null. */
@@ -50,6 +50,9 @@ export const organization = (slug: string) =>
 export const identify = (email: string) =>
   apiPost<SessionView>("/api/auth/identify", { email });
 /** Logs out. `samlLogoutRedirect` is a URL to navigate to for front-channel SAML Single Logout, or null. */
+/** First-login forced reset: replace the admin-issued temporary password; the response finalizes the session. */
+export const changePassword = (password: string) =>
+  apiPost<SessionView>("/api/auth/change-password", { password });
 export const logout = () => apiPost<{ samlLogoutRedirect: string | null }>("/api/auth/logout");
 export const resume = () => apiGet<{ redirectUrl: string }>("/api/auth/resume");
 
