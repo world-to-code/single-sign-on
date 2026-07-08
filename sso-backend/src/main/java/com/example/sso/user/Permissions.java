@@ -55,7 +55,7 @@ public final class Permissions {
     public static final String NETWORK_ZONE_CREATE = "network-zone:create";
     public static final String NETWORK_ZONE_UPDATE = "network-zone:update";
     public static final String NETWORK_ZONE_DELETE = "network-zone:delete";
-    // Admin-portal security settings (singleton)
+    // Admin-portal security settings (per-tenant)
     public static final String PORTAL_SETTINGS_READ = "portal-settings:read";
     public static final String PORTAL_SETTINGS_UPDATE = "portal-settings:update";
     // Application assignments (portal)
@@ -99,10 +99,9 @@ public final class Permissions {
     private static final Set<String> CATALOG = Set.copyOf(ALL);
 
     /**
-     * Platform-only permissions: the organization registry ({@code organization:create/update/delete}),
-     * the platform-wide admin-console security config ({@code portal-settings:*}), and cross-tenant audit
-     * ({@code audit:read}). A tenant (org) admin can neither see these in the catalog nor grant them
-     * (enforced by {@link PermissionGrantPolicy}) — granting one would cross tenant boundaries.
+     * Platform-only permissions: the organization registry ({@code organization:create/update/delete}) and
+     * cross-tenant audit ({@code audit:read}). A tenant (org) admin can neither see these in the catalog nor
+     * grant them (enforced by {@link PermissionGrantPolicy}) — granting one would cross tenant boundaries.
      *
      * <p>Everything else in {@link #ALL} is tenant-grantable — the directory + policy + application domain a
      * tenant admin owns within their own org: {@code user:*}, {@code group:*}, {@code role:*},
@@ -115,12 +114,12 @@ public final class Permissions {
      * and SAML signing keys), {@code scim:manage} (org-scoped SCIM tokens that provision INTO its own org and
      * see only its members on {@code /Users}; {@code /Groups} is platform-only, so a tenant token is refused
      * there), plus {@code organization:read}/{@code member-manage} (their own org). {@code portal-settings:*}
-     * stays platform-governed because the admin-console elevation policy is coupled to the single global
-     * admin-console client.
+     * is org-scoped too: each tenant edits its own admin-console elevation policy (its {@code admin_portal_settings}
+     * row), and the elevation gate enforces that tenant's elevation-token TTL by the token's age — decoupled
+     * from the single shared admin-console client.
      */
     public static final Set<String> PLATFORM = Set.of(
             ORG_CREATE, ORG_UPDATE, ORG_DELETE,
-            PORTAL_SETTINGS_READ, PORTAL_SETTINGS_UPDATE,
             AUDIT_READ);
 
     /**

@@ -55,7 +55,7 @@ public class AdminPortalSeeder implements ApplicationRunner {
 
     public AdminPortalSeeder(RegisteredClientRepository clients,
                              @Value("${sso.admin-console.redirect-uris}") List<String> redirectUris,
-                             @Value("${sso.admin-console.access-token-ttl-minutes:5}") int accessTtlMinutes) {
+                             @Value("${sso.admin-console.access-token-ttl-minutes:1440}") int accessTtlMinutes) {
         this.clients = clients;
         this.redirectUris = redirectUris;
         this.accessTtlMinutes = accessTtlMinutes;
@@ -70,8 +70,9 @@ public class AdminPortalSeeder implements ApplicationRunner {
             return;
         }
 
-        // The client may pre-date the "admin" elevation scope or the requires-assignment flag (dev DB).
-        // Backfill both so elevation and the assignment gate work without re-seeding.
+        // The client may pre-date the "admin" elevation scope, the requires-assignment flag, or the
+        // per-tenant TTL ceiling (a dev DB seeded with the old short-lived token). Backfill all three so
+        // elevation, the assignment gate, and per-tenant TTL enforcement work without re-seeding.
         RegisteredClient.Builder updated = RegisteredClient.from(existing);
         boolean changed = false;
         if (!existing.getScopes().contains(ADMIN_SCOPE)) {
@@ -81,6 +82,13 @@ public class AdminPortalSeeder implements ApplicationRunner {
         if (!Boolean.TRUE.equals(existing.getClientSettings().getSetting(REQUIRES_ASSIGNMENT_SETTING))) {
             updated.clientSettings(ClientSettings.withSettings(existing.getClientSettings().getSettings())
                     .setting(REQUIRES_ASSIGNMENT_SETTING, true).build());
+            changed = true;
+        }
+        // The token lifetime is the CEILING for any per-tenant elevation TTL (the filter enforces the real
+        // per-tenant value by token age); align a client seeded with the old short-lived TTL.
+        if (!Duration.ofMinutes(accessTtlMinutes).equals(existing.getTokenSettings().getAccessTokenTimeToLive())) {
+            updated.tokenSettings(TokenSettings.withSettings(existing.getTokenSettings().getSettings())
+                    .accessTokenTimeToLive(Duration.ofMinutes(accessTtlMinutes)).build());
             changed = true;
         }
         if (changed) {
@@ -107,7 +115,9 @@ public class AdminPortalSeeder implements ApplicationRunner {
                         .setting(REQUIRES_ASSIGNMENT_SETTING, true) // console entry = app assignment
                         .build())
                 .tokenSettings(TokenSettings.builder()
-                        .accessTokenTimeToLive(Duration.ofMinutes(accessTtlMinutes)) // short-lived admin proof
+                        // The CEILING for elevation: the AdminElevationFilter enforces the real per-tenant TTL
+                        // (from admin_portal_settings) by the token's age, so one shared client fits all tenants.
+                        .accessTokenTimeToLive(Duration.ofMinutes(accessTtlMinutes))
                         .build());
 
         redirectUris.forEach(builder::redirectUri);

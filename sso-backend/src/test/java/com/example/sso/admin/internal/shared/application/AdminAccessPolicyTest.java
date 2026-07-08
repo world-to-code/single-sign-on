@@ -293,7 +293,7 @@ class AdminAccessPolicyTest {
         RoleRef reporting = mock(RoleRef.class);
         when(reporting.getId()).thenReturn(roleId);
         when(roleService.findByName("ROLE_REPORTING")).thenReturn(Optional.of(reporting));
-        when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.PORTAL_SETTINGS_READ));
+        when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.AUDIT_READ));
 
         assertThat(policy.mayAssignRoles(Set.of("ROLE_REPORTING"))).isFalse();
     }

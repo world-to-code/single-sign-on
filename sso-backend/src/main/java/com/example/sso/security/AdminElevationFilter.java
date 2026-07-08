@@ -94,17 +94,19 @@ public class AdminElevationFilter extends OncePerRequestFilter {
             return;
         }
 
-        AdminPortalSettingsData settings = settingsService.get();
+        AdminPortalSettingsData settings = settingsService.get(); // the ACTING tenant's policy (or the global default)
         // Keyed on the direct peer address (getRemoteAddr), NOT the spoofable X-Forwarded-For. Behind a
-        // reverse proxy that does not preserve the client IP, allowlist the proxy's address. An operator
-        // who allowlists a range excluding their own network locks the console out (recover via DB).
+        // reverse proxy that does not preserve the client IP, allowlist the proxy's address. The allowlist is
+        // per-tenant now: an admin (or a super-admin drilled into that tenant) whose network is excluded is
+        // locked out of THAT tenant's console only — recover by editing the tenant's row in the DB.
         if (!settings.ipAllowed(request.getRemoteAddr())) {
             audit.record(new AuditRecord(AuditType.ADMIN_IP_BLOCKED, jwt.getSubject(), false,
                     "uri=" + request.getRequestURI(), request.getRemoteAddr()));
             forbidNetwork(response);
             return;
         }
-        if (!isElevated(jwt, settings.reauthInterval(), expectedIssuer(request, issuer)) || !boundToSession(jwt)) {
+        if (!isElevated(jwt, settings.reauthInterval(), settings.elevationTokenTtl(), expectedIssuer(request, issuer))
+                || !boundToSession(jwt)) {
             // A decoded token that fails elevation or session-binding is the forge/replay/stale signal — audit it.
             audit.record(new AuditRecord(AuditType.ADMIN_ELEVATION_DENIED, jwt.getSubject(), false,
                     "uri=" + request.getRequestURI(), request.getRemoteAddr()));
@@ -161,7 +163,7 @@ public class AdminElevationFilter extends OncePerRequestFilter {
      * ({@code AppAssignmentFilter} gates {@code /oauth2/authorize}), and what the caller may do is
      * decided per endpoint by {@code @RequirePermission}.
      */
-    private boolean isElevated(Jwt jwt, Duration freshnessWindow, String expectedIssuer) {
+    private boolean isElevated(Jwt jwt, Duration freshnessWindow, Duration tokenTtl, String expectedIssuer) {
         if (jwt.getIssuer() == null || !expectedIssuer.equals(jwt.getIssuer().toString())) {
             return false;
         }
@@ -172,6 +174,18 @@ public class AdminElevationFilter extends OncePerRequestFilter {
             return false;
         }
         if (!REQUIRED_ACR.equals(jwt.getClaimAsString("acr"))) {
+            return false;
+        }
+
+        // Elevation-token lifetime, enforced PER TENANT here. The shared admin-console client mints a
+        // long-lived token (one client serves every tenant); the acting tenant's TTL bounds how long that
+        // token actually elevates, measured from its issuance (iat).
+        Instant issuedAt = jwt.getIssuedAt();
+        if (issuedAt == null) {
+            return false;
+        }
+        long tokenAge = Instant.now().getEpochSecond() - issuedAt.getEpochSecond();
+        if (tokenAge < 0 || tokenAge > tokenTtl.toSeconds()) {
             return false;
         }
 

@@ -18,6 +18,11 @@ public record AdminPortalSettingsData(int reauthIntervalMinutes, int elevationTo
         return Duration.ofMinutes(reauthIntervalMinutes);
     }
 
+    /** Max age of the elevation access token itself (since issuance) — enforced per-tenant by the gate. */
+    public Duration elevationTokenTtl() {
+        return Duration.ofMinutes(elevationTokenTtlMinutes);
+    }
+
     public Duration sessionIdleTimeout() {
         return Duration.ofMinutes(sessionIdleTimeoutMinutes);
     }

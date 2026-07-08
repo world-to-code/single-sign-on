@@ -135,7 +135,7 @@ sso:
   admin-console:
     # first-party OIDC client for the admin console; redirect URIs = the SPA origin(s) + /admin/callback
     redirect-uris: http://localhost:9000/admin/callback,http://127.0.0.1:9000/admin/callback,http://localhost:5173/admin/callback
-    access-token-ttl-minutes: 5                       # initial elevation-token TTL (seed only; runtime value lives in admin_portal_settings)
+    access-token-ttl-minutes: 1440                     # shared client's token lifetime = the CEILING (24h, = per-tenant max); the AdminElevationFilter enforces the real per-tenant TTL from admin_portal_settings by token age
     refresh-token-ttl-minutes: 30
     # Elevation freshness + admin session idle/absolute lifetimes are now runtime-editable in the
     # admin console (Applications -> Admin Portal -> Portal settings), stored in admin_portal_settings.
