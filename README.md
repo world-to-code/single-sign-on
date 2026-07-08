@@ -1,19 +1,25 @@
-# Mini SSO System — Central Identity Provider
+# Mini SSO System — Multi-Tenant Identity Provider
 
-A from-scratch, production-leaning **Single Sign-On Identity Provider (IdP)**. Other
-applications delegate authentication to it over **OIDC**, **SAML 2.0**, or **SCIM 2.0**, and
-every human sign-in is protected by **policy-driven multi-factor authentication** with a
-first-login onboarding flow. Built on **Spring Boot 4 / Spring Security 7**, with a **React**
-admin + login console served from the same origin as a single deployable.
+*🌏 [한국어 README](README_KR.md)*
 
-> **In one sentence:** log in once, with strong MFA, and get into every connected app — while
-> the IdP centrally owns identities, credentials, keys, sessions, and the audit trail.
+A from-scratch, production-leaning **multi-tenant Single Sign-On Identity Provider (IdP)**.
+Each **organization is a tenant** with its own subdomain, users, policies, apps, and signing
+keys; other applications delegate authentication to it over **OIDC**, **SAML 2.0**, or
+**SCIM 2.0**, and every human sign-in is protected by **policy-driven multi-factor
+authentication**. Built as a **Spring Modulith modular monolith** on **Spring Boot 4 /
+Spring Security 7**, with a **React** admin + login console served from the same origin as a
+single deployable, and **PostgreSQL Row-Level Security** as the hard boundary between tenants.
+
+> **In one sentence:** each company gets its own isolated IdP at `its-slug.example.com` — its
+> own users, MFA, policies, apps and audit trail — while a thin platform layer owns the tenant
+> registry, and RLS + host-derived issuers keep every tenant's data and tokens strictly separate.
 
 ---
 
 ## Table of contents
 
 - [What it does (at a glance)](#what-it-does-at-a-glance)
+- [Multi-tenancy](#multi-tenancy--every-organization-is-an-isolated-tenant)
 - [Architecture](#architecture)
 - [Authentication](#authentication--how-a-user-proves-who-they-are)
 - [Authorization](#authorization--what-a-user-is-allowed-to-do)
@@ -36,51 +42,117 @@ admin + login console served from the same origin as a single deployable.
 
 | Capability | Summary |
 |---|---|
-| **OIDC Provider** | OAuth 2.1 + OpenID Connect 1.0 — discovery, JWKS (rotatable RS256), authorization-code + PKCE, client-credentials, refresh tokens, consent, UserInfo. |
-| **SAML 2.0 IdP** | OpenSAML 5 — metadata, `AuthnRequest` over HTTP-Redirect/POST, **signed assertions**. |
-| **SCIM 2.0 server** | Inbound provisioning of Users/Groups (`/scim/v2`, bearer auth). Provisioned users become real, loginable identities. |
-| **Multi-factor auth** | Identifier-first login with **password, TOTP, email OTP, and FIDO2 passkeys**, ordered by a per-user **authentication policy**. |
-| **Step-up / elevation** | RFC 9470 fresh re-authentication for sensitive actions; **token-based privilege elevation** to enter the admin console. |
-| **RBAC + PBAC** | Roles gate URLs; fine-grained per-user permissions gate operations (`@PreAuthorize`). |
+| **Multi-tenancy** | **Organization = tenant.** Per-tenant subdomain (`{slug}.base`), host-derived OIDC issuer + signing key, and **PostgreSQL RLS** isolating every org-scoped table. Global/shared rows (`org_id IS NULL`) are visible everywhere; a tenant sees only its own. |
+| **Two-tier admin** | A **platform super-admin** owns the tenant registry + global config and **drills into** a tenant to manage it (audited); a **tenant admin** (`ROLE_ORG_ADMIN`) fully manages **its own** org — users, apps, roles, policies, keys, SCIM, its own audit. |
+| **Tenant onboarding** | **Public self-service signup** (email-verification-first: nothing is provisioned until the link is redeemed) *and* **admin-initiated onboarding** (provision up front + invite). Creating a tenant auto-provisions its baseline (default session + auth policy, "All Users" group). |
+| **OIDC Provider** | OAuth 2.1 + OpenID Connect 1.0 — discovery, JWKS (rotatable RS256), authorization-code + PKCE, client-credentials, refresh tokens, consent, UserInfo. **Per-tenant issuer** derived from the subdomain. |
+| **SAML 2.0 IdP** | OpenSAML 5 — metadata, `AuthnRequest` over HTTP-Redirect/POST, **signed assertions**; per-tenant relying-party registry. |
+| **SCIM 2.0 server** | Inbound provisioning of Users/Groups (`/scim/v2`, bearer auth); per-tenant tokens provision **into their own org**. |
+| **Multi-factor auth** | **Tenant-first**, identifier-first login with **password, TOTP, email OTP, and FIDO2 passkeys** (incl. per-org passwordless passkey first-factor), ordered by a per-user **authentication policy**. |
+| **Step-up / elevation** | RFC 9470 fresh re-authentication for sensitive actions; **token-based privilege elevation** to enter the admin console, bounded by the acting tenant's session policy. |
+| **RBAC + PBAC** | Roles gate URLs; fine-grained permissions gate operations (`@PreAuthorize`); instance-level (ABAC) checks scope every object to the acting tenant. |
 | **Self-service** | "My Profile": registered factors/passkeys, email-verification status, active-session list with per-device revoke. |
-| **Admin console** | Same SPA — user lifecycle, OIDC clients, SAML relying parties, groups, session/auth policies, audit log, SCIM tokens, key rotation. |
+| **Admin console** | Same SPA — user lifecycle, OIDC clients, SAML relying parties, groups, roles, resources, session/auth policies, network zones, audit log, SCIM tokens, key rotation — all tier-scoped to the acting tenant. |
 
 ---
 
 ## Architecture
 
-A single deployable. The React SPA is built **into the backend's static resources** and
-served from the IdP origin, so it shares the IdP's **session cookie** (no cross-origin token
-juggling for the first-party UI). Three isolated `SecurityFilterChain`s separate concerns:
-the OAuth2 Authorization Server (protocol endpoints), the SCIM chain (stateless bearer), and
-the app/SPA chain (session + CSRF).
+A single deployable, structured internally as a **Spring Modulith modular monolith**: each
+domain (`user`, `organization`, `authpolicy`, `session`, `oidc`, `saml`, `scim`, `admin`,
+`onboarding`, `resource`, …) is an enforced module exposing only a root API (interfaces + record
+DTOs); entities and repositories never cross a module boundary, and `ModularityTests` keeps the
+boundaries honest. The React SPA is built **into the backend's static resources** and served from
+the IdP origin, so it shares the IdP's **session cookie** (no cross-origin token juggling for the
+first-party UI). Isolated `SecurityFilterChain`s separate concerns: the OAuth2 Authorization
+Server (protocol endpoints, with a **per-tenant host filter**), the SCIM chain (stateless bearer),
+and the app/SPA chain (session + CSRF + tenant-context + RLS).
 
 ```
-                                       ┌───────────────────────────────────────────────┐
-  OIDC RP  ──/oauth2/*,/.well-known,/userinfo──►│                                       │
-  SAML SP  ──/saml2/idp/{metadata,sso}─────────►│   Spring Boot 4 IdP                   │
-  Ext IdP  ──/scim/v2/*  (Bearer)──────────────►│   ├─ Spring Security 7 (+ Auth Server)│──JPA──► PostgreSQL 17
-  Browser  ──/ (React SPA) + /api/auth/* (cookie)►│   ├─ OpenSAML 5  (SAML IdP)           │         (Flyway-managed)
-  Browser  ──/api/admin/* (Bearer elevation)────►│   ├─ scim-sdk    (SCIM 2.0)           │
-                                       │   └─ WebAuthn / TOTP / email OTP / RSA keys    │──SMTP──► MailHog (dev)
+             {slug}.example.com                ┌───────────────────────────────────────────────┐
+  OIDC RP  ──/oauth2/*,/.well-known,/userinfo──►│   Spring Boot 4 IdP (Spring Modulith)         │
+  SAML SP  ──/saml2/idp/{metadata,sso}─────────►│   ├─ Spring Security 7 (+ Auth Server)        │──JPA──► PostgreSQL 17
+  Ext IdP  ──/scim/v2/*  (Bearer)──────────────►│   ├─ OpenSAML 5  (SAML IdP)                   │  Row-Level Security
+  Browser  ──/ (React SPA) + /api/auth/* (cookie)►│   ├─ scim-sdk    (SCIM 2.0)                  │  (Flyway-managed)
+  Browser  ──/api/admin/* (Bearer elevation)────►│   ├─ WebAuthn / TOTP / email OTP / RSA keys   │
+             ▲ host → tenant + issuer + key      │   └─ TenantHostFilter + OrgContext + RLS bind │──SMTP──► MailHog (dev)
                                        └───────────────────────────────────────────────┘
 ```
 
-Browser navigations to `/oauth2/authorize` or `/saml2/idp/sso` that aren't yet
-authenticated are redirected to the SPA login, which completes the auth policy and then
+The **request host selects the tenant**: `TenantHostFilter`/`OrgContextFilter` resolve
+`{slug}.base` to an organization, bind it as the request's `OrgContext`, and set the PostgreSQL
+`app.current_org` GUC so RLS scopes every query — while the OIDC issuer and signing key are
+derived from that same host. Browser navigations to `/oauth2/authorize` or `/saml2/idp/sso` that
+aren't yet authenticated are redirected to the SPA login, which completes the auth policy and then
 **resumes the saved request**.
+
+---
+
+## Multi-tenancy — every organization is an isolated tenant
+
+The **organization is the tenant**: one org per company, with its own users, groups, roles,
+policies, apps, signing keys and audit trail. Isolation is enforced at three layers.
+
+### 1. Data isolation — PostgreSQL Row-Level Security
+
+Org-scoped tables carry an `org_id` and enforce an RLS policy of the shape
+`org_id IS NULL OR org_id = current_setting('app.current_org')`: a tenant sees its own rows plus
+the **global/shared** rows (`org_id IS NULL`, e.g. the seeded default policies), never another
+tenant's. The runtime binds `app.current_org` per request from the resolved tenant. RLS is the
+**hard boundary** — but it only binds when the app connects as a **non-superuser** role
+(superusers bypass RLS), which the app enforces at startup (`sso.tenancy.require-non-superuser-role`).
+
+A few tables are deliberately **RLS-free** because they are read on browser-less / pre-context
+paths (login, logout propagation, SCIM): `app_user` and `audit_event`. These carry `org_id` as a
+column and are isolated at the **application layer** instead (every read is explicitly org-scoped).
+
+### 2. Tenant resolution — subdomain, host-derived issuer
+
+Each tenant lives at `{slug}.base` (e.g. `acme.localhost:9000`, `acme.idp.example.com`). The host
+resolves the org before authentication, so:
+
+- the **OIDC issuer is per-tenant** (`http://acme.localhost:9000` → its own discovery + JWKS),
+  backed by that tenant's signing key (with a global fallback);
+- sessions are **host-bound** — a session established on one tenant's subdomain is rejected on
+  another's (`TenantSessionHostGuard`), and an unknown subdomain 404s (`TenantUnknownSubdomainGuard`);
+- login **auto-selects the org from the host**, so a member just signs in.
+
+### 3. Two-tier administration — platform vs tenant, drill-in
+
+| | Platform super-admin (`ROLE_ADMIN`) | Tenant admin (`ROLE_ORG_ADMIN`) |
+|---|---|---|
+| **Scope** | The **tenant registry** + global/shared config; **no merged all-tenant view**. | **Everything inside its own org** — users, groups, roles, apps, auth/session policies, network zones, signing keys, SCIM, its own audit. |
+| **Cross-tenant** | Reaches a tenant's data only by **deliberate drill-in** (`X-Org-Context`, live-membership-checked, **audited** — okta-style). | None — bound to its own org by host + membership. |
+| **Permissions** | `Permissions.PLATFORM` (org registry) — invisible and un-grantable to tenants. | `Permissions.tenantGrantable()` = everything else, each domain org-isolated. |
+
+**Drill-in** lets a super-admin act *as* a tenant (RLS re-scoped to that org) with a thorough audit
+trail recording who entered which tenant. Un-drilled, the super-admin sees only global rows.
+
+### 4. Per-tenant baseline — provisioned on creation
+
+Creating an organization publishes an event that provisions the tenant's **own editable defaults**:
+a default **session policy** and **auth (login) policy** (org-owned, priority above the global
+default so they win for that org, applied to every member), plus a per-org **"All Users" group**.
+The **Default policy is a locked fallback** — its assignments, priority and enabled state are
+frozen so an admin can never strand users by targeting the catch-all at an empty set. Admin-console
+knobs (elevation-token TTL, IP allowlist) are per-tenant too; the admin session's lifetimes come
+from the tenant's session policy.
 
 ---
 
 ## Authentication — how a user proves who they are
 
-### Identifier-first, policy-driven flow
+### Tenant-first, identifier-first, policy-driven flow
 
-1. **Identify** — the user submits their email. Accounts are **admin-provisioned
-   (invite-only)**: an email with no active account is rejected (this is the tenant-resolution
-   point for a future multi-tenant split).
+0. **Resolve the tenant** — the organization is taken from the **subdomain** (`{slug}.base`), or
+   selected on the bare platform host, and pinned in the pre-auth session. The rest of login is
+   scoped to it: a username shared across orgs authenticates against **this** org's account.
+1. **Identify** — the user submits their email; membership of the resolved org is required
+   (a non-member is rejected the same way as an unknown account, so the form leaks nothing).
 2. **Resolve policy** — `AuthPolicyResolver` picks the authentication policy assigned to that
-   user (or the global default). A policy is an **ordered list of required factors**.
+   user *within the login org* (or the org's default, else the global default). A policy is an
+   **ordered list of required factors**; an org may enable **passwordless passkey** as the first
+   factor.
 3. **Walk the factors** — the SPA polls `GET /api/auth/session`, and for the current step calls
    the generic `POST /api/auth/factors/{factor}/{prepare,verify}` endpoints, which dispatch to a
    `FactorHandler` strategy. Each cleared factor grants a `FACTOR_*` authority.
@@ -126,17 +198,27 @@ admin gate can reason about strength and freshness:
 
 ## Authorization — what a user is allowed to do
 
-- **RBAC** — `ROLE_ADMIN` gates the admin URL space at the filter chain.
-- **PBAC** — fine-grained per-user permissions (`user:write`, `key:rotate`, …) gate individual
-  operations via method-level `@PreAuthorize`. Permissions are assigned **per user**, not via
-  roles, so adding a role never silently grants privilege.
+- **RBAC** — roles gate the admin URL space at the filter chain (`ROLE_ADMIN` = platform
+  super-admin, `ROLE_ORG_ADMIN` = tenant admin).
+- **PBAC** — fine-grained permissions (`user:update`, `key:rotate`, `audit:read`, …) gate
+  individual operations via method-level `@PreAuthorize`. `Permissions.PLATFORM` (the tenant
+  registry) is super-admin-only and un-grantable to tenants; everything else is
+  **tenant-grantable** and org-isolated, so a tenant admin manages its own org fully but nothing
+  beyond it.
+- **ABAC (instance-level)** — every object referenced by a client-supplied id gets an
+  ownership/scope check that composes with `and`: a tenant admin reaches only rows in its own org
+  (`AdminAccessPolicy` + RLS + the org-tier guard), so there is no IDOR across tenants. Admin list
+  views are tier-scoped — an un-drilled super-admin sees only global rows, a tenant admin only its
+  own, and the audit log read resolves the acting tenant.
 - **Admin console = privilege elevation.** Entering `/api/admin/**` requires a **fresh
   bearer access token** obtained through a dedicated first-party `admin-console` OIDC client
-  (PKCE). The `AdminElevationFilter` (additive, runs after RBAC/PBAC) accepts the request only
-  when the token is:
-  - issued by **this IdP** (`iss`) for the **`admin-console`** client (`azp`),
-  - carrying the reserved **`admin`** scope and **`roles` ∋ `ROLE_ADMIN`**,
-  - asserting **`acr=mfa`** and a **fresh `stepup_time`** (a real step-up, within a configurable window),
+  (PKCE, host-agnostic so it works at any tenant subdomain). The `AdminElevationFilter` (additive,
+  runs after RBAC/PBAC) accepts the request only when the token is:
+  - issued by **this IdP at the request's own host** (`iss`) for the **`admin-console`** client (`azp`),
+  - carrying the reserved **`admin`** scope,
+  - asserting **`acr=mfa`** and a **fresh `stepup_time`** within the **acting tenant's** session-policy
+    step-up window, with the token's own age bounded by the tenant's elevation-token TTL,
+  - passing the tenant's admin-console **IP allowlist**,
   - and bound to the **current session subject** (`sub`) — so a token minted for another user
     or another client cannot elevate.
 
@@ -189,7 +271,10 @@ admin gate can reason about strength and freshness:
 - **CSRF** — double-submit cookie (`XSRF-TOKEN` readable cookie + `X-XSRF-TOKEN` header) on the
   session-based SPA chain; the stateless protocol/SCIM chains are exempt by design.
 - **Zero-Trust session posture** — short idle timeout, absolute session lifetime, optional
-  client (User-Agent) binding as defense-in-depth, and re-auth-on-sensitive-action.
+  client (User-Agent) binding as defense-in-depth, and re-auth-on-sensitive-action. Sessions are
+  **host-bound to their tenant**: a cookie replayed on a different tenant's subdomain is refused.
+- **Tenant isolation** — RLS on org-scoped tables (fail-fast if the runtime DB role is a
+  superuser), host→tenant→issuer/key derivation, and per-tenant admin-console IP allowlists.
 - **Secret hygiene** — all production secrets come from the environment; no defaults for the
   master password or crypto salt in prod (fail-fast); the known-secret demo OIDC client is
   **not seeded in production**.
@@ -200,9 +285,9 @@ admin gate can reason about strength and freshness:
 
 | Protocol | Endpoints | Highlights |
 |---|---|---|
-| **OIDC** | `/.well-known/openid-configuration`, `/oauth2/{authorize,token,jwks}`, `/userinfo` | auth-code + PKCE, client-credentials, refresh, consent, custom claims (profile/email/roles/`amr`/`acr`/`auth_time`/`stepup_time`/`azp`). |
-| **SAML 2.0** | `/saml2/idp/{metadata,sso}` | `AuthnRequest` over Redirect/POST, MFA-gated, signed `Response`/`Assertion`, per-SP relying-party registry. |
-| **SCIM 2.0** | `/scim/v2/{ServiceProviderConfig,Users,Groups}` | bearer auth, configurable list/filter/bulk limits, protected role assignment. |
+| **OIDC** | `/.well-known/openid-configuration`, `/oauth2/{authorize,token,jwks}`, `/userinfo` | auth-code + PKCE, client-credentials, refresh, consent, custom claims (profile/email/roles/`org`/`amr`/`acr`/`auth_time`/`stepup_time`/`azp`). **Per-tenant issuer** — discovery/JWKS resolve from the request subdomain. |
+| **SAML 2.0** | `/saml2/idp/{metadata,sso}` | `AuthnRequest` over Redirect/POST, MFA-gated, signed `Response`/`Assertion`, per-tenant relying-party registry. |
+| **SCIM 2.0** | `/scim/v2/{ServiceProviderConfig,Users,Groups}` | bearer auth, configurable list/filter/bulk limits; a tenant token provisions **into its own org** and sees only its members. |
 
 ---
 
@@ -212,6 +297,8 @@ admin gate can reason about strength and freshness:
 |---|---|
 | Language / runtime | **Java 21 (LTS)** |
 | Framework | **Spring Boot 4.0.x**, **Spring Security 7** (incl. the merged OAuth2 **Authorization Server**) |
+| Modularity | **Spring Modulith 2** — enforced module boundaries, verified by `ModularityTests` |
+| Multi-tenancy | **PostgreSQL Row-Level Security** (`app.current_org` GUC) + host-derived per-tenant issuer/keys |
 | SAML | **OpenSAML 5.1.x** (built directly — Spring has no native SAML *IdP*) |
 | SCIM | **scim-sdk 1.33** (framework-agnostic, exposed via a Spring `@RestController`) |
 | WebAuthn / Passkeys | **spring-security-webauthn** |
@@ -253,10 +340,15 @@ cd sso-frontend && npm install && npm run build && cd ..   # build SPA into sso-
 cd sso-backend && ./gradlew bootRun                        # IdP + SPA at http://localhost:9000
 ```
 
-Open http://localhost:9000 and sign in as `admin` / `admin123!`. First login (for any new
-user) prompts for the email code (view it in MailHog at http://localhost:8025) then a strong
-factor (TOTP via QR or a passkey). For SPA hot-reload during development:
-`cd sso-frontend && npm run dev` (Vite on :5173 proxies API/auth to :9000).
+Open http://localhost:9000 and sign in as `admin` / `admin123!` (the **platform super-admin**).
+First login (for any new user) prompts for the email code (view it in MailHog at
+http://localhost:8025) then a strong factor (TOTP via QR or a passkey). For SPA hot-reload during
+development: `cd sso-frontend && npm run dev` (Vite on :5173 proxies API/auth to :9000).
+
+**Tenants live on subdomains.** `*.localhost` resolves to `127.0.0.1` on most systems, so a tenant
+created with slug `acme` is reachable at `http://acme.localhost:9000`. Create one from the admin
+console (Organizations) or via public self-service signup; the activation link lands on the platform
+host and, once redeemed, sends the new admin to their own subdomain.
 
 Build the production image (frontend + backend in one shot):
 
@@ -268,9 +360,10 @@ docker build -t mini-sso .        # multi-stage; context is the repo root
 
 | What | Value |
 |---|---|
-| Admin (email pre-verified) | `admin` / `admin123!` |
+| Platform super-admin (email pre-verified) | `admin` / `admin123!` (`ROLE_ADMIN`; owns the tenant registry, drills into tenants) |
+| Global default policies | a global **Default** session policy + auth policy (`org_id IS NULL`) every tenant inherits until it customizes |
 | OIDC confidential client (dev only) | `demo-client` / `demo-secret` (auth-code+PKCE, consent) |
-| Admin-console OIDC client | `admin-console` (public, PKCE; powers admin elevation) |
+| Admin-console OIDC client | `admin-console` (public, PKCE, host-agnostic; powers admin elevation) |
 | SCIM bearer token | `dev-scim-token` |
 | SAML test SP | entityID `urn:example:sp`, ACS `http://127.0.0.1:8090/acs` |
 
@@ -284,6 +377,8 @@ All operational knobs live under `sso.*` (see `application.yml`; prod overrides 
 | Area | Keys |
 |---|---|
 | Issuer / admin seed | `sso.issuer`, `sso.admin.{username,email,password}` |
+| Multi-tenancy | `sso.tenancy.{base-domains,require-non-superuser-role}`, `DB_APP_USERNAME`/`DB_APP_PASSWORD` (non-superuser runtime role) |
+| Onboarding | `sso.onboarding.{verification-ttl,resend-cooldown,min-password-length,set-password-url,activate-url,workspace-url-template}` |
 | Crypto | `sso.crypto.{master-password,salt,rsa-key-size}` |
 | Email OTP | `sso.email-otp.{ttl-minutes,max-attempts}` |
 | Admin console / elevation | `sso.admin-console.{redirect-uris,access-token-ttl-minutes,refresh-token-ttl-minutes,elevation-freshness-minutes}` |
@@ -300,21 +395,24 @@ All operational knobs live under `sso.*` (see `application.yml`; prod overrides 
 
 | Area | Endpoint |
 |---|---|
-| Auth (SPA, session) | `/api/auth/{session,identify,login,logout,factors/*,reauth/*,profile,sessions}` |
-| OIDC | `/.well-known/openid-configuration`, `/oauth2/{authorize,token,jwks}`, `/userinfo` |
+| Auth (SPA, session) | `/api/auth/{session,organization,identify,login,logout,factors/*,reauth/*,profile,sessions}` |
+| Onboarding (public) | `/api/onboarding/{apply,activate,set-password}` (self-service signup → email verification → activation; invitation redemption) |
+| OIDC | `/.well-known/openid-configuration`, `/oauth2/{authorize,token,jwks}`, `/userinfo` (per-tenant issuer by host) |
 | SAML | `/saml2/idp/{metadata,sso}` |
 | SCIM | `/scim/v2/{ServiceProviderConfig,Users,Groups}` (Bearer) |
-| Admin (ROLE_ADMIN + permission + elevation) | `/api/admin/{users,roles,clients,saml/relying-parties,groups,audit,scim/tokens,session-policies,auth-policies,keys/rotate}` |
+| Admin (role + permission + elevation, tier-scoped) | `/api/admin/{organizations,users,roles,groups,resources,applications,clients,relying-parties,auth-policies,session-policy,network-zones,portal-settings,audit,scim-tokens,metrics,keys}` — a super-admin adds `X-Org-Context` to drill into a tenant |
 
 ---
 
 ## Verifying the flows
 
 ```bash
-cd sso-backend && ./gradlew test        # Testcontainers integration tests
+cd sso-backend && ./gradlew test        # Testcontainers integration tests (incl. ModularityTests + RLS)
 python3 scripts/oidc_authcode_flow.py   # OIDC: MFA session -> PKCE -> ID token
 python3 scripts/saml_sso_flow.py        # SAML: MFA-gated SSO -> signed assertion
 python3 scripts/admin_api_flow.py       # Admin API: RBAC/PBAC + user lifecycle (session)
+python3 scripts/tenant_login_flow.py    # Multi-tenancy: per-tenant login + isolation on a subdomain
+python3 scripts/scim_provision_flow.py  # SCIM: provision a user into an org, then log in as them
 ```
 
 ---
