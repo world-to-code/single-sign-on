@@ -8,11 +8,14 @@ import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationView;
 import com.example.sso.session.SessionPolicyDetails;
 import com.example.sso.session.SessionPolicyService;
+import com.example.sso.session.SessionPolicyUpdate;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -20,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Creating an organization provisions that tenant's OWN baseline policies (via OrganizationCreatedEvent →
@@ -85,5 +89,42 @@ class TenantBaselineProvisioningIT extends AbstractIntegrationTest {
         // The per-org Default (priority 1) beats the GLOBAL Default (priority 0), so the tenant runs on its own.
         assertThat(resolved.getName()).isEqualTo(SessionPolicyService.DEFAULT_NAME);
         assertThat(resolved.getPriority()).isEqualTo(SessionPolicyService.TENANT_DEFAULT_PRIORITY);
+    }
+
+    @Test
+    void theProvisionedDefaultStaysTheUnconditionalFallbackAndCannotBeReassignedOrDeleted() {
+        OrganizationView org = organizations.create(
+                new NewOrganization("octatco-lock-it", "Octatco Lock IT", CompanyProfile.empty()));
+        orgId = org.id();
+
+        orgContext.runInOrg(orgId, () -> {
+            SessionPolicyDetails def = theDefault();
+            // Try to target the Default at a specific role AND raise its priority — the server must refuse both,
+            // so the fallback can never be stranded on an empty/narrow set.
+            sessionPolicies.update(def.getId(), reassign(def, UUID.randomUUID(), 99));
+
+            SessionPolicyDetails after = theDefault();
+            assertThat(after.getAssignedRoleIds()).isEmpty();
+            assertThat(after.getAssignedUserIds()).isEmpty();
+            assertThat(after.getPriority()).isEqualTo(SessionPolicyService.TENANT_DEFAULT_PRIORITY);
+            assertThat(after.isEnabled()).isTrue();
+
+            // And it cannot be deleted (it is the tier's required fallback).
+            assertThatThrownBy(() -> sessionPolicies.delete(def.getId())).isInstanceOf(BadRequestException.class);
+        });
+    }
+
+    private SessionPolicyDetails theDefault() {
+        return sessionPolicies.listAll().stream()
+                .filter(p -> SessionPolicyService.DEFAULT_NAME.equals(p.getName()))
+                .findFirst().orElseThrow();
+    }
+
+    /** A well-formed update that attempts to assign the policy to {@code roleId} and change its priority. */
+    private SessionPolicyUpdate reassign(SessionPolicyDetails p, UUID roleId, int priority) {
+        return new SessionPolicyUpdate(priority, false, p.getAbsoluteTimeoutMinutes(), p.getIdleTimeoutMinutes(),
+                p.getReauthIntervalMinutes(), p.getReauthFactors(), p.getSensitiveReauthWindowMinutes(),
+                p.getStepUpFactors(), p.isBindClient(), p.getMaxConcurrentSessions(), p.isRotateOnReauth(),
+                p.getCookieSameSite(), Set.of(), Set.of(roleId), List.of());
     }
 }

@@ -431,7 +431,7 @@ class SessionPolicyServiceImplTest {
     }
 
     @Test
-    void anOrgScopedPolicyNamedDefaultIsRepriorisableByItsOwner() {
+    void aTenantsDefaultIsTheLockedFallbackWithAFrozenPriority() {
         UUID orgA = UUID.randomUUID();
         UUID id = UUID.randomUUID();
         when(orgContext.currentOrg()).thenReturn(Optional.of(orgA));
@@ -441,8 +441,21 @@ class SessionPolicyServiceImplTest {
 
         SessionPolicyDetails saved = service.update(id, update(7, true, "TOTP"));
 
-        // The immutable-fallback guard is for the GLOBAL Default only; an org policy named "Default" is a
-        // normal custom policy and stays fully editable (priority applied, not frozen to 0).
-        assertThat(saved.getPriority()).isEqualTo(7);
+        // A tenant's per-org "Default" is the unconditional fallback, not a normal custom policy: its priority
+        // is FROZEN (the requested 7 is ignored — it stays the lowest-priority catch-all), so an admin can
+        // never re-rank or re-target it and strand users with no policy.
+        assertThat(saved.getPriority()).isEqualTo(3);
+    }
+
+    @Test
+    void aTenantsDefaultCannotBeDeleted() {
+        UUID orgA = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgA));
+        when(repository.findById(id))
+                .thenReturn(Optional.of(new SessionPolicy(SessionPolicyService.DEFAULT_NAME, 1, orgA)));
+
+        assertThatThrownBy(() -> service.delete(id)).isInstanceOf(BadRequestException.class);
+        verify(repository, never()).delete(any());
     }
 }

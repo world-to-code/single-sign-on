@@ -295,12 +295,14 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         String stepUpFactors = validateReauthFactors(update.stepUpFactors());
         List<IpRuleEntry> ipRules = toIpRules(update.ipRules()); // validates zone references before any write
 
-        boolean isDefault = isGlobalDefault(policy);
+        boolean isDefault = isDefaultFallback(policy);
         Set<UUID> userIds;
         Set<UUID> roleIds;
         if (isDefault) {
-            // The Default is not assignable/reprioritisable, but it DOES carry the global cookie
-            // settings + the baseline timeouts, so allow editing those (priority/assignment fixed).
+            // The Default (global OR a tenant's per-org Default) is the unconditional catch-all: it stays
+            // UNASSIGNED and keeps its priority so it always covers every user not matched by a higher-priority
+            // policy — an admin can never strand users by targeting it at a specific (or empty) set. Only its
+            // knobs (timeouts, factors, cookie/IP settings) are editable.
             policy.update(update.absoluteTimeoutMinutes(), update.idleTimeoutMinutes(),
                     update.reauthIntervalMinutes(), reauthFactors, update.sensitiveReauthWindowMinutes(),
                     stepUpFactors, update.bindClient(),
@@ -336,7 +338,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
     @Transactional
     public void delete(UUID id) {
         SessionPolicy policy = tierGuard.requireInTier(repository.findById(id), () -> new NotFoundException("policy not found"));
-        if (isGlobalDefault(policy)) {
+        if (isDefaultFallback(policy)) {
             throw new BadRequestException("the Default policy cannot be deleted");
         }
 
@@ -356,10 +358,12 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
                 : repository.findByNameAndOrgId(name, org)).isPresent();
     }
 
-    // The immutable fallback is only the GLOBAL Default (org_id null); a tenant may own a policy named
-    // "Default" and must still be able to edit/delete it.
-    private boolean isGlobalDefault(SessionPolicy policy) {
-        return policy.getOrgId() == null && DEFAULT_NAME.equals(policy.getName());
+    // A "Default" policy — the GLOBAL fallback or a tenant's provisioned per-org Default — is the tier's
+    // unconditional lowest-priority catch-all. It must stay unassigned + non-reprioritisable + non-deletable
+    // so it always covers everyone not matched by a higher-priority policy, and an admin can never leave users
+    // with no policy by mis-targeting it.
+    private boolean isDefaultFallback(SessionPolicy policy) {
+        return DEFAULT_NAME.equals(policy.getName());
     }
 
     private Set<UUID> currentUserIds(UUID policyId) {

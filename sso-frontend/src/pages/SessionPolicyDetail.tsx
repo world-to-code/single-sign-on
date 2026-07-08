@@ -179,6 +179,9 @@ export default function SessionPolicyDetail() {
   }
 
   const crumbName = isNew ? "New policy" : (editor?.name || "Edit");
+  // The "Default" is the tier's unconditional fallback: its priority, enabled state and assignments are fixed
+  // (the server rejects changes) so it always covers every user not matched by a higher-priority policy.
+  const isDefault = !!editor?.id && editor.name === "Default";
 
   return (
     <EditorPage<Tab>
@@ -192,7 +195,7 @@ export default function SessionPolicyDetail() {
     >
       {editor && (
         <>
-          {tab === "general" && <GeneralTab editor={editor} set={set} />}
+          {tab === "general" && <GeneralTab editor={editor} set={set} isDefault={isDefault} />}
           {tab === "reauth" && <ReauthTab editor={editor} set={set} />}
           {tab === "network" && (
             <NetworkTab editor={editor} set={set} zoneNames={zoneNames} addKey={addKey}
@@ -206,7 +209,7 @@ export default function SessionPolicyDetail() {
                           setAddKey((k) => k + 1);
                         }} />
           )}
-          {tab === "assign" && <AssignTab editor={editor} set={set} roles={roles} />}
+          {tab === "assign" && <AssignTab editor={editor} set={set} roles={roles} isDefault={isDefault} />}
         </>
       )}
     </EditorPage>
@@ -226,7 +229,8 @@ function FactorChips({ selected, onToggle }: { selected: string[]; onToggle: (f:
   );
 }
 
-function GeneralTab({ editor, set }: { editor: Editor; set: (p: Partial<Editor>) => void }) {
+function GeneralTab({ editor, set, isDefault }:
+  { editor: Editor; set: (p: Partial<Editor>) => void; isDefault: boolean }) {
   return (
     <>
       <SettingsSection title="Basics" description="Identify the policy and set how it ranks against others.">
@@ -234,11 +238,16 @@ function GeneralTab({ editor, set }: { editor: Editor; set: (p: Partial<Editor>)
           <Input value={editor.name} disabled={!!editor.id} onChange={(e) => set({ name: e.target.value })} />
         </Field>
         <div className="grid gap-5 sm:grid-cols-2">
-          <Field label="Priority" hint="Higher wins when several policies match a user.">
-            <Input value={editor.priority} inputMode="numeric" onChange={(e) => set({ priority: e.target.value })} />
+          <Field label="Priority"
+                 hint={isDefault ? "The Default is fixed at the lowest priority so it always applies as the fallback."
+                                 : "Higher wins when several policies match a user."}>
+            <Input value={editor.priority} inputMode="numeric" disabled={isDefault}
+                   onChange={(e) => set({ priority: e.target.value })} />
           </Field>
-          <Toggle label="Enabled" hint="Disabled policies are ignored during resolution."
-                  checked={editor.enabled} onChange={(v) => set({ enabled: v })} />
+          <Toggle label="Enabled"
+                  hint={isDefault ? "The Default can't be disabled — it's the required fallback."
+                                  : "Disabled policies are ignored during resolution."}
+                  checked={editor.enabled} disabled={isDefault} onChange={(v) => set({ enabled: v })} />
         </div>
       </SettingsSection>
 
@@ -353,8 +362,20 @@ function NetworkTab({ editor, set, zoneNames, addKey, onAdd }:
   );
 }
 
-function AssignTab({ editor, set, roles }: { editor: Editor; set: (p: Partial<Editor>) => void; roles: Role[] }) {
+function AssignTab({ editor, set, roles, isDefault }:
+  { editor: Editor; set: (p: Partial<Editor>) => void; roles: Role[]; isDefault: boolean }) {
   const toggle = (v: string) => (editor.roleIds.includes(v) ? editor.roleIds.filter((x) => x !== v) : [...editor.roleIds, v]);
+  if (isDefault) {
+    return (
+      <SettingsSection title="Applies to" description="Who this policy governs.">
+        <p className="text-sm text-muted-foreground">
+          The <strong>Default</strong> policy is the unconditional fallback: it applies to <strong>every user</strong>
+          {" "}not matched by a higher-priority policy, so it can't be targeted at specific roles or users. To scope
+          different rules to some users, create another policy with a higher priority and assign it there.
+        </p>
+      </SettingsSection>
+    );
+  }
   return (
     <SettingsSection
       title="Applies to"
