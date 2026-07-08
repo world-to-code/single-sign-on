@@ -3,7 +3,6 @@ import type { FormEvent } from "react";
 import { ArrowRight, Building2, Loader2 } from "lucide-react";
 import { ApiError } from "../api";
 import { organization } from "../auth";
-import type { SessionView } from "../auth";
 import { lastOrg, rememberOrg } from "../lib/loginMemory";
 import AuthLayout from "../components/layout/AuthLayout";
 import { Alert, AlertDescription } from "../components/ui/alert";
@@ -11,13 +10,21 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 
+/** The origin of the tenant's OWN subdomain ({slug}.{platform-host}), where its sign-in must complete —
+ *  the session is host-bound, so an organization is reached ONLY through its subdomain, never the bare host. */
+function tenantOrigin(slug: string): string {
+  const { protocol, host } = window.location; // host includes the port (e.g. localhost:9000)
+  return `${protocol}//${slug}.${host}`;
+}
+
 /**
- * Tenant-first entry screen. The user identifies their organization (tenant) before their account, so
- * the sign-in that follows is scoped to that org. Unknown/suspended organizations are rejected uniformly
- * (no enumeration of which tenants exist). A returning visitor is offered their last-used organization for
- * a one-tap continue, with a clear path to a different one.
+ * Tenant-first entry screen, shown only on the bare platform host (a tenant subdomain auto-resolves its org
+ * and skips straight to sign-in). The user identifies their organization; we then send them to that org's OWN
+ * subdomain to sign in, because the session is host-bound — an organization is reached only through its
+ * subdomain. Unknown/suspended organizations are rejected uniformly (no enumeration). A returning visitor is
+ * offered their last-used organization for a one-tap continue.
  */
-export default function OrgSelect({ onDone }: { onDone: (s: SessionView) => void }) {
+export default function OrgSelect() {
   const remembered = lastOrg();
   // Start on the one-tap card when we remember an org; otherwise ask for the slug.
   const [manual, setManual] = useState(!remembered);
@@ -31,10 +38,11 @@ export default function OrgSelect({ onDone }: { onDone: (s: SessionView) => void
     setError(null);
     setBusy(true);
     try {
-      // The organization IS the tenant: a member signs in with their organization's slug.
-      const session = await organization(trimmed);
+      // Validate the organization exists and is ACTIVE (404 → inline error, no redirect), then continue the
+      // sign-in on the tenant's OWN subdomain, where the host-bound session belongs.
+      await organization(trimmed);
       rememberOrg(trimmed);
-      onDone(session);
+      window.location.assign(tenantOrigin(trimmed) + "/");
     } catch (e) {
       if (e instanceof ApiError) {
         setError(e.status === 404

@@ -76,7 +76,7 @@ export default function App() {
 
   switch (session.next) {
     case "ORGANIZATION":
-      return <OrgSelect onDone={apply} />;
+      return <OrgSelect />;
     case "IDENTIFY":
       return <Login session={session} onDone={apply} />;
     case "FACTOR":
