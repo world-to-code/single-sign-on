@@ -13,13 +13,15 @@ class OnboardingEmailSender {
 
     private final JavaMailSender mailSender;
 
+    // All three carry a {slug} placeholder substituted with the new tenant's subdomain: the set-password and
+    // activation links MUST land on the tenant's OWN host (their session/login context is host-bound), not the
+    // bare platform host.
     @Value("${sso.onboarding.set-password-url}")
     private String setPasswordUrl;
 
     @Value("${sso.onboarding.activate-url}")
     private String activateUrl;
 
-    // {slug} is substituted with the new tenant's subdomain to give the admin their workspace address.
     @Value("${sso.onboarding.workspace-url-template}")
     private String workspaceUrlTemplate;
 
@@ -34,7 +36,7 @@ class OnboardingEmailSender {
         message.setSubject("Verify your email to create your Mini SSO workspace");
         message.setText("A workspace \"" + slug + "\" was requested on Mini SSO with this email address."
                 + "\n\nVerify your email and set your admin password to create it:\n\n"
-                + activateUrl + "?token=" + rawToken
+                + activateUrl.replace("{slug}", slug) + "?token=" + rawToken
                 + "\n\nIf you didn't request this, ignore this email — nothing has been created."
                 + " This one-time link expires soon.");
         mailSender.send(message);
@@ -47,7 +49,7 @@ class OnboardingEmailSender {
         message.setSubject("Set up your Mini SSO admin account");
         message.setText("Your workspace is ready at:\n\n" + workspaceUrl
                 + "\n\nSet your password to activate your admin account:\n\n"
-                + setPasswordUrl + "?token=" + rawToken
+                + setPasswordUrl.replace("{slug}", slug) + "?token=" + rawToken
                 + "\n\nFor your security this is a one-time link and expires soon.");
         mailSender.send(message);
     }

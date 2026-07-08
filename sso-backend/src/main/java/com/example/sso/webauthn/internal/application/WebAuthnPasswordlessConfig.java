@@ -1,5 +1,6 @@
 package com.example.sso.webauthn.internal.application;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -42,8 +43,10 @@ public class WebAuthnPasswordlessConfig {
             UserCredentialRepository userCredentials,
             @Value("${sso.webauthn.rp-id:localhost}") String rpId,
             @Value("${sso.webauthn.rp-name:Mini SSO}") String rpName,
-            @Value("${sso.webauthn.allowed-origins:http://localhost:9000,http://localhost:5173}") Set<String> allowedOrigins) {
+            @Qualifier("webAuthnAllowedOrigins") Set<String> allowedOrigins) {
         PublicKeyCredentialRpEntity rp = PublicKeyCredentialRpEntity.builder().id(rpId).name(rpName).build();
+        // allowedOrigins is the TENANT-AWARE set (admits the current request's tenant-subdomain origin), so the
+        // single RP-operations bean validates passkey ceremonies at every tenant host, not only the platform.
         return new Webauthn4JRelyingPartyOperations(userEntities, userCredentials, rp, allowedOrigins);
     }
 

@@ -123,8 +123,8 @@ sso:
     invitation-ttl: 72h                              # how long a set-password invitation stays redeemable
     verification-ttl: 72h                                  # how long a self-service email-verification link stays redeemable
     resend-cooldown: 1m                                    # min interval between verification emails to the same address (anti-bomb)
-    set-password-url: http://localhost:9000/set-password  # SPA route the emailed invitation link points at
-    activate-url: http://localhost:9000/activate           # SPA route the self-service verification link points at
+    set-password-url: http://{slug}.localhost:9000/set-password  # invitation link — lands on the TENANT's own host ({slug} substituted)
+    activate-url: http://{slug}.localhost:9000/activate          # self-service verification link — lands on the TENANT's own host
     workspace-url-template: http://{slug}.localhost:9000   # tenant workspace address emailed to the new admin ({slug} substituted)
   demo-client:
     enabled: true                                    # local-testing OIDC client (known secret); false in prod

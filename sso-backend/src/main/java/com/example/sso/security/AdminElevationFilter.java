@@ -104,7 +104,7 @@ public class AdminElevationFilter extends OncePerRequestFilter {
             forbidNetwork(response);
             return;
         }
-        if (!isElevated(jwt, settings.reauthInterval()) || !boundToSession(jwt)) {
+        if (!isElevated(jwt, settings.reauthInterval(), expectedIssuer(request, issuer)) || !boundToSession(jwt)) {
             // A decoded token that fails elevation or session-binding is the forge/replay/stale signal — audit it.
             audit.record(new AuditRecord(AuditType.ADMIN_ELEVATION_DENIED, jwt.getSubject(), false,
                     "uri=" + request.getRequestURI(), request.getRemoteAddr()));
@@ -161,8 +161,8 @@ public class AdminElevationFilter extends OncePerRequestFilter {
      * ({@code AppAssignmentFilter} gates {@code /oauth2/authorize}), and what the caller may do is
      * decided per endpoint by {@code @RequirePermission}.
      */
-    private boolean isElevated(Jwt jwt, Duration freshnessWindow) {
-        if (jwt.getIssuer() == null || !issuer.equals(jwt.getIssuer().toString())) {
+    private boolean isElevated(Jwt jwt, Duration freshnessWindow, String expectedIssuer) {
+        if (jwt.getIssuer() == null || !expectedIssuer.equals(jwt.getIssuer().toString())) {
             return false;
         }
         if (!clientId.equals(jwt.getClaimAsString("azp"))) {
@@ -182,6 +182,19 @@ public class AdminElevationFilter extends OncePerRequestFilter {
 
         long age = Instant.now().getEpochSecond() - stepUp;
         return age >= 0 && age <= freshnessWindow.toSeconds();
+    }
+
+    /**
+     * The issuer the admin-console token MUST carry: this IdP AT THE REQUEST'S OWN HOST. The per-tenant issuer
+     * is host-derived (a token minted at {@code acme.localhost:9000} carries {@code iss=http://acme.localhost:9000}),
+     * so a fixed platform issuer would reject every tenant admin at their subdomain. Deriving it from the request
+     * host matches how the token was minted AND pins the token to this host — a token from ANOTHER tenant's issuer
+     * is refused (belt-and-suspenders with the host-scoped signature check). Falls back to the configured platform
+     * issuer if the Host header is absent.
+     */
+    static String expectedIssuer(HttpServletRequest request, String fallbackIssuer) {
+        String host = request.getHeader("Host");
+        return host == null || host.isBlank() ? fallbackIssuer : request.getScheme() + "://" + host;
     }
 
     /** sub must equal the current session principal so a token for another user cannot be replayed. */

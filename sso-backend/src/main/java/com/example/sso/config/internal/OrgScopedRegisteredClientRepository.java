@@ -1,5 +1,6 @@
 package com.example.sso.config.internal;
 
+import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.tenancy.OrgContext;
 import java.util.Objects;
 import java.util.UUID;
@@ -57,6 +58,14 @@ public class OrgScopedRegisteredClientRepository implements RegisteredClientRepo
     private RegisteredClient inHostTier(RegisteredClient client) {
         if (client == null) {
             return null;
+        }
+        // The first-party admin console is host-AGNOSTIC: every tenant admin enters it from THEIR OWN subdomain
+        // (host-bound session), so it must resolve at the platform host AND every tenant host. Safe because it
+        // is a PUBLIC client (PKCE, no secret to leak across hosts) whose interactive redirect is validated
+        // same-origin (AdminConsoleRedirectUriValidator) — the cross-tenant-mint risk this scoping guards is a
+        // CONFIDENTIAL client presenting its secret at a foreign host, which does not apply here.
+        if (AdminPortalSeeder.CLIENT_ID.equals(client.getClientId())) {
+            return client;
         }
         UUID clientOrg = clientOrg(client.getId());
         UUID hostOrg = orgContext.currentOrg().orElse(null);

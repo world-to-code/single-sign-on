@@ -34,4 +34,13 @@ public class HostOrgResolver {
                 .filter(o -> o.getStatus() == OrganizationStatus.ACTIVE)
                 .map(OrganizationRef::getId));
     }
+
+    /**
+     * Whether the host is a subdomain-SHAPED tenant host ({@code {slug}.base}) that resolves to NO active org —
+     * an unknown or suspended tenant. Distinguishes it from the bare platform host and from a foreign/IP host
+     * (which carries no tenant label): only the former should 404, so health checks at an IP still pass.
+     */
+    public boolean isUnknownTenant(String host) {
+        return resolver.tenantSlug(host).isPresent() && resolveOrg(host).isEmpty();
+    }
 }

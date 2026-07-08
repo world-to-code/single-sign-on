@@ -26,6 +26,7 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authorization.AuthenticatedAuthorizationManager;
 import org.springframework.security.authorization.AuthorityAuthorizationManager;
 import org.springframework.security.authorization.AuthorizationManager;
@@ -39,6 +40,7 @@ import org.springframework.security.oauth2.core.oidc.OidcScopes;
 import org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
+import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationProvider;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
@@ -56,6 +58,7 @@ import org.springframework.security.core.GrantedAuthority;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
@@ -97,7 +100,11 @@ public class AuthorizationServerConfig {
                 .with(authorizationServer, as -> as
                         // Replace the framework whitelabel consent screen with our branded, server-rendered
                         // page (same SPA visual identity); the endpoint still owns the scope/consent contract.
-                        .authorizationEndpoint(endpoint -> endpoint.consentPage(ConsentPage.URI))
+                        // The custom redirect_uri validator lets the first-party admin console be entered from
+                        // any tenant subdomain (same-origin callback) without pre-registering each one.
+                        .authorizationEndpoint(endpoint -> endpoint
+                                .consentPage(ConsentPage.URI)
+                                .authenticationProviders(adminConsoleRedirectValidator()))
                         .oidc(oidc -> oidc
                                 .providerConfigurationEndpoint(providerConfig -> providerConfig
                                         .providerConfigurationCustomizer(metadata -> metadata
@@ -260,6 +267,19 @@ public class AuthorizationServerConfig {
                 }
             });
         };
+    }
+
+    /**
+     * Swaps the framework's default authorization-code request validator for one that additionally accepts the
+     * first-party admin console's same-origin {@code /admin/callback} redirect at any tenant subdomain (see
+     * {@link AdminConsoleRedirectUriValidator}); all other clients keep the strict registered-set check.
+     */
+    private Consumer<List<AuthenticationProvider>> adminConsoleRedirectValidator() {
+        return providers -> providers.forEach(provider -> {
+            if (provider instanceof OAuth2AuthorizationCodeRequestAuthenticationProvider codeRequestProvider) {
+                codeRequestProvider.setAuthenticationValidator(new AdminConsoleRedirectUriValidator());
+            }
+        });
     }
 
     /** Maps satisfied factor authorities to RFC 8176 Authentication Method References. */

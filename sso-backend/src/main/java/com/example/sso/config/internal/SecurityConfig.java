@@ -18,8 +18,10 @@ import com.example.sso.security.OrgDrillInFilter;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.security.SessionIntegrityFilter;
 import com.example.sso.security.TenantSessionHostGuard;
+import com.example.sso.security.TenantUnknownSubdomainGuard;
 import com.example.sso.session.NetworkZoneService;
 import com.example.sso.session.SessionPolicyService;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
@@ -94,6 +96,18 @@ public class SecurityConfig {
         return new SpringSessionBackedSessionRegistry<>(sessions);
     }
 
+    /**
+     * WebAuthn allowed origins, tenant-aware: the configured platform/dev origins PLUS the current request's
+     * own origin when its host is a base domain or a live tenant — so a passkey ceremony at a tenant subdomain
+     * validates without pre-registering every one. Shared by the app chain's {@code http.webAuthn(..)} and the
+     * {@code Webauthn4JRelyingPartyOperations} assertion validator.
+     */
+    @Bean
+    Set<String> webAuthnAllowedOrigins(HostOrgResolver hostOrgResolver,
+            @Value("${sso.webauthn.allowed-origins:http://localhost:9000,http://localhost:5173}") Set<String> configured) {
+        return new TenantAwareWebAuthnOrigins(configured, hostOrgResolver);
+    }
+
     @Bean
     @Order(Ordered.LOWEST_PRECEDENCE)
     SecurityFilterChain appSecurityFilterChain(
@@ -107,7 +121,7 @@ public class SecurityConfig {
             @Value("${sso.issuer}") String issuer,
             @Value("${sso.webauthn.rp-id:localhost}") String rpId,
             @Value("${sso.webauthn.rp-name:Mini SSO}") String rpName,
-            @Value("${sso.webauthn.allowed-origins:http://localhost:9000,http://localhost:5173}") Set<String> allowedOrigins)
+            @Qualifier("webAuthnAllowedOrigins") Set<String> allowedOrigins)
             throws Exception {
         CsrfTokenRequestAttributeHandler csrfRequestHandler = new CsrfTokenRequestAttributeHandler();
 
@@ -185,6 +199,10 @@ public class SecurityConfig {
                 // that follow resolve the caller's ORG-scoped policy, not just the global default. Ordering is
                 // explicit (each filter anchored on the previous) — the tenant's session controls depend on it.
                 .addFilterAfter(new OrgContextFilter(orgContext), CsrfFilter.class)
+                // Zero-Trust host allowlist on the app chain (twin of the OIDC chain's TenantHostFilter): an
+                // unknown/suspended tenant subdomain ({slug}.base with no active org) 404s across the whole app
+                // surface — SPA shell, static assets, /api/** — while the bare host and foreign/IP hosts pass.
+                .addFilterAfter(new TenantUnknownSubdomainGuard(hostOrgResolver), OrgContextFilter.class)
                 // During the LOGIN phase (before MFA completes, when OrgContext is not yet bound), scope user
                 // resolution to the organization being signed into, so the password provider / factor-state /
                 // lockout target the right tenant's account and never a same-named user in another org.

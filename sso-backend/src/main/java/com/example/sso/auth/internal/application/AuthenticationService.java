@@ -8,6 +8,7 @@ import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.organization.OrganizationRef;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationStatus;
+import com.example.sso.tenancy.SubdomainTenantResolver;
 import com.example.sso.saml.SamlFrontChannelLogout;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.NotFoundException;
@@ -59,11 +60,30 @@ public class AuthenticationService {
     private final OrganizationService organizations;
     private final PreAuthOrgSession preAuthOrg;
     private final LoginResolutionScope loginScope;
+    private final SubdomainTenantResolver subdomainResolver;
     private final AuditService audit;
 
     public AuthSessionView session(HttpServletRequest request) {
+        autoSelectOrgFromHost(request);
         return authState.describe(currentUser.authentication(),
                 preAuthOrg.orgSlug(request).orElse(null), preAuthOrg.orgId(request).orElse(null));
+    }
+
+    /**
+     * On a tenant subdomain ({@code {slug}.base}) the organization is unambiguous from the HOST, so auto-select
+     * it — stash it exactly as the tenant-first entry would — and the SPA skips the org picker, landing on
+     * IDENTIFY. Only when nothing is stashed yet and only for an ACTIVE tenant; the bare platform host derives
+     * no slug, so it still shows the picker. (An unknown/suspended subdomain never reaches here — the app-chain
+     * {@code TenantUnknownSubdomainGuard} already 404s it.)
+     */
+    private void autoSelectOrgFromHost(HttpServletRequest request) {
+        if (preAuthOrg.orgId(request).isPresent()) {
+            return;
+        }
+        subdomainResolver.tenantSlug(request.getServerName())
+                .flatMap(organizations::findBySlug)
+                .filter(org -> org.getStatus() == OrganizationStatus.ACTIVE)
+                .ifPresent(org -> preAuthOrg.stash(request, org.getId(), org.getSlug()));
     }
 
     /** Whether an account has already been identified in this session (a pre-auth principal is established). */
