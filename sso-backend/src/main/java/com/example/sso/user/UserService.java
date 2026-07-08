@@ -54,9 +54,6 @@ public interface UserService {
 
     List<UserAccount> findAll();
 
-    /** A DB-paged slice of all users (0-based page), ordered by username — for the admin directory. */
-    Page<UserAccount> findAll(int page, int size);
-
     /** A DB-paged slice of the users whose id is in {@code ids} — for a scoped admin's directory. */
     Page<UserAccount> findByIds(Collection<UUID> ids, int page, int size);
 

@@ -73,7 +73,6 @@ class UserAdminServiceTest {
         when(userService.findByOrg(null, 0, 20)).thenReturn(new Page<>(1, 0, 20, List.of(global)));
 
         assertThat(service.listUsers(0, 20).items()).hasSize(1);
-        verify(userService, never()).findAll(anyInt(), anyInt());          // never the all-tenant list
         verify(accessPolicy, never()).currentManagedUserIds();
         verify(userService, never()).findByIds(any(), anyInt(), anyInt());
     }
@@ -89,7 +88,6 @@ class UserAdminServiceTest {
         Page<AdminUserView> result = service.listUsers(0, 20);
 
         assertThat(result.items()).extracting(AdminUserView::id).containsExactly(managed.toString());
-        verify(userService, never()).findAll(anyInt(), anyInt());
     }
 
     @Test

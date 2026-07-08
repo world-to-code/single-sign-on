@@ -78,12 +78,6 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
                 .or(() -> findByUsernameAndOrgIdIsNull(identifier));
     }
 
-    /**
-     * A page of users, ordered by username. Roles/permissions are hydrated separately (explicit join
-     * repositories) by the service when it projects the page, so no collection fetch-join here.
-     */
-    Page<AppUser> findByOrderByUsernameAsc(Pageable pageable);
-
     /** A scoped page: users whose id is in {@code ids} (a delegate's subtree), ordered by username. */
     Page<AppUser> findByIdInOrderByUsernameAsc(Collection<UUID> ids, Pageable pageable);
 

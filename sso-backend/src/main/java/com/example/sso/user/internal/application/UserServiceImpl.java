@@ -129,12 +129,6 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<UserAccount> findAll(int page, int size) {
-        return toPage(users.findByOrderByUsernameAsc(PageRequest.of(Page.clampPage(page), Page.clampSize(size))));
-    }
-
-    @Override
-    @Transactional(readOnly = true)
     public Page<UserAccount> findByOrg(UUID orgId, int page, int size) {
         PageRequest pageRequest = PageRequest.of(Page.clampPage(page), Page.clampSize(size));
         // A null tier is the PLATFORM: the global (org-less) users only — an un-drilled super-admin never sees a
