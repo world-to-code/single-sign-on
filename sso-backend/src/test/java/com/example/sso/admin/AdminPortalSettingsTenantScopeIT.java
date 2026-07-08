@@ -1,6 +1,7 @@
 package com.example.sso.admin;
 
 import com.example.sso.admin.internal.portalsettings.domain.AdminPortalSettingsRepository;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
@@ -59,11 +60,18 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
 
         assertThat(orgContext.callInOrg(orgA, settings::get).reauthIntervalMinutes()).isEqualTo(42);
         assertThat(orgContext.callInOrg(orgA, settings::get).adminAllowedCidrs()).containsExactly("10.0.0.0/8");
-        // orgB still inherits the untouched global default; the platform default is unchanged too.
-        assertThat(orgContext.callInOrg(orgB, settings::get).reauthIntervalMinutes())
-                .isEqualTo(global.reauthIntervalMinutes());
-        assertThat(orgContext.callAsPlatform(settings::get).reauthIntervalMinutes())
-                .isEqualTo(global.reauthIntervalMinutes());
+        // orgB still inherits the untouched global default; the WHOLE global record is unchanged (not just one
+        // field) — a bug bleeding orgA's CIDRs or TTL into the global row would be caught here.
+        assertThat(orgContext.callInOrg(orgB, settings::get)).isEqualTo(global);
+        assertThat(orgContext.callAsPlatform(settings::get)).isEqualTo(global);
+    }
+
+    @Test
+    void updateRejectsAnInvalidCidr() {
+        assertThatThrownBy(() -> orgContext.callInOrg(orgA, () -> settings.update(
+                new AdminPortalSettingsData(10, 5, 30, 480, List.of("not-a-cidr")))))
+                .isInstanceOf(BadRequestException.class);
+        assertThat(repository.findByOrgId(orgA)).isEmpty(); // the rejected write materialized no row
     }
 
     @Test

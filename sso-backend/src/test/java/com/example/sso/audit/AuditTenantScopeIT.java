@@ -53,24 +53,40 @@ class AuditTenantScopeIT extends AbstractIntegrationTest {
     @Test
     void thePlatformTierSeesOnlyGlobalEventsNotAnyTenant() {
         record(AuditType.AUTH_SUCCESS, "alice", orgA);
+        record(AuditType.AUTH_SUCCESS, "bob", orgB);
         record(AuditType.AUTH_SUCCESS, "root", null);
 
         List<String> principals = principalsOf(audit.recent(null));
 
         assertThat(principals).contains("root");
-        assertThat(principals).doesNotContain("alice");
+        assertThat(principals).doesNotContain("alice", "bob"); // never any tenant merged in
     }
 
     @Test
-    void categoryReadsAreTenantScoped() {
-        record(AuditType.AUTH_SUCCESS, "alice", orgA); // AUTHENTICATION category
-        record(AuditType.AUTH_SUCCESS, "bob", orgB);
+    void aTenantTierSurvivesTopNTruncationBehindAGlobalFlood() {
+        // The scope MUST be in the query, not an after-fetch filter: a tenant with a few old events behind a
+        // flood of >100 newer GLOBAL events must still see its own. A fetch-top-100-then-filter regression
+        // would drop orgA's event out of the newest-100 window and return nothing here.
+        record(AuditType.AUTH_SUCCESS, "lonely-a", orgA);
+        for (int i = 0; i < 105; i++) { // exceed the findTop100 window with newer global events
+            record(AuditType.AUTH_SUCCESS, "flood-" + i, null);
+        }
+
+        assertThat(principalsOf(audit.recent(orgA))).containsExactly("lonely-a");
+    }
+
+    @Test
+    void categoryReadsAreScopedByBothOrgAndCategory() {
+        record(AuditType.AUTH_SUCCESS, "alice-auth", orgA);          // AUTHENTICATION, orgA
+        record(AuditType.SESSION_ADMIN_REVOKED, "alice-session", orgA); // SESSION, orgA
+        record(AuditType.AUTH_SUCCESS, "bob", orgB);                 // AUTHENTICATION, orgB
 
         List<String> principals = principalsOf(
-                audit.recentByCategory(orgA, AuditType.AUTH_SUCCESS.getCategory()));
+                audit.recentByCategory(orgA, AuditCategory.AUTHENTICATION));
 
-        assertThat(principals).contains("alice");
-        assertThat(principals).doesNotContain("bob");
+        assertThat(principals).contains("alice-auth");
+        assertThat(principals).doesNotContain("alice-session"); // category predicate is real
+        assertThat(principals).doesNotContain("bob");           // org predicate is real
     }
 
     @Test
@@ -84,6 +100,20 @@ class AuditTenantScopeIT extends AbstractIntegrationTest {
 
         assertThat(typesForA).contains(AuditType.AUTH_SUCCESS.name());
         assertThat(typesForA).doesNotContain(AuditType.SESSION_ADMIN_REVOKED.name());
+    }
+
+    @Test
+    void thePlatformNullBranchOfPrincipalAndCategoryReadsSeesOnlyGlobalEvents() {
+        // Each read's null branch dispatches to a SEPARATE repository method (…ByOrgIdIsNull…); make sure
+        // neither the principal nor the category null-branch surfaces a tenant's rows.
+        record(AuditType.AUTH_SUCCESS, "shared", null);       // global
+        record(AuditType.AUTH_SUCCESS, "shared", orgA);       // tenant, same username (for the principal read)
+        record(AuditType.AUTH_SUCCESS, "tenant-only", orgA);  // tenant, distinct (for the category read)
+
+        assertThat(audit.recentForPrincipal(null, "shared")).hasSize(1); // only the global "shared", not orgA's
+        assertThat(principalsOf(audit.recentByCategory(null, AuditCategory.AUTHENTICATION)))
+                .contains("shared")
+                .doesNotContain("tenant-only"); // global-only; the orgA rows are absent
     }
 
     private void record(AuditType type, String principal, UUID orgId) {

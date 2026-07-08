@@ -80,7 +80,7 @@ class PermissionsTest {
         assertThat(Permissions.isPlatform(Permissions.ORG_CREATE)).isTrue();
         assertThat(Permissions.isPlatform(Permissions.AUDIT_READ)).isTrue();
         // a tenant's own directory + apps + registry membership + admin-console policy are tenant-grantable
-        assertThat(Permissions.isPlatform(Permissions.PORTAL_SETTINGS_UPDATE)).isFalse(); // per-tenant admin-console policy
+        assertThat(Permissions.isPlatform(Permissions.PORTAL_SETTINGS_UPDATE)).isFalse(); // per-tenant policy
         assertThat(Permissions.isPlatform(Permissions.CLIENT_CREATE)).isFalse(); // host-org-scoped OIDC clients
         assertThat(Permissions.isPlatform(Permissions.SCIM_MANAGE)).isFalse(); // per-tenant SCIM /Users provisioning
         assertThat(Permissions.isPlatform(Permissions.KEY_ROTATE)).isFalse();  // per-tenant signing keys

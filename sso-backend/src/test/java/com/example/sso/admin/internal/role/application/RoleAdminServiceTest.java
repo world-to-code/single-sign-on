@@ -158,7 +158,7 @@ class RoleAdminServiceTest {
         assertThat(service.listPermissions()).extracting(PermissionView::name)
                 .doesNotContain(Permissions.ORG_CREATE, Permissions.ORG_DELETE, Permissions.AUDIT_READ)
                 .contains(Permissions.USER_READ, Permissions.ORG_READ, Permissions.ROLE_CREATE, Permissions.POLICY_READ,
-                        Permissions.PORTAL_SETTINGS_UPDATE, // per-tenant admin-console elevation policy -> tenant-grantable
+                        Permissions.PORTAL_SETTINGS_UPDATE, // per-tenant admin-console policy
                         Permissions.CLIENT_CREATE, // host-org-scoped OIDC clients -> tenant-grantable
                         Permissions.SCIM_MANAGE); // /Users org-scoped -> tenant-grantable
         verify(rbacService, never()).allPermissions(); // a tenant admin uses the static tenant subset
