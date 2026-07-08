@@ -4,6 +4,7 @@ import { ChevronLeft, Fingerprint, KeyRound, Loader2, Lock, Smartphone } from "l
 import { ApiError, registerStepUpHandler } from "@/api";
 import type { StepUpReason } from "@/api";
 import { logout, reauthPrepare, reauthVerify } from "@/auth";
+import { getSessionConfig } from "@/portal";
 import type { SessionView } from "@/auth";
 import { assertFactorCredential, webAuthnSupported } from "@/webauthn";
 import { Button } from "@/components/ui/button";
@@ -32,8 +33,18 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // True while a proactive step-up is still fetching the policy's allowed factors — the method chooser is
+  // withheld until then, so a method the server would reject (e.g. password) is NEVER momentarily offered.
+  const [resolvingFactors, setResolvingFactors] = useState(false);
   const resolver = useRef<((ok: boolean) => void) | null>(null);
   const pending = useRef<Promise<boolean> | null>(null);
+  // The policy's re-auth factors — the set the server's ReauthService allows for a step-up with no explicit
+  // server challenge. Prefetched so a PROACTIVE step-up (entering the admin console) is constrained to them.
+  const policyFactors = useRef<string[] | null>(null);
+
+  useEffect(() => {
+    getSessionConfig().then((cfg) => { policyFactors.current = cfg.reauthFactors; }).catch(() => undefined);
+  }, []);
 
   const allow = (factor: string) => allowed === null || allowed.includes(factor);
   const passkeyAvailable = allow("FIDO2") && session.fido2Enrolled && webAuthnSupported();
@@ -46,9 +57,23 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
     if (pending.current) {
       return pending.current; // a modal is already open — reuse it instead of clobbering the resolver
     }
-    setReason(why); setAllowed(factors ?? null); setMethod("choose");
+    setReason(why); setMethod("choose");
     setCode(""); setPassword(""); setError(null); setBusy(false); setOpen(true);
     pending.current = new Promise<boolean>((resolve) => { resolver.current = resolve; });
+    if (factors) {
+      setAllowed(factors); setResolvingFactors(false); // reactive: the server named the exact allowed factors
+    } else if (policyFactors.current) {
+      setAllowed(policyFactors.current); setResolvingFactors(false); // proactive, factors already prefetched
+    } else {
+      // Proactive step-up (e.g. entering the admin console) before the prefetch resolved: WITHHOLD the method
+      // chooser (spinner) until we know the policy's re-auth factors — the SAME set ReauthService accepts —
+      // so a method it would reject (e.g. password on a TOTP/FIDO2-only policy) is never even offered.
+      setAllowed(null); setResolvingFactors(true);
+      getSessionConfig()
+        .then((cfg) => { policyFactors.current = cfg.reauthFactors; setAllowed(cfg.reauthFactors); })
+        .catch(() => undefined) // config unreachable: fall back to offering all (the server still rejects)
+        .finally(() => setResolvingFactors(false));
+    }
     return pending.current;
   }, []);
 
@@ -136,8 +161,15 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
 
           {error && <p className="text-sm text-destructive">{error}</p>}
 
+          {/* Still resolving which factors the policy allows — withhold the chooser so no rejected method shows */}
+          {resolvingFactors && (
+            <div className="flex items-center justify-center py-6">
+              <Loader2 className="size-5 animate-spin text-muted-foreground" />
+            </div>
+          )}
+
           {/* Step 1: pick an allowed + available method */}
-          {method === "choose" && !noMethods && (
+          {!resolvingFactors && method === "choose" && !noMethods && (
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">Choose how to verify:</p>
               {passkeyAvailable && (
