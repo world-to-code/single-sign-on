@@ -6,29 +6,16 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * Exposed, read-only projection of the admin-portal security settings (the {@code admin-console}
- * elevation path knobs). This is the admin module's public contract; the backing
- * {@code AdminPortalSettings} entity stays module-internal.
+ * Exposed, read-only projection of the admin-console-specific security settings: the elevation-token TTL
+ * and the IP allowlist. The admin session's idle/absolute lifetimes and step-up freshness come from the
+ * SESSION POLICY resolved for the admin user, not from here. This is the admin module's public contract;
+ * the backing {@code AdminPortalSettings} entity stays module-internal.
  */
-public record AdminPortalSettingsData(int reauthIntervalMinutes, int elevationTokenTtlMinutes,
-                                      int sessionIdleTimeoutMinutes, int sessionAbsoluteLifetimeMinutes,
-                                      List<String> adminAllowedCidrs) {
-
-    public Duration reauthInterval() {
-        return Duration.ofMinutes(reauthIntervalMinutes);
-    }
+public record AdminPortalSettingsData(int elevationTokenTtlMinutes, List<String> adminAllowedCidrs) {
 
     /** Max age of the elevation access token itself (since issuance) — enforced per-tenant by the gate. */
     public Duration elevationTokenTtl() {
         return Duration.ofMinutes(elevationTokenTtlMinutes);
-    }
-
-    public Duration sessionIdleTimeout() {
-        return Duration.ofMinutes(sessionIdleTimeoutMinutes);
-    }
-
-    public Duration sessionAbsoluteLifetime() {
-        return Duration.ofMinutes(sessionAbsoluteLifetimeMinutes);
     }
 
     /**

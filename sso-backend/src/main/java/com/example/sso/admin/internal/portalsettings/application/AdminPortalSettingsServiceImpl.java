@@ -42,9 +42,7 @@ public class AdminPortalSettingsServiceImpl implements AdminPortalSettingsServic
         // Write the ACTING tenant's own row (a tenant admin can only touch their bound org; an un-drilled
         // super-admin edits the global default). On a tenant's first save, copy-on-write from the global row.
         AdminPortalSettings settings = writableRow(actingOrg());
-        settings.update(command.reauthIntervalMinutes(), command.elevationTokenTtlMinutes(),
-                command.sessionIdleTimeoutMinutes(), command.sessionAbsoluteLifetimeMinutes(),
-                normalizeCidrs(command.adminAllowedCidrs()));
+        settings.update(command.elevationTokenTtlMinutes(), normalizeCidrs(command.adminAllowedCidrs()));
         return toData(repository.save(settings));
     }
 
@@ -82,9 +80,8 @@ public class AdminPortalSettingsServiceImpl implements AdminPortalSettingsServic
     }
 
     private AdminPortalSettingsData toData(AdminPortalSettings settings) {
-        return new AdminPortalSettingsData(settings.getReauthIntervalMinutes(),
-                settings.getElevationTokenTtlMinutes(), settings.getSessionIdleTimeoutMinutes(),
-                settings.getSessionAbsoluteLifetimeMinutes(), splitCidrs(settings.getAdminAllowedCidrs()));
+        return new AdminPortalSettingsData(settings.getElevationTokenTtlMinutes(),
+                splitCidrs(settings.getAdminAllowedCidrs()));
     }
 
     /** Trims/validates each CIDR (rejecting an invalid one, 400) and joins them for storage; blank → null. */

@@ -4,15 +4,10 @@ import com.example.sso.admin.AdminPortalSettingsData;
 
 import java.util.List;
 
-/** Read model for the admin-portal security settings. */
-public record AdminPortalSettingsView(int reauthIntervalMinutes, int elevationTokenTtlMinutes,
-                                      int sessionIdleTimeoutMinutes, int sessionAbsoluteLifetimeMinutes,
-                                      List<String> adminAllowedCidrs) {
+/** Read model for the admin-console-specific security settings (elevation-token TTL + IP allowlist). */
+public record AdminPortalSettingsView(int elevationTokenTtlMinutes, List<String> adminAllowedCidrs) {
 
     static AdminPortalSettingsView of(AdminPortalSettingsData settings) {
-        return new AdminPortalSettingsView(
-                settings.reauthIntervalMinutes(), settings.elevationTokenTtlMinutes(),
-                settings.sessionIdleTimeoutMinutes(), settings.sessionAbsoluteLifetimeMinutes(),
-                settings.adminAllowedCidrs());
+        return new AdminPortalSettingsView(settings.elevationTokenTtlMinutes(), settings.adminAllowedCidrs());
     }
 }

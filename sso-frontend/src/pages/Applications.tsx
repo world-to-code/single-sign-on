@@ -21,13 +21,10 @@ import { SearchSelect } from "@/components/SearchSelect";
 import { searchGroups, searchUsers } from "@/groups";
 
 interface Application { id: string; type: "OIDC" | "SAML"; name: string; launchUrl: string | null; system: boolean; requiredPolicyId: string | null; requiredPolicyName: string | null; }
-interface PortalSettings { reauthIntervalMinutes: number; elevationTokenTtlMinutes: number; sessionIdleTimeoutMinutes: number; sessionAbsoluteLifetimeMinutes: number; adminAllowedCidrs: string[]; }
+interface PortalSettings { elevationTokenTtlMinutes: number; adminAllowedCidrs: string[]; }
 
 const settingFields: { key: keyof PortalSettings; label: string; hint: string }[] = [
-  { key: "reauthIntervalMinutes", label: "Re-authentication interval (min)", hint: "How recent the deliberate step-up must be to use the admin API. Older ⇒ re-prompt for a strong factor." },
   { key: "elevationTokenTtlMinutes", label: "Elevation token lifetime (min)", hint: "TTL of the admin-console access token (the privilege-elevation proof)." },
-  { key: "sessionIdleTimeoutMinutes", label: "Admin session idle timeout (min)", hint: "The admin session ends after this long with no admin activity." },
-  { key: "sessionAbsoluteLifetimeMinutes", label: "Admin session absolute lifetime (min)", hint: "The admin session ends this long after it first elevated, regardless of activity." },
 ];
 /** Split a textarea of CIDRs (newline- or comma-separated) into trimmed, non-empty entries. */
 function splitCidrs(value: string): string[] {
@@ -242,8 +239,9 @@ export default function Applications() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Lock className="size-4" /> Admin Portal security</DialogTitle>
             <DialogDescription>
-              Session and re-authentication rules that apply <strong>only</strong> to the admin portal — separate from
-              per-user session policies. Changes take effect on the next admin request.
+              Admin-console-specific security: the elevation token lifetime and the IP allowlist. The admin
+              session's idle/absolute timeouts and step-up freshness come from the <strong>session policy</strong>
+              assigned to the admin. Changes take effect on the next admin request.
             </DialogDescription>
           </DialogHeader>
 

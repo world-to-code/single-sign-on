@@ -46,8 +46,8 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
 
         AdminPortalSettingsData asA = orgContext.callInOrg(orgA, settings::get);
 
-        assertThat(asA.reauthIntervalMinutes()).isEqualTo(global.reauthIntervalMinutes());
         assertThat(asA.elevationTokenTtlMinutes()).isEqualTo(global.elevationTokenTtlMinutes());
+        assertThat(asA.adminAllowedCidrs()).isEqualTo(global.adminAllowedCidrs());
         assertThat(repository.findByOrgId(orgA)).isEmpty(); // a pure read never materializes a row
     }
 
@@ -56,9 +56,9 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
         AdminPortalSettingsData global = orgContext.callAsPlatform(settings::get);
 
         orgContext.callInOrg(orgA, () -> settings.update(
-                new AdminPortalSettingsData(42, 7, 21, 240, List.of("10.0.0.0/8"))));
+                new AdminPortalSettingsData(7, List.of("10.0.0.0/8"))));
 
-        assertThat(orgContext.callInOrg(orgA, settings::get).reauthIntervalMinutes()).isEqualTo(42);
+        assertThat(orgContext.callInOrg(orgA, settings::get).elevationTokenTtlMinutes()).isEqualTo(7);
         assertThat(orgContext.callInOrg(orgA, settings::get).adminAllowedCidrs()).containsExactly("10.0.0.0/8");
         // orgB still inherits the untouched global default; the WHOLE global record is unchanged (not just one
         // field) — a bug bleeding orgA's CIDRs or TTL into the global row would be caught here.
@@ -69,7 +69,7 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
     @Test
     void updateRejectsAnInvalidCidr() {
         assertThatThrownBy(() -> orgContext.callInOrg(orgA, () -> settings.update(
-                new AdminPortalSettingsData(10, 5, 30, 480, List.of("not-a-cidr")))))
+                new AdminPortalSettingsData(5, List.of("not-a-cidr")))))
                 .isInstanceOf(BadRequestException.class);
         assertThat(repository.findByOrgId(orgA)).isEmpty(); // the rejected write materialized no row
     }
@@ -77,12 +77,12 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
     @Test
     void twoTenantsKeepSeparateSettings() {
         orgContext.callInOrg(orgA, () -> settings.update(
-                new AdminPortalSettingsData(11, 3, 15, 120, List.of())));
+                new AdminPortalSettingsData(11, List.of())));
         orgContext.callInOrg(orgB, () -> settings.update(
-                new AdminPortalSettingsData(99, 9, 45, 600, List.of())));
+                new AdminPortalSettingsData(99, List.of())));
 
-        assertThat(orgContext.callInOrg(orgA, settings::get).reauthIntervalMinutes()).isEqualTo(11);
-        assertThat(orgContext.callInOrg(orgB, settings::get).reauthIntervalMinutes()).isEqualTo(99);
+        assertThat(orgContext.callInOrg(orgA, settings::get).elevationTokenTtlMinutes()).isEqualTo(11);
+        assertThat(orgContext.callInOrg(orgB, settings::get).elevationTokenTtlMinutes()).isEqualTo(99);
     }
 
     @Test
@@ -90,17 +90,15 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
         // A bound-but-orgless, non-platform context (an org user that authenticated without a resolved tenant)
         // must NOT fall through to rewriting the platform-wide default every tenant inherits.
         assertThatThrownBy(() -> orgContext.callInOrg(null, () -> settings.update(
-                new AdminPortalSettingsData(1, 1, 1, 1, List.of()))))
+                new AdminPortalSettingsData(1, List.of()))))
                 .isInstanceOf(ForbiddenException.class);
 
         // The platform super-admin context may edit it (write back the current values so the shared row is
         // left byte-for-byte unchanged for other tests).
         AdminPortalSettingsData global = orgContext.callAsPlatform(settings::get);
         orgContext.callAsPlatform(() -> settings.update(new AdminPortalSettingsData(
-                global.reauthIntervalMinutes(), global.elevationTokenTtlMinutes(),
-                global.sessionIdleTimeoutMinutes(), global.sessionAbsoluteLifetimeMinutes(),
-                global.adminAllowedCidrs())));
-        assertThat(orgContext.callAsPlatform(settings::get).reauthIntervalMinutes())
-                .isEqualTo(global.reauthIntervalMinutes());
+                global.elevationTokenTtlMinutes(), global.adminAllowedCidrs())));
+        assertThat(orgContext.callAsPlatform(settings::get).elevationTokenTtlMinutes())
+                .isEqualTo(global.elevationTokenTtlMinutes());
     }
 }

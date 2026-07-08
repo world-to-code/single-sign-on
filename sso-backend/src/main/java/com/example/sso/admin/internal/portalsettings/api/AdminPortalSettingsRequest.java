@@ -6,19 +6,16 @@ import jakarta.validation.constraints.Min;
 import java.util.List;
 
 /**
- * Admin request to update the portal security settings (elevation freshness, admin session lifetimes,
- * and the admin-console IP allowlist). Timeouts in minutes.
+ * Admin request to update the admin-console-specific security settings: the elevation-token TTL and the
+ * admin-console IP allowlist. The admin session lifetimes and step-up freshness are managed by the session
+ * policy assigned to the admin, not here. TTL in minutes.
  */
 public record AdminPortalSettingsRequest(
-        @Min(1) @Max(1440) int reauthIntervalMinutes,
         @Min(1) @Max(1440) int elevationTokenTtlMinutes,
-        @Min(1) @Max(1440) int sessionIdleTimeoutMinutes,
-        @Min(1) @Max(10080) int sessionAbsoluteLifetimeMinutes,
         List<String> adminAllowedCidrs) {
 
     /** The settings update command (same shape as the public {@link AdminPortalSettingsData} projection). */
     public AdminPortalSettingsData toData() {
-        return new AdminPortalSettingsData(reauthIntervalMinutes, elevationTokenTtlMinutes,
-                sessionIdleTimeoutMinutes, sessionAbsoluteLifetimeMinutes, adminAllowedCidrs);
+        return new AdminPortalSettingsData(elevationTokenTtlMinutes, adminAllowedCidrs);
     }
 }

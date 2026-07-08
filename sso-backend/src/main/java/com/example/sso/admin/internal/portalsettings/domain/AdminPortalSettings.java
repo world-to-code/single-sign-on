@@ -44,11 +44,8 @@ public class AdminPortalSettings extends AbstractEntity {
     }
 
     /** Domain mutation (intent-revealing, not a JavaBean setter): replace all knobs and re-stamp. */
-    public void update(int reauthIntervalMinutes, int elevationTokenTtlMinutes,
-                       int sessionIdleTimeoutMinutes, int sessionAbsoluteLifetimeMinutes,
-                       String adminAllowedCidrs) {
-        this.settings = new PortalSecuritySettings(reauthIntervalMinutes, elevationTokenTtlMinutes,
-                sessionIdleTimeoutMinutes, sessionAbsoluteLifetimeMinutes, adminAllowedCidrs);
+    public void update(int elevationTokenTtlMinutes, String adminAllowedCidrs) {
+        this.settings = new PortalSecuritySettings(elevationTokenTtlMinutes, adminAllowedCidrs);
         this.updatedAt = Instant.now();
     }
 
@@ -57,20 +54,8 @@ public class AdminPortalSettings extends AbstractEntity {
     }
 
     // The security knobs live in the embedded value object; these delegate to preserve callers.
-    public int getReauthIntervalMinutes() {
-        return settings.reauthIntervalMinutes();
-    }
-
     public int getElevationTokenTtlMinutes() {
         return settings.elevationTokenTtlMinutes();
-    }
-
-    public int getSessionIdleTimeoutMinutes() {
-        return settings.sessionIdleTimeoutMinutes();
-    }
-
-    public int getSessionAbsoluteLifetimeMinutes() {
-        return settings.sessionAbsoluteLifetimeMinutes();
     }
 
     public String getAdminAllowedCidrs() {

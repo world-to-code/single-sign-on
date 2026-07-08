@@ -6,11 +6,11 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.oidc.AdminPortalSeeder;
+import com.example.sso.session.SessionPolicyService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -59,16 +59,15 @@ public class AdminElevationFilter extends OncePerRequestFilter {
     private static final String CHALLENGE =
             "Bearer error=\"" + INSUFFICIENT + "\", acr_values=\"" + REQUIRED_ACR + "\"";
 
-    /** Session attributes tracking the admin-elevation session's start and last-activity (epoch seconds). */
-    private static final String ADMIN_FIRST_SEEN = AdminElevationFilter.class.getName() + ".firstSeen";
-    private static final String ADMIN_LAST_SEEN = AdminElevationFilter.class.getName() + ".lastSeen";
-
     private final SecurityContextHolderStrategy contextHolder = SecurityContextHolder.getContextHolderStrategy();
     private final JwtDecoder jwtDecoder;
     private final String issuer;
     private final String clientId;
-    /** Runtime-editable admin-portal knobs (freshness window + session idle/absolute lifetimes). */
+    /** Admin-console-specific knobs: the elevation-token TTL and the IP allowlist. */
     private final AdminPortalSettingsService settingsService;
+    /** The admin's session policy supplies the step-up freshness window (idle/absolute are enforced for the
+     *  whole session by SessionIntegrityFilter, admin requests included). */
+    private final SessionPolicyService sessionPolicyService;
     private final AuditService audit;
 
     @Override
@@ -105,7 +104,13 @@ public class AdminElevationFilter extends OncePerRequestFilter {
             forbidNetwork(response);
             return;
         }
-        if (!isElevated(jwt, settings.reauthInterval(), settings.elevationTokenTtl(), expectedIssuer(request, issuer))
+        // Step-up freshness comes from the admin's SESSION POLICY (assign a session policy to the admin's
+        // role/user and it governs the console too). The session's idle/absolute lifetimes are enforced for
+        // EVERY authenticated request — admin included — by SessionIntegrityFilter, so there is no separate
+        // admin-session window here.
+        Duration freshness = Duration.ofMinutes(
+                sessionPolicyService.resolveForUsername(jwt.getSubject()).getSensitiveReauthWindowMinutes());
+        if (!isElevated(jwt, freshness, settings.elevationTokenTtl(), expectedIssuer(request, issuer))
                 || !boundToSession(jwt)) {
             // A decoded token that fails elevation or session-binding is the forge/replay/stale signal — audit it.
             audit.record(new AuditRecord(AuditType.ADMIN_ELEVATION_DENIED, jwt.getSubject(), false,
@@ -113,48 +118,8 @@ public class AdminElevationFilter extends OncePerRequestFilter {
             challenge(response);
             return;
         }
-        if (!withinSessionWindow(request, settings)) {
-            challenge(response);
-            return;
-        }
 
         chain.doFilter(request, response);
-    }
-
-    /**
-     * Bounds the admin-elevation session by idle and absolute lifetime, tracked in the HTTP session.
-     * When either window is exceeded the admin timestamps are cleared and the request is challenged, so
-     * the SPA re-elevates (a fresh step-up) which restarts the windows.
-     */
-    private boolean withinSessionWindow(HttpServletRequest request, AdminPortalSettingsData settings) {
-        HttpSession session = request.getSession(false);
-        if (session == null) {
-            return false; // an authenticated admin request always carries a session
-        }
-
-        long now = Instant.now().getEpochSecond();
-        Long firstSeen = (Long) session.getAttribute(ADMIN_FIRST_SEEN);
-        Long lastSeen = (Long) session.getAttribute(ADMIN_LAST_SEEN);
-        if (firstSeen != null && now - firstSeen > settings.sessionAbsoluteLifetime().toSeconds()) {
-            clearAdminSession(session);
-            return false;
-        }
-        if (lastSeen != null && now - lastSeen > settings.sessionIdleTimeout().toSeconds()) {
-            clearAdminSession(session);
-            return false;
-        }
-
-        if (firstSeen == null) {
-            session.setAttribute(ADMIN_FIRST_SEEN, now);
-        }
-        session.setAttribute(ADMIN_LAST_SEEN, now);
-
-        return true;
-    }
-
-    private void clearAdminSession(HttpSession session) {
-        session.removeAttribute(ADMIN_FIRST_SEEN);
-        session.removeAttribute(ADMIN_LAST_SEEN);
     }
 
     /**

@@ -226,7 +226,7 @@ public class SecurityConfig {
                 // Anchored AFTER the authorization filter so the session MFA_COMPLETE check
                 // (and @RequirePermission) still run first — a non-admin gets 403 there, never the 401 challenge.
                 .addFilterAfter(new AdminElevationFilter(jwtDecoder, issuer, AdminPortalSeeder.CLIENT_ID,
-                        adminPortalSettingsService, audit), AuthorizationFilter.class)
+                        adminPortalSettingsService, policyService, audit), AuthorizationFilter.class)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .exceptionHandling(ex -> ex
                         .defaultAuthenticationEntryPointFor(
