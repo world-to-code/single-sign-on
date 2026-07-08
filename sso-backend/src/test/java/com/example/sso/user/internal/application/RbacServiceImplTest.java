@@ -100,8 +100,9 @@ class RbacServiceImplTest {
                 .contains(Permissions.USER_CREATE, Permissions.ROLE_CREATE, Permissions.POLICY_CREATE,
                         Permissions.APP_ASSIGNMENT_ASSIGN, Permissions.RESOURCE_CREATE, Permissions.CLIENT_CREATE,
                         Permissions.SESSION_POLICY_READ, Permissions.NETWORK_ZONE_READ,
-                        Permissions.PORTAL_SETTINGS_UPDATE) // per-tenant admin-console elevation policy
-                .doesNotContain(Permissions.ORG_CREATE, Permissions.AUDIT_READ);
+                        Permissions.PORTAL_SETTINGS_UPDATE, // per-tenant admin-console elevation policy
+                        Permissions.AUDIT_READ) // org-scoped audit log read
+                .doesNotContain(Permissions.ORG_CREATE, Permissions.ORG_DELETE);
     }
 
     @Test

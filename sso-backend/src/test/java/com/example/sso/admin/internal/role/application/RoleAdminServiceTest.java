@@ -156,8 +156,9 @@ class RoleAdminServiceTest {
         when(accessPolicy.isCurrentActorUnscoped()).thenReturn(false);
 
         assertThat(service.listPermissions()).extracting(PermissionView::name)
-                .doesNotContain(Permissions.ORG_CREATE, Permissions.ORG_DELETE, Permissions.AUDIT_READ)
+                .doesNotContain(Permissions.ORG_CREATE, Permissions.ORG_DELETE, Permissions.ORG_UPDATE)
                 .contains(Permissions.USER_READ, Permissions.ORG_READ, Permissions.ROLE_CREATE, Permissions.POLICY_READ,
+                        Permissions.AUDIT_READ, // org-scoped audit log read -> tenant-grantable
                         Permissions.PORTAL_SETTINGS_UPDATE, // per-tenant admin-console policy
                         Permissions.CLIENT_CREATE, // host-org-scoped OIDC clients -> tenant-grantable
                         Permissions.SCIM_MANAGE); // /Users org-scoped -> tenant-grantable

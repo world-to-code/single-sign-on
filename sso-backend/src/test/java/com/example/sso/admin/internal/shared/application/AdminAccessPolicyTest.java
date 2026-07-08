@@ -293,7 +293,7 @@ class AdminAccessPolicyTest {
         RoleRef reporting = mock(RoleRef.class);
         when(reporting.getId()).thenReturn(roleId);
         when(roleService.findByName("ROLE_REPORTING")).thenReturn(Optional.of(reporting));
-        when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.AUDIT_READ));
+        when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.ORG_CREATE));
 
         assertThat(policy.mayAssignRoles(Set.of("ROLE_REPORTING"))).isFalse();
     }
@@ -421,13 +421,13 @@ class AdminAccessPolicyTest {
     @Test
     void scopedAdminMayNotUpdateAUserAssigningAGlobalRoleCarryingAPlatformPermission() {
         // The create→update escalation: a tenant admin creates a puppet, then UPDATEs it to add a super-created
-        // global role that bundles a PLATFORM permission (e.g. audit:read). canUpdateUser must refuse it, exactly
+        // global role that bundles a PLATFORM permission (e.g. organization:create). canUpdateUser must refuse it, exactly
         // as canCreateUser's mayAssignRoles gate does — otherwise the puppet gains cross-tenant reach.
         UUID roleId = UUID.randomUUID();
         RoleRef auditor = mock(RoleRef.class);
         when(auditor.getId()).thenReturn(roleId);
         when(roleService.findByName("ROLE_AUDITOR")).thenReturn(Optional.of(auditor));
-        when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.AUDIT_READ));
+        when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.ORG_CREATE));
 
         assertThat(policy.canUpdateUser(OTHER_ID, true, Set.of("ROLE_AUDITOR"))).isFalse();
     }

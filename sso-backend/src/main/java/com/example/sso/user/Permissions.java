@@ -99,9 +99,10 @@ public final class Permissions {
     private static final Set<String> CATALOG = Set.copyOf(ALL);
 
     /**
-     * Platform-only permissions: the organization registry ({@code organization:create/update/delete}) and
-     * cross-tenant audit ({@code audit:read}). A tenant (org) admin can neither see these in the catalog nor
-     * grant them (enforced by {@link PermissionGrantPolicy}) — granting one would cross tenant boundaries.
+     * Platform-only permissions: the organization registry ({@code organization:create/update/delete}) — only
+     * the platform super-admin registers/suspends/deletes tenants. A tenant (org) admin can neither see these
+     * in the catalog nor grant them (enforced by {@link PermissionGrantPolicy}) — granting one crosses tenant
+     * boundaries.
      *
      * <p>Everything else in {@link #ALL} is tenant-grantable — the directory + policy + application domain a
      * tenant admin owns within their own org: {@code user:*}, {@code group:*}, {@code role:*},
@@ -116,11 +117,12 @@ public final class Permissions {
      * there), plus {@code organization:read}/{@code member-manage} (their own org). {@code portal-settings:*}
      * is org-scoped too: each tenant edits its own admin-console elevation policy (its {@code admin_portal_settings}
      * row), and the elevation gate enforces that tenant's elevation-token TTL by the token's age — decoupled
-     * from the single shared admin-console client.
+     * from the single shared admin-console client. {@code audit:read} is org-scoped as well: the audit log READ
+     * path resolves the acting tenant, so a tenant admin sees only its own org's events (and an un-drilled
+     * super-admin only the global ones) — cross-tenant audit is reached by deliberate drill-in, not this perm.
      */
     public static final Set<String> PLATFORM = Set.of(
-            ORG_CREATE, ORG_UPDATE, ORG_DELETE,
-            AUDIT_READ);
+            ORG_CREATE, ORG_UPDATE, ORG_DELETE);
 
     /**
      * Expands a set of granted permissions with the implied {@code <resource>:read}: any mutating
