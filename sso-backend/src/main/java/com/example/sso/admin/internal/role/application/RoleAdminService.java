@@ -6,6 +6,7 @@ import com.example.sso.admin.internal.shared.application.LastAdminGuard;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.RbacService;
 import com.example.sso.user.RoleService;
@@ -34,6 +35,7 @@ public class RoleAdminService {
     private final AdminAccessPolicy accessPolicy;
     private final AdminAuditLogger auditLogger;
     private final LastAdminGuard lastAdminGuard;
+    private final OrgContext orgContext;
 
     @Transactional(readOnly = true)
     public List<RoleView> listRoles() {
@@ -68,8 +70,16 @@ public class RoleAdminService {
         }
 
         List<UserAccount> members = roleService.members(roleId);
-        if (!accessPolicy.isCurrentActorUnscoped()) {
-            Set<UUID> managed = accessPolicy.currentManagedUserIds();
+        if (accessPolicy.isCurrentActorUnscoped()) {
+            return members.stream().map(RoleMemberView::of).toList();     // platform super-admin: all holders
+        }
+        if (accessPolicy.administersBoundOrg()) {
+            // Tenant admin: the role's members that belong to THEIR org (a global role has members across
+            // tenants — a tenant admin sees only their own org's, like the user directory).
+            UUID org = orgContext.currentOrg().orElse(null);
+            members = members.stream().filter(user -> org != null && org.equals(user.getOrgId())).toList();
+        } else {
+            Set<UUID> managed = accessPolicy.currentManagedUserIds();     // resource delegate: subtree
             members = members.stream().filter(user -> managed.contains(user.getId())).toList();
         }
         return members.stream().map(RoleMemberView::of).toList();

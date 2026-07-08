@@ -185,7 +185,7 @@ class ResourceAdminServiceTest {
         UUID otherId = UUID.randomUUID();
         Resource managed = viewable(managedId);
         Resource other = viewable(otherId);
-        when(access.isUnscoped()).thenReturn(false);
+        when(access.isTierAdmin()).thenReturn(false); // a mere resource delegate — not a tenant/super admin
         when(access.managedResourceIds()).thenReturn(Set.of(managedId));
         when(resources.findAllFetchingType()).thenReturn(List.of(managed, other));
         when(edges.findByParentIdIn(anyCollection())).thenReturn(List.of());
@@ -196,6 +196,22 @@ class ResourceAdminServiceTest {
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).id()).isEqualTo(managedId.toString());
+    }
+
+    @Test
+    void aTierAdminSeesTheWholeDirectoryRlsReturnsNotJustASubtree() {
+        // A tenant admin (or super) is a tier admin: they see every resource RLS returns — their org's whole
+        // tree — WITHOUT being narrowed to a managed subtree (which is empty for a pure tenant admin).
+        Resource one = viewable(UUID.randomUUID());
+        Resource two = viewable(UUID.randomUUID());
+        when(access.isTierAdmin()).thenReturn(true);
+        when(resources.findAllFetchingType()).thenReturn(List.of(one, two));
+        when(edges.findByParentIdIn(anyCollection())).thenReturn(List.of());
+        when(memberRows.findByResourceIdIn(anyCollection())).thenReturn(List.of());
+        when(grantRows.findByResourceIdIn(anyCollection())).thenReturn(List.of());
+
+        assertThat(service.list()).hasSize(2);
+        verify(access, never()).managedResourceIds(); // never narrowed to a subtree
     }
 
     @Test

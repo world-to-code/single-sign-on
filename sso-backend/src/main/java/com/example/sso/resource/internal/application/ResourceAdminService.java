@@ -112,11 +112,15 @@ public class ResourceAdminService {
 
     @Transactional(readOnly = true)
     public List<ResourceView> list() {
-        boolean unscoped = access.isUnscoped();
-        Set<UUID> managed = unscoped ? Set.of() : access.managedResourceIds();
+        // A TIER admin (platform super-admin, or a tenant admin in their own org) sees the whole directory RLS
+        // returns — every org for a super, the bound org's resource tree for a tenant admin. Only a mere
+        // resource delegate is narrowed to their managed subtree (empty for a pure tenant admin, which would
+        // otherwise hide their entire org's resource tree).
+        boolean tierAdmin = access.isTierAdmin();
+        Set<UUID> managed = tierAdmin ? Set.of() : access.managedResourceIds();
         List<Resource> all = resources.findAllFetchingType();
         List<Resource> visible = all.stream()
-                .filter(resource -> unscoped || managed.contains(resource.getId()))
+                .filter(resource -> tierAdmin || managed.contains(resource.getId()))
                 .toList();
         if (visible.isEmpty()) {
             return List.of();

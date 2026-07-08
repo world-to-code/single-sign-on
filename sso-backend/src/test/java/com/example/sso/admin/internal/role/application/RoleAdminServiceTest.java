@@ -7,6 +7,7 @@ import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.RbacService;
 import com.example.sso.user.RoleRef;
@@ -43,6 +44,7 @@ class RoleAdminServiceTest {
     private AdminAccessPolicy accessPolicy;
     private AdminAuditLogger auditLogger;
     private LastAdminGuard lastAdminGuard;
+    private OrgContext orgContext;
     private RoleAdminService service;
 
     @BeforeEach
@@ -52,7 +54,8 @@ class RoleAdminServiceTest {
         accessPolicy = mock(AdminAccessPolicy.class);
         auditLogger = mock(AdminAuditLogger.class);
         lastAdminGuard = mock(LastAdminGuard.class);
-        service = new RoleAdminService(roleService, rbacService, accessPolicy, auditLogger, lastAdminGuard);
+        orgContext = mock(OrgContext.class);
+        service = new RoleAdminService(roleService, rbacService, accessPolicy, auditLogger, lastAdminGuard, orgContext);
     }
 
     @Test
@@ -69,6 +72,24 @@ class RoleAdminServiceTest {
         List<RoleMemberView> members = service.roleMembers(roleId);
 
         assertThat(members).extracting(RoleMemberView::id).containsExactly(managed.toString());
+    }
+
+    @Test
+    void aTenantAdminSeesOnlyTheirOwnOrgsMembersOfARole() {
+        // A global role has holders across tenants; a tenant admin sees ONLY their org's holders (not another
+        // tenant's same-role members), so they can manage role membership within their own org.
+        UUID roleId = UUID.randomUUID();
+        when(roleService.findById(roleId)).thenReturn(Optional.of(mock(RoleRef.class)));
+        UUID org = UUID.randomUUID();
+        UserAccount mine = userInOrg(UUID.randomUUID(), org);
+        UserAccount theirs = userInOrg(UUID.randomUUID(), UUID.randomUUID());
+        when(roleService.members(roleId)).thenReturn(List.of(mine, theirs));
+        when(accessPolicy.isCurrentActorUnscoped()).thenReturn(false);
+        when(accessPolicy.administersBoundOrg()).thenReturn(true);
+        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
+
+        assertThat(service.roleMembers(roleId)).extracting(RoleMemberView::id)
+                .containsExactly(mine.getId().toString());
     }
 
     @Test
@@ -146,6 +167,13 @@ class RoleAdminServiceTest {
     private UserAccount user(UUID id) {
         UserAccount account = mock(UserAccount.class);
         when(account.getId()).thenReturn(id);
+        return account;
+    }
+
+    private UserAccount userInOrg(UUID id, UUID orgId) {
+        UserAccount account = mock(UserAccount.class);
+        when(account.getId()).thenReturn(id);
+        when(account.getOrgId()).thenReturn(orgId);
         return account;
     }
 }
