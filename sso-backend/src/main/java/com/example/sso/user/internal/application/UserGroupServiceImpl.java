@@ -84,8 +84,12 @@ public class UserGroupServiceImpl implements UserGroupService {
     @Override
     @Transactional(readOnly = true)
     public Page<GroupView> listByOrg(UUID orgId, int page, int size) {
-        return toPage(repository.findByOrgIdOrderByNameAsc(orgId,
-                PageRequest.of(Page.clampPage(page), Page.clampSize(size))));
+        PageRequest pageRequest = PageRequest.of(Page.clampPage(page), Page.clampSize(size));
+        // A null tier is the PLATFORM: the global/system groups only — an un-drilled super-admin never sees a
+        // tenant's groups merged in; they drill into a tenant to get its (non-null) tier.
+        return toPage(orgId == null
+                ? repository.findByOrgIdIsNullOrderByNameAsc(pageRequest)
+                : repository.findByOrgIdOrderByNameAsc(orgId, pageRequest));
     }
 
     @Override

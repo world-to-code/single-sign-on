@@ -112,15 +112,18 @@ public class ResourceAdminService {
 
     @Transactional(readOnly = true)
     public List<ResourceView> list() {
-        // A TIER admin (platform super-admin, or a tenant admin in their own org) sees the whole directory RLS
-        // returns — every org for a super, the bound org's resource tree for a tenant admin. Only a mere
-        // resource delegate is narrowed to their managed subtree (empty for a pure tenant admin, which would
-        // otherwise hide their entire org's resource tree).
+        // Tier-scoped for a TIER admin (super or tenant): the resources of the ACTING tier — the bound org's
+        // tree for a tenant admin or a drilled super-admin, and only the global (org-less) resources for an
+        // un-drilled super-admin (never all tenants' trees merged). A mere resource delegate is narrowed to
+        // their managed subtree (empty for a pure tenant admin, which would otherwise hide their org's tree).
         boolean tierAdmin = access.isTierAdmin();
         Set<UUID> managed = tierAdmin ? Set.of() : access.managedResourceIds();
+        UUID tier = tierGuard.currentTier();
         List<Resource> all = resources.findAllFetchingType();
         List<Resource> visible = all.stream()
-                .filter(resource -> tierAdmin || managed.contains(resource.getId()))
+                .filter(resource -> tierAdmin
+                        ? Objects.equals(resource.getOrgId(), tier)
+                        : managed.contains(resource.getId()))
                 .toList();
         if (visible.isEmpty()) {
             return List.of();

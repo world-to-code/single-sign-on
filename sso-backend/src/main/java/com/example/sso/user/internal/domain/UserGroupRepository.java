@@ -38,6 +38,9 @@ public interface UserGroupRepository extends JpaRepository<UserGroup, UUID> {
      *  which must never surface the platform-wide groups RLS keeps visible for login role-resolution. */
     Page<UserGroup> findByOrgIdOrderByNameAsc(UUID orgId, Pageable pageable);
 
+    /** A page of the GLOBAL/system groups (org_id IS NULL) — what an un-drilled platform admin sees. */
+    Page<UserGroup> findByOrgIdIsNullOrderByNameAsc(Pageable pageable);
+
     Optional<UserGroup> findFirstBySystemTrue();
 
     /**
@@ -84,9 +87,11 @@ public interface UserGroupRepository extends JpaRepository<UserGroup, UUID> {
             + "where lower(g.name) like lower(concat('%', :q, '%')) order by g.name asc")
     List<IdName> search(@Param("q") String q, Pageable limit);
 
-    /** Typeahead search WITHIN one organization (excludes GLOBAL groups) — a tenant admin's picker. */
+    /** Typeahead search within one TIER — a specific org, or (null) the global groups — so a tenant admin's
+     *  picker stays org-scoped and an un-drilled super-admin sees only global groups. */
     @Query("select g.id as id, g.name as name from UserGroup g "
-            + "where g.orgId = :orgId and lower(g.name) like lower(concat('%', :q, '%')) order by g.name asc")
+            + "where ((:orgId is null and g.orgId is null) or g.orgId = :orgId) "
+            + "and lower(g.name) like lower(concat('%', :q, '%')) order by g.name asc")
     List<IdName> searchInOrg(@Param("q") String q, @Param("orgId") UUID orgId, Pageable limit);
 
     /** Member count for a (visible) group, joined through {@code UserGroup} to stay RLS-scoped. */

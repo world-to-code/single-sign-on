@@ -134,12 +134,16 @@ class GroupAdminServiceTest {
     }
 
     @Test
-    void listPagesEverythingForAnUnscopedActor() {
+    void anUnDrilledPlatformAdminSeesOnlyGlobalGroupsNotEveryTenantsMerged() {
+        // Drill-in scoping: a super-admin who has NOT drilled into a tenant (tier null) sees only the global
+        // groups — they must drill into a tenant to see its groups, never all tenants merged.
         when(accessPolicy.isCurrentActorUnscoped()).thenReturn(true);
-        when(userGroups.listAll(0, 100))
-                .thenReturn(new Page<>(2, 0, 100, List.of(group(UUID.randomUUID()), group(UUID.randomUUID()))));
+        when(orgContext.currentOrg()).thenReturn(Optional.empty()); // not drilled
+        when(userGroups.listByOrg(null, 0, 100))
+                .thenReturn(new Page<>(1, 0, 100, List.of(group(UUID.randomUUID()))));
 
-        assertThat(service.list(0, 100).items()).hasSize(2);
+        assertThat(service.list(0, 100).items()).hasSize(1);
+        verify(userGroups, never()).listAll(anyInt(), anyInt()); // never the RLS-wide (all-tenant) list
         verify(accessPolicy, never()).currentScopedGroupIds();
     }
 

@@ -18,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -63,13 +64,16 @@ class UserAdminServiceTest {
     }
 
     @Test
-    void unscopedActorPagesEveryUserWithoutConsultingTheManagedSet() {
-        UserAccount first = user(UUID.randomUUID());
-        UserAccount second = user(UUID.randomUUID());
+    void anUnDrilledPlatformAdminSeesOnlyGlobalUsersNotEveryTenantMerged() {
+        // Drill-in scoping: a super-admin who has NOT drilled into a tenant (tier null) sees only the global
+        // (org-less) users — they drill into a tenant to see ITS users, never all tenants merged.
+        UserAccount global = user(UUID.randomUUID());
         when(accessPolicy.isCurrentActorUnscoped()).thenReturn(true);
-        when(userService.findAll(0, 20)).thenReturn(new Page<>(2, 0, 20, List.of(first, second)));
+        when(orgContext.currentOrg()).thenReturn(Optional.empty()); // not drilled
+        when(userService.findByOrg(null, 0, 20)).thenReturn(new Page<>(1, 0, 20, List.of(global)));
 
-        assertThat(service.listUsers(0, 20).items()).hasSize(2);
+        assertThat(service.listUsers(0, 20).items()).hasSize(1);
+        verify(userService, never()).findAll(anyInt(), anyInt());          // never the all-tenant list
         verify(accessPolicy, never()).currentManagedUserIds();
         verify(userService, never()).findByIds(any(), anyInt(), anyInt());
     }

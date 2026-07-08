@@ -41,15 +41,17 @@ public class GroupAdminService {
     private final OrgContext orgContext;
 
     public Page<GroupView> list(int page, int size) {
-        if (accessPolicy.isCurrentActorUnscoped()) {
-            return userGroups.listAll(page, size);                        // platform super-admin: every org
-        }
-        if (accessPolicy.administersBoundOrg()) {
-            // A tenant admin sees ONLY their own org's groups — NOT the GLOBAL/system groups (e.g. the platform
-            // "All Users") that RLS keeps visible for login role-resolution but which they cannot manage.
+        // Tier-scoped: an un-drilled platform admin (tier null) sees ONLY the global/system groups; a super-admin
+        // drilled into a tenant, or a tenant admin, sees THAT org's groups — never all tenants' groups merged.
+        if (isTierAdmin()) {
             return userGroups.listByOrg(actingOrg(), page, size);
         }
         return userGroups.listByIds(accessPolicy.currentScopedGroupIds(), page, size); // resource delegate: subtree
+    }
+
+    /** A platform super-admin (drilled or not) OR a tenant admin — both scope to their acting tier. */
+    private boolean isTierAdmin() {
+        return accessPolicy.isCurrentActorUnscoped() || accessPolicy.administersBoundOrg();
     }
 
     /** The org the acting admin is bound to (their login org, or a drill-in), or null for the platform tier. */
@@ -97,11 +99,8 @@ public class GroupAdminService {
     }
 
     public List<Suggestion> search(String query, int limit) {
-        if (accessPolicy.isCurrentActorUnscoped()) {
-            return userGroups.search(query, limit);                       // platform super-admin: every org
-        }
-        if (accessPolicy.administersBoundOrg()) {
-            return userGroups.searchInOrg(query, actingOrg(), limit);     // tenant admin: own org only (no globals)
+        if (isTierAdmin()) {
+            return userGroups.searchInOrg(query, actingOrg(), limit);     // tier-scoped (global groups if null)
         }
 
         Set<UUID> scoped = accessPolicy.currentScopedGroupIds();

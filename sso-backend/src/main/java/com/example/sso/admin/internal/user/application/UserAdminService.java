@@ -23,6 +23,7 @@ import com.example.sso.user.UserUpdate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -61,36 +62,28 @@ public class UserAdminService {
 
     @Transactional(readOnly = true)
     public Page<AdminUserView> listUsers(int page, int size) {
-        Page<UserAccount> users;
-        if (accessPolicy.isCurrentActorUnscoped()) {
-            users = userService.findAll(page, size);                       // platform super-admin: all users
-        } else if (accessPolicy.administersBoundOrg()) {
-            users = userService.findByOrg(actingOrg(), page, size);        // tenant admin: their org's directory
-        } else {
-            users = userService.findByIds(accessPolicy.currentManagedUserIds(), page, size); // resource delegate
-        }
+        Page<UserAccount> users = isTierAdmin()
+                // Tier-scoped: an un-drilled platform admin (tier null) sees ONLY global users; a super-admin
+                // drilled into a tenant, or a tenant admin, sees THAT org's users — never all tenants merged.
+                ? userService.findByOrg(actingOrg(), page, size)
+                : userService.findByIds(accessPolicy.currentManagedUserIds(), page, size); // resource delegate
         return users.map(AdminUserView::of);
     }
 
-    /** Typeahead user search for the assignment picker (a tenant admin sees only their org; a resource
-     *  delegate only the users they manage; a super admin everyone). */
+    /** Typeahead user search for the assignment picker, scoped to the acting tier (a resource delegate only
+     *  the users they manage). */
     @Transactional(readOnly = true)
     public List<Suggestion> searchUsers(String q, int limit) {
-        if (accessPolicy.isCurrentActorUnscoped()) {
-            return userService.searchUsers(q, limit);
-        }
-        if (accessPolicy.administersBoundOrg()) {
+        if (isTierAdmin()) {
             return userService.searchUsersInOrg(q, actingOrg(), limit);
         }
-
         Set<UUID> managed = accessPolicy.currentManagedUserIds();
         return userService.searchUsers(q, limit).stream()
                 .filter(suggestion -> managed.contains(UUID.fromString(suggestion.id())))
                 .toList();
     }
 
-    /** Resolves selected user ids to (id, label) chips for the picker (a tenant admin only their org's users;
-     *  a resource delegate only theirs). */
+    /** Resolves selected user ids to (id, label) chips for the picker, scoped to the acting tier. */
     @Transactional(readOnly = true)
     public List<Suggestion> usersByIds(Collection<UUID> ids) {
         if (ids == null || ids.isEmpty()) {
@@ -98,16 +91,22 @@ public class UserAdminService {
         }
 
         Set<UUID> visible = new HashSet<>(ids);
-        if (accessPolicy.administersBoundOrg()) {
-            UUID org = actingOrg();
-            visible.removeIf(id -> !userService.orgIdOf(id).map(org::equals).orElse(false));
-        } else if (!accessPolicy.isCurrentActorUnscoped()) {
+        if (isTierAdmin()) {
+            UUID tier = actingOrg();
+            visible.removeIf(id -> !Objects.equals(userService.orgIdOf(id).orElse(null), tier));
+        } else {
             visible.retainAll(accessPolicy.currentManagedUserIds());
         }
 
         return userService.idNames(visible).stream()
                 .map(idName -> new Suggestion(idName.getId().toString(), idName.getName()))
                 .toList();
+    }
+
+    /** A platform super-admin (drilled or not) OR a tenant admin — both scope to their acting tier
+     *  ({@link #actingOrg()}); everyone else is a resource-subtree delegate. */
+    private boolean isTierAdmin() {
+        return accessPolicy.isCurrentActorUnscoped() || accessPolicy.administersBoundOrg();
     }
 
     @Transactional

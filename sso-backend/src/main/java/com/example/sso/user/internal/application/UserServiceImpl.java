@@ -136,8 +136,12 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public Page<UserAccount> findByOrg(UUID orgId, int page, int size) {
-        return toPage(users.findByOrgIdOrderByUsernameAsc(orgId,
-                PageRequest.of(Page.clampPage(page), Page.clampSize(size))));
+        PageRequest pageRequest = PageRequest.of(Page.clampPage(page), Page.clampSize(size));
+        // A null tier is the PLATFORM: the global (org-less) users only — an un-drilled super-admin never sees a
+        // tenant's users merged in; they drill into a tenant to get its (non-null) tier.
+        return toPage(orgId == null
+                ? users.findByOrgIdIsNullOrderByUsernameAsc(pageRequest)
+                : users.findByOrgIdOrderByUsernameAsc(orgId, pageRequest));
     }
 
     @Override

@@ -13,6 +13,7 @@ import com.example.sso.user.RoleService;
 import com.example.sso.user.Roles;
 import com.example.sso.user.UserAccount;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -70,14 +71,12 @@ public class RoleAdminService {
         }
 
         List<UserAccount> members = roleService.members(roleId);
-        if (accessPolicy.isCurrentActorUnscoped()) {
-            return members.stream().map(RoleMemberView::of).toList();     // platform super-admin: all holders
-        }
-        if (accessPolicy.administersBoundOrg()) {
-            // Tenant admin: the role's members that belong to THEIR org (a global role has members across
-            // tenants — a tenant admin sees only their own org's, like the user directory).
-            UUID org = orgContext.currentOrg().orElse(null);
-            members = members.stream().filter(user -> org != null && org.equals(user.getOrgId())).toList();
+        if (accessPolicy.isCurrentActorUnscoped() || accessPolicy.administersBoundOrg()) {
+            // Tier-scoped: the role's holders that belong to the ACTING tier — an un-drilled super-admin sees
+            // only global holders, a super-admin drilled into a tenant (or a tenant admin) sees that org's
+            // holders (a global role has members across tenants — never all merged).
+            UUID tier = orgContext.currentOrg().orElse(null);
+            members = members.stream().filter(user -> Objects.equals(user.getOrgId(), tier)).toList();
         } else {
             Set<UUID> managed = accessPolicy.currentManagedUserIds();     // resource delegate: subtree
             members = members.stream().filter(user -> managed.contains(user.getId())).toList();
