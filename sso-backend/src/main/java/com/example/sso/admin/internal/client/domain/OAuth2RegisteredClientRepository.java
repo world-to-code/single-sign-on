@@ -1,6 +1,7 @@
 package com.example.sso.admin.internal.client.domain;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -19,6 +20,10 @@ public interface OAuth2RegisteredClientRepository extends JpaRepository<OAuth2Re
 
     /** Clients owned by one tenant — what a tenant admin (or a super-admin drilled into that org) manages. */
     List<OAuth2RegisteredClientEntity> findAllByOrgId(UUID orgId);
+
+    /** A client by its OAuth {@code client_id} — used to surface the host-agnostic first-party admin console
+     *  in every tier's launchable-app catalog (its {@code id} is a random UUID, so a client_id lookup is needed). */
+    Optional<OAuth2RegisteredClientEntity> findByClientId(String clientId);
 
     /** Persists our launch-metadata column on the client row Spring just saved. */
     @Modifying

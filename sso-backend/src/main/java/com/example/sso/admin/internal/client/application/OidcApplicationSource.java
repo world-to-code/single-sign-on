@@ -11,6 +11,7 @@ import org.springframework.web.util.UriUtils;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -31,20 +32,22 @@ public class OidcApplicationSource implements ApplicationSource {
 
     @Override
     public List<ApplicationDescriptor> applications() {
-        return clients
-                .listClients()
-                .stream()
-                .map(client -> {
-                    boolean isSystem = AdminPortalSeeder.CLIENT_ID.equals(client.clientId());
+        List<ClientView> clientList = new ArrayList<>(clients.listClients());
+        // The first-party admin console is a GLOBAL platform app EVERY admin (super OR tenant) can launch — but
+        // the tier-scoped client list omits it under a tenant tier, so add it back so the admin dashboard tile
+        // appears in every tenant's portal, not only the platform host.
+        if (clientList.stream().noneMatch(c -> AdminPortalSeeder.CLIENT_ID.equals(c.clientId()))) {
+            clients.firstPartyConsole().ifPresent(clientList::add);
+        }
+        return clientList.stream().map(this::toDescriptor).toList();
+    }
 
-                    String name = isSystem ? "Admin Portal"
-                            : StringUtils.hasText(client.clientName())
-                              ? client.clientName() : client.clientId();
-
-                    String launchUrl = isSystem ? "/admin" : launchUrl(client);
-                    return new ApplicationDescriptor(AppType.OIDC, client.id(), name, launchUrl, isSystem);
-                })
-                .toList();
+    private ApplicationDescriptor toDescriptor(ClientView client) {
+        boolean isSystem = AdminPortalSeeder.CLIENT_ID.equals(client.clientId());
+        String name = isSystem ? "Admin Portal"
+                : StringUtils.hasText(client.clientName()) ? client.clientName() : client.clientId();
+        String launchUrl = isSystem ? "/admin" : launchUrl(client);
+        return new ApplicationDescriptor(AppType.OIDC, client.id(), name, launchUrl, isSystem);
     }
 
     private String launchUrl(ClientView client) {

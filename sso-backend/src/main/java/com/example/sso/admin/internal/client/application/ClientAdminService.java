@@ -27,6 +27,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -92,6 +93,13 @@ public class ClientAdminService {
 
     public Page<ClientView> listClients(int page, int size) {
         return Page.of(listClients(), page, size);
+    }
+
+    /** The first-party admin-console client (a GLOBAL, host-agnostic platform app), regardless of the acting
+     *  tier — so it can be surfaced as a launchable app in EVERY tenant's portal, not just the platform host. */
+    @Transactional(readOnly = true)
+    public Optional<ClientView> firstPartyConsole() {
+        return clientRows.findByClientId(AdminPortalSeeder.CLIENT_ID).map(ClientView::of);
     }
 
     /**
