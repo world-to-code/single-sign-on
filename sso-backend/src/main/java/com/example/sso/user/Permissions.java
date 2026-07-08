@@ -100,30 +100,28 @@ public final class Permissions {
 
     /**
      * Platform-only permissions: the organization registry ({@code organization:create/update/delete}),
-     * the global admin-console security config ({@code portal-settings:*}), and shared cross-tenant
-     * INFRASTRUCTURE — cross-tenant audit ({@code audit:read}) and the global OIDC client registry
-     * ({@code oidc-client:*}). A tenant (org) admin can neither see these in the catalog nor grant them
+     * the platform-wide admin-console security config ({@code portal-settings:*}), and cross-tenant audit
+     * ({@code audit:read}). A tenant (org) admin can neither see these in the catalog nor grant them
      * (enforced by {@link PermissionGrantPolicy}) — granting one would cross tenant boundaries.
      *
-     * <p>Everything else in {@link #ALL} is tenant-grantable — the directory + policy domain a tenant admin
-     * owns ({@code user:*}, {@code group:*}, {@code role:*}, {@code auth-policy:*}, {@code session-policy:*},
-     * {@code network-zone:*}, {@code saml-rp:*} — SAML relying parties are now org-scoped ({@code org_id} +
-     * RLS), so a tenant manages only its own SPs — {@code app-assignment:*} — portal assignments are now
-     * org-scoped too — {@code resource:*} — the resource DAG is now an org-scoped sub-hierarchy (a tenant
-     * admin manages its own tree STRUCTURE; the GLOBAL resource-type vocabulary and delegating resource-admin
-     * to a user stay platform-super-gated in the service) — {@code key:rotate} — OIDC and SAML signing keys
-     * are per-tenant — {@code scim:manage} — a tenant admin issues org-scoped SCIM tokens that provision INTO
-     * its own org and see only its members on {@code /Users}; the {@code /Groups} endpoint is platform-only,
-     * so a tenant token is refused there) plus {@code organization:read}/{@code member-manage} (their own
-     * org). This set SHRINKS
-     * as Workstream-A makes each remaining domain truly per-tenant ({@code org_id} + RLS). Nothing is granted
-     * by default (the ROLE_ORG_ADMIN baseline is only {@code organization:read} + {@code member-manage}).
+     * <p>Everything else in {@link #ALL} is tenant-grantable — the directory + policy + application domain a
+     * tenant admin owns within their own org: {@code user:*}, {@code group:*}, {@code role:*},
+     * {@code auth-policy:*}, {@code session-policy:*}, {@code network-zone:*}, {@code saml-rp:*} and
+     * {@code oidc-client:*} (both relying-party types are org-scoped — SAML by {@code org_id}+RLS, OIDC by
+     * host-org via {@code OrgScopedRegisteredClientRepository} — so a tenant manages only its own apps),
+     * {@code app-assignment:*} (org-scoped portal assignments), {@code resource:*} (the org-scoped resource
+     * DAG — a tenant admin manages its own tree STRUCTURE; the GLOBAL resource-type vocabulary and delegating
+     * resource-admin to a user stay platform-super-gated in the service), {@code key:rotate} (per-tenant OIDC
+     * and SAML signing keys), {@code scim:manage} (org-scoped SCIM tokens that provision INTO its own org and
+     * see only its members on {@code /Users}; {@code /Groups} is platform-only, so a tenant token is refused
+     * there), plus {@code organization:read}/{@code member-manage} (their own org). {@code portal-settings:*}
+     * stays platform-governed because the admin-console elevation policy is coupled to the single global
+     * admin-console client.
      */
     public static final Set<String> PLATFORM = Set.of(
             ORG_CREATE, ORG_UPDATE, ORG_DELETE,
             PORTAL_SETTINGS_READ, PORTAL_SETTINGS_UPDATE,
-            AUDIT_READ,
-            CLIENT_READ, CLIENT_CREATE, CLIENT_UPDATE, CLIENT_DELETE);
+            AUDIT_READ);
 
     /**
      * Expands a set of granted permissions with the implied {@code <resource>:read}: any mutating

@@ -32,24 +32,14 @@ public class RbacServiceImpl implements RbacService {
             Permissions.USER_READ, Permissions.USER_UPDATE, Permissions.USER_DELETE);
 
     // What a tenant admin may manage WITHIN their own org (bound by OrgContextFilter to their login org, or by
-    // a drill-in they are authorized for). Every permission here is tenant-grantable (never a PLATFORM one), and
-    // its endpoints are org-isolated by RLS + OrgTierGuard (a scoped actor's tier is never null, so it cannot
-    // touch a global or another tenant's row). The organization is the tenant, managed by ROLE_ORG_ADMIN; the
-    // acting org is set by login (the ORG_ marker) or drill-in (OrganizationAuthorization.canManage), NOT by this
-    // set. Grown one capability at a time as each is verified org-isolated (Workstream C): baseline org
-    // read/member-manage + session controls (session policies, network zones) so far.
-    private static final List<String> TENANT_ADMIN_PERMISSIONS = List.of(
-            Permissions.ORG_READ, Permissions.ORG_MEMBER_MANAGE,
-            Permissions.SESSION_POLICY_READ, Permissions.SESSION_POLICY_CREATE,
-            Permissions.SESSION_POLICY_UPDATE, Permissions.SESSION_POLICY_DELETE,
-            Permissions.NETWORK_ZONE_READ, Permissions.NETWORK_ZONE_CREATE,
-            Permissions.NETWORK_ZONE_UPDATE, Permissions.NETWORK_ZONE_DELETE,
-            Permissions.SAML_READ, Permissions.SAML_CREATE,
-            Permissions.SAML_UPDATE, Permissions.SAML_DELETE,
-            Permissions.GROUP_READ, Permissions.GROUP_CREATE,
-            Permissions.GROUP_UPDATE, Permissions.GROUP_DELETE);
-
-    private static final List<String> ORG_ADMIN_PERMISSIONS = TENANT_ADMIN_PERMISSIONS;
+    // a drill-in they are authorized for): the WHOLE tenant-grantable catalog (= ALL minus the PLATFORM set).
+    // Every one of these is org-isolated — either by RLS + OrgTierGuard (a scoped actor's tier is never null,
+    // so it cannot touch a global or another tenant's row: role/auth-policy/session-policy/network-zone/saml-rp/
+    // app-assignment/resource), by host-org scoping (oidc-client via OrgScopedRegisteredClientRepository), or by
+    // an app-layer org check (user:* — app_user has no RLS, scoped in AdminAccessPolicy/UserAdminService). The
+    // PLATFORM permissions (organization registry, portal-settings, cross-tenant audit) are excluded. Sourced
+    // from Permissions.tenantGrantable() so it self-maintains as the PLATFORM classification evolves.
+    private static final List<String> ORG_ADMIN_PERMISSIONS = Permissions.tenantGrantable();
 
     private final PermissionRepository permissions;
     private final RolePermissionRepository rolePermissions;

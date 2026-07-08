@@ -17,8 +17,11 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.GrantedAuthority;
@@ -131,10 +134,31 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
     }
 
     @Override
-    public int terminateAll(String username) {
-        List<SessionInformation> active = sessionRegistry.getAllSessions(username, false);
-        active.forEach(this::hardDelete);
-        return active.size();
+    public int terminateForUser(String username, UUID orgId) {
+        Set<String> ids = orgScopedSessionIds(username, orgId);
+        ids.forEach(sessionRepository::deleteById); // fires SessionDeletedEvent -> BCL/SLO + metadata cleanup
+        return ids.size();
+    }
+
+    @Override
+    public Set<String> sessionIdsForUser(String username, UUID orgId) {
+        return orgScopedSessionIds(username, orgId);
+    }
+
+    /**
+     * The ids of {@code username}'s sessions that belong to org {@code orgId}: those carrying the
+     * {@code ORG_<orgId>} marker, or — for a global (null) account — those carrying NO org marker at all.
+     * Usernames are unique only within an org, so this scoping keeps a same-named user in another tenant out.
+     */
+    private Set<String> orgScopedSessionIds(String username, UUID orgId) {
+        String marker = orgId == null ? null : Factors.ORG_PREFIX + orgId;
+        Set<String> ids = new HashSet<>();
+        sessionRepository.findByPrincipalName(username).forEach((sessionId, session) -> {
+            if (marker == null ? !hasOrgMarker(session) : isBoundToOrg(session, marker)) {
+                ids.add(sessionId);
+            }
+        });
+        return ids;
     }
 
     /**
@@ -153,7 +177,7 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
      *  mutation never terminates sessions (fallbackExecution covers publishers outside a transaction). */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onUserAccessChanged(UserAccessChangedEvent event) {
-        terminateAll(event.username());
+        terminateForUser(event.username(), event.orgId()); // scoped to the user's own org — never a same-named
     }
 
     /**
@@ -165,29 +189,27 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
     public void onOrganizationAccessRevoked(OrganizationAccessRevokedEvent event) {
         users.findById(event.userId())
                 .map(UserAccount::getUsername)
-                .ifPresent(username -> terminateInOrg(username, event.orgId()));
-    }
-
-    /** Deletes the user's sessions carrying the {@code ORG_<orgId>} marker (their login org), leaving others. */
-    private void terminateInOrg(String username, UUID orgId) {
-        String marker = Factors.ORG_PREFIX + orgId;
-        sessionRepository.findByPrincipalName(username).forEach((sessionId, session) -> {
-            if (isBoundToOrg(session, marker)) {
-                sessionRepository.deleteById(sessionId); // fires SessionDeletedEvent -> BCL/SLO + metadata cleanup
-            }
-        });
+                .ifPresent(username -> terminateForUser(username, event.orgId()));
     }
 
     /** True when the session's stored SecurityContext carries the given org marker as an authority. */
     private boolean isBoundToOrg(Session session, String marker) {
+        return authorities(session).anyMatch(marker::equals);
+    }
+
+    /** True when the session carries ANY org marker (i.e. it is a tenant login, not a global/platform one). */
+    private boolean hasOrgMarker(Session session) {
+        return authorities(session).anyMatch(authority -> authority.startsWith(Factors.ORG_PREFIX));
+    }
+
+    /** The authority strings in the session's stored SecurityContext (empty when none/unauthenticated). */
+    private Stream<String> authorities(Session session) {
         SecurityContext context = session.getAttribute(
                 HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY);
         if (context == null || context.getAuthentication() == null) {
-            return false;
+            return Stream.empty();
         }
-        return context.getAuthentication().getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .anyMatch(marker::equals);
+        return context.getAuthentication().getAuthorities().stream().map(GrantedAuthority::getAuthority);
     }
 
     private boolean isLive(SessionMetadata metadata) {

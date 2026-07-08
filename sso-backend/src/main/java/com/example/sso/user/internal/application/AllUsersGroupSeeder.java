@@ -20,9 +20,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Ensures the platform-managed "All Users" group exists and contains every user. Created once, then
- * backfilled idempotently on each boot (missing members are added as explicit {@code user_group_member}
- * rows). New users join via {@link UserService#createUser} at creation time.
+ * Ensures the GLOBAL "All Users" group exists and contains every GLOBAL (org-less) user — the platform
+ * super-admins. Created once, then backfilled idempotently on each boot. Tenant users belong to their OWN
+ * org's "All Users" group (per-tenant, created at {@link UserService#createUser} time), never this global
+ * one — so a global group assignment can never cross the tenant boundary. Backfilling tenant users here
+ * would re-introduce exactly that leak, so the backfill is restricted to org-less accounts.
  */
 @Component
 @Order(Ordered.LOWEST_PRECEDENCE)
@@ -48,7 +50,9 @@ public class AllUsersGroupSeeder implements ApplicationRunner {
         UserGroup saved = groups.save(group); // persist (and assign an id for a brand-new group)
 
         Set<UUID> current = new HashSet<>(members.findUserIdsByGroupId(saved.getId()));
-        users.findAll().stream().map(AppUser::getId)
+        users.findAll().stream()
+                .filter(user -> user.getOrgId() == null) // tenant users belong to their own org's group, not this
+                .map(AppUser::getId)
                 .filter(id -> !current.contains(id))
                 .forEach(id -> members.save(new UserGroupMember(saved.getId(), id)));
     }

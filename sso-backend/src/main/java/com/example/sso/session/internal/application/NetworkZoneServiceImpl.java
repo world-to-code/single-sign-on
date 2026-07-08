@@ -26,6 +26,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -82,8 +83,13 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
     @Override
     @Transactional(readOnly = true)
     public List<NetworkZoneView> list() {
+        // Tier-scoped: a tenant admin (tier = their org) sees ONLY their org's zones, NOT the GLOBAL ones RLS
+        // keeps visible (and which they cannot edit — update/delete requireInTier 404s them). Platform admin
+        // (tier null) sees the globals.
+        UUID tier = tierGuard.currentTier();
         Map<UUID, List<String>> byZone = groupCidrsByZone();
         return repository.findAll().stream()
+                .filter(zone -> Objects.equals(zone.getOrgId(), tier))
                 .sorted(Comparator.comparing(NetworkZone::getName, String.CASE_INSENSITIVE_ORDER))
                 .map(zone -> NetworkZoneView.of(zone, byZone.getOrDefault(zone.getId(), List.of())))
                 .toList();

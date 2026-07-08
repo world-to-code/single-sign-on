@@ -31,7 +31,12 @@ public class AppAssignmentAdminService {
 
     public Page<ApplicationView> listApplications(int page, int size) {
         List<ApplicationView> all = applications.listApplications();
-        if (!accessPolicy.isCurrentActorUnscoped()) {
+        // The catalog is ALREADY tier-scoped (OidcApplicationSource/SamlApplicationSource return only the acting
+        // tier's apps), so a platform super-admin AND a tenant admin acting in their own org see it whole — the
+        // tenant admin's own newly-registered clients included. Only a mere resource DELEGATE (no bound-org
+        // admin rights) is further narrowed to the apps in their subtree; that set is empty for a pure tenant
+        // admin, which would otherwise hide every app they just registered.
+        if (!accessPolicy.isCurrentActorUnscoped() && !accessPolicy.administersBoundOrg()) {
             Set<String> scoped = accessPolicy.currentScopedAppIds();
             all = all.stream().filter(app -> scoped.contains(app.id())).toList();
         }

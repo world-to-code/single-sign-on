@@ -61,27 +61,36 @@ public class UserAdminService {
 
     @Transactional(readOnly = true)
     public Page<AdminUserView> listUsers(int page, int size) {
-        Page<UserAccount> users = accessPolicy.isCurrentActorUnscoped()
-                ? userService.findAll(page, size)
-                : userService.findByIds(accessPolicy.currentManagedUserIds(), page, size);
+        Page<UserAccount> users;
+        if (accessPolicy.isCurrentActorUnscoped()) {
+            users = userService.findAll(page, size);                       // platform super-admin: all users
+        } else if (accessPolicy.administersBoundOrg()) {
+            users = userService.findByOrg(actingOrg(), page, size);        // tenant admin: their org's directory
+        } else {
+            users = userService.findByIds(accessPolicy.currentManagedUserIds(), page, size); // resource delegate
+        }
         return users.map(AdminUserView::of);
     }
 
-    /** Typeahead user search for the assignment picker (scoped admins see only users they manage). */
+    /** Typeahead user search for the assignment picker (a tenant admin sees only their org; a resource
+     *  delegate only the users they manage; a super admin everyone). */
     @Transactional(readOnly = true)
     public List<Suggestion> searchUsers(String q, int limit) {
-        List<Suggestion> results = userService.searchUsers(q, limit);
         if (accessPolicy.isCurrentActorUnscoped()) {
-            return results;
+            return userService.searchUsers(q, limit);
+        }
+        if (accessPolicy.administersBoundOrg()) {
+            return userService.searchUsersInOrg(q, actingOrg(), limit);
         }
 
         Set<UUID> managed = accessPolicy.currentManagedUserIds();
-        return results.stream()
+        return userService.searchUsers(q, limit).stream()
                 .filter(suggestion -> managed.contains(UUID.fromString(suggestion.id())))
                 .toList();
     }
 
-    /** Resolves selected user ids to (id, label) chips for the picker (scoped admins only their users). */
+    /** Resolves selected user ids to (id, label) chips for the picker (a tenant admin only their org's users;
+     *  a resource delegate only theirs). */
     @Transactional(readOnly = true)
     public List<Suggestion> usersByIds(Collection<UUID> ids) {
         if (ids == null || ids.isEmpty()) {
@@ -89,7 +98,10 @@ public class UserAdminService {
         }
 
         Set<UUID> visible = new HashSet<>(ids);
-        if (!accessPolicy.isCurrentActorUnscoped()) {
+        if (accessPolicy.administersBoundOrg()) {
+            UUID org = actingOrg();
+            visible.removeIf(id -> !userService.orgIdOf(id).map(org::equals).orElse(false));
+        } else if (!accessPolicy.isCurrentActorUnscoped()) {
             visible.retainAll(accessPolicy.currentManagedUserIds());
         }
 

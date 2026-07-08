@@ -132,6 +132,95 @@ class UserServiceIT extends AbstractIntegrationTest {
                 Set.of("ROLE_USER")), orgId)).isInstanceOf(ConflictException.class);
     }
 
+    // --- Per-org default group: a tenant user joins THEIR org's "All Users" group, never the global one
+    //     (which every user sharing would leak apps assigned to it across tenants). ---
+
+    @Test
+    void addsANewTenantUserToTheirOwnOrgAllUsersGroupNotTheGlobalOne() {
+        UUID orgA = org();
+        String s = UUID.randomUUID().toString().substring(0, 8);
+        UUID userId = userService.createUser(new NewUser("ga-" + s, "ga-" + s + "@example.com", "GA",
+                "S3cret!pw", Set.of("ROLE_USER")), orgA).getId();
+
+        // The user's single "All Users" membership is the tenant's OWN group (org_id = orgA).
+        UUID membershipOrg = ownerJdbc().queryForObject(
+                "select g.org_id from user_group_member m join user_group g on g.id = m.group_id "
+                        + "where m.user_id = ? and g.name = 'All Users'", UUID.class, userId);
+        assertThat(membershipOrg).isEqualTo(orgA);
+
+        // …and NOT the GLOBAL All Users group (the cross-tenant leak vector).
+        Long inGlobal = ownerJdbc().queryForObject(
+                "select count(*) from user_group_member m join user_group g on g.id = m.group_id "
+                        + "where m.user_id = ? and g.name = 'All Users' and g.org_id is null", Long.class, userId);
+        assertThat(inGlobal).isZero();
+    }
+
+    @Test
+    void tenantUsersInDifferentOrgsDoNotShareAnAllUsersGroup() {
+        UUID orgA = org();
+        UUID orgB = org();
+        String s = UUID.randomUUID().toString().substring(0, 8);
+        UUID a = userService.createUser(new NewUser("da-" + s, "da-" + s + "@example.com", "DA",
+                "S3cret!pw", Set.of("ROLE_USER")), orgA).getId();
+        UUID b = userService.createUser(new NewUser("db-" + s, "db-" + s + "@example.com", "DB",
+                "S3cret!pw", Set.of("ROLE_USER")), orgB).getId();
+
+        UUID groupA = ownerJdbc().queryForObject("select group_id from user_group_member m "
+                + "join user_group g on g.id = m.group_id where m.user_id = ? and g.name = 'All Users'",
+                UUID.class, a);
+        UUID groupB = ownerJdbc().queryForObject("select group_id from user_group_member m "
+                + "join user_group g on g.id = m.group_id where m.user_id = ? and g.name = 'All Users'",
+                UUID.class, b);
+        assertThat(groupA).isNotEqualTo(groupB);
+    }
+
+    @Test
+    void addsAGlobalUserToTheGlobalAllUsersGroup() {
+        String s = UUID.randomUUID().toString().substring(0, 8);
+        UUID id = userService.createUser(new NewUser("glob-" + s, "glob-" + s + "@example.com", "Glob",
+                "S3cret!pw", Set.of("ROLE_USER"))).getId(); // no org → global platform account
+
+        Long inGlobal = ownerJdbc().queryForObject(
+                "select count(*) from user_group_member m join user_group g on g.id = m.group_id "
+                        + "where m.user_id = ? and g.name = 'All Users' and g.org_id is null", Long.class, id);
+        assertThat(inGlobal).isEqualTo(1L);
+    }
+
+    // --- Org-scoped directory reads: a tenant admin's list/search sees ONLY their org's users
+    //     (app_user has no RLS, so the scoping is enforced in the query itself). ---
+
+    @Test
+    void findByOrgReturnsOnlyThatOrgsUsers() {
+        UUID orgA = org();
+        UUID orgB = org();
+        String s = UUID.randomUUID().toString().substring(0, 8);
+        UUID a = userService.createUser(new NewUser("fa-" + s, "fa-" + s + "@example.com", "FA",
+                "S3cret!pw", Set.of("ROLE_USER")), orgA).getId();
+        userService.createUser(new NewUser("fb-" + s, "fb-" + s + "@example.com", "FB",
+                "S3cret!pw", Set.of("ROLE_USER")), orgB);
+
+        var pageA = userService.findByOrg(orgA, 0, 50);
+        assertThat(pageA.items()).extracting(UserAccount::getId).containsExactly(a);
+        assertThat(pageA.items()).allSatisfy(u -> assertThat(u.getOrgId()).isEqualTo(orgA));
+    }
+
+    @Test
+    void searchUsersInOrgIsScopedToTheOrg() {
+        UUID orgA = org();
+        UUID orgB = org();
+        String s = UUID.randomUUID().toString().substring(0, 8);
+        String shared = "shared" + s; // same username fragment in both orgs
+        userService.createUser(new NewUser(shared, shared + "@a.example.com", "A", "S3cret!pw",
+                Set.of("ROLE_USER")), orgA);
+        userService.createUser(new NewUser(shared, shared + "@b.example.com", "B", "S3cret!pw",
+                Set.of("ROLE_USER")), orgB);
+
+        // The search fragment matches a user in BOTH orgs, but an org-scoped search returns only orgA's.
+        assertThat(userService.searchUsersInOrg(shared, orgA, 20)).hasSize(1);
+        assertThat(userService.searchUsersInOrg(shared, orgB, 20)).hasSize(1);
+        assertThat(userService.searchUsersInOrg(shared, org(), 20)).isEmpty(); // a third org sees neither
+    }
+
     private UUID org() {
         String slug = "o-" + UUID.randomUUID().toString().substring(0, 8);
         return organizations.create(new NewOrganization(slug, slug)).id();

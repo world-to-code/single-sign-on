@@ -60,6 +60,10 @@ public interface UserService {
     /** A DB-paged slice of the users whose id is in {@code ids} — for a scoped admin's directory. */
     Page<UserAccount> findByIds(Collection<UUID> ids, int page, int size);
 
+    /** A DB-paged slice of ONE organization's users (0-based page), ordered by username — a tenant admin's
+     *  directory. Scoped in the query (app_user carries no RLS), so it never surfaces another tenant's users. */
+    Page<UserAccount> findByOrg(UUID orgId, int page, int size);
+
     /** A page of users (SCIM 1-based startIndex). */
     List<UserAccount> page(long startIndex, int count);
 
@@ -78,6 +82,10 @@ public interface UserService {
 
     /** Typeahead (id, username) suggestions for assignment pickers. */
     List<Suggestion> searchUsers(String q, int limit);
+
+    /** Typeahead (id, username) suggestions scoped to ONE organization — a tenant admin's picker never
+     *  reveals another tenant's users. */
+    List<Suggestion> searchUsersInOrg(String q, UUID orgId, int limit);
 
     /** (id, username) for the given user ids — display-name resolution without exposing the entity. */
     List<IdName> idNames(Collection<UUID> ids);
@@ -119,7 +127,12 @@ public interface UserService {
 
     // --- authentication helpers ---
 
+    /** Verifies the password of the user resolved by username WITHIN the current resolution org (login path). */
     boolean verifyPassword(String username, String rawPassword);
+
+    /** Verifies the password of a KNOWN user by id — org-independent, for re-authenticating the already
+     *  authenticated principal (step-up). Avoids re-resolving by username, which is unique only per org. */
+    boolean verifyPassword(UUID userId, String rawPassword);
 
     /** Records a failed login for the account; locks it for {@code lockFor} once {@code maxAttempts} is hit. */
     void recordFailedLogin(String username, int maxAttempts, Duration lockFor);

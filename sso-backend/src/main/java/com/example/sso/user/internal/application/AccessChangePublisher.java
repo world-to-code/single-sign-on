@@ -28,6 +28,6 @@ class AccessChangePublisher {
             return;
         }
         users.findAllById(Set.copyOf(userIds))
-                .forEach(user -> events.publishEvent(new UserAccessChangedEvent(user.getUsername())));
+                .forEach(user -> events.publishEvent(new UserAccessChangedEvent(user.getUsername(), user.getOrgId())));
     }
 }

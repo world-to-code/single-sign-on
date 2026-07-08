@@ -23,6 +23,12 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
             + "where lower(u.username) like lower(concat('%', :q, '%')) order by u.username asc")
     List<IdName> search(@Param("q") String q, Pageable limit);
 
+    /** Typeahead search by username WITHIN one organization — a tenant admin's picker stays org-scoped. */
+    @Query("select u.id as id, u.username as name from AppUser u "
+            + "where u.orgId = :orgId and lower(u.username) like lower(concat('%', :q, '%')) "
+            + "order by u.username asc")
+    List<IdName> searchInOrg(@Param("q") String q, @Param("orgId") UUID orgId, Pageable limit);
+
     /**
      * A page of a group's members (id, username), ordered by username. The membership subquery is joined
      * through {@code UserGroup} so it stays tenant-scoped (RLS): members of a group not visible in the
@@ -79,6 +85,9 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 
     /** A scoped page: users whose id is in {@code ids} (a delegate's subtree), ordered by username. */
     Page<AppUser> findByIdInOrderByUsernameAsc(Collection<UUID> ids, Pageable pageable);
+
+    /** A page of ONE organization's users, ordered by username — a tenant admin's org-scoped directory. */
+    Page<AppUser> findByOrgIdOrderByUsernameAsc(UUID orgId, Pageable pageable);
 
     boolean existsByUsername(String username);
 

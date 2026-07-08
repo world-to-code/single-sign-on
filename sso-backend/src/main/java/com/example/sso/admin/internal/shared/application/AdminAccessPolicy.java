@@ -5,6 +5,8 @@ import com.example.sso.resource.ApplicationAuthorization;
 import com.example.sso.resource.GroupAuthorization;
 import com.example.sso.resource.ResourceAuthorization;
 import com.example.sso.organization.OrganizationAuthorization;
+import com.example.sso.portal.ApplicationService;
+import com.example.sso.portal.ApplicationView;
 import com.example.sso.resource.UserAuthorization;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.Permissions;
@@ -59,6 +61,7 @@ public class AdminAccessPolicy {
     private final ApplicationAuthorization appAuth;
     private final ResourceAuthorization resourceAuth;
     private final OrganizationAuthorization orgAuth;
+    private final ApplicationService applications;
     private final OrgContext orgContext;
 
     /**
@@ -76,12 +79,31 @@ public class AdminAccessPolicy {
         UUID actorId = actor.get();
         return resourceAuth.isUnscoped(actorId)
                 || actorId.equals(targetId)
-                || userAuth.canManage(actorId, targetId);
+                || userAuth.canManage(actorId, targetId)
+                || boundOrgContainsTarget(targetId);
     }
 
-    /** Only a super admin may mint new user accounts (a scoped admin manages existing members only). */
+    /**
+     * A TENANT (org) admin acting within their own org reaches any user that BELONGS to that org — the
+     * organization, not a resource subtree, is their management scope. The target's org is read
+     * authoritatively ({@code app_user} carries no RLS), so a foreign-org user is out of scope even though
+     * the row is physically readable.
+     */
+    private boolean boundOrgContainsTarget(UUID targetId) {
+        if (!administersBoundOrg()) {
+            return false;
+        }
+        UUID boundOrg = orgContext.currentOrg().orElse(null);
+        return boundOrg != null && userService.orgIdOf(targetId).map(boundOrg::equals).orElse(false);
+    }
+
+    /**
+     * Who may mint new user accounts: a super admin (anywhere), or a TENANT admin acting within their own
+     * org (the new user is stamped with that org). The roles a non-super may assign at creation are still
+     * gated by {@link #mayAssignRoles} on the endpoint, so a tenant admin cannot create an administrator.
+     */
     public boolean canCreateUser() {
-        return currentUserId().map(this::isSuper).orElse(false);
+        return currentUserId().map(this::isSuper).orElse(false) || administersBoundOrg();
     }
 
     /**
@@ -165,9 +187,22 @@ public class AdminAccessPolicy {
         return currentUserId().map(orgAuth::scopedOrgIds).orElse(Set.of());
     }
 
-    /** Application scope: whether the acting admin may manage {@code appId} (resource subtree; super bypasses). */
+    /**
+     * Application scope: whether the acting admin may manage {@code appId}. A super admin bypasses; a resource
+     * delegate reaches apps in its subtree; a TENANT (org) admin reaches an app that BELONGS to their bound org
+     * — resolved via the tier-scoped catalog ({@code applications.listApplications()} returns only the acting
+     * tier's apps), so an app in another tenant (or a global one) is never in their catalog and stays out.
+     */
     public boolean canAccessApp(String appId) {
-        return currentUserId().map(actorId -> appAuth.canManage(actorId, appId)).orElse(false);
+        Optional<UUID> actor = currentUserId();
+        if (actor.isEmpty()) {
+            return false;
+        }
+        UUID actorId = actor.get();
+        return resourceAuth.isUnscoped(actorId)
+                || appAuth.canManage(actorId, appId)
+                || (administersBoundOrg() && applications.listApplications().stream()
+                        .map(ApplicationView::id).anyMatch(appId::equals));
     }
 
     /** For a scoped acting admin, the ids of the applications inside their resource subtree. */
@@ -238,9 +273,11 @@ public class AdminAccessPolicy {
      */
     public boolean canUpdateUser(UUID targetId, boolean enabled, Collection<String> roles) {
         boolean targetIsAdmin = isAdmin(targetId);
-        if (!currentIsSuperAdmin() && (targetIsAdmin || containsPrivilegedRole(roles))) {
-            // A scoped admin may not touch an administrator account, nor assign a privileged role
-            // (which would escalate the target — or themselves — to admin).
+        if (!currentIsSuperAdmin() && (targetIsAdmin || !mayAssignRoles(roles))) {
+            // A scoped admin may not touch an administrator account, nor assign — via an UPDATE — a privileged
+            // role, a role carrying a platform-only permission, or any role bearing a permission they do not
+            // themselves hold. Delegating to mayAssignRoles closes the create→update escalation path (the
+            // create gate already runs the same check), not just the narrower privileged-role case.
             return false;
         }
         if (!enabled && targetIsAdmin) {

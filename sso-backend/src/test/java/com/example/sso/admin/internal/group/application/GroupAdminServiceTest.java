@@ -7,8 +7,10 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.portal.ApplicationService;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.error.ForbiddenException;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.GroupView;
 import com.example.sso.user.UserGroupService;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -19,6 +21,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -39,6 +42,7 @@ class GroupAdminServiceTest {
     private ApplicationService applications;
     private AdminAccessPolicy accessPolicy;
     private AdminAuditLogger auditLogger;
+    private OrgContext orgContext;
     private GroupAdminService service;
 
     @BeforeEach
@@ -47,7 +51,8 @@ class GroupAdminServiceTest {
         applications = mock(ApplicationService.class);
         accessPolicy = mock(AdminAccessPolicy.class);
         auditLogger = mock(AdminAuditLogger.class);
-        service = new GroupAdminService(userGroups, applications, accessPolicy, auditLogger);
+        orgContext = mock(OrgContext.class);
+        service = new GroupAdminService(userGroups, applications, accessPolicy, auditLogger, orgContext);
     }
 
     @Test
@@ -111,6 +116,21 @@ class GroupAdminServiceTest {
         when(userGroups.listByIds(Set.of(scopedId), 0, 100)).thenReturn(new Page<>(1, 0, 100, List.of(group(scopedId))));
 
         assertThat(service.list(0, 100).items()).extracting(GroupView::id).containsExactly(scopedId.toString());
+    }
+
+    @Test
+    void aTenantAdminListsOnlyTheirOwnOrgsGroupsNotTheGlobalOnes() {
+        // The reported leak: a tenant admin's Groups page showed a SECOND "All Users" — the GLOBAL system group
+        // RLS keeps visible. The list must query ONLY the acting org's groups (listByOrg), never listAll.
+        UUID org = UUID.randomUUID();
+        when(accessPolicy.isCurrentActorUnscoped()).thenReturn(false);
+        when(accessPolicy.administersBoundOrg()).thenReturn(true);
+        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
+        when(userGroups.listByOrg(org, 0, 100)).thenReturn(new Page<>(1, 0, 100, List.of(group(UUID.randomUUID()))));
+
+        assertThat(service.list(0, 100).items()).hasSize(1);
+        verify(userGroups).listByOrg(org, 0, 100);
+        verify(userGroups, never()).listAll(anyInt(), anyInt()); // never the RLS-wide (globals-included) list
     }
 
     @Test

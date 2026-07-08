@@ -36,6 +36,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.Objects;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -173,7 +174,13 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
     @Override
     @Transactional(readOnly = true)
     public List<SessionPolicyDetails> listAll() {
-        return loadAll().stream().map(SessionPolicyDetails.class::cast).toList();
+        // Tier-scoped for the admin directory (its only caller): a tenant admin (tier = their org) sees ONLY
+        // their org's policies, NOT the GLOBAL default RLS keeps visible — which they cannot edit anyway
+        // (update/delete tierGuard.requireInTier → 404). The platform admin (tier null) sees the globals.
+        UUID tier = tierGuard.currentTier();
+        return loadAll().stream()
+                .filter(cached -> Objects.equals(cached.policy().getOrgId(), tier))
+                .map(SessionPolicyDetails.class::cast).toList();
     }
 
     /**

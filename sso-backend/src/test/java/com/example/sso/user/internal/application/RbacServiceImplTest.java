@@ -84,9 +84,11 @@ class RbacServiceImplTest {
     }
 
     @Test
-    void grantOrgAdminPermissionsGrantsTheSameScopedTenantAdminSet() {
-        // The two tenant-admin roles share one permission set (their scope differs only in drill-in), so an
-        // org-admin gets the same session controls — a divergence here would be an isolation bug.
+    void grantOrgAdminPermissionsGrantsTheWholeTenantGrantableCatalog() {
+        // A tenant admin manages their whole org: the grant is exactly the tenant-grantable catalog
+        // (= ALL minus PLATFORM), so it INCLUDES user/role/policy/app/resource management and EXCLUDES every
+        // PLATFORM permission (the registry, portal-settings, cross-tenant audit) — granting one would cross
+        // the tenant boundary.
         when(roles.findByNameAndOrgIdIsNull(Roles.ORG_ADMIN))
                 .thenReturn(Optional.of(new Role(Roles.ORG_ADMIN)));
         permissionsAreGetOrCreated();
@@ -94,8 +96,12 @@ class RbacServiceImplTest {
         service.grantOrgAdminPermissions();
 
         assertThat(grantedPermissionNames())
-                .contains(Permissions.SESSION_POLICY_READ, Permissions.NETWORK_ZONE_READ)
-                .doesNotContain(Permissions.ORG_CREATE);
+                .containsExactlyInAnyOrderElementsOf(Permissions.tenantGrantable())
+                .contains(Permissions.USER_CREATE, Permissions.ROLE_CREATE, Permissions.POLICY_CREATE,
+                        Permissions.APP_ASSIGNMENT_ASSIGN, Permissions.RESOURCE_CREATE, Permissions.CLIENT_CREATE,
+                        Permissions.SESSION_POLICY_READ, Permissions.NETWORK_ZONE_READ)
+                .doesNotContain(Permissions.ORG_CREATE, Permissions.PORTAL_SETTINGS_UPDATE,
+                        Permissions.AUDIT_READ);
     }
 
     @Test

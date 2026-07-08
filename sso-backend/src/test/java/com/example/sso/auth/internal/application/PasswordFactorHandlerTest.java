@@ -43,9 +43,12 @@ class PasswordFactorHandlerTest {
     }
 
     @Test
-    void verifyDelegatesToTheUserPasswordCheck() {
-        when(user.getUsername()).thenReturn("alice");
-        when(userService.verifyPassword("alice", "secret")).thenReturn(true);
+    void verifyDelegatesToTheUserPasswordCheckByIdNotUsername() {
+        // By id (not username): step-up re-authenticates the ALREADY-resolved principal, so it must not depend
+        // on the resolution org being the user's org (which broke password step-up for tenant admins).
+        UUID id = UUID.randomUUID();
+        when(user.getId()).thenReturn(id);
+        when(userService.verifyPassword(id, "secret")).thenReturn(true);
 
         boolean ok = handler().verify(user, new FactorVerificationRequest(null, "secret", null),
                 new MockHttpServletRequest());

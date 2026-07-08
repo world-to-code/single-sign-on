@@ -83,6 +83,13 @@ public class UserGroupServiceImpl implements UserGroupService {
 
     @Override
     @Transactional(readOnly = true)
+    public Page<GroupView> listByOrg(UUID orgId, int page, int size) {
+        return toPage(repository.findByOrgIdOrderByNameAsc(orgId,
+                PageRequest.of(Page.clampPage(page), Page.clampSize(size))));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Page<GroupView> listByIds(Collection<UUID> ids, int page, int size) {
         int safePage = Page.clampPage(page);
         int safeSize = Page.clampSize(size);
@@ -120,6 +127,14 @@ public class UserGroupServiceImpl implements UserGroupService {
     public List<Suggestion> search(String q, int limit) {
         int safeLimit = limit <= 0 ? 20 : Math.min(limit, 50);
         return repository.search(q == null ? "" : q, PageRequest.of(0, safeLimit)).stream()
+                .map(p -> new Suggestion(p.getId().toString(), p.getName())).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Suggestion> searchInOrg(String q, UUID orgId, int limit) {
+        int safeLimit = limit <= 0 ? 20 : Math.min(limit, 50);
+        return repository.searchInOrg(q == null ? "" : q, orgId, PageRequest.of(0, safeLimit)).stream()
                 .map(p -> new Suggestion(p.getId().toString(), p.getName())).toList();
     }
 

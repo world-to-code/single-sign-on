@@ -73,7 +73,12 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
     @Override
     @Transactional(readOnly = true)
     public List<AuthPolicyView> listAll() {
+        // Tier-scoped for the admin directory: a tenant admin (tier = their org) sees ONLY their org's policies,
+        // NOT the GLOBAL default RLS keeps visible (and which they cannot edit — update/delete requireInTier
+        // 404s it). The platform admin (tier null) sees the globals.
+        UUID tier = tierGuard.currentTier();
         return repository.findAllByOrderByPriorityDesc().stream()
+                .filter(policy -> Objects.equals(policy.getOrgId(), tier))
                 .map(AuthPolicyView.class::cast).toList();
     }
 

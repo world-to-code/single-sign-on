@@ -180,31 +180,47 @@ class SessionManagerImplTest {
     }
 
     @Test
-    void terminateAllDeletesEveryLiveSessionAndReturnsTheCount() {
-        // Hard-delete (not expireNow mark), so the Redis deletion fires SessionDeletedEvent -> BCL/SLO now.
-        SessionInformation a = mock(SessionInformation.class);
-        SessionInformation b = mock(SessionInformation.class);
-        when(a.getSessionId()).thenReturn("sid-a");
-        when(b.getSessionId()).thenReturn("sid-b");
-        when(sessionRegistry.getAllSessions(USER, false)).thenReturn(List.of(a, b));
+    void terminateForUserDeletesOnlyTheTargetOrgsSessionsAndReturnsTheCount() {
+        // Hard-delete (not expireNow mark) fires SessionDeletedEvent -> BCL/SLO. Scoped to the target org so a
+        // same-named user in ANOTHER tenant (org B) is never logged out.
+        UUID orgA = UUID.randomUUID();
+        UUID orgB = UUID.randomUUID();
+        when(sessionRepository.findByPrincipalName(USER))
+                .thenReturn(Map.of("sid-a", sessionBoundTo(orgA), "sid-b", sessionBoundTo(orgB)));
 
-        int count = manager.terminateAll(USER);
+        int count = manager.terminateForUser(USER, orgA);
 
         verify(sessionRepository).deleteById("sid-a");
-        verify(sessionRepository).deleteById("sid-b");
-        verify(a, never()).expireNow();
-        assertThat(count).isEqualTo(2);
+        verify(sessionRepository, never()).deleteById("sid-b");
+        assertThat(count).isEqualTo(1);
     }
 
     @Test
-    void userAccessChangedEventDeletesTheUsersSessions() {
-        SessionInformation a = mock(SessionInformation.class);
-        when(a.getSessionId()).thenReturn("sid-a");
-        when(sessionRegistry.getAllSessions(USER, false)).thenReturn(List.of(a));
+    void terminateForUserWithNoOrgDeletesOnlyTheMarkerlessGlobalSessions() {
+        // A global/platform account (orgId null) matches only sessions carrying NO org marker — never a tenant
+        // user's org-bound session that happens to share the username.
+        UUID orgA = UUID.randomUUID();
+        when(sessionRepository.findByPrincipalName(USER))
+                .thenReturn(Map.of("sid-global", new MapSession(), "sid-org", sessionBoundTo(orgA)));
 
-        manager.onUserAccessChanged(new UserAccessChangedEvent(USER));
+        int count = manager.terminateForUser(USER, null);
+
+        verify(sessionRepository).deleteById("sid-global");
+        verify(sessionRepository, never()).deleteById("sid-org");
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void userAccessChangedEventDeletesOnlyTheUsersOwnOrgSessions() {
+        UUID org = UUID.randomUUID();
+        UUID other = UUID.randomUUID();
+        when(sessionRepository.findByPrincipalName(USER))
+                .thenReturn(Map.of("sid-a", sessionBoundTo(org), "sid-other", sessionBoundTo(other)));
+
+        manager.onUserAccessChanged(new UserAccessChangedEvent(USER, org));
 
         verify(sessionRepository).deleteById("sid-a");
+        verify(sessionRepository, never()).deleteById("sid-other"); // a same-named user in another tenant survives
     }
 
     @Test

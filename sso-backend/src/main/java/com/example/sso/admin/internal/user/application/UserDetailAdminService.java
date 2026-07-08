@@ -16,6 +16,7 @@ import com.example.sso.user.UserService;
 import com.example.sso.webauthn.PasskeyService;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import lombok.RequiredArgsConstructor;
@@ -53,7 +54,11 @@ public class UserDetailAdminService {
 
     public List<UserSessionView> sessions(UUID userId) {
         UserAccount user = require(userId);
+        // Scope to the target's OWN org: username is unique only within an org, so an unscoped metadata lookup
+        // would expose a same-named user's session PII (IP/UA/activity) in another tenant.
+        Set<String> orgSessionIds = userSessions.sessionIdsForUser(user.getUsername(), user.getOrgId());
         return sessionMetadata.forUser(user.getUsername()).stream()
+                .filter(metadata -> orgSessionIds.contains(metadata.sessionId()))
                 .map(UserSessionView::of)
                 .toList();
     }
@@ -67,7 +72,7 @@ public class UserDetailAdminService {
      *  their OIDC/SAML participants). Returns the number of sessions ended. */
     public int terminateSessions(UUID userId) {
         UserAccount user = require(userId);
-        int count = userSessions.terminateAll(user.getUsername());
+        int count = userSessions.terminateForUser(user.getUsername(), user.getOrgId());
         audit.record(new AuditRecord(AuditType.SESSION_ADMIN_REVOKED, user.getUsername(), true,
                 "count=" + count, null));
         return count;

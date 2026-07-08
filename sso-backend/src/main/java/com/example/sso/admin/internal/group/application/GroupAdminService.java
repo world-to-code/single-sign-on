@@ -8,6 +8,7 @@ import com.example.sso.portal.ApplicationService;
 import com.example.sso.portal.ApplicationView;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.error.ForbiddenException;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.GroupMembersPage;
 import com.example.sso.user.GroupRequest;
 import com.example.sso.user.GroupView;
@@ -37,14 +38,23 @@ public class GroupAdminService {
     private final ApplicationService applications;
     private final AdminAccessPolicy accessPolicy;
     private final AdminAuditLogger auditLogger;
+    private final OrgContext orgContext;
 
     public Page<GroupView> list(int page, int size) {
-        // A super admin, or a tenant admin acting within their own org, sees the whole directory RLS returns
-        // (all orgs for a super; the bound org's groups for a tenant admin). A mere resource delegate is limited
-        // to the groups inside their subtree.
-        return accessPolicy.isCurrentActorUnscoped() || accessPolicy.administersBoundOrg()
-                ? userGroups.listAll(page, size)
-                : userGroups.listByIds(accessPolicy.currentScopedGroupIds(), page, size);
+        if (accessPolicy.isCurrentActorUnscoped()) {
+            return userGroups.listAll(page, size);                        // platform super-admin: every org
+        }
+        if (accessPolicy.administersBoundOrg()) {
+            // A tenant admin sees ONLY their own org's groups — NOT the GLOBAL/system groups (e.g. the platform
+            // "All Users") that RLS keeps visible for login role-resolution but which they cannot manage.
+            return userGroups.listByOrg(actingOrg(), page, size);
+        }
+        return userGroups.listByIds(accessPolicy.currentScopedGroupIds(), page, size); // resource delegate: subtree
+    }
+
+    /** The org the acting admin is bound to (their login org, or a drill-in), or null for the platform tier. */
+    private UUID actingOrg() {
+        return orgContext.currentOrg().orElse(null);
     }
 
     public GroupView create(GroupRequest request) {
@@ -87,15 +97,16 @@ public class GroupAdminService {
     }
 
     public List<Suggestion> search(String query, int limit) {
-        List<Suggestion> results = userGroups.search(query, limit);
-        // The search itself runs under RLS, so a super admin and a tenant admin in their own org already get a
-        // correctly-scoped result set; only a resource delegate is further narrowed to its subtree.
-        if (accessPolicy.isCurrentActorUnscoped() || accessPolicy.administersBoundOrg()) {
-            return results;
+        if (accessPolicy.isCurrentActorUnscoped()) {
+            return userGroups.search(query, limit);                       // platform super-admin: every org
+        }
+        if (accessPolicy.administersBoundOrg()) {
+            return userGroups.searchInOrg(query, actingOrg(), limit);     // tenant admin: own org only (no globals)
         }
 
         Set<UUID> scoped = accessPolicy.currentScopedGroupIds();
-        return results.stream().filter(suggestion -> scoped.contains(UUID.fromString(suggestion.id()))).toList();
+        return userGroups.search(query, limit).stream()
+                .filter(suggestion -> scoped.contains(UUID.fromString(suggestion.id()))).toList();
     }
 
     private void requireAccess(UUID groupId) {

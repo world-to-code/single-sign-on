@@ -135,6 +135,13 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
+    public Page<UserAccount> findByOrg(UUID orgId, int page, int size) {
+        return toPage(users.findByOrgIdOrderByUsernameAsc(orgId,
+                PageRequest.of(Page.clampPage(page), Page.clampSize(size))));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Page<UserAccount> findByIds(Collection<UUID> ids, int page, int size) {
         int safePage = Page.clampPage(page);
         int safeSize = Page.clampSize(size);
@@ -204,6 +211,14 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<Suggestion> searchUsersInOrg(String q, UUID orgId, int limit) {
+        int safeLimit = limit <= 0 ? 20 : Math.min(limit, 50);
+        return users.searchInOrg(q == null ? "" : q, orgId, PageRequest.of(0, safeLimit)).stream()
+                .map(p -> new Suggestion(p.getId().toString(), p.getName())).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<IdName> idNames(Collection<UUID> ids) {
         return users.findIdNames(ids);
     }
@@ -236,15 +251,36 @@ public class UserServiceImpl implements UserService {
         String encodedPassword = rawPassword == null ? null : passwordEncoder.encode(rawPassword);
         AppUser saved = users.save(new AppUser(username, email, newUser.displayName(), encodedPassword, orgId));
         assignedRoles.forEach(role -> userRoles.save(new UserRole(saved.getId(), role.getId())));
-        addToDefaultGroup(saved.getId());
+        addToDefaultGroup(saved.getId(), orgId);
 
         return hydrator.hydrateUser(saved);
     }
 
-    /** Adds a user to the platform "All Users" group via an explicit membership row (caller's transaction). */
-    private void addToDefaultGroup(UUID userId) {
-        groups.findByNameAndOrgIdIsNull(UserGroup.ALL_USERS)
-                .ifPresent(group -> userGroupMembers.save(new UserGroupMember(group.getId(), userId)));
+    /**
+     * Adds a user to the "All Users" group of their OWN organization (find-or-create), so a group-based app
+     * assignment never crosses the tenant boundary. A global (org-less) platform account joins the single
+     * global group instead. The group find/create runs in the org's context ({@code user_group} is RLS-forced,
+     * so the WITH CHECK only admits an insert whose {@code org_id} matches the bound org).
+     */
+    private void addToDefaultGroup(UUID userId, UUID orgId) {
+        UUID groupId = orgId == null
+                ? allUsersGroup(null).getId()
+                : orgContext.callInOrg(orgId, () -> allUsersGroup(orgId).getId());
+        userGroupMembers.save(new UserGroupMember(groupId, userId)); // member table is org-agnostic (no RLS)
+    }
+
+    /** The "All Users" system group for an org (or the global one when {@code orgId} is null), created on demand. */
+    private UserGroup allUsersGroup(UUID orgId) {
+        Optional<UserGroup> existing = orgId == null
+                ? groups.findByNameAndOrgIdIsNull(UserGroup.ALL_USERS)
+                : groups.findByNameAndOrgId(UserGroup.ALL_USERS, orgId);
+        return existing.orElseGet(() -> {
+            UserGroup group = new UserGroup(UserGroup.ALL_USERS, "Every user belongs to this group.", null, orgId);
+            group.markSystem();
+            // Flush the INSERT NOW, while the org RLS context is applied to the held connection — a deferred
+            // flush at commit would run after callInOrg restored the outer context and fail the WITH CHECK.
+            return groups.saveAndFlush(group);
+        });
     }
 
     @Override
@@ -265,7 +301,7 @@ public class UserServiceImpl implements UserService {
         }
 
         AppUser saved = users.save(user);
-        events.publishEvent(new UserAccessChangedEvent(saved.getUsername())); // roles/enabled may have changed
+        events.publishEvent(new UserAccessChangedEvent(saved.getUsername(), saved.getOrgId())); // roles/enabled may have changed
         return hydrator.hydrateUser(saved);
     }
 
@@ -290,7 +326,7 @@ public class UserServiceImpl implements UserService {
 
         AppUser saved = users.save(user);
         if (!enabled) {
-            events.publishEvent(new UserAccessChangedEvent(saved.getUsername())); // disabled -> kill sessions
+            events.publishEvent(new UserAccessChangedEvent(saved.getUsername(), saved.getOrgId())); // disabled -> kill sessions
         }
         return hydrator.hydrateUser(saved);
     }
@@ -318,7 +354,7 @@ public class UserServiceImpl implements UserService {
     public void disable(UUID id) {
         AppUser user = require(id);
         user.disable();
-        events.publishEvent(new UserAccessChangedEvent(user.getUsername()));
+        events.publishEvent(new UserAccessChangedEvent(user.getUsername(), user.getOrgId()));
     }
 
     @Override
@@ -330,7 +366,7 @@ public class UserServiceImpl implements UserService {
         replaceUserDirectPermissions(id, desired);
 
         AppUser saved = users.save(user);
-        events.publishEvent(new UserAccessChangedEvent(saved.getUsername()));
+        events.publishEvent(new UserAccessChangedEvent(saved.getUsername(), saved.getOrgId()));
         return hydrator.hydrateUser(saved);
     }
 
@@ -361,6 +397,7 @@ public class UserServiceImpl implements UserService {
         AppUser user = users.findById(id)
                 .orElseThrow(() -> new NotFoundException("User not found"));
         String username = user.getUsername();
+        UUID orgId = user.getOrgId(); // capture before deletion — the session termination is scoped to it
 
         // Explicitly remove the user's join rows (formerly done by Hibernate's @ManyToMany collection
         // cleanup / DB FK cascade). Group membership rows are owned by the group and are left untouched,
@@ -369,7 +406,7 @@ public class UserServiceImpl implements UserService {
         userDirectPermissions.deleteByUserId(id);
         users.deleteById(id);
         events.publishEvent(new UserDeletedEvent(id));
-        events.publishEvent(new UserAccessChangedEvent(username)); // terminate the deleted user's sessions
+        events.publishEvent(new UserAccessChangedEvent(username, orgId)); // terminate the deleted user's sessions
     }
 
     @Override
@@ -382,6 +419,18 @@ public class UserServiceImpl implements UserService {
     @Transactional(readOnly = true)
     public boolean verifyPassword(String username, String rawPassword) {
         return users.findByUsernameInOrg(username, resolutionOrg())
+                .map(AppUser::getPasswordHash)
+                .filter(hash -> rawPassword != null && passwordEncoder.matches(rawPassword, hash))
+                .isPresent();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean verifyPassword(UUID userId, String rawPassword) {
+        // By id — the caller already holds the authenticated principal, so we must NOT re-resolve by username
+        // (unique only per org): during step-up the resolution org may not be the user's org, which would find
+        // a non-existent global user and fail a correct password.
+        return users.findById(userId)
                 .map(AppUser::getPasswordHash)
                 .filter(hash -> rawPassword != null && passwordEncoder.matches(rawPassword, hash))
                 .isPresent();

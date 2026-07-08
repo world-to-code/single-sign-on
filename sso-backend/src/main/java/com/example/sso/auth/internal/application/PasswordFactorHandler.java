@@ -28,6 +28,8 @@ public class PasswordFactorHandler implements FactorHandler {
 
     @Override
     public boolean verify(UserAccount user, FactorVerificationRequest verification, HttpServletRequest request) {
-        return userService.verifyPassword(user.getUsername(), verification.password());
+        // By id (like the TOTP factor uses user.getId()), NOT by username: the principal is already resolved,
+        // and re-resolving by username would fail at step-up when the resolution org isn't this user's org.
+        return userService.verifyPassword(user.getId(), verification.password());
     }
 }

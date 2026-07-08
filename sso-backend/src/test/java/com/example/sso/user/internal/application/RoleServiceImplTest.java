@@ -162,7 +162,7 @@ class RoleServiceImplTest {
         when(orgContext.currentOrg()).thenReturn(Optional.of(orgId));
         when(roles.findByNameAndOrgId("REPORTING", orgId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.create("REPORTING", Set.of(Permissions.CLIENT_CREATE)))
+        assertThatThrownBy(() -> service.create("REPORTING", Set.of(Permissions.AUDIT_READ)))
                 .isInstanceOf(ForbiddenException.class);
         verify(roles, never()).save(any());
     }

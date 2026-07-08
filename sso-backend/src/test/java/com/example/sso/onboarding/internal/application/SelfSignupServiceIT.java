@@ -92,6 +92,32 @@ class SelfSignupServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void theNewTenantAdminJoinsTheirOwnOrgsAllUsersGroupNotTheGlobalOne() {
+        String slug = "prov-" + UUID.randomUUID().toString().substring(0, 8);
+        String adminEmail = slug + "@example.com";
+        signup.request(spec(slug, adminEmail));
+        ArgumentCaptor<String> token = ArgumentCaptor.forClass(String.class);
+        verify(email).sendVerification(eq(adminEmail), token.capture(), eq(slug));
+
+        signup.activate(token.getValue(), "chosen-passphrase-1");
+
+        UUID orgId = organizations.findBySlug(slug).orElseThrow().getId();
+        UUID adminId = users.findByLoginInOrg(adminEmail, orgId).orElseThrow().getId();
+
+        // The admin's "All Users" membership is their OWN org's group — a tenant baseline that is theirs,
+        // isolated from every other tenant. (Read via the owner connection to bypass RLS.)
+        UUID membershipOrg = ownerJdbc().queryForObject(
+                "select g.org_id from user_group_member m join user_group g on g.id = m.group_id "
+                        + "where m.user_id = ? and g.name = 'All Users'", UUID.class, adminId);
+        assertThat(membershipOrg).isEqualTo(orgId);
+        // …and NOT the global group (the cross-tenant leak vector that surfaced other tenants' apps).
+        Long inGlobal = ownerJdbc().queryForObject(
+                "select count(*) from user_group_member m join user_group g on g.id = m.group_id "
+                        + "where m.user_id = ? and g.name = 'All Users' and g.org_id is null", Long.class, adminId);
+        assertThat(inGlobal).isZero();
+    }
+
+    @Test
     void aSlugTakenSinceTheRequestRollsBackWithoutBurningTheToken() {
         String slug = "dup-" + UUID.randomUUID().toString().substring(0, 8);
         String firstEmail = "first-" + slug + "@example.com";

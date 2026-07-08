@@ -34,6 +34,10 @@ public interface UserGroupRepository extends JpaRepository<UserGroup, UUID> {
     /** A scoped page: groups whose id is in {@code ids} (a delegate's subtree), ordered by name. */
     Page<UserGroup> findByIdInOrderByNameAsc(Collection<UUID> ids, Pageable pageable);
 
+    /** A page of ONE organization's groups (excludes GLOBAL/system groups) — a tenant admin's directory,
+     *  which must never surface the platform-wide groups RLS keeps visible for login role-resolution. */
+    Page<UserGroup> findByOrgIdOrderByNameAsc(UUID orgId, Pageable pageable);
+
     Optional<UserGroup> findFirstBySystemTrue();
 
     /**
@@ -79,6 +83,11 @@ public interface UserGroupRepository extends JpaRepository<UserGroup, UUID> {
     @Query("select g.id as id, g.name as name from UserGroup g "
             + "where lower(g.name) like lower(concat('%', :q, '%')) order by g.name asc")
     List<IdName> search(@Param("q") String q, Pageable limit);
+
+    /** Typeahead search WITHIN one organization (excludes GLOBAL groups) — a tenant admin's picker. */
+    @Query("select g.id as id, g.name as name from UserGroup g "
+            + "where g.orgId = :orgId and lower(g.name) like lower(concat('%', :q, '%')) order by g.name asc")
+    List<IdName> searchInOrg(@Param("q") String q, @Param("orgId") UUID orgId, Pageable limit);
 
     /** Member count for a (visible) group, joined through {@code UserGroup} to stay RLS-scoped. */
     @Query("select count(mem) from UserGroup g "

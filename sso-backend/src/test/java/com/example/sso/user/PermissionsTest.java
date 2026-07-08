@@ -63,24 +63,24 @@ class PermissionsTest {
     void platformCoversRegistryConsoleAndSharedInfraAndIsASubsetOfTheCatalog() {
         assertThat(Permissions.ALL).containsAll(Permissions.PLATFORM);
         assertThat(Permissions.PLATFORM).contains(
-                Permissions.ORG_CREATE, Permissions.PORTAL_SETTINGS_UPDATE,
-                Permissions.AUDIT_READ, Permissions.CLIENT_CREATE);
-        // the directory + policy domain a tenant admin owns is NOT platform; SAML RPs, app assignments, the
-        // resource DAG and SCIM provisioning (/Users) are now org-scoped too
+                Permissions.ORG_CREATE, Permissions.PORTAL_SETTINGS_UPDATE, Permissions.AUDIT_READ);
+        // the directory + policy + application domain a tenant admin owns is NOT platform; SAML/OIDC apps, app
+        // assignments, the resource DAG and SCIM provisioning (/Users) are all org-scoped
         assertThat(Permissions.PLATFORM).doesNotContain(
                 Permissions.USER_READ, Permissions.GROUP_CREATE, Permissions.ROLE_CREATE,
                 Permissions.POLICY_READ, Permissions.SESSION_POLICY_READ, Permissions.NETWORK_ZONE_READ,
-                Permissions.SAML_CREATE, Permissions.APP_ASSIGNMENT_ASSIGN, Permissions.RESOURCE_ASSIGN_ADMIN,
-                Permissions.RESOURCE_CREATE, Permissions.ORG_READ, Permissions.ORG_MEMBER_MANAGE,
-                Permissions.SCIM_MANAGE);
+                Permissions.SAML_CREATE, Permissions.CLIENT_CREATE, Permissions.APP_ASSIGNMENT_ASSIGN,
+                Permissions.RESOURCE_ASSIGN_ADMIN, Permissions.RESOURCE_CREATE, Permissions.ORG_READ,
+                Permissions.ORG_MEMBER_MANAGE, Permissions.SCIM_MANAGE);
     }
 
     @Test
     void isPlatformFlagsOnlyPlatformPermissions() {
         assertThat(Permissions.isPlatform(Permissions.ORG_CREATE)).isTrue();
         assertThat(Permissions.isPlatform(Permissions.PORTAL_SETTINGS_UPDATE)).isTrue();
-        assertThat(Permissions.isPlatform(Permissions.CLIENT_CREATE)).isTrue();
-        // a tenant's own directory + registry membership stay tenant-grantable; key:rotate is now per-tenant
+        assertThat(Permissions.isPlatform(Permissions.AUDIT_READ)).isTrue();
+        // a tenant's own directory + apps + registry membership are tenant-grantable
+        assertThat(Permissions.isPlatform(Permissions.CLIENT_CREATE)).isFalse(); // host-org-scoped OIDC clients
         assertThat(Permissions.isPlatform(Permissions.SCIM_MANAGE)).isFalse(); // per-tenant SCIM /Users provisioning
         assertThat(Permissions.isPlatform(Permissions.KEY_ROTATE)).isFalse();  // per-tenant signing keys
         assertThat(Permissions.isPlatform(Permissions.SAML_CREATE)).isFalse(); // per-tenant SAML relying parties
@@ -97,10 +97,11 @@ class PermissionsTest {
                 .doesNotContainAnyElementsOf(Permissions.PLATFORM)
                 .contains(Permissions.USER_READ, Permissions.ROLE_CREATE, Permissions.GROUP_CREATE,
                         Permissions.POLICY_READ, Permissions.ORG_READ, Permissions.ORG_MEMBER_MANAGE,
+                        Permissions.CLIENT_CREATE, // host-org-scoped OIDC clients are tenant-grantable
                         Permissions.KEY_ROTATE, // per-tenant signing keys are tenant-grantable
                         Permissions.SAML_CREATE, // per-tenant SAML relying parties are tenant-grantable
                         Permissions.SCIM_MANAGE) // per-tenant SCIM /Users provisioning is tenant-grantable
-                .doesNotContain(Permissions.CLIENT_CREATE, Permissions.AUDIT_READ)
+                .doesNotContain(Permissions.AUDIT_READ, Permissions.PORTAL_SETTINGS_UPDATE)
                 .hasSize(Permissions.ALL.size() - Permissions.PLATFORM.size());
     }
 

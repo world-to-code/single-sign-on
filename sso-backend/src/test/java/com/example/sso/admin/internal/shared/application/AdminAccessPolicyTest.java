@@ -5,6 +5,8 @@ import com.example.sso.resource.ApplicationAuthorization;
 import com.example.sso.resource.GroupAuthorization;
 import com.example.sso.resource.ResourceAuthorization;
 import com.example.sso.organization.OrganizationAuthorization;
+import com.example.sso.portal.ApplicationService;
+import com.example.sso.portal.ApplicationView;
 import com.example.sso.resource.UserAuthorization;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.Permissions;
@@ -52,6 +54,7 @@ class AdminAccessPolicyTest {
     private ApplicationAuthorization appAuth;
     private ResourceAuthorization resourceAuth;
     private OrganizationAuthorization orgAuth;
+    private ApplicationService applications;
     private OrgContext orgContext;
     private AdminAccessPolicy policy;
 
@@ -65,9 +68,10 @@ class AdminAccessPolicyTest {
         appAuth = mock(ApplicationAuthorization.class);
         resourceAuth = mock(ResourceAuthorization.class);
         orgAuth = mock(OrganizationAuthorization.class);
+        applications = mock(ApplicationService.class);
         orgContext = mock(OrgContext.class);
         policy = new AdminAccessPolicy(userService, roleService, userGroups, userAuth, groupAuth,
-                appAuth, resourceAuth, orgAuth, orgContext);
+                appAuth, resourceAuth, orgAuth, applications, orgContext);
 
         UserAccount actor = mock(UserAccount.class);
         when(actor.getId()).thenReturn(ACTOR_ID);
@@ -105,6 +109,39 @@ class AdminAccessPolicyTest {
     @Test
     void unrelatedUserIsOutOfScope() {
         assertThat(policy.canAccessUser(OTHER_ID)).isFalse();
+    }
+
+    @Test
+    void aTenantAdminReachesAUserInTheirBoundOrg() {
+        // No resource-subtree delegation, but the actor administers the bound org AND the target belongs to
+        // it → in scope (a tenant admin manages their whole org's directory).
+        UUID orgId = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgId));
+        when(orgAuth.canManage(ACTOR_ID, orgId)).thenReturn(true);
+        when(userService.orgIdOf(OTHER_ID)).thenReturn(Optional.of(orgId));
+
+        assertThat(policy.canAccessUser(OTHER_ID)).isTrue();
+    }
+
+    @Test
+    void aTenantAdminCannotReachAUserInAnotherOrg() {
+        // The actor administers the bound org, but the target belongs to a DIFFERENT org → out of scope,
+        // even though app_user has no RLS to hide the row.
+        UUID orgId = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgId));
+        when(orgAuth.canManage(ACTOR_ID, orgId)).thenReturn(true);
+        when(userService.orgIdOf(OTHER_ID)).thenReturn(Optional.of(UUID.randomUUID()));
+
+        assertThat(policy.canAccessUser(OTHER_ID)).isFalse();
+    }
+
+    @Test
+    void aTenantAdminMayCreateUsersWithinTheirOrg() {
+        UUID orgId = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgId));
+        when(orgAuth.canManage(ACTOR_ID, orgId)).thenReturn(true); // administers the bound org
+
+        assertThat(policy.canCreateUser()).isTrue();
     }
 
     @Test
@@ -179,6 +216,21 @@ class AdminAccessPolicyTest {
         when(appAuth.canManage(ACTOR_ID, "app-1")).thenReturn(true);
         assertThat(policy.canAccessApp("app-1")).isTrue();
         assertThat(policy.canAccessApp("app-2")).isFalse();
+    }
+
+    @Test
+    void aTenantAdminCanManageAnAppInTheirOwnOrgsCatalogButNotOthers() {
+        // No resource-subtree delegation, but the actor administers the bound org and the app is in that org's
+        // tier-scoped catalog → manageable. An app NOT in their catalog (another tenant's, or a global one) is
+        // refused — so a tenant admin can assign/manage the apps they just registered, and only those.
+        UUID orgId = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgId));
+        when(orgAuth.canManage(ACTOR_ID, orgId)).thenReturn(true);
+        when(applications.listApplications()).thenReturn(List.of(
+                new ApplicationView("my-app", "OIDC", "My App", "/launch", false, null, null)));
+
+        assertThat(policy.canAccessApp("my-app")).isTrue();
+        assertThat(policy.canAccessApp("another-tenants-app")).isFalse();
     }
 
     @Test
@@ -364,6 +416,20 @@ class AdminAccessPolicyTest {
     @Test
     void scopedAdminMayNotAssignAPrivilegedRole() {
         assertThat(policy.canUpdateUser(OTHER_ID, true, Set.of(Roles.ADMIN))).isFalse();
+    }
+
+    @Test
+    void scopedAdminMayNotUpdateAUserAssigningAGlobalRoleCarryingAPlatformPermission() {
+        // The create→update escalation: a tenant admin creates a puppet, then UPDATEs it to add a super-created
+        // global role that bundles a PLATFORM permission (e.g. audit:read). canUpdateUser must refuse it, exactly
+        // as canCreateUser's mayAssignRoles gate does — otherwise the puppet gains cross-tenant reach.
+        UUID roleId = UUID.randomUUID();
+        RoleRef auditor = mock(RoleRef.class);
+        when(auditor.getId()).thenReturn(roleId);
+        when(roleService.findByName("ROLE_AUDITOR")).thenReturn(Optional.of(auditor));
+        when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.AUDIT_READ));
+
+        assertThat(policy.canUpdateUser(OTHER_ID, true, Set.of("ROLE_AUDITOR"))).isFalse();
     }
 
     @Test

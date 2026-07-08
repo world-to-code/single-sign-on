@@ -23,6 +23,10 @@ public interface UserGroupService {
     /** A DB-paged slice of the groups whose id is in {@code ids} — for a scoped admin's directory. */
     Page<GroupView> listByIds(Collection<UUID> ids, int page, int size);
 
+    /** A DB-paged slice of ONE organization's groups (excludes GLOBAL/system groups) — a tenant admin's
+     *  directory, which must not surface the platform-wide groups RLS keeps visible for login resolution. */
+    Page<GroupView> listByOrg(UUID orgId, int page, int size);
+
     GroupView get(UUID id);
 
     /** A page of a group's members (id, username), ordered by username. */
@@ -30,6 +34,9 @@ public interface UserGroupService {
 
     /** Typeahead group search for the assignment picker. */
     List<Suggestion> search(String q, int limit);
+
+    /** Typeahead group search scoped to ONE organization (excludes GLOBAL groups) — a tenant admin's picker. */
+    List<Suggestion> searchInOrg(String q, UUID orgId, int limit);
 
     GroupView create(GroupSpec spec);
 

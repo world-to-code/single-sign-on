@@ -15,6 +15,8 @@ import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.internal.domain.PermissionRepository;
 import com.example.sso.user.internal.domain.RoleRepository;
 import com.example.sso.user.internal.domain.UserDirectPermissionRepository;
+import com.example.sso.user.internal.domain.UserGroup;
+import com.example.sso.user.internal.domain.UserGroupMember;
 import com.example.sso.user.internal.domain.UserGroupMemberRepository;
 import com.example.sso.user.internal.domain.UserGroupRepository;
 import com.example.sso.user.internal.domain.UserRoleRepository;
@@ -89,11 +91,15 @@ class UserServiceImplTest {
         when(users.existsByEmailInOrg("alice@example.com", null)).thenReturn(false);
         when(passwordEncoder.encode("pw")).thenReturn("hash");
         when(users.save(any(AppUser.class))).thenAnswer(inv -> inv.getArgument(0));
+        UserGroup allUsers = mock(UserGroup.class);
+        when(allUsers.getId()).thenReturn(UUID.randomUUID());
+        when(groups.findByNameAndOrgIdIsNull("All Users")).thenReturn(Optional.of(allUsers));
 
-        service.createUser(newUser(Set.of()));
+        service.createUser(newUser(Set.of())); // global (org-less) account → the GLOBAL All Users group
 
         verify(users).save(any(AppUser.class));
         verify(groups).findByNameAndOrgIdIsNull("All Users");
+        verify(userGroupMembers).save(any(UserGroupMember.class));
     }
 
     @Test
@@ -139,8 +145,10 @@ class UserServiceImplTest {
     @Test
     void deleteRemovesTheUserItsJoinRowsAndPublishesUserDeletedEvent() {
         UUID id = UUID.randomUUID();
+        UUID orgId = UUID.randomUUID();
         AppUser user = mock(AppUser.class);
         when(user.getUsername()).thenReturn("bob");
+        when(user.getOrgId()).thenReturn(orgId);
         when(users.findById(id)).thenReturn(Optional.of(user));
 
         service.delete(id);
@@ -149,7 +157,8 @@ class UserServiceImplTest {
         verify(userDirectPermissions).deleteByUserId(id);
         verify(users).deleteById(id);
         verify(events).publishEvent(new UserDeletedEvent(id));
-        verify(events).publishEvent(new UserAccessChangedEvent("bob")); // terminate the deleted user's sessions
+        // Scoped to the user's own org so a same-named user in another tenant is not also logged out.
+        verify(events).publishEvent(new UserAccessChangedEvent("bob", orgId));
     }
 
     @Test
