@@ -12,9 +12,12 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 /**
- * The set-password / verification links MUST land on the NEW tenant's OWN host ({slug} substituted), not the
- * bare platform host — the admin's session/login is host-bound, so a link to {@code localhost:9000} would drop
- * them in the wrong (or no) tenant context.
+ * The admin-ONBOARDING invitation (set-password) MUST land on the NEW tenant's OWN host ({slug} substituted):
+ * that flow provisions the org UP FRONT, so its subdomain already resolves and the host-bound login lands in
+ * the right tenant. The self-service SIGNUP verification (activate) is the OPPOSITE: nothing is provisioned
+ * yet — the tenant subdomain does NOT exist until activation creates the org — so that link must target the
+ * PLATFORM host (a {slug} link would 404 at the unknown-subdomain guard); the SPA redirects to the tenant
+ * subdomain only AFTER activation.
  */
 class OnboardingEmailSenderTest {
 
@@ -24,7 +27,7 @@ class OnboardingEmailSenderTest {
     @BeforeEach
     void configureTenantAwareUrls() {
         ReflectionTestUtils.setField(sender, "setPasswordUrl", "http://{slug}.localhost:9000/set-password");
-        ReflectionTestUtils.setField(sender, "activateUrl", "http://{slug}.localhost:9000/activate");
+        ReflectionTestUtils.setField(sender, "activateUrl", "http://localhost:9000/activate");
         ReflectionTestUtils.setField(sender, "workspaceUrlTemplate", "http://{slug}.localhost:9000");
     }
 
@@ -35,11 +38,11 @@ class OnboardingEmailSenderTest {
     }
 
     @Test
-    void theVerificationLinkTargetsTheTenantSubdomain() {
+    void theVerificationLinkTargetsThePlatformHostBecauseTheTenantDoesNotExistYet() {
         sender.sendVerification("admin@acme.example", "tok-123", "acme");
 
-        assertThat(sentBody()).contains("http://acme.localhost:9000/activate?token=tok-123")
-                .doesNotContain("http://localhost:9000/activate");
+        assertThat(sentBody()).contains("http://localhost:9000/activate?token=tok-123")
+                .doesNotContain("acme.localhost:9000/activate"); // the org isn't created until this link is redeemed
     }
 
     @Test
