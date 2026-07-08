@@ -29,6 +29,7 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -168,6 +169,27 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
             repository.save(new SessionPolicy(DEFAULT_NAME, 0)); // the global fallback (org_id null)
         }
 
+        events.publishEvent(new SessionPolicyCacheChanged());
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void provisionDefault(UUID orgId) {
+        // REQUIRES_NEW: this runs from an AFTER_COMMIT listener (the org-created transaction is already
+        // completing), so it must open its OWN physical transaction — a plain REQUIRES would find no active
+        // transaction and the flush below would fail.
+        // Bind the org for the whole read+write so RLS scopes the existence check AND the insert's WITH CHECK
+        // to this tenant; saveAndFlush forces the INSERT while the GUC is still orgId (a deferred flush would
+        // run after the scope restores the outer context and fail — see rls-connection-context-binder).
+        orgContext.runInOrg(orgId, () -> {
+            if (repository.findByNameAndOrgId(DEFAULT_NAME, orgId).isPresent()) {
+                return; // idempotent: the tenant already has its baseline
+            }
+            // Org-owned "Default": priority above the global 0 so it wins for this org, no user/role
+            // assignments so it applies to every member, standard baseline knobs (SessionRules.defaults()).
+            // Editable by the tenant admin — it is NOT the immutable GLOBAL Default (org_id is non-null).
+            repository.saveAndFlush(new SessionPolicy(DEFAULT_NAME, TENANT_DEFAULT_PRIORITY, orgId));
+        });
         events.publishEvent(new SessionPolicyCacheChanged());
     }
 

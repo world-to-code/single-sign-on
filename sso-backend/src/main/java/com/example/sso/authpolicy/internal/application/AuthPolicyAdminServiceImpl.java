@@ -19,11 +19,13 @@ import com.example.sso.authpolicy.internal.domain.AuthPolicyUserRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.RoleService;
 import com.example.sso.user.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -49,6 +51,7 @@ import java.util.UUID;
 public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
     private final AuthPolicyRepository repository;
     private final OrgTierGuard tierGuard;
+    private final OrgContext orgContext;
     private final AuthPolicyStepRepository stepRepository;
     private final AuthPolicyStepFactorRepository stepFactorRepository;
     private final AuthPolicyUserRepository userRepository;
@@ -68,6 +71,31 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         policy.allowEnrollmentAtLogin(true); // the fallback must let users bootstrap a required factor
         AuthPolicy saved = repository.save(policy);
         replaceSteps(saved, List.of(Set.of(AuthFactor.PASSWORD), Set.of(AuthFactor.TOTP)));
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void provisionDefault(UUID orgId) {
+        // REQUIRES_NEW: this runs from an AFTER_COMMIT listener (the org-created transaction is already
+        // completing), so it must open its OWN physical transaction — a plain REQUIRES would find no active
+        // transaction and the flush below would fail.
+        // Bind the org for the whole read+write so RLS scopes the existence check AND the insert's WITH CHECK
+        // to this tenant; saveAndFlush forces the INSERT while the GUC is still orgId (a deferred flush would
+        // run after the scope restores the outer context and fail — see rls-connection-context-binder).
+        orgContext.runInOrg(orgId, () -> {
+            if (repository.findByNameAndOrgId(AuthPolicyResolver.DEFAULT_NAME, orgId).isPresent()) {
+                return; // idempotent: the tenant already has its baseline
+            }
+            // Org-owned "Default" login policy: priority above the global 0 so it wins for this org, no
+            // assignments so it applies to every member, canonical password-then-TOTP steps, and used for
+            // login with enrollment allowed (so a member can bootstrap their required factor). Editable by
+            // the tenant admin — it is NOT the immutable GLOBAL Default (org_id is non-null).
+            AuthPolicy policy = new AuthPolicy(AuthPolicyResolver.DEFAULT_NAME, TENANT_DEFAULT_PRIORITY, orgId);
+            policy.useForLogin(true);
+            policy.allowEnrollmentAtLogin(true);
+            AuthPolicy saved = repository.saveAndFlush(policy);
+            replaceSteps(saved, List.of(Set.of(AuthFactor.PASSWORD), Set.of(AuthFactor.TOTP)));
+        });
     }
 
     @Override

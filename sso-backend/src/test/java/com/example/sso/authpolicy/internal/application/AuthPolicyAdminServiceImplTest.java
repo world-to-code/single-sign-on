@@ -70,7 +70,7 @@ class AuthPolicyAdminServiceImplTest {
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.empty());
         // Exercise the REAL tier guard (driven by the mocked OrgContext) so the isolation checks are genuine.
         service = new AuthPolicyAdminServiceImpl(
-                repository, new OrgTierGuard(orgContext),
+                repository, new OrgTierGuard(orgContext), orgContext,
                 stepRepository, stepFactorRepository, userRepository, roleRepository, users, roles);
     }
 

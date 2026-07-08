@@ -2,6 +2,7 @@ package com.example.sso.organization.internal.application;
 
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationAccessRevokedEvent;
+import com.example.sso.organization.OrganizationCreatedEvent;
 import com.example.sso.organization.OrganizationRef;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationStatus;
@@ -45,7 +46,11 @@ public class OrganizationServiceImpl implements OrganizationService {
             throw new ConflictException("organization slug '" + slug + "' already exists");
         }
         Organization org = new Organization(slug, requireName(command.name()), command.profile());
-        return view(organizations.save(org));
+        Organization saved = organizations.save(org);
+        // Let other modules provision this tenant's baseline (its own default session/auth policies). Delivered
+        // AFTER this (and the enclosing signup/onboarding) transaction commits, so the org row already exists.
+        events.publishEvent(new OrganizationCreatedEvent(saved.getId()));
+        return view(saved);
     }
 
     @Override
