@@ -72,7 +72,8 @@ public class OrgDrillInFilter extends OncePerRequestFilter {
 
         // Deny-by-default: only a platform super-admin, or someone who administers this org (an org-admin who
         // is a member of it), may switch into it. canManage re-checks membership live.
-        if (!orgContext.isPlatform() && !mayDrillInto(orgId)) {
+        boolean platformSuperAdmin = orgContext.isPlatform(); // capture BEFORE bindOrg overrides the context
+        if (!platformSuperAdmin && !mayDrillInto(orgId)) {
             deny(request, response, "not authorized for org", orgId.toString(), HttpServletResponse.SC_FORBIDDEN);
             return;
         }
@@ -82,8 +83,11 @@ public class OrgDrillInFilter extends OncePerRequestFilter {
         }
 
         orgContext.bindOrg(orgId); // override the base context → scope RLS to this tenant for the request
+        // A thorough drill-in trail: WHO entered WHICH tenant, and whether it was a PLATFORM super-admin
+        // crossing into a customer tenant (the sensitive case) vs. a tenant admin acting in an org they own.
         audit.record(new AuditRecord(AuditType.ORGANIZATION_CONTEXT_ENTERED, principal(), true,
-                "org=" + orgId, ClientIp.of(request)));
+                "org=" + orgId + (platformSuperAdmin ? " via=platform-super-admin" : " via=org-admin"),
+                ClientIp.of(request)));
         chain.doFilter(request, response);
     }
 
