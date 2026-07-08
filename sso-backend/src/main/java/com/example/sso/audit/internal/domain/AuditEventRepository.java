@@ -11,11 +11,19 @@ import org.springframework.data.repository.query.Param;
 
 public interface AuditEventRepository extends JpaRepository<AuditEvent, Long> {
 
-    List<AuditEvent> findTop100ByOrderByOccurredAtDesc();
+    /** Recent events in one tenant — a tenant admin, or a super-admin drilled into that org. */
+    List<AuditEvent> findTop100ByOrgIdOrderByOccurredAtDesc(UUID orgId);
 
-    List<AuditEvent> findTop50ByPrincipalOrderByOccurredAtDesc(String principal);
+    /** Recent global (org-less) events — the platform tier: an un-drilled super-admin, never all tenants merged. */
+    List<AuditEvent> findTop100ByOrgIdIsNullOrderByOccurredAtDesc();
 
-    List<AuditEvent> findTop100ByCategoryOrderByOccurredAtDesc(AuditCategory category);
+    List<AuditEvent> findTop50ByOrgIdAndPrincipalOrderByOccurredAtDesc(UUID orgId, String principal);
+
+    List<AuditEvent> findTop50ByOrgIdIsNullAndPrincipalOrderByOccurredAtDesc(String principal);
+
+    List<AuditEvent> findTop100ByOrgIdAndCategoryOrderByOccurredAtDesc(UUID orgId, AuditCategory category);
+
+    List<AuditEvent> findTop100ByOrgIdIsNullAndCategoryOrderByOccurredAtDesc(AuditCategory category);
 
     /** Platform-wide count of events of a type since a moment (e.g. completed sign-ins in the last 30 days). */
     long countByTypeAndOccurredAtAfter(String type, Instant since);

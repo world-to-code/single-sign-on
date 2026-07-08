@@ -14,13 +14,18 @@ public interface AuditService {
 
     void record(AuditType type, String principal, boolean success);
 
-    List<AuditEntry> recent();
+    /**
+     * The most recent events in one tenant ({@code orgId}) or the platform/global scope ({@code orgId} null),
+     * newest first. Scoped in the query — a tenant tier never sees another tenant's events, and the platform
+     * tier sees only global (org-less) events, never all tenants merged.
+     */
+    List<AuditEntry> recent(UUID orgId);
 
-    /** The most recent events recorded for a single principal (username), newest first. */
-    List<AuditEntry> recentForPrincipal(String principal);
+    /** The most recent events for a single principal within one tenant (or the global scope), newest first. */
+    List<AuditEntry> recentForPrincipal(UUID orgId, String principal);
 
-    /** The most recent events in a single category, newest first. */
-    List<AuditEntry> recentByCategory(AuditCategory category);
+    /** The most recent events in a single category within one tenant (or the global scope), newest first. */
+    List<AuditEntry> recentByCategory(UUID orgId, AuditCategory category);
 
     /** Platform-wide count of completed sign-ins since a moment (analytics). */
     long signInsSince(Instant since);

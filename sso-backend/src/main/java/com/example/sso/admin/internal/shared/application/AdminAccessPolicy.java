@@ -170,6 +170,15 @@ public class AdminAccessPolicy {
                 orgContext.currentOrg().map(orgId -> orgAuth.canManage(actorId, orgId))).orElse(false);
     }
 
+    /**
+     * The tenant the acting admin is bound to (their login org, or one a super-admin drilled into), or null
+     * for the platform tier (an un-drilled super-admin). Tier-scoped reads pass this as the {@code orgId} so a
+     * tenant admin sees only their org and an un-drilled super-admin sees only global (org-less) data.
+     */
+    public UUID actingOrg() {
+        return orgContext.currentOrg().orElse(null);
+    }
+
     /** For a scoped acting admin, the ids of the groups inside their resource subtree. */
     public Set<UUID> currentScopedGroupIds() {
         return currentUserId().map(groupAuth::scopedGroupIds).orElse(Set.of());
@@ -211,8 +220,10 @@ public class AdminAccessPolicy {
     }
 
     /**
-     * The acting admin's audit visibility: unscoped for a super admin, otherwise their union of scoped
-     * user/group/app/resource ids. The admin audit log filters entries through {@link AuditScope#permits}.
+     * The acting admin's audit visibility WITHIN the already tier-scoped event set (the query has bounded it
+     * to the acting org — a tenant's events, or the platform's global events). Unscoped — sees every entry in
+     * that tier — for a super admin OR a tenant admin acting in their own org; a resource delegate is narrowed
+     * further to the union of their scoped user/group/app/resource ids via {@link AuditScope#permits}.
      */
     public AuditScope currentAuditScope() {
         Optional<UUID> actor = currentUserId();
@@ -221,7 +232,7 @@ public class AdminAccessPolicy {
         }
 
         UUID actorId = actor.get();
-        if (resourceAuth.isUnscoped(actorId)) {
+        if (resourceAuth.isUnscoped(actorId) || administersBoundOrg()) {
             return new AuditScope(true, currentUsername(), Set.of(), Set.of(), Set.of(), Set.of());
         }
         return new AuditScope(false, currentUsername(), currentManagedUserIds(),

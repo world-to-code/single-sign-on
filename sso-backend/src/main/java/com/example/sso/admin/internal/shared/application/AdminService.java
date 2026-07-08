@@ -12,6 +12,7 @@ import com.example.sso.scim.ScimTokenService;
 import com.example.sso.shared.Page;
 import java.time.Duration;
 import java.util.List;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -32,12 +33,16 @@ public class AdminService {
     private final AdminAccessPolicy accessPolicy;
 
     /**
-     * Recent audit events, optionally filtered to a single category (null = all categories) and always
-     * scoped to the acting admin: a super admin sees everything; a delegate sees only entries whose
-     * subject is inside their subtree (and their own actions).
+     * Recent audit events, optionally filtered to a single category (null = all categories). Scoping is
+     * two-tiered: the query is bounded to the acting tenant (a tenant admin, or a super-admin drilled into an
+     * org — an un-drilled super-admin sees only global events), then a resource delegate is narrowed further
+     * to entries whose subject is inside their subtree (and their own actions).
      */
     public Page<AuditEntry> recentAudit(AuditCategory category, int page, int size) {
-        List<AuditEntry> events = category == null ? auditService.recent() : auditService.recentByCategory(category);
+        UUID actingOrg = accessPolicy.actingOrg();
+        List<AuditEntry> events = category == null
+                ? auditService.recent(actingOrg)
+                : auditService.recentByCategory(actingOrg, category);
         AuditScope scope = accessPolicy.currentAuditScope();
         List<AuditEntry> visible = scope.unscoped() ? events : events.stream().filter(scope::permits).toList();
         return Page.of(visible, page, size);

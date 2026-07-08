@@ -64,7 +64,10 @@ public class UserDetailAdminService {
     }
 
     public Page<AuditEntry> activity(UUID userId, int page, int size) {
-        List<AuditEntry> recent = audit.recentForPrincipal(require(userId).getUsername());
+        // Scope to the target's OWN org: usernames are unique only within an org (V68), so an org-less lookup
+        // could surface a same-named principal's activity from another tenant.
+        UserAccount user = require(userId);
+        List<AuditEntry> recent = audit.recentForPrincipal(user.getOrgId(), user.getUsername());
         return Page.of(recent, page, size);
     }
 

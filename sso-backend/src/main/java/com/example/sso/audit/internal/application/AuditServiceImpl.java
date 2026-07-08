@@ -50,22 +50,29 @@ public class AuditServiceImpl implements AuditService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<AuditEntry> recent() {
-        return repository.findTop100ByOrderByOccurredAtDesc().stream().map(this::toEntry).toList();
+    public List<AuditEntry> recent(UUID orgId) {
+        List<AuditEvent> events = orgId == null
+                ? repository.findTop100ByOrgIdIsNullOrderByOccurredAtDesc()
+                : repository.findTop100ByOrgIdOrderByOccurredAtDesc(orgId);
+        return events.stream().map(this::toEntry).toList();
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<AuditEntry> recentForPrincipal(String principal) {
-        return repository.findTop50ByPrincipalOrderByOccurredAtDesc(principal).stream()
-                .map(this::toEntry).toList();
+    public List<AuditEntry> recentForPrincipal(UUID orgId, String principal) {
+        List<AuditEvent> events = orgId == null
+                ? repository.findTop50ByOrgIdIsNullAndPrincipalOrderByOccurredAtDesc(principal)
+                : repository.findTop50ByOrgIdAndPrincipalOrderByOccurredAtDesc(orgId, principal);
+        return events.stream().map(this::toEntry).toList();
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<AuditEntry> recentByCategory(AuditCategory category) {
-        return repository.findTop100ByCategoryOrderByOccurredAtDesc(category).stream()
-                .map(this::toEntry).toList();
+    public List<AuditEntry> recentByCategory(UUID orgId, AuditCategory category) {
+        List<AuditEvent> events = orgId == null
+                ? repository.findTop100ByOrgIdIsNullAndCategoryOrderByOccurredAtDesc(category)
+                : repository.findTop100ByOrgIdAndCategoryOrderByOccurredAtDesc(orgId, category);
+        return events.stream().map(this::toEntry).toList();
     }
 
     @Override
