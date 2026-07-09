@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { ArrowRight, Building2, Loader2 } from "lucide-react";
 import { ApiError } from "../api";
-import { organization } from "../auth";
+import { goHome, organization } from "../auth";
 import { lastOrg, rememberOrg } from "../lib/loginMemory";
 import AuthLayout from "../components/layout/AuthLayout";
 import { Alert, AlertDescription } from "../components/ui/alert";
@@ -60,7 +60,8 @@ export default function OrgSelect() {
   }
 
   return (
-    <AuthLayout title="Sign in" description="Enter your organization to continue.">
+    <AuthLayout title="Sign in" description="Enter your organization to continue."
+                onBack={goHome} backLabel="Home">
       {error && (
         <Alert variant="destructive" className="mb-4">
           <AlertDescription>{error}</AlertDescription>

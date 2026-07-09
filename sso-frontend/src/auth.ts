@@ -54,6 +54,12 @@ export const identify = (email: string) =>
 export const changePassword = (password: string) =>
   apiPost<SessionView>("/api/auth/change-password", { password });
 export const logout = () => apiPost<{ samlLogoutRedirect: string | null }>("/api/auth/logout");
+
+/** Abandon any in-progress sign-in and return to the marketing home page (clears the pre-auth session). */
+export const goHome = async () => {
+  try { await logout(); } catch { /* ignore — may be a pre-auth session with nothing to end */ }
+  window.location.assign("/");
+};
 export const resume = () => apiGet<{ redirectUrl: string }>("/api/auth/resume");
 
 // Generic factor steps — the backend dispatches to the per-factor strategy.
