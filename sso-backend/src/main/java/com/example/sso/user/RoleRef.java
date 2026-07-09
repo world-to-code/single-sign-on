@@ -12,6 +12,9 @@ public interface RoleRef {
 
     UUID getId();
 
+    /** The org this role belongs to, or {@code null} for a global/system role shared across every tenant. */
+    UUID getOrgId();
+
     String getName();
 
     /** Whether this is a protected system role (name/deletion locked; e.g. ROLE_ADMIN, ROLE_USER). */

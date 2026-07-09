@@ -7,6 +7,7 @@ import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.RbacService;
 import com.example.sso.user.RoleService;
@@ -37,10 +38,17 @@ public class RoleAdminService {
     private final AdminAuditLogger auditLogger;
     private final LastAdminGuard lastAdminGuard;
     private final OrgContext orgContext;
+    private final OrgTierGuard tierGuard;
 
     @Transactional(readOnly = true)
     public List<RoleView> listRoles() {
-        return roleService.findAll().stream().map(RoleView::of).toList();
+        // Tier-scoped like every other org-scoped list: a tenant admin sees only its own org's roles, the
+        // platform super-admin only the global roles. RLS lets a tenant READ global rows, so the builder must
+        // filter in code — otherwise a tenant admin could enumerate (and target) shared/global roles.
+        UUID tier = tierGuard.currentTier();
+        return roleService.findAll().stream()
+                .filter(role -> Objects.equals(role.getOrgId(), tier))
+                .map(RoleView::of).toList();
     }
 
     @Transactional
@@ -52,6 +60,7 @@ public class RoleAdminService {
 
     @Transactional
     public RoleView updateRole(UUID id, String name, Set<String> permissions) {
+        requireRoleInTier(id);
         RoleView view = RoleView.of(roleService.updateRole(id, name, permissions));
         auditLogger.log(AuditType.ROLE_UPDATED, "role=" + id + " name=" + name + " permissions=" + permissions);
         return view;
@@ -59,8 +68,26 @@ public class RoleAdminService {
 
     @Transactional
     public void deleteRole(UUID id) {
+        requireRoleInTier(id);
         roleService.deleteRole(id);
         auditLogger.log(AuditType.ROLE_DELETED, "role=" + id);
+    }
+
+    /**
+     * Confines a role mutation to the actor's own tier. RLS lets a caller READ global/other-tenant rows, so
+     * the WRITABLE tier must be enforced in code — identically to every other org-scoped admin service (see
+     * {@link OrgTierGuard}). Without this a tenant admin holding {@code role:update}/{@code role:delete} could
+     * rewrite the permissions of a GLOBAL/shared role (inherited by every tenant), delete a shared role, or —
+     * via the holder-session termination that follows a role edit — force-log-out users across every tenant.
+     * {@code orgIdOf} yields empty for a global role and for an unknown id alike, so a tenant admin is denied
+     * both; the platform super-admin (tier {@code null}) manages the global roles and must drill into an org
+     * to touch that org's roles. The 404 is non-revealing (does not disclose that the role exists).
+     */
+    private void requireRoleInTier(UUID id) {
+        UUID roleTier = roleService.orgIdOf(id).orElse(null);
+        if (!Objects.equals(roleTier, tierGuard.currentTier())) {
+            throw new NotFoundException("role not found");
+        }
     }
 
     /** The users holding this role directly (scope-filtered for a delegated admin). */

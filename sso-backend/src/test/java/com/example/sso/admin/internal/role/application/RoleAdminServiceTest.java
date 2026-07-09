@@ -8,6 +8,7 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.RbacService;
 import com.example.sso.user.RoleRef;
@@ -45,6 +46,7 @@ class RoleAdminServiceTest {
     private AdminAuditLogger auditLogger;
     private LastAdminGuard lastAdminGuard;
     private OrgContext orgContext;
+    private OrgTierGuard tierGuard;
     private RoleAdminService service;
 
     @BeforeEach
@@ -55,7 +57,9 @@ class RoleAdminServiceTest {
         auditLogger = mock(AdminAuditLogger.class);
         lastAdminGuard = mock(LastAdminGuard.class);
         orgContext = mock(OrgContext.class);
-        service = new RoleAdminService(roleService, rbacService, accessPolicy, auditLogger, lastAdminGuard, orgContext);
+        tierGuard = new OrgTierGuard(orgContext);
+        service = new RoleAdminService(
+                roleService, rbacService, accessPolicy, auditLogger, lastAdminGuard, orgContext, tierGuard);
     }
 
     @Test
@@ -163,6 +167,100 @@ class RoleAdminServiceTest {
                         Permissions.CLIENT_CREATE, // host-org-scoped OIDC clients -> tenant-grantable
                         Permissions.SCIM_MANAGE); // /Users org-scoped -> tenant-grantable
         verify(rbacService, never()).allPermissions(); // a tenant admin uses the static tenant subset
+    }
+
+    @Test
+    void aTenantAdminCannotUpdateAGlobalRole() {
+        // The core cross-tenant isolation guard: a tenant admin holding role:update must not be able to rewrite
+        // the permissions of a GLOBAL/shared role (org_id null) — that role's authorities are inherited by every
+        // tenant, and the holder-session termination that follows a role edit would span all tenants.
+        UUID globalRoleId = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(UUID.randomUUID())); // acting as a tenant admin
+        when(roleService.orgIdOf(globalRoleId)).thenReturn(Optional.empty());     // global role — no owning org
+
+        assertThatThrownBy(() -> service.updateRole(globalRoleId, "ROLE_USER", Set.of(Permissions.USER_READ)))
+                .isInstanceOf(NotFoundException.class);
+        verify(roleService, never()).updateRole(any(), any(), any());
+    }
+
+    @Test
+    void aTenantAdminCannotDeleteAGlobalRole() {
+        UUID globalRoleId = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(UUID.randomUUID()));
+        when(roleService.orgIdOf(globalRoleId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.deleteRole(globalRoleId)).isInstanceOf(NotFoundException.class);
+        verify(roleService, never()).deleteRole(any());
+    }
+
+    @Test
+    void aTenantAdminCannotEditAnotherTenantsRole() {
+        UUID otherOrgRoleId = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(UUID.randomUUID()));
+        when(roleService.orgIdOf(otherOrgRoleId)).thenReturn(Optional.of(UUID.randomUUID())); // a different org
+
+        assertThatThrownBy(() -> service.updateRole(otherOrgRoleId, "x", Set.of()))
+                .isInstanceOf(NotFoundException.class);
+        verify(roleService, never()).updateRole(any(), any(), any());
+    }
+
+    @Test
+    void aTenantAdminCanUpdateItsOwnRole() {
+        UUID org = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        RoleRef updated = roleRef(roleId, "ROLE_SUPPORT", org);
+        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
+        when(roleService.orgIdOf(roleId)).thenReturn(Optional.of(org));
+        when(roleService.updateRole(eq(roleId), eq("ROLE_SUPPORT"), any())).thenReturn(updated);
+
+        RoleView view = service.updateRole(roleId, "ROLE_SUPPORT", Set.of(Permissions.USER_READ));
+
+        assertThat(view.id()).isEqualTo(roleId.toString());
+        verify(roleService).updateRole(eq(roleId), eq("ROLE_SUPPORT"), any());
+        verify(auditLogger).log(eq(AuditType.ROLE_UPDATED), any());
+    }
+
+    @Test
+    void thePlatformAdminManagesGlobalRoles() {
+        UUID globalRoleId = UUID.randomUUID();
+        RoleRef updated = roleRef(globalRoleId, "ROLE_SUPPORT", null);
+        when(orgContext.currentOrg()).thenReturn(Optional.empty());           // platform tier (null)
+        when(roleService.orgIdOf(globalRoleId)).thenReturn(Optional.empty()); // global role
+        when(roleService.updateRole(eq(globalRoleId), any(), any())).thenReturn(updated);
+
+        service.updateRole(globalRoleId, "ROLE_SUPPORT", Set.of());
+
+        verify(roleService).updateRole(eq(globalRoleId), any(), any());
+    }
+
+    @Test
+    void listRolesIsScopedToTheActingTenant() {
+        UUID org = UUID.randomUUID();
+        RoleRef mine = roleRef(UUID.randomUUID(), "ROLE_SUPPORT", org);
+        RoleRef global = roleRef(UUID.randomUUID(), Roles.ADMIN, null); // must not leak to a tenant admin
+        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
+        when(roleService.findAll()).thenReturn(List.of(mine, global));
+
+        assertThat(service.listRoles()).extracting(RoleView::name).containsExactly("ROLE_SUPPORT");
+    }
+
+    @Test
+    void listRolesForThePlatformAdminReturnsGlobalRoles() {
+        RoleRef tenantRole = roleRef(UUID.randomUUID(), "ROLE_SUPPORT", UUID.randomUUID());
+        RoleRef global = roleRef(UUID.randomUUID(), Roles.ADMIN, null);
+        when(orgContext.currentOrg()).thenReturn(Optional.empty());
+        when(roleService.findAll()).thenReturn(List.of(tenantRole, global));
+
+        assertThat(service.listRoles()).extracting(RoleView::name).containsExactly(Roles.ADMIN);
+    }
+
+    private RoleRef roleRef(UUID id, String name, UUID orgId) {
+        RoleRef role = mock(RoleRef.class);
+        when(role.getId()).thenReturn(id);
+        when(role.getName()).thenReturn(name);
+        when(role.getOrgId()).thenReturn(orgId);
+        when(role.getPermissionNames()).thenReturn(Set.of());
+        return role;
     }
 
     private UserAccount user(UUID id) {
