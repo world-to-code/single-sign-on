@@ -1,5 +1,6 @@
 package com.example.sso.auth.internal.application;
 
+import com.example.sso.user.LockoutPolicy;
 import com.example.sso.user.UserService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -16,19 +17,19 @@ import java.time.Duration;
 public class LoginAttemptService {
 
     private final UserService userService;
-    private final int maxAttempts;
-    private final Duration lockDuration;
+    private final LockoutPolicy policy;
 
     public LoginAttemptService(UserService userService,
-                               @Value("${sso.lockout.max-attempts:5}") int maxAttempts,
-                               @Value("${sso.lockout.duration-minutes:15}") long lockMinutes) {
+                               @Value("${sso.lockout.max-attempts}") int maxAttempts,
+                               @Value("${sso.lockout.duration-minutes}") long lockMinutes,
+                               @Value("${sso.lockout.max-duration-minutes}") long maxLockMinutes) {
         this.userService = userService;
-        this.maxAttempts = maxAttempts;
-        this.lockDuration = Duration.ofMinutes(lockMinutes);
+        this.policy = new LockoutPolicy(maxAttempts, Duration.ofMinutes(lockMinutes),
+                Duration.ofMinutes(maxLockMinutes));
     }
 
     public void onFailure(String username) {
-        userService.recordFailedLogin(username, maxAttempts, lockDuration);
+        userService.recordFailedLogin(username, policy);
     }
 
     public void onSuccess(String username) {

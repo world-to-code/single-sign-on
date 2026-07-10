@@ -15,6 +15,7 @@ import com.example.sso.user.internal.domain.AppUserRepository;
 import com.example.sso.user.internal.domain.Permission;
 import com.example.sso.user.internal.domain.Role;
 import com.example.sso.user.internal.domain.RoleRepository;
+import com.example.sso.user.LockoutPolicy;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.Suggestion;
 import com.example.sso.user.UserAccount;
@@ -445,9 +446,9 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    public void recordFailedLogin(String username, int maxAttempts, Duration lockFor) {
+    public void recordFailedLogin(String username, LockoutPolicy policy) {
         users.findByUsernameInOrg(username, resolutionOrg())
-                .ifPresent(user -> user.registerFailedLogin(maxAttempts, lockFor, Instant.now()));
+                .ifPresent(user -> user.registerFailedLogin(policy, Instant.now()));
     }
 
     @Override

@@ -132,7 +132,7 @@ public interface UserService {
     boolean verifyPassword(UUID userId, String rawPassword);
 
     /** Records a failed login for the account; locks it for {@code lockFor} once {@code maxAttempts} is hit. */
-    void recordFailedLogin(String username, int maxAttempts, Duration lockFor);
+    void recordFailedLogin(String username, LockoutPolicy policy);
 
     void recordSuccessfulLogin(String username);
 }

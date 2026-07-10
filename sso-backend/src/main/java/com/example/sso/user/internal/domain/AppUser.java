@@ -1,5 +1,6 @@
 package com.example.sso.user.internal.domain;
 import com.example.sso.shared.domain.AuditedEntity;
+import com.example.sso.user.LockoutPolicy;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -160,8 +161,9 @@ public class AppUser extends AuditedEntity implements UserAccount {
     }
 
     /** Records a failed login; once {@code maxAttempts} is reached, locks the account until now+lockFor. */
-    public void registerFailedLogin(int maxAttempts, Duration lockFor, Instant now) {
-        this.lockout = this.lockout.registerFailure(maxAttempts, lockFor, now);
+    public void registerFailedLogin(LockoutPolicy policy, Instant now) {
+        this.lockout = this.lockout.registerFailure(
+                policy.maxAttempts(), policy.baseLockFor(), policy.maxLockFor(), now);
     }
 
     /** Clears failed-login state after a successful authentication. */

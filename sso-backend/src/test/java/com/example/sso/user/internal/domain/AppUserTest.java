@@ -1,5 +1,6 @@
 package com.example.sso.user.internal.domain;
 
+import com.example.sso.user.LockoutPolicy;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -108,8 +109,8 @@ class AppUserTest {
     void failedLoginsBelowThresholdDoNotLock() {
         AppUser user = newUser();
 
-        user.registerFailedLogin(3, Duration.ofMinutes(15), NOW);
-        user.registerFailedLogin(3, Duration.ofMinutes(15), NOW);
+        user.registerFailedLogin(new LockoutPolicy(3, Duration.ofMinutes(15), Duration.ofHours(8)), NOW);
+        user.registerFailedLogin(new LockoutPolicy(3, Duration.ofMinutes(15), Duration.ofHours(8)), NOW);
 
         assertThat(user.isTemporarilyLocked(NOW)).isFalse();
     }
@@ -118,8 +119,8 @@ class AppUserTest {
     void reachingTheThresholdTemporarilyLocksTheAccount() {
         AppUser user = newUser();
 
-        user.registerFailedLogin(2, Duration.ofMinutes(15), NOW);
-        user.registerFailedLogin(2, Duration.ofMinutes(15), NOW);
+        user.registerFailedLogin(new LockoutPolicy(2, Duration.ofMinutes(15), Duration.ofHours(8)), NOW);
+        user.registerFailedLogin(new LockoutPolicy(2, Duration.ofMinutes(15), Duration.ofHours(8)), NOW);
 
         assertThat(user.isTemporarilyLocked(NOW)).isTrue();
         assertThat(user.isTemporarilyLocked(NOW.plus(Duration.ofMinutes(16)))).isFalse();
@@ -128,8 +129,8 @@ class AppUserTest {
     @Test
     void successfulLoginClearsPriorFailures() {
         AppUser user = newUser();
-        user.registerFailedLogin(2, Duration.ofMinutes(15), NOW);
-        user.registerFailedLogin(2, Duration.ofMinutes(15), NOW);
+        user.registerFailedLogin(new LockoutPolicy(2, Duration.ofMinutes(15), Duration.ofHours(8)), NOW);
+        user.registerFailedLogin(new LockoutPolicy(2, Duration.ofMinutes(15), Duration.ofHours(8)), NOW);
 
         user.registerSuccessfulLogin();
 

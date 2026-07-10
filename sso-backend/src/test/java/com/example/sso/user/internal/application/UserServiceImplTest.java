@@ -6,6 +6,7 @@ import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.NewUser;
 import com.example.sso.user.PermissionGrantPolicy;
+import com.example.sso.user.LockoutPolicy;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.UserAccessChangedEvent;
 import com.example.sso.user.UserDeletedEvent;
@@ -215,7 +216,7 @@ class UserServiceImplTest {
         AppUser user = new AppUser("alice", "a@x", "A", "h");
         when(users.findByUsernameInOrg("alice", null)).thenReturn(Optional.of(user));
 
-        service.recordFailedLogin("alice", 1, Duration.ofMinutes(15));
+        service.recordFailedLogin("alice", new LockoutPolicy(1, Duration.ofMinutes(15), Duration.ofHours(8)));
 
         assertThat(user.isTemporarilyLocked(Instant.now())).isTrue();
     }
