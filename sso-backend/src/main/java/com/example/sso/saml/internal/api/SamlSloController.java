@@ -81,7 +81,7 @@ public class SamlSloController {
                 Base64.getDecoder().decode(signature), relyingParty);
 
         return render(inboundLogout.process(request, relyingParty, username(authentication, request),
-                relayState, httpRequest));
+                authentication, relayState, httpRequest));
     }
 
     @PostMapping
@@ -99,7 +99,7 @@ public class SamlSloController {
         signatureValidator.verifyEmbedded(request, relyingParty); // always verify (see the Redirect handler)
 
         return render(inboundLogout.process(request, relyingParty, username(authentication, request),
-                relayState, httpRequest));
+                authentication, relayState, httpRequest));
     }
 
     /** Drives the next hop of a front-channel logout chain (emits a LogoutRequest to the next SP). */
