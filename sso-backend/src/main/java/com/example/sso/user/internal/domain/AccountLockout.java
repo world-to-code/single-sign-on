@@ -52,7 +52,7 @@ public record AccountLockout(
     }
 
     /** {@code base * 2^(lockout-1)}, saturating at {@code max} (and never overflowing on the way there). */
-    private static Duration backoff(Duration base, Duration max, int lockout) {
+    private Duration backoff(Duration base, Duration max, int lockout) {
         long millis = base.toMillis();
         long ceiling = max.toMillis();
         for (int doubling = 1; doubling < lockout && millis < ceiling; doubling++) {

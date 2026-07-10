@@ -4,6 +4,7 @@ import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.saml.internal.domain.SamlRelyingParty;
+import javax.xml.namespace.QName;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -66,7 +67,7 @@ class SamlInboundLogoutServiceTest {
     }
 
     @SuppressWarnings("unchecked")
-    private <T> T build(javax.xml.namespace.QName name) {
+    private <T> T build(QName name) {
         return (T) builders.getBuilder(name).buildObject(name);
     }
 
