@@ -1,9 +1,11 @@
 package com.example.sso.portal.internal.application;
 
 import com.example.sso.oidc.AdminPortalSeeder;
+import com.example.sso.portal.AdminConsoleAccess;
 import com.example.sso.portal.AppType;
 import com.example.sso.portal.internal.domain.AppAssignment;
 import com.example.sso.portal.internal.domain.AppAssignmentRepository;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.RoleService;
 import com.example.sso.user.Roles;
 import java.util.UUID;
@@ -23,36 +25,52 @@ import org.springframework.transaction.annotation.Transactional;
  * other assignment. The assignment only lets a user REACH the console — what they can DO there stays gated by
  * their scoped permissions + drill-in authorization. Runs on {@link ApplicationReadyEvent} so it deterministically
  * follows both the role seeding and the {@link AdminPortalSeeder} client seeding, whatever their runner order.
+ * Also the {@link AdminConsoleAccess} implementation: tenant baseline provisioning assigns the console to each
+ * org's OWN {@code ROLE_ORG_ADMIN} through it (assignment resolution matches role IDS, so a per-org role needs
+ * its own assignment row).
  */
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class AdminConsoleAccessSeeder {
+public class AdminConsoleAccessSeeder implements AdminConsoleAccess {
 
     private final RegisteredClientRepository clients;
     private final RoleService roles;
     private final AppAssignmentRepository assignments;
+    private final OrgContext orgContext;
 
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void seed() {
-        RegisteredClient console = clients.findByClientId(AdminPortalSeeder.CLIENT_ID);
-        if (console == null) {
-            log.warn("Admin console client is not seeded; skipping the console role assignments.");
-            return;
-        }
-        assignConsoleToRole(console, Roles.ADMIN);
-        assignConsoleToRole(console, Roles.ORG_ADMIN);
+        assignToRole(roles.getOrCreateSystem(Roles.ADMIN).getId(), null);
+        assignToRole(roles.getOrCreateSystem(Roles.ORG_ADMIN).getId(), null);
     }
 
-    private void assignConsoleToRole(RegisteredClient console, String roleName) {
-        UUID roleId = roles.getOrCreateSystem(roleName).getId(); // idempotent, order-proof
+    @Override
+    @Transactional
+    public void assignToRole(UUID roleId, UUID orgId) {
+        RegisteredClient console = clients.findByClientId(AdminPortalSeeder.CLIENT_ID);
+        if (console == null) {
+            log.warn("Admin console client is not seeded; skipping the console assignment for role {}.", roleId);
+            return;
+        }
+        if (orgId == null) {
+            saveIfMissing(console, roleId, null);
+        } else {
+            // app_assignment is RLS-forced: both the idempotency check and the write must run in the org's
+            // scope (an unbound check would miss the org row and insert a duplicate); flush inside the scope.
+            orgContext.runInOrg(orgId, () -> saveIfMissing(console, roleId, orgId));
+        }
+    }
+
+    private void saveIfMissing(RegisteredClient console, UUID roleId, UUID orgId) {
         boolean exists = assignments.existsByAppTypeAndAppIdAndSubjectTypeAndSubjectId(
                 AppType.OIDC, console.getId(), AppAssignment.SubjectType.ROLE, roleId);
-        if (!exists) {
-            assignments.save(new AppAssignment(AppType.OIDC, console.getId(),
-                    AppAssignment.SubjectType.ROLE, roleId, null));
-            log.info("Assigned the admin console to {} (assignment-based console entry).", roleName);
+        if (exists) {
+            return;
         }
+        assignments.saveAndFlush(new AppAssignment(AppType.OIDC, console.getId(),
+                AppAssignment.SubjectType.ROLE, roleId, null, orgId));
+        log.info("Assigned the admin console to role {} (assignment-based console entry).", roleId);
     }
 }

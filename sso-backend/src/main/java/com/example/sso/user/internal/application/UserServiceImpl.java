@@ -243,7 +243,7 @@ public class UserServiceImpl implements UserService {
 
         // Resolve (and validate) the requested roles BEFORE persisting anything, so an unknown role name
         // never leaves a half-created user behind.
-        List<Role> assignedRoles = newUser.roleNames().stream().map(this::requireRole).toList();
+        List<Role> assignedRoles = newUser.roleNames().stream().map(name -> requireRole(name, orgId)).toList();
 
         String rawPassword = newUser.rawPassword();
         String encodedPassword = rawPassword == null ? null : passwordEncoder.encode(rawPassword);
@@ -294,7 +294,8 @@ public class UserServiceImpl implements UserService {
 
         Set<String> roleNames = update.roleNames();
         if (roleNames != null) {
-            Set<UUID> desired = roleNames.stream().map(name -> requireRole(name).getId()).collect(Collectors.toSet());
+            Set<UUID> desired = roleNames.stream()
+                    .map(name -> requireRole(name, user.getOrgId()).getId()).collect(Collectors.toSet());
             replaceUserRoles(id, desired);
         }
 
@@ -455,10 +456,16 @@ public class UserServiceImpl implements UserService {
      * Resolves an EXISTING role for assignment. Role minting happens only through the role builder
      * (which validates the name); resolving here never creates a role, so a user-management call can
      * never plant a role whose name collides with a reserved authority (e.g. MFA_COMPLETE, key:rotate).
+     * A tenant user's name resolves to their ORG's own (provisioned baseline) role when one exists,
+     * falling back to the global role (platform accounts, and names the org has no copy of). The org
+     * lookup runs in the org's scope — the caller (self-signup / async onboarding) may be unbound and the
+     * role table is RLS-forced, so a bare query would silently miss the org row and re-plant the global one.
      */
-    private Role requireRole(String name) {
-        // Users are assigned GLOBAL roles by name; tenant (org) roles are assigned by id via the role builder.
-        return roles.findByNameAndOrgIdIsNull(name)
+    private Role requireRole(String name, UUID orgId) {
+        return (orgId == null
+                ? Optional.<Role>empty()
+                : orgContext.callInOrg(orgId, () -> roles.findByNameAndOrgId(name, orgId)))
+                .or(() -> roles.findByNameAndOrgIdIsNull(name))
                 .orElseThrow(() -> new BadRequestException("unknown role: " + name));
     }
 

@@ -92,15 +92,17 @@ public class SsoUserDetailsService implements UserDetailsService {
     }
 
     /**
-     * A role's authorities: its permission names always, plus its name (ROLE_*) ONLY for a global/system
-     * role. A tenant (org) role contributes only its permissions, so an org role name never becomes a
-     * granted authority — an org role named e.g. {@code ROLE_ADMIN} can't escalate, and org role names stay
+     * A role's authorities: its permission names always, plus its name (ROLE_*) for a GLOBAL role or an
+     * org's provisioned SYSTEM role (the org's own ROLE_USER/ROLE_GROUP_ADMIN/ROLE_ORG_ADMIN — the
+     * well-known name is what authorization checks and the console-entry assignment key on). A tenant's
+     * CUSTOM role contributes only its permissions: a tenant can neither create nor rename a system role,
+     * so an org role named e.g. {@code ROLE_ADMIN} can't escalate, and custom org role names stay
      * unrestricted. (Org-scoped roles resolve here only when this runs in that org's context — see the
      * completion service, which loads authorities bound to the login org.)
      */
     private Stream<String> roleAuthorities(Collection<Role> roles) {
         return roles.stream().flatMap(role -> Stream.concat(
-                role.getOrgId() == null ? Stream.of(role.getName()) : Stream.empty(),
+                role.getOrgId() == null || role.isSystem() ? Stream.of(role.getName()) : Stream.empty(),
                 role.getPermissionNames().stream()));
     }
 
