@@ -161,8 +161,11 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
                 || path.equals("/api/auth/logout")
                 // Re-proving an address an admin changed: the mandatory re-auth may demand the EMAIL factor,
                 // which is refused while that address is unverified. Challenging the recovery path too would
-                // soft-brick the session — the only escape would be to sign out.
-                || path.startsWith("/api/auth/email-verification")
+                // soft-brick the session — the only escape would be to sign out. Matched EXACTLY (like the
+                // other entries), never by prefix: getRequestURI() is un-normalized, so a prefix could exempt
+                // a crafted URI that routes elsewhere.
+                || path.equals("/api/auth/email-verification")
+                || path.equals("/api/auth/email-verification/confirm")
                 || path.equals("/api/portal/session-config");
     }
 

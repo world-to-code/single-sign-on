@@ -3,6 +3,7 @@ package com.example.sso.mfa.internal.application;
 import com.example.sso.mfa.EmailVerificationService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
@@ -32,6 +33,10 @@ public class EmailVerificationServiceImpl implements EmailVerificationService {
         return String.format(Locale.ROOT, "%06d", RANDOM.nextInt(1_000_000));
     }
 
+    // Sent off the request thread: SMTP latency must not (a) block the caller, nor (b) make a code send
+    // measurably slower than a no-op, which would disclose whether an address is already verified. A failure
+    // surfaces via the async exception handler, not to the caller — an OTP send is optimistic regardless.
+    @Async
     @Override
     public void sendCode(String email, String code) {
         SimpleMailMessage message = new SimpleMailMessage();
