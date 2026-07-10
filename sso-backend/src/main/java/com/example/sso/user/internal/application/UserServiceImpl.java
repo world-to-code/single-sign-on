@@ -43,6 +43,7 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -286,6 +287,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public UserAccount updateUser(UUID id, UserUpdate update) {
         AppUser user = require(id);
+        requireLocallyOwnedProfile(user, update);
         user.updateProfile(update.displayName(), update.email());
         if (update.enabled()) {
             user.enable();
@@ -488,4 +490,20 @@ public class UserServiceImpl implements UserService {
         return permissions.findByName(name).orElseGet(() -> permissions.save(new Permission(name)));
     }
 
+    /**
+     * An externally provisioned user (SCIM/LDAP {@code externalId}) has their PROFILE owned by the source
+     * system, which overwrites it on the next sync — so an admin edit here would silently vanish. Access
+     * decisions (enabled, roles) stay local and remain editable. A no-op profile submit is allowed, so the
+     * admin console can still save the access fields of a provisioned user.
+     */
+    private void requireLocallyOwnedProfile(AppUser user, UserUpdate update) {
+        if (user.getExternalId() == null) {
+            return;
+        }
+        boolean profileChanged = !Objects.equals(user.getDisplayName(), update.displayName())
+                || !Objects.equals(user.getEmail(), update.email());
+        if (profileChanged) {
+            throw new ConflictException("this user is provisioned externally; edit their profile in the source system");
+        }
+    }
 }

@@ -219,4 +219,34 @@ class UserServiceImplTest {
 
         assertThat(user.isTemporarilyLocked(Instant.now())).isTrue();
     }
+
+    @Test
+    void updateUserRefusesToEditTheProfileOfAnExternallyProvisionedUser() {
+        // A SCIM/LDAP-provisioned user's profile is owned by the source system: an admin edit here would be
+        // silently overwritten on the next sync, so it is refused. (SCIM itself writes via updateProfile.)
+        UUID id = UUID.randomUUID();
+        AppUser provisioned = new AppUser("alice", "a@x", "Alice", "h");
+        provisioned.assignExternalId("scim-1");
+        when(users.findById(id)).thenReturn(Optional.of(provisioned));
+
+        UserUpdate update = new UserUpdate("Alice Renamed", "a@x", true, null);
+
+        assertThatThrownBy(() -> service.updateUser(id, update)).isInstanceOf(ConflictException.class);
+        verify(users, never()).save(any());
+    }
+
+    @Test
+    void updateUserStillManagesAccessOfAnExternallyProvisionedUser() {
+        // Only the PROFILE is owned externally. Disabling/enabling and role assignment stay local decisions.
+        UUID id = UUID.randomUUID();
+        AppUser provisioned = new AppUser("alice", "a@x", "Alice", "h");
+        provisioned.assignExternalId("scim-1");
+        when(users.findById(id)).thenReturn(Optional.of(provisioned));
+        when(users.save(any(AppUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(hydrator.hydrateUser(any(AppUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.updateUser(id, new UserUpdate("Alice", "a@x", false, null));
+
+        assertThat(provisioned.isEnabled()).isFalse();
+    }
 }

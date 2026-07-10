@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
-  Activity, AppWindow, ArrowLeft, Fingerprint, KeyRound, Monitor, Power, PowerOff, RotateCcw,
+  Activity, AppWindow, ArrowLeft, Fingerprint, KeyRound, Monitor, Pencil, Power, PowerOff, RotateCcw,
   ShieldCheck, Smartphone, Trash2,
 } from "lucide-react";
 import type { SessionView } from "@/auth";
@@ -15,6 +15,8 @@ import { errorMessage } from "@/api";
 import { ADMIN_ROLE, listPermissions, listRoles, togglePermission, type Permission, type Role } from "@/roles";
 import { usePaginated } from "@/usePaginated";
 import { Pagination } from "@/components/Pagination";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/PageHeader";
 import { PermissionPicker } from "@/components/PermissionPicker";
 import { useConfirm } from "@/components/ConfirmProvider";
@@ -40,6 +42,8 @@ export default function UserDetail({ session }: { session: SessionView }) {
   const [allRoles, setAllRoles] = useState<Role[]>([]);
   const [catalog, setCatalog] = useState<Permission[]>([]);
   const [rolesOpen, setRolesOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profile, setProfile] = useState({ displayName: "", email: "" });
   const [roleSel, setRoleSel] = useState<string[]>([]);
   const [permsOpen, setPermsOpen] = useState(false);
   const [permSel, setPermSel] = useState<string[]>([]);
@@ -108,6 +112,26 @@ export default function UserDetail({ session }: { session: SessionView }) {
     }
   }
 
+  function openProfile() {
+    if (!user) return;
+    setProfile({ displayName: user.displayName ?? "", email: user.email });
+    setProfileOpen(true);
+  }
+  async function saveProfile() {
+    if (!user) return;
+    try {
+      await updateUser(id, {
+        displayName: profile.displayName, email: profile.email,
+        enabled: user.enabled,
+        roles: user.roleAssignments.filter((a) => a.direct).map((a) => a.roleName),
+      });
+      setProfileOpen(false);
+      load();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
   function openPerms() {
     setPermSel(user ? [...user.directPermissions] : []);
     setPermsOpen(true);
@@ -139,6 +163,15 @@ export default function UserDetail({ session }: { session: SessionView }) {
             >
               {user.enabled ? <PowerOff className="size-4" /> : <Power className="size-4" />}
               {user.enabled ? "Disable" : "Enable"}
+            </Button>
+            <Button
+              variant="outline" size="sm" onClick={openProfile}
+              disabled={user.externalId !== null}
+              title={user.externalId !== null
+                ? "Provisioned externally (SCIM) — edit the profile in the source system"
+                : undefined}
+            >
+              <Pencil className="size-4" /> Edit profile
             </Button>
             <Button variant="outline" size="sm" onClick={resetMfa}><RotateCcw className="size-4" /> Reset MFA</Button>
             <Button
@@ -379,6 +412,33 @@ export default function UserDetail({ session }: { session: SessionView }) {
           </CardContent>
         </Card>
       )}
+
+      <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit profile</DialogTitle>
+            <DialogDescription>
+              Name and email of this directory user. Externally provisioned users are managed in their source system.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-name">Display name</Label>
+              <Input id="profile-name" value={profile.displayName}
+                     onChange={(e) => setProfile((p) => ({ ...p, displayName: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-email">Email</Label>
+              <Input id="profile-email" type="email" value={profile.email}
+                     onChange={(e) => setProfile((p) => ({ ...p, email: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setProfileOpen(false)}>Cancel</Button>
+            <Button onClick={saveProfile} disabled={!profile.email.trim()}>Save changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={rolesOpen} onOpenChange={setRolesOpen}>
         <DialogContent>
