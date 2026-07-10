@@ -15,7 +15,6 @@ import org.opensaml.saml.saml2.core.Status;
 import org.opensaml.saml.saml2.core.StatusCode;
 import org.opensaml.security.SecurityException;
 import org.opensaml.xmlsec.signature.support.SignatureException;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -31,12 +30,21 @@ import static com.example.sso.saml.internal.application.SamlObjects.build;
 public class SamlLogoutMessageBuilder {
 
     private final SamlSigner signer;
-    private final String idpEntityId;
+    private final SamlEntityId entityId;
     private final IdentifierGenerationStrategy idGenerator = new SecureRandomIdentifierGenerationStrategy();
 
-    public SamlLogoutMessageBuilder(SamlSigner signer, @Value("${sso.saml.entity-id}") String idpEntityId) {
+    public SamlLogoutMessageBuilder(SamlSigner signer, SamlEntityId entityId) {
         this.signer = signer;
-        this.idpEntityId = idpEntityId;
+        this.entityId = entityId;
+    }
+
+    /**
+     * The entityID an SLO message to {@code sp} is issued under: the SP's own tenant entityID, matching the
+     * issuer its SSO assertions carried (and the one it registered). Signing already uses that tenant's key,
+     * so a platform Issuer here would be an SP-side mismatch.
+     */
+    private String issuerFor(SamlRelyingParty sp) {
+        return entityId.forOrg(sp.getOrgId());
     }
 
     private LogoutRequest buildLogoutRequest(SamlRelyingParty sp, String nameIdValue, String sessionIndex) {
@@ -47,7 +55,7 @@ public class SamlLogoutMessageBuilder {
         request.setDestination(sp.getSingleLogoutUrl());
 
         Issuer issuer = build(Issuer.DEFAULT_ELEMENT_NAME);
-        issuer.setValue(idpEntityId);
+        issuer.setValue(issuerFor(sp));
         request.setIssuer(issuer);
 
         NameID nameId = build(NameID.DEFAULT_ELEMENT_NAME);
@@ -94,7 +102,7 @@ public class SamlLogoutMessageBuilder {
             response.setDestination(sp.getSingleLogoutUrl());
 
             Issuer issuer = build(Issuer.DEFAULT_ELEMENT_NAME);
-            issuer.setValue(idpEntityId);
+            issuer.setValue(issuerFor(sp));
             response.setIssuer(issuer);
 
             StatusCode statusCode = build(StatusCode.DEFAULT_ELEMENT_NAME);
