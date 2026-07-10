@@ -30,6 +30,8 @@ interface SessionPolicy {
   reauthIntervalMinutes: number;
   reauthFactors: string;
   sensitiveReauthWindowMinutes: number;
+  elevationTokenTtlMinutes: number;
+  adminAllowedCidrs: string | null;
   stepUpFactors: string;
   bindClient: boolean;
   maxConcurrentSessions: number;
@@ -52,6 +54,8 @@ interface Editor {
   reauthIntervalMinutes: string;
   reauthFactors: string;
   sensitiveReauthWindowMinutes: string;
+  elevationTokenTtlMinutes: string;
+  adminAllowedCidrs: string;
   stepUpFactors: string;
   bindClient: boolean;
   maxConcurrentSessions: string;
@@ -75,6 +79,7 @@ const blankEditor: Editor = {
   id: null, name: "", priority: "10", enabled: true,
   absoluteTimeoutMinutes: "480", idleTimeoutMinutes: "30", reauthIntervalMinutes: "5",
   reauthFactors: "TOTP,FIDO2", sensitiveReauthWindowMinutes: "2", stepUpFactors: "TOTP,FIDO2",
+  elevationTokenTtlMinutes: "5", adminAllowedCidrs: "",
   bindClient: true, maxConcurrentSessions: "0", rotateOnReauth: true,
   cookieSameSite: "Lax", roleIds: [], userIds: [], ipRules: [],
 };
@@ -87,6 +92,7 @@ function toEditor(p: SessionPolicy): Editor {
     reauthIntervalMinutes: String(p.reauthIntervalMinutes),
     reauthFactors: p.reauthFactors,
     sensitiveReauthWindowMinutes: String(p.sensitiveReauthWindowMinutes), stepUpFactors: p.stepUpFactors,
+    elevationTokenTtlMinutes: String(p.elevationTokenTtlMinutes), adminAllowedCidrs: p.adminAllowedCidrs ?? "",
     bindClient: p.bindClient,
     maxConcurrentSessions: String(p.maxConcurrentSessions), rotateOnReauth: p.rotateOnReauth,
     cookieSameSite: p.cookieSameSite,
@@ -139,6 +145,7 @@ export default function SessionPolicyDetail() {
     if (Number.isNaN(intOf(e.maxConcurrentSessions))) return { tab: "general", message: "Max concurrent sessions must be a whole number (0 = unlimited)." };
     if (!(intOf(e.reauthIntervalMinutes) >= 1)) return { tab: "reauth", message: "Re-auth interval must be at least 1 minute." };
     if (!(intOf(e.sensitiveReauthWindowMinutes) >= 1)) return { tab: "reauth", message: "Step-up window must be at least 1 minute." };
+    if (!(intOf(e.elevationTokenTtlMinutes) >= 1)) return { tab: "reauth", message: "Elevation token lifetime must be at least 1 minute." };
     if (tokens(e.reauthFactors, ",").length === 0) return { tab: "reauth", message: "Pick at least one re-auth factor." };
     if (tokens(e.stepUpFactors, ",").length === 0) return { tab: "reauth", message: "Pick at least one step-up factor." };
     return null;
@@ -164,6 +171,8 @@ export default function SessionPolicyDetail() {
       maxConcurrentSessions: Number(editor.maxConcurrentSessions),
       rotateOnReauth: editor.rotateOnReauth,
       cookieSameSite: editor.cookieSameSite,
+      elevationTokenTtlMinutes: Number(editor.elevationTokenTtlMinutes),
+      adminAllowedCidrs: editor.adminAllowedCidrs.trim() || null,
       assignedRoleIds: editor.roleIds,
       assignedUserIds: editor.userIds,
       ipRules: editor.ipRules.map((r, i) => ({ zoneId: r.zoneId, action: r.action, priority: i })),
@@ -302,6 +311,17 @@ function ReauthTab({ editor, set }: { editor: Editor; set: (p: Partial<Editor>) 
           <FactorChips selected={stepUp} onToggle={(f) => set({ stepUpFactors: toggle(stepUp, f).join(",") })} />
           <p className="text-xs text-muted-foreground">Can be stronger than the general factors — e.g. passkey (FIDO2) only.</p>
         </div>
+      </SettingsSection>
+
+      <SettingsSection title="Admin console"
+                       description="Applied when this policy governs the admin console (select it under Applications → Admin Portal security).">
+        <Field label="Elevation token lifetime (min)" hint="TTL of the admin-console access token (the privilege-elevation proof).">
+          <Input type="number" min={1} value={editor.elevationTokenTtlMinutes} onChange={(e) => set({ elevationTokenTtlMinutes: e.target.value })} />
+        </Field>
+        <Field label="Admin console IP allowlist" hint="Comma-separated CIDRs. Empty allows any network.">
+          <Input placeholder="e.g. 203.0.113.0/24, 10.0.0.0/8" value={editor.adminAllowedCidrs}
+                 onChange={(e) => set({ adminAllowedCidrs: e.target.value })} />
+        </Field>
       </SettingsSection>
     </>
   );

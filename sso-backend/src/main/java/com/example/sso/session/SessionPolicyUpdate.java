@@ -12,6 +12,7 @@ public record SessionPolicyUpdate(int priority, boolean enabled, int absoluteTim
                                   int idleTimeoutMinutes, int reauthIntervalMinutes, String reauthFactors,
                                   int sensitiveReauthWindowMinutes, String stepUpFactors,
                                   boolean bindClient, int maxConcurrentSessions, boolean rotateOnReauth,
-                                  String cookieSameSite, Set<UUID> userIds, Set<UUID> roleIds,
+                                  String cookieSameSite, int elevationTokenTtlMinutes,
+                                  String adminAllowedCidrs, Set<UUID> userIds, Set<UUID> roleIds,
                                   List<IpRuleSpec> ipRules) {
 }

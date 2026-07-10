@@ -3,6 +3,7 @@ package com.example.sso.session;
 import com.example.sso.user.UserAccount;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -29,6 +30,9 @@ public interface SessionPolicyService {
 
     /** The non-editable Default fallback (also supplies the GLOBAL session-cookie attributes). */
     SessionPolicyDetails defaultPolicy();
+
+    /** A policy by id (from the in-memory cache), or empty when it no longer exists. */
+    Optional<SessionPolicyDetails> findById(UUID id);
 
     /** Ensures the Default fallback exists (idempotent; leaves an existing Default's settings intact). */
     void seedDefault();

@@ -1,12 +1,10 @@
 package com.example.sso.security;
 
-import com.example.sso.admin.AdminPortalSettingsData;
-import com.example.sso.admin.AdminPortalSettingsService;
 import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.oidc.AdminPortalSeeder;
-import com.example.sso.session.SessionPolicyService;
+import com.example.sso.session.SessionPolicyDetails;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -63,11 +61,8 @@ public class AdminElevationFilter extends OncePerRequestFilter {
     private final JwtDecoder jwtDecoder;
     private final String issuer;
     private final String clientId;
-    /** Admin-console-specific knobs: the elevation-token TTL and the IP allowlist. */
-    private final AdminPortalSettingsService settingsService;
-    /** The admin's session policy supplies the step-up freshness window (idle/absolute are enforced for the
-     *  whole session by SessionIntegrityFilter, admin requests included). */
-    private final SessionPolicyService sessionPolicyService;
+    /** The session policy governing the console: the tenant's selection, else the acting admin's own. */
+    private final AdminConsolePolicy consolePolicy;
     private final AuditService audit;
 
     @Override
@@ -93,12 +88,12 @@ public class AdminElevationFilter extends OncePerRequestFilter {
             return;
         }
 
-        AdminPortalSettingsData settings = settingsService.get(); // the ACTING tenant's policy (or the global default)
+        SessionPolicyDetails policy = consolePolicy.resolveFor(jwt.getSubject());
         // Keyed on the direct peer address (getRemoteAddr), NOT the spoofable X-Forwarded-For. Behind a
         // reverse proxy that does not preserve the client IP, allowlist the proxy's address. The allowlist is
         // per-tenant now: an admin (or a super-admin drilled into that tenant) whose network is excluded is
         // locked out of THAT tenant's console only — recover by editing the tenant's row in the DB.
-        if (!settings.ipAllowed(request.getRemoteAddr())) {
+        if (!AdminConsoleNetwork.allows(policy.getAdminAllowedCidrs(), request.getRemoteAddr())) {
             audit.record(new AuditRecord(AuditType.ADMIN_IP_BLOCKED, jwt.getSubject(), false,
                     "uri=" + request.getRequestURI(), request.getRemoteAddr()));
             forbidNetwork(response);
@@ -108,9 +103,9 @@ public class AdminElevationFilter extends OncePerRequestFilter {
         // role/user and it governs the console too). The session's idle/absolute lifetimes are enforced for
         // EVERY authenticated request — admin included — by SessionIntegrityFilter, so there is no separate
         // admin-session window here.
-        Duration freshness = Duration.ofMinutes(
-                sessionPolicyService.resolveForUsername(jwt.getSubject()).getSensitiveReauthWindowMinutes());
-        if (!isElevated(jwt, freshness, settings.elevationTokenTtl(), expectedIssuer(request, issuer))
+        Duration freshness = Duration.ofMinutes(policy.getSensitiveReauthWindowMinutes());
+        Duration tokenTtl = Duration.ofMinutes(policy.getElevationTokenTtlMinutes());
+        if (!isElevated(jwt, freshness, tokenTtl, expectedIssuer(request, issuer))
                 || !boundToSession(jwt)) {
             // A decoded token that fails elevation or session-binding is the forge/replay/stale signal — audit it.
             audit.record(new AuditRecord(AuditType.ADMIN_ELEVATION_DENIED, jwt.getSubject(), false,

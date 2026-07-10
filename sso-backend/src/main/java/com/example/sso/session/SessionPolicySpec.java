@@ -12,6 +12,6 @@ public record SessionPolicySpec(String name, int priority, boolean enabled, int 
                                 int idleTimeoutMinutes, int reauthIntervalMinutes, String reauthFactors,
                                 int sensitiveReauthWindowMinutes, String stepUpFactors,
                                 boolean bindClient, int maxConcurrentSessions, boolean rotateOnReauth,
-                                String cookieSameSite, Set<UUID> userIds, Set<UUID> roleIds,
-                                List<IpRuleSpec> ipRules) {
+                                String cookieSameSite, int elevationTokenTtlMinutes, String adminAllowedCidrs,
+                                Set<UUID> userIds, Set<UUID> roleIds, List<IpRuleSpec> ipRules) {
 }

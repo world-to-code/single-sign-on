@@ -122,12 +122,12 @@ class SessionPolicyServiceImplTest {
 
     private SessionPolicySpec spec(String name, String reauthFactors, String stepUpFactors) {
         return new SessionPolicySpec(name, 5, true, 480, 30, 15, reauthFactors, 2, stepUpFactors, false, 0, false,
-                "Lax", Set.of(), Set.of(), List.of());
+                "Lax", 5, null, Set.of(), Set.of(), List.of());
     }
 
     private SessionPolicyUpdate update(int priority, boolean enabled, String reauthFactors) {
         return new SessionPolicyUpdate(priority, enabled, 480, 30, 15, reauthFactors, 2, reauthFactors, false, 0, false,
-                "Lax", Set.of(), Set.of(), List.of());
+                "Lax", 5, null, Set.of(), Set.of(), List.of());
     }
 
     // --- resolution ---
@@ -259,7 +259,7 @@ class SessionPolicyServiceImplTest {
         String ghost = UUID.randomUUID().toString();
         when(networkZones.exists(UUID.fromString(ghost))).thenReturn(false);
         SessionPolicySpec spec = new SessionPolicySpec("BadZone", 5, true, 480, 30, 15, "TOTP", 2, "TOTP",
-                false, 0, false, "Lax", Set.of(), Set.of(), List.of(new IpRuleSpec(ghost, "BLOCK", 0)));
+                false, 0, false, "Lax", 5, null, Set.of(), Set.of(), List.of(new IpRuleSpec(ghost, "BLOCK", 0)));
 
         assertThatThrownBy(() -> service.create(spec)).isInstanceOf(BadRequestException.class);
         verify(repository, never()).save(any());
@@ -269,7 +269,7 @@ class SessionPolicyServiceImplTest {
     void createRejectsAMalformedZoneId() {
         when(repository.findByNameAndOrgIdIsNull("BadId")).thenReturn(Optional.empty());
         SessionPolicySpec spec = new SessionPolicySpec("BadId", 5, true, 480, 30, 15, "TOTP", 2, "TOTP",
-                false, 0, false, "Lax", Set.of(), Set.of(), List.of(new IpRuleSpec("not-a-uuid", "BLOCK", 0)));
+                false, 0, false, "Lax", 5, null, Set.of(), Set.of(), List.of(new IpRuleSpec("not-a-uuid", "BLOCK", 0)));
 
         assertThatThrownBy(() -> service.create(spec)).isInstanceOf(BadRequestException.class);
         verify(repository, never()).save(any());
@@ -283,7 +283,7 @@ class SessionPolicyServiceImplTest {
         String everywhere = UUID.randomUUID().toString();
         when(networkZones.exists(any(UUID.class))).thenReturn(true);
         SessionPolicySpec spec = new SessionPolicySpec("Net", 5, true, 480, 30, 15, "TOTP", 2, "TOTP",
-                false, 0, false, "Lax", Set.of(), Set.of(),
+                false, 0, false, "Lax", 5, null, Set.of(), Set.of(),
                 List.of(new IpRuleSpec(everywhere, "BLOCK", 1), new IpRuleSpec(office, "ALLOW", 0)));
 
         SessionPolicyDetails created = service.create(spec);
@@ -457,5 +457,18 @@ class SessionPolicyServiceImplTest {
 
         assertThatThrownBy(() -> service.delete(id)).isInstanceOf(BadRequestException.class);
         verify(repository, never()).delete(any());
+    }
+
+    @Test
+    void aNonGlobalDefaultPolicyStoresTheGlobalCookieSameSite() {
+        // The SESSION cookie is written before the user (and thus their policy) is known, so the serializer
+        // reads the GLOBAL Default's SameSite. Any other policy stores that same value — a divergent one would
+        // be inert (edited, never applied), so it must never be persisted as if it meant something.
+        loadCache(List.of(policy(SessionPolicyService.DEFAULT_NAME, 0)), List.of(), List.of()); // global: Lax
+        when(repository.save(any(SessionPolicy.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        SessionPolicySpec spec = new SessionPolicySpec("Strict-Cookies", 10, true, 480, 30, 5, "TOTP", 2,
+                "TOTP", false, 0, false, "Strict", 5, null, Set.of(), Set.of(), List.of());
+
+        assertThat(service.create(spec).getCookieSameSite()).isEqualTo("Lax");
     }
 }

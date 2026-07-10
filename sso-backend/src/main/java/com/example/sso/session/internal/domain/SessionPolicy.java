@@ -65,13 +65,9 @@ public class SessionPolicy extends AbstractEntity implements OrgOwned {
         this.orgId = orgId;
     }
 
-    public void update(int absoluteTimeoutMinutes, int idleTimeoutMinutes, int reauthIntervalMinutes,
-                       String reauthFactors, int sensitiveReauthWindowMinutes, String stepUpFactors,
-                       boolean bindClient, int maxConcurrentSessions,
-                       boolean rotateOnReauth, String cookieSameSite) {
-        this.rules = new SessionRules(absoluteTimeoutMinutes, idleTimeoutMinutes, reauthIntervalMinutes,
-                reauthFactors, sensitiveReauthWindowMinutes, stepUpFactors, bindClient, maxConcurrentSessions,
-                rotateOnReauth, cookieSameSite);
+    /** Replaces the policy's rules wholesale — the value object is built at the layer boundary, not here. */
+    public void update(SessionRules rules) {
+        this.rules = rules;
     }
 
     public void updatePriority(int priority) {

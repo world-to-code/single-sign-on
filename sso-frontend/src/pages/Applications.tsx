@@ -11,9 +11,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DataList, EmptyState } from "@/components/states";
@@ -21,15 +19,8 @@ import { SearchSelect } from "@/components/SearchSelect";
 import { searchGroups, searchUsers } from "@/groups";
 
 interface Application { id: string; type: "OIDC" | "SAML"; name: string; launchUrl: string | null; system: boolean; requiredPolicyId: string | null; requiredPolicyName: string | null; }
-interface PortalSettings { elevationTokenTtlMinutes: number; adminAllowedCidrs: string[]; }
-
-const settingFields: { key: keyof PortalSettings; label: string; hint: string }[] = [
-  { key: "elevationTokenTtlMinutes", label: "Elevation token lifetime (min)", hint: "TTL of the admin-console access token (the privilege-elevation proof)." },
-];
-/** Split a textarea of CIDRs (newline- or comma-separated) into trimmed, non-empty entries. */
-function splitCidrs(value: string): string[] {
-  return value.split(/[\n,]+/).map((c) => c.trim()).filter(Boolean);
-}
+interface PortalSettings { sessionPolicyId: string | null; }
+interface SessionPolicy { id: string; name: string; }
 
 interface Assignment { id: string; subjectType: string; subjectName: string; requiredPolicyId: string | null; }
 interface Policy { id: string; name: string; appliesToLogin: boolean; }
@@ -53,6 +44,7 @@ export default function Applications() {
   const [settings, setSettings] = useState<PortalSettings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsSaved, setSettingsSaved] = useState(false);
+  const [sessionPolicies, setSessionPolicies] = useState<SessionPolicy[]>([]);
 
   useEffect(() => {
     apiGet<Page<Policy>>("/api/admin/auth-policies?size=100").then((p) => setPolicies(p.items)).catch(() => undefined);
@@ -74,6 +66,7 @@ export default function Applications() {
   function openSettings() {
     setSettingsError(null); setSettingsSaved(false); setSettings(null); setSettingsOpen(true);
     apiGet<PortalSettings>("/api/admin/portal-settings").then(setSettings).catch((e) => setSettingsError(errorMessage(e)));
+    apiGet<SessionPolicy[]>("/api/admin/session-policies").then(setSessionPolicies).catch(() => undefined);
   }
 
   async function saveSettings() {
@@ -239,9 +232,10 @@ export default function Applications() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Lock className="size-4" /> Admin Portal security</DialogTitle>
             <DialogDescription>
-              Admin-console-specific security: the elevation token lifetime and the IP allowlist. The admin
-              session's idle/absolute timeouts and step-up freshness come from the <strong>session policy</strong>
-              assigned to the admin. Changes take effect on the next admin request.
+              Choose the <strong>session policy</strong> that governs the admin console. It supplies everything
+              the console enforces — idle/absolute timeouts, step-up freshness, the elevation token lifetime and
+              the console IP allowlist. Leave it unset to use the policy resolved for each admin.
+              Changes take effect on the next admin request.
             </DialogDescription>
           </DialogHeader>
 
@@ -250,21 +244,17 @@ export default function Applications() {
 
           {settings ? (
             <div className="space-y-4">
-              {settingFields.map((f) => (
-                <div key={f.key} className="space-y-1.5">
-                  <Label htmlFor={f.key}>{f.label}</Label>
-                  <Input id={f.key} type="number" min={1} value={settings[f.key] as number}
-                         onChange={(e) => setSettings((s) => (s ? { ...s, [f.key]: Number(e.target.value) } : s))} />
-                  <p className="text-xs text-muted-foreground">{f.hint}</p>
-                </div>
-              ))}
               <div className="space-y-1.5">
-                <Label htmlFor="admin-cidrs">Admin console IP allowlist</Label>
-                <Textarea id="admin-cidrs" rows={3} placeholder="e.g. 203.0.113.0/24&#10;10.0.0.0/8"
-                          value={settings.adminAllowedCidrs.join("\n")}
-                          onChange={(e) => setSettings((s) => (s ? { ...s, adminAllowedCidrs: splitCidrs(e.target.value) } : s))} />
+                <Label htmlFor="console-policy">Session policy</Label>
+                <Select id="console-policy" value={settings.sessionPolicyId ?? ""}
+                        onChange={(e) => setSettings({ sessionPolicyId: e.target.value || null })}>
+                  <option value="">Each admin&apos;s own policy</option>
+                  {sessionPolicies.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </Select>
                 <p className="text-xs text-muted-foreground">
-                  One CIDR per line. When set, the admin console (<code>/api/admin</code>) is reachable only from these networks. Leave empty to allow any network.
+                  Edit the elevation token lifetime and the IP allowlist on the chosen policy, under Session policies.
                 </p>
               </div>
             </div>

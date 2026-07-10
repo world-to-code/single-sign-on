@@ -1,6 +1,7 @@
 package com.example.sso.portal.internal.application;
 
 import com.example.sso.portal.AppAssignmentView;
+import com.example.sso.authpolicy.AuthPolicyResolver;
 import com.example.sso.portal.AppType;
 import com.example.sso.portal.ApplicationView;
 import com.example.sso.portal.AssignAppRequest;
@@ -46,6 +47,7 @@ class AppAssignmentManager {
     private final UserGroupService userGroups;
     private final AppCatalog catalog;
     private final OrgTierGuard tierGuard;
+    private final AuthPolicyResolver authPolicies;
 
     @Transactional(readOnly = true)
     List<ApplicationView> appsForUser(UserAccount user) {
@@ -127,8 +129,7 @@ class AppAssignmentManager {
             throw new ConflictException("application is already assigned to that subject");
         }
 
-        UUID policyId = request.requiredPolicyId() == null || request.requiredPolicyId().isBlank()
-                ? null : UUID.fromString(request.requiredPolicyId());
+        UUID policyId = requiredPolicy(request.requiredPolicyId());
         AppAssignment saved = assignments.save(new AppAssignment(appType, request.appId(), subjectType, subjectId,
                 policyId, tierGuard.currentTier())); // stamp the acting admin's tier so it applies only in-org
         ApplicationView app = catalog.index().get(AppKey.of(appType, request.appId()));
@@ -175,5 +176,21 @@ class AppAssignmentManager {
     /** The resolved display name for an assignment's subject, falling back to its id. */
     private String subjectName(Map<UUID, String> names, AppAssignment a) {
         return names.getOrDefault(a.getSubjectId(), a.getSubjectId().toString());
+    }
+
+    /**
+     * Resolves (and validates) the assignment's extra-authentication policy. A dangling id would silently
+     * resolve to "no policy" at enforcement time, quietly dropping the step-up the admin configured — so an
+     * unknown policy is refused here, exactly as the app-level policy path refuses one.
+     */
+    private UUID requiredPolicy(String requiredPolicyId) {
+        if (requiredPolicyId == null || requiredPolicyId.isBlank()) {
+            return null;
+        }
+        UUID policyId = UUID.fromString(requiredPolicyId);
+        if (!authPolicies.exists(policyId)) {
+            throw new NotFoundException("policy not found");
+        }
+        return policyId;
     }
 }

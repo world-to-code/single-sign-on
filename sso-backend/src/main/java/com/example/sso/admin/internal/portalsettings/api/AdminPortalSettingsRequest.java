@@ -1,21 +1,25 @@
 package com.example.sso.admin.internal.portalsettings.api;
 
 import com.example.sso.admin.AdminPortalSettingsData;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
-import java.util.List;
+import com.example.sso.shared.error.BadRequestException;
+import java.util.UUID;
 
 /**
- * Admin request to update the admin-console-specific security settings: the elevation-token TTL and the
- * admin-console IP allowlist. The admin session lifetimes and step-up freshness are managed by the session
- * policy assigned to the admin, not here. TTL in minutes.
+ * Admin request selecting the session policy that governs the admin console. A blank/absent id clears the
+ * selection, so the console falls back to the policy resolved for the acting admin. Everything the console
+ * enforces (step-up freshness, elevation-token lifetime, IP allowlist) lives on the chosen policy.
  */
-public record AdminPortalSettingsRequest(
-        @Min(1) @Max(1440) int elevationTokenTtlMinutes,
-        List<String> adminAllowedCidrs) {
+public record AdminPortalSettingsRequest(String sessionPolicyId) {
 
     /** The settings update command (same shape as the public {@link AdminPortalSettingsData} projection). */
     public AdminPortalSettingsData toData() {
-        return new AdminPortalSettingsData(elevationTokenTtlMinutes, adminAllowedCidrs);
+        if (sessionPolicyId == null || sessionPolicyId.isBlank()) {
+            return new AdminPortalSettingsData(null);
+        }
+        try {
+            return new AdminPortalSettingsData(UUID.fromString(sessionPolicyId));
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException("invalid session policy id");
+        }
     }
 }

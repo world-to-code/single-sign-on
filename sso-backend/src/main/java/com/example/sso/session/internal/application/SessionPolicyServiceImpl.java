@@ -10,6 +10,7 @@ import com.example.sso.session.SessionPolicyUpdate;
 import com.example.sso.session.internal.domain.IpAction;
 import com.example.sso.session.internal.domain.IpRuleEntry;
 import com.example.sso.session.internal.domain.SessionPolicy;
+import com.example.sso.session.internal.domain.SessionRules;
 import com.example.sso.session.internal.domain.SessionPolicyIpRule;
 import com.example.sso.session.internal.domain.SessionPolicyIpRuleRepository;
 import com.example.sso.session.internal.domain.SessionPolicyRepository;
@@ -28,6 +29,7 @@ import com.example.sso.user.UserService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.web.util.matcher.IpAddressMatcher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,6 +43,7 @@ import java.util.Objects;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -140,6 +143,14 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         return users.findByUsername(username)
                 .map(this::resolveForUser)
                 .orElseGet(this::defaultPolicy);
+    }
+
+    @Override
+    public Optional<SessionPolicyDetails> findById(UUID id) {
+        return cached.stream()
+                .filter(p -> p.getId().equals(id))
+                .findFirst()
+                .map(SessionPolicyDetails.class::cast);
     }
 
     @Override
@@ -268,14 +279,17 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         Set<UUID> userIds = spec.userIds() == null ? Set.of() : Set.copyOf(spec.userIds());
         Set<UUID> roleIds = spec.roleIds() == null ? Set.of() : Set.copyOf(spec.roleIds());
         List<IpRuleEntry> ipRules = toIpRules(spec.ipRules()); // validates zone references before any write
+        String cookieSameSite = effectiveCookieSameSite(spec.cookieSameSite(),
+                creationOrg == null && DEFAULT_NAME.equals(spec.name()));
 
         SessionPolicy policy = new SessionPolicy(spec.name(), spec.priority(), creationOrg);
         if (!spec.enabled()) {
             policy.disable();
         }
-        policy.update(spec.absoluteTimeoutMinutes(), spec.idleTimeoutMinutes(), spec.reauthIntervalMinutes(),
-                reauthFactors, spec.sensitiveReauthWindowMinutes(), stepUpFactors, spec.bindClient(),
-                spec.maxConcurrentSessions(), spec.rotateOnReauth(), spec.cookieSameSite());
+        policy.update(new SessionRules(spec.absoluteTimeoutMinutes(), spec.idleTimeoutMinutes(),
+                spec.reauthIntervalMinutes(), reauthFactors, spec.sensitiveReauthWindowMinutes(), stepUpFactors,
+                spec.bindClient(), spec.maxConcurrentSessions(), spec.rotateOnReauth(), cookieSameSite,
+                spec.elevationTokenTtlMinutes(), normalizeCidrs(spec.adminAllowedCidrs())));
         SessionPolicy saved = repository.save(policy);
 
         replaceUsers(saved.getId(), userIds);
@@ -294,6 +308,8 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         String reauthFactors = validateReauthFactors(update.reauthFactors());
         String stepUpFactors = validateReauthFactors(update.stepUpFactors());
         List<IpRuleEntry> ipRules = toIpRules(update.ipRules()); // validates zone references before any write
+        String cookieSameSite = effectiveCookieSameSite(update.cookieSameSite(),
+                policy.getOrgId() == null && DEFAULT_NAME.equals(policy.getName()));
 
         boolean isDefault = isDefaultFallback(policy);
         Set<UUID> userIds;
@@ -303,10 +319,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
             // UNASSIGNED and keeps its priority so it always covers every user not matched by a higher-priority
             // policy — an admin can never strand users by targeting it at a specific (or empty) set. Only its
             // knobs (timeouts, factors, cookie/IP settings) are editable.
-            policy.update(update.absoluteTimeoutMinutes(), update.idleTimeoutMinutes(),
-                    update.reauthIntervalMinutes(), reauthFactors, update.sensitiveReauthWindowMinutes(),
-                    stepUpFactors, update.bindClient(),
-                    update.maxConcurrentSessions(), update.rotateOnReauth(), update.cookieSameSite());
+            policy.update(rulesOf(update, reauthFactors, stepUpFactors, cookieSameSite));
             userIds = currentUserIds(id);
             roleIds = currentRoleIds(id);
         } else {
@@ -316,10 +329,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
             } else {
                 policy.disable();
             }
-            policy.update(update.absoluteTimeoutMinutes(), update.idleTimeoutMinutes(),
-                    update.reauthIntervalMinutes(), reauthFactors, update.sensitiveReauthWindowMinutes(),
-                    stepUpFactors, update.bindClient(),
-                    update.maxConcurrentSessions(), update.rotateOnReauth(), update.cookieSameSite());
+            policy.update(rulesOf(update, reauthFactors, stepUpFactors, cookieSameSite));
             userIds = update.userIds() == null ? Set.of() : Set.copyOf(update.userIds());
             roleIds = update.roleIds() == null ? Set.of() : Set.copyOf(update.roleIds());
             replaceUsers(id, userIds);
@@ -402,5 +412,52 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         Set<IpRuleEntry> present = current.stream().map(SessionPolicyIpRule::toEntry).collect(Collectors.toSet());
         desired.stream().filter(rule -> !present.contains(rule))
                 .forEach(rule -> policyIpRules.save(new SessionPolicyIpRule(policyId, rule)));
+    }
+
+    /** The rules value object for an update — built at the layer boundary, never positionally in the entity. */
+    private SessionRules rulesOf(SessionPolicyUpdate update, String reauthFactors, String stepUpFactors,
+                                 String cookieSameSite) {
+        return new SessionRules(update.absoluteTimeoutMinutes(), update.idleTimeoutMinutes(),
+                update.reauthIntervalMinutes(), reauthFactors, update.sensitiveReauthWindowMinutes(),
+                stepUpFactors, update.bindClient(), update.maxConcurrentSessions(), update.rotateOnReauth(),
+                cookieSameSite, update.elevationTokenTtlMinutes(),
+                normalizeCidrs(update.adminAllowedCidrs()));
+    }
+
+    /** Trims and validates each admin-console CIDR (rejecting an invalid one, 400); blank -> null (any network). */
+    private String normalizeCidrs(String cidrs) {
+        if (cidrs == null || cidrs.isBlank()) {
+            return null;
+        }
+        List<String> cleaned = Arrays.stream(cidrs.split(","))
+                .map(String::trim).filter(cidr -> !cidr.isEmpty()).toList();
+        cleaned.forEach(this::validateCidr);
+        return cleaned.isEmpty() ? null : String.join(",", cleaned);
+    }
+
+    private void validateCidr(String cidr) {
+        try {
+            new IpAddressMatcher(cidr);
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException("invalid CIDR: " + cidr);
+        }
+    }
+
+    /**
+     * The SESSION cookie is written before the request's user (and therefore their policy) is known, so
+     * {@code PolicyAwareCookieSerializer} reads the GLOBAL Default's SameSite for every session. Any other
+     * policy therefore stores the SAME value: a divergent one would be inert (edited, never applied), and a
+     * stale one submitted by a client must not be persisted as if it meant something. Only the global Default
+     * actually decides the attribute.
+     */
+    private String effectiveCookieSameSite(String requested, boolean isGlobalDefault) {
+        if (isGlobalDefault) {
+            return requested;
+        }
+        return cached.stream()
+                .filter(p -> p.policy().getOrgId() == null && DEFAULT_NAME.equals(p.getName()))
+                .findFirst()
+                .map(SessionPolicyDetails::getCookieSameSite)
+                .orElse(requested); // no global Default yet (seeding): keep what was asked for
     }
 }

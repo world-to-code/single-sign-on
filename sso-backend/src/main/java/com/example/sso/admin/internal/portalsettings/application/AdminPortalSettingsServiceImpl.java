@@ -4,30 +4,29 @@ import com.example.sso.admin.AdminPortalSettingsData;
 import com.example.sso.admin.AdminPortalSettingsService;
 import com.example.sso.admin.internal.portalsettings.domain.AdminPortalSettings;
 import com.example.sso.admin.internal.portalsettings.domain.AdminPortalSettingsRepository;
+import com.example.sso.session.SessionPolicyDetails;
+import com.example.sso.session.SessionPolicyService;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.web.util.matcher.IpAddressMatcher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
-import java.util.UUID;
 
 /**
  * Default {@link AdminPortalSettingsService}. Resolves the acting tenant from {@link OrgContext} and reads
  * (or, on update, writes) that tenant's own {@code admin_portal_settings} row, falling back to the GLOBAL
- * default (org_id null) a tenant inherits until it saves its own. There is no client-side coupling: the
- * elevation-token TTL is enforced per-tenant by {@code AdminElevationFilter} on the token's age, not by
- * syncing to the single shared admin-console OAuth client.
+ * default (org_id null) a tenant inherits until it saves its own. The row carries a single choice: which
+ * session policy governs the admin console.
  */
 @Service
 @RequiredArgsConstructor
 public class AdminPortalSettingsServiceImpl implements AdminPortalSettingsService {
 
     private final AdminPortalSettingsRepository repository;
+    private final SessionPolicyService sessionPolicies;
     private final OrgContext orgContext;
 
     @Override
@@ -39,11 +38,29 @@ public class AdminPortalSettingsServiceImpl implements AdminPortalSettingsServic
     @Override
     @Transactional
     public AdminPortalSettingsData update(AdminPortalSettingsData command) {
+        requireSelectableInTier(command.sessionPolicyId());
         // Write the ACTING tenant's own row (a tenant admin can only touch their bound org; an un-drilled
         // super-admin edits the global default). On a tenant's first save, copy-on-write from the global row.
         AdminPortalSettings settings = writableRow(actingOrg());
-        settings.update(command.elevationTokenTtlMinutes(), normalizeCidrs(command.adminAllowedCidrs()));
+        settings.selectPolicy(command.sessionPolicyId());
         return toData(repository.save(settings));
+    }
+
+    /**
+     * A tenant may only point its console at a policy of its OWN tier: {@code listAll} is tier-scoped, so a
+     * policy outside it (another tenant's, or a global one a tenant cannot see) is rejected — otherwise the
+     * console's posture could be governed by a policy the tenant neither owns nor can inspect.
+     */
+    private void requireSelectableInTier(UUID policyId) {
+        if (policyId == null) {
+            return; // clearing the selection restores "the acting admin's own resolved policy"
+        }
+        boolean selectable = sessionPolicies.listAll().stream()
+                .map(SessionPolicyDetails::getId)
+                .anyMatch(policyId::equals);
+        if (!selectable) {
+            throw new BadRequestException("unknown session policy");
+        }
     }
 
     private UUID actingOrg() {
@@ -71,7 +88,7 @@ public class AdminPortalSettingsServiceImpl implements AdminPortalSettingsServic
             return global();
         }
         return repository.findByOrgId(orgId)
-                .orElseGet(() -> new AdminPortalSettings(orgId, global().settings()));
+                .orElseGet(() -> new AdminPortalSettings(orgId, global().getSessionPolicyId()));
     }
 
     private AdminPortalSettings global() {
@@ -80,35 +97,6 @@ public class AdminPortalSettingsServiceImpl implements AdminPortalSettingsServic
     }
 
     private AdminPortalSettingsData toData(AdminPortalSettings settings) {
-        return new AdminPortalSettingsData(settings.getElevationTokenTtlMinutes(),
-                splitCidrs(settings.getAdminAllowedCidrs()));
-    }
-
-    /** Trims/validates each CIDR (rejecting an invalid one, 400) and joins them for storage; blank → null. */
-    private String normalizeCidrs(List<String> cidrs) {
-        if (cidrs == null || cidrs.isEmpty()) {
-            return null;
-        }
-
-        List<String> cleaned = cidrs.stream().map(String::trim).filter(c -> !c.isEmpty()).toList();
-        cleaned.forEach(this::validateCidr);
-
-        return cleaned.isEmpty() ? null : String.join(",", cleaned);
-    }
-
-    private void validateCidr(String cidr) {
-        try {
-            new IpAddressMatcher(cidr);
-        } catch (IllegalArgumentException e) {
-            throw new BadRequestException("invalid CIDR: " + cidr);
-        }
-    }
-
-    private List<String> splitCidrs(String stored) {
-        if (stored == null || stored.isBlank()) {
-            return List.of();
-        }
-
-        return List.of(stored.split(","));
+        return new AdminPortalSettingsData(settings.getSessionPolicyId());
     }
 }

@@ -41,6 +41,12 @@ public interface SessionPolicyDetails {
 
     String getCookieSameSite();
 
+    /** Admin-console elevation proof lifetime (minutes) — enforced by the admin elevation gate. */
+    int getElevationTokenTtlMinutes();
+
+    /** Comma-separated CIDRs the admin console may be entered from; blank/null = any network. */
+    String getAdminAllowedCidrs();
+
     Set<UUID> getAssignedUserIds();
 
     Set<UUID> getAssignedRoleIds();

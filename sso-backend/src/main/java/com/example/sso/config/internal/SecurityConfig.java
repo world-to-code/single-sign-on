@@ -1,6 +1,5 @@
 package com.example.sso.config.internal;
 
-import com.example.sso.admin.AdminPortalSettingsService;
 import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.ratelimit.AuthRateLimitFilter;
@@ -9,6 +8,7 @@ import com.example.sso.oidc.ConsentPage;
 import com.example.sso.organization.OrganizationAuthorization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.user.UserService;
+import com.example.sso.security.AdminConsolePolicy;
 import com.example.sso.security.AdminElevationFilter;
 import com.example.sso.security.PolicyIpAccessFilter;
 import com.example.sso.security.HostOrgResolver;
@@ -116,7 +116,7 @@ public class SecurityConfig {
             OrganizationService organizations, OrganizationAuthorization orgAuthorization, UserService users,
             SessionPolicyService policyService,
             NetworkZoneService networkZones, JwtDecoder jwtDecoder,
-            AdminPortalSettingsService adminPortalSettingsService, AuditService audit,
+            AdminConsolePolicy adminConsolePolicy, AuditService audit,
             PublicKeyCredentialCreationOptionsRepository creationOptionsRepository,
             @Value("${sso.issuer}") String issuer,
             @Value("${sso.webauthn.rp-id:localhost}") String rpId,
@@ -226,7 +226,7 @@ public class SecurityConfig {
                 // Anchored AFTER the authorization filter so the session MFA_COMPLETE check
                 // (and @RequirePermission) still run first — a non-admin gets 403 there, never the 401 challenge.
                 .addFilterAfter(new AdminElevationFilter(jwtDecoder, issuer, AdminPortalSeeder.CLIENT_ID,
-                        adminPortalSettingsService, policyService, audit), AuthorizationFilter.class)
+                        adminConsolePolicy, audit), AuthorizationFilter.class)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .exceptionHandling(ex -> ex
                         .defaultAuthenticationEntryPointFor(

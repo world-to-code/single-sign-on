@@ -6,6 +6,7 @@ import com.example.sso.portal.ApplicationView;
 import com.example.sso.portal.AssignAppRequest;
 import com.example.sso.portal.internal.domain.AppAssignment;
 import com.example.sso.portal.internal.domain.AppAssignment.SubjectType;
+import com.example.sso.authpolicy.AuthPolicyResolver;
 import com.example.sso.portal.internal.domain.AppAssignmentRepository;
 import com.example.sso.shared.IdName;
 import com.example.sso.shared.error.ConflictException;
@@ -55,6 +56,7 @@ class AppAssignmentManagerTest {
     private AppCatalog catalog;
     private OrgContext orgContext;
     private AppAssignmentManager manager;
+    private AuthPolicyResolver authPolicies;
 
     @BeforeEach
     void setUp() {
@@ -64,9 +66,11 @@ class AppAssignmentManagerTest {
         userGroups = mock(UserGroupService.class);
         catalog = mock(AppCatalog.class);
         orgContext = mock(OrgContext.class);
+        authPolicies = mock(AuthPolicyResolver.class);
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.empty()); // platform/global tier by default
         // REAL guard over the mocked context so tier-ownership logic is exercised, not stubbed.
-        manager = new AppAssignmentManager(assignments, users, roles, userGroups, catalog, new OrgTierGuard(orgContext));
+        manager = new AppAssignmentManager(assignments, users, roles, userGroups, catalog,
+                new OrgTierGuard(orgContext), authPolicies);
     }
 
     // --- hasAssignment ---
@@ -162,6 +166,7 @@ class AppAssignmentManagerTest {
         UUID subjectId = UUID.randomUUID();
         UUID policyId = UUID.randomUUID();
         AssignAppRequest request = new AssignAppRequest("OIDC", APP_ID, "ROLE", subjectId.toString(), policyId.toString());
+        when(authPolicies.exists(policyId)).thenReturn(true);
         when(assignments.existsByAppTypeAndAppIdAndSubjectTypeAndSubjectId(
                 APP_TYPE, APP_ID, SubjectType.ROLE, subjectId)).thenReturn(false);
         AppAssignment saved = assignment(SubjectType.ROLE, subjectId);
@@ -363,5 +368,18 @@ class AppAssignmentManagerTest {
         when(idName.getId()).thenReturn(id);
         when(idName.getName()).thenReturn(name);
         return idName;
+    }
+
+    @Test
+    void assignRejectsARequiredPolicyThatDoesNotExist() {
+        // The per-assignment step-up policy is enforced at /oauth2/authorize; a dangling id silently resolves
+        // to "no policy", so the app quietly loses the extra authentication the admin thought they configured.
+        UUID policyId = UUID.randomUUID();
+        when(authPolicies.exists(policyId)).thenReturn(false);
+        AssignAppRequest request = new AssignAppRequest("OIDC", "app-1", "USER",
+                UUID.randomUUID().toString(), policyId.toString());
+
+        assertThatThrownBy(() -> manager.assign(request)).isInstanceOf(NotFoundException.class);
+        verify(assignments, never()).save(any());
     }
 }

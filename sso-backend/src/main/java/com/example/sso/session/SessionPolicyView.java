@@ -9,7 +9,7 @@ public record SessionPolicyView(String id, String name, int priority, boolean en
                                 int reauthIntervalMinutes, String reauthFactors,
                                 int sensitiveReauthWindowMinutes, String stepUpFactors, boolean bindClient,
                                 int maxConcurrentSessions, boolean rotateOnReauth,
-                                String cookieSameSite,
+                                String cookieSameSite, int elevationTokenTtlMinutes, String adminAllowedCidrs,
                                 List<String> assignedUserIds, List<String> assignedRoleIds,
                                 List<IpRuleSpec> ipRules) {
 
@@ -18,7 +18,7 @@ public record SessionPolicyView(String id, String name, int priority, boolean en
                 p.getAbsoluteTimeoutMinutes(), p.getIdleTimeoutMinutes(), p.getReauthIntervalMinutes(),
                 p.getReauthFactors(), p.getSensitiveReauthWindowMinutes(), p.getStepUpFactors(),
                 p.isBindClient(), p.getMaxConcurrentSessions(), p.isRotateOnReauth(),
-                p.getCookieSameSite(),
+                p.getCookieSameSite(), p.getElevationTokenTtlMinutes(), p.getAdminAllowedCidrs(),
                 p.getAssignedUserIds().stream().map(UUID::toString).toList(),
                 p.getAssignedRoleIds().stream().map(UUID::toString).toList(),
                 p.getIpRules());
