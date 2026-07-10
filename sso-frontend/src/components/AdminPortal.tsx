@@ -29,7 +29,7 @@ export function AdminGuard({ children }: { children: ReactNode }) {
       // Force a FRESH step-up re-auth FIRST (re-stamps the session auth_time), THEN run the OIDC flow
       // so the minted elevation token carries a fresh auth_time (RFC 9470).
       void (async () => {
-        if (await triggerStepUp("action")) {
+        if (await triggerStepUp("elevation")) {
           await startAdminOidc(); // navigates away to /oauth2/authorize
         } else {
           // Declining re-elevation is NOT an authorization failure — it's just an unmet extra-auth
@@ -105,7 +105,7 @@ export function AdminCallback() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
         <Button className="w-full" onClick={() => {
-          void (async () => { if (await triggerStepUp("action")) await startAdminOidc(); })();
+          void (async () => { if (await triggerStepUp("elevation")) await startAdminOidc(); })();
         }}>Try again</Button>
         <a href="/" className="mt-4 block text-center text-sm text-muted-foreground hover:text-foreground">
           Back to portal

@@ -46,7 +46,13 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
     getSessionConfig().then((cfg) => { policyFactors.current = cfg.reauthFactors; }).catch(() => undefined);
   }, []);
 
-  const allow = (factor: string) => allowed === null || allowed.includes(factor);
+  // Admin elevation must mint an acr=mfa token: a session holding fewer than two distinct factors can only
+  // get there by presenting a factor it does NOT already hold — re-verifying an already-held one (e.g. the
+  // password of a password-only session) would mint another single-factor token and loop forever.
+  const needsNewFactor = reason === "elevation" && new Set(session.factors).size < 2;
+  const heldFactor = (factor: string) => session.factors.includes(`FACTOR_${factor}`);
+  const allow = (factor: string) =>
+    (allowed === null || allowed.includes(factor)) && !(needsNewFactor && heldFactor(factor));
   const passkeyAvailable = allow("FIDO2") && session.fido2Enrolled && webAuthnSupported();
   const totpAvailable = allow("TOTP") && session.totpEnrolled;
   const passwordAvailable = allow("PASSWORD"); // the user always "has" their password
@@ -233,7 +239,9 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
 
           {noMethods && (
             <p className="text-sm text-muted-foreground">
-              No allowed re-authentication factor is available. Set up an authenticator or passkey in your profile first.
+              {needsNewFactor
+                ? "The admin console requires a second, different factor. Set up an authenticator app or passkey in your profile first."
+                : "No allowed re-authentication factor is available. Set up an authenticator or passkey in your profile first."}
             </p>
           )}
 

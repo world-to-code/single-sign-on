@@ -59,7 +59,7 @@ export default function AppShell(
   // Enter the admin console: force a FRESH step-up re-auth FIRST (re-stamps the session auth_time), so
   // the elevation token minted by the subsequent OIDC flow carries a fresh auth_time (RFC 9470).
   async function enterAdmin() {
-    if (await triggerStepUp("action")) {
+    if (await triggerStepUp("elevation")) {
       await startAdminOidc(); // navigates away to /oauth2/authorize
     }
   }

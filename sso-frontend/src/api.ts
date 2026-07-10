@@ -145,8 +145,12 @@ export async function apiDelete(path: string): Promise<void> {
  * Step-up re-auth bridge: the StepUpProvider registers a handler that prompts the user for a fresh
  * factor. When a mutating request is rejected with X-Step-Up-Required, we run it and retry once.
  */
-/** Why a step-up prompt is shown — drives the modal copy. */
-export type StepUpReason = "action" | "session";
+/**
+ * Why a step-up prompt is shown — drives the modal copy and factor choice. "elevation" is the admin-console
+ * entry: the minted token must assert acr=mfa, so a single-factor session must present a NEW factor (the
+ * modal excludes factors the session already holds), unlike a plain freshness re-auth.
+ */
+export type StepUpReason = "action" | "session" | "elevation";
 
 /** The modal prompts for a fresh factor; `factors` (when known) limits the offered methods to those the policy allows. */
 export type StepUpHandler = (reason: StepUpReason, factors?: string[]) => Promise<boolean>;
