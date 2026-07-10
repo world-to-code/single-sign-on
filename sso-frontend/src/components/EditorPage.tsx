@@ -11,6 +11,13 @@ export interface EditorTab<K extends string> {
   label: string;
 }
 
+/** One changed field for the diff save bar — the bar names the diff, not the intent (DESIGN.md §4). */
+export interface DiffEntry {
+  label: string;
+  from: ReactNode;
+  to: ReactNode;
+}
+
 /**
  * Shared shell for the Okta-style, full-width create/edit PAGES (session policy, users, auth policies,
  * relying parties, clients). Gives every editor the same breadcrumb, header, optional tab bar, a single
@@ -20,7 +27,7 @@ export interface EditorTab<K extends string> {
 export function EditorPage<K extends string>({
   backTo, backLabel, crumb, title, description,
   tabs, activeTab, onTab,
-  error, formId, onSubmit, busy, submitLabel, onCancel, loading, children,
+  error, formId, onSubmit, busy, submitLabel, onCancel, loading, diff, children,
 }: {
   backTo: string;
   backLabel: string;
@@ -37,6 +44,11 @@ export function EditorPage<K extends string>({
   submitLabel: string;
   onCancel: () => void;
   loading?: boolean;
+  /**
+   * Opt-in diff save bar. When provided, the bar names the changed fields and disables submit while
+   * empty ("Nothing to save"). Omit it (the default) to keep the always-enabled bar used by create pages.
+   */
+  diff?: DiffEntry[];
   children: ReactNode;
 }) {
   return (
@@ -74,9 +86,27 @@ export function EditorPage<K extends string>({
         <>
           <form id={formId} onSubmit={onSubmit}>{children}</form>
 
-          <div className="sticky bottom-0 z-10 mt-2 flex items-center justify-end gap-3 border-t border-border bg-background/90 py-4 backdrop-blur">
-            <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
-            <Button form={formId} type="submit" disabled={busy}>{submitLabel}</Button>
+          <div className="sticky bottom-0 z-10 mt-2 flex items-center justify-between gap-4 border-t border-border bg-background/90 py-4 backdrop-blur">
+            <div className="min-w-0 flex-1 overflow-x-auto text-sm">
+              {diff !== undefined && (diff.length === 0
+                ? <span className="text-muted-foreground">Nothing to save</span>
+                : (
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    {diff.map((d, i) => (
+                      <span key={i} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <span className="text-muted-foreground">{d.label}</span>
+                        <span className="text-faint line-through">{d.from}</span>
+                        <span className="text-faint">→</span>
+                        <span className="font-medium text-ink">{d.to}</span>
+                      </span>
+                    ))}
+                  </div>
+                ))}
+            </div>
+            <div className="flex shrink-0 items-center gap-3">
+              <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
+              <Button form={formId} type="submit" disabled={busy || (diff !== undefined && diff.length === 0)}>{submitLabel}</Button>
+            </div>
           </div>
         </>
       )}

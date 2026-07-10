@@ -3,10 +3,12 @@ import type { FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiGet, apiPost, apiPut, errorMessage, type Page } from "../api";
 import { EditorPage } from "@/components/EditorPage";
+import type { DiffEntry } from "@/components/EditorPage";
 import { SettingsSection } from "@/components/SettingsSection";
 import { Field, Toggle } from "@/components/form/fields";
 import { CheckboxGroup } from "@/components/form/CheckboxGroup";
 import { StepsBuilder } from "@/components/form/StepsBuilder";
+import { SignInPreview } from "@/components/form/SignInPreview";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { UserMultiSelect } from "@/components/UserMultiSelect";
@@ -52,12 +54,30 @@ function toEditor(p: Policy): Editor {
   };
 }
 
+const onOff = (b: boolean) => (b ? "On" : "Off");
+const factorCount = (steps: string[][]) => `${steps.reduce((n, s) => n + s.length, 0)} factors`;
+
+/** The save bar names the diff against the loaded policy — old value struck through (DESIGN.md §4). */
+function diffEntries(base: Editor, cur: Editor): DiffEntry[] {
+  const out: DiffEntry[] = [];
+  if (base.priority !== cur.priority) out.push({ label: "Priority", from: base.priority, to: cur.priority });
+  if (base.enabled !== cur.enabled) out.push({ label: "Status", from: base.enabled ? "Enabled" : "Disabled", to: cur.enabled ? "Enabled" : "Disabled" });
+  if (base.appliesToLogin !== cur.appliesToLogin) out.push({ label: "Use for login", from: onOff(base.appliesToLogin), to: onOff(cur.appliesToLogin) });
+  if (base.allowEnrollmentAtLogin !== cur.allowEnrollmentAtLogin) out.push({ label: "Enroll at login", from: onOff(base.allowEnrollmentAtLogin), to: onOff(cur.allowEnrollmentAtLogin) });
+  if (base.stepUpFreshnessMinutes !== cur.stepUpFreshnessMinutes) out.push({ label: "Re-auth window", from: `${base.stepUpFreshnessMinutes} min`, to: `${cur.stepUpFreshnessMinutes} min` });
+  if (JSON.stringify(base.steps) !== JSON.stringify(cur.steps)) out.push({ label: "Sign-on chain", from: factorCount(base.steps), to: factorCount(cur.steps) });
+  if (JSON.stringify(base.roleIds) !== JSON.stringify(cur.roleIds)) out.push({ label: "Roles", from: base.roleIds.length, to: cur.roleIds.length });
+  if (JSON.stringify(base.userIds) !== JSON.stringify(cur.userIds)) out.push({ label: "Users", from: base.userIds.length, to: cur.userIds.length });
+  return out;
+}
+
 /** Okta-style full-page create/edit for an authentication policy (routes `auth-policies/new` + `:id`). */
 export default function AuthPolicyDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const isNew = !id;
   const [editor, setEditor] = useState<Editor | null>(isNew ? blankEditor : null);
+  const [baseline, setBaseline] = useState<Editor | null>(null); // snapshot of the loaded policy, for the diff bar
   const [roles, setRoles] = useState<Role[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -70,7 +90,7 @@ export default function AuthPolicyDetail() {
     apiGet<Page<Policy>>("/api/admin/auth-policies?size=100")
       .then((p) => {
         const found = p.items.find((x) => x.id === id);
-        if (found) setEditor(toEditor(found));
+        if (found) { const ed = toEditor(found); setEditor(ed); setBaseline(ed); }
         else setError("Policy not found.");
       })
       .catch((e) => setError(errorMessage(e)));
@@ -108,6 +128,8 @@ export default function AuthPolicyDetail() {
   }
 
   const crumbName = isNew ? "New policy" : (editor?.name || "Edit");
+  // Edits raise a diff bar; creation keeps the always-enabled create bar (opt-in — pass diff only when editing).
+  const diff = !isNew && editor && baseline ? diffEntries(baseline, editor) : undefined;
 
   return (
     <EditorPage
@@ -116,7 +138,7 @@ export default function AuthPolicyDetail() {
       description="Define the ordered factor chain, whether it governs login, and where it applies."
       error={error} formId="auth-policy-form" onSubmit={submit} busy={busy}
       submitLabel={isNew ? "Create policy" : "Save changes"}
-      onCancel={() => navigate("/admin/auth-policies")} loading={!editor}
+      onCancel={() => navigate("/admin/auth-policies")} loading={!editor} diff={diff}
     >
       {editor && (
         <>
@@ -134,7 +156,11 @@ export default function AuthPolicyDetail() {
           </SettingsSection>
 
           <SettingsSection title="Sign-on chain" description="The factors a user must complete, verified step by step.">
-            <StepsBuilder steps={editor.steps} onChange={(steps) => set({ steps })} />
+            {/* editorgrid: preview sits beside the builder, dropping below it at ≤1180px (DESIGN.md §3). */}
+            <div className="grid grid-cols-1 gap-5 min-[1180px]:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
+              <StepsBuilder steps={editor.steps} onChange={(steps) => set({ steps })} />
+              <SignInPreview steps={editor.steps} />
+            </div>
           </SettingsSection>
 
           <SettingsSection title="Behavior" description="How this policy is used and whether users can enroll factors while signing in.">

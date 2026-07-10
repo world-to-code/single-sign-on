@@ -10,7 +10,14 @@ export interface Page<T> {
 
 /** Thrown for non-2xx responses so callers can branch on status (e.g. 401/403). */
 export class ApiError extends Error {
-  constructor(public status: number, message?: string) {
+  constructor(
+    public status: number,
+    message?: string,
+    /** RFC 7807 `code` — the backend's stable error code (e.g. "invalid_cidr"). */
+    public code?: string,
+    /** RFC 7807 `traceId` — 12 hex chars the operator can grep server logs by (server/network failures only). */
+    public traceId?: string,
+  ) {
     super(message ?? `HTTP ${status}`);
   }
 }
@@ -107,12 +114,17 @@ async function parse<T>(res: Response): Promise<T> {
     // the precise reason (e.g. "invalid CIDR: x") instead of a generic status line.
     const body = await res.text().catch(() => "");
     let detail: string | undefined;
+    let code: string | undefined;
+    let traceId: string | undefined;
     try {
-      detail = body ? (JSON.parse(body) as { detail?: string }).detail : undefined;
+      const problem = body ? (JSON.parse(body) as { detail?: string; code?: string; traceId?: string }) : {};
+      detail = problem.detail;
+      code = problem.code;
+      traceId = problem.traceId;
     } catch {
       detail = undefined;
     }
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, detail, code, traceId);
   }
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;
@@ -189,6 +201,10 @@ export function triggerStepUp(reason: StepUpReason = "session", factors?: string
 let lastActivityAt = Date.now();
 export function lastActivityMillis(): number {
   return lastActivityAt;
+}
+/** Reset the inactivity clock without a request — "Stay signed in" on the idle countdown pairs it with a real ping. */
+export function markActivity(): void {
+  lastActivityAt = Date.now();
 }
 
 async function send<T>(method: string, path: string, body?: unknown, retried = false): Promise<T> {

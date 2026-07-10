@@ -13,7 +13,7 @@ export function usePaginated<T>(basePath: string, size = 20) {
   useEffect(() => { setPage(0); }, [basePath]);
 
   const sep = basePath.includes("?") ? "&" : "?";
-  const { data, error, loading, reload } = useApiData<Page<T>>(`${basePath}${sep}page=${page}&size=${size}`);
+  const { data, error, cause, loading, reload } = useApiData<Page<T>>(`${basePath}${sep}page=${page}&size=${size}`);
 
   // If the current page fell past the end (e.g. the last row on the last page was deleted), step back
   // so the user isn't stranded on an empty, mislabeled page.
@@ -27,6 +27,6 @@ export function usePaginated<T>(basePath: string, size = 20) {
     page, setPage, size,
     items: data?.items ?? null,
     total,
-    error, loading, reload,
+    error, cause, loading, reload,
   };
 }

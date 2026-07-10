@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { ChevronLeft, Fingerprint, KeyRound, Loader2, Lock, Smartphone } from "lucide-react";
+import { ChevronLeft, Fingerprint, KeyRound, Loader2, Lock, ShieldAlert, Smartphone } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { ApiError, registerStepUpHandler } from "@/api";
 import type { StepUpReason } from "@/api";
 import { logout, reauthPrepare, reauthVerify } from "@/auth";
@@ -11,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { OtpInput } from "@/components/auth/OtpInput";
+import { useReturnFocus } from "@/hooks/useReturnFocus";
 
 type Method = "choose" | "totp" | "password";
 
@@ -59,10 +61,58 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
   const noMethods = !passkeyAvailable && !totpAvailable && !passwordAvailable;
   const mandatory = reason === "session";
 
+  // A row per policy-allowed factor. An allowed-but-unenrolled factor stays VISIBLE but disabled
+  // ("Not enrolled") so the reader sees WHY it isn't offered, rather than it silently vanishing (§7).
+  interface FactorRow {
+    key: string;
+    label: string;
+    explain: string;
+    keycap: string;
+    Icon: LucideIcon;
+    enrolled: boolean;
+    onSelect: () => void;
+  }
+  const factorRows: FactorRow[] = [
+    { key: "FIDO2", label: "Passkey", explain: "Your device biometric or security key", keycap: "1",
+      Icon: Fingerprint, enrolled: session.fido2Enrolled && webAuthnSupported(), onSelect: () => verifyPasskey() },
+    { key: "TOTP", label: "Authenticator app", explain: "A 6-digit code from your authenticator app", keycap: "2",
+      Icon: Smartphone, enrolled: session.totpEnrolled, onSelect: () => { setError(null); setMethod("totp"); } },
+    { key: "PASSWORD", label: "Password", explain: "Your account password", keycap: "3",
+      Icon: KeyRound, enrolled: true, onSelect: () => { setError(null); setMethod("password"); } },
+  ].filter((r) => allow(r.key)); // allow() folds policy allow + the held-factor exclusion (not enrollment)
+  const rowsRef = useRef<FactorRow[]>([]);
+  rowsRef.current = factorRows;
+
+  // Keycap shortcuts: 1/2/3 pick an enrolled factor. Only on the chooser step, where there is no text
+  // input to swallow the digit, so it can't interfere with the TOTP/password entry forms.
+  useEffect(() => {
+    if (!open || method !== "choose" || resolvingFactors) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (busy) return;
+      const row = rowsRef.current.find((r) => r.enrolled && r.keycap === e.key);
+      if (row) { e.preventDefault(); row.onSelect(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, method, resolvingFactors, busy]);
+
+  const badgeText = reason === "elevation" ? "Elevation required" : "Confirm it's you";
+  const requested = reason === "elevation"
+    ? "Enter the admin console"
+    : reason === "session" ? "Continue your session" : "A sensitive change";
+  const unlocks = reason === "elevation"
+    ? "Admin actions stay unlocked for this session's elevated window."
+    : reason === "session"
+      ? "Your session continues without signing in again."
+      : "This change proceeds; you won't be asked again for a short while.";
+
+  const { capture, restore } = useReturnFocus();
+
   const prompt = useCallback((why: StepUpReason, factors?: string[]) => {
     if (pending.current) {
       return pending.current; // a modal is already open — reuse it instead of clobbering the resolver
     }
+    capture();
     setReason(why); setMethod("choose");
     setCode(""); setPassword(""); setError(null); setBusy(false); setOpen(true);
     pending.current = new Promise<boolean>((resolve) => { resolver.current = resolve; });
@@ -81,7 +131,7 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
         .finally(() => setResolvingFactors(false));
     }
     return pending.current;
-  }, []);
+  }, [capture]);
 
   useEffect(() => {
     registerStepUpHandler(prompt);
@@ -95,6 +145,7 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
     setOpen(false);
     setBusy(false);
     setCode(""); setPassword(""); // don't retain the entered secret after the prompt closes
+    restore();
   }
 
   async function verifyTotp(event: React.FormEvent) {
@@ -150,20 +201,41 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
           onInteractOutside={mandatory ? (e) => e.preventDefault() : undefined}
         >
           <DialogHeader>
+            <span className="mb-1 inline-flex w-fit items-center gap-1.5 rounded-full border border-warn/30 bg-warn/10 px-2.5 py-0.5 text-xs font-semibold text-warn">
+              <ShieldAlert className="size-3.5" /> {badgeText}
+            </span>
             <div className="flex items-start gap-3">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-primary">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-warn/10 text-warn">
                 <Lock className="size-5" />
               </span>
               <div className="space-y-1">
-                <DialogTitle>{mandatory ? "Re-authentication required" : "Confirm it's you"}</DialogTitle>
+                <DialogTitle>
+                  {reason === "elevation"
+                    ? "Elevate to continue"
+                    : mandatory ? "Re-authentication required" : "Confirm it's you"}
+                </DialogTitle>
                 <DialogDescription>
-                  {mandatory
-                    ? "Your session needs to be re-verified to continue. This step can't be skipped."
-                    : "This action is sensitive — please re-authenticate to continue."}
+                  {reason === "elevation"
+                    ? "The admin console needs a stronger proof of identity than your current session holds."
+                    : mandatory
+                      ? "Your session needs to be re-verified to continue. This step can't be skipped."
+                      : "This action is sensitive — please re-authenticate to continue."}
                 </DialogDescription>
               </div>
             </div>
           </DialogHeader>
+
+          {/* Why this appeared and what complying buys — a modal without a stated reason trains click-through (§7). */}
+          <dl className="space-y-1.5 rounded-[12px] bg-sunken p-3 text-sm">
+            <div className="flex items-start justify-between gap-4">
+              <dt className="text-muted-foreground">Requested</dt>
+              <dd className="text-right font-medium text-ink">{requested}</dd>
+            </div>
+            <div className="flex items-start justify-between gap-4">
+              <dt className="text-muted-foreground">After you confirm</dt>
+              <dd className="text-right text-ink">{unlocks}</dd>
+            </div>
+          </dl>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
 
@@ -174,39 +246,37 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
             </div>
           )}
 
-          {/* Step 1: pick an allowed + available method */}
-          {!resolvingFactors && method === "choose" && !noMethods && (
+          {/* Step 1: pick a factor. Allowed-but-unenrolled factors show as disabled rows, not omissions. */}
+          {!resolvingFactors && method === "choose" && factorRows.length > 0 && (
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">Choose how to verify:</p>
-              {passkeyAvailable && (
-                <Button type="button" variant="outline" className="h-12 w-full justify-start gap-3" onClick={verifyPasskey} disabled={busy}>
-                  {busy ? <Loader2 className="animate-spin" /> : <Fingerprint className="text-primary" />}
-                  <span className="flex flex-col items-start">
-                    <span className="font-medium">Use your passkey</span>
-                    <span className="text-xs text-muted-foreground">Fingerprint, PIN, or security key</span>
-                  </span>
-                </Button>
-              )}
-              {totpAvailable && (
-                <Button type="button" variant="outline" className="h-12 w-full justify-start gap-3"
-                        onClick={() => { setError(null); setMethod("totp"); }} disabled={busy}>
-                  <Smartphone className="text-primary" />
-                  <span className="flex flex-col items-start">
-                    <span className="font-medium">Authenticator app</span>
-                    <span className="text-xs text-muted-foreground">Enter a 6-digit TOTP code</span>
-                  </span>
-                </Button>
-              )}
-              {passwordAvailable && (
-                <Button type="button" variant="outline" className="h-12 w-full justify-start gap-3"
-                        onClick={() => { setError(null); setMethod("password"); }} disabled={busy}>
-                  <KeyRound className="text-primary" />
-                  <span className="flex flex-col items-start">
-                    <span className="font-medium">Password</span>
-                    <span className="text-xs text-muted-foreground">Re-enter your account password</span>
-                  </span>
-                </Button>
-              )}
+              {factorRows.map((row) => {
+                const Icon = row.Icon;
+                if (!row.enrolled) {
+                  return (
+                    <div key={row.key}
+                         className="flex w-full items-center gap-3 rounded-[12px] border border-line bg-sunken px-4 py-3 opacity-70">
+                      <Icon className="size-5 shrink-0 text-faint" />
+                      <span className="flex flex-1 flex-col items-start">
+                        <span className="text-sm font-medium text-muted-foreground">{row.label}</span>
+                        <span className="text-xs text-faint">{row.explain}</span>
+                      </span>
+                      <span className="shrink-0 text-xs font-medium text-faint">Not enrolled</span>
+                    </div>
+                  );
+                }
+                return (
+                  <Button key={row.key} type="button" variant="outline"
+                          className="h-auto w-full justify-start gap-3 px-4 py-3" onClick={row.onSelect} disabled={busy}>
+                    {busy && row.key === "FIDO2" ? <Loader2 className="animate-spin" /> : <Icon className="text-primary" />}
+                    <span className="flex flex-1 flex-col items-start">
+                      <span className="font-medium">{row.label}</span>
+                      <span className="text-xs text-muted-foreground">{row.explain}</span>
+                    </span>
+                    <kbd className="shrink-0 rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">{row.keycap}</kbd>
+                  </Button>
+                );
+              })}
             </div>
           )}
 

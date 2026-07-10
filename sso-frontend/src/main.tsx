@@ -2,6 +2,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { ConfirmProvider } from "./components/ConfirmProvider";
+import { ToastProvider } from "./components/ToastProvider";
 import "./index.css";
 
 // React.StrictMode is intentionally NOT used: in development it double-invokes every effect, which
@@ -10,8 +11,10 @@ import "./index.css";
 // admin OIDC flow in AdminPortal guards against re-entry).
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <BrowserRouter>
-    <ConfirmProvider>
-      <App />
-    </ConfirmProvider>
+    <ToastProvider>
+      <ConfirmProvider>
+        <App />
+      </ConfirmProvider>
+    </ToastProvider>
   </BrowserRouter>,
 );
