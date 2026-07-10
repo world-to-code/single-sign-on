@@ -23,11 +23,15 @@ public class EmailVerificationFlow {
     private final EmailOwnershipProof proofs;
     private final UserService users;
 
-    /** Mails a one-time code to the user's current address. */
+    /**
+     * Mails a one-time code to the user's current address. An already-verified address is accepted and does
+     * nothing: this endpoint is reachable by an identify-first principal, so a distinguishable response would
+     * disclose whether a known address is verified.
+     */
     public void request() {
         UserAccount user = currentUser.require();
         if (user.isEmailVerified()) {
-            throw new BadRequestException("This email address is already verified.");
+            return;
         }
         proofs.challenge(user.getId(), user.getEmail());
     }

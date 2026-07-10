@@ -56,10 +56,12 @@ class EmailVerificationFlowTest {
     }
 
     @Test
-    void anAlreadyVerifiedAddressIsNotChallengedAgain() {
+    void anAlreadyVerifiedAddressIsNotChallengedAgainAndSaysNothingAboutIt() {
+        // An identify-first principal (pre-credential) can reach this endpoint, so a distinguishable response
+        // would tell an attacker whether the victim's address is verified. Accept and do nothing.
         when(user.isEmailVerified()).thenReturn(true);
 
-        assertThatThrownBy(() -> flow().request()).isInstanceOf(BadRequestException.class);
+        assertThatCode(() -> flow().request()).doesNotThrowAnyException();
         verify(proofs, never()).challenge(any(), any());
     }
 
