@@ -24,12 +24,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 
 /**
  * Creating an organization provisions that tenant's OWN baseline policies (via OrganizationCreatedEvent →
- * TenantBaselineProvisioner, AFTER_COMMIT). The tenant admin must therefore find real, editable, org-owned
- * "Default" session and auth policies — not an empty page — and those must WIN resolution for the tenant over
- * the global fallback. Runs against Testcontainers so the RLS-scoped writes + resolution are exercised.
+ * TenantBaselineProvisioner, AFTER_COMMIT + async, hence the awaits). The tenant admin must therefore find
+ * real, editable, org-owned "Default" session and auth policies — not an empty page — and those must WIN
+ * resolution for the tenant over the global fallback. Runs against Testcontainers so the RLS-scoped writes
+ * + resolution are exercised.
  */
 class TenantBaselineProvisioningIT extends AbstractIntegrationTest {
 
@@ -64,14 +66,14 @@ class TenantBaselineProvisioningIT extends AbstractIntegrationTest {
         orgId = org.id();
 
         // The tenant admin's policy pages (tier-scoped listAll) show a real, org-owned "Default" for both axes.
-        orgContext.runInOrg(orgId, () -> {
+        await().untilAsserted(() -> orgContext.runInOrg(orgId, () -> {
             assertThat(sessionPolicies.listAll())
                     .anyMatch(p -> SessionPolicyService.DEFAULT_NAME.equals(p.getName())
                             && p.getPriority() == SessionPolicyService.TENANT_DEFAULT_PRIORITY && p.isEnabled());
             assertThat(authPolicies.listAll())
                     .anyMatch(p -> "Default".equals(p.getName())
                             && p.getPriority() == AuthPolicyAdminService.TENANT_DEFAULT_PRIORITY);
-        });
+        }));
     }
 
     @Test
@@ -84,11 +86,13 @@ class TenantBaselineProvisioningIT extends AbstractIntegrationTest {
                         "Member", "S3cret!pw9", Set.of("ROLE_USER")), orgId);
         userId = member.getId();
 
-        SessionPolicyDetails resolved = orgContext.callInOrg(orgId, () -> sessionPolicies.resolveForUser(member));
-
         // The per-org Default (priority 1) beats the GLOBAL Default (priority 0), so the tenant runs on its own.
-        assertThat(resolved.getName()).isEqualTo(SessionPolicyService.DEFAULT_NAME);
-        assertThat(resolved.getPriority()).isEqualTo(SessionPolicyService.TENANT_DEFAULT_PRIORITY);
+        await().untilAsserted(() -> {
+            SessionPolicyDetails resolved =
+                    orgContext.callInOrg(orgId, () -> sessionPolicies.resolveForUser(member));
+            assertThat(resolved.getName()).isEqualTo(SessionPolicyService.DEFAULT_NAME);
+            assertThat(resolved.getPriority()).isEqualTo(SessionPolicyService.TENANT_DEFAULT_PRIORITY);
+        });
     }
 
     @Test
@@ -96,6 +100,11 @@ class TenantBaselineProvisioningIT extends AbstractIntegrationTest {
         OrganizationView org = organizations.create(
                 new NewOrganization("octatco-lock-it", "Octatco Lock IT", CompanyProfile.empty()));
         orgId = org.id();
+
+        // Wait for the async baseline provisioning before mutating the Default it creates.
+        await().untilAsserted(() -> orgContext.runInOrg(orgId, () ->
+                assertThat(sessionPolicies.listAll())
+                        .anyMatch(p -> SessionPolicyService.DEFAULT_NAME.equals(p.getName()))));
 
         orgContext.runInOrg(orgId, () -> {
             SessionPolicyDetails def = theDefault();
