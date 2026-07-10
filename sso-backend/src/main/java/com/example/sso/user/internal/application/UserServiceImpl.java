@@ -477,7 +477,9 @@ public class UserServiceImpl implements UserService {
         if (!Permissions.ALL.contains(name)) {
             throw new BadRequestException("unknown permission: " + name);
         }
-        if (!grantPolicy.mayGrant(name)) {
+        // Direct grants also honour grant-only-what-you-hold, so the invariant does not live in the
+        // endpoint gate alone (defence in depth: a dropped annotation must not open an escalation).
+        if (!grantPolicy.mayGrantDirectly(name)) {
             throw new ForbiddenException("not permitted to grant permission: " + name);
         }
 

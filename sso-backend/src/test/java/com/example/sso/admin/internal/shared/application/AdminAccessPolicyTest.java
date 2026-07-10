@@ -359,6 +359,19 @@ class AdminAccessPolicyTest {
     }
 
     @Test
+    void aNonSuperMayNotGrantANonCatalogAuthorityAsAPermission() {
+        // currentAuthorities() mixes permissions with role names and session markers, so a bare
+        // "the actor holds this string" test would let MFA_COMPLETE / ROLE_ORG_ADMIN through as a
+        // "permission" and mint a real authority on the target. The gate must check the CATALOG itself.
+        signInWith("MFA_COMPLETE", Roles.ORG_ADMIN, "FACTOR_TOTP", Permissions.USER_READ);
+
+        assertThat(policy.mayGrantPermissions(Set.of("MFA_COMPLETE"))).isFalse();
+        assertThat(policy.mayGrantPermissions(Set.of(Roles.ORG_ADMIN))).isFalse();
+        assertThat(policy.mayGrantPermissions(Set.of("FACTOR_TOTP"))).isFalse();
+        assertThat(policy.mayGrantPermissions(Set.of(Permissions.USER_READ))).isTrue();
+    }
+
+    @Test
     void aNonSuperMayNeverGrantAPlatformPermission() {
         signInWith(Permissions.ORG_CREATE); // even if somehow held, it is platform-only
         assertThat(policy.mayGrantPermissions(Set.of(Permissions.ORG_CREATE))).isFalse();

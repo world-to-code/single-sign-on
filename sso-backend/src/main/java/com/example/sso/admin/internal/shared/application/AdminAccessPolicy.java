@@ -53,6 +53,9 @@ public class AdminAccessPolicy {
     private static final Set<String> PRIVILEGED_ROLES =
             Set.of(Roles.ADMIN, Roles.GROUP_ADMIN, Roles.ORG_ADMIN);
 
+    /** The permission catalog — a granted name must be one of these, never a role name or session marker. */
+    private static final Set<String> CATALOG = Set.copyOf(Permissions.ALL);
+
     private final UserService userService;
     private final RoleService roleService;
     private final UserGroupService userGroups;
@@ -286,9 +289,14 @@ public class AdminAccessPolicy {
     }
 
     /**
-     * Grant-only-what-you-hold for DIRECT permission assignment: a non-super may hand out only permissions
-     * that are tenant-grantable AND that they themselves currently hold — otherwise a tenant admin could
-     * grant a puppet account (or themselves) an authority they lack and escalate within the tenant.
+     * Grant-only-what-you-hold for DIRECT permission assignment: a non-super may hand out only names that are
+     * CATALOG permissions, are tenant-grantable, and that they themselves currently hold — otherwise a tenant
+     * admin could grant a puppet account (or themselves) an authority they lack and escalate within the tenant.
+     *
+     * <p>The catalog check is explicit and NOT delegated to the service: {@link #currentAuthorities()} mixes
+     * permissions with role names and session markers ({@code MFA_COMPLETE}, {@code FACTOR_*}), so a bare
+     * "the actor holds this string" test would pass for a marker. The service rejects a non-catalog name too;
+     * this gate must be correct on its own.
      */
     public boolean mayGrantPermissions(Collection<String> permissions) {
         if (currentIsSuperAdmin()) {
@@ -297,7 +305,8 @@ public class AdminAccessPolicy {
         if (permissions == null) {
             return true;
         }
-        return permissions.stream().noneMatch(Permissions::isPlatform)
+        return CATALOG.containsAll(permissions)
+                && permissions.stream().noneMatch(Permissions::isPlatform)
                 && currentAuthorities().containsAll(permissions);
     }
 

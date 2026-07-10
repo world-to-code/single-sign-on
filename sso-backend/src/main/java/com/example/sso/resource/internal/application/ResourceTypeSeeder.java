@@ -12,8 +12,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Seeds the baseline resource-type vocabulary. Types are GLOBAL and mintable only by a platform
@@ -36,17 +36,25 @@ public class ResourceTypeSeeder implements ApplicationRunner {
     private final ResourceTypeAllowedMemberRepository allowedMembers;
 
     @Override
-    @Transactional
     public void run(ApplicationArguments args) {
         BASELINE_TYPES.forEach(this::seedType);
     }
 
+    /**
+     * Deliberately NOT wrapped in one seeding transaction: each repository call commits on its own, so a
+     * concurrent boot losing the {@code name} unique-index race fails only its own insert. The winner's row
+     * is what both instances then use, so the loss is a no-op — not a failed startup.
+     */
     private void seedType(String name, Set<MemberType> allowed) {
         if (types.findByName(name).isPresent()) {
             return;
         }
-        UUID typeId = types.save(new ResourceType(name)).getId();
-        allowed.forEach(memberType -> allowedMembers.save(new ResourceTypeAllowedMember(typeId, memberType)));
-        log.info("Seeded baseline resource type '{}'.", name);
+        try {
+            UUID typeId = types.saveAndFlush(new ResourceType(name)).getId();
+            allowed.forEach(memberType -> allowedMembers.save(new ResourceTypeAllowedMember(typeId, memberType)));
+            log.info("Seeded baseline resource type '{}'.", name);
+        } catch (DataIntegrityViolationException e) {
+            log.debug("Baseline resource type '{}' was seeded concurrently.", name);
+        }
     }
 }

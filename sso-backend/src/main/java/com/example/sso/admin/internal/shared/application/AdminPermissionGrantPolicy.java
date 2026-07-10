@@ -2,6 +2,7 @@ package com.example.sso.admin.internal.shared.application;
 
 import com.example.sso.user.PermissionGrantPolicy;
 import com.example.sso.user.Permissions;
+import java.util.Set;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
@@ -28,5 +29,10 @@ public class AdminPermissionGrantPolicy implements PermissionGrantPolicy {
     @Override
     public boolean mayGrant(String permission) {
         return !Permissions.isPlatform(permission) || accessPolicy.isCurrentActorUnscoped();
+    }
+
+    @Override
+    public boolean mayGrantDirectly(String permission) {
+        return accessPolicy.mayGrantPermissions(Set.of(permission));
     }
 }

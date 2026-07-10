@@ -11,4 +11,11 @@ public interface PermissionGrantPolicy {
 
     /** Whether the current actor is permitted to grant {@code permission}. */
     boolean mayGrant(String permission);
+
+    /**
+     * Whether the current actor may grant {@code permission} DIRECTLY to a user. Stricter than
+     * {@link #mayGrant}: a non-super must also HOLD the permission themselves (grant-only-what-you-hold),
+     * so the invariant survives even if the endpoint gate is ever bypassed or dropped.
+     */
+    boolean mayGrantDirectly(String permission);
 }
