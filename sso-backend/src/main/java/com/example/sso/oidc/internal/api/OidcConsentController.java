@@ -39,6 +39,8 @@ public class OidcConsentController {
 
         model.addAttribute("clientId", clientId);
         model.addAttribute("clientName", page.clientName());
+        model.addAttribute("redirectHost", page.redirectHost());
+        model.addAttribute("thirdParty", page.thirdParty());
         model.addAttribute("state", state);
         model.addAttribute("userCode", userCode);
         model.addAttribute("principalName", principal.getName());

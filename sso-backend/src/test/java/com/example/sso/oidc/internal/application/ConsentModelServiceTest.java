@@ -1,11 +1,15 @@
 package com.example.sso.oidc.internal.application;
 
 import java.util.List;
+import java.util.Locale;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.oidc.OidcScopes;
@@ -20,9 +24,11 @@ import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for the consent view-model assembly: the three scope buckets (openid dropped, freshly
- * requested → to-approve, already-consented → previously-granted) and the unknown-client invariant.
- * Drives the real bucketing logic with mocked Authorization Server services, so no web/DB layer is
- * needed. The adversary is a scope split that silently mis-buckets or an openid toggle leaking to the UI.
+ * requested → to-approve, already-consented → previously-granted), the redirect-host / third-party
+ * signals the screen shows so a destination is never hidden, and localized scope descriptions with a
+ * humanized fallback. Drives the real bucketing logic with mocked Authorization Server services and a
+ * real message bundle, so no web/DB layer is needed. The adversary is a scope split that silently
+ * mis-buckets, an openid toggle leaking to the UI, or a hidden redirect destination.
  */
 @ExtendWith(MockitoExtension.class)
 class ConsentModelServiceTest {
@@ -35,8 +41,23 @@ class ConsentModelServiceTest {
     @Mock
     private OAuth2AuthorizationConsentService authorizationConsents;
 
-    @InjectMocks
     private ConsentModelService service;
+
+    @BeforeEach
+    void setUp() {
+        // A real bundle so description resolution (bundle hit + humanized fallback) is genuinely exercised.
+        ResourceBundleMessageSource messages = new ResourceBundleMessageSource();
+        messages.setBasename("messages");
+        messages.setDefaultEncoding("UTF-8");
+        messages.setFallbackToSystemLocale(false);
+        service = new ConsentModelService(registeredClients, authorizationConsents, messages);
+        LocaleContextHolder.setLocale(Locale.ENGLISH);
+    }
+
+    @AfterEach
+    void tearDown() {
+        LocaleContextHolder.resetLocaleContext();
+    }
 
     private RegisteredClient client() {
         return RegisteredClient.withId("cid-1")
@@ -44,7 +65,7 @@ class ConsentModelServiceTest {
                 .clientName("Demo OIDC Client")
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                .redirectUri("https://example.com/cb")
+                .redirectUri("https://grafana.acme.io/login/oauth2/code/demo")
                 .scope(OidcScopes.OPENID)
                 .scope(OidcScopes.PROFILE)
                 .scope(OidcScopes.EMAIL)
@@ -111,6 +132,43 @@ class ConsentModelServiceTest {
     }
 
     @Test
+    void theRedirectHostIsDerivedFromTheFirstRedirectUri() {
+        RegisteredClient client = client();
+        when(registeredClients.findByClientId(CLIENT_ID)).thenReturn(client);
+        when(authorizationConsents.findById(client.getId(), PRINCIPAL)).thenReturn(null);
+
+        ConsentPageModel page = service.build(CLIENT_ID, PRINCIPAL, "openid profile");
+
+        assertThat(page.redirectHost()).isEqualTo("grafana.acme.io");
+    }
+
+    @Test
+    void everyClientIsPresentedAsOrganizationRegistered() {
+        RegisteredClient client = client();
+        when(registeredClients.findByClientId(CLIENT_ID)).thenReturn(client);
+        when(authorizationConsents.findById(client.getId(), PRINCIPAL)).thenReturn(null);
+
+        ConsentPageModel page = service.build(CLIENT_ID, PRINCIPAL, "openid profile");
+
+        // No dynamic client registration exists in this IdP, so there is no reliable third-party signal.
+        assertThat(page.thirdParty()).isFalse();
+    }
+
+    @Test
+    void knownScopesGetALocalizedDescriptionAndUnknownOnesAreHumanized() {
+        RegisteredClient client = client();
+        when(registeredClients.findByClientId(CLIENT_ID)).thenReturn(client);
+        when(authorizationConsents.findById(client.getId(), PRINCIPAL)).thenReturn(null);
+
+        ConsentPageModel page = service.build(CLIENT_ID, PRINCIPAL, "openid profile custom_scope");
+
+        assertThat(descriptionOf(page.toApprove(), OidcScopes.PROFILE))
+                .isEqualTo("Your basic profile — display name and username");
+        // An unknown scope falls back to its own name with separators as spaces — never blank, never raw.
+        assertThat(descriptionOf(page.toApprove(), "custom_scope")).isEqualTo("custom scope");
+    }
+
+    @Test
     void anUnknownClientIsAnInvariantViolation() {
         when(registeredClients.findByClientId("nope")).thenReturn(null);
 
@@ -120,5 +178,10 @@ class ConsentModelServiceTest {
 
     private static List<String> scopeNames(List<ConsentScopeView> views) {
         return views.stream().map(ConsentScopeView::scope).toList();
+    }
+
+    private static String descriptionOf(List<ConsentScopeView> views, String scope) {
+        return views.stream().filter(v -> v.scope().equals(scope)).map(ConsentScopeView::description)
+                .findFirst().orElseThrow();
     }
 }

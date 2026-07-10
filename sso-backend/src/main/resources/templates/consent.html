@@ -1,47 +1,71 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<html th:lang="${#locale.language}" lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Authorize access · Mini SSO</title>
+  <title th:text="#{consent.title}">Authorize access · Mini SSO</title>
   <!--
-    Server-rendered consent screen. Styled to match the React SPA's login/MFA pages using the same
-    design tokens (see sso-frontend/src/index.css). Styles are inlined because the CSP allows
-    'unsafe-inline' for style-src but forbids external stylesheets and inline scripts; the Allow /
-    Cancel actions are therefore two plain forms — no JavaScript.
+    Server-rendered OIDC consent screen. This template carries its OWN copy of the design tokens
+    (see sso-frontend/DESIGN.md §2/§8) — nothing else can reach it, so a token change in the SPA must
+    be mirrored here. The CSP allows 'unsafe-inline' for style-src but forbids inline scripts and
+    external stylesheets, so the whole interaction is checkboxes and two plain <form>s — no JavaScript.
+    The Allow / Cancel buttons live outside their forms and are wired via the HTML `form` attribute so
+    they can share one action row while keeping the scope checkboxes only on the Allow form.
+    Fonts must be same-origin; Pretendard is served from the SPA build at /fonts/…, the one path the CSP
+    permits (a CDN would be blocked).
   -->
   <style>
+    @font-face {
+      font-family: "Pretendard Variable";
+      font-weight: 45 920;
+      font-style: normal;
+      font-display: swap;
+      src: url("/fonts/PretendardVariable.woff2") format("woff2-variations");
+    }
+
     :root {
-      --background: 210 40% 98%;
-      --foreground: 222 47% 11%;
-      --card: 0 0% 100%;
-      --primary: 243 75% 59%;
-      --primary-foreground: 0 0% 100%;
-      --muted: 210 40% 96%;
-      --muted-foreground: 215 16% 47%;
-      --accent: 243 75% 96%;
-      --accent-foreground: 243 75% 40%;
-      --success: 142 71% 45%;
-      --border: 214 32% 91%;
-      --radius: 0.65rem;
+      --bg: 60 8% 95%;
+      --surface: 0 0% 100%;
+      --sunken: 60 17% 98%;
+      --line: 60 5% 89%;
+      --line-soft: 60 9% 93%;
+      --faint: 60 3% 65%;
+      --muted: 60 2% 42%;
+      --ink-2: 60 3% 22%;
+      --ink: 60 4% 10%;
+      --accent: 183 76% 25%;
+      --accent-ink: 0 0% 100%;
+      --accent-soft: 180 23% 94%;
+      --accent-line: 182 24% 80%;
+      --allow: 145 46% 34%;
+      --deny: 6 63% 46%;
+      --warn: 39 80% 37%;
+      --r-card: 18px;
+      --r-ctl: 12px;
     }
 
     @media (prefers-color-scheme: dark) {
       :root {
-        --background: 222 47% 9%;
-        --foreground: 210 40% 98%;
-        --card: 222 47% 12%;
-        --primary: 243 75% 66%;
-        --primary-foreground: 222 47% 11%;
-        --muted: 217 33% 18%;
-        --muted-foreground: 215 20% 65%;
-        --accent: 217 33% 20%;
-        --accent-foreground: 210 40% 98%;
-        --border: 217 33% 20%;
+        --bg: 60 5% 7%;
+        --surface: 60 4% 11%;
+        --sunken: 40 5% 12%;
+        --line: 60 5% 17%;
+        --line-soft: 60 4% 15%;
+        --faint: 60 4% 39%;
+        --muted: 60 3% 59%;
+        --ink-2: 60 7% 81%;
+        --ink: 60 8% 95%;
+        --accent: 175 45% 53%;
+        --accent-ink: 178 60% 8%;
+        --accent-soft: 160 12% 14%;
+        --accent-line: 172 26% 22%;
+        --allow: 144 34% 54%;
+        --deny: 5 69% 62%;
+        --warn: 41 61% 55%;
       }
     }
 
-    * { box-sizing: border-box; border-color: hsl(var(--border)); }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -50,178 +74,208 @@
       align-items: center;
       justify-content: center;
       padding: 2.5rem 1rem;
-      background-color: hsl(var(--background));
-      color: hsl(var(--foreground));
-      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      font-feature-settings: "rlig" 1, "calt" 1;
+      background-color: hsl(var(--bg));
+      color: hsl(var(--ink));
+      line-height: 1.55;
+      font-family: "Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo",
+        "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
       -webkit-font-smoothing: antialiased;
-      /* Decorative backdrop: radial glow + faint grid, masked toward the top (mirrors AuthLayout). */
-      background-image:
-        radial-gradient(60rem 40rem at 50% -10%, hsl(var(--primary) / 0.12), transparent),
-        linear-gradient(to right, hsl(var(--border) / 0.4) 1px, transparent 1px),
-        linear-gradient(to bottom, hsl(var(--border) / 0.4) 1px, transparent 1px);
-      background-size: 100% 100%, 36px 36px, 36px 36px;
+      text-rendering: optimizeLegibility;
     }
+    html[lang="ko"] body { line-height: 1.65; }
 
-    .shell { width: 100%; max-width: 28rem; }
+    .shell { width: 100%; max-width: 26rem; }
 
     .brand {
       display: flex;
       align-items: center;
-      justify-content: center;
       gap: 0.625rem;
-      margin-bottom: 1.5rem;
+      margin-bottom: 1.25rem;
+      padding-left: 0.125rem;
     }
     .brand-mark {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 2.25rem;
-      height: 2.25rem;
-      border-radius: 0.5rem;
-      background-color: hsl(var(--primary));
-      color: hsl(var(--primary-foreground));
-      box-shadow: 0 1px 2px 0 hsl(var(--foreground) / 0.05);
+      width: 2rem;
+      height: 2rem;
+      border-radius: var(--r-ctl);
+      background-color: hsl(var(--ink));
+      color: hsl(var(--bg));
     }
-    .brand-name { font-size: 0.875rem; font-weight: 600; letter-spacing: -0.01em; line-height: 1.1; }
-    .brand-sub { font-size: 0.6875rem; color: hsl(var(--muted-foreground)); }
+    .brand-name { font-size: 0.9375rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; }
+    .brand-sub { font-size: 0.75rem; color: hsl(var(--muted)); }
 
     .card {
-      background-color: hsl(var(--card));
-      border: 1px solid hsl(var(--border));
-      border-radius: var(--radius);
-      box-shadow: 0 20px 25px -5px hsl(var(--foreground) / 0.1), 0 8px 10px -6px hsl(var(--foreground) / 0.1);
-      overflow: hidden;
+      background-color: hsl(var(--surface));
+      border: 1px solid hsl(var(--line));
+      border-radius: var(--r-card);
+      padding: 1.5rem;
     }
-    .card-body { padding: 1.5rem; }
 
-    .step {
+    .eyebrow {
       display: inline-flex;
       align-items: center;
       gap: 0.375rem;
       font-size: 0.75rem;
       font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: hsl(var(--primary));
-      margin-bottom: 0.5rem;
+      color: hsl(var(--muted));
+      margin-bottom: 0.625rem;
     }
+    html[lang="en"] .eyebrow { text-transform: uppercase; letter-spacing: 0.05em; }
+    .eyebrow svg { color: hsl(var(--muted)); }
 
-    h1 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 0.25rem; }
-    h1 .app { color: hsl(var(--primary)); }
-    .lead { font-size: 0.875rem; color: hsl(var(--muted-foreground)); margin: 0; }
+    h1 { font-size: 1.375rem; font-weight: 700; letter-spacing: -0.022em; margin: 0 0 0.375rem; text-wrap: balance; }
+    html[lang="ko"] h1 { letter-spacing: -0.03em; }
+    .lead { font-size: 0.875rem; color: hsl(var(--muted)); margin: 0; }
+
+    .destination {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      align-items: center;
+      column-gap: 0.625rem;
+      row-gap: 0.5rem;
+      margin: 1.25rem 0 0;
+      padding: 0.75rem 0.875rem;
+      border: 1px solid hsl(var(--line));
+      border-radius: var(--r-ctl);
+      background-color: hsl(var(--sunken));
+    }
+    /* The registration badge takes the full top row so the destination sentence never wraps around it. */
+    .destination .kind { grid-column: 1 / -1; order: -1; justify-self: start; }
+    .destination svg { color: hsl(var(--muted)); flex-shrink: 0; }
+    .destination .to { min-width: 0; }
+    .destination .to-label { display: block; font-size: 0.75rem; color: hsl(var(--muted)); }
+    .destination .to-host {
+      display: block;
+      font-size: 0.9375rem;
+      font-weight: 700;
+      color: hsl(var(--ink));
+      word-break: break-all;
+    }
+    .kind {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .kind-org { background-color: hsl(var(--accent-soft)); color: hsl(var(--accent)); border: 1px solid hsl(var(--accent-line)); }
+    .kind-third { background-color: hsl(var(--warn) / 0.12); color: hsl(var(--warn)); border: 1px solid hsl(var(--warn) / 0.4); }
 
     .identity {
       display: flex;
       align-items: center;
-      gap: 0.625rem;
-      margin: 1.25rem 0;
-      padding: 0.75rem;
-      border: 1px solid hsl(var(--border));
-      border-radius: calc(var(--radius) - 0.15rem);
-      background-color: hsl(var(--muted) / 0.5);
+      gap: 0.5rem;
+      margin: 0.625rem 0 0;
       font-size: 0.8125rem;
+      color: hsl(var(--muted));
     }
-    .identity svg { color: hsl(var(--muted-foreground)); flex-shrink: 0; }
-    .identity .who { color: hsl(var(--muted-foreground)); }
-    .identity .who strong { color: hsl(var(--foreground)); font-weight: 600; }
+    .identity svg { color: hsl(var(--faint)); flex-shrink: 0; }
+    .identity strong { color: hsl(var(--ink-2)); font-weight: 600; }
 
     .section-label {
       font-size: 0.75rem;
       font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: hsl(var(--muted-foreground));
-      margin: 0 0 0.5rem;
+      color: hsl(var(--muted));
+      margin: 1.5rem 0 0.5rem;
     }
+    html[lang="en"] .section-label { text-transform: uppercase; letter-spacing: 0.04em; }
 
-    .scopes { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: 0.5rem; }
-    .scope {
+    .rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+
+    .row {
       display: flex;
       align-items: flex-start;
       gap: 0.75rem;
       padding: 0.75rem;
-      border: 1px solid hsl(var(--border));
-      border-radius: calc(var(--radius) - 0.15rem);
-      background-color: hsl(var(--card));
-      transition: border-color 0.15s ease, background-color 0.15s ease;
+      border: 1px solid hsl(var(--line));
+      border-radius: var(--r-ctl);
+      background-color: hsl(var(--surface));
     }
-    .scope:focus-within { border-color: hsl(var(--primary)); background-color: hsl(var(--accent) / 0.4); }
-    .scope input[type="checkbox"] {
+    .row .name { display: block; font-size: 0.875rem; font-weight: 500; color: hsl(var(--ink)); line-height: 1.35; }
+    .row .code { display: block; font-size: 0.6875rem; color: hsl(var(--muted)); margin-top: 0.15rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .row label { cursor: pointer; }
+
+    /* Locked openid row and previously-granted rows: muted context, never a live control. */
+    .row-locked, .row-granted { background-color: hsl(var(--sunken)); border-color: hsl(var(--line-soft)); }
+    .row-locked .name, .row-granted .name { color: hsl(var(--muted)); }
+    .tick { flex-shrink: 0; margin-top: 0.05rem; }
+    .tick-muted { color: hsl(var(--faint)); }
+    .tick-granted { color: hsl(var(--allow)); }
+    .locked-note { display: block; font-size: 0.75rem; color: hsl(var(--muted)); margin-top: 0.15rem; }
+
+    .row input[type="checkbox"] {
       appearance: none;
       -webkit-appearance: none;
       width: 1.15rem;
       height: 1.15rem;
       margin: 0.05rem 0 0;
-      border: 1.5px solid hsl(var(--border));
+      border: 1.5px solid hsl(var(--line));
       border-radius: 0.35rem;
-      background-color: hsl(var(--card));
+      background-color: hsl(var(--surface));
       display: inline-grid;
       place-content: center;
       cursor: pointer;
       flex-shrink: 0;
     }
-    .scope input[type="checkbox"]::before {
+    .row input[type="checkbox"]::before {
       content: "";
       width: 0.65rem;
       height: 0.65rem;
       transform: scale(0);
       transition: transform 0.12s ease-in-out;
-      box-shadow: inset 1rem 1rem hsl(var(--primary-foreground));
+      box-shadow: inset 1rem 1rem hsl(var(--accent-ink));
       clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
     }
-    .scope input[type="checkbox"]:checked {
-      background-color: hsl(var(--primary));
-      border-color: hsl(var(--primary));
-    }
-    .scope input[type="checkbox"]:checked::before { transform: scale(1); }
-    .scope input[type="checkbox"]:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
-    .scope label { cursor: pointer; }
-    .scope .name { display: block; font-size: 0.875rem; font-weight: 500; line-height: 1.3; }
-    .scope .code { display: block; font-size: 0.6875rem; color: hsl(var(--muted-foreground)); margin-top: 0.15rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .row input[type="checkbox"]:checked { background-color: hsl(var(--accent)); border-color: hsl(var(--accent)); }
+    .row input[type="checkbox"]:checked::before { transform: scale(1); }
+    .row input[type="checkbox"]:focus-visible { outline: 2px solid hsl(var(--accent)); outline-offset: 2px; }
+    .row:focus-within { border-color: hsl(var(--accent-line)); }
 
-    .granted { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0; font-size: 0.8125rem; color: hsl(var(--muted-foreground)); }
-    .granted svg { color: hsl(var(--success)); flex-shrink: 0; }
-
-    .actions { display: grid; gap: 0.5rem; margin-top: 1.25rem; }
+    .actions { display: flex; gap: 0.625rem; margin-top: 1.5rem; }
     .btn {
+      flex: 1;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 0.5rem;
-      width: 100%;
       height: 2.75rem;
       padding: 0 1rem;
       font-size: 0.9375rem;
       font-weight: 600;
-      border-radius: calc(var(--radius) - 0.1rem);
+      font-family: inherit;
+      border-radius: var(--r-ctl);
       border: 1px solid transparent;
       cursor: pointer;
-      transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     }
-    .btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
-    .btn-primary { background-color: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
-    .btn-primary:hover { background-color: hsl(var(--primary) / 0.9); }
-    .btn-ghost { background-color: transparent; color: hsl(var(--muted-foreground)); border-color: hsl(var(--border)); }
-    .btn-ghost:hover { background-color: hsl(var(--muted) / 0.6); color: hsl(var(--foreground)); }
+    .btn:focus-visible { outline: 2px solid hsl(var(--accent)); outline-offset: 2px; }
+    .btn-primary { background-color: hsl(var(--ink)); color: hsl(var(--bg)); }
+    .btn-quiet { background-color: hsl(var(--line-soft)); color: hsl(var(--ink-2)); }
 
     .reassure {
+      list-style: none;
+      margin: 1.25rem 0 0;
+      padding: 1rem 0 0;
+      border-top: 1px solid hsl(var(--line));
+      display: grid;
+      gap: 0.4rem;
+    }
+    .reassure li {
       display: flex;
       align-items: flex-start;
       gap: 0.5rem;
-      margin-top: 1.25rem;
-      padding-top: 1rem;
-      border-top: 1px solid hsl(var(--border));
       font-size: 0.75rem;
-      color: hsl(var(--muted-foreground));
+      color: hsl(var(--muted));
       line-height: 1.45;
     }
-    .reassure svg { color: hsl(var(--success)); flex-shrink: 0; margin-top: 0.1rem; }
+    .reassure svg { color: hsl(var(--allow)); flex-shrink: 0; margin-top: 0.1rem; }
 
-    .footer { margin-top: 1.5rem; text-align: center; font-size: 0.75rem; color: hsl(var(--muted-foreground)); }
+    .footer { margin-top: 1.25rem; text-align: center; font-size: 0.75rem; color: hsl(var(--faint)); }
 
     @media (prefers-reduced-motion: reduce) {
-      * { transition: none !important; }
+      * { transition: none !important; animation: none !important; }
     }
   </style>
 </head>
@@ -229,7 +283,7 @@
   <main class="shell">
     <div class="brand">
       <span class="brand-mark" aria-hidden="true">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
           <path d="m9 12 2 2 4-4"/>
@@ -237,86 +291,130 @@
       </span>
       <span>
         <span class="brand-name">Mini SSO</span>
-        <span class="brand-sub">Identity Provider</span>
+        <span class="brand-sub" th:text="#{consent.brand.tagline}">Sign-in protected by Mini SSO</span>
       </span>
     </div>
 
     <div class="card">
-      <div class="card-body">
-        <div class="step">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
-            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-          </svg>
-          Authorize access
-        </div>
-        <h1><span class="app" th:text="${clientName}">The app</span> wants to access your account</h1>
-        <p class="lead">Review the information this application is requesting before you approve.</p>
+      <div class="eyebrow">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+        <span th:text="#{consent.eyebrow}">Authorize access</span>
+      </div>
+      <h1 th:text="#{consent.heading(${clientName})}">The app wants to access your account</h1>
+      <p class="lead" th:text="#{consent.lead}">Review what this application is requesting before you approve.</p>
 
-        <div class="identity">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
-            <circle cx="12" cy="7" r="4"/>
-          </svg>
-          <span class="who">Signed in as <strong th:text="${principalName}">user</strong></span>
-        </div>
+      <div class="destination">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M15 3h6v6"/><path d="M10 14 21 3"/>
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+        </svg>
+        <span class="to">
+          <span class="to-label" th:if="${redirectHost != null}" th:text="#{consent.destination.label}">Sends you to</span>
+          <span class="to-host" th:if="${redirectHost != null}" th:text="${redirectHost}">app.example.com</span>
+        </span>
+        <span class="kind kind-third" th:if="${thirdParty}" th:text="#{consent.client.thirdParty}">Third-party application</span>
+        <span class="kind kind-org" th:unless="${thirdParty}" th:text="#{consent.client.orgRegistered}">Registered by your organization</span>
+      </div>
 
-        <form method="post" th:action="@{/oauth2/authorize}">
-          <input type="hidden" name="client_id" th:value="${clientId}">
-          <input type="hidden" name="state" th:value="${state}">
-          <input type="hidden" name="user_code" th:value="${userCode}" th:if="${userCode != null}">
+      <p class="identity">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+        <span th:text="#{consent.signedInAs(${principalName})}">Signed in as user</span>
+      </p>
 
-          <div th:if="${!scopes.isEmpty()}">
-            <p class="section-label">Permissions requested</p>
-            <ul class="scopes">
-              <li class="scope" th:each="s : ${scopes}">
-                <input type="checkbox" name="scope" th:value="${s.scope}" th:id="'scope-' + ${s.scope}" checked>
-                <label th:for="'scope-' + ${s.scope}">
-                  <span class="name" th:text="${s.description}">A permission</span>
-                  <span class="code" th:text="${s.scope}">scope</span>
-                </label>
-              </li>
-            </ul>
-          </div>
+      <form id="allow-form" method="post" th:action="@{/oauth2/authorize}">
+        <input type="hidden" name="client_id" th:value="${clientId}">
+        <input type="hidden" name="state" th:value="${state}">
+        <input type="hidden" name="user_code" th:value="${userCode}" th:if="${userCode != null}">
 
-          <div th:if="${!previouslyGrantedScopes.isEmpty()}">
-            <p class="section-label">Already granted</p>
-            <div class="granted" th:each="s : ${previouslyGrantedScopes}">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        <p class="section-label" th:text="#{consent.permissions.label}">Permissions requested</p>
+        <ul class="rows">
+          <!-- openid is implicit and re-added by the authorization server: shown as a locked, granted
+               row (muted tick), never a checkbox the reader could untick to no effect. -->
+          <li class="row row-locked">
+            <svg class="tick tick-muted" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M20 6 9 17l-5-5"/>
+            </svg>
+            <span>
+              <span class="name" th:text="#{consent.openid.title}">Identify you at sign-in</span>
+              <span class="locked-note" th:text="#{consent.openid.desc}">Needed to identify you. It can't be turned off.</span>
+            </span>
+          </li>
+          <!-- Approvable scopes. offline_access is opt-in (a scope the person did not ask for is not a
+               default), so it renders unchecked; every other requested scope defaults checked. -->
+          <li class="row" th:each="s : ${scopes}">
+            <input type="checkbox" name="scope" th:value="${s.scope}" th:id="'scope-' + ${s.scope}"
+                   th:checked="${s.scope != 'offline_access'}">
+            <label th:for="'scope-' + ${s.scope}">
+              <span class="name" th:text="${s.description}">A permission</span>
+              <span class="code" th:text="${s.scope}">scope</span>
+            </label>
+          </li>
+        </ul>
+
+        <div th:if="${!previouslyGrantedScopes.isEmpty()}">
+          <p class="section-label" th:text="#{consent.granted.label}">Already granted</p>
+          <ul class="rows">
+            <li class="row row-granted" th:each="s : ${previouslyGrantedScopes}">
+              <svg class="tick tick-granted" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                    stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M20 6 9 17l-5-5"/>
               </svg>
-              <span th:text="${s.description}">A permission</span>
-            </div>
-          </div>
-
-          <div class="actions">
-            <button class="btn btn-primary" type="submit" id="submit-consent">Allow access</button>
-          </div>
-        </form>
-
-        <!-- Cancel is a separate form that submits no scopes, which the authorization endpoint treats
-             as a denial (access_denied). Kept out of the Allow form so it can never carry checked scopes. -->
-        <form method="post" th:action="@{/oauth2/authorize}" class="actions">
-          <input type="hidden" name="client_id" th:value="${clientId}">
-          <input type="hidden" name="state" th:value="${state}">
-          <input type="hidden" name="user_code" th:value="${userCode}" th:if="${userCode != null}">
-          <button class="btn btn-ghost" type="submit" id="cancel-consent">Cancel</button>
-        </form>
-
-        <div class="reassure">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
-          </svg>
-          <span>Only the permissions you leave checked are shared. You can revoke this access at any time from your account.</span>
+              <span>
+                <span class="name" th:text="${s.description}">A permission</span>
+                <span class="code" th:text="${s.scope}">scope</span>
+              </span>
+            </li>
+          </ul>
         </div>
+      </form>
+
+      <!-- Cancel is a separate form that submits no scopes; the authorization endpoint treats that as a
+           denial (access_denied). Kept scope-free so it can never carry a checked permission. -->
+      <form id="cancel-form" method="post" th:action="@{/oauth2/authorize}">
+        <input type="hidden" name="client_id" th:value="${clientId}">
+        <input type="hidden" name="state" th:value="${state}">
+        <input type="hidden" name="user_code" th:value="${userCode}" th:if="${userCode != null}">
+      </form>
+
+      <!-- Cancel (quiet) left, Allow (ink) right; wired to their forms via the HTML `form` attribute so
+           the scope checkboxes stay only on the Allow form. Allow is never pre-focused. -->
+      <div class="actions">
+        <button class="btn btn-quiet" type="submit" form="cancel-form" id="cancel-consent"
+                th:text="#{consent.cancel}">Cancel</button>
+        <button class="btn btn-primary" type="submit" form="allow-form" id="submit-consent"
+                th:text="#{consent.allow}">Allow access</button>
       </div>
+
+      <ul class="reassure">
+        <li>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          <span th:text="#{consent.reassure.password}">It never sees your password.</span>
+        </li>
+        <li>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          <span th:text="#{consent.reassure.unchecked}">It receives nothing you leave unchecked.</span>
+        </li>
+        <li>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          <span th:text="#{consent.reassure.revoke}">You can revoke access any time from your profile.</span>
+        </li>
+      </ul>
     </div>
 
-    <p class="footer">Secured by Mini SSO · single-node Identity Provider</p>
+    <p class="footer" th:text="#{consent.footer}">Secured by Mini SSO</p>
   </main>
 </body>
 </html>
