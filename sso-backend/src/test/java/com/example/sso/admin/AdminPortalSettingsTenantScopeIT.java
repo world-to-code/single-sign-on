@@ -6,15 +6,20 @@ import com.example.sso.organization.OrganizationService;
 import com.example.sso.session.SessionPolicyDetails;
 import com.example.sso.session.SessionPolicyService;
 import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.session.SessionPolicySpec;
+import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
@@ -158,5 +163,25 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
 
         assertThat(orgContext.callAsPlatform(settings::get).sessionPolicyId()).isEqualTo(globalDefault.getId());
         orgContext.callAsPlatform(() -> settings.update(new AdminPortalSettingsData(null))); // restore
+    }
+
+    @Test
+    void aPolicyGoverningTheConsoleCannotBeDeletedUntilItIsDeselected() {
+        orgA = org();
+        UUID custom = orgContext.callInOrg(orgA, () -> sessionPolicies.create(
+                new SessionPolicySpec("Console-" + UUID.randomUUID().toString().substring(0, 8), 20, true,
+                        480, 30, 5, "TOTP", 2, "TOTP", true, 0, true, "Lax", 5, "10.0.0.0/8",
+                        Set.of(), Set.of(), List.of()))).getId();
+        orgContext.callInOrg(orgA, () -> settings.update(new AdminPortalSettingsData(custom)));
+
+        // Deleting it would silently revert the console to the acting admin's policy — dropping this tenant's
+        // admin IP allowlist and lengthening its elevation TTL. Refuse until the selection is cleared.
+        assertThatThrownBy(() -> orgContext.runInOrg(orgA, () -> sessionPolicies.delete(custom)))
+                .isInstanceOf(ConflictException.class);
+        assertThat(orgContext.callInOrg(orgA, settings::get).sessionPolicyId()).isEqualTo(custom);
+
+        orgContext.callInOrg(orgA, () -> settings.update(new AdminPortalSettingsData(null)));
+        assertThatCode(() -> orgContext.runInOrg(orgA, () -> sessionPolicies.delete(custom)))
+                .doesNotThrowAnyException();
     }
 }

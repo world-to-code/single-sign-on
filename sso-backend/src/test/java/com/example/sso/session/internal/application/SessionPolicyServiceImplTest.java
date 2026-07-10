@@ -471,4 +471,39 @@ class SessionPolicyServiceImplTest {
 
         assertThat(service.create(spec).getCookieSameSite()).isEqualTo("Lax");
     }
+
+    @Test
+    void createRejectsAnInvalidAdminConsoleCidr() {
+        // The admin-console allowlist is a security control: an invalid CIDR must be refused at write time,
+        // not stored to silently never-match (which would lock the console down) at read time.
+        loadCache(List.of(policy(SessionPolicyService.DEFAULT_NAME, 0)), List.of(), List.of());
+        SessionPolicySpec spec = new SessionPolicySpec("Bad-Cidrs", 10, true, 480, 30, 5, "TOTP", 2,
+                "TOTP", false, 0, false, "Lax", 5, "not-a-cidr", Set.of(), Set.of(), List.of());
+
+        assertThatThrownBy(() -> service.create(spec))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("invalid CIDR");
+        verify(repository, never()).save(any(SessionPolicy.class));
+    }
+
+    @Test
+    void createNormalizesTheAdminConsoleCidrs() {
+        loadCache(List.of(policy(SessionPolicyService.DEFAULT_NAME, 0)), List.of(), List.of());
+        when(repository.save(any(SessionPolicy.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        SessionPolicySpec spec = new SessionPolicySpec("Cidrs", 10, true, 480, 30, 5, "TOTP", 2,
+                "TOTP", false, 0, false, "Lax", 5, " 10.0.0.0/8 , 203.0.113.0/24 ",
+                Set.of(), Set.of(), List.of());
+
+        assertThat(service.create(spec).getAdminAllowedCidrs()).isEqualTo("10.0.0.0/8,203.0.113.0/24");
+    }
+
+    @Test
+    void createTreatsABlankAdminConsoleAllowlistAsAnyNetwork() {
+        loadCache(List.of(policy(SessionPolicyService.DEFAULT_NAME, 0)), List.of(), List.of());
+        when(repository.save(any(SessionPolicy.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        SessionPolicySpec spec = new SessionPolicySpec("Blank", 10, true, 480, 30, 5, "TOTP", 2,
+                "TOTP", false, 0, false, "Lax", 5, "  ", Set.of(), Set.of(), List.of());
+
+        assertThat(service.create(spec).getAdminAllowedCidrs()).isNull();
+    }
 }

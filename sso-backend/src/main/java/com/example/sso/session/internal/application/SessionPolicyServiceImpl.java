@@ -29,6 +29,7 @@ import com.example.sso.user.UserService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.web.util.matcher.IpAddressMatcher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -356,7 +357,15 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         policyUsers.deleteByPolicyId(id);
         policyRoles.deleteByPolicyId(id);
         policyIpRules.deleteByPolicyId(id);
-        repository.delete(policy);
+        try {
+            // A policy governing an admin console is referenced by admin_portal_settings (ON DELETE RESTRICT):
+            // deleting it would silently revert that console to the acting admin's policy, dropping the tenant's
+            // admin IP allowlist. Refuse, and say so, instead of failing open.
+            repository.delete(policy);
+            repository.flush();
+        } catch (DataIntegrityViolationException e) {
+            throw new ConflictException("this policy governs the admin console; select another one first");
+        }
         events.publishEvent(new SessionPolicyCacheChanged());
     }
 
