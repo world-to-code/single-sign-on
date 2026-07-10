@@ -253,6 +253,63 @@ class TenantRoleProvisioningIT extends AbstractIntegrationTest {
                 .isFalse(); // never marked system, so its name is never emitted as an authority
     }
 
+    @Test
+    void creatingAnOrganizationWiresItsBaselineInheritanceChain() {
+        UUID orgId = org();
+        UUID orgAdmin = orgRole(orgId, Roles.ORG_ADMIN).getId();
+        UUID groupAdmin = orgRole(orgId, Roles.GROUP_ADMIN).getId();
+        UUID user = orgRole(orgId, Roles.USER).getId();
+        UUID globalAdmin = roleService.findByName(Roles.ADMIN).orElseThrow().getId();
+
+        // The intra-tenant chain ORG_ADMIN -> GROUP_ADMIN -> USER, plus the cross-tier ADMIN -> ORG_ADMIN edge,
+        // every edge stamped with THIS org (the cross-tier one with the CHILD's org) so RLS confines it.
+        assertThat(edgeOrg(orgAdmin, groupAdmin)).isEqualTo(orgId);
+        assertThat(edgeOrg(groupAdmin, user)).isEqualTo(orgId);
+        assertThat(edgeOrg(globalAdmin, orgAdmin)).isEqualTo(orgId);
+        assertThat(edgeCount(orgId)).isEqualTo(3); // exactly those three; nothing else wired for the tenant
+    }
+
+    @Test
+    void theInheritanceEdgesAreIdempotentAcrossReprovisioning() {
+        UUID orgId = org();
+
+        rbacService.provisionBaselineRoles(orgId);
+        rbacService.provisionBaselineRoles(orgId);
+
+        assertThat(edgeCount(orgId)).isEqualTo(3); // no duplicate edges on a second run
+    }
+
+    @Test
+    void aSquattedBaselineNameIsNeverWiredIntoTheHierarchy() {
+        UUID orgId = org();
+        UUID squatterId = orgRole(orgId, Roles.GROUP_ADMIN).getId();
+        // Simulate a pre-feature legacy DB: a role squatting the GROUP_ADMIN name and NO hierarchy edges yet
+        // (the org predates this feature). Clearing the edges the creation event wired lets us assert what
+        // (re)provisioning does from that legacy state.
+        demoteToLegacyCustomRole(squatterId);
+        ownerJdbc().update("delete from role_hierarchy where org_id = ?", orgId);
+
+        rbacService.provisionBaselineRoles(orgId);
+
+        // GROUP_ADMIN was skipped, so neither ORG_ADMIN->GROUP_ADMIN nor GROUP_ADMIN->USER is wired — a
+        // squatted role is never silently connected into the inheritance graph.
+        Long touchingSquatter = ownerJdbc().queryForObject(
+                "select count(*) from role_hierarchy where parent_role_id = ? or child_role_id = ?",
+                Long.class, squatterId, squatterId);
+        assertThat(touchingSquatter).isZero();
+    }
+
+    private UUID edgeOrg(UUID parentRoleId, UUID childRoleId) {
+        return ownerJdbc().queryForObject(
+                "select org_id from role_hierarchy where parent_role_id = ? and child_role_id = ?",
+                UUID.class, parentRoleId, childRoleId);
+    }
+
+    private long edgeCount(UUID orgId) {
+        return ownerJdbc().queryForObject(
+                "select count(*) from role_hierarchy where org_id = ?", Long.class, orgId);
+    }
+
     /** Rewrites a provisioned baseline role into the legacy shape: a plain tenant role, no baseline grants. */
     private void demoteToLegacyCustomRole(UUID roleId) {
         ownerJdbc().update("delete from role_permission where role_id = ?", roleId);

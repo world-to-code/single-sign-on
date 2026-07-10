@@ -10,6 +10,7 @@ import com.example.sso.portal.ApplicationView;
 import com.example.sso.resource.UserAuthorization;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.Permissions;
+import com.example.sso.user.RoleHierarchyService;
 import com.example.sso.user.RoleRef;
 import com.example.sso.user.RoleService;
 import com.example.sso.user.Roles;
@@ -49,15 +50,12 @@ public class AdminAccessPolicy {
 
     static final String ADMIN_ROLE = Roles.ADMIN;
 
-    /** Roles that grant admin-console reach; only a super admin may assign them. */
-    private static final Set<String> PRIVILEGED_ROLES =
-            Set.of(Roles.ADMIN, Roles.GROUP_ADMIN, Roles.ORG_ADMIN);
-
     /** The permission catalog — a granted name must be one of these, never a role name or session marker. */
     private static final Set<String> CATALOG = Set.copyOf(Permissions.ALL);
 
     private final UserService userService;
     private final RoleService roleService;
+    private final RoleHierarchyService roleHierarchy;
     private final UserGroupService userGroups;
     private final UserAuthorization userAuth;
     private final GroupAuthorization groupAuth;
@@ -120,14 +118,18 @@ public class AdminAccessPolicy {
         if (currentIsSuperAdmin()) {
             return true;
         }
-        if (containsPrivilegedRole(roleNames)) {
-            return false;
-        }
         if (roleNames == null) {
             return true;
         }
-        return roleNames.stream().noneMatch(this::roleCarriesPlatformPermission)
-                && roleNames.stream().allMatch(this::actorHoldsAllPermissionsOfRole);
+        // A non-super may assign a role only if it sits strictly BELOW them in the inheritance DAG (never a
+        // peer such as their own ROLE_ORG_ADMIN, never one above such as ROLE_ADMIN), carries no platform-only
+        // permission, and they themselves hold every permission it carries (grant-only-what-you-hold).
+        // Dominance REPLACES the former fixed privileged-role denylist; all three compose with AND, and each
+        // fails closed on an unknown/unresolved name.
+        return roleNames.stream().allMatch(name ->
+                currentActorDominatesRoleName(name)
+                        && !roleCarriesPlatformPermission(name)
+                        && actorHoldsAllPermissionsOfRole(name));
     }
 
     /**
@@ -136,6 +138,34 @@ public class AdminAccessPolicy {
      */
     public boolean currentIsSuperAdmin() {
         return currentUserId().map(this::isSuper).orElse(false);
+    }
+
+    /**
+     * The acting admin's APEX roles in the inheritance DAG — where a role they create must be attached so it
+     * sits strictly beneath them (and is therefore one they may assign). Empty for an unresolved actor.
+     */
+    public Set<UUID> currentActorApexRoleIds() {
+        return currentUserId().map(roleHierarchy::apexRolesOf).orElse(Set.of());
+    }
+
+    /** Whether the role (by id) sits strictly BELOW the acting admin in the inheritance DAG (fail-closed). */
+    public boolean currentActorDominatesRole(UUID roleId) {
+        return currentUserId().map(actorId -> roleHierarchy.actorDominatesRole(actorId, roleId)).orElse(false);
+    }
+
+    /**
+     * Whether the role NAMED here — resolved in the acting tier, org-first — sits strictly below the acting
+     * admin. Fail-closed on an unresolved actor or unknown name.
+     */
+    public boolean currentActorDominatesRoleName(String roleName) {
+        return currentUserId()
+                .map(actorId -> roleHierarchy.actorDominatesRoleName(actorId, roleName, actingOrg()))
+                .orElse(false);
+    }
+
+    /** The roles that strictly OUTRANK the acting admin — hidden from their role listing (empty for super). */
+    public Set<UUID> currentRolesAboveActor() {
+        return currentUserId().map(roleHierarchy::rolesAboveActor).orElse(Set.of());
     }
 
     /**
@@ -360,12 +390,14 @@ public class AdminAccessPolicy {
 
     private boolean canManageRoleMembership(UUID userId, UUID roleId) {
         if (!currentIsSuperAdmin()
-                && (isAdmin(userId) || PRIVILEGED_ROLES.contains(roleName(roleId))
+                && (isAdmin(userId) || !currentActorDominatesRole(roleId)
                         || roleCarriesPlatformPermission(roleId)
                         || !actorHoldsAllPermissionsOf(roleId))) {
-            // A scoped admin may never touch admin accounts, hand out a privileged role, grant a role that
-            // carries a platform-only permission, nor grant a role carrying any permission they do not
-            // themselves hold (all of which would escalate the target — or themselves).
+            // A scoped/tenant admin may never touch an admin account, grant a role they do NOT dominate (a
+            // peer such as their own ROLE_ORG_ADMIN or one above them), grant a role carrying a platform-only
+            // permission, nor grant a role carrying any permission they do not themselves hold — all of which
+            // would escalate the target or themselves. The dominance check REPLACES the old privileged-role
+            // denylist and applies identically whether the role is granted to a user or delegated to a group.
             return false;
         }
         return canAccessUser(userId);
@@ -444,10 +476,6 @@ public class AdminAccessPolicy {
 
     private boolean containsAdmin(Collection<String> roles) {
         return roles != null && roles.contains(ADMIN_ROLE);
-    }
-
-    private boolean containsPrivilegedRole(Collection<String> roles) {
-        return roles != null && roles.stream().anyMatch(PRIVILEGED_ROLES::contains);
     }
 
     private Optional<UUID> currentUserId() {

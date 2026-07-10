@@ -37,6 +37,13 @@ public interface RoleService {
     /** The role's permission names, resolved inside a transaction (safe to read outside one). */
     Set<String> permissionNames(UUID roleId);
 
+    /**
+     * The EFFECTIVE permission names of the given roles under the inheritance DAG — the union of what they
+     * carry directly AND what they inherit transitively. Used to cap a new child role so it can never carry a
+     * permission its parent (apex) role lacks, which would otherwise bleed up into that shared role.
+     */
+    Set<String> effectivePermissionNames(Collection<UUID> roleIds);
+
     /** Returns the role, creating it if absent (idempotent). */
     RoleRef getOrCreate(String name);
 
@@ -51,6 +58,14 @@ public interface RoleService {
      * duplicate name (409) or an unknown permission (400).
      */
     RoleRef create(String name, Set<String> permissionNames);
+
+    /**
+     * Admin role builder that also wires the new role BELOW the given parent roles in the inheritance DAG
+     * (each parent then inherits the new role's permissions). The parents must be the creator's apex roles
+     * so the new role sits strictly beneath the creator — the mechanism behind "a role you create is one
+     * you may assign, and never above your own level". Rejects a cycle. Empty parents = a detached root.
+     */
+    RoleRef create(String name, Set<String> permissionNames, Collection<UUID> parentRoleIds);
 
     /**
      * Admin role builder: renames and/or replaces the permissions of a role. System roles cannot be

@@ -20,6 +20,14 @@ public interface RbacService {
     void grantOrgAdminPermissions();
 
     /**
+     * Wires the GLOBAL role-inheritance chain {@code ROLE_ADMIN → ROLE_ORG_ADMIN → ROLE_GROUP_ADMIN →
+     * ROLE_USER} (edges owned by the platform tier), idempotently. Keeps the model consistent for any
+     * holder assigned a global system role directly; per-tenant chains are wired by
+     * {@link #provisionBaselineRoles}.
+     */
+    void seedGlobalRoleHierarchy();
+
+    /**
      * Provisions the organization's OWN baseline system roles — {@code ROLE_USER},
      * {@code ROLE_GROUP_ADMIN} and {@code ROLE_ORG_ADMIN}, with their baseline (tenant-grantable only)
      * permission grants — idempotently, JOINING the caller's transaction so the roles already exist for a

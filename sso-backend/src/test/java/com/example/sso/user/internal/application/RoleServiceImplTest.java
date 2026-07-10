@@ -60,6 +60,9 @@ class RoleServiceImplTest {
     @Mock private PermissionGrantPolicy grantPolicy;
     @Mock private OrgContext orgContext;
     @Mock private RbacHydrator hydrator;
+    @Mock private RoleHierarchyWriter roleHierarchyWriter;
+    @Mock private RoleInheritanceResolver inheritanceResolver;
+    @Mock private RoleClosure roleClosure;
 
     @InjectMocks private RoleServiceImpl service;
 

@@ -64,6 +64,7 @@ public class DataSeeder implements ApplicationRunner {
         rbacService.grantAllPermissionsToAdmin();
         rbacService.grantGroupAdminPermissions();
         rbacService.grantOrgAdminPermissions();
+        rbacService.seedGlobalRoleHierarchy();
         authPolicyService.seedDefault();
 
         if (!userService.existsByUsername(adminUsername)) {

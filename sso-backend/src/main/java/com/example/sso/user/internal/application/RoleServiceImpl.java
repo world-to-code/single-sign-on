@@ -33,6 +33,7 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -67,6 +68,8 @@ public class RoleServiceImpl implements RoleService {
     private final AppUserRepository users;
     private final PermissionRepository permissions;
     private final RolePermissionRepository rolePermissions;
+    private final RoleHierarchyWriter roleHierarchyWriter;
+    private final RoleInheritanceResolver inheritanceResolver;
     private final UserRoleRepository userRoles;
     private final UserGroupRoleRepository userGroupRoles;
     private final UserGroupRepository groups;
@@ -74,6 +77,7 @@ public class RoleServiceImpl implements RoleService {
     private final PermissionGrantPolicy grantPolicy;
     private final OrgContext orgContext;
     private final RbacHydrator hydrator;
+    private final RoleClosure roleClosure;
     private final RoleTierResolver tierResolver;
 
     /** The org a newly-created role belongs to: the active tenant context, or null (global/system role). */
@@ -106,6 +110,12 @@ public class RoleServiceImpl implements RoleService {
         // Authoritative (RLS-bypassing) org lookup for cross-module same-org checks: Optional#map drops a null
         // org, so a global/system role and an unknown id both yield empty — exactly "no org owns this role".
         return orgContext.callAsPlatform(() -> roles.findById(roleId).map(Role::getOrgId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Set<String> effectivePermissionNames(Collection<UUID> roleIds) {
+        return inheritanceResolver.effectivePermissionNames(roleIds);
     }
 
     @Override
@@ -146,6 +156,12 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional
     public RoleRef create(String name, Set<String> permissionNames) {
+        return create(name, permissionNames, Set.of());
+    }
+
+    @Override
+    @Transactional
+    public RoleRef create(String name, Set<String> permissionNames, Collection<UUID> parentRoleIds) {
         validateRoleName(name);
         UUID org = creationOrg();
         // Unique within its own tier only (a tenant may reuse a name another tenant — or the global tier —
@@ -163,8 +179,14 @@ public class RoleServiceImpl implements RoleService {
         Set<Permission> resolved = resolvePermissions(permissionNames, org);
         Role role = roles.save(new Role(name, org));
         grantPermissions(role.getId(), resolved);
+        attachBelow(role.getId(), parentRoleIds, org);
 
         return hydrator.hydrateRole(role);
+    }
+
+    /** Wires the brand-new role as a child of each parent in the inheritance DAG (idempotent, cycle-guarded). */
+    private void attachBelow(UUID childRoleId, Collection<UUID> parentRoleIds, UUID orgId) {
+        parentRoleIds.forEach(parent -> roleHierarchyWriter.link(parent, childRoleId, orgId));
     }
 
     @Override
@@ -192,9 +214,10 @@ public class RoleServiceImpl implements RoleService {
 
         replacePermissions(roleId, resolvePermissions(permissionNames, role.getOrgId()));
 
-        // A rename changes the emitted role-name authority and a permission edit changes granted
-        // permissions, so end every holder's sessions to shed the now-stale authorities.
-        accessChanges.forUserIds(holdersOf(roleId));
+        // A rename changes the emitted role-name authority and a permission edit changes granted permissions,
+        // so end every AFFECTED holder's sessions to shed the now-stale authorities — the role's own holders
+        // AND, since a parent inherits this role's permissions, the same-tier ancestor roles' holders.
+        accessChanges.forUserIds(holdersAffectedByChange(roleId));
         return hydrator.hydrateRole(role);
     }
 
@@ -206,7 +229,7 @@ public class RoleServiceImpl implements RoleService {
             throw new ConflictException("system role '" + role.getName() + "' cannot be deleted");
         }
 
-        Set<UUID> affected = holdersOf(roleId); // resolve before the delete removes the associations
+        Set<UUID> affected = holdersAffectedByChange(roleId); // resolve before the delete removes the edges
         deleteJoinRows(roleId);
         roles.delete(role);
         accessChanges.forUserIds(affected);
@@ -216,7 +239,7 @@ public class RoleServiceImpl implements RoleService {
     @Transactional
     public void delete(UUID roleId) {
         roles.findById(roleId).ifPresent(role -> {
-            Set<UUID> affected = holdersOf(roleId);
+            Set<UUID> affected = holdersAffectedByChange(roleId);
             deleteJoinRows(roleId);
             roles.delete(role);
             accessChanges.forUserIds(affected);
@@ -225,14 +248,16 @@ public class RoleServiceImpl implements RoleService {
 
     /**
      * Explicitly removes every join row referencing the role before it is deleted: its permission grants
-     * ({@code role_permission}), direct user assignments ({@code app_user_role}) and group delegations
-     * ({@code group_role}). The DB has ON DELETE CASCADE FKs too, but the deletes are spelled out here so
-     * the code — not the schema — documents exactly what disappears with a role.
+     * ({@code role_permission}), direct user assignments ({@code app_user_role}), group delegations
+     * ({@code group_role}) and inheritance edges ({@code role_hierarchy}). The DB has ON DELETE CASCADE FKs
+     * too, but the deletes are spelled out here so the code — not the schema — documents exactly what
+     * disappears with a role.
      */
     private void deleteJoinRows(UUID roleId) {
         rolePermissions.deleteByRoleId(roleId);
         userRoles.deleteByRoleId(roleId);
         userGroupRoles.deleteByRoleId(roleId);
+        roleHierarchyWriter.unlinkRole(roleId);
     }
 
     /**
@@ -402,5 +427,26 @@ public class RoleServiceImpl implements RoleService {
         Set<UUID> ids = new HashSet<>(userRoles.findUserIdsByRoleId(roleId));
         ids.addAll(orgContext.callAsPlatform(() -> groups.findMemberIdsByRoleId(roleId)));
         return ids;
+    }
+
+    /**
+     * Everyone whose EFFECTIVE authorities change when this role's name/permissions change: the role's own
+     * holders PLUS the holders of every ancestor role that inherits it — but only ancestors IN THE SAME TIER.
+     * The cross-tier {@code ROLE_ADMIN} is deliberately excluded: it self-heals to the full catalog, so its
+     * holders' effective authorities never actually change, and revoking them would needlessly log out every
+     * platform super-admin whenever a tenant edits one of its roles.
+     */
+    private Set<UUID> holdersAffectedByChange(UUID roleId) {
+        Set<UUID> affected = holdersOf(roleId);
+        UUID tier = orgContext.currentOrg().orElse(null);
+        roleClosure.ancestors(Set.of(roleId)).stream()
+                .filter(ancestorId -> Objects.equals(roleOrgOf(ancestorId), tier))
+                .forEach(ancestorId -> affected.addAll(holdersOf(ancestorId)));
+        return affected;
+    }
+
+    /** The owning org of a role, resolved RLS-blind (a global/system role = {@code null}). */
+    private UUID roleOrgOf(UUID roleId) {
+        return orgContext.callAsPlatform(() -> roles.findById(roleId).map(Role::getOrgId).orElse(null));
     }
 }

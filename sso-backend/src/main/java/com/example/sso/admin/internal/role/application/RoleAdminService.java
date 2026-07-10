@@ -5,6 +5,7 @@ import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.shared.application.LastAdminGuard;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
+import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.tenancy.OrgTierGuard;
@@ -46,24 +47,66 @@ public class RoleAdminService {
         // platform super-admin only the global roles. RLS lets a tenant READ global rows, so the builder must
         // filter in code — otherwise a tenant admin could enumerate (and target) shared/global roles.
         UUID tier = tierGuard.currentTier();
+        // Hide-above: a non-super also never sees roles that strictly OUTRANK them within their tier (e.g. a
+        // GROUP_ADMIN must not see — nor, via the assignment gates, target — their tenant's ORG_ADMIN). Super
+        // sees everything in the global tier.
+        Set<UUID> aboveActor = accessPolicy.isCurrentActorUnscoped()
+                ? Set.of() : accessPolicy.currentRolesAboveActor();
         return roleService.findAll().stream()
                 .filter(role -> Objects.equals(role.getOrgId(), tier))
+                .filter(role -> !aboveActor.contains(role.getId()))
                 .map(RoleView::of).toList();
     }
 
     @Transactional
     public RoleView createRole(String name, Set<String> permissions) {
-        RoleView view = RoleView.of(roleService.create(name, permissions));
+        // Ceiling: a non-super may put in a role only permissions they themselves hold (grant-only-what-you-
+        // hold), and the role is wired BELOW their apex so it sits strictly beneath them — it becomes a role
+        // they dominate (and may assign), never one at/above their level. A super holds the whole catalog and
+        // creates global roles (empty apex → a detached root they dominate via the super short-circuit).
+        requireMayGrantPermissions(permissions);
+        Set<UUID> apex = accessPolicy.currentActorApexRoleIds();
+        requireWithinApexAuthority(permissions, apex);
+        RoleView view = RoleView.of(roleService.create(name, permissions, apex));
         auditLogger.log(AuditType.ROLE_CREATED, "role=" + name + " permissions=" + permissions);
         return view;
+    }
+
+    /**
+     * Prevents an upward permission bleed: because the new role is wired below the actor's apex and a parent
+     * INHERITS its children's permissions, a permission the child carries that the apex (a shared, multi-holder
+     * role such as {@code ROLE_ORG_ADMIN}) lacks would silently accrue to every co-holder of that apex. So a
+     * created role may carry only permissions the apex ALREADY holds effectively. A super (or an actor with no
+     * apex → a detached root with no parent to bleed into) is exempt.
+     */
+    private void requireWithinApexAuthority(Set<String> permissions, Set<UUID> apex) {
+        if (accessPolicy.currentIsSuperAdmin() || apex.isEmpty()) {
+            return;
+        }
+        if (!roleService.effectivePermissionNames(apex).containsAll(permissions)) {
+            throw new ForbiddenException("a created role may not carry a permission its parent role lacks");
+        }
     }
 
     @Transactional
     public RoleView updateRole(UUID id, String name, Set<String> permissions) {
         requireRoleInTier(id);
+        // Re-assert the ceiling on every edit: a non-super may edit only a role strictly BELOW them (never a
+        // peer/system role such as their own ORG_ADMIN) and may set only permissions they hold — otherwise a
+        // tenant admin could rewrite a role to carry an authority they lack, or edit a role at their level.
+        if (!accessPolicy.currentIsSuperAdmin()
+                && !(accessPolicy.currentActorDominatesRole(id) && accessPolicy.mayGrantPermissions(permissions))) {
+            throw new ForbiddenException("not permitted to modify this role");
+        }
         RoleView view = RoleView.of(roleService.updateRole(id, name, permissions));
         auditLogger.log(AuditType.ROLE_UPDATED, "role=" + id + " name=" + name + " permissions=" + permissions);
         return view;
+    }
+
+    private void requireMayGrantPermissions(Set<String> permissions) {
+        if (!accessPolicy.mayGrantPermissions(permissions)) {
+            throw new ForbiddenException("not permitted to grant one or more of these permissions");
+        }
     }
 
     @Transactional
@@ -142,9 +185,13 @@ public class RoleAdminService {
      */
     @Transactional(readOnly = true)
     public List<PermissionView> listPermissions() {
-        List<String> catalog = accessPolicy.isCurrentActorUnscoped()
-                ? rbacService.allPermissions()
-                : Permissions.tenantGrantable();
-        return catalog.stream().map(PermissionView::of).toList();
+        boolean unscoped = accessPolicy.isCurrentActorUnscoped();
+        List<String> catalog = unscoped ? rbacService.allPermissions() : Permissions.tenantGrantable();
+        // Hide-above-holdings: a non-super sees only permissions they could actually grant (the same
+        // grant-only-what-you-hold rule the write path enforces), so a permission above their level never
+        // appears in the builder. A super (unscoped) sees the whole catalog.
+        return catalog.stream()
+                .filter(permission -> unscoped || accessPolicy.mayGrantPermissions(Set.of(permission)))
+                .map(PermissionView::of).toList();
     }
 }

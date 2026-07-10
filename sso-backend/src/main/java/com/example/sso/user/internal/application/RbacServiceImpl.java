@@ -57,6 +57,7 @@ public class RbacServiceImpl implements RbacService {
     private final PermissionRepository permissions;
     private final RolePermissionRepository rolePermissions;
     private final RoleRepository roles;
+    private final RoleHierarchyWriter roleHierarchy;
     private final OrgContext orgContext;
 
     @Override
@@ -97,9 +98,58 @@ public class RbacServiceImpl implements RbacService {
             BASELINE_ROLES.forEach((name, baselinePermissions) ->
                     ensureOrgSystemRole(orgId, name, baselinePermissions)
                             .ifPresent(role -> provisioned.put(name, role.getId())));
+            wireBaselineHierarchy(orgId, provisioned);
             return provisioned;
         });
     }
+
+    /**
+     * Wires this org's inheritance chain {@code ROLE_ORG_ADMIN → ROLE_GROUP_ADMIN → ROLE_USER} plus the
+     * cross-tier {@code ROLE_ADMIN(global) → ROLE_ORG_ADMIN(this org)} edge — every edge stamped with THIS
+     * org (the child's tenant for the cross-tier one), so it is confined to the tenant by RLS. Only roles
+     * actually provisioned (present in {@code provisioned}) are wired: a squatted name that skipped
+     * provisioning is never silently connected. Runs inside the org scope opened by the caller.
+     */
+    private void wireBaselineHierarchy(UUID orgId, Map<String, UUID> provisioned) {
+        UUID orgAdmin = provisioned.get(Roles.ORG_ADMIN);
+        UUID groupAdmin = provisioned.get(Roles.GROUP_ADMIN);
+        UUID user = provisioned.get(Roles.USER);
+        if (orgAdmin != null && groupAdmin != null) {
+            roleHierarchy.link(orgAdmin, groupAdmin, orgId);
+        }
+        if (groupAdmin != null && user != null) {
+            roleHierarchy.link(groupAdmin, user, orgId);
+        }
+        if (orgAdmin != null) {
+            roles.findByNameAndOrgIdIsNull(Roles.ADMIN)
+                    .ifPresent(admin -> roleHierarchy.link(admin.getId(), orgAdmin, orgId));
+        }
+    }
+
+    @Override
+    @Transactional
+    public void seedGlobalRoleHierarchy() {
+        // The GLOBAL (org NULL) edges may be written only from the platform context (role_hierarchy's tightened
+        // WITH CHECK, so a tenant can never mint a global edge). callAsPlatform binds platform='on' onto the
+        // held connection — exactly as provisionBaselineRoles binds the tenant scope with callInOrg.
+        orgContext.callAsPlatform(() -> {
+            UUID admin = globalRoleId(Roles.ADMIN);
+            UUID orgAdmin = globalRoleId(Roles.ORG_ADMIN);
+            UUID groupAdmin = globalRoleId(Roles.GROUP_ADMIN);
+            UUID user = globalRoleId(Roles.USER);
+            roleHierarchy.link(admin, orgAdmin, null);
+            roleHierarchy.link(orgAdmin, groupAdmin, null);
+            roleHierarchy.link(groupAdmin, user, null);
+            return null;
+        });
+    }
+
+    private UUID globalRoleId(String name) {
+        return roles.findByNameAndOrgIdIsNull(name)
+                .orElseThrow(() -> new IllegalStateException(name + " must exist before seeding the hierarchy"))
+                .getId();
+    }
+
 
     /**
      * Get-or-creates the org's own SYSTEM role and (idempotently) grants its baseline permissions.

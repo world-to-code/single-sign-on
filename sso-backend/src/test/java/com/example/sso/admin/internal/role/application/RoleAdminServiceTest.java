@@ -6,6 +6,7 @@ import com.example.sso.admin.internal.shared.application.LastAdminGuard;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.shared.error.ConflictException;
+import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.tenancy.OrgTierGuard;
@@ -158,6 +159,7 @@ class RoleAdminServiceTest {
     @Test
     void listPermissionsHidesPlatformPermissionsFromATenantAdmin() {
         when(accessPolicy.isCurrentActorUnscoped()).thenReturn(false);
+        when(accessPolicy.mayGrantPermissions(any())).thenReturn(true); // holds the whole tenant-grantable set
 
         assertThat(service.listPermissions()).extracting(PermissionView::name)
                 .doesNotContain(Permissions.ORG_CREATE, Permissions.ORG_DELETE, Permissions.ORG_UPDATE)
@@ -212,6 +214,8 @@ class RoleAdminServiceTest {
         when(orgContext.currentOrg()).thenReturn(Optional.of(org));
         when(roleService.orgIdOf(roleId)).thenReturn(Optional.of(org));
         when(roleService.updateRole(eq(roleId), eq("ROLE_SUPPORT"), any())).thenReturn(updated);
+        when(accessPolicy.currentActorDominatesRole(roleId)).thenReturn(true); // strictly below the actor
+        when(accessPolicy.mayGrantPermissions(any())).thenReturn(true);        // holds the permissions set
 
         RoleView view = service.updateRole(roleId, "ROLE_SUPPORT", Set.of(Permissions.USER_READ));
 
@@ -227,6 +231,7 @@ class RoleAdminServiceTest {
         when(orgContext.currentOrg()).thenReturn(Optional.empty());           // platform tier (null)
         when(roleService.orgIdOf(globalRoleId)).thenReturn(Optional.empty()); // global role
         when(roleService.updateRole(eq(globalRoleId), any(), any())).thenReturn(updated);
+        when(accessPolicy.currentIsSuperAdmin()).thenReturn(true);            // the platform admin is super
 
         service.updateRole(globalRoleId, "ROLE_SUPPORT", Set.of());
 
@@ -252,6 +257,88 @@ class RoleAdminServiceTest {
         when(roleService.findAll()).thenReturn(List.of(tenantRole, global));
 
         assertThat(service.listRoles()).extracting(RoleView::name).containsExactly(Roles.ADMIN);
+    }
+
+    @Test
+    void listRolesHidesRolesThatOutrankANonSuperActor() {
+        // Hide-above (decision 5): a role in the actor's tier that strictly outranks them (e.g. a GROUP_ADMIN
+        // seeing their tenant's ORG_ADMIN) is filtered out of the builder entirely — not merely un-assignable.
+        UUID org = UUID.randomUUID();
+        UUID orgAdminId = UUID.randomUUID();
+        RoleRef orgAdmin = roleRef(orgAdminId, Roles.ORG_ADMIN, org); // above the actor, same tier
+        RoleRef support = roleRef(UUID.randomUUID(), "ROLE_SUPPORT", org);
+        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
+        when(roleService.findAll()).thenReturn(List.of(orgAdmin, support));
+        when(accessPolicy.isCurrentActorUnscoped()).thenReturn(false);
+        when(accessPolicy.currentRolesAboveActor()).thenReturn(Set.of(orgAdminId));
+
+        assertThat(service.listRoles()).extracting(RoleView::name).containsExactly("ROLE_SUPPORT");
+    }
+
+    @Test
+    void listPermissionsHidesPermissionsATenantAdminDoesNotHold() {
+        // A tenant admin sees only permissions they could actually grant (grant-only-what-you-hold); one above
+        // their holdings never appears in the builder, aligning the list with the write-path gate.
+        when(accessPolicy.isCurrentActorUnscoped()).thenReturn(false);
+        when(accessPolicy.mayGrantPermissions(Set.of(Permissions.USER_READ))).thenReturn(true);
+        // every other permission: mayGrantPermissions defaults to false → hidden
+
+        assertThat(service.listPermissions()).extracting(PermissionView::name)
+                .containsExactly(Permissions.USER_READ);
+    }
+
+    @Test
+    void createRoleRejectsPermissionsBeyondTheActorsHoldings() {
+        when(accessPolicy.mayGrantPermissions(any())).thenReturn(false); // actor lacks one of the permissions
+
+        assertThatThrownBy(() -> service.createRole("ROLE_X", Set.of(Permissions.SCIM_MANAGE)))
+                .isInstanceOf(ForbiddenException.class);
+        verify(roleService, never()).create(any(), any(), any());
+    }
+
+    @Test
+    void createRoleWiresTheNewRoleBelowTheActorsApex() {
+        UUID apex = UUID.randomUUID();
+        RoleRef created = roleRef(UUID.randomUUID(), "ROLE_X", UUID.randomUUID());
+        when(accessPolicy.mayGrantPermissions(any())).thenReturn(true);
+        when(accessPolicy.currentActorApexRoleIds()).thenReturn(Set.of(apex));
+        when(roleService.effectivePermissionNames(Set.of(apex))).thenReturn(Set.of(Permissions.USER_READ));
+        when(roleService.create(eq("ROLE_X"), any(), eq(Set.of(apex)))).thenReturn(created);
+
+        service.createRole("ROLE_X", Set.of(Permissions.USER_READ));
+
+        verify(roleService).create(eq("ROLE_X"), eq(Set.of(Permissions.USER_READ)), eq(Set.of(apex)));
+    }
+
+    @Test
+    void createRoleRejectsAPermissionTheApexParentRoleDoesNotHold() {
+        // The new role is wired below the actor's apex, which INHERITS it. A permission the apex lacks would
+        // bleed into that shared role for all its co-holders, so it is refused even though the actor holds it
+        // directly (grant-only-what-you-hold passes, the apex-authority cap does not).
+        UUID apex = UUID.randomUUID();
+        when(accessPolicy.mayGrantPermissions(any())).thenReturn(true);            // actor holds it directly
+        when(accessPolicy.currentActorApexRoleIds()).thenReturn(Set.of(apex));
+        when(roleService.effectivePermissionNames(Set.of(apex)))
+                .thenReturn(Set.of(Permissions.USER_READ));                        // apex lacks key:rotate
+
+        assertThatThrownBy(() -> service.createRole("ROLE_Y", Set.of(Permissions.KEY_ROTATE)))
+                .isInstanceOf(ForbiddenException.class);
+        verify(roleService, never()).create(any(), any(), any());
+    }
+
+    @Test
+    void updateRoleRejectsARoleTheActorDoesNotDominate() {
+        // A non-super editing a role that is NOT strictly below them (a peer/system role such as their own
+        // ORG_ADMIN) is refused, even though it is in their tier — closes a "same-tier so editable" gap.
+        UUID org = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
+        when(roleService.orgIdOf(roleId)).thenReturn(Optional.of(org)); // in-tier, passes requireRoleInTier
+        when(accessPolicy.currentActorDominatesRole(roleId)).thenReturn(false); // but NOT below the actor
+
+        assertThatThrownBy(() -> service.updateRole(roleId, "ROLE_ORG_ADMIN", Set.of()))
+                .isInstanceOf(ForbiddenException.class);
+        verify(roleService, never()).updateRole(any(), any(), any());
     }
 
     private RoleRef roleRef(UUID id, String name, UUID orgId) {

@@ -41,6 +41,7 @@ public class SsoUserDetailsService implements UserDetailsService {
     private final UserGroupRepository groups;
     private final RoleRepository roles;
     private final RbacHydrator hydrator;
+    private final RoleInheritanceResolver inheritanceResolver;
     private final LoginResolutionScope loginScope;
 
     @Override
@@ -50,17 +51,23 @@ public class SsoUserDetailsService implements UserDetailsService {
                 .orElseThrow(() -> new UsernameNotFoundException("Unknown user: " + username));
 
         // RBAC: role names (ROLE_*) from roles assigned directly AND delegated via the user's groups.
-        // PBAC: permissions carried by those roles AND granted directly to the user. Finally, each
-        // resource:action permission implies resource:read (see Permissions.expandImplied). Every read is
-        // an EXPLICIT join query — hydrator loads the roles (with permission names) from the join tables.
+        // PBAC: permissions carried by those roles AND granted directly to the user, PLUS the permissions
+        // of every role those roles INHERIT down the role-hierarchy DAG (inheritanceResolver — permission
+        // names ONLY, never an inherited role's name). Finally, each mutating resource:action implies
+        // resource:read (see Permissions.expandImplied). Every read is an EXPLICIT join query.
         hydrator.hydrateUser(user); // direct roles (+ their permission names) and direct permission names
         List<Role> groupRoles = groupDelegatedRoles(user.getId());
+
+        Set<UUID> heldRoleIds = Stream.concat(user.getRoles().stream(), groupRoles.stream())
+                .map(Role::getId).collect(Collectors.toSet());
 
         Stream<String> directRoleAuthorities = roleAuthorities(user.getRoles());
         Stream<String> groupRoleAuthorities = roleAuthorities(groupRoles);
         Stream<String> directPermissions = user.getDirectPermissionNames().stream();
+        Stream<String> inheritedPermissions = inheritanceResolver.effectivePermissionNames(heldRoleIds).stream();
 
-        Set<String> granted = Stream.of(directRoleAuthorities, groupRoleAuthorities, directPermissions)
+        Set<String> granted = Stream.of(directRoleAuthorities, groupRoleAuthorities,
+                        directPermissions, inheritedPermissions)
                 .flatMap(s -> s)
                 .collect(Collectors.toSet());
         List<SimpleGrantedAuthority> authorities = Permissions.expandImplied(granted).stream()
