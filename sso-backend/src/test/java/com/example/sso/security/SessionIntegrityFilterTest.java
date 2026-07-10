@@ -31,6 +31,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -218,6 +219,27 @@ class SessionIntegrityFilterTest {
         filter.doFilter(request, new MockHttpServletResponse(), chain);
 
         verify(chain).doFilter(any(), any());
+    }
+
+    @Test
+    void theEmailReVerificationPathStaysReachableWhileReauthIsOverdue() throws Exception {
+        // The mandatory re-auth may demand the EMAIL factor, which EmailFactorHandler refuses while the
+        // address is unverified (an admin just changed it). If this recovery path were also challenged, the
+        // live session would be soft-bricked: the only way to satisfy the challenge is to re-prove the
+        // address, and the only way to re-prove it is this endpoint.
+        authenticate();
+        HttpSession s = session(MIN, MIN, null);
+        lenient().when(s.getAttribute(StepUpInterceptor.REAUTH_ACTIVITY))
+                .thenReturn(System.currentTimeMillis() - 20 * MIN);
+        FilterChain chain = mock(FilterChain.class);
+
+        for (String path : new String[] {"/api/auth/email-verification", "/api/auth/email-verification/confirm"}) {
+            MockHttpServletRequest request = request(s, "Mozilla");
+            request.setRequestURI(path);
+            filter.doFilter(request, new MockHttpServletResponse(), chain);
+        }
+
+        verify(chain, times(2)).doFilter(any(), any());
     }
 
     @Test
