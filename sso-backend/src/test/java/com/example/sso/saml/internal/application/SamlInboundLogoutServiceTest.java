@@ -1,5 +1,6 @@
 package com.example.sso.saml.internal.application;
 
+import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.saml.internal.domain.SamlRelyingParty;
@@ -25,8 +26,12 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -55,7 +60,7 @@ class SamlInboundLogoutServiceTest {
         InitializationService.initialize();
         builders = XMLObjectProviderRegistrySupport.getBuilderFactory();
         service = new SamlInboundLogoutService(messageBuilder, codec, audit);
-        lenient().when(messageBuilder.signedLogoutResponse(any(), anyString()))
+        lenient().when(messageBuilder.signedLogoutResponse(any(), anyString(), anyBoolean()))
                 .thenReturn(build(LogoutResponse.DEFAULT_ELEMENT_NAME));
         lenient().when(codec.encodeObject(any())).thenReturn("b64");
     }
@@ -137,5 +142,58 @@ class SamlInboundLogoutServiceTest {
 
         assertThat(result.base64Response()).isEqualTo("b64");
         assertThat(result.relayState()).isEqualTo("relay");
+    }
+
+    @Test
+    void reportsAPartialLogoutAndAuditsAFailureWhenNothingWasTerminated() {
+        // The SP keeps a SessionIndex from an EARLIER IdP session (SP app-sessions outlive IdP sessions). If we
+        // answered Success, the SP would record a completed global logout while the IdP session — and its SSO to
+        // every other RP — lives on. Say so instead: partial logout, audited as a failure.
+        MockHttpSession session = new MockHttpSession();
+        MockHttpServletRequest httpRequest = requestWithSession(session);
+
+        SamlInboundLogoutService.InboundLogout result =
+                service.process(logoutRequest("sid-stale"), rp(), "user", sessionPrincipal(), "relay", httpRequest);
+
+        assertThat(session.isInvalid()).isFalse();
+        verify(messageBuilder).signedLogoutResponse(any(), eq("req-1"), eq(false)); // terminated=false
+        assertThat(result.base64Response()).isEqualTo("b64"); // the SP still gets a signed response
+        verify(audit).record(argThat(record -> !record.success()));
+    }
+
+    @Test
+    void auditsASuccessWhenTheTargetedSessionIsTerminated() {
+        MockHttpServletRequest httpRequest = requestWithSession(new MockHttpSession());
+
+        service.process(logoutRequest(SID), rp(), "user", sessionPrincipal(), null, httpRequest);
+
+        verify(messageBuilder).signedLogoutResponse(any(), eq("req-1"), eq(true));
+        verify(audit).record(argThat(AuditRecord::success));
+    }
+
+    @Test
+    void terminatesWhenAnyOfSeveralSessionIndexesMatches() {
+        // A LogoutRequest may name several sessions; ours is the second.
+        MockHttpSession session = new MockHttpSession();
+        LogoutRequest request = logoutRequest("sid-other");
+        SessionIndex second = build(SessionIndex.DEFAULT_ELEMENT_NAME);
+        second.setValue(SID);
+        request.getSessionIndexes().add(second);
+
+        service.process(request, rp(), "user", sessionPrincipal(), null, requestWithSession(session));
+
+        assertThat(session.isInvalid()).isTrue();
+    }
+
+    @Test
+    void leavesASessionWithoutASessionIdMarkerAlone() {
+        // A session that never completed login carries no SID_ marker, so no SP holds a SessionIndex for it:
+        // a targeted request can never name it, and must not fall through to killing it.
+        MockHttpSession session = new MockHttpSession();
+        Authentication markerless = new UsernamePasswordAuthenticationToken("user", null, List.of());
+
+        service.process(logoutRequest(SID), rp(), "user", markerless, null, requestWithSession(session));
+
+        assertThat(session.isInvalid()).isFalse();
     }
 }

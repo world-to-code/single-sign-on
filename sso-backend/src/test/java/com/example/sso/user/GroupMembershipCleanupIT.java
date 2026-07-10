@@ -23,11 +23,15 @@ class GroupMembershipCleanupIT extends AbstractIntegrationTest {
     UserGroupService userGroups;
 
     private UUID groupId;
+    private UUID secondGroupId;
 
     @AfterEach
     void tearDown() {
         if (groupId != null) {
             userGroups.delete(groupId);
+        }
+        if (secondGroupId != null) {
+            userGroups.delete(secondGroupId);
         }
     }
 
@@ -65,6 +69,25 @@ class GroupMembershipCleanupIT extends AbstractIntegrationTest {
         userService.delete(member);
 
         assertThat(userGroups.members(groupId, 0, 20).total()).isZero();
+        assertThat(userGroups.groupIdsOf(member)).isEmpty();
+    }
+
+    @Test
+    void deletingAUserRemovesThemFromEVERYGroupTheyBelongTo() {
+        // deleteByUserId is unscoped by group; a delete that only reached one membership would leave the other
+        // group's count inflated. One group per test would never notice.
+        UUID member = user("multi");
+        groupId = UUID.fromString(userGroups.create(
+                new GroupSpec("First-" + UUID.randomUUID().toString().substring(0, 8),
+                        "first", null, Set.of(member))).id());
+        secondGroupId = UUID.fromString(userGroups.create(
+                new GroupSpec("Second-" + UUID.randomUUID().toString().substring(0, 8),
+                        "second", null, Set.of(member))).id());
+
+        userService.delete(member);
+
+        assertThat(userGroups.members(groupId, 0, 20).total()).isZero();
+        assertThat(userGroups.members(secondGroupId, 0, 20).total()).isZero();
         assertThat(userGroups.groupIdsOf(member)).isEmpty();
     }
 }
