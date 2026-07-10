@@ -400,10 +400,12 @@ public class UserServiceImpl implements UserService {
         UUID orgId = user.getOrgId(); // capture before deletion — the session termination is scoped to it
 
         // Explicitly remove the user's join rows (formerly done by Hibernate's @ManyToMany collection
-        // cleanup / DB FK cascade). Group membership rows are owned by the group and are left untouched,
-        // matching the previous behavior.
+        // cleanup / DB FK cascade). Group memberships go too: a surviving row inflates the group's member
+        // count (which counts join rows) above its member list (which joins app_user), and keeps handing the
+        // deleted principal's id to group-based role delegation and app assignments.
         userRoles.deleteByUserId(id);
         userDirectPermissions.deleteByUserId(id);
+        userGroupMembers.deleteByUserId(id);
         users.deleteById(id);
         events.publishEvent(new UserDeletedEvent(id));
         events.publishEvent(new UserAccessChangedEvent(username, orgId)); // terminate the deleted user's sessions
@@ -485,4 +487,5 @@ public class UserServiceImpl implements UserService {
 
         return permissions.findByName(name).orElseGet(() -> permissions.save(new Permission(name)));
     }
+
 }

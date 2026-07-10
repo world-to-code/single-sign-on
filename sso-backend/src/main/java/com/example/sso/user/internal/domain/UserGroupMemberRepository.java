@@ -22,6 +22,10 @@ public interface UserGroupMemberRepository extends JpaRepository<UserGroupMember
     void deleteByGroupIdAndUserId(@Param("groupId") UUID groupId, @Param("userId") UUID userId);
 
     @Modifying
+    @Query("delete from UserGroupMember m where m.id.userId = :userId")
+    void deleteByUserId(@Param("userId") UUID userId);
+
+    @Modifying
     @Query("delete from UserGroupMember m where m.id.groupId = :groupId")
     void deleteByGroupId(@Param("groupId") UUID groupId);
 }
