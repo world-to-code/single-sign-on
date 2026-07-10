@@ -57,6 +57,15 @@ public class AdminService {
         return rsaKeyService.rotate();
     }
 
+    /** The acting tier's JWKS retention: how many rotated-away signing keys stay published. */
+    public int signingKeyRetention() {
+        return rsaKeyService.retainedInactiveKeys();
+    }
+
+    public int updateSigningKeyRetention(int retainedInactiveKeys) {
+        return rsaKeyService.updateRetainedInactiveKeys(retainedInactiveKeys);
+    }
+
     /** Rotates the SAML signing key; SPs must re-fetch IdP metadata for the new certificate. */
     public String rotateSamlSigningKey() {
         return samlCredentialService.rotate();

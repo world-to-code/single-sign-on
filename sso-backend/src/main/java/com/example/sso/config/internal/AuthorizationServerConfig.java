@@ -39,6 +39,8 @@ import org.springframework.security.config.annotation.web.configurers.oauth2.ser
 import org.springframework.security.oauth2.core.oidc.OidcScopes;
 import org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationProvider;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
@@ -170,6 +172,20 @@ public class AuthorizationServerConfig {
     @Bean
     JWKSource<SecurityContext> jwkSource(RsaKeyService rsaKeyService) {
         return (jwkSelector, securityContext) -> jwkSelector.select(rsaKeyService.buildJwkSet());
+    }
+
+    /**
+     * The signing encoder for every issued JWT (the authorization server picks this bean up; the
+     * back-channel logout_token signs through it too). The JWKS keeps rotated-away keys published for
+     * verification overlap across rotation, so a signing selection matches SEVERAL keys — without a
+     * configured selector {@code NimbusJwtEncoder} refuses. {@code buildJwkSet} orders the ACTIVE key
+     * first, so signing selects the first match.
+     */
+    @Bean
+    JwtEncoder jwtEncoder(JWKSource<SecurityContext> jwkSource) {
+        NimbusJwtEncoder encoder = new NimbusJwtEncoder(jwkSource);
+        encoder.setJwkSelector(List::getFirst);
+        return encoder;
     }
 
     @Bean

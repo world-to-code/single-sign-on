@@ -1,8 +1,6 @@
 package com.example.sso.oidc.internal.application;
 
 import com.example.sso.oidc.BackChannelLogout;
-import com.nimbusds.jose.jwk.source.JWKSource;
-import com.nimbusds.jose.proc.SecurityContext;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -12,12 +10,11 @@ import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
-import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.stereotype.Component;
 
 /**
- * Builds a signed OIDC Back-Channel Logout 1.0 {@code logout_token}. Signs with the SAME rotatable RSA key
- * the Authorization Server uses (the shared {@link JWKSource}, which follows the bound tenant), and stamps
+ * Builds a signed OIDC Back-Channel Logout 1.0 {@code logout_token}. Signs through the SAME {@link JwtEncoder}
+ * the Authorization Server uses (backed by the tenant-following JWK source, active key first), and stamps
  * the {@code issuer} the client's tokens were issued under, so a relying party validates it against its own
  * (per-tenant) issuer + JWKS. Carries {@code sid} for per-session logout, or omits it for subject-wide.
  */
@@ -26,8 +23,8 @@ public class LogoutTokenFactory {
 
     private final JwtEncoder encoder;
 
-    public LogoutTokenFactory(JWKSource<SecurityContext> jwkSource) {
-        this.encoder = new NimbusJwtEncoder(jwkSource);
+    public LogoutTokenFactory(JwtEncoder encoder) {
+        this.encoder = encoder;
     }
 
     public String create(String clientId, String subject, String sid, String issuer) {

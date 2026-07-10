@@ -10,9 +10,9 @@ import com.nimbusds.jose.jwk.JWKSet;
 public interface RsaKeyService {
 
     /**
-     * Builds the JWK set used by the authorization server. Only the active key is exposed so the JWT
-     * encoder can unambiguously select a signing key; rotation swaps which key is active (relying
-     * parties re-fetch the JWKS to pick up the new key).
+     * Builds the JWK set used by the authorization server for the acting tier: the ACTIVE key first (the
+     * JWT encoder signs with the first match), followed by up to {@link #retainedInactiveKeys()} rotated-away
+     * keys kept published so tokens they signed stay verifiable until they expire.
      */
     JWKSet buildJwkSet();
 
@@ -22,4 +22,17 @@ public interface RsaKeyService {
      * active key id.
      */
     String rotate();
+
+    /**
+     * The acting tier's JWKS retention: how many rotated-away keys stay published. Resolves the tier's own
+     * setting, falling back to the global default row, then the configured default.
+     */
+    int retainedInactiveKeys();
+
+    /**
+     * Sets the acting tier's JWKS retention (copy-on-write: a tenant's first save creates its own row).
+     * With no bound org only the platform context may write — the global default is inherited by every
+     * tenant that has not customized its own. Returns the stored value.
+     */
+    int updateRetainedInactiveKeys(int retainedInactiveKeys);
 }

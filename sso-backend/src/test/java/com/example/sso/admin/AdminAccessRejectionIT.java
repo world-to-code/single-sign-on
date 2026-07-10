@@ -22,6 +22,7 @@ import java.util.Set;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -86,6 +87,40 @@ class AdminAccessRejectionIT extends AbstractIntegrationTest {
 
         // With the real servlet path set, AdminElevationFilter runs: no admin-console bearer → 401 + challenge.
         mvc.perform(get(ADMIN_URI).cookie(session).with(servletPath(ADMIN_URI)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("WWW-Authenticate",
+                        Matchers.containsString("insufficient_user_authentication")));
+    }
+
+    // --- signing-key retention endpoints (key:rotate + step-up wiring, per-endpoint) --------------------
+
+    private static final String RETENTION_URI = "/api/admin/keys/retention";
+    private static final String RETENTION_BODY = "{\"retainedInactiveKeys\":2}";
+
+    @Test
+    void anonymousSigningKeyRetentionRequestMustAuthenticate() throws Exception {
+        mvc.perform(get(RETENTION_URI)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void signingKeyRetentionRequiresTheKeyRotatePermission() throws Exception {
+        // MFA-complete but only ROLE_USER (no key:rotate) → @RequirePermission rejects the read. The write
+        // is rejected even earlier: the @RequireStepUp interceptor (preHandle) runs BEFORE method security,
+        // so an un-stepped-up caller gets the 401 step-up gate — proving both annotations are wired.
+        Cookie session = mfaSession("retention-perm-less");
+
+        mvc.perform(get(RETENTION_URI).cookie(session)).andExpect(status().isForbidden());
+        mvc.perform(put(RETENTION_URI).cookie(session).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(RETENTION_BODY))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void signingKeyRetentionUpdateWithoutElevationGetsTheStepUpChallenge() throws Exception {
+        Cookie session = mfaSession("retention-unelevated");
+
+        mvc.perform(put(RETENTION_URI).cookie(session).with(csrf()).with(servletPath(RETENTION_URI))
+                        .contentType(MediaType.APPLICATION_JSON).content(RETENTION_BODY))
                 .andExpect(status().isUnauthorized())
                 .andExpect(header().string("WWW-Authenticate",
                         Matchers.containsString("insufficient_user_authentication")));

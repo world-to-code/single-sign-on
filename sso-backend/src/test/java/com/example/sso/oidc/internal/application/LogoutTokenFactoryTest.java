@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -29,7 +30,7 @@ class LogoutTokenFactoryTest {
     void setUp() throws Exception {
         key = new RSAKeyGenerator(2048).keyID("test-kid").generate();
         JWKSource<SecurityContext> jwkSource = (selector, context) -> selector.select(new JWKSet(key));
-        factory = new LogoutTokenFactory(jwkSource);
+        factory = new LogoutTokenFactory(new NimbusJwtEncoder(jwkSource));
     }
 
     private Jwt decode(String token) throws Exception {

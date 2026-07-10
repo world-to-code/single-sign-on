@@ -115,6 +115,8 @@ sso:
     master-password: dev-master-password-change-me  # dev only — override in prod
     salt: 5c0744940b5c369b
     rsa-key-size: 2048                               # OIDC signing key size (bits)
+    jwks-retained-inactive-keys: 1                   # rotated-away keys kept in the JWKS (default; per-org override via admin API)
+    jwks-max-retained-inactive-keys: 10              # ceiling for the per-org retention setting (bounds JWKS growth)
   email-otp:
     ttl-minutes: 10                                  # email one-time-code validity
     max-attempts: 5                                  # wrong guesses before the code is burned

@@ -4,6 +4,11 @@ import com.example.sso.crypto.RsaKeyService;
 import com.example.sso.crypto.SecretCipher;
 import com.example.sso.crypto.internal.domain.SigningKey;
 import com.example.sso.crypto.internal.domain.SigningKeyRepository;
+import com.example.sso.crypto.internal.domain.SigningKeyRetention;
+import com.example.sso.crypto.internal.domain.SigningKeyRetentionRepository;
+import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.shared.error.ConflictException;
+import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.tenancy.OrgContext;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.JWK;
@@ -15,6 +20,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,13 +33,15 @@ import java.security.interfaces.RSAPublicKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
  * Default {@link RsaKeyService}. Ensures an active key exists on startup and builds the
  * Nimbus {@link JWKSet} consumed by the OAuth2 Authorization Server's JWK source.
- * The active key signs; all keys are published (for verification across rotation).
+ * The active key signs (published first); rotated-away keys stay published up to the acting tier's
+ * retention setting, so tokens they signed remain verifiable across a rotation.
  */
 @Service
 public class RsaKeyServiceImpl implements RsaKeyService, ApplicationRunner {
@@ -40,16 +49,25 @@ public class RsaKeyServiceImpl implements RsaKeyService, ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(RsaKeyServiceImpl.class);
 
     private final SigningKeyRepository repository;
+    private final SigningKeyRetentionRepository retentionRepository;
     private final SecretCipher secretCipher;
     private final OrgContext orgContext;
     private final int keySize;
+    private final int defaultRetainedInactiveKeys;
+    private final int maxRetainedInactiveKeys;
 
-    public RsaKeyServiceImpl(SigningKeyRepository repository, SecretCipher secretCipher, OrgContext orgContext,
-                             @Value("${sso.crypto.rsa-key-size:2048}") int keySize) {
+    public RsaKeyServiceImpl(SigningKeyRepository repository, SigningKeyRetentionRepository retentionRepository,
+                             SecretCipher secretCipher, OrgContext orgContext,
+                             @Value("${sso.crypto.rsa-key-size:2048}") int keySize,
+                             @Value("${sso.crypto.jwks-retained-inactive-keys}") int defaultRetainedInactiveKeys,
+                             @Value("${sso.crypto.jwks-max-retained-inactive-keys}") int maxRetainedInactiveKeys) {
         this.repository = repository;
+        this.retentionRepository = retentionRepository;
         this.secretCipher = secretCipher;
         this.orgContext = orgContext;
         this.keySize = keySize;
+        this.defaultRetainedInactiveKeys = defaultRetainedInactiveKeys;
+        this.maxRetainedInactiveKeys = maxRetainedInactiveKeys;
     }
 
     @Override
@@ -109,20 +127,83 @@ public class RsaKeyServiceImpl implements RsaKeyService, ApplicationRunner {
         }
     }
 
+    // The keys of the CURRENT tenant context (bound from the request host / session): the org's own keys
+    // if it has an active one, otherwise the GLOBAL keys — so a tenant without its own key still signs
+    // verifiably under its issuer (its JWKS then publishes the global keys). Platform/unbound → global.
+    // The ACTIVE key comes first (the JWT encoder signs with the first match); rotated-away keys stay
+    // published up to the SERVING tier's retention setting so tokens they signed verify until they expire.
     @Override
     @Transactional(readOnly = true)
     public JWKSet buildJwkSet() {
-        return new JWKSet((JWK) toRsaKey(activeSigningKey()));
+        UUID org = orgContext.currentOrg().orElse(null);
+        List<SigningKey> keys = publishedKeysForTier(org);
+        if (org != null && hasNoActiveKey(keys)) {
+            keys = publishedKeysForTier(null);
+        }
+        if (hasNoActiveKey(keys)) {
+            throw new IllegalStateException("No active signing key (global key missing)");
+        }
+        return new JWKSet(keys.stream()
+                .map(key -> (JWK) toRsaKey(key))
+                .toList());
     }
 
-    // The active signing key for the CURRENT tenant context (bound from the request host / session): the
-    // org's own key if it has one, otherwise the GLOBAL key — so a tenant without its own key still signs
-    // verifiably under its issuer (its JWKS then publishes the global key). Platform/unbound → global.
-    private SigningKey activeSigningKey() {
-        return orgContext.currentOrg()
-                .flatMap(repository::findFirstByActiveTrueAndOrgIdOrderByCreatedAtDesc)
-                .or(repository::findFirstByActiveTrueAndOrgIdIsNullOrderByCreatedAtDesc)
-                .orElseThrow(() -> new IllegalStateException("No active signing key (global key missing)"));
+    @Override
+    @Transactional(readOnly = true)
+    public int retainedInactiveKeys() {
+        return retentionForTier(orgContext.currentOrg().orElse(null));
+    }
+
+    @Override
+    @Transactional
+    public int updateRetainedInactiveKeys(int retainedInactiveKeys) {
+        if (retainedInactiveKeys < 0 || retainedInactiveKeys > maxRetainedInactiveKeys) {
+            throw new BadRequestException(
+                    "retained inactive keys must be between 0 and " + maxRetainedInactiveKeys);
+        }
+        UUID org = orgContext.currentOrg().orElse(null);
+        if (org == null && !orgContext.isPlatform()) {
+            // Fail closed: the global default is inherited by every tenant that has not customized its own,
+            // so only the platform context may write it (mirror of the admin-portal-settings global write).
+            throw new ForbiddenException("only a platform administrator may edit the global signing-key retention");
+        }
+        SigningKeyRetention row = (org == null
+                ? retentionRepository.findByOrgIdIsNull()
+                : retentionRepository.findByOrgId(org))
+                .orElseGet(() -> new SigningKeyRetention(org, retainedInactiveKeys));
+        row.update(retainedInactiveKeys);
+        try {
+            // Flush in-method so a concurrent first-save racing the tier's partial unique index surfaces
+            // here as a client-visible conflict, not a commit-time 500.
+            return retentionRepository.saveAndFlush(row).getRetainedInactiveKeys();
+        } catch (DataIntegrityViolationException e) {
+            throw new ConflictException("signing-key retention was updated concurrently; retry");
+        }
+    }
+
+    /** The tier's keys bounded IN THE QUERY to active + its retention worth of rotated-away keys. */
+    private List<SigningKey> publishedKeysForTier(UUID org) {
+        Limit publication = Limit.of(1 + retentionForTier(org));
+        return org == null
+                ? repository.findByOrgIdIsNullOrderByActiveDescCreatedAtDesc(publication)
+                : repository.findByOrgIdOrderByActiveDescCreatedAtDesc(org, publication);
+    }
+
+    /** Keys are ordered active-first, so an inactive (or missing) head means the tier cannot sign. */
+    private boolean hasNoActiveKey(List<SigningKey> keys) {
+        return keys.isEmpty() || !keys.getFirst().isActive();
+    }
+
+    /**
+     * The tier's retention: its own row, else the global default row, else the configured default —
+     * clamped to the configured maximum so a stored value can never blow up the publication limit.
+     */
+    private int retentionForTier(UUID org) {
+        int retained = Optional.ofNullable(org).flatMap(retentionRepository::findByOrgId)
+                .or(retentionRepository::findByOrgIdIsNull)
+                .map(SigningKeyRetention::getRetainedInactiveKeys)
+                .orElse(defaultRetainedInactiveKeys);
+        return Math.min(retained, maxRetainedInactiveKeys);
     }
 
     private RSAKey toRsaKey(SigningKey key) {
