@@ -171,7 +171,7 @@ public class RoleServiceImpl implements RoleService {
                 ? roles.findByNameAndOrgIdIsNull(name).isPresent()
                 : roles.findByNameAndOrgId(name, org).isPresent();
         if (nameTaken) {
-            throw new ConflictException("role '" + name + "' already exists");
+            throw ConflictException.of("user.role.duplicate", name);
         }
 
         // Resolve (and validate) permissions BEFORE persisting the role, so an unknown/forbidden
@@ -194,19 +194,19 @@ public class RoleServiceImpl implements RoleService {
     public RoleRef updateRole(UUID roleId, String name, Set<String> permissionNames) {
         Role role = roles.findById(roleId).orElseThrow(() -> new NotFoundException("role not found"));
         if (ADMIN_ROLE.equals(role.getName())) {
-            throw new ConflictException("ROLE_ADMIN is managed automatically and cannot be edited");
+            throw ConflictException.of("user.role.adminImmutable");
         }
 
         if (!role.getName().equals(name)) {
             if (role.isSystem()) {
-                throw new ConflictException("system role '" + role.getName() + "' cannot be renamed");
+                throw ConflictException.of("user.role.systemNoRename", role.getName());
             }
             validateRoleName(name);
             boolean taken = role.getOrgId() == null
                     ? roles.findByNameAndOrgIdIsNull(name).isPresent()
                     : roles.findByNameAndOrgId(name, role.getOrgId()).isPresent();
             if (taken) {
-                throw new ConflictException("role '" + name + "' already exists");
+                throw ConflictException.of("user.role.duplicate", name);
             }
             role.rename(name);
             roles.save(role);
@@ -226,7 +226,7 @@ public class RoleServiceImpl implements RoleService {
     public void deleteRole(UUID roleId) {
         Role role = roles.findById(roleId).orElseThrow(() -> new NotFoundException("role not found"));
         if (role.isSystem()) {
-            throw new ConflictException("system role '" + role.getName() + "' cannot be deleted");
+            throw ConflictException.of("user.role.systemNoDelete", role.getName());
         }
 
         Set<UUID> affected = holdersAffectedByChange(roleId); // resolve before the delete removes the edges
@@ -272,7 +272,7 @@ public class RoleServiceImpl implements RoleService {
                 || RESERVED_AUTHORITY_PREFIXES.stream().anyMatch(candidate::startsWith);
 
         if (reserved) {
-            throw new BadRequestException("role name '" + name + "' collides with a reserved authority");
+            throw BadRequestException.of("user.role.reservedName", name);
         }
     }
 
@@ -296,7 +296,7 @@ public class RoleServiceImpl implements RoleService {
 
         return names.stream().map(name -> {
             if (!CATALOG.contains(name)) {
-                throw new BadRequestException("unknown permission: " + name);
+                throw BadRequestException.of("user.permission.unknown", name);
             }
             boolean permitted = roleOrg != null ? !Permissions.isPlatform(name) : grantPolicy.mayGrant(name);
             if (!permitted) {

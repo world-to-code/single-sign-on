@@ -56,7 +56,7 @@ public class SamlSsoController {
 
         if (relyingParty.isWantAuthnRequestsSigned()) {
             if (signature == null || sigAlg == null) {
-                throw new BadRequestException("AuthnRequest must be signed (Redirect binding)");
+                throw BadRequestException.of("saml.authnRequest.unsigned");
             }
 
             // The signed octet string is the raw query up to (but excluding) "&Signature=".
@@ -90,10 +90,10 @@ public class SamlSsoController {
                                                @RequestParam(value = "RelayState", required = false) String relayState,
                                                Authentication authentication, HttpServletRequest httpRequest) {
         SamlRelyingParty relyingParty = relyingParties.findByEntityId(spEntityId)
-                .orElseThrow(() -> new BadRequestException("Unknown SP: " + spEntityId));
+                .orElseThrow(() -> BadRequestException.of("saml.sp.unknown", spEntityId));
 
         if (!relyingParty.isAllowIdpInitiated()) {
-            throw new BadRequestException("IdP-initiated SSO is not allowed for " + spEntityId);
+            throw BadRequestException.of("saml.sso.idpInitiatedNotAllowed", spEntityId);
         }
 
         return render(sso.process(relyingParty, null, relayState, authentication, httpRequest)); // null InResponseTo = unsolicited
@@ -101,12 +101,12 @@ public class SamlSsoController {
 
     private SamlRelyingParty resolve(AuthnRequest request) {
         if (request.getIssuer() == null || request.getIssuer().getValue() == null || request.getID() == null) {
-            throw new BadRequestException("AuthnRequest is missing Issuer or ID");
+            throw BadRequestException.of("saml.authnRequest.missingIssuerOrId");
         }
 
         String spEntityId = request.getIssuer().getValue();
         return relyingParties.findByEntityId(spEntityId)
-                .orElseThrow(() -> new BadRequestException("Unknown SP: " + spEntityId));
+                .orElseThrow(() -> BadRequestException.of("saml.sp.unknown", spEntityId));
     }
 
     private ResponseEntity<String> render(SamlSsoOutcome outcome) {

@@ -238,10 +238,10 @@ public class UserServiceImpl implements UserService {
         // Uniqueness is per-organization (the tenant): the same username/email may be a different user in a
         // different org. A null orgId is the global platform super-admin, unique across all such accounts.
         if (users.existsByUsernameInOrg(username, orgId)) {
-            throw new ConflictException("username already exists: " + username);
+            throw ConflictException.of("user.username.duplicate", username);
         }
         if (users.existsByEmailInOrg(email, orgId)) {
-            throw new ConflictException("email already exists: " + email);
+            throw ConflictException.of("user.email.duplicate", email);
         }
 
         // Resolve (and validate) the requested roles BEFORE persisting anything, so an unknown role name
@@ -472,7 +472,7 @@ public class UserServiceImpl implements UserService {
      */
     private Role requireRole(String name, UUID orgId) {
         return tierResolver.resolve(name, orgId)
-                .orElseThrow(() -> new BadRequestException("unknown role: " + name));
+                .orElseThrow(() -> BadRequestException.of("user.role.unknown", name));
     }
 
     /**
@@ -483,7 +483,7 @@ public class UserServiceImpl implements UserService {
      */
     private Permission getOrCreatePermission(String name) {
         if (!Permissions.ALL.contains(name)) {
-            throw new BadRequestException("unknown permission: " + name);
+            throw BadRequestException.of("user.permission.unknown", name);
         }
         // Direct grants also honour grant-only-what-you-hold, so the invariant does not live in the
         // endpoint gate alone (defence in depth: a dropped annotation must not open an escalation).
@@ -507,7 +507,7 @@ public class UserServiceImpl implements UserService {
         boolean profileChanged = !Objects.equals(user.getDisplayName(), update.displayName())
                 || !Objects.equals(user.getEmail(), update.email());
         if (profileChanged) {
-            throw new ConflictException("this user is provisioned externally; edit their profile in the source system");
+            throw ConflictException.of("user.externallyManaged");
         }
     }
 
@@ -521,7 +521,7 @@ public class UserServiceImpl implements UserService {
             return;
         }
         if (users.existsByEmailInOrg(email, user.getOrgId())) {
-            throw new ConflictException("email already exists: " + email);
+            throw ConflictException.of("user.email.duplicate", email);
         }
     }
 }

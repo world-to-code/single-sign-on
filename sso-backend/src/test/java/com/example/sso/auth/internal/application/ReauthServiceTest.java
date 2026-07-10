@@ -140,7 +140,8 @@ class ReauthServiceTest {
 
         assertThatThrownBy(() -> service.verify(AuthFactor.TOTP, response("000000"), request, new MockHttpServletResponse()))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("not an allowed re-auth factor");
+                // The detail is now localized via a MessageSource; the exception message carries the key.
+                .hasMessageContaining("auth.reauth.factorNotAllowed");
 
         verify(factorHandlers, never()).get(any()); // rejected before any handler dispatch
         assertThat(((MockHttpSession) request.getSession()).getAttribute(StepUpInterceptor.STEPUP_TIME)).isNull();

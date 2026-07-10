@@ -41,7 +41,7 @@ public class OnboardingInvitationService {
     public String issue(UUID userId, Duration ttl) {
         UserAccount user = users.findById(userId).orElseThrow(() -> new NotFoundException("user not found"));
         if (user.isEnabled() || users.hasPassword(userId)) {
-            throw new BadRequestException("an invitation can only be issued for an inactive, password-less account");
+            throw BadRequestException.of("onboarding.invitation.onlyInactive");
         }
         String token = tokens.mint();
         invitations.save(new OnboardingInvitation(userId, tokens.hash(token), Instant.now().plus(ttl)));
@@ -68,14 +68,14 @@ public class OnboardingInvitationService {
     public void redeem(String rawToken, String newPassword) {
         OnboardingInvitation invitation = invitations.findByTokenHash(tokens.hash(rawToken))
                 .filter(existing -> existing.isRedeemable(Instant.now()))
-                .orElseThrow(() -> new BadRequestException("invalid or expired invitation"));
+                .orElseThrow(() -> BadRequestException.of("onboarding.invitation.invalid"));
         if (newPassword == null || newPassword.length() < minPasswordLength) {
-            throw new BadRequestException("password must be at least " + minPasswordLength + " characters");
+            throw BadRequestException.of("onboarding.password.tooShort", minPasswordLength);
         }
         // Consume FIRST, atomically: only the winner of a concurrent double-redeem gets 1 row (single-use).
         // A weak password was already rejected above WITHOUT consuming, so a compliant retry still works.
         if (invitations.consume(invitation.getId(), Instant.now()) == 0) {
-            throw new BadRequestException("invalid or expired invitation");
+            throw BadRequestException.of("onboarding.invitation.invalid");
         }
         users.setPassword(invitation.getUserId(), newPassword);
         users.enable(invitation.getUserId());

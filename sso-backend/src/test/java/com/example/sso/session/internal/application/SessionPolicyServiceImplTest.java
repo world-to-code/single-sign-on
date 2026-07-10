@@ -482,7 +482,8 @@ class SessionPolicyServiceImplTest {
 
         assertThatThrownBy(() -> service.create(spec))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("invalid CIDR");
+                // The detail is now localized via a MessageSource; the exception message carries the key.
+                .hasMessageContaining("session.cidr.invalid");
         verify(repository, never()).save(any(SessionPolicy.class));
     }
 

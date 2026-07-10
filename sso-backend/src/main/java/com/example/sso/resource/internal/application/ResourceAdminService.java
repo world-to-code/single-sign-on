@@ -95,7 +95,7 @@ public class ResourceAdminService {
                 ? types.findByNameAndOrgIdIsNull(name).isPresent()
                 : types.findByNameAndOrgId(name, tier).isPresent();
         if (taken) {
-            throw new ConflictException("A resource type with this name already exists.");
+            throw ConflictException.of("resource.type.duplicate");
         }
         ResourceType type = types.save(new ResourceType(name, tier));
         allowedMemberTypes.forEach(memberType ->
@@ -114,7 +114,7 @@ public class ResourceAdminService {
         // acting (e.g. un-drilled super) context cannot see, so a plain check would report "unused" and let
         // the delete hit the FK → a 500. Platform scope sees every referencing resource → a clean 409.
         if (orgContext.callAsPlatform(() -> resources.existsByTypeId(id))) {
-            throw new ConflictException("This type is still in use by one or more resources.");
+            throw ConflictException.of("resource.type.inUse");
         }
         allowedMembers.deleteByTypeId(id); // explicit: drop the member-kind rows before the type
         types.delete(type);
@@ -437,7 +437,7 @@ public class ResourceAdminService {
             case USER -> users.findById(MemberIds.requireUuid(memberId)).isPresent();
             case APPLICATION -> applications.listApplications().stream()
                     .anyMatch(app -> app.id().equals(memberId));
-            case RESOURCE -> throw new BadRequestException("Child resources are attached as edges, not members.");
+            case RESOURCE -> throw BadRequestException.of("resource.member.childNotMember");
         };
         if (!exists) {
             throw new NotFoundException("Member " + memberType + " not found.");
@@ -460,7 +460,7 @@ public class ResourceAdminService {
                 ? users.findById(member).map(UserAccount::getOrgId).orElse(null)
                 : groups.orgIdOf(member).orElse(null);
         if (!Objects.equals(resource.getOrgId(), memberOrg)) {
-            throw new BadRequestException("Cannot attach a member from a different organization.");
+            throw BadRequestException.of("resource.member.crossOrg");
         }
     }
 }

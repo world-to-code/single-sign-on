@@ -59,7 +59,7 @@ public class AdminPortalSettingsServiceImpl implements AdminPortalSettingsServic
                 .map(SessionPolicyDetails::getId)
                 .anyMatch(policyId::equals);
         if (!selectable) {
-            throw new BadRequestException("unknown session policy");
+            throw BadRequestException.of("admin.sessionPolicy.unknown");
         }
     }
 

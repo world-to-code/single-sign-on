@@ -103,7 +103,7 @@ public class AuthenticationService {
         // org, so allowing a later re-selection would let a member of A switch the session to B (which login
         // completion then binds) without a membership check — a cross-tenant escape.
         if (identified()) {
-            throw new BadRequestException("Sign-in is already in progress; restart to change organization.");
+            throw BadRequestException.of("auth.signin.inProgress");
         }
         // The org (the tenant) must be ACTIVE. Rejected uniformly (no enumeration of which orgs exist).
         OrganizationRef org = organizations.findBySlug(slug)
@@ -122,7 +122,7 @@ public class AuthenticationService {
     public AuthSessionView identify(String email, HttpServletRequest httpRequest,
                                     HttpServletResponse httpResponse) {
         if (!targetSelected(httpRequest)) {
-            throw new BadRequestException("Select an organization first.");
+            throw BadRequestException.of("auth.org.selectFirst");
         }
         UserAccount user = users.findByLoginInOrg(email, preAuthOrg.orgId(httpRequest).orElse(null))
                 .filter(UserAccount::isEnabled).orElse(null);
@@ -144,7 +144,7 @@ public class AuthenticationService {
     public AuthSessionView login(String username, String password, HttpServletRequest httpRequest,
                                  HttpServletResponse httpResponse) {
         if (!targetSelected(httpRequest)) {
-            throw new BadRequestException("Select an organization first.");
+            throw BadRequestException.of("auth.org.selectFirst");
         }
         UUID orgId = preAuthOrg.orgId(httpRequest).orElse(null); // the selected organization (the tenant)
         try {

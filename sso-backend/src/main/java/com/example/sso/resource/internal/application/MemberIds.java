@@ -10,7 +10,7 @@ final class MemberIds {
         try {
             return UUID.fromString(value);
         } catch (IllegalArgumentException e) {
-            throw new BadRequestException("Member id must be a UUID.");
+            throw BadRequestException.of("resource.memberId.notUuid");
         }
     }
 

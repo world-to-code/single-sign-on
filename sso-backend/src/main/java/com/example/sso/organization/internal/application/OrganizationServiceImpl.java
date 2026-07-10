@@ -43,7 +43,7 @@ public class OrganizationServiceImpl implements OrganizationService {
         String slug = Slug.normalize(command.slug());
         // The organization is the tenant: its slug is GLOBALLY unique, so reject a collision across all orgs.
         if (organizations.existsBySlug(slug)) {
-            throw new ConflictException("organization slug '" + slug + "' already exists");
+            throw ConflictException.of("organization.slug.duplicate", slug);
         }
         Organization org = new Organization(slug, requireName(command.name()), command.profile());
         Organization saved = organizations.save(org);
@@ -190,7 +190,7 @@ public class OrganizationServiceImpl implements OrganizationService {
 
     private String requireName(String name) {
         if (name == null || name.isBlank()) {
-            throw new BadRequestException("organization name is required");
+            throw BadRequestException.of("organization.name.required");
         }
         return name.trim();
     }

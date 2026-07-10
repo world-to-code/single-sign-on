@@ -23,7 +23,7 @@ public class FactorHandlers {
     public FactorHandler get(AuthFactor factor) {
         FactorHandler handler = byFactor.get(factor);
         if (handler == null) {
-            throw new BadRequestException("unsupported factor: " + factor);
+            throw BadRequestException.of("auth.factor.unsupported", factor);
         }
 
         return handler;

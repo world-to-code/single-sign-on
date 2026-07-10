@@ -158,8 +158,7 @@ public class RsaKeyServiceImpl implements RsaKeyService, ApplicationRunner {
     @Transactional
     public int updateRetainedInactiveKeys(int retainedInactiveKeys) {
         if (retainedInactiveKeys < 0 || retainedInactiveKeys > maxRetainedInactiveKeys) {
-            throw new BadRequestException(
-                    "retained inactive keys must be between 0 and " + maxRetainedInactiveKeys);
+            throw BadRequestException.of("crypto.retention.outOfRange", maxRetainedInactiveKeys);
         }
         UUID org = orgContext.currentOrg().orElse(null);
         if (org == null && !orgContext.isPlatform()) {
@@ -177,7 +176,7 @@ public class RsaKeyServiceImpl implements RsaKeyService, ApplicationRunner {
             // here as a client-visible conflict, not a commit-time 500.
             return retentionRepository.saveAndFlush(row).getRetainedInactiveKeys();
         } catch (DataIntegrityViolationException e) {
-            throw new ConflictException("signing-key retention was updated concurrently; retry");
+            throw ConflictException.of("crypto.retention.concurrentUpdate");
         }
     }
 

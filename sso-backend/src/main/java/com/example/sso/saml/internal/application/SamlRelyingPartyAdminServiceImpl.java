@@ -48,7 +48,7 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
         // entityId is globally unique across tenants; check cross-org (RLS would otherwise hide another
         // tenant's row and let a duplicate slip through) before stamping the RP with the caller's tier.
         if (orgContext.callAsPlatform(() -> relyingParties.existsByEntityId(request.entityId()))) {
-            throw new ConflictException("a relying party with that entityId already exists");
+            throw ConflictException.of("saml.relyingParty.duplicate");
         }
 
         SamlRelyingParty rp = new SamlRelyingParty(request.entityId(), request.acsUrl(), nameIdFormat(request),

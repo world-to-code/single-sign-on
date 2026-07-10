@@ -85,7 +85,7 @@ public class OnboardingServiceImpl {
     public OnboardingView requestReinvite(UUID id) {
         Onboarding onboarding = require(id);
         if (onboarding.getAdminUserId() == null || !awaitingInvitation(onboarding.getStatus())) {
-            throw new BadRequestException("this onboarding has no admin awaiting an invitation");
+            throw BadRequestException.of("onboarding.noAdminAwaiting");
         }
         UserAccount admin = users.findById(onboarding.getAdminUserId())
                 .orElseThrow(() -> new NotFoundException("onboarding admin not found"));
@@ -93,7 +93,7 @@ public class OnboardingServiceImpl {
         // once-activated-then-disabled admin is rejected HERE with an honest 400 rather than passing to the
         // async worker, whose issue() would reject and leave the job stuck mid-PROVISIONING.
         if (admin.isEnabled() || users.hasPassword(admin.getId())) {
-            throw new BadRequestException("the admin has already activated their account");
+            throw BadRequestException.of("onboarding.adminAlreadyActivated");
         }
         onboarding.markProvisioning(); // signal "working" while the async worker re-invites
         events.publishEvent(new ReinviteRequested(id));

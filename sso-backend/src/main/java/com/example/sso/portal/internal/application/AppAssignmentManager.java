@@ -126,7 +126,7 @@ class AppAssignmentManager {
         SubjectType subjectType = SubjectType.valueOf(request.subjectType());
         UUID subjectId = UUID.fromString(request.subjectId());
         if (assignments.existsByAppTypeAndAppIdAndSubjectTypeAndSubjectId(appType, request.appId(), subjectType, subjectId)) {
-            throw new ConflictException("application is already assigned to that subject");
+            throw ConflictException.of("portal.assignment.duplicate");
         }
 
         UUID policyId = requiredPolicy(request.requiredPolicyId());

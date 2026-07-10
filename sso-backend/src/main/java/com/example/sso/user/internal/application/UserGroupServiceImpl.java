@@ -147,7 +147,7 @@ public class UserGroupServiceImpl implements UserGroupService {
     public GroupView create(GroupSpec spec) {
         UUID org = creationOrg();
         if (sameTierByName(spec.name(), org).isPresent()) { // unique within its own tier (global or this org)
-            throw new ConflictException("group name already exists");
+            throw ConflictException.of("user.group.duplicate");
         }
 
         UserGroup group = repository.save(new UserGroup(spec.name(), spec.description(), spec.externalId(), org));
@@ -161,12 +161,12 @@ public class UserGroupServiceImpl implements UserGroupService {
     public GroupView update(UUID id, GroupSpec spec) {
         UserGroup group = require(id);
         if (group.isSystem()) {
-            throw new ConflictException("the '" + group.getName() + "' system group cannot be edited");
+            throw ConflictException.of("user.group.systemNoEdit", group.getName());
         }
 
         sameTierByName(spec.name(), group.getOrgId())
                 .filter(other -> !other.getId().equals(id))
-                .ifPresent(other -> { throw new ConflictException("group name already exists"); });
+                .ifPresent(other -> { throw ConflictException.of("user.group.duplicate"); });
 
         Set<UUID> affected = new HashSet<>(members.findUserIdsByGroupId(id)); // former members (roles may change too)
         group.rename(spec.name());
@@ -185,7 +185,7 @@ public class UserGroupServiceImpl implements UserGroupService {
     public void delete(UUID id) {
         UserGroup group = require(id);
         if (group.isSystem()) {
-            throw new ConflictException("the '" + group.getName() + "' system group cannot be deleted");
+            throw ConflictException.of("user.group.systemNoDelete", group.getName());
         }
 
         Set<UUID> affected = new HashSet<>(members.findUserIdsByGroupId(id)); // members lose the group's delegated roles
@@ -202,7 +202,7 @@ public class UserGroupServiceImpl implements UserGroupService {
     public GroupView setMembers(UUID id, Set<UUID> memberIds) {
         UserGroup group = require(id);
         if (group.isSystem()) {
-            throw new ConflictException("membership of the '" + group.getName() + "' system group is managed automatically");
+            throw ConflictException.of("user.group.systemMembershipAuto", group.getName());
         }
 
         Set<UUID> affected = new HashSet<>(members.findUserIdsByGroupId(id));
@@ -219,7 +219,7 @@ public class UserGroupServiceImpl implements UserGroupService {
     public GroupView setRoles(UUID id, Set<String> roleNames) {
         UserGroup group = require(id);
         if (group.isSystem()) {
-            throw new ConflictException("roles of the '" + group.getName() + "' system group cannot be edited");
+            throw ConflictException.of("user.group.systemRolesNoEdit", group.getName());
         }
 
         replaceRoles(id, resolveRoleIds(roleNames));
@@ -310,7 +310,7 @@ public class UserGroupServiceImpl implements UserGroupService {
         return roleNames.stream()
                 // Groups delegate GLOBAL roles by name; tenant roles are managed per-org by id.
                 .map(name -> roles.findByNameAndOrgIdIsNull(name)
-                        .orElseThrow(() -> new BadRequestException("unknown role: " + name)).getId())
+                        .orElseThrow(() -> BadRequestException.of("user.role.unknown", name)).getId())
                 .collect(Collectors.toSet());
     }
 
@@ -326,7 +326,7 @@ public class UserGroupServiceImpl implements UserGroupService {
         List<AppUser> found = users.findAllById(memberIds);
         for (AppUser user : found) {
             if (!Objects.equals(user.getOrgId(), group.getOrgId())) {
-                throw new BadRequestException("Cannot add a user from a different organization to this group.");
+                throw BadRequestException.of("user.group.crossOrgMember");
             }
         }
         return found.stream().map(AppUser::getId).collect(Collectors.toSet());

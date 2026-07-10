@@ -19,7 +19,7 @@ final class SamlCertificates {
             return (X509Certificate) CertificateFactory.getInstance("X.509")
                     .generateCertificate(new ByteArrayInputStream(pem.getBytes(StandardCharsets.UTF_8)));
         } catch (CertificateException e) {
-            throw new BadRequestException("invalid SP certificate (expected PEM X.509)");
+            throw BadRequestException.of("saml.sp.invalidCert");
         }
     }
 }

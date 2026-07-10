@@ -50,7 +50,7 @@ public class ReauthService {
 
         if (!factorHandlers.get(factor).verify(user, verification, request)) {
             audit.record(new AuditRecord(AuditType.REAUTH_FAILURE, user.getUsername(), false, "factor=" + factor, null));
-            throw new BadRequestException("Re-authentication failed.");
+            throw BadRequestException.of("auth.reauth.failed");
         }
 
         // Per-policy defence in depth: rotate the session id on a successful re-auth BEFORE the response
@@ -83,7 +83,7 @@ public class ReauthService {
         boolean ok = Arrays.stream(allowed.split(","))
                 .map(String::trim).anyMatch(f -> f.equals(factor.name()));
         if (!ok) {
-            throw new BadRequestException(factor + " is not an allowed re-auth factor");
+            throw BadRequestException.of("auth.reauth.factorNotAllowed", factor);
         }
     }
 }

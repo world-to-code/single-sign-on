@@ -52,12 +52,12 @@ public class ResourceGraphService {
         // two orgs, nor a global node to a tenant one. Enforced here as a domain guarantee (independent of the
         // admin-layer tier gate), turning what RLS would otherwise reject as a WITH CHECK 500 into a clean 4xx.
         if (!Objects.equals(parent.getOrgId(), child.getOrgId())) {
-            throw new BadRequestException("Cannot link resources across organizations.");
+            throw BadRequestException.of("resource.link.crossOrg");
         }
 
         // Reachability covers self-loops too (a node reaches itself), so a parent==child edge is a cycle.
         if (scope.reaches(childId, parentId)) {
-            throw new ConflictException("Attaching this child would create a cycle in the resource graph.");
+            throw ConflictException.of("resource.link.cycle");
         }
         parent.requireCanNest(allowedMemberTypes(parent.getType().getId()));
         // Both endpoints share the parent's tenant (enforced above), so the edge is owned by that org; RLS

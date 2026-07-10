@@ -44,7 +44,7 @@ public class LastAdminGuard {
                 .anyMatch(user -> user.isEnabled() && !user.getId().equals(targetId));
 
         if (targetIsEnabledAdmin && !anotherEnabledAdminExists) {
-            throw new ConflictException("cannot remove the last administrator");
+            throw ConflictException.of("admin.lastAdmin");
         }
     }
 }

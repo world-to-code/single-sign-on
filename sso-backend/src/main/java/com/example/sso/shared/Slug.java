@@ -20,7 +20,7 @@ public final class Slug {
     public static String normalize(String raw) {
         String slug = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
         if (!PATTERN.matcher(slug).matches()) {
-            throw new BadRequestException("slug must be 2-63 chars: lowercase letters, digits, or hyphens");
+            throw BadRequestException.of("slug.invalid");
         }
         return slug;
     }

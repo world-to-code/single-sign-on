@@ -61,7 +61,7 @@ public class SelfSignupService {
         // activation — and store the SAME normalized value the organization registry will (single source of truth).
         String slug = Slug.normalize(spec.slug());
         if (organizations.findBySlug(slug).isPresent()) {
-            throw new ConflictException("That subdomain is already taken. Choose another.");
+            throw ConflictException.of("onboarding.subdomain.taken");
         }
         // Anti-bomb: don't email an address again while a live verification is still fresh. Bounds a
         // rotating-IP attacker (past the per-IP rate limit) to one verification mail per address per cooldown,
@@ -94,13 +94,13 @@ public class SelfSignupService {
     public SignupView activate(String rawToken, String password) {
         SignupRequest signup = signups.findByTokenHash(tokens.hash(rawToken))
                 .filter(existing -> existing.isRedeemable(Instant.now()))
-                .orElseThrow(() -> new BadRequestException("invalid or expired verification link"));
+                .orElseThrow(() -> BadRequestException.of("onboarding.verification.invalid"));
         if (password == null || password.length() < minPasswordLength) {
-            throw new BadRequestException("password must be at least " + minPasswordLength + " characters");
+            throw BadRequestException.of("onboarding.password.tooShort", minPasswordLength);
         }
         // Consume FIRST, atomically: only the winner of a concurrent double-redeem gets 1 row (single-use).
         if (signups.consume(signup.getId(), Instant.now()) == 0) {
-            throw new BadRequestException("invalid or expired verification link");
+            throw BadRequestException.of("onboarding.verification.invalid");
         }
         // The organization IS the company (the tenant); its slug is the company slug the applicant chose.
         OrganizationView org = organizations.create(new NewOrganization(signup.getSlug(), signup.getName(),

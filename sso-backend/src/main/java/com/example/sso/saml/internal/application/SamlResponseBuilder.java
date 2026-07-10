@@ -160,7 +160,7 @@ public class SamlResponseBuilder {
     private EncryptedAssertion encryptAssertion(Assertion assertion, SamlRelyingParty sp)
             throws EncryptionException {
         if (sp.getEncryptionCertificate() == null) {
-            throw new BadRequestException("encrypt_assertion is enabled but the SP has no encryption certificate");
+            throw BadRequestException.of("saml.sp.noEncryptionCert");
         }
         BasicX509Credential spCredential = new BasicX509Credential(SamlCertificates.parse(sp.getEncryptionCertificate()));
 

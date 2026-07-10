@@ -85,7 +85,7 @@ public class FactorStepService {
         // Account lockout applies to every factor (password is verified here too, not just /login).
         if (user.isTemporarilyLocked(Instant.now()) || !user.isAccountNonLocked()) {
             audit.record(new AuditRecord(AuditType.MFA_LOCKED, user.getUsername(), false, "factor=" + factor.name(), null));
-            throw new LockedException("Account is temporarily locked. Try again later.");
+            throw LockedException.of("auth.account.locked");
         }
 
         if (factorHandlers.get(factor).verify(user, verification, request)) {
@@ -98,7 +98,7 @@ public class FactorStepService {
 
         loginAttempts.onFailure(user.getUsername());
         audit.record(new AuditRecord(AuditType.MFA_FAILURE, user.getUsername(), false, "factor=" + factor.name(), null));
-        throw new BadRequestException("Incorrect code. Try again.");
+        throw BadRequestException.of("auth.code.incorrect");
     }
 
     /**
@@ -134,7 +134,7 @@ public class FactorStepService {
         }
 
         if (!view.pendingFactors().contains(factor.name())) {
-            throw new BadRequestException("Not the expected authentication step.");
+            throw BadRequestException.of("auth.step.unexpected");
         }
     }
 }

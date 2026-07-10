@@ -25,7 +25,7 @@ public class TotpEnrollmentService {
     public FactorChallenge setup(HttpServletRequest request) {
         UserAccount user = currentUser.requireMfaComplete();
         if (factorHandlers.isEnrolled(AuthFactor.TOTP, user)) {
-            throw new ConflictException("An authenticator is already set up. Remove it first to re-enroll.");
+            throw ConflictException.of("auth.totp.alreadyEnrolled");
         }
 
         return factorHandlers.get(AuthFactor.TOTP).prepare(user, request);
@@ -35,7 +35,7 @@ public class TotpEnrollmentService {
     public void confirmSetup(FactorVerificationRequest verification, HttpServletRequest request) {
         UserAccount user = currentUser.requireMfaComplete();
         if (!factorHandlers.get(AuthFactor.TOTP).verify(user, verification, request)) {
-            throw new BadRequestException("Incorrect code. Try again.");
+            throw BadRequestException.of("auth.code.incorrect");
         }
 
         audit.record(AuditType.TOTP_ENROLLED, user.getUsername(), true);

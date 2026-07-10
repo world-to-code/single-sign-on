@@ -96,7 +96,7 @@ public class ResourceAccessPolicy {
             return;
         }
         if (!organizations.isMember(orgId, userId)) {
-            throw new BadRequestException("The user must be a member of this resource's organization.");
+            throw BadRequestException.of("resource.member.notInOrg");
         }
     }
 

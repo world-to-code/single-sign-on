@@ -100,7 +100,7 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
     public NetworkZoneView create(NetworkZoneSpec spec) {
         UUID creationOrg = tierGuard.currentTier();
         if (findInTier(spec.name(), creationOrg).isPresent()) {
-            throw new ConflictException("zone name already exists");
+            throw ConflictException.of("session.zone.duplicate");
         }
         List<String> validated = validateCidrs(spec.cidrs());
         NetworkZone zone = repository.save(new NetworkZone(spec.name(), spec.description(), creationOrg));
@@ -115,7 +115,7 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
         NetworkZone zone = tierGuard.requireInTier(repository.findById(id), () -> new NotFoundException("zone not found"));
         findInTier(spec.name(), tierGuard.currentTier())
                 .filter(other -> !other.getId().equals(id))
-                .ifPresent(other -> { throw new ConflictException("zone name already exists"); });
+                .ifPresent(other -> { throw ConflictException.of("session.zone.duplicate"); });
         List<String> validated = validateCidrs(spec.cidrs());
         zone.update(spec.name(), spec.description());
         replaceCidrs(id, validated);
@@ -139,7 +139,7 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
     public void delete(UUID id) {
         NetworkZone zone = tierGuard.requireInTier(repository.findById(id), () -> new NotFoundException("zone not found"));
         if (policyIpRules.countByZoneId(id) > 0) {
-            throw new ConflictException("zone is referenced by a session policy; remove those rules first");
+            throw ConflictException.of("session.zone.inUse");
         }
         cidrs.deleteByZoneId(id); // explicitly remove the child rows before the owner (no JPA cascade)
         try {
@@ -148,7 +148,7 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
         } catch (DataIntegrityViolationException e) {
             // TOCTOU backstop: a policy referenced the zone between the count and the delete — the DB FK
             // refused. Same outcome as the guard above, so report the same 409, not a 500.
-            throw new ConflictException("zone is referenced by a session policy; remove those rules first");
+            throw ConflictException.of("session.zone.inUse");
         }
         events.publishEvent(new NetworkZoneCacheChanged());
     }
@@ -175,13 +175,13 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
         List<String> trimmed = cidrs == null ? List.of()
                 : cidrs.stream().map(String::trim).filter(s -> !s.isEmpty()).distinct().toList();
         if (trimmed.isEmpty()) {
-            throw new BadRequestException("a network zone needs at least one CIDR");
+            throw BadRequestException.of("session.zone.cidrRequired");
         }
         for (String cidr : trimmed) {
             try {
                 new IpAddressMatcher(cidr);
             } catch (IllegalArgumentException e) {
-                throw new BadRequestException("invalid CIDR: " + cidr);
+                throw BadRequestException.of("session.cidr.invalid", cidr);
             }
         }
         return trimmed;

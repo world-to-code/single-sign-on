@@ -109,7 +109,7 @@ public class ClientAdminService {
     @Transactional
     public ClientCreated createClient(CreateClientRequest request) {
         if (registeredClients.findByClientId(request.clientId()) != null) {
-            throw new ConflictException("clientId already exists");
+            throw ConflictException.of("admin.client.duplicate");
         }
 
         RegisteredClient.Builder clientBuilder =
@@ -128,9 +128,7 @@ public class ClientAdminService {
         } else {
             authMethods.forEach(m -> {
                 if (!SUPPORTED_AUTH_METHODS.contains(m)) {
-                    throw new BadRequestException("unsupported client authentication method '" + m
-                            + "'; enforceable methods are " + SUPPORTED_AUTH_METHODS
-                            + " (use a public client for 'none')");
+                    throw BadRequestException.of("admin.client.unsupportedAuthMethod", m, SUPPORTED_AUTH_METHODS);
                 }
                 clientBuilder.clientAuthenticationMethod(new ClientAuthenticationMethod(m));
             });
@@ -187,7 +185,7 @@ public class ClientAdminService {
         // The first-party admin console is a fixed part of the platform (auto-assigned to admins,
         // launches /admin); it is protected from deletion so the admin entry point can't be removed.
         if (AdminPortalSeeder.CLIENT_ID.equals(client.getClientId())) {
-            throw new ConflictException("the admin console client is protected and cannot be deleted");
+            throw ConflictException.of("admin.client.consoleProtected");
         }
 
         clientRows.deleteById(id);
@@ -200,7 +198,7 @@ public class ClientAdminService {
         // "admin" is the reserved privilege-elevation scope for the first-party admin-console client only;
         // refuse it on any admin-created client so an admin-scoped token can't be minted elsewhere.
         if (scopes.contains(AdminPortalSeeder.ADMIN_SCOPE)) {
-            throw new BadRequestException("the 'admin' scope is reserved and cannot be assigned to a client");
+            throw BadRequestException.of("admin.client.adminScopeReserved");
         }
         return scopes;
     }

@@ -226,13 +226,13 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         List<String> tokens = reauthFactors == null ? List.of()
                 : Arrays.stream(reauthFactors.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
         if (tokens.isEmpty()) {
-            throw new BadRequestException("at least one re-auth factor is required");
+            throw BadRequestException.of("session.policy.reauthFactorRequired");
         }
 
         Set<String> valid = EnumSet.allOf(AuthFactor.class).stream().map(Enum::name).collect(Collectors.toSet());
         for (String token : tokens) {
             if (!valid.contains(token)) {
-                throw new BadRequestException("unknown re-auth factor: " + token);
+                throw BadRequestException.of("session.policy.reauthFactorUnknown", token);
             }
         }
 
@@ -250,10 +250,10 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
             try {
                 zoneId = UUID.fromString(r.zoneId());
             } catch (IllegalArgumentException e) {
-                throw new BadRequestException("invalid zone id: " + r.zoneId());
+                throw BadRequestException.of("session.policy.invalidZoneId", r.zoneId());
             }
             if (!networkZones.exists(zoneId)) {
-                throw new BadRequestException("unknown network zone: " + r.zoneId());
+                throw BadRequestException.of("session.policy.unknownZone", r.zoneId());
             }
             entries.add(new IpRuleEntry(zoneId, IpAction.valueOf(r.action()), r.priority()));
         }
@@ -272,7 +272,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
     public SessionPolicyDetails create(SessionPolicySpec spec) {
         UUID creationOrg = tierGuard.currentTier();
         if (existsInTier(spec.name(), creationOrg)) {
-            throw new ConflictException("policy name already exists");
+            throw ConflictException.of("session.policy.duplicate");
         }
 
         String reauthFactors = validateReauthFactors(spec.reauthFactors());
@@ -350,7 +350,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
     public void delete(UUID id) {
         SessionPolicy policy = tierGuard.requireInTier(repository.findById(id), () -> new NotFoundException("policy not found"));
         if (isDefaultFallback(policy)) {
-            throw new BadRequestException("the Default policy cannot be deleted");
+            throw BadRequestException.of("session.policy.defaultNoDelete");
         }
 
         // Explicitly remove the child rows before the owner (no JPA cascade).
@@ -364,7 +364,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
             repository.delete(policy);
             repository.flush();
         } catch (DataIntegrityViolationException e) {
-            throw new ConflictException("this policy governs the admin console; select another one first");
+            throw ConflictException.of("session.policy.governsConsole");
         }
         events.publishEvent(new SessionPolicyCacheChanged());
     }
@@ -448,7 +448,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         try {
             new IpAddressMatcher(cidr);
         } catch (IllegalArgumentException e) {
-            throw new BadRequestException("invalid CIDR: " + cidr);
+            throw BadRequestException.of("session.cidr.invalid", cidr);
         }
     }
 

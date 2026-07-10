@@ -72,7 +72,7 @@ public class SamlSloController {
         // wantAuthnRequestsSigned flag): the signature prevents cross-site logout-CSRF, since /saml2/idp/slo
         // is permitAll and a Lax SESSION cookie IS sent on a top-level GET navigation.
         if (signature == null || sigAlg == null) {
-            throw new BadRequestException("LogoutRequest must be signed (Redirect binding)");
+            throw BadRequestException.of("saml.logoutRequest.unsigned");
         }
         String query = httpRequest.getQueryString();
         int idx = query.indexOf(SIGNATURE_PARAM);
@@ -131,18 +131,18 @@ public class SamlSloController {
 
     private String require(String samlRequest) {
         if (samlRequest == null) {
-            throw new BadRequestException("SAMLRequest or SAMLResponse is required");
+            throw BadRequestException.of("saml.message.required");
         }
         return samlRequest;
     }
 
     private SamlRelyingParty resolve(LogoutRequest request) {
         if (request.getIssuer() == null || request.getIssuer().getValue() == null || request.getID() == null) {
-            throw new BadRequestException("LogoutRequest is missing Issuer or ID");
+            throw BadRequestException.of("saml.logoutRequest.missingIssuerOrId");
         }
         String spEntityId = request.getIssuer().getValue();
         return relyingParties.findByEntityId(spEntityId)
-                .orElseThrow(() -> new BadRequestException("Unknown SP: " + spEntityId));
+                .orElseThrow(() -> BadRequestException.of("saml.sp.unknown", spEntityId));
     }
 
     /** The subject to audit: the live session's principal, or the request NameID if the session is gone. */

@@ -69,15 +69,14 @@ public class Resource extends AuditedEntity implements OrgOwned {
     /** Validates that a leaf member of the given kind may be attached, per this type's allowed kinds. */
     public void requireCanAttachMember(MemberType memberType, Set<MemberType> allowedMemberTypes) {
         if (memberType == MemberType.RESOURCE) {
-            throw new BadRequestException("Child resources are attached as edges, not members.");
+            throw BadRequestException.of("resource.member.childNotMember");
         }
         requireAllowed(memberType, allowedMemberTypes);
     }
 
     private void requireAllowed(MemberType memberType, Set<MemberType> allowedMemberTypes) {
         if (!allowedMemberTypes.contains(memberType)) {
-            throw new BadRequestException(
-                    "Resource type '" + type.getName() + "' does not allow " + memberType + " members.");
+            throw BadRequestException.of("resource.member.typeNotAllowed", type.getName(), memberType);
         }
     }
 }

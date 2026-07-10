@@ -19,7 +19,7 @@ public record AdminPortalSettingsRequest(String sessionPolicyId) {
         try {
             return new AdminPortalSettingsData(UUID.fromString(sessionPolicyId));
         } catch (IllegalArgumentException e) {
-            throw new BadRequestException("invalid session policy id");
+            throw BadRequestException.of("admin.sessionPolicy.invalidId");
         }
     }
 }

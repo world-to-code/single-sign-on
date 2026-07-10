@@ -115,7 +115,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
     public AuthPolicyView create(AuthPolicySpec spec) {
         UUID creationOrg = tierGuard.currentTier();
         if (existsInTier(spec.name(), creationOrg)) {
-            throw new ConflictException("policy name already exists");
+            throw ConflictException.of("authpolicy.name.duplicate");
         }
 
         AuthPolicy policy = new AuthPolicy(spec.name(), spec.priority(), creationOrg);
@@ -141,7 +141,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
     public AuthPolicyView update(UUID id, AuthPolicyUpdate update) {
         AuthPolicy policy = tierGuard.requireInTier(repository.findById(id), () -> new NotFoundException("policy not found"));
         if (isGlobalDefault(policy)) {
-            throw new BadRequestException("the Default fallback policy cannot be edited");
+            throw BadRequestException.of("authpolicy.defaultNoEdit");
         }
 
         policy.updatePriority(update.priority());
@@ -169,7 +169,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
     public void delete(UUID id) {
         AuthPolicy policy = tierGuard.requireInTier(repository.findById(id), () -> new NotFoundException("policy not found"));
         if (isGlobalDefault(policy)) {
-            throw new BadRequestException("the Default policy cannot be deleted");
+            throw BadRequestException.of("authpolicy.defaultNoDelete");
         }
 
         deleteSteps(id);                        // each step's factor rows, then the step rows
@@ -196,7 +196,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
     private void replaceSteps(AuthPolicy policy, List<? extends Set<AuthFactor>> steps) {
         for (Set<AuthFactor> factors : steps) {
             if (factors.isEmpty()) {
-                throw new BadRequestException("a policy step needs at least one factor");
+                throw BadRequestException.of("authpolicy.step.factorRequired");
             }
         }
 
@@ -249,7 +249,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         // Org-agnostic message: don't confirm that the rejected id belongs to ANOTHER org (a foreign-tenant
         // existence hint), only that it is not assignable here.
         if (org != null && !Objects.equals(org, policy.getOrgId())) {
-            throw new BadRequestException("That " + kind + " cannot be assigned to this policy.");
+            throw BadRequestException.of("authpolicy.assignment.notAllowed", kind);
         }
     }
 }

@@ -25,7 +25,7 @@ public class SamlSignatureValidator {
     public void verifyEmbedded(SignableSAMLObject signed, SamlRelyingParty relyingParty) {
         Signature signature = signed.getSignature();
         if (signature == null) {
-            throw new BadRequestException("AuthnRequest is not signed but the relying party requires it");
+            throw BadRequestException.of("saml.authnRequest.signatureRequired");
         }
 
         BasicX509Credential credential = new BasicX509Credential(requireCertificate(relyingParty));
@@ -33,7 +33,7 @@ public class SamlSignatureValidator {
             new SAMLSignatureProfileValidator().validate(signature);
             SignatureValidator.validate(signature, credential);
         } catch (SignatureException e) {
-            throw new BadRequestException("AuthnRequest signature is invalid");
+            throw BadRequestException.of("saml.authnRequest.signatureInvalid");
         }
     }
 
@@ -43,16 +43,16 @@ public class SamlSignatureValidator {
         BasicX509Credential credential = new BasicX509Credential(requireCertificate(relyingParty));
         try {
             if (!XMLSigningUtil.verifyWithURI(credential, signatureAlgorithmUri, signature, signedContent)) {
-                throw new BadRequestException("AuthnRequest signature is invalid");
+                throw BadRequestException.of("saml.authnRequest.signatureInvalid");
             }
         } catch (SecurityException e) {
-            throw new BadRequestException("AuthnRequest signature could not be verified");
+            throw BadRequestException.of("saml.authnRequest.signatureUnverifiable");
         }
     }
 
     private X509Certificate requireCertificate(SamlRelyingParty relyingParty) {
         if (relyingParty.getSigningCertificate() == null) {
-            throw new BadRequestException("relying party requires signed AuthnRequests but has no signing certificate");
+            throw BadRequestException.of("saml.sp.noSigningCert");
         }
 
         return SamlCertificates.parse(relyingParty.getSigningCertificate());

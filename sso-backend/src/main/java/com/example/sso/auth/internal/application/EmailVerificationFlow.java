@@ -40,7 +40,7 @@ public class EmailVerificationFlow {
     public void confirm(String code) {
         UserAccount user = currentUser.require();
         if (!proofs.redeem(user.getId(), user.getEmail(), code)) {
-            throw new BadRequestException("Invalid or expired verification code.");
+            throw BadRequestException.of("auth.verification.codeInvalid");
         }
         users.markEmailVerified(user.getId());
     }

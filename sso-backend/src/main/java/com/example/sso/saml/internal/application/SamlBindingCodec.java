@@ -61,7 +61,7 @@ public class SamlBindingCodec {
                      new InflaterInputStream(new ByteArrayInputStream(deflated), new Inflater(true))) {
             return parse(inflater);
         } catch (Exception e) {
-            throw new BadRequestException("Invalid SAML redirect message");
+            throw BadRequestException.of("saml.binding.invalidRedirect");
         }
     }
 
@@ -70,7 +70,7 @@ public class SamlBindingCodec {
         try {
             return parse(new ByteArrayInputStream(xml));
         } catch (Exception e) {
-            throw new BadRequestException("Invalid SAML POST message");
+            throw BadRequestException.of("saml.binding.invalidPost");
         }
     }
 

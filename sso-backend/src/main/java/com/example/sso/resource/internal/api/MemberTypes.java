@@ -11,7 +11,7 @@ final class MemberTypes {
         try {
             return MemberType.valueOf(name.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            throw new BadRequestException("Unknown member type: " + name);
+            throw BadRequestException.of("resource.memberType.unknown", name);
         }
     }
 
