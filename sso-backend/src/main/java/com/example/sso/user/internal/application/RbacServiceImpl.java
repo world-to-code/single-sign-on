@@ -12,17 +12,20 @@ import com.example.sso.user.internal.domain.RolePermissionRepository;
 import com.example.sso.user.internal.domain.RoleRepository;
 import com.example.sso.user.internal.domain.PermissionRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /** Default {@link RbacService}: manages the permission catalog (PBAC) and its assignment to roles. */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class RbacServiceImpl implements RbacService {
 
     /** The fine-grained permissions used by method-level {@code @PreAuthorize} policies (see {@link Permissions}). */
@@ -92,23 +95,36 @@ public class RbacServiceImpl implements RbacService {
         return orgContext.callInOrg(orgId, () -> {
             Map<String, UUID> provisioned = new LinkedHashMap<>();
             BASELINE_ROLES.forEach((name, baselinePermissions) ->
-                    provisioned.put(name, ensureOrgSystemRole(orgId, name, baselinePermissions).getId()));
+                    ensureOrgSystemRole(orgId, name, baselinePermissions)
+                            .ifPresent(role -> provisioned.put(name, role.getId())));
             return provisioned;
         });
     }
 
     /**
-     * Get-or-creates the org's own SYSTEM role and (idempotently) grants its baseline permissions. A
-     * pre-existing same-named tenant role is adopted as the baseline (marked system) rather than
-     * duplicated — the per-tier unique index admits only one row for the name anyway.
+     * Get-or-creates the org's own SYSTEM role and (idempotently) grants its baseline permissions.
+     *
+     * <p>Fails CLOSED on a name collision: the baseline names are reserved for new roles, but a tenant role
+     * predating that reservation could squat one. Adopting it (marking it system + granting the baseline)
+     * would silently elevate every current holder to full tenant-admin reach on the next login, so such a
+     * role is left untouched and reported — an operator renames it, then provisioning completes.
      */
-    private Role ensureOrgSystemRole(UUID orgId, String name, List<String> baselinePermissions) {
-        Role role = roles.findByNameAndOrgId(name, orgId).orElseGet(() -> new Role(name, orgId));
-        if (!role.isSystem()) {
-            role.markSystem();
+    private Optional<Role> ensureOrgSystemRole(UUID orgId, String name, List<String> baselinePermissions) {
+        Optional<Role> existing = roles.findByNameAndOrgId(name, orgId);
+        if (existing.isPresent() && !existing.get().isSystem()) {
+            log.error("Organization {} has a non-system role named '{}'; its baseline system role cannot be "
+                    + "provisioned until that role is renamed (holders are NOT elevated).", orgId, name);
+            return Optional.empty();
         }
-        role = roles.saveAndFlush(role);
+
+        Role role = roles.saveAndFlush(existing.orElseGet(() -> newSystemRole(name, orgId)));
         grantEach(role.getId(), baselinePermissions);
+        return Optional.of(role);
+    }
+
+    private Role newSystemRole(String name, UUID orgId) {
+        Role role = new Role(name, orgId);
+        role.markSystem();
         return role;
     }
 

@@ -56,7 +56,11 @@ public class RoleServiceImpl implements RoleService {
     // security-significant authority, else a role could grant MFA_COMPLETE, a factor, SCIM access or a
     // permission without going through the proper flow. These mirror authpolicy.Factors / SCIM authorities
     // as protocol constants (the user module must not depend on those modules).
-    private static final Set<String> RESERVED_AUTHORITY_NAMES = Set.of("MFA_COMPLETE", Roles.SCIM);
+    // Also reserved: the well-known SYSTEM role names. Their names ARE emitted as authorities (globally, and
+    // for an org's provisioned copies), so a tenant-created role squatting one of these names would be
+    // indistinguishable from the real thing to any authorization check that keys on the name.
+    private static final Set<String> RESERVED_AUTHORITY_NAMES = Set.of("MFA_COMPLETE", Roles.SCIM,
+            Roles.ADMIN, Roles.USER, Roles.GROUP_ADMIN, Roles.ORG_ADMIN);
     private static final Set<String> RESERVED_AUTHORITY_PREFIXES = Set.of("FACTOR_", "AUTH_TIME_", "STEPUP_TIME_");
 
     private final RoleRepository roles;
@@ -70,6 +74,7 @@ public class RoleServiceImpl implements RoleService {
     private final PermissionGrantPolicy grantPolicy;
     private final OrgContext orgContext;
     private final RbacHydrator hydrator;
+    private final RoleTierResolver tierResolver;
 
     /** The org a newly-created role belongs to: the active tenant context, or null (global/system role). */
     private UUID creationOrg() {
@@ -81,6 +86,12 @@ public class RoleServiceImpl implements RoleService {
     public Optional<RoleRef> findByName(String name) {
         // Name-based lookup targets the global tier; tenant roles are addressed by id.
         return roles.findByNameAndOrgIdIsNull(name).map(hydrator::hydrateRole).map(r -> r);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<RoleRef> findByName(String name, UUID orgId) {
+        return tierResolver.resolve(name, orgId).map(hydrator::hydrateRole).map(r -> r);
     }
 
     @Override

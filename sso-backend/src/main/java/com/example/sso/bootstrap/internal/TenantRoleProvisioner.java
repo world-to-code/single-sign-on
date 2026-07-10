@@ -7,7 +7,6 @@ import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.RbacService;
 import com.example.sso.user.RoleService;
 import com.example.sso.user.Roles;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -36,9 +35,6 @@ public class TenantRoleProvisioner {
 
     private static final Logger log = LoggerFactory.getLogger(TenantRoleProvisioner.class);
 
-    private static final List<String> BASELINE_ROLE_NAMES =
-            List.of(Roles.USER, Roles.GROUP_ADMIN, Roles.ORG_ADMIN);
-
     private final RbacService rbac;
     private final RoleService roles;
     private final AdminConsoleAccess consoleAccess;
@@ -60,23 +56,29 @@ public class TenantRoleProvisioner {
 
     private Map<String, UUID> provision(UUID orgId) {
         Map<String, UUID> provisioned = rbac.provisionBaselineRoles(orgId);
-        consoleAccess.assignToRole(provisioned.get(Roles.ORG_ADMIN), orgId);
+        // A baseline role blocked by a name collision is absent (reported by the provisioner) — never grant
+        // console entry to a role that does not exist.
+        UUID orgAdminRoleId = provisioned.get(Roles.ORG_ADMIN);
+        if (orgAdminRoleId != null) {
+            consoleAccess.assignToRole(orgAdminRoleId, orgId);
+        }
         return provisioned;
     }
 
     /**
      * Moves the org's members (users whose identity belongs to the org) off a GLOBAL baseline role onto
-     * the org's own copy. Grant-then-revoke, so a holder never has a window without the role. Runs in the
-     * org's scope: the role table is RLS-forced, so the org role is invisible to the (unbound) startup
-     * thread otherwise; global rows stay visible inside an org scope.
+     * the org's own copy — iterating exactly the roles that were provisioned, so the migrated set can
+     * never drift from the baseline {@code RbacService} owns. Grant-then-revoke, so a holder never has a
+     * window without the role. Runs in the org's scope: the role table is RLS-forced, so the org role is
+     * invisible to the (unbound) startup thread otherwise; global rows stay visible inside an org scope.
      */
     private void migrateMembersToOrgRoles(UUID orgId, Map<String, UUID> orgRoles) {
-        orgContext.runInOrg(orgId, () -> BASELINE_ROLE_NAMES.forEach(name ->
+        orgContext.runInOrg(orgId, () -> orgRoles.forEach((name, orgRoleId) ->
                 roles.findByName(name).ifPresent(global ->
                         roles.members(global.getId()).stream()
                                 .filter(user -> orgId.equals(user.getOrgId()))
                                 .forEach(user -> {
-                                    roles.addMember(orgRoles.get(name), user.getId());
+                                    roles.addMember(orgRoleId, user.getId());
                                     roles.removeMember(global.getId(), user.getId());
                                     log.info("Migrated {} from the global {} to organization {}'s own role",
                                             user.getUsername(), name, orgId);

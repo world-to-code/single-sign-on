@@ -68,6 +68,7 @@ class UserServiceImplTest {
     @Mock private ApplicationEventPublisher events;
     @Mock private PermissionGrantPolicy grantPolicy;
     @Mock private RbacHydrator hydrator;
+    @Mock private RoleTierResolver tierResolver;
     // Real (spies) so resolution falls through to a global (null-org) lookup with no login/session scope bound.
     @SuppressWarnings("unchecked")
     @Spy private OrgContext orgContext = new OrgContext(mock(ObjectProvider.class));
@@ -125,7 +126,7 @@ class UserServiceImplTest {
     void createUserWithUnknownRoleThrowsBadRequest() {
         when(users.existsByUsernameInOrg("alice", null)).thenReturn(false);
         when(users.existsByEmailInOrg("alice@example.com", null)).thenReturn(false);
-        when(roles.findByNameAndOrgIdIsNull("ROLE_GHOST")).thenReturn(Optional.empty());
+        when(tierResolver.resolve("ROLE_GHOST", null)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.createUser(newUser(Set.of("ROLE_GHOST"))))
                 .isInstanceOf(BadRequestException.class);
@@ -185,7 +186,7 @@ class UserServiceImplTest {
     void updateUserRejectsAnUnknownRole() {
         UUID id = UUID.randomUUID();
         when(users.findById(id)).thenReturn(Optional.of(new AppUser("alice", "a@x", "A", "h")));
-        when(roles.findByNameAndOrgIdIsNull("ROLE_GHOST")).thenReturn(Optional.empty());
+        when(tierResolver.resolve("ROLE_GHOST", null)).thenReturn(Optional.empty());
 
         UserUpdate update = new UserUpdate("Alice", "a@x", true, Set.of("ROLE_GHOST"));
 

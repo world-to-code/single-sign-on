@@ -17,6 +17,14 @@ public interface RoleService {
 
     Optional<RoleRef> findByName(String name);
 
+    /**
+     * Resolves a role NAME within a tier: {@code orgId}'s own role of that name first, else the GLOBAL one
+     * ({@code orgId} null = global only). Authorization checks on a role name MUST resolve through this
+     * with the acting tier — resolving globally while the assignment resolves per-org would let a scoped
+     * admin hand out an org role the check never inspected.
+     */
+    Optional<RoleRef> findByName(String name, UUID orgId);
+
     Optional<RoleRef> findById(UUID id);
 
     /**

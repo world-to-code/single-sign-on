@@ -292,7 +292,7 @@ class AdminAccessPolicyTest {
         UUID roleId = UUID.randomUUID();
         RoleRef reporting = mock(RoleRef.class);
         when(reporting.getId()).thenReturn(roleId);
-        when(roleService.findByName("ROLE_REPORTING")).thenReturn(Optional.of(reporting));
+        when(roleService.findByName("ROLE_REPORTING", null)).thenReturn(Optional.of(reporting));
         when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.ORG_CREATE));
 
         assertThat(policy.mayAssignRoles(Set.of("ROLE_REPORTING"))).isFalse();
@@ -311,7 +311,38 @@ class AdminAccessPolicyTest {
 
     @Test
     void nonSuperAdminMayAssignOrdinaryRoles() {
+        UUID roleId = UUID.randomUUID();
+        RoleRef support = mock(RoleRef.class);
+        when(support.getId()).thenReturn(roleId);
+        when(roleService.findByName("ROLE_SUPPORT", null)).thenReturn(Optional.of(support));
+        when(roleService.permissionNames(roleId)).thenReturn(Set.of());
+
         assertThat(policy.mayAssignRoles(Set.of("ROLE_SUPPORT"))).isTrue();
+    }
+
+    @Test
+    void nonSuperAdminMayNotAssignARoleTheCheckCannotResolve() {
+        // Fail closed: a name that resolves to no role in the acting tier must not pass the gate. Passing it
+        // (the old orElse(true)) let the SERVICE resolve an org role the CHECK never inspected.
+        assertThat(policy.mayAssignRoles(Set.of("ROLE_UNKNOWN"))).isFalse();
+    }
+
+    @Test
+    void nonSuperAdminMayNotAssignAnOrgRoleCarryingAPermissionTheyDoNotHold() {
+        // The check must resolve the role in the ACTING TENANT's tier — the same tier the assignment resolves
+        // in. An org-only role name that the global lookup misses would otherwise sail through the gate and
+        // then be assigned, handing the target a permission the actor lacks (privilege escalation).
+        UUID orgId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgId));
+        RoleRef appManager = mock(RoleRef.class);
+        when(appManager.getId()).thenReturn(roleId);
+        when(roleService.findByName("appManager", orgId)).thenReturn(Optional.of(appManager));
+        when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.CLIENT_CREATE));
+
+        // The actor holds only user:create/user:read (see signInWith) — never oidc-client:create.
+        signInWith(Permissions.USER_CREATE, Permissions.USER_READ);
+        assertThat(policy.mayAssignRoles(Set.of("appManager"))).isFalse();
     }
 
     @Test
@@ -321,7 +352,7 @@ class AdminAccessPolicyTest {
         UUID roleId = UUID.randomUUID();
         RoleRef reader = mock(RoleRef.class);
         when(reader.getId()).thenReturn(roleId);
-        when(roleService.findByName("ROLE_READER")).thenReturn(Optional.of(reader));
+        when(roleService.findByName("ROLE_READER", null)).thenReturn(Optional.of(reader));
         when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.USER_READ));
 
         assertThat(policy.mayAssignRoles(Set.of("ROLE_READER"))).isFalse();
@@ -333,7 +364,7 @@ class AdminAccessPolicyTest {
         UUID roleId = UUID.randomUUID();
         RoleRef reader = mock(RoleRef.class);
         when(reader.getId()).thenReturn(roleId);
-        when(roleService.findByName("ROLE_READER")).thenReturn(Optional.of(reader));
+        when(roleService.findByName("ROLE_READER", null)).thenReturn(Optional.of(reader));
         when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.USER_READ));
 
         assertThat(policy.mayAssignRoles(Set.of("ROLE_READER"))).isTrue();
@@ -426,7 +457,7 @@ class AdminAccessPolicyTest {
         UUID roleId = UUID.randomUUID();
         RoleRef auditor = mock(RoleRef.class);
         when(auditor.getId()).thenReturn(roleId);
-        when(roleService.findByName("ROLE_AUDITOR")).thenReturn(Optional.of(auditor));
+        when(roleService.findByName("ROLE_AUDITOR", null)).thenReturn(Optional.of(auditor));
         when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.ORG_CREATE));
 
         assertThat(policy.canUpdateUser(OTHER_ID, true, Set.of("ROLE_AUDITOR"))).isFalse();

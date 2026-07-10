@@ -12,6 +12,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -56,17 +57,31 @@ class RbacDelegationIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void anOrgRoleNamedLikeASystemRoleGrantsItsPermissionsButNotThatAuthority() {
-        // Role names are unrestricted (no prefix limit): a tenant may create an org role literally named
-        // ROLE_ADMIN. It must NOT escalate — an org role contributes only its permissions, never its name
-        // as a granted authority, so it can never mint the platform super-admin authority.
+    void aRoleMayNotBeNamedAfterASystemRole() {
+        // A SYSTEM role's name IS emitted as an authority (globally, and for an org's provisioned copies), so
+        // a role squatting one of those names would be indistinguishable from the real thing to any check
+        // that keys on the name. Minting one is refused outright — in a tenant context too.
+        String s = UUID.randomUUID().toString().substring(0, 8);
+        UUID orgId = organizations.create(new NewOrganization("esc-" + s, "Esc")).id();
+
+        for (String reserved : List.of(Roles.ADMIN, Roles.ORG_ADMIN, Roles.GROUP_ADMIN, Roles.USER)) {
+            assertThatThrownBy(() -> orgContext.callInOrg(orgId,
+                    () -> roleService.create(reserved, Set.of(Permissions.USER_READ))))
+                    .isInstanceOf(BadRequestException.class);
+        }
+    }
+
+    @Test
+    void aCustomOrgRoleGrantsItsPermissionsButNotItsNameAsAnAuthority() {
+        // An org's CUSTOM role contributes only its permissions — never its name — so a tenant can never mint
+        // an authority by naming a role after one. (Only the org's provisioned SYSTEM roles emit their name.)
         String s = UUID.randomUUID().toString().substring(0, 8);
         UUID orgId = organizations.create(new NewOrganization("esc-" + s, "Esc")).id();
         String username = "esc-user-" + s;
         UUID user = userService.createUser(new NewUser(username, username + "@example.com", "Esc",
                 "S3cret!pw", Set.of("ROLE_USER"))).getId();
         UUID roleId = orgContext.callInOrg(orgId,
-                () -> roleService.create("ROLE_ADMIN", Set.of(Permissions.USER_READ))).getId();
+                () -> roleService.create("ESCALATOR", Set.of(Permissions.USER_READ))).getId();
         // Managing an org role's membership runs in that org's context (as a drilled-in admin would); the
         // org role is RLS-invisible from an unbound context now that the app runs as a non-superuser.
         orgContext.runInOrg(orgId, () -> roleService.addMember(roleId, user));
@@ -74,8 +89,8 @@ class RbacDelegationIT extends AbstractIntegrationTest {
         // Authorities are computed bound to the login org (as at real login), so the org role resolves; an
         // unbound computation would not see it now that the app runs as a non-superuser (RLS).
         Set<String> authorities = orgContext.callInOrg(orgId, () -> authoritiesOf(username));
-        assertThat(authorities).contains(Permissions.USER_READ);      // the org role's permission is granted
-        assertThat(authorities).doesNotContain("ROLE_ADMIN");         // but NOT the ROLE_ADMIN authority
+        assertThat(authorities).contains(Permissions.USER_READ);   // the org role's permission is granted
+        assertThat(authorities).doesNotContain("ESCALATOR");        // but NOT its name as an authority
     }
 
     @Test

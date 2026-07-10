@@ -69,6 +69,7 @@ public class UserServiceImpl implements UserService {
     private final ApplicationEventPublisher events;
     private final PermissionGrantPolicy grantPolicy;
     private final RbacHydrator hydrator;
+    private final RoleTierResolver tierResolver;
     private final OrgContext orgContext;
     private final LoginResolutionScope loginScope;
 
@@ -456,16 +457,13 @@ public class UserServiceImpl implements UserService {
      * Resolves an EXISTING role for assignment. Role minting happens only through the role builder
      * (which validates the name); resolving here never creates a role, so a user-management call can
      * never plant a role whose name collides with a reserved authority (e.g. MFA_COMPLETE, key:rotate).
-     * A tenant user's name resolves to their ORG's own (provisioned baseline) role when one exists,
-     * falling back to the global role (platform accounts, and names the org has no copy of). The org
-     * lookup runs in the org's scope — the caller (self-signup / async onboarding) may be unbound and the
-     * role table is RLS-forced, so a bare query would silently miss the org row and re-plant the global one.
+     * A tenant user's name resolves to their ORG's own (provisioned baseline) role when one exists, falling
+     * back to the global role (platform accounts, and names the org has no copy of) — through the SAME
+     * {@link RoleTierResolver} the authorization check uses, so a role can never be checked in one tier and
+     * assigned from another.
      */
     private Role requireRole(String name, UUID orgId) {
-        return (orgId == null
-                ? Optional.<Role>empty()
-                : orgContext.callInOrg(orgId, () -> roles.findByNameAndOrgId(name, orgId)))
-                .or(() -> roles.findByNameAndOrgIdIsNull(name))
+        return tierResolver.resolve(name, orgId)
                 .orElseThrow(() -> new BadRequestException("unknown role: " + name));
     }
 

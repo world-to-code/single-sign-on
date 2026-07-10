@@ -343,9 +343,13 @@ public class AdminAccessPolicy {
         return roleService.permissionNames(roleId).stream().anyMatch(Permissions::isPlatform);
     }
 
-    /** Whether the role (by name) carries any platform-only permission; unknown name → false. */
+    /**
+     * Whether the role (by name) carries any platform-only permission. Resolved IN THE ACTING TIER (the
+     * org's own role of that name first, else the global one) — exactly as the assignment resolves it, so
+     * the role that is checked is the role that gets assigned. An unknown name carries nothing.
+     */
     private boolean roleCarriesPlatformPermission(String roleName) {
-        return roleService.findByName(roleName)
+        return roleService.findByName(roleName, actingOrg())
                 .map(role -> roleCarriesPlatformPermission(role.getId()))
                 .orElse(false);
     }
@@ -360,11 +364,16 @@ public class AdminAccessPolicy {
         return currentAuthorities().containsAll(roleService.permissionNames(roleId));
     }
 
-    /** Grant-only-what-you-hold by role name; an unknown name is left for the service to reject (404), not blocked here. */
+    /**
+     * Grant-only-what-you-hold by role name, resolved IN THE ACTING TIER (org's own role first, else the
+     * global one) — the same resolution the assignment performs. Fails CLOSED on an unknown name: a role
+     * the check cannot see must never be assignable (an org-only name resolved as "unknown" while the
+     * service happily assigned the org role was a real escalation path).
+     */
     private boolean actorHoldsAllPermissionsOfRole(String roleName) {
-        return roleService.findByName(roleName)
+        return roleService.findByName(roleName, actingOrg())
                 .map(role -> actorHoldsAllPermissionsOf(role.getId()))
-                .orElse(true);
+                .orElse(false);
     }
 
     /** The authority strings the acting admin currently holds (role names, permissions, and session markers). */
