@@ -72,6 +72,14 @@ class EmailOwnershipProofIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void anAbandonedChallengeExpiresRatherThanLivingForever() {
+        // Without a TTL an unredeemed code stays grindable and Redis grows with every request ever made.
+        proofs.challenge(userId, "alice@example.com");
+
+        assertThat(redis.getExpire("email:proof:" + userId)).isPositive();
+    }
+
+    @Test
     void redeemingWithNoLiveChallengeFails() {
         assertThat(proofs.redeem(userId, "alice@example.com", "123456")).isFalse();
     }

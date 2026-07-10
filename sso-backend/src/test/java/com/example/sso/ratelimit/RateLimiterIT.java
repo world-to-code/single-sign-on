@@ -1,7 +1,9 @@
 package com.example.sso.ratelimit;
 
 import com.example.sso.support.AbstractIntegrationTest;
+import com.example.sso.ratelimit.internal.Bucket4jRateLimiter;
 import io.github.bucket4j.distributed.proxy.ProxyManager;
+import java.time.Duration;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -76,14 +78,15 @@ class RateLimiterIT extends AbstractIntegrationTest {
 
     @Test
     void anExhaustedBucketRefillsOverTime() {
-        // With a 1-token-per-window refill this would take a full window; the configured rate refills the
-        // first token in window/capacity, so a short poll is enough to prove the bucket is not stuck empty.
+        // The production window is a minute, so refilling one token would cost this test six seconds. Drive a
+        // limiter with the same code and a short window instead: the property is "an empty bucket recovers",
+        // not the configured rate.
+        RateLimiter fast = new Bucket4jRateLimiter(buckets, 2, 1);
         String key = key();
-        for (int call = 0; call < capacity; call++) {
-            limiter.tryAcquire(key);
-        }
-        assertThat(limiter.tryAcquire(key)).isFalse();
+        assertThat(fast.tryAcquire(key)).isTrue();
+        assertThat(fast.tryAcquire(key)).isTrue();
+        assertThat(fast.tryAcquire(key)).isFalse();
 
-        await().until(() -> limiter.tryAcquire(key));
+        await().atMost(Duration.ofSeconds(3)).until(() -> fast.tryAcquire(key));
     }
 }

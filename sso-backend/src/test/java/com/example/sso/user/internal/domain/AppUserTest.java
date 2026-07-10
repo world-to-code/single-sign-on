@@ -136,4 +136,24 @@ class AppUserTest {
 
         assertThat(user.isTemporarilyLocked(NOW)).isFalse();
     }
+
+    @Test
+    void successfulLoginClearsTheLockoutEscalationNotJustTheDeadline() {
+        // Keeping the escalation counter across a successful sign-in would start the NEXT lockout already
+        // doubled — a user who mistyped, signed in, then mistyped again would be locked out for twice as long.
+        LockoutPolicy policy = new LockoutPolicy(1, Duration.ofMinutes(15), Duration.ofHours(8));
+        AppUser user = newUser();
+        user.registerFailedLogin(policy, NOW);                       // lockout #1: 15 min
+        Instant afterFirst = NOW.plus(Duration.ofMinutes(16));
+        user.registerFailedLogin(policy, afterFirst);                // lockout #2: 30 min
+        assertThat(user.getLockout().lockouts()).isEqualTo(2);
+
+        user.registerSuccessfulLogin();
+
+        Instant later = afterFirst.plus(Duration.ofHours(1));
+        user.registerFailedLogin(policy, later);
+        // Back to the BASE window, not 60 min — the escalation really was cleared.
+        assertThat(user.getLockout().lockouts()).isEqualTo(1);
+        assertThat(user.getLockout().lockedUntil()).isEqualTo(later.plus(Duration.ofMinutes(15)));
+    }
 }
