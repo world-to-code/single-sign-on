@@ -11,6 +11,7 @@ import io.lettuce.core.codec.RedisCodec;
 import io.lettuce.core.codec.StringCodec;
 import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.data.redis.autoconfigure.DataRedisConnectionDetails;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -18,6 +19,11 @@ import org.springframework.context.annotation.Configuration;
  * The Redis connection Bucket4j stores its buckets in. Bucket4j needs a {@code String -> byte[]} Lettuce
  * connection, which Spring's {@code LettuceConnectionFactory} does not expose, so the rate limiter owns a
  * small dedicated client against the same Redis.
+ *
+ * <p>It is built from Boot's resolved {@link DataRedisConnectionDetails} — never from a second reading of
+ * {@code spring.data.redis.host/port} — so the credentials and TLS of the session client cannot drift from
+ * the limiter's. Prod Redis mandates a password (it holds serialized SecurityContexts); a client that
+ * ignored it would NOAUTH on every login attempt and take authentication down.
  *
  * <p>A bucket key expires once it has had time to refill to full: at that point its stored state is
  * indistinguishable from a fresh bucket, so dropping it costs nothing and Redis does not grow with every IP
@@ -27,9 +33,29 @@ import org.springframework.context.annotation.Configuration;
 public class RateLimitRedisConfig {
 
     @Bean(destroyMethod = "shutdown")
-    RedisClient rateLimitRedisClient(@Value("${spring.data.redis.host}") String host,
-                                     @Value("${spring.data.redis.port}") int port) {
-        return RedisClient.create(RedisURI.create(host, port));
+    RedisClient rateLimitRedisClient(DataRedisConnectionDetails redis) {
+        return RedisClient.create(uriOf(redis));
+    }
+
+    /** The same endpoint, credentials and TLS Boot resolved for the session client. */
+    RedisURI uriOf(DataRedisConnectionDetails redis) {
+        DataRedisConnectionDetails.Standalone standalone = redis.getStandalone();
+        RedisURI.Builder uri = RedisURI.builder()
+                .withHost(standalone.getHost())
+                .withPort(standalone.getPort())
+                .withDatabase(standalone.getDatabase())
+                .withSsl(redis.getSslBundle() != null);
+        String password = redis.getPassword();
+        if (password != null) {
+            char[] secret = password.toCharArray();
+            // ACL user + password, or the legacy password-only AUTH.
+            if (redis.getUsername() != null) {
+                uri.withAuthentication(redis.getUsername(), secret);
+            } else {
+                uri.withPassword(secret);
+            }
+        }
+        return uri.build();
     }
 
     @Bean(destroyMethod = "close")
