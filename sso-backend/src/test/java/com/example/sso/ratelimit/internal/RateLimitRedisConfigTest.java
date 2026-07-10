@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.data.redis.autoconfigure.DataRedisConnectionDetails;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The rate limiter opens its own Lettuce connection (Bucket4j needs a {@code String -> byte[]} codec that
@@ -60,5 +61,16 @@ class RateLimitRedisConfigTest {
 
         assertThat(uri.getUsername()).isEqualTo("sso");
         assertThat(uri.getPassword()).isEqualTo("s3cret".toCharArray());
+    }
+
+    @Test
+    void failsFastWithAClearMessageOnANonStandaloneTopology() {
+        // A cluster/sentinel connection has no Standalone; deriving host/port off null would NPE at startup.
+        DataRedisConnectionDetails clusterOnly = new DataRedisConnectionDetails() {
+        };
+
+        assertThatThrownBy(() -> config.uriOf(clusterOnly))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("standalone");
     }
 }

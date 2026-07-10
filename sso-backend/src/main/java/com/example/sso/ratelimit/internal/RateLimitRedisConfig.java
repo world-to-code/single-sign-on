@@ -3,15 +3,18 @@ package com.example.sso.ratelimit.internal;
 import io.github.bucket4j.distributed.ExpirationAfterWriteStrategy;
 import io.github.bucket4j.distributed.proxy.ProxyManager;
 import io.github.bucket4j.redis.lettuce.cas.LettuceBasedProxyManager;
+import io.lettuce.core.ClientOptions;
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
+import io.lettuce.core.SslOptions;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.codec.ByteArrayCodec;
 import io.lettuce.core.codec.RedisCodec;
 import io.lettuce.core.codec.StringCodec;
 import java.time.Duration;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.data.redis.autoconfigure.DataRedisConnectionDetails;
+import org.springframework.boot.ssl.SslBundle;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -34,12 +37,31 @@ public class RateLimitRedisConfig {
 
     @Bean(destroyMethod = "shutdown")
     RedisClient rateLimitRedisClient(DataRedisConnectionDetails redis) {
-        return RedisClient.create(uriOf(redis));
+        RedisClient client = RedisClient.create(uriOf(redis));
+        SslBundle bundle = redis.getSslBundle();
+        if (bundle != null) {
+            // Install the SAME trust/key material Boot resolved for the session client, not the JVM default
+            // trust store — else a private-CA Redis handshake fails and every rate-limited auth endpoint 500s.
+            client.setOptions(ClientOptions.builder()
+                    .sslOptions(SslOptions.builder()
+                            .jdkSslProvider()
+                            .trustManager(bundle.getManagers().getTrustManagerFactory())
+                            .keyManager(bundle.getManagers().getKeyManagerFactory())
+                            .build())
+                    .build());
+        }
+        return client;
     }
 
-    /** The same endpoint, credentials and TLS Boot resolved for the session client. */
+    /** The same endpoint and credentials Boot resolved for the session client. */
     RedisURI uriOf(DataRedisConnectionDetails redis) {
         DataRedisConnectionDetails.Standalone standalone = redis.getStandalone();
+        if (standalone == null) {
+            // The limiter only supports a standalone Redis today; a cluster/sentinel deployment would need
+            // its own topology wiring. Fail fast with a clear message rather than NPE on getHost().
+            throw new IllegalStateException(
+                    "Rate-limit Redis requires a standalone connection; cluster/sentinel is not supported");
+        }
         RedisURI.Builder uri = RedisURI.builder()
                 .withHost(standalone.getHost())
                 .withPort(standalone.getPort())
