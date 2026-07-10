@@ -270,11 +270,35 @@ public class AdminAccessPolicy {
     }
 
     /**
-     * Only a super admin may set direct permissions, and never another administrator's. A scoped admin
-     * is blocked outright — otherwise they could self-grant any authority and escalate to super admin.
+     * Who may set a user's DIRECT permissions: a super admin (never another administrator's), or a TENANT
+     * admin acting within their own org — a tenant owns its own directory. A resource delegate (scoped, but
+     * administering no org) stays blocked outright.
+     *
+     * <p>This says nothing about WHICH permissions may be handed out: that is {@link #mayGrantPermissions},
+     * which blocks platform-only permissions and enforces grant-only-what-you-hold. Both compose on the
+     * endpoint, so a tenant admin can never mint an authority they do not themselves hold.
      */
     public boolean canManagePermissions(UUID targetId) {
-        return currentIsSuperAdmin() && (isSelf(targetId) || !isAdmin(targetId));
+        if (currentIsSuperAdmin()) {
+            return isSelf(targetId) || !isAdmin(targetId);
+        }
+        return administersBoundOrg() && !isAdmin(targetId);
+    }
+
+    /**
+     * Grant-only-what-you-hold for DIRECT permission assignment: a non-super may hand out only permissions
+     * that are tenant-grantable AND that they themselves currently hold — otherwise a tenant admin could
+     * grant a puppet account (or themselves) an authority they lack and escalate within the tenant.
+     */
+    public boolean mayGrantPermissions(Collection<String> permissions) {
+        if (currentIsSuperAdmin()) {
+            return true;
+        }
+        if (permissions == null) {
+            return true;
+        }
+        return permissions.stream().noneMatch(Permissions::isPlatform)
+                && currentAuthorities().containsAll(permissions);
     }
 
     /**

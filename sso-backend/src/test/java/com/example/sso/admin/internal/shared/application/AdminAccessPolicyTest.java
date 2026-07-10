@@ -320,6 +320,56 @@ class AdminAccessPolicyTest {
         assertThat(policy.mayAssignRoles(Set.of("ROLE_SUPPORT"))).isTrue();
     }
 
+    // --- direct permissions: a tenant admin manages their own org, bounded by what they hold ---
+
+    @Test
+    void aTenantAdminMayManageTheirOwnOrgsUsersDirectPermissions() {
+        // A tenant admin owns their tenant: they may set a user's direct permissions. The permissions
+        // themselves are bounded by mayGrantPermissions, not by blocking the operation outright.
+        UUID orgId = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgId));
+        when(orgAuth.canManage(ACTOR_ID, orgId)).thenReturn(true);
+
+        assertThat(policy.canManagePermissions(OTHER_ID)).isTrue();
+    }
+
+    @Test
+    void aTenantAdminMayNotManageAnAdministratorsDirectPermissions() {
+        UUID orgId = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgId));
+        lenient().when(orgAuth.canManage(ACTOR_ID, orgId)).thenReturn(true);
+        makeAdmin(OTHER_ID);
+
+        assertThat(policy.canManagePermissions(OTHER_ID)).isFalse();
+    }
+
+    @Test
+    void aScopedAdminWhoAdministersNoOrgMayNotManageDirectPermissions() {
+        // A resource delegate (no org administration) stays blocked — otherwise they could self-grant.
+        assertThat(policy.canManagePermissions(OTHER_ID)).isFalse();
+    }
+
+    @Test
+    void aNonSuperMayGrantOnlyPermissionsTheyThemselvesHold() {
+        signInWith(Permissions.USER_READ, Permissions.USER_UPDATE);
+
+        assertThat(policy.mayGrantPermissions(Set.of(Permissions.USER_READ))).isTrue();
+        // scim:manage is tenant-grantable, but the actor does not hold it — handing it out escalates.
+        assertThat(policy.mayGrantPermissions(Set.of(Permissions.SCIM_MANAGE))).isFalse();
+    }
+
+    @Test
+    void aNonSuperMayNeverGrantAPlatformPermission() {
+        signInWith(Permissions.ORG_CREATE); // even if somehow held, it is platform-only
+        assertThat(policy.mayGrantPermissions(Set.of(Permissions.ORG_CREATE))).isFalse();
+    }
+
+    @Test
+    void aSuperAdminMayGrantAnyPermission() {
+        makeActorSuper();
+        assertThat(policy.mayGrantPermissions(Set.of(Permissions.ORG_CREATE))).isTrue();
+    }
+
     @Test
     void nonSuperAdminMayNotAssignARoleTheCheckCannotResolve() {
         // Fail closed: a name that resolves to no role in the acting tier must not pass the gate. Passing it
