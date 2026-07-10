@@ -51,9 +51,9 @@ def authenticate(session: requests.Session, base: str,
         raise SystemExit(f"login failed: {resp.status_code}")
 
     # Default policy is password -> TOTP; prepare issues the enrollment secret + QR, verify confirms it.
-    prepare = session.post(f"{base}/api/auth/factors/TOTP/prepare", headers=_csrf_headers(session)).json()
+    prepare = session.post(f"{base}/api/auth/factors/totp/prepare", headers=_csrf_headers(session)).json()
     secret = prepare["secret"]
-    confirm = session.post(f"{base}/api/auth/factors/TOTP/verify",
+    confirm = session.post(f"{base}/api/auth/factors/totp/verify",
                            json={"code": totp(secret)}, headers=_csrf_headers(session))
     if confirm.status_code != 200 or confirm.json().get("next") != "DONE":
         raise SystemExit(f"MFA completion failed: {confirm.status_code} {confirm.text}")
@@ -71,7 +71,7 @@ def elevate(session: requests.Session, base: str, totp_secret: str) -> str:
     window = int(time.time() // 30)
     while int(time.time() // 30) == window:
         time.sleep(1)
-    reauth = session.post(f"{base}/api/auth/reauth/TOTP/verify",
+    reauth = session.post(f"{base}/api/auth/reauth/totp/verify",
                           json={"code": totp(totp_secret)}, headers=_csrf_headers(session))
     if reauth.status_code != 200:
         raise SystemExit(f"deliberate step-up failed: {reauth.status_code} {reauth.text}")

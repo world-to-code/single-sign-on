@@ -62,14 +62,18 @@ export const goHome = async () => {
 };
 export const resume = () => apiGet<{ redirectUrl: string }>("/api/auth/resume");
 
+// The factor name is the enum value (e.g. "TOTP") everywhere in the client, but the REST URL segment is
+// lowercase by convention — the backend binds it case-insensitively.
+const factorSegment = (factor: string) => factor.toLowerCase();
+
 // Generic factor steps — the backend dispatches to the per-factor strategy.
 export const prepareFactor = (factor: string) =>
-  apiPost<FactorChallenge>(`/api/auth/factors/${factor}/prepare`);
+  apiPost<FactorChallenge>(`/api/auth/factors/${factorSegment(factor)}/prepare`);
 export const verifyFactor = (factor: string, payload: FactorVerification) =>
-  apiPost<SessionView>(`/api/auth/factors/${factor}/verify`, payload);
+  apiPost<SessionView>(`/api/auth/factors/${factorSegment(factor)}/verify`, payload);
 
 // Step-up re-authentication for sensitive operations.
 export const reauthPrepare = (factor: string) =>
-  apiPost<FactorChallenge>(`/api/auth/reauth/${factor}/prepare`);
+  apiPost<FactorChallenge>(`/api/auth/reauth/${factorSegment(factor)}/prepare`);
 export const reauthVerify = (factor: string, payload: FactorVerification) =>
-  apiPost<void>(`/api/auth/reauth/${factor}/verify`, payload);
+  apiPost<void>(`/api/auth/reauth/${factorSegment(factor)}/verify`, payload);

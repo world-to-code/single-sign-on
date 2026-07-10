@@ -211,7 +211,7 @@ def mfa_login(session: requests.Session, secret: str, user="admin", password="ad
     session.get(f"{BASE}/api/auth/session")
     login = session.post(f"{BASE}/api/auth/login", json={"username": user, "password": password},
                          headers=_csrf_headers(session))
-    verify = session.post(f"{BASE}/api/auth/factors/TOTP/verify", json={"code": totp(secret)},
+    verify = session.post(f"{BASE}/api/auth/factors/totp/verify", json={"code": totp(secret)},
                           headers=_csrf_headers(session))
     if verify.status_code != 200 or verify.json().get("next") != "DONE":
         raise SystemExit(f"re-login failed: {login.status_code}/{verify.status_code} {verify.text}")
