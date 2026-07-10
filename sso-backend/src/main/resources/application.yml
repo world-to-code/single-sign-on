@@ -107,7 +107,8 @@ sso:
     window-seconds: 60
   lockout:
     max-attempts: 5             # Zero-Trust: lock an account after repeated failed logins
-    duration-minutes: 15
+    duration-minutes: 15        # first lock; each further lockout doubles it
+    max-duration-minutes: 480   # ceiling, so an account is never locked out forever
   zerotrust:
     bind-client: true                       # bind a session to the client it was established on
     session-absolute-lifetime-minutes: 480  # force full re-authentication after 8h regardless of activity

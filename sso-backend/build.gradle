@@ -65,6 +65,10 @@ dependencies {
     // Sessions live in Redis so a key TTL expiry fires SessionExpiredEvent WITHOUT a request —
     // the trigger for OIDC back-channel logout on idle expiry (see SessionTerminationListener).
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    // Token-bucket rate limiting: a maintained implementation with a distributed (Lettuce/Redis) backend,
+    // rather than a hand-rolled Lua script. Pinned like every other non-Boot-managed dependency.
+    implementation 'com.bucket4j:bucket4j_jdk17-core:8.19.0'
+    implementation 'com.bucket4j:bucket4j_jdk17-lettuce:8.19.0'
     implementation 'org.springframework.session:spring-session-data-redis'
 
     // --- SAML2 IdP (OpenSAML 5) ---
