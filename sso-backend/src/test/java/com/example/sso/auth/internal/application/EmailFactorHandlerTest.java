@@ -2,6 +2,7 @@ package com.example.sso.auth.internal.application;
 
 import com.example.sso.authpolicy.AuthFactor;
 import com.example.sso.mfa.EmailVerificationService;
+import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.user.UserAccount;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,6 +13,9 @@ import org.springframework.mock.web.MockHttpServletRequest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.lenient;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -35,6 +39,8 @@ class EmailFactorHandlerTest {
         // TTL 10 min, 3 attempts before the code is burned.
         handler = new EmailFactorHandler(emails, 10, 3);
         lenient().when(user.getEmail()).thenReturn("alice@example.com");
+        // The address must be PROVEN before a one-time code is sent to it; the happy-path tests assume it is.
+        lenient().when(user.isEmailVerified()).thenReturn(true);
     }
 
     private FactorVerificationRequest code(String value) {
@@ -110,5 +116,27 @@ class EmailFactorHandlerTest {
         MockHttpServletRequest request = new MockHttpServletRequest(); // no session prepared
 
         assertThat(handler.verify(user, code(CODE), request)).isFalse();
+    }
+
+    @Test
+    void refusesToSendACodeToAnUnverifiedAddress() {
+        // The email is a login identifier an admin can change. Sending a one-time code to an address nobody
+        // proved control of — and accepting it — authenticates whoever holds that mailbox.
+        when(user.isEmailVerified()).thenReturn(false);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+
+        assertThatThrownBy(() -> handler.prepare(user, request)).isInstanceOf(ForbiddenException.class);
+        verify(emails, never()).sendCode(any(), any());
+    }
+
+    @Test
+    void refusesToVerifyACodeOnceTheAddressIsNoLongerVerified() {
+        // A code minted before an admin changed the address must not still authenticate.
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        when(emails.generateCode()).thenReturn(CODE);
+        handler.prepare(user, request);
+
+        when(user.isEmailVerified()).thenReturn(false);
+        assertThat(handler.verify(user, new FactorVerificationRequest(CODE, null, null), request)).isFalse();
     }
 }

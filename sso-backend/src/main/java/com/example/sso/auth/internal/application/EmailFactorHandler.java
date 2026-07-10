@@ -2,6 +2,7 @@ package com.example.sso.auth.internal.application;
 
 import com.example.sso.authpolicy.AuthFactor;
 import com.example.sso.mfa.EmailVerificationService;
+import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.user.UserAccount;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
@@ -40,6 +41,7 @@ public class EmailFactorHandler implements FactorHandler {
 
     @Override
     public FactorChallenge prepare(UserAccount user, HttpServletRequest request) {
+        requireVerifiedAddress(user);
         HttpSession session = request.getSession(true);
         String code = emails.generateCode();
         session.setAttribute(CODE, code);
@@ -52,7 +54,8 @@ public class EmailFactorHandler implements FactorHandler {
 
     @Override
     public boolean verify(UserAccount user, FactorVerificationRequest verification, HttpServletRequest request) {
-        if (verification.code() == null) {
+        // Re-checked here too: a code minted before the address changed must not still authenticate.
+        if (!user.isEmailVerified() || verification.code() == null) {
             return false;
         }
 
@@ -89,5 +92,17 @@ public class EmailFactorHandler implements FactorHandler {
         session.removeAttribute(CODE);
         session.removeAttribute(EXPIRES_AT);
         session.removeAttribute(ATTEMPTS);
+    }
+
+    /**
+     * A one-time code proves control of the mailbox it lands in — nothing more. Sent to an address nobody
+     * proved belongs to the user (an admin can change it; {@code updateProfile} clears the flag on change),
+     * accepting that code would authenticate whoever holds that mailbox. The other factors of the step remain
+     * available, so this refuses the FACTOR, not the login.
+     */
+    private void requireVerifiedAddress(UserAccount user) {
+        if (!user.isEmailVerified()) {
+            throw new ForbiddenException("This email address is not verified. Use another factor.");
+        }
     }
 }
