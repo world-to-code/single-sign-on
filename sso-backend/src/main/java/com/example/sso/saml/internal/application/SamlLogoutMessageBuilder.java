@@ -91,8 +91,13 @@ public class SamlLogoutMessageBuilder {
         }
     }
 
-    /** A signed successful LogoutResponse answering the SP's LogoutRequest ({@code inResponseTo} = its ID). */
-    public LogoutResponse signedLogoutResponse(SamlRelyingParty sp, String inResponseTo) {
+    /**
+     * A signed LogoutResponse answering the SP's LogoutRequest ({@code inResponseTo} = its ID). When nothing
+     * was terminated — the request named a SessionIndex this IdP no longer holds — the status is
+     * {@code Responder}/{@code PartialLogout}, NOT Success: an SP told "Success" records a completed global
+     * logout while the IdP session (and its SSO to every other relying party) lives on.
+     */
+    public LogoutResponse signedLogoutResponse(SamlRelyingParty sp, String inResponseTo, boolean terminated) {
         try {
             LogoutResponse response = build(LogoutResponse.DEFAULT_ELEMENT_NAME);
             response.setID(idGenerator.generateIdentifier());
@@ -105,9 +110,14 @@ public class SamlLogoutMessageBuilder {
             issuer.setValue(issuerFor(sp));
             response.setIssuer(issuer);
 
-            StatusCode statusCode = build(StatusCode.DEFAULT_ELEMENT_NAME);
-            statusCode.setValue(StatusCode.SUCCESS);
             Status status = build(Status.DEFAULT_ELEMENT_NAME);
+            StatusCode statusCode = build(StatusCode.DEFAULT_ELEMENT_NAME);
+            statusCode.setValue(terminated ? StatusCode.SUCCESS : StatusCode.RESPONDER);
+            if (!terminated) {
+                StatusCode partial = build(StatusCode.DEFAULT_ELEMENT_NAME);
+                partial.setValue(StatusCode.PARTIAL_LOGOUT);
+                statusCode.setStatusCode(partial);
+            }
             status.setStatusCode(statusCode);
             response.setStatus(status);
 

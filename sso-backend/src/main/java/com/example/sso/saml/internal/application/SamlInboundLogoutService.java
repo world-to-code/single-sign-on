@@ -26,6 +26,10 @@ import org.springframework.stereotype.Service;
  * assertion at SSO. The ambient browser session is ended only when it is that session: a user signed in from
  * several browsers otherwise loses whichever session happened to carry the cookie on the SP's redirect. A
  * request with NO SessionIndex targets the subject's session at this IdP, so the ambient one is ended.
+ *
+ * <p>When nothing is terminated the SP is told so ({@code PartialLogout}) and the attempt is audited as a
+ * failure — answering Success would have the SP record a completed logout while the IdP session, and its SSO
+ * to every other relying party, survives.
  */
 @Service
 @RequiredArgsConstructor
@@ -49,11 +53,12 @@ public class SamlInboundLogoutService {
         if (terminated) {
             session.invalidate();
         }
-        audit.record(new AuditRecord(AuditType.SAML_SLO, username, true,
+        audit.record(new AuditRecord(AuditType.SAML_SLO, username, terminated,
                 "sp=" + rp.getEntityId() + " (sp-initiated)" + (terminated ? "" : " no matching session"),
                 ClientIp.of(httpRequest)));
 
-        String base64Response = codec.encodeObject(messageBuilder.signedLogoutResponse(rp, request.getID()));
+        String base64Response = codec.encodeObject(
+                messageBuilder.signedLogoutResponse(rp, request.getID(), terminated));
         return new InboundLogout(rp.getSingleLogoutUrl(), base64Response, relayState);
     }
 
