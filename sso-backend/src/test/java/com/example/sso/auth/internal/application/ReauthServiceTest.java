@@ -106,6 +106,10 @@ class ReauthServiceTest {
         assertThat(now - (long) session.getAttribute(StepUpInterceptor.REAUTH_ACTIVITY)).isBetween(0L, 5_000L);
         assertThat(session.getAttribute(StepUpInterceptor.STEPUP_FACTORS)).isNull(); // pending challenge consumed
         verify(sessions, never()).rotateSessionId(any(), any()); // rotation is gated on isRotateOnReauth (false here)
+        // The session PRESENTED this factor — it must be granted, so the factor set (and the acr/amr the
+        // elevation token derives from it) reflects reality: a password-login session that re-auths with a
+        // second factor is genuinely multi-factor. Without this, admin elevation (acr=mfa) loops forever.
+        verify(factorAuth).grantFactor(eq(request), any(), eq(AuthFactor.FIDO2.authority()));
         verify(factorAuth).restampAuthTime(eq(request), any());
         verify(audit).record(auditOfType(AuditType.REAUTH_SUCCESS));
     }
@@ -124,6 +128,7 @@ class ReauthServiceTest {
         assertThat(session.getAttribute(StepUpInterceptor.STEPUP_FACTOR)).isNull();
         assertThat(session.getAttribute(StepUpInterceptor.STEPUP_FACTORS)).isEqualTo("TOTP,FIDO2"); // still pending
         verify(sessions, never()).rotateSessionId(any(), any());
+        verify(factorAuth, never()).grantFactor(any(), any(), any()); // a failed factor must never be granted
         verify(factorAuth, never()).restampAuthTime(any(), any());
         verify(audit).record(auditOfType(AuditType.REAUTH_FAILURE));
     }

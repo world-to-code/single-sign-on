@@ -61,6 +61,10 @@ public class ReauthService {
 
         StepUpInterceptor.stampStepUp(request.getSession(true), factor.name()); // records WHICH factor stepped up
         request.getSession().removeAttribute(StepUpInterceptor.STEPUP_FACTORS); // pending step-up satisfied
+        // The session has now PRESENTED this factor — grant it, so the factor set (and the acr/amr an
+        // elevation token derives from it) reflects reality: a password-login session that re-auths with a
+        // second factor is genuinely multi-factor. The admin elevation gate (acr=mfa) depends on this.
+        factorAuth.grantFactor(request, response, factor.authority());
         // Re-stamp the session Authentication's auth-time marker so an admin elevation token minted from
         // the OIDC flow right after this step-up carries a FRESH auth_time (RFC 9470 step-up).
         factorAuth.restampAuthTime(request, response);
