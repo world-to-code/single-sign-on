@@ -288,6 +288,7 @@ public class UserServiceImpl implements UserService {
     public UserAccount updateUser(UUID id, UserUpdate update) {
         AppUser user = require(id);
         requireLocallyOwnedProfile(user, update);
+        requireEmailAvailable(user, update.email());
         user.updateProfile(update.displayName(), update.email());
         if (update.enabled()) {
             user.enable();
@@ -384,7 +385,9 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public void updateProfile(UUID id, String displayName, String email) {
-        require(id).updateProfile(displayName, email);
+        AppUser user = require(id);
+        requireEmailAvailable(user, email);
+        user.updateProfile(displayName, email);
     }
 
     @Override
@@ -504,6 +507,20 @@ public class UserServiceImpl implements UserService {
                 || !Objects.equals(user.getEmail(), update.email());
         if (profileChanged) {
             throw new ConflictException("this user is provisioned externally; edit their profile in the source system");
+        }
+    }
+
+    /**
+     * Email is a login identifier ({@code findByLoginInOrg}) and the address email-OTP codes are sent to, so
+     * it stays unique WITHIN the user's organization. Only an actual change is probed — re-submitting the
+     * current address must not collide with the user themselves.
+     */
+    private void requireEmailAvailable(AppUser user, String email) {
+        if (Objects.equals(user.getEmail(), email)) {
+            return;
+        }
+        if (users.existsByEmailInOrg(email, user.getOrgId())) {
+            throw new ConflictException("email already exists: " + email);
         }
     }
 }

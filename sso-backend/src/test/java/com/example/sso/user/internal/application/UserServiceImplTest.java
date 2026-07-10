@@ -249,4 +249,73 @@ class UserServiceImplTest {
 
         assertThat(provisioned.isEnabled()).isFalse();
     }
+
+    // --- email changes: a login identifier AND the address email-OTP codes are delivered to ---
+
+    @Test
+    void updateUserRejectsAnEmailAlreadyTakenInTheSameOrg() {
+        // Email is a login identifier (findByLoginInOrg) — a duplicate makes sign-in ambiguous and lets an
+        // admin point a second account at an existing user's address.
+        UUID id = UUID.randomUUID();
+        AppUser alice = new AppUser("alice", "alice@x", "Alice", "h");
+        when(users.findById(id)).thenReturn(Optional.of(alice));
+        when(users.existsByEmailInOrg("taken@x", null)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.updateUser(id,
+                new UserUpdate("Alice", "taken@x", true, null)))
+                .isInstanceOf(ConflictException.class);
+        assertThat(alice.getEmail()).isEqualTo("alice@x"); // nothing was mutated
+        verify(users, never()).save(any());
+    }
+
+    @Test
+    void updateUserResetsEmailVerificationWhenTheAddressChanges() {
+        // A changed address is UNPROVEN: leaving emailVerified set would let an admin redirect email-OTP
+        // codes and password-recovery mail to an address the user never controlled.
+        UUID id = UUID.randomUUID();
+        AppUser alice = new AppUser("alice", "alice@x", "Alice", "h");
+        alice.verifyEmail();
+        when(users.findById(id)).thenReturn(Optional.of(alice));
+        when(users.existsByEmailInOrg("new@x", null)).thenReturn(false);
+        when(users.save(any(AppUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(hydrator.hydrateUser(any(AppUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.updateUser(id, new UserUpdate("Alice", "new@x", true, null));
+
+        assertThat(alice.getEmail()).isEqualTo("new@x");
+        assertThat(alice.isEmailVerified()).isFalse();
+    }
+
+    @Test
+    void updateUserKeepsEmailVerificationWhenTheAddressIsUnchanged() {
+        UUID id = UUID.randomUUID();
+        AppUser alice = new AppUser("alice", "alice@x", "Alice", "h");
+        alice.verifyEmail();
+        when(users.findById(id)).thenReturn(Optional.of(alice));
+        when(users.save(any(AppUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(hydrator.hydrateUser(any(AppUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.updateUser(id, new UserUpdate("Alice Renamed", "alice@x", true, null));
+
+        assertThat(alice.isEmailVerified()).isTrue();
+        verify(users, never()).existsByEmailInOrg(any(), any()); // no needless uniqueness probe
+    }
+
+    @Test
+    void updateProfileRejectsAnEmailAlreadyTakenAndResetsVerificationOnAChange() {
+        // The SCIM path writes through updateProfile; the same invariants must hold there.
+        UUID id = UUID.randomUUID();
+        AppUser alice = new AppUser("alice", "alice@x", "Alice", "h");
+        alice.verifyEmail();
+        when(users.findById(id)).thenReturn(Optional.of(alice));
+        when(users.existsByEmailInOrg("taken@x", null)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.updateProfile(id, "Alice", "taken@x"))
+                .isInstanceOf(ConflictException.class);
+        assertThat(alice.isEmailVerified()).isTrue();
+
+        when(users.existsByEmailInOrg("new@x", null)).thenReturn(false);
+        service.updateProfile(id, "Alice", "new@x");
+        assertThat(alice.isEmailVerified()).isFalse();
+    }
 }

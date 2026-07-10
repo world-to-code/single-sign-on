@@ -15,6 +15,7 @@ import java.util.Collections;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -119,9 +120,17 @@ public class AppUser extends AuditedEntity implements UserAccount {
         this.emailVerified = true;
     }
 
+    /**
+     * Updates the profile. A CHANGED email address is unproven, so it drops the verified flag: the address is
+     * a login identifier and the destination of email-OTP codes, so carrying the old proof over would let a
+     * change redirect them to an address the user never controlled.
+     */
     public void updateProfile(String displayName, String email) {
         this.displayName = displayName;
-        this.email = email;
+        if (!Objects.equals(this.email, email)) {
+            this.email = email;
+            this.emailVerified = false;
+        }
     }
 
     public void assignExternalId(String externalId) {
