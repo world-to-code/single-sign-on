@@ -165,9 +165,9 @@ class ScopedAuditIT extends AbstractIntegrationTest {
     }
 
     private ResourceType saveType(String name, MemberType... allowed) {
-        ResourceType type = types.save(new ResourceType(name));
+        ResourceType type = types.save(new ResourceType(name, null));
         for (MemberType memberType : allowed) {
-            allowedMembers.save(new ResourceTypeAllowedMember(type.getId(), memberType));
+            allowedMembers.save(new ResourceTypeAllowedMember(type.getId(), memberType, null));
         }
         return type;
     }

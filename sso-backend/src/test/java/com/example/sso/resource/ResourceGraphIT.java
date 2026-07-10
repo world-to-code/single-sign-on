@@ -187,7 +187,7 @@ class ResourceGraphIT extends AbstractIntegrationTest {
     @Test
     void directUserMembersAreInScopeWithoutAGroup() {
         // A sub-resource inside the managed subtree carrying a DIRECT user member (no group involved).
-        UUID direct = resources.save(new Resource("Res-Direct", types.findByName("ANY").orElseThrow(), null)).getId();
+        UUID direct = resources.save(new Resource("Res-Direct", types.findByNameAndOrgIdIsNull("ANY").orElseThrow(), null)).getId();
         memberRows.save(ResourceMemberRow.of(direct, ResourceMember.user(frontendDev), null));
         graph.attachChild(backend, direct);
 
@@ -210,7 +210,7 @@ class ResourceGraphIT extends AbstractIntegrationTest {
 
     @Test
     void scopeWalksArbitrarilyDeepChains() {
-        ResourceType any = types.findByName("ANY").orElseThrow();
+        ResourceType any = types.findByNameAndOrgIdIsNull("ANY").orElseThrow();
         UUID deep = resources.save(new Resource("Res-Deep", any, null)).getId();
         UUID deeper = resources.save(new Resource("Res-Deeper", any, null)).getId();
         graph.attachChild(shared, deep);   // backend → shared → deep → deeper (3 below the grant)
@@ -223,7 +223,7 @@ class ResourceGraphIT extends AbstractIntegrationTest {
 
     @Test
     void multipleAdminGrantsUnionDisjointSubtrees() {
-        UUID islandId = resources.save(new Resource("Res-Island", types.findByName("ANY").orElseThrow(), null)).getId();
+        UUID islandId = resources.save(new Resource("Res-Island", types.findByNameAndOrgIdIsNull("ANY").orElseThrow(), null)).getId();
         grantRows.save(ResourceGrantRow.of(islandId, ResourceGrant.admin(backendLead), null));
 
         assertThat(scope.managedResourceIds(backendLead))
@@ -232,7 +232,7 @@ class ResourceGraphIT extends AbstractIntegrationTest {
 
     @Test
     void viewerTierConfersNoScopeInPhase0() {
-        UUID watchedId = resources.save(new Resource("Res-Watched", types.findByName("ANY").orElseThrow(), null)).getId();
+        UUID watchedId = resources.save(new Resource("Res-Watched", types.findByNameAndOrgIdIsNull("ANY").orElseThrow(), null)).getId();
         grantRows.save(ResourceGrantRow.of(watchedId, ResourceGrant.viewer(backendLead), null));
 
         assertThat(scope.managedResourceIds(backendLead)).doesNotContain(watchedId);
@@ -338,7 +338,7 @@ class ResourceGraphIT extends AbstractIntegrationTest {
     void concurrentOppositeEdgeAttachesCannotFormACycle() throws Exception {
         // Regression for the check-then-act race the advisory lock closes: without it, both attaches
         // pass the reachability check and insert the two halves of a cycle.
-        ResourceType any = types.findByName("ANY").orElseThrow();
+        ResourceType any = types.findByNameAndOrgIdIsNull("ANY").orElseThrow();
         UUID x = resources.save(new Resource("Res-X", any, null)).getId();
         UUID y = resources.save(new Resource("Res-Y", any, null)).getId();
 
@@ -390,9 +390,9 @@ class ResourceGraphIT extends AbstractIntegrationTest {
     }
 
     private ResourceType saveType(String name, MemberType... allowed) {
-        ResourceType type = types.save(new ResourceType(name));
+        ResourceType type = types.save(new ResourceType(name, null));
         for (MemberType memberType : allowed) {
-            allowedMembers.save(new ResourceTypeAllowedMember(type.getId(), memberType));
+            allowedMembers.save(new ResourceTypeAllowedMember(type.getId(), memberType, null));
         }
         return type;
     }

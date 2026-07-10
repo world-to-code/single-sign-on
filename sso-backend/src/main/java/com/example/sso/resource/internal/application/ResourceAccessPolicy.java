@@ -100,13 +100,6 @@ public class ResourceAccessPolicy {
         }
     }
 
-    /** Denies (403) unless the caller is a platform super-admin (for global resource-type vocabulary ops). */
-    public void requireUnscoped() {
-        if (!isUnscoped()) {
-            throw new ForbiddenException("Only a platform administrator may manage resource types.");
-        }
-    }
-
     /**
      * Pull-in guard: to attach a leaf member the caller must ALREADY manage it (else a scoped admin
      * could absorb an unmanaged group/app/user into their resource to gain visibility over it).

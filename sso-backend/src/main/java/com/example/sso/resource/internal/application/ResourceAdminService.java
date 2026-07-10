@@ -23,6 +23,7 @@ import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserGroupService;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.UserService;
 import java.util.Comparator;
@@ -30,6 +31,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -66,6 +68,7 @@ public class ResourceAdminService {
     private final UserGroupService groups;
     private final ApplicationService applications;
     private final OrgTierGuard tierGuard;
+    private final OrgContext orgContext;
 
     // --- Types ---
 
@@ -81,31 +84,48 @@ public class ResourceAdminService {
                 .toList();
     }
 
-    // create/createType are intentionally unscoped: they mint a DETACHED node/type with no grants or
-    // edges, conferring no reach — a scoped admin can only wire it in later via the (both-endpoints) edge guard.
+    // create/createType are intentionally unscoped w.r.t. the resource SUBTREE: they mint a DETACHED node/type
+    // with no grants or edges, conferring no reach — a scoped admin can only wire it in later via the
+    // (both-endpoints) edge guard. The type is org-stamped to the acting tier, so a tenant defines its OWN types.
     @Transactional
     public ResourceTypeView createType(String name, Set<MemberType> allowedMemberTypes) {
-        access.requireUnscoped(); // resource types are a GLOBAL vocabulary — platform super-admin only
-        if (types.findByName(name).isPresent()) {
+        UUID tier = tierGuard.currentTier(); // a drilled/bound tenant admin creates a tenant type; a platform
+        // super-admin (no bound org) creates a GLOBAL/shared one (org null)
+        boolean taken = tier == null
+                ? types.findByNameAndOrgIdIsNull(name).isPresent()
+                : types.findByNameAndOrgId(name, tier).isPresent();
+        if (taken) {
             throw new ConflictException("A resource type with this name already exists.");
         }
-        ResourceType type = types.save(new ResourceType(name));
+        ResourceType type = types.save(new ResourceType(name, tier));
         allowedMemberTypes.forEach(memberType ->
-                allowedMembers.save(new ResourceTypeAllowedMember(type.getId(), memberType)));
+                allowedMembers.save(new ResourceTypeAllowedMember(type.getId(), memberType, tier)));
         return ResourceTypeView.of(type, allowedMemberTypes);
     }
 
-    /** Deletes an unused resource type; rejects deletion while any resource still uses it (409). */
+    /** Deletes an unused resource type from the caller's own tier; rejects deletion while any resource uses it. */
     @Transactional
     public void deleteType(UUID id) {
-        access.requireUnscoped(); // global vocabulary — platform super-admin only
-        ResourceType type = types.findById(id)
-                .orElseThrow(() -> new NotFoundException("Resource type not found."));
-        if (resources.existsByTypeId(id)) {
+        // Confined to the acting tier: a tenant deletes only its OWN types, the platform super only global ones.
+        // A foreign/global type for a tenant (or a tenant type for the platform) is a non-revealing 404.
+        ResourceType type = tierGuard.requireInTier(
+                types.findById(id), () -> new NotFoundException("Resource type not found."));
+        // Check for use RLS-BLIND: a global type may be referenced by another tenant's resources that the
+        // acting (e.g. un-drilled super) context cannot see, so a plain check would report "unused" and let
+        // the delete hit the FK → a 500. Platform scope sees every referencing resource → a clean 409.
+        if (orgContext.callAsPlatform(() -> resources.existsByTypeId(id))) {
             throw new ConflictException("This type is still in use by one or more resources.");
         }
         allowedMembers.deleteByTypeId(id); // explicit: drop the member-kind rows before the type
         types.delete(type);
+    }
+
+    /** The type named {@code typeName} in the acting tier (a tenant's own first), else the GLOBAL one. */
+    private ResourceType resolveType(String typeName) {
+        UUID tier = tierGuard.currentTier();
+        return (tier == null ? Optional.<ResourceType>empty() : types.findByNameAndOrgId(typeName, tier))
+                .or(() -> types.findByNameAndOrgIdIsNull(typeName))
+                .orElseThrow(() -> new NotFoundException("Resource type not found."));
     }
 
     // --- Resources ---
@@ -248,8 +268,7 @@ public class ResourceAdminService {
 
     @Transactional
     public ResourceView create(String name, String typeName) {
-        ResourceType type = types.findByName(typeName)
-                .orElseThrow(() -> new NotFoundException("Resource type not found."));
+        ResourceType type = resolveType(typeName);
         // Stamp the acting admin's tier: a drilled-in super-admin creates the resource in that org, a platform
         // super-admin (no bound org) creates a GLOBAL one (org null).
         Resource saved = resources.save(new Resource(name, type, tierGuard.currentTier()));
@@ -266,8 +285,7 @@ public class ResourceAdminService {
     public ResourceView createSubResource(UUID parentId, String name, String typeName) {
         access.requireManage(parentId);
         Resource parent = requireInTier(parentId);
-        ResourceType type = types.findByName(typeName)
-                .orElseThrow(() -> new NotFoundException("Resource type not found."));
+        ResourceType type = resolveType(typeName);
         // A sub-resource inherits its parent's tenant (the tree stays within one org).
         Resource child = resources.save(new Resource(name, type, parent.getOrgId()));
         graph.attachChild(parentId, child.getId());

@@ -43,14 +43,14 @@ public class ResourceAdminController {
     }
 
     @PostMapping("/types")
-    @RequirePermission(Permissions.RESOURCE_CREATE)
+    @RequirePermission(Permissions.RESOURCE_CREATE_TYPE)
     public ResponseEntity<ResourceTypeView> createType(@Valid @RequestBody CreateResourceTypeRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(service.createType(request.name(), request.toMemberTypes()));
     }
 
     @DeleteMapping("/types/{id}")
-    @RequirePermission(Permissions.RESOURCE_DELETE)
+    @RequirePermission(Permissions.RESOURCE_DELETE_TYPE)
     @RequireStepUp
     public ResponseEntity<Void> deleteType(@PathVariable UUID id) {
         service.deleteType(id);

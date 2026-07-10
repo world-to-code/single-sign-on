@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class ResourceTest {
 
-    private final ResourceType team = new ResourceType("TEAM");
+    private final ResourceType team = new ResourceType("TEAM", null);
     private final Set<MemberType> teamAllows =
             Set.of(MemberType.RESOURCE, MemberType.GROUP, MemberType.APPLICATION);
 
@@ -29,7 +29,7 @@ class ResourceTest {
 
     @Test
     void rejectsNestingWhenTheTypeDisallowsIt() {
-        Resource parent = new Resource("Flat", new ResourceType("FLAT"), null);
+        Resource parent = new Resource("Flat", new ResourceType("FLAT", null), null);
 
         assertThatThrownBy(() -> parent.requireCanNest(Set.of(MemberType.GROUP)))
                 .isInstanceOf(BadRequestException.class);

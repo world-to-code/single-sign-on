@@ -63,7 +63,7 @@ class ResourceGraphServiceTest {
     void attachChildLocksThenChecksThenInsertsWhenAcyclic() {
         bothResourcesExist();
         when(scope.reaches(childId, parentId)).thenReturn(false);
-        ResourceType type = new ResourceType("TEAM");
+        ResourceType type = new ResourceType("TEAM", null);
         lenient().when(parent.getType()).thenReturn(type);
         lenient().when(allowedMembers.findByTypeId(any())).thenReturn(List.of());
 

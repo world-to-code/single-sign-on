@@ -33,8 +33,13 @@ public class ResourceTypeAllowedMember {
     @Column(name = "member_type", nullable = false, length = 20)
     private MemberType memberType;
 
-    public ResourceTypeAllowedMember(UUID typeId, MemberType memberType) {
+    // Carries the SAME org as its type (V82): NULL for a global type's rows, the tenant for a tenant type's.
+    @Column(name = "org_id")
+    private UUID orgId;
+
+    public ResourceTypeAllowedMember(UUID typeId, MemberType memberType, UUID orgId) {
         this.typeId = typeId;
         this.memberType = memberType;
+        this.orgId = orgId;
     }
 }

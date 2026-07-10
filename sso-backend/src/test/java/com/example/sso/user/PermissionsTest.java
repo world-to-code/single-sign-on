@@ -34,6 +34,45 @@ class PermissionsTest {
     }
 
     @Test
+    void mutatingActionsAreMutuallyIndependentAndOnlyImplyRead() {
+        // The permission "hierarchy" is exactly: create/update/delete each REQUIRE (imply) read, and are
+        // otherwise INDEPENDENT of one another — delete does NOT imply update or create, update does not
+        // imply create. Locking this guards a real escalation: user:create is deliberately super-only
+        // (excluded from ROLE_GROUP_ADMIN), so a holder of user:delete/user:update must never gain
+        // user:create through implication.
+        assertThat(Permissions.expandImplied(Set.of(Permissions.USER_DELETE)))
+                .containsExactlyInAnyOrder(Permissions.USER_DELETE, Permissions.USER_READ)
+                .doesNotContain(Permissions.USER_UPDATE, Permissions.USER_CREATE);
+        assertThat(Permissions.expandImplied(Set.of(Permissions.USER_UPDATE)))
+                .containsExactlyInAnyOrder(Permissions.USER_UPDATE, Permissions.USER_READ)
+                .doesNotContain(Permissions.USER_CREATE, Permissions.USER_DELETE);
+    }
+
+    @Test
+    void resourceTypeManagementImpliesResourceReadOnly() {
+        assertThat(Permissions.expandImplied(Set.of(Permissions.RESOURCE_CREATE_TYPE)))
+                .containsExactlyInAnyOrder(Permissions.RESOURCE_CREATE_TYPE, Permissions.RESOURCE_READ);
+        assertThat(Permissions.expandImplied(Set.of(Permissions.RESOURCE_DELETE_TYPE)))
+                .containsExactlyInAnyOrder(Permissions.RESOURCE_DELETE_TYPE, Permissions.RESOURCE_READ);
+    }
+
+    @Test
+    void resourceTypeManagementIsCatalogedAndTenantGrantable() {
+        assertThat(Permissions.ALL).contains(Permissions.RESOURCE_CREATE_TYPE, Permissions.RESOURCE_DELETE_TYPE);
+        assertThat(Permissions.isPlatform(Permissions.RESOURCE_CREATE_TYPE)).isFalse();
+        assertThat(Permissions.isPlatform(Permissions.RESOURCE_DELETE_TYPE)).isFalse();
+        assertThat(Permissions.tenantGrantable())
+                .contains(Permissions.RESOURCE_CREATE_TYPE, Permissions.RESOURCE_DELETE_TYPE);
+    }
+
+    @Test
+    void expandImpliedIsIdempotent() {
+        Set<String> once = Permissions.expandImplied(Set.of(
+                Permissions.USER_DELETE, Permissions.RESOURCE_CREATE_TYPE, Permissions.KEY_ROTATE));
+        assertThat(Permissions.expandImplied(once)).containsExactlyInAnyOrderElementsOf(once);
+    }
+
+    @Test
     void aReadPermissionExpandsToItselfOnly() {
         assertThat(Permissions.expandImplied(Set.of(Permissions.USER_READ)))
                 .containsExactly(Permissions.USER_READ);

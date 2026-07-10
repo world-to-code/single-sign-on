@@ -6,7 +6,6 @@ import com.example.sso.resource.internal.api.CreateResourceTypeRequest;
 import com.example.sso.resource.internal.api.MemberRequest;
 import com.example.sso.resource.internal.api.ResourceAdminController;
 import com.example.sso.resource.internal.api.ResourceRequest;
-import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.Permissions;
@@ -111,17 +110,25 @@ class ResourceAdminAuthzIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void resourceTypeVocabularyIsPlatformSuperOnly() {
-        // resource:* is now tenant-grantable (org-scoped DAG), but the GLOBAL resource-type vocabulary must
-        // stay platform-super only: a tenant admin creating/deleting a shared type would affect other tenants
-        // (and delete's in-use check is RLS-blind to another org's resources). The perm gate passes; the
-        // service's super-only guard rejects a non-super holder with a 403.
+    void resourceTypeManagementNeedsItsOwnPermissionDistinctFromResourceCrud() {
+        // Resource-type management is now per-tenant (V82), but gated on DEDICATED permissions
+        // (resource:create-type / resource:delete-type) rather than the resource CRUD perms — so holding
+        // resource:create/delete alone does NOT unlock the type vocabulary. A holder of only the CRUD perm is
+        // denied at the permission gate (never reaching the service).
         actAs(Permissions.RESOURCE_CREATE);
-        assertThatThrownBy(() -> controller.createType(new CreateResourceTypeRequest("T-" + suffix(), Set.of("GROUP"))))
-                .isInstanceOf(ForbiddenException.class);
+        assertDenied(() -> controller.createType(new CreateResourceTypeRequest("T-" + suffix(), Set.of("GROUP"))));
         actAs(Permissions.RESOURCE_DELETE);
+        assertDenied(() -> controller.deleteType(UUID.randomUUID()));
+    }
+
+    @Test
+    void aHolderOfTheDeleteTypePermissionReachesTheServiceWhichIsTierScoped() {
+        // With the dedicated permission the gate passes; deleting an unknown id then reaches the service's
+        // tier check, which is a non-revealing 404 (not a 403) — proving type management is no longer
+        // platform-super-only at the gate.
+        actAs(Permissions.RESOURCE_DELETE_TYPE);
         assertThatThrownBy(() -> controller.deleteType(UUID.randomUUID()))
-                .isInstanceOf(ForbiddenException.class);
+                .isInstanceOf(NotFoundException.class);
     }
 
     private void assertDenied(ThrowingCallable call) {

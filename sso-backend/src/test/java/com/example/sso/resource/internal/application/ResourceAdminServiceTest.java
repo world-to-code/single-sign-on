@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -83,8 +84,11 @@ class ResourceAdminServiceTest {
         // genuine; an unbound context (currentOrg empty) means the caller's tier is the GLOBAL tier (null),
         // matching the mock resources' default null org so the happy-path loads pass through.
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.empty());
+        // deleteType checks type usage RLS-blind via callAsPlatform; run the supplier inline in the mock.
+        lenient().when(orgContext.callAsPlatform(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0, Supplier.class).get());
         service = new ResourceAdminService(resources, types, allowedMembers, edges, memberRows, grantRows,
-                graph, access, users, groups, applications, new OrgTierGuard(orgContext));
+                graph, access, users, groups, applications, new OrgTierGuard(orgContext), orgContext);
     }
 
     @Test
@@ -155,7 +159,7 @@ class ResourceAdminServiceTest {
         UUID childId = UUID.randomUUID();
         Resource child = viewable(childId);
         when(resources.findById(parentId)).thenReturn(Optional.of(mock(Resource.class))); // tier-checked parent load for its org
-        when(types.findByName("TEAM")).thenReturn(Optional.of(mock(ResourceType.class)));
+        when(types.findByNameAndOrgIdIsNull("TEAM")).thenReturn(Optional.of(mock(ResourceType.class)));
         when(resources.save(any(Resource.class))).thenReturn(child);
 
         service.createSubResource(parentId, "Sub", "TEAM");

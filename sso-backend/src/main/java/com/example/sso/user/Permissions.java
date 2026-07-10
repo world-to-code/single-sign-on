@@ -68,6 +68,9 @@ public final class Permissions {
     public static final String RESOURCE_UPDATE = "resource:update";
     public static final String RESOURCE_DELETE = "resource:delete";
     public static final String RESOURCE_ASSIGN_ADMIN = "resource:assign-admin";
+    // Resource-type vocabulary management (per-tenant since V82): a tenant admin defines its own types.
+    public static final String RESOURCE_CREATE_TYPE = "resource:create-type";
+    public static final String RESOURCE_DELETE_TYPE = "resource:delete-type";
 
     // Organizations (tenants) — platform-admin registry management + membership
     public static final String ORG_READ = "organization:read";
@@ -93,6 +96,7 @@ public final class Permissions {
             PORTAL_SETTINGS_READ, PORTAL_SETTINGS_UPDATE,
             APP_ASSIGNMENT_READ, APP_ASSIGNMENT_ASSIGN, APP_ASSIGNMENT_UNASSIGN,
             RESOURCE_READ, RESOURCE_CREATE, RESOURCE_UPDATE, RESOURCE_DELETE, RESOURCE_ASSIGN_ADMIN,
+            RESOURCE_CREATE_TYPE, RESOURCE_DELETE_TYPE,
             ORG_READ, ORG_CREATE, ORG_UPDATE, ORG_DELETE, ORG_MEMBER_MANAGE,
             AUDIT_READ, SCIM_MANAGE, KEY_ROTATE);
 

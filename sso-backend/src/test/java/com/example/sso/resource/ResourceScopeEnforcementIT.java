@@ -271,7 +271,7 @@ class ResourceScopeEnforcementIT extends AbstractIntegrationTest {
         asRole(Roles.ADMIN, "admin");
         inTx(() -> {
             UUID viewedId = resources.save(
-                    new Resource("Scope-ViewedRes", types.findByName("SCOPE-ANY").orElseThrow(), null)).getId();
+                    new Resource("Scope-ViewedRes", types.findByNameAndOrgIdIsNull("SCOPE-ANY").orElseThrow(), null)).getId();
             grantRows.save(ResourceGrantRow.of(viewedId, ResourceGrant.viewer(backendLead), null));
             memberRows.save(ResourceMemberRow.of(viewedId, ResourceMember.group(viewedGroup), null));
         });
@@ -322,9 +322,9 @@ class ResourceScopeEnforcementIT extends AbstractIntegrationTest {
     }
 
     private ResourceType saveType(String name, MemberType... allowed) {
-        ResourceType type = types.save(new ResourceType(name));
+        ResourceType type = types.save(new ResourceType(name, null));
         for (MemberType memberType : allowed) {
-            allowedMembers.save(new ResourceTypeAllowedMember(type.getId(), memberType));
+            allowedMembers.save(new ResourceTypeAllowedMember(type.getId(), memberType, null));
         }
         return type;
     }

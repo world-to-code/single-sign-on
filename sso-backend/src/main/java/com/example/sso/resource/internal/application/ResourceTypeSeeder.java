@@ -46,12 +46,13 @@ public class ResourceTypeSeeder implements ApplicationRunner {
      * is what both instances then use, so the loss is a no-op — not a failed startup.
      */
     private void seedType(String name, Set<MemberType> allowed) {
-        if (types.findByName(name).isPresent()) {
+        if (types.findByNameAndOrgIdIsNull(name).isPresent()) {
             return;
         }
         try {
-            UUID typeId = types.saveAndFlush(new ResourceType(name)).getId();
-            allowed.forEach(memberType -> allowedMembers.save(new ResourceTypeAllowedMember(typeId, memberType)));
+            UUID typeId = types.saveAndFlush(new ResourceType(name, null)).getId(); // baseline types are GLOBAL
+            allowed.forEach(memberType ->
+                    allowedMembers.save(new ResourceTypeAllowedMember(typeId, memberType, null)));
             log.info("Seeded baseline resource type '{}'.", name);
         } catch (DataIntegrityViolationException e) {
             log.debug("Baseline resource type '{}' was seeded concurrently.", name);

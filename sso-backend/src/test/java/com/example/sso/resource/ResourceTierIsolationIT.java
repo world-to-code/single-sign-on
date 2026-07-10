@@ -67,7 +67,7 @@ class ResourceTierIsolationIT extends AbstractIntegrationTest {
 
     @BeforeEach
     void seed() {
-        ResourceType type = types.save(new ResourceType("TIER-ANY-" + suffix()));
+        ResourceType type = types.save(new ResourceType("TIER-ANY-" + suffix(), null));
         typeId = type.getId();
         // A GLOBAL resource (org null) — as a legacy/platform row would be after the V56 backfill.
         globalResource = resources.save(new Resource("Tier-Global-" + suffix(), type, null)).getId();
