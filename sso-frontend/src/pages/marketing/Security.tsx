@@ -1,7 +1,7 @@
 import { ArrowDown, Lock, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Section, CtaBand, HeroBackdrop } from "@/components/marketing/MarketingLayout";
+import { Section, CtaBand } from "@/components/marketing/MarketingLayout";
 
 /** Security page ("/security"): the trust story told seriously — a dark zero-trust isolation flow and a
  *  threat -> mitigation controls table, not another card grid. */
@@ -9,7 +9,6 @@ export default function Security() {
   return (
     <>
       <section className="relative overflow-hidden border-b">
-        <HeroBackdrop />
         <div className="relative mx-auto max-w-3xl px-4 py-20 sm:px-6 sm:py-24">
           <Badge variant="muted" className="mb-5 inline-flex items-center gap-1.5">
             <ShieldCheck className="size-3.5" /> Secure by design
@@ -31,7 +30,7 @@ export default function Security() {
             <h2 className="text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl">
               Tenants can't see each other — by construction
             </h2>
-            <p className="mt-3 text-sidebar-foreground/70">
+            <p className="mt-3 text-bg/70">
               Separation isn't a code convention you hope holds. Every query runs against a Postgres row-level-security
               policy that only matches rows for the organization bound to the connection. Bind nothing, and the policy
               matches nothing — the default is deny.
@@ -48,10 +47,10 @@ export default function Security() {
                     <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">{i + 1}</span>
                     <span className="font-medium text-white">{step.label}</span>
                   </div>
-                  <p className="mt-1.5 pl-10 text-sm text-sidebar-foreground/70">{step.detail}</p>
+                  <p className="mt-1.5 pl-10 text-sm text-bg/70">{step.detail}</p>
                 </div>
                 {i < ISOLATION_FLOW.length - 1 && (
-                  <div className="flex justify-center py-1"><ArrowDown className="size-4 text-sidebar-foreground/40" /></div>
+                  <div className="flex justify-center py-1"><ArrowDown className="size-4 text-bg/40" /></div>
                 )}
               </li>
             ))}

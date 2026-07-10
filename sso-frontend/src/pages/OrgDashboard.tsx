@@ -1,9 +1,9 @@
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, LogIn, Users, XCircle } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import type { OrgMetrics } from "@/metrics";
 import { useApiData } from "@/useApiData";
 import { PageHeader } from "@/components/PageHeader";
-import { MetricTile } from "@/components/MetricTile";
+import { Metric } from "@/components/Metric";
 import { SignInTrendChart } from "@/components/charts/SignInTrendChart";
 import { ErrorCard, LoadingCard } from "@/components/states";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,9 +33,9 @@ export default function OrgDashboard() {
       ) : (
         <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-3">
-            <MetricTile icon={<Users className="size-5" />} label="Members" value={data.users} />
-            <MetricTile icon={<LogIn className="size-5" />} label="Successful sign-ins" value={successes} />
-            <MetricTile icon={<XCircle className="size-5" />} label="Failed attempts" value={failures} />
+            <Metric label="Members" value={data.users} />
+            <Metric label="Successful sign-ins" value={successes} />
+            <Metric label="Failed attempts" value={failures} />
           </div>
           <Card>
             <CardHeader>

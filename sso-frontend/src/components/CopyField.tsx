@@ -28,7 +28,7 @@ export function CopyField({ label, value, hint }: { label: string; value: string
           {value}
         </code>
         <Button type="button" variant="outline" size="icon" onClick={copy} title="Copy to clipboard" aria-label="Copy">
-          {copied ? <Check className="size-4 text-green-600" /> : <Copy className="size-4" />}
+          {copied ? <Check className="size-4 text-allow" /> : <Copy className="size-4" />}
         </Button>
       </div>
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}

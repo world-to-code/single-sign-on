@@ -1,20 +1,28 @@
 import { Link } from "react-router-dom";
-import { Fingerprint, KeyRound, ShieldCheck, Smartphone, UserCircle } from "lucide-react";
+import { KeyRound, UserCircle } from "lucide-react";
 import type { SessionView } from "../auth";
+import { Metric } from "../components/Metric";
 import { PageHeader } from "../components/PageHeader";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 
-function StatCard({ icon, label, value, ok }: { icon: React.ReactNode; label: string; value: string; ok?: boolean }) {
+/**
+ * An enrollment state, not a figure — so it reads as a state chip rather than a Metric. The dot is
+ * hollow when the factor is missing, so the state survives without colour (DESIGN.md §4).
+ */
+function FactorStat({ label, value, enrolled }: { label: string; value: string; enrolled: boolean }) {
   return (
     <Card>
-      <CardContent className="flex items-center gap-4 p-5">
-        <div className="flex size-11 items-center justify-center rounded-lg bg-accent text-primary">{icon}</div>
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-          <p className={`text-lg font-semibold ${ok === false ? "text-muted-foreground" : ""}`}>{value}</p>
-        </div>
+      <CardContent className="p-5">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="mt-2 flex items-center gap-2 text-lg font-semibold">
+          <span
+            aria-hidden
+            className={`size-2 rounded-full ${enrolled ? "bg-allow" : "ring-2 ring-inset ring-faint"}`}
+          />
+          <span className={enrolled ? "" : "text-muted-foreground"}>{value}</span>
+        </p>
       </CardContent>
     </Card>
   );
@@ -35,12 +43,11 @@ export default function Dashboard({ session }: { session: SessionView }) {
       <PageHeader title={`Welcome, ${session.username}`} description="Your identity and security status at a glance." />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <StatCard icon={<Smartphone className="size-5" />} label="Authenticator (TOTP)"
-                  value={session.totpEnrolled ? "Enrolled" : "Not set up"} ok={session.totpEnrolled} />
-        <StatCard icon={<Fingerprint className="size-5" />} label="Passkey (FIDO2)"
-                  value={session.fido2Enrolled ? "Registered" : "None"} ok={session.fido2Enrolled} />
-        <StatCard icon={<ShieldCheck className="size-5" />} label="Factors this session"
-                  value={String(session.factors.length)} />
+        <FactorStat label="Authenticator (TOTP)" enrolled={session.totpEnrolled}
+                    value={session.totpEnrolled ? "Enrolled" : "Not set up"} />
+        <FactorStat label="Passkey (FIDO2)" enrolled={session.fido2Enrolled}
+                    value={session.fido2Enrolled ? "Registered" : "None"} />
+        <Metric label="Factors this session" value={session.factors.length} />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">

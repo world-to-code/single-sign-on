@@ -6,7 +6,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Section, CtaBand, HeroBackdrop, getStarted, signIn } from "@/components/marketing/MarketingLayout";
+import { Section, CtaBand, getStarted, signIn } from "@/components/marketing/MarketingLayout";
 
 /** Marketing home ("/"): an asymmetric landing hero with a live product mock, a sticky "why switch"
  *  narrative, and wide entry-point rows that route to the detail pages — a story, not a card wall. */
@@ -14,7 +14,6 @@ export default function Home() {
   return (
     <>
       <section className="relative overflow-hidden border-b">
-        <HeroBackdrop />
         <div className="relative mx-auto grid max-w-6xl gap-12 px-4 py-20 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-center lg:py-24">
           <div>
             <Badge variant="muted" className="mb-5">Central identity provider</Badge>

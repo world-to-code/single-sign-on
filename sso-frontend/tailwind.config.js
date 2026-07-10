@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  darkMode: ["class"],
+  darkMode: ["selector", ':root[data-theme="dark"]'],
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     container: { center: true, padding: "2rem", screens: { "2xl": "1400px" } },
@@ -10,6 +10,7 @@ export default {
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
         background: "hsl(var(--background))",
+        bg: "hsl(var(--bg) / <alpha-value>)",
         foreground: "hsl(var(--foreground))",
         primary: { DEFAULT: "hsl(var(--primary))", foreground: "hsl(var(--primary-foreground))" },
         secondary: { DEFAULT: "hsl(var(--secondary))", foreground: "hsl(var(--secondary-foreground))" },
@@ -19,19 +20,29 @@ export default {
         popover: { DEFAULT: "hsl(var(--popover))", foreground: "hsl(var(--popover-foreground))" },
         card: { DEFAULT: "hsl(var(--card))", foreground: "hsl(var(--card-foreground))" },
         success: { DEFAULT: "hsl(var(--success))", foreground: "hsl(var(--success-foreground))" },
-        sidebar: {
-          DEFAULT: "hsl(var(--sidebar))",
-          foreground: "hsl(var(--sidebar-foreground))",
-          accent: "hsl(var(--sidebar-accent))",
-          border: "hsl(var(--sidebar-border))",
-        },
+        // Raw semantic tokens (DESIGN.md §2), exposed as their own color names with alpha support.
+        ink: { DEFAULT: "hsl(var(--ink) / <alpha-value>)", 2: "hsl(var(--ink-2) / <alpha-value>)" },
+        surface: "hsl(var(--surface) / <alpha-value>)",
+        sunken: "hsl(var(--sunken) / <alpha-value>)",
+        line: { DEFAULT: "hsl(var(--line) / <alpha-value>)", soft: "hsl(var(--line-soft) / <alpha-value>)" },
+        faint: "hsl(var(--faint) / <alpha-value>)",
+        warn: "hsl(var(--warn) / <alpha-value>)",
+        allow: "hsl(var(--allow) / <alpha-value>)",
+        deny: "hsl(var(--deny) / <alpha-value>)",
+        "accent-soft": "hsl(var(--accent-soft) / <alpha-value>)",
+        "accent-line": "hsl(var(--accent-line) / <alpha-value>)",
       },
-      borderRadius: { lg: "var(--radius)", md: "calc(var(--radius) - 2px)", sm: "calc(var(--radius) - 4px)" },
+      borderRadius: { lg: "var(--r-card)", md: "var(--r-ctl)", DEFAULT: "var(--r-ctl)", sm: "8px" },
       keyframes: {
         "accordion-down": { from: { height: "0" }, to: { height: "var(--radix-accordion-content-height)" } },
         "accordion-up": { from: { height: "var(--radix-accordion-content-height)" }, to: { height: "0" } },
+        shimmer: { from: { transform: "translateX(-100%)" }, to: { transform: "translateX(100%)" } },
       },
-      animation: { "accordion-down": "accordion-down 0.2s ease-out", "accordion-up": "accordion-up 0.2s ease-out" },
+      animation: {
+        "accordion-down": "accordion-down 0.2s ease-out",
+        "accordion-up": "accordion-up 0.2s ease-out",
+        shimmer: "shimmer 1.4s linear infinite",
+      },
     },
   },
   plugins: [require("tailwindcss-animate")],

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Blocks, Building2, CheckCircle2, Mail, Rocket, UsersRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Section, CtaBand, HeroBackdrop } from "@/components/marketing/MarketingLayout";
+import { Section, CtaBand } from "@/components/marketing/MarketingLayout";
 
 /** How-it-works page ("/how-it-works"): the path from signup to a live workspace as a connected
  *  vertical timeline, each step carrying its own detail panel, closed by a "day one" ribbon. */
@@ -10,7 +10,6 @@ export default function HowItWorks() {
   return (
     <>
       <section className="relative overflow-hidden border-b">
-        <HeroBackdrop />
         <div className="relative mx-auto max-w-3xl px-4 py-20 text-center sm:px-6 sm:py-24">
           <Badge variant="muted" className="mb-5">How it works</Badge>
           <h1 className="text-balance text-4xl font-bold tracking-tight sm:text-5xl">

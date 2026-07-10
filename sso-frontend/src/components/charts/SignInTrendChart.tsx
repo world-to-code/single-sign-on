@@ -14,7 +14,7 @@ function shortDate(iso: string): string {
 /**
  * Hand-rolled, token-themed SVG line chart of a tenant's daily sign-ins: a filled success line and a
  * failure line over the window, with a faint gridline scale. No charting dependency — responsive via
- * viewBox; colors come from the theme's success/destructive tokens.
+ * viewBox; colors come from the theme's allow/deny tokens.
  */
 export function SignInTrendChart({ days }: { days: SignInDay[] }) {
   const total = days.reduce((sum, d) => sum + d.successes + d.failures, 0);
@@ -41,28 +41,28 @@ export function SignInTrendChart({ days }: { days: SignInDay[] }) {
         {ticks.map((t) => (
           <g key={t}>
             <line x1={PAD_L} x2={W - PAD_R} y1={y(t)} y2={y(t)}
-                  stroke="hsl(var(--border))" strokeWidth={1} opacity={0.6} />
-            <text x={PAD_L - 5} y={y(t) + 3} textAnchor="end" fontSize={10} fill="hsl(var(--muted-foreground))">
+                  className="stroke-line" strokeWidth={1} opacity={0.6} />
+            <text x={PAD_L - 5} y={y(t) + 3} textAnchor="end" fontSize={10} className="fill-muted-foreground">
               {t}
             </text>
           </g>
         ))}
-        <polygon points={successArea} fill="hsl(var(--success))" opacity={0.12} />
-        <polyline points={line((d) => d.successes)} fill="none" stroke="hsl(var(--success))"
+        <polygon points={successArea} className="fill-allow" opacity={0.12} />
+        <polyline points={line((d) => d.successes)} fill="none" className="stroke-allow"
                   strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-        <polyline points={line((d) => d.failures)} fill="none" stroke="hsl(var(--destructive))"
+        <polyline points={line((d) => d.failures)} fill="none" className="stroke-deny"
                   strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-        <text x={PAD_L} y={H - 5} fontSize={10} fill="hsl(var(--muted-foreground))">{shortDate(days[0].day)}</text>
-        <text x={W - PAD_R} y={H - 5} textAnchor="end" fontSize={10} fill="hsl(var(--muted-foreground))">
+        <text x={PAD_L} y={H - 5} fontSize={10} className="fill-muted-foreground">{shortDate(days[0].day)}</text>
+        <text x={W - PAD_R} y={H - 5} textAnchor="end" fontSize={10} className="fill-muted-foreground">
           {shortDate(days[days.length - 1].day)}
         </text>
       </svg>
       <div className="mt-2 flex items-center justify-center gap-5 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block size-2.5 rounded-sm" style={{ background: "hsl(var(--success))" }} /> Successful
+          <span className="inline-block size-2.5 rounded-sm bg-allow" /> Successful
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block size-2.5 rounded-sm" style={{ background: "hsl(var(--destructive))" }} /> Failed
+          <span className="inline-block size-2.5 rounded-sm bg-deny" /> Failed
         </span>
       </div>
     </div>

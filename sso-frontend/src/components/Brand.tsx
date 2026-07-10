@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 export function Brand({ className, subtitle = "Identity Provider" }: { className?: string; subtitle?: string }) {
   return (
     <div className={cn("flex items-center gap-2.5", className)}>
-      <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+      <div className="flex size-9 items-center justify-center rounded-lg bg-ink text-bg shadow-sm">
         <ShieldCheck className="size-5" />
       </div>
       <div className="leading-tight">

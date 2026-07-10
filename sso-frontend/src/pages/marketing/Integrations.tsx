@@ -2,7 +2,7 @@ import { Blocks, Network, Plug, RefreshCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Section, CtaBand, HeroBackdrop, getStarted } from "@/components/marketing/MarketingLayout";
+import { Section, CtaBand, getStarted } from "@/components/marketing/MarketingLayout";
 import { cn } from "@/lib/utils";
 
 /** Integrations page ("/integrations"): a developer-flavored walkthrough — each protocol paired with a
@@ -11,7 +11,6 @@ export default function Integrations() {
   return (
     <>
       <section className="relative overflow-hidden border-b">
-        <HeroBackdrop />
         <div className="relative mx-auto max-w-3xl px-4 py-20 text-center sm:px-6 sm:py-24">
           <Badge variant="muted" className="mb-5">For developers</Badge>
           <h1 className="text-balance text-4xl font-bold tracking-tight sm:text-5xl">
@@ -124,19 +123,19 @@ type Line = Span[];
 const spanClass: Record<NonNullable<Span["c"]>, string> = {
   k: "text-primary",
   s: "text-success",
-  c: "text-sidebar-foreground/40",
+  c: "text-bg/40",
 };
 
 function CodeBlock({ title, lines }: { title: string; lines: Line[] }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-sidebar-border bg-sidebar shadow-lg">
-      <div className="flex items-center gap-2 border-b border-sidebar-border px-4 py-2.5">
+    <div className="overflow-hidden rounded-xl border border-white/10 bg-ink shadow-lg">
+      <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
         <span className="size-2.5 rounded-full bg-destructive/50" />
         <span className="size-2.5 rounded-full bg-amber-400/50" />
         <span className="size-2.5 rounded-full bg-success/50" />
-        <span className="ml-2 truncate font-mono text-xs text-sidebar-foreground/70">{title}</span>
+        <span className="ml-2 truncate font-mono text-xs text-bg/70">{title}</span>
       </div>
-      <pre className="overflow-x-auto px-4 py-4 font-mono text-xs leading-relaxed text-sidebar-foreground">
+      <pre className="overflow-x-auto px-4 py-4 font-mono text-xs leading-relaxed text-bg">
         <code>
           {lines.map((line, i) => (
             <div key={i}>

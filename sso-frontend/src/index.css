@@ -2,64 +2,182 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Self-hosted Pretendard — CSP forbids CDN fonts, so serve from our own origin at /fonts/. */
+@font-face {
+  font-family: "Pretendard Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 45 920;
+  src: url("/fonts/PretendardVariable.woff2") format("woff2-variations");
+}
+
 @layer base {
+  /*
+   * Design tokens (DESIGN.md §2), shipped as HSL channel triples so Tailwind's alpha modifiers
+   * (bg-primary/10, border-destructive/40, …) resolve through hsl(var(--x) / <alpha-value>).
+   * RAW semantic vars carry literal triples and are the only ones redefined per theme; the shadcn
+   * aliases reference them with var(), so they follow the theme automatically. --accent-soft and
+   * --accent-line are the accent precomposed at 8% / 26% over --surface (a channel triple cannot
+   * feed color-mix). --accent (petrol) lives in --primary, since text-primary already means accent.
+   */
   :root {
-    --background: 210 40% 98%;
-    --foreground: 222 47% 11%;
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    --primary: 243 75% 59%;            /* indigo-600 */
-    --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 243 75% 96%;
-    --accent-foreground: 243 75% 40%;
-    --destructive: 0 72% 51%;
+    /* raw semantic scale (light) */
+    --bg: 60 8% 95%;
+    --surface: 0 0% 100%;
+    --sunken: 60 17% 98%;
+    --line: 60 5% 89%;
+    --line-soft: 60 9% 93%;
+    --faint: 60 3% 65%;
+    --ink-2: 60 3% 22%;
+    --ink: 60 4% 10%;
+    --accent-soft: 180 23% 94%;
+    --accent-line: 182 24% 80%;
+    --allow: 145 46% 34%;
+    --deny: 6 63% 46%;
+    --warn: 39 80% 37%;
+    --primary: 183 76% 25%;          /* --accent, petrol */
+    --primary-foreground: 0 0% 100%; /* --accent-ink */
+    --muted-foreground: 60 2% 42%;   /* --muted, secondary text */
+
+    /* shadcn aliases → new meanings (DESIGN.md §11), following the raw vars via var() */
+    --background: var(--bg);
+    --foreground: var(--ink);
+    --card: var(--surface);
+    --card-foreground: var(--ink);
+    --popover: var(--surface);
+    --popover-foreground: var(--ink);
+    --muted: var(--sunken);
+    --secondary: var(--line-soft);
+    --secondary-foreground: var(--ink);
+    --accent: var(--accent-soft);
+    --accent-foreground: var(--primary);
+    --destructive: var(--deny);
     --destructive-foreground: 0 0% 100%;
-    --success: 142 71% 45%;
+    --success: var(--allow);
     --success-foreground: 0 0% 100%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 243 75% 59%;
-    --radius: 0.65rem;
-    --sidebar: 222 47% 11%;
-    --sidebar-foreground: 215 20% 75%;
-    --sidebar-accent: 243 75% 59%;
-    --sidebar-border: 217 33% 20%;
+    --border: var(--line);
+    --input: var(--line);
+    --ring: var(--primary);
+
+    /* space, radius, motion */
+    --r-card: 18px;
+    --r-ctl: 12px;
+    --page: 28px;
+    --gap: 20px;
+    --pad: 24px;
+    --ease: cubic-bezier(.2, .8, .2, 1);
   }
 
-  .dark {
-    --background: 222 47% 9%;
-    --foreground: 210 40% 98%;
-    --card: 222 47% 12%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222 47% 12%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 243 75% 66%;
-    --primary-foreground: 222 47% 11%;
-    --secondary: 217 33% 18%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217 33% 18%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 217 33% 20%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 63% 51%;
-    --destructive-foreground: 0 0% 100%;
-    --success: 142 71% 45%;
-    --success-foreground: 0 0% 100%;
-    --border: 217 33% 20%;
-    --input: 217 33% 22%;
-    --ring: 243 75% 66%;
-    --sidebar: 222 47% 7%;
-    --sidebar-foreground: 215 20% 70%;
-    --sidebar-accent: 243 75% 66%;
-    --sidebar-border: 217 33% 16%;
+  /* Dark values. An explicit toggle beats the OS in both directions via this cascade. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: 60 5% 7%;
+      --surface: 60 4% 11%;
+      --sunken: 40 5% 12%;
+      --line: 60 5% 17%;
+      --line-soft: 60 4% 15%;
+      --faint: 60 4% 39%;
+      --ink-2: 60 7% 81%;
+      --ink: 60 8% 95%;
+      --accent-soft: 160 12% 14%;
+      --accent-line: 172 26% 22%;
+      --allow: 144 34% 54%;
+      --deny: 5 69% 62%;
+      --warn: 41 61% 55%;
+      --primary: 175 45% 53%;
+      --primary-foreground: 178 60% 8%;
+      --muted-foreground: 60 3% 59%;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: 60 5% 7%;
+    --surface: 60 4% 11%;
+    --sunken: 40 5% 12%;
+    --line: 60 5% 17%;
+    --line-soft: 60 4% 15%;
+    --faint: 60 4% 39%;
+    --ink-2: 60 7% 81%;
+    --ink: 60 8% 95%;
+    --accent-soft: 160 12% 14%;
+    --accent-line: 172 26% 22%;
+    --allow: 144 34% 54%;
+    --deny: 5 69% 62%;
+    --warn: 41 61% 55%;
+    --primary: 175 45% 53%;
+    --primary-foreground: 178 60% 8%;
+    --muted-foreground: 60 3% 59%;
+  }
+
+  :root[data-theme="light"] {
+    --bg: 60 8% 95%;
+    --surface: 0 0% 100%;
+    --sunken: 60 17% 98%;
+    --line: 60 5% 89%;
+    --line-soft: 60 9% 93%;
+    --faint: 60 3% 65%;
+    --ink-2: 60 3% 22%;
+    --ink: 60 4% 10%;
+    --accent-soft: 180 23% 94%;
+    --accent-line: 182 24% 80%;
+    --allow: 145 46% 34%;
+    --deny: 6 63% 46%;
+    --warn: 39 80% 37%;
+    --primary: 183 76% 25%;
+    --primary-foreground: 0 0% 100%;
+    --muted-foreground: 60 2% 42%;
   }
 
   * { @apply border-border; }
-  body { @apply bg-background text-foreground antialiased; font-feature-settings: "rlig" 1, "calt" 1; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+      "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  code, pre, kbd, samp {
+    font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+
+  /* Korean-first vertical rhythm (DESIGN.md §2): Hangul needs looser leading and tighter heading tracking. */
+  :root[lang="ko"] body { line-height: 1.65; }
+  :root[lang="ko"] h1, :root[lang="ko"] h2, :root[lang="ko"] h3 { letter-spacing: -0.03em; }
+  :root[lang="en"] body { line-height: 1.55; }
+  :root[lang="en"] h1, :root[lang="en"] h2, :root[lang="en"] h3 { letter-spacing: -0.022em; }
+  h1, h2, h3 { text-wrap: balance; }
+
+  /*
+   * Uppercase is meaningless in Hangul — it only widens the tracking of an eyebrow that never
+   * changed case. Rather than gate every `uppercase` call site, neutralize the utility itself
+   * under a Korean root; the class stays on the element and comes back in English.
+   */
+  :root[lang="ko"] .uppercase { text-transform: none; letter-spacing: normal; }
+
+  /*
+   * Toast motion (DESIGN.md §5). The drain bar's animation-duration MUST equal the JS dismissal
+   * timer per tone, or the visible countdown lies. Pausing is driven by data-paused (hover/focus),
+   * which pauses BOTH this bar and — in the component — the JS timer, so they stay in lockstep.
+   * Durations can't live in an inline style (banned) or tailwind.config (out of scope), so they are
+   * keyed off data-life here. Under reduced-motion the component renders the bar static (no class).
+   */
+  @keyframes toast-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  @keyframes toast-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes toast-exit { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(6px) scale(.98); } }
+  .toast-drain { transform-origin: left; animation: toast-drain linear forwards; }
+  .toast-drain[data-paused="true"] { animation-play-state: paused; }
+  .toast-drain[data-life="success"] { animation-duration: 4500ms; }
+  .toast-drain[data-life="warning"] { animation-duration: 7000ms; }
+  .toast-drain[data-life="error"] { animation-duration: 9000ms; }
+  .toast-enter { animation: toast-enter 300ms var(--ease) both; }
+  .toast-exit { animation: toast-exit 200ms var(--ease) forwards; }
+
+  /* Accessibility killswitch — no ambient or entry motion when the reader opts out. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }

@@ -29,7 +29,7 @@ export function CodeBlock({ label, code, hint, wrap }: { label?: string; code: s
         </pre>
         <Button type="button" variant="outline" size="icon" onClick={copy} title="Copy to clipboard"
                 aria-label="Copy" className="absolute right-1.5 top-1.5 size-7">
-          {copied ? <Check className="size-3.5 text-green-600" /> : <Copy className="size-3.5" />}
+          {copied ? <Check className="size-3.5 text-allow" /> : <Copy className="size-3.5" />}
         </Button>
       </div>
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}

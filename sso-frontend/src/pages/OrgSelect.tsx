@@ -76,7 +76,7 @@ export default function OrgSelect() {
             disabled={busy}
             className="flex w-full items-center gap-3 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent disabled:opacity-60"
           >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-ink text-bg">
               <Building2 className="size-4" />
             </span>
             <span className="min-w-0 flex-1">

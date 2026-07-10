@@ -11,14 +11,10 @@ export default function AuthLayout({
   footer?: ReactNode; onBack?: () => void; backLabel?: string;
 }) {
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-10">
-      {/* decorative backdrop */}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60rem_40rem_at_50%_-10%,hsl(var(--primary)/0.12),transparent)]" />
-      <div className="pointer-events-none absolute inset-0 [background-image:linear-gradient(to_right,hsl(var(--border)/0.4)_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--border)/0.4)_1px,transparent_1px)] [background-size:36px_36px] [mask-image:radial-gradient(40rem_30rem_at_50%_0%,black,transparent)]" />
-
-      <div className="relative w-full max-w-md">
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
+      <div className="w-full max-w-md">
         <div className="mb-6 flex justify-center"><Brand /></div>
-        <Card className="shadow-xl">
+        <Card>
           <CardHeader className="space-y-1">
             {onBack && (
               <button type="button" onClick={onBack}

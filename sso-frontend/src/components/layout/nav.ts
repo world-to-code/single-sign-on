@@ -92,11 +92,6 @@ export const NAV: NavGroup[] = [
   },
 ];
 
-/** All nav items, flattened across flat groups and accordion sections. */
-function allItems(): NavItem[] {
-  return NAV.flatMap((g) => [...(g.items ?? []), ...(g.sections ?? []).flatMap((s) => s.items)]);
-}
-
 /**
  * Whether a nav item's route is active for the current path — exact, or a nested detail route beneath it
  * (e.g. /admin/session-policy/new keeps "Session Policy" highlighted). The `to + "/"` guard stops a
@@ -104,12 +99,4 @@ function allItems(): NavItem[] {
  */
 export function isNavActive(pathname: string, to: string): boolean {
   return pathname === to || pathname.startsWith(to + "/");
-}
-
-export function titleFor(pathname: string): string {
-  // Longest prefix match so detail routes (e.g. /admin/session-policy/:id) inherit their section's title.
-  const match = allItems()
-    .filter((i) => isNavActive(pathname, i.to))
-    .sort((a, b) => b.to.length - a.to.length)[0];
-  return match?.label ?? "Dashboard";
 }

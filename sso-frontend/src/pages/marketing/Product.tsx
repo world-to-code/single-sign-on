@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Section, CtaBand, HeroBackdrop } from "@/components/marketing/MarketingLayout";
+import { Section, CtaBand } from "@/components/marketing/MarketingLayout";
 import { cn } from "@/lib/utils";
 
 /** Product page ("/product"): a capability-by-capability deep dive as alternating feature rows, each
@@ -14,7 +14,6 @@ export default function Product() {
   return (
     <>
       <section className="relative overflow-hidden border-b">
-        <HeroBackdrop />
         <div className="relative mx-auto max-w-3xl px-4 py-20 text-center sm:px-6 sm:py-24">
           <Badge variant="muted" className="mb-5">Capabilities</Badge>
           <h1 className="text-balance text-4xl font-bold tracking-tight sm:text-5xl">

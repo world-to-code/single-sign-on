@@ -117,18 +117,6 @@ export default function MarketingLayout() {
 
 /* ---------- Reusable marketing primitives (shared chrome across pages) ---------- */
 
-/** Decorative hero backdrop: a soft primary radial glow over a masked grid. Drop it inside a
- *  `relative overflow-hidden` container; each page composes its own hero layout around it, so the
- *  motif is shared while the hero structure stays page-specific. */
-export function HeroBackdrop() {
-  return (
-    <>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60rem_40rem_at_50%_-10%,hsl(var(--primary)/0.12),transparent)]" />
-      <div className="pointer-events-none absolute inset-0 [background-image:linear-gradient(to_right,hsl(var(--border)/0.5)_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--border)/0.5)_1px,transparent_1px)] [background-size:40px_40px] [mask-image:radial-gradient(44rem_30rem_at_50%_0%,black,transparent)]" />
-    </>
-  );
-}
-
 /** Full-bleed section band with a consistent max-width inner container. `tone` sets the surface. */
 export function Section(
   { tone = "default", children, id, className }:
@@ -137,7 +125,7 @@ export function Section(
   const tones = {
     default: "",
     muted: "border-y bg-muted/30",
-    dark: "bg-sidebar text-sidebar-foreground",
+    dark: "bg-ink text-bg",
   } as const;
   return (
     <section id={id} className={cn(tones[tone])}>
@@ -148,9 +136,8 @@ export function Section(
 
 export function CtaBand() {
   return (
-    <section className="relative overflow-hidden border-t">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(50rem_30rem_at_50%_120%,hsl(var(--primary)/0.12),transparent)]" />
-      <div className="relative mx-auto max-w-3xl px-4 py-20 text-center sm:px-6">
+    <section className="border-t">
+      <div className="mx-auto max-w-3xl px-4 py-20 text-center sm:px-6">
         <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">Bring your team under one login</h2>
         <p className="mx-auto mt-3 max-w-lg text-muted-foreground">
           Create your organization and we'll provision your workspace and email your admin an activation link.
