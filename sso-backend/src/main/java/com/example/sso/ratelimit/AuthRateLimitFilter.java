@@ -32,6 +32,9 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
 
     private static final Set<String> LIMITED_PATHS =
             Set.of("/api/auth/identify", "/api/auth/login",
+                    // Mails a one-time code: unlimited requests would let a signed-in user mail-bomb their
+                    // own address (and burn the mail quota).
+                    "/api/auth/email-verification", "/api/auth/email-verification/confirm",
                     "/api/onboarding/apply", "/api/onboarding/activate", "/api/onboarding/set-password");
     private static final String FACTORS_PREFIX = "/api/auth/factors/"; // .../prepare and .../verify
     private static final String REAUTH_PREFIX = "/api/auth/reauth/";   // step-up / re-auth .../prepare and .../verify
