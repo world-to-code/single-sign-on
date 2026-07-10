@@ -16,15 +16,31 @@ class SamlEntityIdTest {
 
     @Test
     void derivesTheEntityIdFromTheRequestHost() {
-        assertThat(entityId.resolve(request("acme.localhost", 9000)))
+        assertThat(entityId.resolve(request("http", "acme.localhost", 9000)))
                 .isEqualTo("http://acme.localhost:9000/saml2/idp");
-        assertThat(entityId.resolve(request("localhost", 9000)))
+        assertThat(entityId.resolve(request("http", "localhost", 9000)))
                 .isEqualTo("http://localhost:9000/saml2/idp");
     }
 
-    private MockHttpServletRequest request(String host, int port) {
+    @Test
+    void omitsTheSchemeDefaultPort() {
+        assertThat(entityId.resolve(request("https", "acme.idp.example.com", 443)))
+                .isEqualTo("https://acme.idp.example.com/saml2/idp");
+        assertThat(entityId.resolve(request("http", "acme.localhost", 80)))
+                .isEqualTo("http://acme.localhost/saml2/idp");
+    }
+
+    @Test
+    void keepsANonDefaultPortForTheScheme() {
+        assertThat(entityId.resolve(request("https", "acme.idp.example.com", 8443)))
+                .isEqualTo("https://acme.idp.example.com:8443/saml2/idp");
+        assertThat(entityId.resolve(request("http", "acme.localhost", 443)))
+                .isEqualTo("http://acme.localhost:443/saml2/idp");
+    }
+
+    private MockHttpServletRequest request(String scheme, String host, int port) {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.setScheme("http");
+        request.setScheme(scheme);
         request.setServerName(host);
         request.setServerPort(port);
         return request;
