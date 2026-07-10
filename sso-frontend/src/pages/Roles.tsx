@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { ShieldCheck, Lock, Pencil, Plus, Trash2 } from "lucide-react";
 import {
@@ -30,6 +31,7 @@ interface RoleEditor {
 const BLANK: RoleEditor = { id: null, name: "", permissions: [], system: false };
 
 export default function Roles() {
+  const { t } = useTranslation("states");
   const confirmDelete = useDeleteConfirm();
   const [roles, setRoles] = useState<Role[] | null>(null);
   const [catalog, setCatalog] = useState<Permission[]>([]);
@@ -83,7 +85,7 @@ export default function Roles() {
         data={roles}
         error={error}
         isEmpty={(items) => items.length === 0}
-        empty={<EmptyState icon={<ShieldCheck className="size-8" />} title="No roles yet" hint="Create a role to bundle permissions." />}
+        empty={<EmptyState icon={<ShieldCheck className="size-8" />} title={t("rolesEmptyTitle")} hint={t("rolesEmptyHint")} />}
       >
         {(items) => (
           <Table>

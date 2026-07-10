@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ExternalLink, LayoutGrid, ShieldCheck } from "lucide-react";
 import { getMyApps } from "../portal";
 import type { Application } from "../portal";
@@ -9,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState, ErrorCard, LoadingCard } from "@/components/states";
 
 export default function MyApps() {
+  const { t } = useTranslation("states");
   const [apps, setApps] = useState<Application[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,8 +27,8 @@ export default function MyApps() {
       <PageHeader title="My Applications" description="Single sign-on to the apps assigned to you." />
       {error ? <ErrorCard message={error} /> : !apps ? <LoadingCard /> : apps.length === 0 ? (
         <Card><CardContent className="p-0">
-          <EmptyState icon={<LayoutGrid className="size-8" />} title="No applications yet"
-                      hint="Ask an administrator to assign applications to your account or group." />
+          <EmptyState icon={<LayoutGrid className="size-8" />} title={t("myAppsEmptyTitle")}
+                      hint={t("myAppsEmptyHint")} />
         </CardContent></Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
 import { apiGet, type Page } from "../api";
@@ -26,6 +27,7 @@ interface Policy {
 interface Role { id: string; name: string }
 
 export default function AuthPolicies() {
+  const { t } = useTranslation("states");
   const confirmDelete = useDeleteConfirm();
   const [policies, setPolicies] = useState<Policy[] | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -81,7 +83,7 @@ export default function AuthPolicies() {
         data={policies}
         error={error}
         isEmpty={(items) => items.length === 0}
-        empty={<EmptyState title="No policies yet" hint="Create a policy to require specific factors for a role or user." />}
+        empty={<EmptyState title={t("authPoliciesEmptyTitle")} hint={t("authPoliciesEmptyHint")} />}
       >
         {(items) => (
           <Table>

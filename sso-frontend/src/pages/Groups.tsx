@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Lock, Pencil, Plus, Trash2 } from "lucide-react";
 import { createGroup, updateGroup, type Group, type GroupRequest } from "@/groups";
 import { usePaginated } from "@/usePaginated";
@@ -29,6 +30,7 @@ interface Editor {
 const blankEditor: Editor = { id: null, name: "", description: "", externalId: "", userIds: [] };
 
 export default function Groups() {
+  const { t } = useTranslation("states");
   const confirmDelete = useDeleteConfirm();
   const { items: groups, total, page, setPage, size, error: listError, reload } = usePaginated<Group>("/api/admin/groups");
 
@@ -83,7 +85,7 @@ export default function Groups() {
         data={groups}
         error={listError}
         isEmpty={(items) => items.length === 0}
-        empty={<EmptyState title="No groups yet" hint="Create a group to bundle users by department or team." />}
+        empty={<EmptyState title={t("groupsEmptyTitle")} hint={t("groupsEmptyHint")} />}
       >
         {(items) => (
           <Table>

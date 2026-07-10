@@ -1,4 +1,5 @@
 import { ArrowDown, ChevronDown, ChevronUp, Plus, Trash2, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { FACTORS, factorMeta } from "@/factors";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -11,6 +12,7 @@ import { Label } from "@/components/ui/label";
  * (Okta-style sign-on). Reused by the auth-policy editor; controlled via `steps` / `onChange`.
  */
 export function StepsBuilder({ steps, onChange }: { steps: string[][]; onChange: (s: string[][]) => void }) {
+  const { t } = useTranslation("auth");
   const setStep = (i: number, factors: string[]) => onChange(steps.map((s, idx) => (idx === i ? factors : s)));
   const removeStep = (i: number) => onChange(steps.filter((_, idx) => idx !== i));
   const moveStep = (i: number, dir: -1 | 1) => {
@@ -57,7 +59,7 @@ export function StepsBuilder({ steps, onChange }: { steps: string[][]; onChange:
                         {fi > 0 && <span className="text-xs font-medium text-muted-foreground">or</span>}
                         <span className="inline-flex items-center gap-1.5 rounded-md border bg-background py-1 pl-2 pr-1 text-sm">
                           <Icon className="size-3.5 text-primary" />
-                          {meta.label}
+                          {t(meta.label)}
                           <button type="button" className="rounded text-muted-foreground hover:text-destructive" onClick={() => setStep(i, step.filter((x) => x !== f))}><X className="size-3.5" /></button>
                         </span>
                       </span>
@@ -76,7 +78,7 @@ export function StepsBuilder({ steps, onChange }: { steps: string[][]; onChange:
                           const Icon = meta.icon;
                           return (
                             <DropdownMenuItem key={f} onClick={() => setStep(i, [...step, f])}>
-                              <Icon className="size-4" /> {meta.label}
+                              <Icon className="size-4" /> {t(meta.label)}
                             </DropdownMenuItem>
                           );
                         })}

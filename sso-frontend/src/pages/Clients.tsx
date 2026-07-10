@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { ExternalLink, Lock, Plus, Trash2 } from "lucide-react";
 import { type ClientRow } from "@/clients";
 import { usePaginated } from "@/usePaginated";
@@ -23,6 +24,7 @@ function launchUrl(client: ClientRow): string | null {
 }
 
 export default function Clients() {
+  const { t } = useTranslation("states");
   const confirmDelete = useDeleteConfirm();
   const { items: clients, total, page, setPage, size, error, reload } = usePaginated<ClientRow>("/api/admin/clients");
 
@@ -48,8 +50,8 @@ export default function Clients() {
         error={error}
         isEmpty={(items) => items.length === 0}
         empty={
-          <EmptyState icon={<ExternalLink className="size-8" />} title="No clients registered"
-                      hint="Register an OAuth2/OIDC client to let an application sign users in through this IdP." />
+          <EmptyState icon={<ExternalLink className="size-8" />} title={t("clientsEmptyTitle")}
+                      hint={t("clientsEmptyHint")} />
         }
       >
         {(items) => (

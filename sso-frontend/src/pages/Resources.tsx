@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Boxes, Plus, Trash2, Layers, ChevronRight } from "lucide-react";
 import {
   LEAF_MEMBER_TYPES, MEMBER_TYPES, assignResourceAdmin, attachChild, attachMember, createResource,
@@ -34,6 +35,7 @@ const MEMBER_KIND_HINTS: Record<MemberType, string> = {
 };
 
 export default function Resources() {
+  const { t } = useTranslation("states");
   const [resources, setResources] = useState<Resource[] | null>(null);
   const [types, setTypes] = useState<ResourceType[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -86,10 +88,10 @@ export default function Resources() {
         data={resources}
         error={error}
         isEmpty={(r) => r.length === 0}
-        empty={<EmptyState icon={<Boxes />} title="No resources yet"
+        empty={<EmptyState icon={<Boxes />} title={t("resourcesEmptyTitle")}
           hint={types.length
-            ? "Click “New resource” to create one, then attach groups/apps/users and delegate admins."
-            : "Two steps: ① “New type” defines which member kinds a resource can hold, then ② “New resource”."} />}
+            ? t("resourcesEmptyHintWithTypes")
+            : t("resourcesEmptyHintNoTypes")} />}
       >
         {(rs) => (
           <div className="divide-y">
@@ -118,8 +120,8 @@ export default function Resources() {
 
       {view === "types" && (
         types.length === 0
-          ? <EmptyState icon={<Layers />} title="No types yet"
-              hint="A type defines which member kinds a resource can hold. Create one with “New type”." />
+          ? <EmptyState icon={<Layers />} title={t("resourceTypesEmptyTitle")}
+              hint={t("resourceTypesEmptyHint")} />
           : <div className="divide-y rounded-md border">
               {types.map((t) => (
                 <div key={t.id} className="flex items-center justify-between px-4 py-3">

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { KeyRound, Loader2, Mail, MonitorSmartphone, Plus, ShieldCheck, Smartphone, LogOut, Trash2 } from "lucide-react";
@@ -109,6 +110,7 @@ function TotpSetupDialog({ open, onOpenChange, onEnrolled }: { open: boolean; on
 }
 
 export default function Profile() {
+  const { t } = useTranslation("states");
   const confirmRevoke = useDeleteConfirm();
   const confirmDelete = useDeleteConfirm();
   const [totpOpen, setTotpOpen] = useState(false);
@@ -199,7 +201,7 @@ export default function Profile() {
         error={sessions.error}
         errorAlways
         isEmpty={(items) => items.length === 0}
-        empty={<EmptyState icon={<MonitorSmartphone className="size-8" />} title="No active sessions" />}
+        empty={<EmptyState icon={<MonitorSmartphone className="size-8" />} title={t("profileSessionsEmptyTitle")} />}
       >
         {(items) => (
           <Table>

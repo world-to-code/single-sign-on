@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AppWindow, Lock, Network, Settings, Trash2, UserPlus, Users as UsersIcon } from "lucide-react";
 import { apiGet, apiPost, apiPut, errorMessage, type Page } from "../api";
 import { PageHeader } from "@/components/PageHeader";
@@ -26,6 +27,7 @@ interface Assignment { id: string; subjectType: string; subjectName: string; req
 interface Policy { id: string; name: string; appliesToLogin: boolean; }
 
 export default function Applications() {
+  const { t } = useTranslation("states");
   const confirmDelete = useDeleteConfirm();
   const { items: apps, total, page, setPage, size, error, reload } = usePaginated<Application>("/api/admin/applications");
   const [policies, setPolicies] = useState<Policy[]>([]);
@@ -124,7 +126,7 @@ export default function Applications() {
         data={apps}
         error={error}
         isEmpty={(items) => items.length === 0}
-        empty={<EmptyState icon={<AppWindow className="size-8" />} title="No applications" hint="Register an OIDC client or SAML provider first." />}
+        empty={<EmptyState icon={<AppWindow className="size-8" />} title={t("applicationsEmptyTitle")} hint={t("applicationsEmptyHint")} />}
       >
         {(items) => (
           <Table>

@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { BarChart3, Building2, LogIn, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import {
   createOrganization, updateOrganization, updatePasswordlessLogin,
@@ -40,6 +41,7 @@ const blankEditor: Editor = { id: null, slug: "", name: "", status: "ACTIVE", pa
  * roles, policies) is done by drilling into an org (SA-3), not here.
  */
 export default function Organizations() {
+  const { t } = useTranslation("states");
   const navigate = useNavigate();
   const confirmDelete = useDeleteConfirm();
   const { items: orgs, total, page, setPage, size, error: listError, reload } =
@@ -98,8 +100,8 @@ export default function Organizations() {
         data={orgs}
         error={listError}
         isEmpty={(items) => items.length === 0}
-        empty={<EmptyState icon={<Building2 className="size-8" />} title="No organizations yet"
-                           hint="Create an organization to onboard a tenant onto this IdP." />}
+        empty={<EmptyState icon={<Building2 className="size-8" />} title={t("organizationsEmptyTitle")}
+                           hint={t("organizationsEmptyHint")} />}
       >
         {(items) => (
           <Table>

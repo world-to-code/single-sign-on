@@ -1,23 +1,30 @@
 import { Fingerprint, KeyRound, Lock, Mail, Smartphone } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import type { auth as authResources } from "@/i18n/en/auth";
 
 /** Canonical authentication factor identifiers used across login, step-up and policy UIs. */
 export const FACTORS = ["PASSWORD", "TOTP", "EMAIL", "FIDO2"] as const;
 export type Factor = (typeof FACTORS)[number];
 
+/** A key in the `auth` i18n namespace; the render site resolves it via t() bound to that namespace. */
+type FactorLabelKey = keyof typeof authResources;
+
 interface FactorMeta {
-  label: string;
+  label: FactorLabelKey;
   icon: LucideIcon;
 }
 
 const META: Record<string, FactorMeta> = {
-  PASSWORD: { label: "Password", icon: Lock },
-  TOTP: { label: "Authenticator app", icon: Smartphone },
-  EMAIL: { label: "Email code", icon: Mail },
-  FIDO2: { label: "Passkey", icon: Fingerprint },
+  PASSWORD: { label: "factorPassword", icon: Lock },
+  TOTP: { label: "factorTotp", icon: Smartphone },
+  EMAIL: { label: "factorEmail", icon: Mail },
+  FIDO2: { label: "factorPasskey", icon: Fingerprint },
 };
 
-/** Presentation metadata (label + icon) for a factor id, with a safe fallback for unknown values. */
+/**
+ * Presentation metadata for a factor id. `label` is an i18n key resolved with t() by the caller; an
+ * unknown factor falls back to its raw id, which t() returns unchanged when it matches no key.
+ */
 export function factorMeta(factor: string): FactorMeta {
-  return META[factor] ?? { label: factor, icon: KeyRound };
+  return META[factor] ?? { label: factor as FactorLabelKey, icon: KeyRound };
 }

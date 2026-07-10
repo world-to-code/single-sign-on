@@ -1,4 +1,5 @@
 import { clearAdminUnlock, getAdminToken } from "@/adminPortal";
+import i18n from "@/i18n";
 
 /** One page of a larger admin list — mirrors the backend `shared.Page` record. */
 export interface Page<T> {
@@ -42,12 +43,13 @@ export function errorMessage(e: unknown): string {
     // line for input/conflict errors — e.g. "invalid CIDR: x" or "zone is referenced by a policy".
     const detail = e.message.startsWith("HTTP ") ? null : e.message;
     switch (e.status) {
-      case 400: return detail ?? "Invalid input — please check the form.";
-      case 401: return "Re-authentication required — please retry.";
-      case 403: return "You don't have permission for this action.";
-      case 404: return "Not found — it may have been removed.";
-      case 409: return detail ?? "Conflict — the change wasn't applied.";
-      default: return `Request failed (${e.status}).`;
+      // The backend localizes 400/409 `detail` by Accept-Language, so prefer it; the rest are our copy.
+      case 400: return detail ?? i18n.t("badRequest", { ns: "errors" });
+      case 401: return i18n.t("unauthorized", { ns: "errors" });
+      case 403: return i18n.t("forbidden", { ns: "errors" });
+      case 404: return i18n.t("notFound", { ns: "errors" });
+      case 409: return detail ?? i18n.t("conflict", { ns: "errors" });
+      default: return i18n.t("failed", { ns: "errors", status: e.status });
     }
   }
   return e instanceof Error ? e.message : String(e);
@@ -133,7 +135,7 @@ async function parse<T>(res: Response): Promise<T> {
 export async function apiGet<T>(path: string): Promise<T> {
   const res = await fetch(path, {
     credentials: "include",
-    headers: { ...adminAuthHeader(path), ...orgContextHeader(path) },
+    headers: { "Accept-Language": i18n.language, ...adminAuthHeader(path), ...orgContextHeader(path) },
   });
   if (handleElevationChallenge(path, res)) {
     return new Promise<T>(() => {}); // navigating away; never resolves
@@ -213,7 +215,8 @@ async function send<T>(method: string, path: string, body?: unknown, retried = f
     method,
     credentials: "include",
     headers: {
-      "Content-Type": "application/json", ...csrfHeader(), ...adminAuthHeader(path), ...orgContextHeader(path),
+      "Content-Type": "application/json", "Accept-Language": i18n.language,
+      ...csrfHeader(), ...adminAuthHeader(path), ...orgContextHeader(path),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });

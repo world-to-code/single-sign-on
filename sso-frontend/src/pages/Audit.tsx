@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ScrollText } from "lucide-react";
 import { usePaginated } from "@/usePaginated";
 import { Pagination } from "@/components/Pagination";
@@ -24,6 +25,7 @@ const CATEGORIES = [
 const label = (c: string) => c.replace(/_/g, " ").toLowerCase();
 
 export default function Audit() {
+  const { t } = useTranslation("states");
   const [category, setCategory] = useState<string>("ALL");
   const path = category === "ALL" ? "/api/admin/audit" : `/api/admin/audit?category=${category}`;
   const { items, total, page, setPage, size, error } = usePaginated<AuditEvent>(path);
@@ -55,7 +57,7 @@ export default function Audit() {
         data={items}
         error={error}
         isEmpty={(events) => events.length === 0}
-        empty={<EmptyState icon={<ScrollText className="size-8" />} title="No audit events" hint="No events in this category yet." />}
+        empty={<EmptyState icon={<ScrollText className="size-8" />} title={t("auditEmptyTitle")} hint={t("auditEmptyHint")} />}
       >
         {(events) => (
           <Table>

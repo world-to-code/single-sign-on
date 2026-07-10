@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { Pencil, Plus, Save, Trash2 } from "lucide-react";
@@ -38,6 +39,7 @@ interface SessionPolicy {
 interface Role { id: string; name: string }
 
 export default function SessionPolicyPage() {
+  const { t } = useTranslation("states");
   const confirmDelete = useDeleteConfirm();
   const [policies, setPolicies] = useState<SessionPolicy[] | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -94,7 +96,7 @@ export default function SessionPolicyPage() {
         data={policies}
         error={error}
         isEmpty={(items) => items.length === 0}
-        empty={<EmptyState title="No policies yet" hint="Create a session policy to target a role or user." />}
+        empty={<EmptyState title={t("sessionPoliciesEmptyTitle")} hint={t("sessionPoliciesEmptyHint")} />}
       >
         {(items) => (
           <Table>

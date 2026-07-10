@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { createZone, updateZone, type NetworkZone } from "@/zones";
 import { PageHeader } from "@/components/PageHeader";
@@ -27,6 +28,7 @@ const blank: Editor = { id: null, name: "", description: "", cidrs: [""] };
 
 /** Catalog of reusable named IP zones (CIDR sets) that session policies reference to allow/block networks. */
 export default function NetworkZones() {
+  const { t } = useTranslation("states");
   const { items, total, page, setPage, size, error, reload } = usePaginated<NetworkZone>("/api/admin/network-zones");
   const confirmDelete = useDeleteConfirm();
   const [actionError, setActionError] = useState<string | null>(null);
@@ -81,7 +83,7 @@ export default function NetworkZones() {
         data={items}
         error={error}
         isEmpty={(rows) => rows.length === 0}
-        empty={<EmptyState title="No zones yet" hint="Create a named IP zone to reference in policies." />}
+        empty={<EmptyState title={t("networkZonesEmptyTitle")} hint={t("networkZonesEmptyHint")} />}
       >
         {(rows) => (
           <>

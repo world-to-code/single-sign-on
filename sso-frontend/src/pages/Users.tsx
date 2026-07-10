@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { KeyRound, Plus } from "lucide-react";
 import { type AdminUser } from "@/users";
 import { usePaginated } from "@/usePaginated";
@@ -10,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DataList, EmptyState } from "@/components/states";
 
 export default function Users() {
+  const { t } = useTranslation("states");
   const { items: users, total, page, setPage, size, error } = usePaginated<AdminUser>("/api/admin/users");
 
   return (
@@ -24,7 +26,7 @@ export default function Users() {
         data={users}
         error={error}
         isEmpty={(items) => items.length === 0}
-        empty={<EmptyState icon={<KeyRound className="size-8" />} title="No users yet" hint="Create the first directory user." />}
+        empty={<EmptyState icon={<KeyRound className="size-8" />} title={t("usersEmptyTitle")} hint={t("usersEmptyHint")} />}
       >
         {(items) => (
           <Table>

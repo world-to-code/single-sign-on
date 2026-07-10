@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { ExternalLink, Pencil, Plus, Trash2 } from "lucide-react";
 import { usePaginated } from "@/usePaginated";
 import { Pagination } from "@/components/Pagination";
@@ -25,6 +26,7 @@ interface RelyingParty {
 }
 
 export default function RelyingParties() {
+  const { t } = useTranslation("states");
   const confirmDelete = useDeleteConfirm();
   const { items: rps, total, page, setPage, size, error: listError, reload } =
     usePaginated<RelyingParty>("/api/admin/saml/relying-parties");
@@ -64,7 +66,7 @@ export default function RelyingParties() {
         data={rps}
         error={listError}
         isEmpty={(items) => items.length === 0}
-        empty={<EmptyState title="No relying parties" hint="Register a SAML service provider to issue assertions to it." />}
+        empty={<EmptyState title={t("relyingPartiesEmptyTitle")} hint={t("relyingPartiesEmptyHint")} />}
       >
         {(items) => (
           <Table>

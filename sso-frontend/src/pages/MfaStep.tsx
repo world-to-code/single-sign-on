@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Fingerprint, Loader2, Lock, Mail } from "lucide-react";
 import { getSession, logout, prepareFactor } from "../auth";
 import type { FactorChallenge, SessionView } from "../auth";
@@ -22,6 +23,7 @@ function preferredFactor(factors: string[], session: SessionView): string {
 
 /** Completes the current authentication-policy step; the user picks one allowed factor. */
 export default function MfaStep({ session, onDone }: { session: SessionView; onDone: (s: SessionView) => void }) {
+  const { t } = useTranslation("auth");
   const factors = session.pendingFactors;
   const {
     factor, setFactor, code, setCode, password, setPassword, emailSent,
@@ -68,7 +70,7 @@ export default function MfaStep({ session, onDone }: { session: SessionView; onD
       title="Verify your identity"
       description={needEnroll
         ? "Set up your authenticator app to finish securing your account."
-        : `Complete the ${factorMeta(factor).label.toLowerCase()} step required by your sign-in policy.`}
+        : `Complete the ${t(factorMeta(factor).label)} step required by your sign-in policy.`}
     >
       <FactorChooser factors={factors} value={factor} onSelect={setFactor} />
 

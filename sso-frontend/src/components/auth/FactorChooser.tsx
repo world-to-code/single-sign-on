@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { factorMeta } from "@/factors";
 import { cn } from "@/lib/utils";
 
@@ -10,6 +11,7 @@ export function FactorChooser({
   onSelect: (factor: string) => void;
   className?: string;
 }) {
+  const { t } = useTranslation("auth");
   if (factors.length <= 1) return null;
   return (
     <div className={cn("mb-5 grid gap-2", className)}>
@@ -34,7 +36,7 @@ export function FactorChooser({
               )}>
                 <Icon className="size-4" />
               </span>
-              <span className="font-medium">{label}</span>
+              <span className="font-medium">{t(label)}</span>
             </button>
           );
         })}

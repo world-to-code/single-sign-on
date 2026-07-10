@@ -1,0 +1,31 @@
+import type { nav as enNav } from "../en/nav";
+
+export const nav: Record<keyof typeof enNav, string> = {
+  // Group headings
+  groupAccount: "계정",
+  groupAdministration: "관리",
+  // Section headings
+  sectionPlatform: "플랫폼",
+  sectionDirectory: "디렉터리",
+  sectionApplications: "애플리케이션",
+  sectionAccessSecurity: "접근 및 보안",
+  sectionSystem: "시스템",
+  // Item labels
+  dashboard: "대시보드",
+  profile: "내 프로필",
+  myApplications: "내 애플리케이션",
+  myPasskeys: "내 패스키",
+  organizations: "조직",
+  users: "사용자",
+  groups: "그룹",
+  resources: "리소스",
+  applications: "애플리케이션",
+  oauthClients: "OAuth2 클라이언트",
+  samlProviders: "SAML 공급자",
+  roles: "역할",
+  authPolicies: "인증 정책",
+  sessionPolicy: "세션 정책",
+  networkZones: "네트워크 영역",
+  scimTokens: "SCIM 토큰",
+  auditLog: "감사 로그",
+};

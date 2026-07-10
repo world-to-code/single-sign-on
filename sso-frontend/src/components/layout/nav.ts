@@ -3,23 +3,27 @@ import {
   Clock, Globe, LayoutGrid, Boxes, UsersRound, UserCog, KeySquare, Building2,
   type LucideIcon,
 } from "lucide-react";
+import type { nav as navResources } from "@/i18n/en/nav";
+
+/** A key in the `nav` i18n namespace; the render site resolves it via t() bound to that namespace. */
+export type NavKey = keyof typeof navResources;
 
 export interface NavItem {
   to: string;
-  label: string;
+  label: NavKey;
   icon: LucideIcon;
   permission?: string; // fine-grained permission (resource:read) required to see this item
   superAdmin?: boolean; // platform-only area: additionally requires a super-admin (unscoped ROLE_ADMIN)
 }
 
 export interface NavSection {
-  heading: string;
+  heading: NavKey;
   items: NavItem[];
   requiresOrg?: boolean; // org-scoped resources: hidden from a super-admin until they drill into a tenant
 }
 
 export interface NavGroup {
-  heading: string;
+  heading: NavKey;
   scope: "user" | "admin";  // which shell this group belongs to
   items?: NavItem[];        // a flat group (e.g. Account)
   sections?: NavSection[];  // a grouped/accordion group (e.g. Administration)
@@ -32,60 +36,60 @@ export interface NavGroup {
  */
 export const NAV: NavGroup[] = [
   {
-    heading: "Account",
+    heading: "groupAccount",
     scope: "user",
     items: [
-      { to: "/", label: "Dashboard", icon: LayoutDashboard },
-      { to: "/profile", label: "My Profile", icon: UserCog },
-      { to: "/apps", label: "My Applications", icon: LayoutGrid },
-      { to: "/passkeys", label: "My Passkeys", icon: KeyRound },
+      { to: "/", label: "dashboard", icon: LayoutDashboard },
+      { to: "/profile", label: "profile", icon: UserCog },
+      { to: "/apps", label: "myApplications", icon: LayoutGrid },
+      { to: "/passkeys", label: "myPasskeys", icon: KeyRound },
     ],
   },
   {
-    heading: "Administration",
+    heading: "groupAdministration",
     scope: "admin",
     sections: [
       {
-        heading: "Platform",
+        heading: "sectionPlatform",
         items: [
-          { to: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: "organization:read", superAdmin: true },
-          { to: "/admin/organizations", label: "Organizations", icon: Building2, permission: "organization:read", superAdmin: true },
+          { to: "/admin/dashboard", label: "dashboard", icon: LayoutDashboard, permission: "organization:read", superAdmin: true },
+          { to: "/admin/organizations", label: "organizations", icon: Building2, permission: "organization:read", superAdmin: true },
         ],
       },
       {
-        heading: "Directory",
+        heading: "sectionDirectory",
         requiresOrg: true,
         items: [
-          { to: "/admin/users", label: "Users", icon: Users, permission: "user:read" },
-          { to: "/admin/groups", label: "Groups", icon: UsersRound, permission: "group:read" },
-          { to: "/admin/resources", label: "Resources", icon: Boxes, permission: "resource:read" },
+          { to: "/admin/users", label: "users", icon: Users, permission: "user:read" },
+          { to: "/admin/groups", label: "groups", icon: UsersRound, permission: "group:read" },
+          { to: "/admin/resources", label: "resources", icon: Boxes, permission: "resource:read" },
         ],
       },
       {
-        heading: "Applications",
+        heading: "sectionApplications",
         requiresOrg: true,
         items: [
-          { to: "/admin/applications", label: "Applications", icon: Boxes, permission: "app-assignment:read" },
-          { to: "/admin/clients", label: "OAuth2 Clients", icon: AppWindow, permission: "oidc-client:read" },
-          { to: "/admin/relying-parties", label: "SAML Providers", icon: Network, permission: "saml-rp:read" },
+          { to: "/admin/applications", label: "applications", icon: Boxes, permission: "app-assignment:read" },
+          { to: "/admin/clients", label: "oauthClients", icon: AppWindow, permission: "oidc-client:read" },
+          { to: "/admin/relying-parties", label: "samlProviders", icon: Network, permission: "saml-rp:read" },
         ],
       },
       {
-        heading: "Access & Security",
+        heading: "sectionAccessSecurity",
         requiresOrg: true,
         items: [
-          { to: "/admin/roles", label: "Roles", icon: KeySquare, permission: "role:read" },
-          { to: "/admin/auth-policies", label: "Auth Policies", icon: ShieldCheck, permission: "auth-policy:read" },
-          { to: "/admin/session-policy", label: "Session Policy", icon: Clock, permission: "session-policy:read" },
-          { to: "/admin/network-zones", label: "Network Zones", icon: Globe, permission: "network-zone:read" },
+          { to: "/admin/roles", label: "roles", icon: KeySquare, permission: "role:read" },
+          { to: "/admin/auth-policies", label: "authPolicies", icon: ShieldCheck, permission: "auth-policy:read" },
+          { to: "/admin/session-policy", label: "sessionPolicy", icon: Clock, permission: "session-policy:read" },
+          { to: "/admin/network-zones", label: "networkZones", icon: Globe, permission: "network-zone:read" },
         ],
       },
       {
-        heading: "System",
+        heading: "sectionSystem",
         requiresOrg: true,
         items: [
-          { to: "/admin/scim-tokens", label: "SCIM Tokens", icon: Coins, permission: "scim:manage" },
-          { to: "/admin/audit", label: "Audit Log", icon: ScrollText, permission: "audit:read" },
+          { to: "/admin/scim-tokens", label: "scimTokens", icon: Coins, permission: "scim:manage" },
+          { to: "/admin/audit", label: "auditLog", icon: ScrollText, permission: "audit:read" },
         ],
       },
     ],

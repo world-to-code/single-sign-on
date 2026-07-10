@@ -1,17 +1,19 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { factorMeta } from "@/factors";
 import { getSessionConfig } from "@/portal";
 import { cn } from "@/lib/utils";
 
-/** A non-interactive factor chip, mirroring a chosen factor. Labels come verbatim from factorMeta (no casing). */
+/** A non-interactive factor chip, mirroring a chosen factor. The label resolves from the auth namespace. */
 function FactorChip({ factor }: { factor: string }) {
+  const { t } = useTranslation("auth");
   const meta = factorMeta(factor);
   const Icon = meta.icon;
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-line bg-accent-soft px-2.5 py-1 text-xs font-medium text-primary">
       <Icon className="size-3.5" />
-      {meta.label}
+      {t(meta.label)}
     </span>
   );
 }

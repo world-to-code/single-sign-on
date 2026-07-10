@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, ChevronDown, LogOut, Menu, PanelLeftClose, PanelLeftOpen, ShieldCheck, X,
@@ -24,6 +25,7 @@ export default function AppShell(
   { session, variant = "user", children }:
   { session: SessionView; variant?: "user" | "admin"; children: React.ReactNode },
 ) {
+  const { t } = useTranslation("nav");
   // Console ENTRY is an app assignment (Model B), not a role; undefined while the check loads.
   const canEnterAdmin = useAdminConsoleAccess();
   // Within a shell, a nav item shows when the user holds its fine-grained permission (if it declares
@@ -82,14 +84,15 @@ export default function AppShell(
 
   const navLink = ({ to, label, icon: Icon }: NavItem) => {
     const active = isNavActive(location.pathname, to);
+    const text = t(label);
     return (
       <Link
         key={to}
         to={to}
         onClick={() => setOpen(false)}
         aria-current={active ? "page" : undefined}
-        title={rail ? label : undefined}
-        aria-label={rail ? label : undefined}
+        title={rail ? text : undefined}
+        aria-label={rail ? text : undefined}
         className={cn(
           "flex items-center gap-3 rounded-md py-2 text-sm font-medium transition-colors",
           rail ? "justify-center px-0" : "px-3",
@@ -99,7 +102,7 @@ export default function AppShell(
         )}
       >
         <Icon className="size-4 shrink-0" />
-        {!rail && <span>{label}</span>}
+        {!rail && <span>{text}</span>}
       </Link>
     );
   };
@@ -130,7 +133,7 @@ export default function AppShell(
             <div key={group.heading}>
               {!rail && (
                 <p className="px-3 pb-2 text-[11px] font-bold uppercase tracking-[0.04em] text-faint">
-                  {group.heading}
+                  {t(group.heading)}
                 </p>
               )}
               <div className="space-y-1">{items.map(navLink)}</div>
@@ -152,7 +155,7 @@ export default function AppShell(
         return (
           <div key={group.heading}>
             <p className="px-3 pb-2 text-[11px] font-bold uppercase tracking-[0.04em] text-faint">
-              {group.heading}
+              {t(group.heading)}
             </p>
             <div className="space-y-0.5">
               {sections.map((s) => {
@@ -166,7 +169,7 @@ export default function AppShell(
                       aria-expanded={isOpen}
                       className="flex w-full items-center justify-between rounded-md px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted transition-colors hover:text-ink"
                     >
-                      {s.heading}
+                      {t(s.heading)}
                       <ChevronDown className={cn("size-3.5 transition-transform", isOpen ? "" : "-rotate-90")} />
                     </button>
                     {isOpen && <div className="mb-1 mt-0.5 space-y-1">{s.items.map(navLink)}</div>}

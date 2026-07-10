@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Fingerprint, KeyRound, Plus, Trash2 } from "lucide-react";
 import { deletePasskey, listPasskeys, registerPasskey, webAuthnSupported } from "../webauthn";
 import type { Passkey } from "../webauthn";
@@ -16,6 +17,7 @@ import { useDeleteConfirm } from "../hooks/useDeleteConfirm";
  * (e.g. Profile) refresh dependent data (passkey count) after add/remove.
  */
 export default function PasskeyManager({ onChanged }: { onChanged?: () => void } = {}) {
+  const { t } = useTranslation("states");
   const confirmDelete = useDeleteConfirm();
   const [passkeys, setPasskeys] = useState<Passkey[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -65,8 +67,8 @@ export default function PasskeyManager({ onChanged }: { onChanged?: () => void }
         errorAlways
         isEmpty={(items) => items.length === 0}
         empty={
-          <EmptyState icon={<Fingerprint className="size-8" />} title="No passkeys registered"
-                      hint="Register a security key or platform passkey to sign in without a password." />
+          <EmptyState icon={<Fingerprint className="size-8" />} title={t("passkeysEmptyTitle")}
+                      hint={t("passkeysEmptyHint")} />
         }
       >
         {(items) => (
