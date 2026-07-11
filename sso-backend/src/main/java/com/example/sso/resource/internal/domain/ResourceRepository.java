@@ -1,5 +1,7 @@
 package com.example.sso.resource.internal.domain;
 
+import com.example.sso.resource.internal.graph.application.ResourceGraphService;
+
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;

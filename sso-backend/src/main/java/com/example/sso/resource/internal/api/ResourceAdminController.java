@@ -1,9 +1,9 @@
 package com.example.sso.resource.internal.api;
 
-import com.example.sso.resource.internal.application.ResourceAdminService;
-import com.example.sso.resource.internal.application.ResourceDetailView;
-import com.example.sso.resource.internal.application.ResourceTypeView;
-import com.example.sso.resource.internal.application.ResourceView;
+import com.example.sso.resource.internal.catalog.application.ResourceAdminService;
+import com.example.sso.resource.internal.catalog.application.ResourceDetailView;
+import com.example.sso.resource.internal.catalog.application.ResourceTypeView;
+import com.example.sso.resource.internal.catalog.application.ResourceView;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.Permissions;

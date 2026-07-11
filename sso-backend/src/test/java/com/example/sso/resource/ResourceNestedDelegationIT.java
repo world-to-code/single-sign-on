@@ -1,7 +1,7 @@
 package com.example.sso.resource;
 
-import com.example.sso.resource.internal.application.ResourceAdminService;
-import com.example.sso.resource.internal.application.ResourceView;
+import com.example.sso.resource.internal.catalog.application.ResourceAdminService;
+import com.example.sso.resource.internal.catalog.application.ResourceView;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.Resource;
 import com.example.sso.resource.internal.domain.ResourceGrant;

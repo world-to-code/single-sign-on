@@ -2,8 +2,8 @@ package com.example.sso.resource;
 
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
-import com.example.sso.resource.internal.application.ResourceAdminService;
-import com.example.sso.resource.internal.application.ResourceTypeView;
+import com.example.sso.resource.internal.catalog.application.ResourceAdminService;
+import com.example.sso.resource.internal.catalog.application.ResourceTypeView;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
