@@ -1,6 +1,5 @@
 package com.example.sso.resource.internal.domain;
 
-import com.example.sso.resource.internal.graph.application.ResourceGraphService;
 
 import com.example.sso.shared.domain.AuditedEntity;
 import com.example.sso.shared.error.BadRequestException;

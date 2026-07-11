@@ -1,6 +1,5 @@
 package com.example.sso.user.internal.role.domain;
 
-import com.example.sso.user.internal.rbac.domain.Permission;
 
 import org.junit.jupiter.api.Test;
 

@@ -1,6 +1,5 @@
 package com.example.sso.organization.internal.domain;
 
-import com.example.sso.user.internal.account.domain.AppUser;
 
 import com.example.sso.shared.domain.AuditedEntity;
 import jakarta.persistence.Column;

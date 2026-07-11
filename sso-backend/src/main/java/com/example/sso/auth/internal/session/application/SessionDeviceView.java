@@ -1,6 +1,5 @@
 package com.example.sso.auth.internal.session.application;
 
-import com.example.sso.auth.internal.login.application.AuthSessionView;
 
 import java.time.Instant;
 

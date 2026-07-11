@@ -1,6 +1,5 @@
 package com.example.sso.auth.internal.verification.application;
 
-import com.example.sso.auth.internal.factor.application.EmailFactorHandler;
 import com.example.sso.auth.internal.login.application.CurrentUserProvider;
 
 import com.example.sso.mfa.EmailOwnershipProof;

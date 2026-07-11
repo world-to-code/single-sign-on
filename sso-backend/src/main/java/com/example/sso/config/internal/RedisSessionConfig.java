@@ -1,6 +1,5 @@
 package com.example.sso.config.internal;
 
-import com.example.sso.session.internal.lifecycle.application.SessionManagerImpl;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;

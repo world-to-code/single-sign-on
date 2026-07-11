@@ -1,6 +1,5 @@
 package com.example.sso.user.account;
 
-import com.example.sso.user.internal.account.domain.AppUser;
 import com.example.sso.user.role.RoleRef;
 
 import java.time.Instant;

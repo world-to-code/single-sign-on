@@ -1,6 +1,5 @@
 package com.example.sso.scim.internal.application;
 
-import com.example.sso.user.internal.account.domain.AppUser;
 
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.tenancy.OrgContext;

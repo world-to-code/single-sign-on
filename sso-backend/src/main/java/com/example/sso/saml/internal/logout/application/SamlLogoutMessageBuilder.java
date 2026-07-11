@@ -1,7 +1,6 @@
 package com.example.sso.saml.internal.logout.application;
 
 import com.example.sso.saml.internal.core.application.SamlEntityId;
-import com.example.sso.saml.internal.core.application.SamlObjects;
 import com.example.sso.saml.internal.credential.application.SamlSigner;
 
 import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;

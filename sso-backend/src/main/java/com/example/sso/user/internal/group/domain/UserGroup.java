@@ -1,6 +1,5 @@
 package com.example.sso.user.internal.group.domain;
 
-import com.example.sso.user.internal.role.domain.Role;
 import com.example.sso.shared.domain.AuditedEntity;
 
 import jakarta.persistence.*;

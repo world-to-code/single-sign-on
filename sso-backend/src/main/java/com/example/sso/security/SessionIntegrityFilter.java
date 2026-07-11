@@ -1,7 +1,5 @@
 package com.example.sso.security;
 
-import com.example.sso.session.internal.lifecycle.application.SessionManagerImpl;
-import com.example.sso.session.internal.policy.domain.SessionPolicy;
 import com.example.sso.session.lifecycle.SessionLifecycle;
 
 import com.example.sso.audit.AuditType;

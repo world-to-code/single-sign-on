@@ -1,6 +1,5 @@
 package com.example.sso.config.internal;
 
-import com.example.sso.session.internal.lifecycle.application.SessionManagerImpl;
 import com.example.sso.session.lifecycle.SessionLifecycle;
 
 import com.example.sso.portal.access.AppAssignmentFilter;

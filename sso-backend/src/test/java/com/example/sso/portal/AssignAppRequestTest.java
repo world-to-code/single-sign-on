@@ -1,7 +1,6 @@
 package com.example.sso.portal;
 
 import com.example.sso.portal.access.AssignAppRequest;
-import com.example.sso.portal.internal.catalog.domain.AppAssignment;
 
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;

@@ -1,6 +1,5 @@
 package com.example.sso.saml.internal.sso.application;
 
-import com.example.sso.saml.internal.core.application.SamlObjects;
 import com.example.sso.saml.internal.credential.application.SamlCertificates;
 import com.example.sso.saml.internal.credential.application.SamlSigner;
 

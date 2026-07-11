@@ -1,6 +1,5 @@
 package com.example.sso.user.internal.role.domain;
 
-import com.example.sso.user.internal.account.domain.AppUser;
 
 import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;

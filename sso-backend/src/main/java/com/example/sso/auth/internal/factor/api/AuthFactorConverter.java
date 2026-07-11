@@ -1,6 +1,5 @@
 package com.example.sso.auth.internal.factor.api;
 
-import com.example.sso.portal.internal.catalog.api.AppTypeConverter;
 
 import com.example.sso.authpolicy.factor.AuthFactor;
 import java.util.Locale;

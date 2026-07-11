@@ -1,6 +1,5 @@
 package com.example.sso.saml.internal.core.application;
 
-import com.example.sso.saml.internal.credential.application.SamlSignatureValidator;
 import com.example.sso.saml.internal.credential.application.SamlSigner;
 
 import java.io.ByteArrayOutputStream;

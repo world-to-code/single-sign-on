@@ -1,6 +1,5 @@
 package com.example.sso.session.policy;
 
-import com.example.sso.session.internal.policy.domain.SessionPolicy;
 import com.example.sso.session.networkzone.IpRuleSpec;
 
 import java.util.List;

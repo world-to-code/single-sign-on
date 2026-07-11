@@ -1,7 +1,5 @@
 package com.example.sso.user.role;
 
-import com.example.sso.user.internal.rbac.domain.Permission;
-import com.example.sso.user.internal.role.domain.Role;
 
 import java.util.Set;
 import java.util.UUID;

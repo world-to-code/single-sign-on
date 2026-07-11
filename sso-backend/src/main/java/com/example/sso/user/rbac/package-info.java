@@ -6,6 +6,5 @@
 @NamedInterface("rbac")
 package com.example.sso.user.rbac;
 
-import com.example.sso.user.internal.rbac.domain.Permission;
 
 import org.springframework.modulith.NamedInterface;

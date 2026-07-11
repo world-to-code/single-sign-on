@@ -1,6 +1,5 @@
 package com.example.sso.security;
 
-import com.example.sso.session.internal.policy.domain.SessionPolicy;
 
 import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditService;
@@ -24,7 +23,7 @@ import java.io.IOException;
 
 /**
  * Per-policy network access control. For an authenticated request, evaluates the resolved
- * {@link com.example.sso.session.SessionPolicy}'s IP rules (first-match) against the client address and
+ * {@code SessionPolicy}'s IP rules (first-match) against the client address and
  * refuses a denied network with 403 — WITHOUT invalidating the session (it is valid, just not from this
  * network). Runs POST-authentication, so different users' policies can allow/block different ranges.
  *

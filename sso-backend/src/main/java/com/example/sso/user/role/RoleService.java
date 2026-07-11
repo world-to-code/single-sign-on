@@ -1,7 +1,6 @@
 package com.example.sso.user.role;
 
 import com.example.sso.user.account.UserAccount;
-import com.example.sso.user.internal.role.domain.Role;
 
 import com.example.sso.shared.IdName;
 
