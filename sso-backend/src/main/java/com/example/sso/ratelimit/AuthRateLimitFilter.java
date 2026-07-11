@@ -1,5 +1,6 @@
 package com.example.sso.ratelimit;
 
+import com.example.sso.ratelimit.internal.RateLimiter;
 import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;

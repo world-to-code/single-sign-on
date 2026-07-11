@@ -1,6 +1,5 @@
 package com.example.sso.ratelimit.internal;
 
-import com.example.sso.ratelimit.RateLimiter;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.BucketConfiguration;
 import io.github.bucket4j.distributed.proxy.ProxyManager;

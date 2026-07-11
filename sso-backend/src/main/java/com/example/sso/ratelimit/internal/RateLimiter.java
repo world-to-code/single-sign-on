@@ -1,4 +1,4 @@
-package com.example.sso.ratelimit;
+package com.example.sso.ratelimit.internal;
 
 /**
  * A distributed token-bucket rate limiter. Each key holds a bucket of at most {@code capacity} tokens that

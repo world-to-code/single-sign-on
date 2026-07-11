@@ -2,6 +2,7 @@ package com.example.sso.ratelimit;
 
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.ratelimit.internal.Bucket4jRateLimiter;
+import com.example.sso.ratelimit.internal.RateLimiter;
 import io.github.bucket4j.distributed.proxy.ProxyManager;
 import java.time.Duration;
 import java.util.UUID;
