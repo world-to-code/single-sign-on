@@ -27,7 +27,7 @@ export function LanguageToggle({ iconOnly = false }: { iconOnly?: boolean }) {
       title={iconOnly ? label : undefined}
       aria-label={label}
       className={cn(
-        "flex h-9 items-center justify-center gap-2 rounded-lg text-xs font-semibold text-muted transition-colors hover:bg-sunken hover:text-ink",
+        "flex h-9 items-center justify-center gap-2 rounded-lg text-xs font-semibold text-muted-foreground transition-colors hover:bg-sunken hover:text-ink",
         iconOnly ? "w-9" : "flex-1",
       )}
     >

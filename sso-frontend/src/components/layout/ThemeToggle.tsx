@@ -28,7 +28,7 @@ export function ThemeToggle({ iconOnly = false }: { iconOnly?: boolean }) {
       title={iconOnly ? nextLabel : undefined}
       aria-label={`${t("theme")}: ${nextLabel}`}
       className={cn(
-        "flex h-9 items-center justify-center gap-2 rounded-lg text-xs font-semibold text-muted transition-colors hover:bg-sunken hover:text-ink",
+        "flex h-9 items-center justify-center gap-2 rounded-lg text-xs font-semibold text-muted-foreground transition-colors hover:bg-sunken hover:text-ink",
         iconOnly ? "w-9" : "flex-1",
       )}
     >

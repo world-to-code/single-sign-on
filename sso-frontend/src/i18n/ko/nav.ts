@@ -45,4 +45,5 @@ export const nav: Record<keyof typeof enNav, string> = {
   expandSidebar: "사이드바 펼치기",
   openNavigation: "메뉴 열기",
   closeNavigation: "메뉴 닫기",
+  search: "검색",
 };

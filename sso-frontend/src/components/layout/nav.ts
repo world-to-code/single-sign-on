@@ -104,3 +104,20 @@ export const NAV: NavGroup[] = [
 export function isNavActive(pathname: string, to: string): boolean {
   return pathname === to || pathname.startsWith(to + "/");
 }
+
+/**
+ * Breadcrumb trail for a path, as i18n keys: the section heading and the active item's label. A
+ * detail route (e.g. /admin/users/:id) still resolves to its list item, so the crumb names where you
+ * are without repeating the page's own <h1>, which appears once below it.
+ */
+export function crumbsFor(pathname: string): NavKey[] {
+  for (const group of NAV) {
+    for (const section of group.sections ?? []) {
+      const item = section.items.find((i) => isNavActive(pathname, i.to));
+      if (item) return [section.heading, item.label];
+    }
+    const flat = (group.items ?? []).find((i) => isNavActive(pathname, i.to));
+    if (flat) return [flat.label];
+  }
+  return [];
+}

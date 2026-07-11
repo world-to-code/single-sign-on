@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
-  ArrowLeft, ChevronDown, LogOut, Menu, PanelLeftClose, PanelLeftOpen, ShieldCheck, X,
+  ArrowLeft, ChevronDown, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, ShieldCheck, X,
 } from "lucide-react";
 import type { SessionView } from "@/auth";
 import { isPlatformAdmin, logout } from "@/auth";
@@ -10,7 +10,7 @@ import { setDrillIn, useDrillIn } from "@/drillIn";
 import { clearAdminUnlock, startAdminOidc } from "@/adminPortal";
 import { triggerStepUp } from "@/api";
 import { Brand } from "@/components/Brand";
-import { NAV, isNavActive } from "@/components/layout/nav";
+import { NAV, crumbsFor, isNavActive } from "@/components/layout/nav";
 import type { NavItem } from "@/components/layout/nav";
 import { LanguageToggle } from "@/components/layout/LanguageToggle";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
@@ -80,6 +80,11 @@ export default function AppShell(
   }
 
   const initials = (session.username ?? "?").slice(0, 2).toUpperCase();
+  const crumbs = crumbsFor(location.pathname);
+  // The org this shell is scoped to: a super-admin's drilled-in tenant, else the admin's own org.
+  // The user portal has no org context, so its sidebar top keeps the product wordmark.
+  const orgSlug = variant === "admin" ? (drill?.slug ?? session.org) : null;
+  const orgInitial = (orgSlug ?? "?").slice(0, 1).toUpperCase();
 
   const navLink = ({ to, label, icon: Icon }: NavItem) => {
     const active = isNavActive(location.pathname, to);
@@ -107,7 +112,7 @@ export default function AppShell(
   };
 
   const nav = (
-    <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
+    <nav className="min-h-0 flex-1 space-y-6 overflow-y-auto px-3 py-5">
       {variant === "admin" && (
         <button
           type="button"
@@ -166,7 +171,7 @@ export default function AppShell(
                       type="button"
                       onClick={() => setSectionCollapsed((c) => ({ ...c, [s.heading]: !c[s.heading] }))}
                       aria-expanded={isOpen}
-                      className="flex w-full items-center justify-between rounded-md px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted transition-colors hover:text-ink"
+                      className="flex w-full items-center justify-between rounded-md px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:text-ink"
                     >
                       {t(s.heading)}
                       <ChevronDown className={cn("size-3.5 transition-transform", isOpen ? "" : "-rotate-90")} />
@@ -185,7 +190,23 @@ export default function AppShell(
   const sidebar = (
     <div className="flex h-full flex-col bg-card">
       <div className="flex h-16 items-center gap-2 border-b border-line px-4">
-        {rail ? (
+        {orgSlug ? (
+          rail ? (
+            <div className="flex size-9 items-center justify-center rounded-lg bg-ink text-sm font-bold text-bg" title={orgSlug}>
+              {orgInitial}
+            </div>
+          ) : (
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-ink text-sm font-bold text-bg">
+                {orgInitial}
+              </span>
+              <span className="min-w-0 leading-tight">
+                <span className="block truncate text-sm font-bold text-ink">{orgSlug}</span>
+                <span className="block truncate text-[11px] text-faint">{t("groupAdministration")}</span>
+              </span>
+            </div>
+          )
+        ) : rail ? (
           <div className="flex size-9 items-center justify-center rounded-lg bg-ink text-bg">
             <ShieldCheck className="size-5" />
           </div>
@@ -193,7 +214,7 @@ export default function AppShell(
           <Brand />
         )}
         {mobile && (
-          <button className="ml-auto text-muted hover:text-ink" aria-label={t("closeNavigation")} onClick={() => setOpen(false)}>
+          <button className="ml-auto text-muted-foreground hover:text-ink" aria-label={t("closeNavigation")} onClick={() => setOpen(false)}>
             <X className="size-5" />
           </button>
         )}
@@ -221,7 +242,7 @@ export default function AppShell(
             title={rail ? t("signOut") : undefined}
             aria-label={t("signOut")}
             className={cn(
-              "flex h-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-sunken hover:text-destructive",
+              "flex h-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sunken hover:text-destructive",
               rail ? "w-9" : "w-9",
             )}
           >
@@ -249,7 +270,7 @@ export default function AppShell(
               type="button"
               onClick={() => setUserCollapsed((c) => !c)}
               aria-label={rail ? t("expandSidebar") : t("collapseSidebar")}
-              className="absolute -right-3 top-16 z-40 flex size-6 items-center justify-center rounded-full border border-line bg-card text-muted shadow-sm transition-colors hover:text-ink"
+              className="absolute -right-3 top-16 z-40 flex size-6 items-center justify-center rounded-full border border-line bg-card text-muted-foreground shadow-sm transition-colors hover:text-ink"
             >
               {rail ? <PanelLeftOpen className="size-3.5" /> : <PanelLeftClose className="size-3.5" />}
             </button>
@@ -272,25 +293,45 @@ export default function AppShell(
               <Menu className="size-5" />
             </button>
           )}
-          {/* Scope breadcrumb pill: a platform admin drilled into a tenant. No full-width banner. */}
-          {variant === "admin" && drill && (
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="inline-flex items-center gap-2 rounded-full border border-accent-line bg-accent px-3 py-1 text-sm font-medium text-accent-foreground">
-                <span className="size-1.5 shrink-0 rounded-full bg-current" />
-                <span className="truncate">{t("managing")} · <span className="font-mono">{drill.slug}</span></span>
+          {/* The topbar carries navigation context (scope pill + breadcrumb) and search. Identity,
+              language, theme and sign-out live in the sidebar foot (DESIGN.md §3), never here. The
+              breadcrumb names the section — it never repeats the page's own <h1> below it. */}
+          <nav aria-label="breadcrumb" className="flex min-w-0 flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
+            {variant === "admin" && drill && (
+              <>
+                <span className="inline-flex items-center gap-2 rounded-full border border-accent-line bg-accent px-3 py-1 font-medium text-accent-foreground">
+                  <span className="size-1.5 shrink-0 rounded-full bg-current" />
+                  <span className="truncate">{t("managing")} · <span className="font-mono">{drill.slug}</span></span>
+                </span>
+                <Button variant="outline" size="sm" onClick={exitDrillIn}>{t("exitOrganization")}</Button>
+              </>
+            )}
+            {crumbs.map((key, i) => (
+              <span key={key} className="flex items-center gap-2">
+                {i > 0 && <span className="text-faint">/</span>}
+                <span className={i === crumbs.length - 1 ? "font-medium text-ink" : undefined}>{t(key)}</span>
               </span>
-              <Button variant="outline" size="sm" onClick={exitDrillIn}>{t("exitOrganization")}</Button>
-            </div>
-          )}
-          {/* Topbar carries only navigation context and the admin-console entry. Identity, language,
-              theme and sign-out live in the sidebar foot (DESIGN.md §3), not here. */}
-          {variant === "user" && canEnterAdmin && (
-            <div className="ml-auto flex items-center gap-3">
+            ))}
+          </nav>
+
+          <div className="ml-auto flex items-center gap-3">
+            {!mobile && (
+              <button
+                type="button"
+                aria-label={t("search")}
+                className="flex h-9 min-w-[200px] items-center gap-2 rounded-full border border-line bg-card px-3 text-[13px] text-faint transition-colors hover:border-faint"
+              >
+                <Search className="size-4 shrink-0" />
+                <span>{t("search")}</span>
+                <kbd className="ml-auto rounded bg-line-soft px-1.5 py-0.5 text-[11px] font-semibold text-muted-foreground">⌘K</kbd>
+              </button>
+            )}
+            {variant === "user" && canEnterAdmin && (
               <Button variant="outline" size="sm" onClick={() => { void enterAdmin(); }}>
                 <ShieldCheck /> {t("adminConsole")}
               </Button>
-            </div>
-          )}
+            )}
+          </div>
         </header>
         <main className="mx-auto w-full max-w-[1400px] p-4 sm:p-6 lg:p-8">{children}</main>
       </div>
