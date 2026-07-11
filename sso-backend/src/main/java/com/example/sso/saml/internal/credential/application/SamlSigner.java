@@ -1,6 +1,5 @@
 package com.example.sso.saml.internal.credential.application;
 
-
 import com.example.sso.saml.credential.SamlCredentialService;
 import org.opensaml.core.xml.XMLObject;
 import org.opensaml.core.xml.config.XMLObjectProviderRegistrySupport;

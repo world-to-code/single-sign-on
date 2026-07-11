@@ -1,6 +1,5 @@
 package com.example.sso.auth.internal.session.application;
 
-
 import java.time.Instant;
 
 /**

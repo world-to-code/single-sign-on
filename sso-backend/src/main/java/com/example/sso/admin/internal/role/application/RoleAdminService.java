@@ -1,6 +1,5 @@
 package com.example.sso.admin.internal.role.application;
 
-
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.shared.application.LastAdminGuard;

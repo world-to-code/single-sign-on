@@ -1,6 +1,5 @@
 package com.example.sso.saml.internal.metadata.application;
 
-
 import com.example.sso.saml.credential.SamlCredentialService;
 import net.shibboleth.shared.xml.SerializeSupport;
 import org.opensaml.core.xml.config.XMLObjectProviderRegistrySupport;

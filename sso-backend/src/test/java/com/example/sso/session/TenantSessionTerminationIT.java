@@ -1,6 +1,5 @@
 package com.example.sso.session;
 
-
 import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;

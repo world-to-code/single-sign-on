@@ -3,7 +3,6 @@ package com.example.sso.saml.internal.sso.application;
 import com.example.sso.saml.internal.credential.application.SamlSigner;
 import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;
 
-import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

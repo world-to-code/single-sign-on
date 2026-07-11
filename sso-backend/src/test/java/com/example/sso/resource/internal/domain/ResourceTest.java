@@ -1,6 +1,5 @@
 package com.example.sso.resource.internal.domain;
 
-
 import com.example.sso.shared.error.BadRequestException;
 import java.util.Set;
 import java.util.UUID;

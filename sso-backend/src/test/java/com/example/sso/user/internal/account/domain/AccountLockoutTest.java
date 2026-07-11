@@ -1,6 +1,5 @@
 package com.example.sso.user.internal.account.domain;
 
-
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;

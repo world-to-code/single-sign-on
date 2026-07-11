@@ -1,6 +1,5 @@
 package com.example.sso.user.internal.rbac.domain;
 
-
 import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;

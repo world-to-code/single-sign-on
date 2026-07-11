@@ -1,6 +1,5 @@
 package com.example.sso.user.internal.role.domain;
 
-
 import org.junit.jupiter.api.Test;
 
 import java.util.HashSet;

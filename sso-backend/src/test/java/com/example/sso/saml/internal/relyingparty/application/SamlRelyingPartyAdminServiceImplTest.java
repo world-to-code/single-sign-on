@@ -6,8 +6,6 @@ import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingPartyReposit
 import com.example.sso.portal.application.ApplicationDeletedEvent;
 import com.example.sso.saml.relyingparty.RelyingPartyRequest;
 import com.example.sso.saml.relyingparty.RelyingPartyView;
-import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;
-import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingPartyRepository;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;

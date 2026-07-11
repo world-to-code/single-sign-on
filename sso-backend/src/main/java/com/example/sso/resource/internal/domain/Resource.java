@@ -1,6 +1,5 @@
 package com.example.sso.resource.internal.domain;
 
-
 import com.example.sso.shared.domain.AuditedEntity;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.tenancy.OrgOwned;

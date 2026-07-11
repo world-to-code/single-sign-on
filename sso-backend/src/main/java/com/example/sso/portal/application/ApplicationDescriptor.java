@@ -1,6 +1,5 @@
 package com.example.sso.portal.application;
 
-
 /**
  * A launchable application contributed by a protocol module (OIDC/SAML) to the portal. Each module
  * owns how it derives the display name and launch URL; the portal only aggregates and layers on the

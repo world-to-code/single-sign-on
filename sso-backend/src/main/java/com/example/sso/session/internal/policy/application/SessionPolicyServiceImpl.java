@@ -1,6 +1,5 @@
 package com.example.sso.session.internal.policy.application;
 
-
 import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.session.networkzone.IpRuleSpec;
 import com.example.sso.session.networkzone.NetworkZoneService;

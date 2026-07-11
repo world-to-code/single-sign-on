@@ -1,6 +1,5 @@
 package com.example.sso.session.internal.networkzone.application;
 
-
 import com.example.sso.session.networkzone.NetworkZoneSpec;
 import com.example.sso.session.networkzone.NetworkZoneView;
 import com.example.sso.session.internal.networkzone.domain.NetworkZone;

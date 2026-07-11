@@ -1,6 +1,5 @@
 package com.example.sso.user.role;
 
-
 import java.util.Set;
 import java.util.UUID;
 

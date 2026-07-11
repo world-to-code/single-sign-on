@@ -4,8 +4,6 @@ import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;
 import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingPartyRepository;
 
 import com.example.sso.portal.application.ApplicationDescriptor;
-import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;
-import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingPartyRepository;
 import com.example.sso.tenancy.OrgTierGuard;
 import java.util.List;
 import java.util.UUID;

@@ -8,8 +8,6 @@ import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingPartyReposit
 import com.example.sso.saml.relyingparty.SloBinding;
 import com.example.sso.saml.internal.logout.application.SamlLogoutChainService.ChainStep;
 import com.example.sso.saml.internal.logout.application.SamlLogoutChainStore.Hop;
-import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;
-import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingPartyRepository;
 import com.example.sso.tenancy.OrgContext;
 import java.util.Optional;
 import java.util.UUID;

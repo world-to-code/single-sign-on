@@ -1,6 +1,5 @@
 package com.example.sso.security;
 
-
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
 import com.example.sso.session.lifecycle.SessionMetadataStore;

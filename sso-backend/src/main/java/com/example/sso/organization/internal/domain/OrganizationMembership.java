@@ -1,6 +1,5 @@
 package com.example.sso.organization.internal.domain;
 
-
 import com.example.sso.shared.domain.AuditedEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

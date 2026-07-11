@@ -1,6 +1,5 @@
 package com.example.sso.portal.internal.catalog.application;
 
-
 import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.authpolicy.policy.AuthPolicyEvaluator;
 import com.example.sso.authpolicy.policy.AuthPolicyResolver;

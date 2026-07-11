@@ -1,6 +1,5 @@
 package com.example.sso.portal.internal.catalog.application;
 
-
 import com.example.sso.portal.application.AppType;
 import org.junit.jupiter.api.Test;
 

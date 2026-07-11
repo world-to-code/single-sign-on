@@ -4,7 +4,6 @@ import com.example.sso.saml.internal.core.application.SamlEntityId;
 import com.example.sso.saml.internal.credential.application.SamlSigner;
 import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;
 
-import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

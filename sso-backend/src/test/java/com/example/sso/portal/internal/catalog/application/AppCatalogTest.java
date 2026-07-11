@@ -1,6 +1,5 @@
 package com.example.sso.portal.internal.catalog.application;
 
-
 import com.example.sso.authpolicy.policy.AuthPolicyResolver;
 import com.example.sso.portal.application.ApplicationDescriptor;
 import com.example.sso.portal.application.ApplicationSource;

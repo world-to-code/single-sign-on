@@ -1,6 +1,5 @@
 package com.example.sso.session.internal.policy.application;
 
-
 import com.example.sso.session.networkzone.IpRuleSpec;
 import com.example.sso.session.networkzone.NetworkZoneService;
 import com.example.sso.session.policy.SessionPolicyDetails;

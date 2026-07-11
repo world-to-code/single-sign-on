@@ -1,6 +1,5 @@
 package com.example.sso.portal.internal.catalog.application;
 
-
 import com.example.sso.portal.access.AppAccess;
 import com.example.sso.portal.access.AppAccessQuery;
 import com.example.sso.portal.access.AppAssignmentView;

@@ -1,6 +1,5 @@
 package com.example.sso.session.internal.networkzone.domain;
 
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
 import jakarta.persistence.EnumType;
