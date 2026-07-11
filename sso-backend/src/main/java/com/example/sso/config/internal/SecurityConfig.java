@@ -6,7 +6,7 @@ import com.example.sso.session.lifecycle.SessionLifecycle;
 import com.example.sso.portal.access.AppAssignmentFilter;
 
 import com.example.sso.audit.AuditService;
-import com.example.sso.authpolicy.Factors;
+import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.ratelimit.AuthRateLimitFilter;
 import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.oidc.ConsentPage;

@@ -1,4 +1,6 @@
-package com.example.sso.authpolicy;
+package com.example.sso.authpolicy.policy;
+
+import com.example.sso.authpolicy.factor.AuthFactor;
 
 import java.util.Set;
 

@@ -1,6 +1,6 @@
 package com.example.sso.auth.internal.factor.application;
 
-import com.example.sso.authpolicy.AuthFactor;
+import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.mfa.MfaService;
 import com.example.sso.mfa.QrCodeService;
 import com.example.sso.mfa.TotpEnrollment;

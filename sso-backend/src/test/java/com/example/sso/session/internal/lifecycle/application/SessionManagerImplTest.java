@@ -1,7 +1,7 @@
 package com.example.sso.session.internal.lifecycle.application;
 
 
-import com.example.sso.authpolicy.Factors;
+import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.organization.OrganizationAccessRevokedEvent;
 import com.example.sso.session.lifecycle.SessionMetadata;
 import com.example.sso.session.lifecycle.SessionMetadataStore;

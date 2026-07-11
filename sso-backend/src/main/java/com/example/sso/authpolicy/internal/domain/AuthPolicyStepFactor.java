@@ -1,6 +1,6 @@
 package com.example.sso.authpolicy.internal.domain;
 
-import com.example.sso.authpolicy.AuthFactor;
+import com.example.sso.authpolicy.factor.AuthFactor;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

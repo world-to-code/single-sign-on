@@ -1,6 +1,6 @@
 package com.example.sso.bootstrap.internal;
 
-import com.example.sso.authpolicy.AuthPolicyAdminService;
+import com.example.sso.authpolicy.policy.AuthPolicyAdminService;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.user.Roles;
 import com.example.sso.user.NewUser;

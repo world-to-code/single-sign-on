@@ -1,4 +1,4 @@
-package com.example.sso.authpolicy;
+package com.example.sso.authpolicy.policy;
 
 import com.example.sso.shared.IdName;
 import com.example.sso.user.UserAccount;

@@ -1,6 +1,6 @@
 package com.example.sso.auth.internal.factor.api;
 
-import com.example.sso.authpolicy.AuthFactor;
+import com.example.sso.authpolicy.factor.AuthFactor;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;

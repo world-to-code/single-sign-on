@@ -1,6 +1,6 @@
 package com.example.sso.authpolicy.internal.domain;
 
-import com.example.sso.authpolicy.AuthFactor;
+import com.example.sso.authpolicy.factor.AuthFactor;
 import java.io.Serializable;
 import java.util.Objects;
 import java.util.UUID;

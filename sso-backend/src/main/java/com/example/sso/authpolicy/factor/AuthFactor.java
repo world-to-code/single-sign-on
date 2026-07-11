@@ -1,4 +1,4 @@
-package com.example.sso.authpolicy;
+package com.example.sso.authpolicy.factor;
 
 /** Authentication factor types selectable in an authentication-policy step. */
 public enum AuthFactor {

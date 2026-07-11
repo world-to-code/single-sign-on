@@ -1,6 +1,6 @@
 package com.example.sso.mfa.internal.application;
 
-import com.example.sso.authpolicy.Factors;
+import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.mfa.FactorAuthorizationService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;

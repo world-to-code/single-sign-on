@@ -6,7 +6,7 @@ import com.example.sso.saml.internal.core.application.SamlEntityId;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
-import com.example.sso.authpolicy.Factors;
+import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.portal.access.AppAccess;
 import com.example.sso.portal.access.AppAccessQuery;
 import com.example.sso.portal.stepup.AppStepUpFilter;

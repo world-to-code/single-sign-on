@@ -1,6 +1,6 @@
 package com.example.sso.oidc.internal.application;
 
-import com.example.sso.authpolicy.Factors;
+import com.example.sso.authpolicy.factor.Factors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
 import org.springframework.security.core.GrantedAuthority;

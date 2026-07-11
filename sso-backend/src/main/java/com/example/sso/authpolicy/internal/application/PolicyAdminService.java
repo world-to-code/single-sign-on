@@ -1,8 +1,8 @@
 package com.example.sso.authpolicy.internal.application;
 
-import com.example.sso.authpolicy.AuthPolicyAdminService;
-import com.example.sso.authpolicy.AuthPolicySpec;
-import com.example.sso.authpolicy.AuthPolicyUpdate;
+import com.example.sso.authpolicy.policy.AuthPolicyAdminService;
+import com.example.sso.authpolicy.policy.AuthPolicySpec;
+import com.example.sso.authpolicy.policy.AuthPolicyUpdate;
 import com.example.sso.shared.Page;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;

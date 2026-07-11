@@ -1,6 +1,6 @@
 package com.example.sso.security;
 
-import com.example.sso.authpolicy.Factors;
+import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.Roles;
 import jakarta.servlet.FilterChain;

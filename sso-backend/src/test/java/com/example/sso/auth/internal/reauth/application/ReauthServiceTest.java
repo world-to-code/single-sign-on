@@ -9,7 +9,7 @@ import com.example.sso.auth.internal.login.application.CurrentUserProvider;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
-import com.example.sso.authpolicy.AuthFactor;
+import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.session.lifecycle.SessionLifecycle;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;

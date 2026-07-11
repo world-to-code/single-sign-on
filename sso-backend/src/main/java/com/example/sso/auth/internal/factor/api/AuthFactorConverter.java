@@ -2,7 +2,7 @@ package com.example.sso.auth.internal.factor.api;
 
 import com.example.sso.portal.internal.catalog.api.AppTypeConverter;
 
-import com.example.sso.authpolicy.AuthFactor;
+import com.example.sso.authpolicy.factor.AuthFactor;
 import java.util.Locale;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.stereotype.Component;

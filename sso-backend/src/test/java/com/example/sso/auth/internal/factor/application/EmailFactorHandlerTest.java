@@ -1,6 +1,6 @@
 package com.example.sso.auth.internal.factor.application;
 
-import com.example.sso.authpolicy.AuthFactor;
+import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.mfa.EmailVerificationService;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.user.UserAccount;

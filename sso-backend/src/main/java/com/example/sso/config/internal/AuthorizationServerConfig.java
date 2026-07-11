@@ -1,7 +1,7 @@
 package com.example.sso.config.internal;
 
 import com.example.sso.audit.AuditService;
-import com.example.sso.authpolicy.Factors;
+import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.crypto.RsaKeyService;
 import com.example.sso.oidc.BackChannelLogout;
 import com.example.sso.oidc.ConsentPage;

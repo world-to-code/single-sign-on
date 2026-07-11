@@ -7,7 +7,7 @@ import com.example.sso.portal.application.ApplicationView;
 import com.example.sso.portal.access.AssignAppRequest;
 import com.example.sso.portal.internal.catalog.domain.AppAssignment;
 import com.example.sso.portal.internal.catalog.domain.AppAssignment.SubjectType;
-import com.example.sso.authpolicy.AuthPolicyResolver;
+import com.example.sso.authpolicy.policy.AuthPolicyResolver;
 import com.example.sso.portal.internal.catalog.domain.AppAssignmentRepository;
 import com.example.sso.shared.IdName;
 import com.example.sso.shared.error.ConflictException;

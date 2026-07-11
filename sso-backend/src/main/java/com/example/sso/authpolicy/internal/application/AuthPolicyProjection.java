@@ -1,8 +1,8 @@
 package com.example.sso.authpolicy.internal.application;
 
-import com.example.sso.authpolicy.AuthFactor;
-import com.example.sso.authpolicy.AuthPolicyStepView;
-import com.example.sso.authpolicy.AuthPolicyView;
+import com.example.sso.authpolicy.factor.AuthFactor;
+import com.example.sso.authpolicy.policy.AuthPolicyStepView;
+import com.example.sso.authpolicy.policy.AuthPolicyView;
 import com.example.sso.authpolicy.internal.domain.AuthPolicy;
 import java.util.List;
 import java.util.Set;

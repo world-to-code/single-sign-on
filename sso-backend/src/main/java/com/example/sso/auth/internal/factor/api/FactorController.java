@@ -4,7 +4,7 @@ import com.example.sso.auth.internal.login.application.AuthSessionView;
 import com.example.sso.auth.internal.factor.application.FactorChallenge;
 import com.example.sso.auth.internal.factor.application.FactorStepService;
 import com.example.sso.auth.internal.factor.application.FactorVerificationRequest;
-import com.example.sso.authpolicy.AuthFactor;
+import com.example.sso.authpolicy.factor.AuthFactor;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;

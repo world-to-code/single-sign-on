@@ -1,6 +1,6 @@
 package com.example.sso.session;
 
-import com.example.sso.authpolicy.Factors;
+import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.support.AbstractIntegrationTest;
 import java.time.Instant;
 import java.util.List;

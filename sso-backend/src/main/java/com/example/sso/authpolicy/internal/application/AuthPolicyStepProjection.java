@@ -1,7 +1,7 @@
 package com.example.sso.authpolicy.internal.application;
 
-import com.example.sso.authpolicy.AuthFactor;
-import com.example.sso.authpolicy.AuthPolicyStepView;
+import com.example.sso.authpolicy.factor.AuthFactor;
+import com.example.sso.authpolicy.policy.AuthPolicyStepView;
 import java.util.Set;
 import lombok.Getter;
 

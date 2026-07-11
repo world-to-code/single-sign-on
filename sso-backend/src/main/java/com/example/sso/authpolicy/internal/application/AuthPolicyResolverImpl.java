@@ -1,7 +1,7 @@
 package com.example.sso.authpolicy.internal.application;
 
-import com.example.sso.authpolicy.AuthPolicyResolver;
-import com.example.sso.authpolicy.AuthPolicyView;
+import com.example.sso.authpolicy.policy.AuthPolicyResolver;
+import com.example.sso.authpolicy.policy.AuthPolicyView;
 import com.example.sso.authpolicy.internal.domain.AuthPolicy;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyRepository;
 import com.example.sso.shared.IdName;

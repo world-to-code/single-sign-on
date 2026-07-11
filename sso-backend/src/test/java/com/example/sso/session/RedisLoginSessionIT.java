@@ -1,6 +1,6 @@
 package com.example.sso.session;
 
-import com.example.sso.authpolicy.Factors;
+import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.mfa.MfaService;
 import com.example.sso.mfa.TotpEnrollment;
 import com.example.sso.mfa.internal.application.TotpService;

@@ -1,5 +1,7 @@
 package com.example.sso.user.internal.application;
 
+import com.example.sso.authpolicy.factor.Factors;
+
 import com.example.sso.shared.IdName;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;

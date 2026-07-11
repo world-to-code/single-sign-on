@@ -1,8 +1,8 @@
 package com.example.sso.authpolicy.internal.api;
 
-import com.example.sso.authpolicy.AuthFactor;
-import com.example.sso.authpolicy.AuthPolicySpec;
-import com.example.sso.authpolicy.AuthPolicyUpdate;
+import com.example.sso.authpolicy.factor.AuthFactor;
+import com.example.sso.authpolicy.policy.AuthPolicySpec;
+import com.example.sso.authpolicy.policy.AuthPolicyUpdate;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;

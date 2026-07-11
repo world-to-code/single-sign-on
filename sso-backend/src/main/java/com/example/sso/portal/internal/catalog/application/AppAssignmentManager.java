@@ -3,7 +3,7 @@ package com.example.sso.portal.internal.catalog.application;
 import com.example.sso.portal.access.AppAssignmentFilter;
 
 import com.example.sso.portal.access.AppAssignmentView;
-import com.example.sso.authpolicy.AuthPolicyResolver;
+import com.example.sso.authpolicy.policy.AuthPolicyResolver;
 import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.application.ApplicationView;
 import com.example.sso.portal.access.AssignAppRequest;

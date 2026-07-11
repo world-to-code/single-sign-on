@@ -13,7 +13,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-import com.example.sso.authpolicy.AuthPolicyView;
+import com.example.sso.authpolicy.policy.AuthPolicyView;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;

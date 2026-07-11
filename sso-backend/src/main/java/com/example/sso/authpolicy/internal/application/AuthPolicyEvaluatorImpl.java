@@ -1,8 +1,8 @@
 package com.example.sso.authpolicy.internal.application;
 
-import com.example.sso.authpolicy.AuthPolicyEvaluator;
-import com.example.sso.authpolicy.AuthPolicyStepView;
-import com.example.sso.authpolicy.AuthPolicyView;
+import com.example.sso.authpolicy.policy.AuthPolicyEvaluator;
+import com.example.sso.authpolicy.policy.AuthPolicyStepView;
+import com.example.sso.authpolicy.policy.AuthPolicyView;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;

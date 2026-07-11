@@ -1,10 +1,10 @@
 package com.example.sso.portal.internal.catalog.application;
 
-import com.example.sso.authpolicy.AuthFactor;
-import com.example.sso.authpolicy.AuthPolicyEvaluator;
-import com.example.sso.authpolicy.AuthPolicyResolver;
-import com.example.sso.authpolicy.AuthPolicyStepView;
-import com.example.sso.authpolicy.AuthPolicyView;
+import com.example.sso.authpolicy.factor.AuthFactor;
+import com.example.sso.authpolicy.policy.AuthPolicyEvaluator;
+import com.example.sso.authpolicy.policy.AuthPolicyResolver;
+import com.example.sso.authpolicy.policy.AuthPolicyStepView;
+import com.example.sso.authpolicy.policy.AuthPolicyView;
 import com.example.sso.portal.access.AppAccess;
 import com.example.sso.portal.access.AppAccessQuery;
 import com.example.sso.portal.application.AppType;

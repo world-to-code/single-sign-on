@@ -2,12 +2,12 @@ package com.example.sso.auth.internal.login.application;
 
 import com.example.sso.auth.internal.factor.application.FactorHandlers;
 
-import com.example.sso.authpolicy.AuthFactor;
-import com.example.sso.authpolicy.AuthPolicyEvaluator;
-import com.example.sso.authpolicy.AuthPolicyResolver;
-import com.example.sso.authpolicy.AuthPolicyStepView;
-import com.example.sso.authpolicy.AuthPolicyView;
-import com.example.sso.authpolicy.Factors;
+import com.example.sso.authpolicy.factor.AuthFactor;
+import com.example.sso.authpolicy.policy.AuthPolicyEvaluator;
+import com.example.sso.authpolicy.policy.AuthPolicyResolver;
+import com.example.sso.authpolicy.policy.AuthPolicyStepView;
+import com.example.sso.authpolicy.policy.AuthPolicyView;
+import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.Roles;

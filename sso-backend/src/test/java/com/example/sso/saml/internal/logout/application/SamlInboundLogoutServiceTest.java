@@ -5,7 +5,7 @@ import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;
 
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
-import com.example.sso.authpolicy.Factors;
+import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;
 import javax.xml.namespace.QName;
 import java.util.List;

@@ -8,7 +8,7 @@ import com.example.sso.portal.application.ApplicationService;
 import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
-import com.example.sso.authpolicy.Factors;
+import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.user.UserAccount;
 import com.example.sso.user.UserService;
 import jakarta.servlet.FilterChain;

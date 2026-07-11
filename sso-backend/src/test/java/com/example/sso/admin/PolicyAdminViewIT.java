@@ -1,8 +1,8 @@
 package com.example.sso.admin;
 
 import com.example.sso.admin.internal.sessionpolicy.application.SessionPolicyAdminService;
-import com.example.sso.authpolicy.AuthFactor;
-import com.example.sso.authpolicy.AuthPolicySpec;
+import com.example.sso.authpolicy.factor.AuthFactor;
+import com.example.sso.authpolicy.policy.AuthPolicySpec;
 import com.example.sso.authpolicy.internal.application.PolicyAdminService;
 import com.example.sso.authpolicy.internal.application.PolicyView;
 import com.example.sso.session.networkzone.IpRuleSpec;

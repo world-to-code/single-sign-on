@@ -1,11 +1,11 @@
 package com.example.sso.authpolicy.internal.application;
 
-import com.example.sso.authpolicy.AuthFactor;
-import com.example.sso.authpolicy.AuthPolicyAdminService;
-import com.example.sso.authpolicy.AuthPolicySpec;
-import com.example.sso.authpolicy.AuthPolicyStepView;
-import com.example.sso.authpolicy.AuthPolicyUpdate;
-import com.example.sso.authpolicy.AuthPolicyView;
+import com.example.sso.authpolicy.factor.AuthFactor;
+import com.example.sso.authpolicy.policy.AuthPolicyAdminService;
+import com.example.sso.authpolicy.policy.AuthPolicySpec;
+import com.example.sso.authpolicy.policy.AuthPolicyStepView;
+import com.example.sso.authpolicy.policy.AuthPolicyUpdate;
+import com.example.sso.authpolicy.policy.AuthPolicyView;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;

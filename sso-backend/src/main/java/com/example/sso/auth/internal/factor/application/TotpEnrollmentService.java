@@ -4,7 +4,7 @@ import com.example.sso.auth.internal.login.application.CurrentUserProvider;
 
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
-import com.example.sso.authpolicy.AuthFactor;
+import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.mfa.MfaService;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;

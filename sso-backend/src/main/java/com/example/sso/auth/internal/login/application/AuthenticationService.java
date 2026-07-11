@@ -3,7 +3,7 @@ package com.example.sso.auth.internal.login.application;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
-import com.example.sso.authpolicy.Factors;
+import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.organization.OrganizationRef;
 import com.example.sso.organization.OrganizationService;

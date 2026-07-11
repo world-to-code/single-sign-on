@@ -1,7 +1,7 @@
 package com.example.sso.portal.internal.console.application;
 
 
-import com.example.sso.authpolicy.Factors;
+import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.portal.access.AppAccess;
 import com.example.sso.portal.stepup.AppStepUpFilter;

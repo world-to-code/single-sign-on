@@ -1,7 +1,7 @@
 package com.example.sso.onboarding;
 
-import com.example.sso.authpolicy.AuthPolicyAdminService;
-import com.example.sso.authpolicy.AuthPolicyView;
+import com.example.sso.authpolicy.policy.AuthPolicyAdminService;
+import com.example.sso.authpolicy.policy.AuthPolicyView;
 import com.example.sso.organization.CompanyProfile;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;

@@ -1,4 +1,4 @@
-package com.example.sso.authpolicy;
+package com.example.sso.authpolicy.factor;
 
 /**
  * Authority strings for authentication factors and the MFA-complete marker. Factor authorities
