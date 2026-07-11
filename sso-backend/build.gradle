@@ -91,7 +91,6 @@ dependencies {
     implementation 'org.springframework.security:spring-security-webauthn'
 
     // --- Dev ---
-    developmentOnly 'org.springframework.boot:spring-boot-devtools'
     compileOnly        'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
     testCompileOnly      'org.projectlombok:lombok'

@@ -11,8 +11,7 @@ paths:
   ([flyway](flyway.md)).
 - **MockMvc misparses `/oauth2/authorize` and SAML query strings** — do NOT write MockMvc tests
   for those endpoints; verify them live with `scripts/oidc_authcode_flow.py`,
-  `scripts/saml_sso_flow.py`, `scripts/admin_api_flow.py`
-  (`SPRING_DEVTOOLS_RESTART_ENABLED=false` when driving live scripts against `bootRun`).
+  `scripts/saml_sso_flow.py`, `scripts/admin_api_flow.py` against `bootRun`.
 - **TDD:** write the full case matrix BEFORE implementing (happy, each error path, boundaries,
   principal matrix for authz endpoints), then code to green.
 - Adapter/read-model projection tests must run OUTSIDE a transaction — see

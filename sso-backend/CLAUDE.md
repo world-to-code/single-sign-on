@@ -13,8 +13,7 @@ restate rule details here.
 Java 21 · Spring Boot 4.0.x · Spring Security 7 (OAuth2 Auth Server + WebAuthn) · Spring Modulith 2.0.x ·
 OpenSAML 5 · scim-sdk · PostgreSQL + Flyway · Lombok · Gradle. Versions are pinned in `build.gradle`.
 
-Run from `sso-backend/`: `./gradlew compileJava | test | bootRun`
-(`SPRING_DEVTOOLS_RESTART_ENABLED=false` when driving live scripts).
+Run from `sso-backend/`: `./gradlew compileJava | test | bootRun`.
 
 ## Architecture sketch (NON-NEGOTIABLE — details in rules)
 
