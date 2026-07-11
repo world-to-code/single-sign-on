@@ -5,7 +5,7 @@ import com.example.sso.audit.AuditCategory;
 import com.example.sso.audit.AuditEntry;
 import com.example.sso.audit.AuditService;
 import com.example.sso.crypto.RsaKeyService;
-import com.example.sso.saml.SamlCredentialService;
+import com.example.sso.saml.credential.SamlCredentialService;
 import com.example.sso.scim.IssueScimTokenRequest;
 import com.example.sso.scim.ScimTokenIssued;
 import com.example.sso.scim.ScimTokenService;

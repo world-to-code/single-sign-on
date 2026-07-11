@@ -1,8 +1,8 @@
 package com.example.sso.saml.internal.application;
 
 import com.example.sso.portal.ApplicationDeletedEvent;
-import com.example.sso.saml.RelyingPartyRequest;
-import com.example.sso.saml.RelyingPartyView;
+import com.example.sso.saml.relyingparty.RelyingPartyRequest;
+import com.example.sso.saml.relyingparty.RelyingPartyView;
 import com.example.sso.saml.internal.domain.SamlRelyingParty;
 import com.example.sso.saml.internal.domain.SamlRelyingPartyRepository;
 import com.example.sso.shared.error.ConflictException;

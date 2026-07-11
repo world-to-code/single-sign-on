@@ -1,6 +1,6 @@
 package com.example.sso.saml.internal.application;
 
-import com.example.sso.saml.SamlCredentialService;
+import com.example.sso.saml.credential.SamlCredentialService;
 import net.shibboleth.shared.xml.SerializeSupport;
 import org.opensaml.core.xml.config.XMLObjectProviderRegistrySupport;
 import org.opensaml.core.xml.io.MarshallingException;

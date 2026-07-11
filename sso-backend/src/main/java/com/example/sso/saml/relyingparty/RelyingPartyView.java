@@ -1,4 +1,4 @@
-package com.example.sso.saml;
+package com.example.sso.saml.relyingparty;
 
 /** Admin view of a SAML relying party + its full per-RP security configuration. */
 public record RelyingPartyView(String id, String entityId, String displayName, String acsUrl, String nameIdFormat,

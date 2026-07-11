@@ -1,4 +1,4 @@
-package com.example.sso.saml;
+package com.example.sso.saml.relyingparty;
 
 import jakarta.validation.constraints.NotBlank;
 

@@ -1,4 +1,4 @@
-package com.example.sso.saml;
+package com.example.sso.saml.internal.application;
 
 import java.util.Map;
 

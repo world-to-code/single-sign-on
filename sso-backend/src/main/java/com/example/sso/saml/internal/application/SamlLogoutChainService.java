@@ -1,6 +1,6 @@
 package com.example.sso.saml.internal.application;
 
-import com.example.sso.saml.SloBinding;
+import com.example.sso.saml.relyingparty.SloBinding;
 import com.example.sso.saml.internal.application.SamlLogoutChainStore.Hop;
 import com.example.sso.saml.internal.domain.SamlRelyingParty;
 import com.example.sso.saml.internal.domain.SamlRelyingPartyRepository;

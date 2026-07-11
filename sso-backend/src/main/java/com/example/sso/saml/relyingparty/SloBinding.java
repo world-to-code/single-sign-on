@@ -1,4 +1,4 @@
-package com.example.sso.saml;
+package com.example.sso.saml.relyingparty;
 
 /**
  * How the IdP delivers a SAML {@code LogoutRequest} to a relying party's Single Logout endpoint.

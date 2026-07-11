@@ -1,6 +1,6 @@
 package com.example.sso.bootstrap.internal;
 
-import com.example.sso.saml.SamlRelyingPartyAdminService;
+import com.example.sso.saml.relyingparty.SamlRelyingPartyAdminService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;

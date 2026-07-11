@@ -1,4 +1,4 @@
-package com.example.sso.saml;
+package com.example.sso.saml.logout;
 
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Optional;

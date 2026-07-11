@@ -9,7 +9,7 @@ import com.example.sso.organization.OrganizationRef;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationStatus;
 import com.example.sso.tenancy.SubdomainTenantResolver;
-import com.example.sso.saml.SamlFrontChannelLogout;
+import com.example.sso.saml.logout.SamlFrontChannelLogout;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.shared.error.UnauthorizedException;

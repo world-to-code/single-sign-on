@@ -1,4 +1,4 @@
-package com.example.sso.saml;
+package com.example.sso.saml.credential;
 
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;

@@ -1,8 +1,8 @@
 package com.example.sso.admin.internal.relyingparty.api;
 
-import com.example.sso.saml.RelyingPartyRequest;
-import com.example.sso.saml.RelyingPartyView;
-import com.example.sso.saml.SamlRelyingPartyAdminService;
+import com.example.sso.saml.relyingparty.RelyingPartyRequest;
+import com.example.sso.saml.relyingparty.RelyingPartyView;
+import com.example.sso.saml.relyingparty.SamlRelyingPartyAdminService;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;

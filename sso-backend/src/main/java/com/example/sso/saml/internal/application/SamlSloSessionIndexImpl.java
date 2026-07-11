@@ -1,6 +1,6 @@
 package com.example.sso.saml.internal.application;
 
-import com.example.sso.saml.SamlSloSessionIndex;
+import com.example.sso.saml.internal.application.SamlSloSessionIndex;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;

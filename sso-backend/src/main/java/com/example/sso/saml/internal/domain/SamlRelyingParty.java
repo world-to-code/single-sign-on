@@ -1,6 +1,6 @@
 package com.example.sso.saml.internal.domain;
 
-import com.example.sso.saml.SloBinding;
+import com.example.sso.saml.relyingparty.SloBinding;
 import com.example.sso.shared.domain.AuditedEntity;
 import com.example.sso.tenancy.OrgOwned;
 import jakarta.persistence.Column;

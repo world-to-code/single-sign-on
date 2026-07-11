@@ -1,6 +1,6 @@
 package com.example.sso.saml.internal.application;
 
-import com.example.sso.saml.SamlCredentialService;
+import com.example.sso.saml.credential.SamlCredentialService;
 import net.shibboleth.shared.component.ComponentInitializationException;
 import net.shibboleth.shared.xml.ParserPool;
 import net.shibboleth.shared.xml.impl.BasicParserPool;

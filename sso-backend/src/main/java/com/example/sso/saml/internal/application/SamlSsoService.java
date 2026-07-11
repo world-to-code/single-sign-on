@@ -9,7 +9,7 @@ import com.example.sso.portal.AppAccessQuery;
 import com.example.sso.portal.AppStepUpFilter;
 import com.example.sso.portal.AppType;
 import com.example.sso.portal.ApplicationService;
-import com.example.sso.saml.SamlSloSessionIndex;
+import com.example.sso.saml.internal.application.SamlSloSessionIndex;
 import com.example.sso.saml.internal.domain.SamlRelyingParty;
 import com.example.sso.shared.error.UnauthorizedException;
 import com.example.sso.user.UserAccount;
