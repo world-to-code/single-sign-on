@@ -1,5 +1,8 @@
 package com.example.sso.session;
 
+import com.example.sso.session.lifecycle.SessionMetadata;
+import com.example.sso.session.lifecycle.SessionMetadataStore;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

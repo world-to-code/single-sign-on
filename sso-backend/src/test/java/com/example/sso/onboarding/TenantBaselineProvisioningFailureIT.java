@@ -9,7 +9,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.example.sso.bootstrap.internal.TenantBaselineProvisioner;
-import com.example.sso.session.SessionPolicyService;
+import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.support.AbstractIntegrationTest;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;

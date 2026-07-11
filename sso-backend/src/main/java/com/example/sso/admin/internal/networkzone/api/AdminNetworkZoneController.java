@@ -1,7 +1,7 @@
 package com.example.sso.admin.internal.networkzone.api;
 
-import com.example.sso.session.NetworkZoneService;
-import com.example.sso.session.NetworkZoneView;
+import com.example.sso.session.networkzone.NetworkZoneService;
+import com.example.sso.session.networkzone.NetworkZoneView;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;

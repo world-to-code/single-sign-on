@@ -1,5 +1,7 @@
 package com.example.sso.session;
 
+import com.example.sso.session.lifecycle.SessionMetadataStore;
+
 import com.example.sso.support.AbstractIntegrationTest;
 import java.time.Duration;
 import java.util.List;

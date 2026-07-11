@@ -6,7 +6,7 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.oidc.AdminPortalSeeder;
-import com.example.sso.session.SessionPolicyDetails;
+import com.example.sso.session.policy.SessionPolicyDetails;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

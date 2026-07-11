@@ -1,11 +1,13 @@
 package com.example.sso.security;
 
+import com.example.sso.session.internal.policy.domain.SessionPolicy;
+
 import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditService;
-import com.example.sso.session.IpRules;
-import com.example.sso.session.NetworkZoneService;
-import com.example.sso.session.SessionPolicyDetails;
-import com.example.sso.session.SessionPolicyService;
+import com.example.sso.session.networkzone.IpRules;
+import com.example.sso.session.networkzone.NetworkZoneService;
+import com.example.sso.session.policy.SessionPolicyDetails;
+import com.example.sso.session.policy.SessionPolicyService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

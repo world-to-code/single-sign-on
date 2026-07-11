@@ -2,8 +2,8 @@ package com.example.sso.security;
 
 import com.example.sso.admin.AdminPortalSettingsData;
 import com.example.sso.admin.AdminPortalSettingsService;
-import com.example.sso.session.SessionPolicyDetails;
-import com.example.sso.session.SessionPolicyService;
+import com.example.sso.session.policy.SessionPolicyDetails;
+import com.example.sso.session.policy.SessionPolicyService;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;

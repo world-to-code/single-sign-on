@@ -1,5 +1,9 @@
 package com.example.sso.session;
 
+import com.example.sso.session.lifecycle.StepUpInterceptor;
+import com.example.sso.session.policy.SessionPolicyDetails;
+import com.example.sso.session.policy.SessionPolicyService;
+
 import com.example.sso.shared.security.RequireStepUp;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.AfterEach;

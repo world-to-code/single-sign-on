@@ -1,6 +1,6 @@
 package com.example.sso.security;
 
-import com.example.sso.session.SessionMetadataStore;
+import com.example.sso.session.lifecycle.SessionMetadataStore;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
 import org.springframework.session.events.SessionDestroyedEvent;

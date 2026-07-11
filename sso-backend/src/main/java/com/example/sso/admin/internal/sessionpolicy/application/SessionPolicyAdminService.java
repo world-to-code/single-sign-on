@@ -1,8 +1,8 @@
 package com.example.sso.admin.internal.sessionpolicy.application;
 
-import com.example.sso.session.SessionPolicyRequest;
-import com.example.sso.session.SessionPolicyService;
-import com.example.sso.session.SessionPolicyView;
+import com.example.sso.session.policy.SessionPolicyRequest;
+import com.example.sso.session.policy.SessionPolicyService;
+import com.example.sso.session.policy.SessionPolicyView;
 import com.example.sso.shared.Page;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;

@@ -1,11 +1,15 @@
 package com.example.sso.security;
 
+import com.example.sso.session.internal.lifecycle.application.SessionManagerImpl;
+import com.example.sso.session.internal.policy.domain.SessionPolicy;
+import com.example.sso.session.lifecycle.SessionLifecycle;
+
 import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditService;
-import com.example.sso.session.SessionMetadataStore;
-import com.example.sso.session.SessionPolicyDetails;
-import com.example.sso.session.SessionPolicyService;
-import com.example.sso.session.StepUpInterceptor;
+import com.example.sso.session.lifecycle.SessionMetadataStore;
+import com.example.sso.session.policy.SessionPolicyDetails;
+import com.example.sso.session.policy.SessionPolicyService;
+import com.example.sso.session.lifecycle.StepUpInterceptor;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

@@ -1,6 +1,6 @@
 package com.example.sso.admin.internal.user.application;
 
-import com.example.sso.session.SessionMetadata;
+import com.example.sso.session.lifecycle.SessionMetadata;
 import java.time.Instant;
 
 /**

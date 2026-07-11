@@ -1,5 +1,7 @@
 package com.example.sso.shared.security;
 
+import com.example.sso.session.lifecycle.StepUpInterceptor;
+
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;

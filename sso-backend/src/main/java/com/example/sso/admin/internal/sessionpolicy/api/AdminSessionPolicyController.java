@@ -1,8 +1,8 @@
 package com.example.sso.admin.internal.sessionpolicy.api;
 
 import com.example.sso.admin.internal.sessionpolicy.application.SessionPolicyAdminService;
-import com.example.sso.session.SessionPolicyRequest;
-import com.example.sso.session.SessionPolicyView;
+import com.example.sso.session.policy.SessionPolicyRequest;
+import com.example.sso.session.policy.SessionPolicyView;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;

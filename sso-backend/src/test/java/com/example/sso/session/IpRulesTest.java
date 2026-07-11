@@ -1,5 +1,8 @@
 package com.example.sso.session;
 
+import com.example.sso.session.networkzone.IpRuleSpec;
+import com.example.sso.session.networkzone.IpRules;
+
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

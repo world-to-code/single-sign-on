@@ -1,5 +1,8 @@
 package com.example.sso.config.internal;
 
+import com.example.sso.session.internal.lifecycle.application.SessionManagerImpl;
+import com.example.sso.session.lifecycle.SessionLifecycle;
+
 import com.example.sso.portal.access.AppAssignmentFilter;
 
 import com.example.sso.audit.AuditService;
@@ -21,8 +24,8 @@ import com.example.sso.tenancy.OrgContext;
 import com.example.sso.security.SessionIntegrityFilter;
 import com.example.sso.security.TenantSessionHostGuard;
 import com.example.sso.security.TenantUnknownSubdomainGuard;
-import com.example.sso.session.NetworkZoneService;
-import com.example.sso.session.SessionPolicyService;
+import com.example.sso.session.networkzone.NetworkZoneService;
+import com.example.sso.session.policy.SessionPolicyService;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;

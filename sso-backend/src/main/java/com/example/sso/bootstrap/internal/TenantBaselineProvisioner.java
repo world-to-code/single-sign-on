@@ -2,7 +2,7 @@ package com.example.sso.bootstrap.internal;
 
 import com.example.sso.authpolicy.AuthPolicyAdminService;
 import com.example.sso.organization.OrganizationCreatedEvent;
-import com.example.sso.session.SessionPolicyService;
+import com.example.sso.session.policy.SessionPolicyService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
