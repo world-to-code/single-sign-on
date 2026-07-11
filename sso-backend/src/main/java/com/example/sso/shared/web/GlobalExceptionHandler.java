@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.ProblemDetail;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -23,11 +24,13 @@ import java.util.stream.Collectors;
  * Services throw {@link ApiException} subtypes and stay free of web-layer (HTTP status) concerns.
  *
  * <p>An {@code ApiException} carrying a {@code messageKey} is localized against the {@link MessageSource}
- * using the request locale; otherwise its verbatim message is used. Deliberately no catch-all
- * {@code Exception} handler: this app relies on method security, whose {@code AccessDeniedException}
- * must reach the security filter (403) rather than being masked as a 500 here, and framework web
- * exceptions must keep their own status mapping. Unexpected 5xx therefore flow through Boot's default
- * error path; every {@code ProblemDetail} this advice builds still carries a {@code traceId}.
+ * using the request locale; otherwise its verbatim message is used. Method-security denials
+ * ({@code AccessDeniedException}) are mapped here to a clean 403 {@code ProblemDetail} so they never fall
+ * through to Boot's default error page (which would leak a stack trace). Deliberately no catch-all
+ * {@code Exception} handler: framework web exceptions keep their own status mapping and a genuine 5xx must
+ * not be masked as a 4xx here. Unexpected 5xx flow through Boot's default error path (hardened by
+ * {@code server.error.include-stacktrace=never}); every {@code ProblemDetail} this advice builds carries a
+ * {@code traceId}.
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -46,6 +49,19 @@ public class GlobalExceptionHandler {
                 ? messageSource.getMessage(ex.getMessageKey(), ex.getMessageArgs(), LocaleContextHolder.getLocale())
                 : ex.getMessage();
         return problem(ex.getCode(), detail, request);
+    }
+
+    /**
+     * A method-security denial (an {@code @PreAuthorize}/{@code @Can…} check thrown from inside the invoked
+     * controller — {@code AuthorizationDeniedException} is a subtype) propagates back to the dispatcher and,
+     * without this, falls through to Boot's DEFAULT error page — which leaks a full stack {@code trace}. Map
+     * it to the same clean, non-revealing {@link ProblemDetail} (403, {@code code}, {@code traceId}) as every
+     * other error. This is a SPECIFIC handler, not a catch-all, so a genuine 5xx is never masked as a 403;
+     * URL-level (filter) denials are still handled by the security chain, now trace-free via {@code server.error}.
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    ProblemDetail handleAccessDenied(AccessDeniedException ex, WebRequest request) {
+        return problem(ErrorCode.FORBIDDEN, "Access is denied.", request);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

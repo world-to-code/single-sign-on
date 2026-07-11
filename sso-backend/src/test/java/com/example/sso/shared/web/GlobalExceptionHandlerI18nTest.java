@@ -3,6 +3,7 @@ package com.example.sso.shared.web;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.LockedException;
 import org.junit.jupiter.api.AfterEach;
+import org.springframework.security.access.AccessDeniedException;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.context.support.ResourceBundleMessageSource;
@@ -54,6 +55,18 @@ class GlobalExceptionHandlerI18nTest {
                 BadRequestException.of("resource.memberType.unknown", "wizard"), null);
 
         assertThat(problem.getDetail()).isEqualTo("Unknown member type: wizard");
+    }
+
+    @Test
+    void aMethodSecurityDenialRendersACleanForbiddenProblemNotAStackTrace() {
+        // A method-security denial must map to the same RFC-7807 ProblemDetail (403, code, traceId) as every
+        // other error — never Boot's default error body, which leaks a full stack `trace`.
+        var problem = handler.handleAccessDenied(new AccessDeniedException("Access Denied"), null);
+
+        assertThat(problem.getStatus()).isEqualTo(403);
+        assertThat(problem.getDetail()).isEqualTo("Access is denied."); // generic, non-revealing
+        assertThat(problem.getProperties()).containsEntry("code", "FORBIDDEN").containsKey("traceId");
+        assertThat(problem.getProperties()).doesNotContainKey("trace"); // no stack trace leaks
     }
 
     @Test
