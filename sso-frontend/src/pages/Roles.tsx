@@ -31,7 +31,7 @@ interface RoleEditor {
 const BLANK: RoleEditor = { id: null, name: "", permissions: [], system: false };
 
 export default function Roles() {
-  const { t } = useTranslation("states");
+  const { t } = useTranslation(["console", "states"]);
   const confirmDelete = useDeleteConfirm();
   const [roles, setRoles] = useState<Role[] | null>(null);
   const [catalog, setCatalog] = useState<Permission[]>([]);
@@ -64,20 +64,20 @@ export default function Roles() {
 
   function remove(role: Role) {
     confirmDelete({
-      title: "Delete role?",
-      description: `${role.name} will be removed and unassigned from all users and groups.`,
+      title: t("rolesDeleteTitle"),
+      description: t("rolesDeleteDescription", { name: role.name }),
       run: () => deleteRole(role.id),
       onDeleted: reload,
     });
   }
 
-  const newButton = <Button onClick={form.openCreate}><Plus /> New role</Button>;
+  const newButton = <Button onClick={form.openCreate}><Plus /> {t("rolesNew")}</Button>;
 
   return (
     <>
       <PageHeader
-        title="Roles"
-        description={roles ? `${roles.length} role${roles.length === 1 ? "" : "s"} — bundle permissions into a role, then assign it to users or groups.` : "Compose permissions into roles."}
+        title={t("rolesTitle")}
+        description={roles ? t("rolesCount", { count: roles.length }) : t("rolesDescription")}
         actions={newButton}
       />
 
@@ -85,15 +85,15 @@ export default function Roles() {
         data={roles}
         error={error}
         isEmpty={(items) => items.length === 0}
-        empty={<EmptyState icon={<ShieldCheck className="size-8" />} title={t("rolesEmptyTitle")} hint={t("rolesEmptyHint")} />}
+        empty={<EmptyState icon={<ShieldCheck className="size-8" />} title={t("states:rolesEmptyTitle")} hint={t("states:rolesEmptyHint")} />}
       >
         {(items) => (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Role</TableHead>
-                <TableHead>Permissions</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>{t("rolesColRole")}</TableHead>
+                <TableHead>{t("rolesColPermissions")}</TableHead>
+                <TableHead className="text-right">{t("rolesColActions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -102,12 +102,12 @@ export default function Roles() {
                   <TableCell className="font-medium">
                     <span className="inline-flex items-center gap-2">
                       <Link to={`/admin/roles/${role.id}`} className="text-primary hover:underline">{role.name}</Link>
-                      {role.system && <Badge variant="secondary"><Lock className="size-3" /> System</Badge>}
+                      {role.system && <Badge variant="secondary"><Lock className="size-3" /> {t("badgeSystem")}</Badge>}
                     </span>
                   </TableCell>
                   <TableCell>
                     {role.name === ADMIN_ROLE ? (
-                      <span className="text-muted-foreground">All permissions (auto-managed)</span>
+                      <span className="text-muted-foreground">{t("rolesAllPermissions")}</span>
                     ) : role.permissions.length ? (
                       <div className="flex flex-wrap gap-1">
                         {role.permissions.map((p) => <Badge key={p} variant="outline" className="font-mono text-xs">{p}</Badge>)}
@@ -120,7 +120,7 @@ export default function Roles() {
                     <div className="flex items-center justify-end gap-1">
                       <Button
                         variant="ghost" size="icon"
-                        title={role.name === ADMIN_ROLE ? "Managed automatically" : "Edit role"}
+                        title={role.name === ADMIN_ROLE ? t("rolesManagedAuto") : t("rolesEditRole")}
                         disabled={role.name === ADMIN_ROLE}
                         onClick={() => form.openEdit({ id: role.id, name: role.name, permissions: role.permissions, system: role.system })}
                       >
@@ -128,7 +128,7 @@ export default function Roles() {
                       </Button>
                       <Button
                         variant="ghost" size="icon"
-                        title={role.system ? "System roles cannot be deleted" : "Delete role"}
+                        title={role.system ? t("rolesSystemNoDelete") : t("rolesDeleteRole")}
                         className="text-muted-foreground hover:text-destructive"
                         disabled={role.system}
                         onClick={() => remove(role)}
@@ -147,28 +147,26 @@ export default function Roles() {
       <Dialog open={form.open} onOpenChange={form.setOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit role" : "Create role"}</DialogTitle>
+            <DialogTitle>{editing ? t("rolesDialogEdit") : t("rolesDialogCreate")}</DialogTitle>
             <DialogDescription>
-              {isAdmin
-                ? "ROLE_ADMIN is managed automatically and always holds every permission."
-                : "Choose the permissions this role grants. Assign the role to users or groups afterwards."}
+              {isAdmin ? t("rolesAdminManaged") : t("rolesChoosePermissions")}
             </DialogDescription>
           </DialogHeader>
           {form.error && <Alert variant="destructive"><AlertDescription>{form.error}</AlertDescription></Alert>}
           <form onSubmit={form.save} className="space-y-4">
-            <Field label="Name" hint={nameLocked ? "System roles cannot be renamed." : undefined}>
+            <Field label={t("rolesNameLabel")} hint={nameLocked ? t("rolesNameLockedHint") : undefined}>
               <Input
                 value={form.editor.name}
                 onChange={(e) => form.set({ name: e.target.value })}
-                placeholder="e.g. APP_MANAGER"
+                placeholder={t("rolesNamePlaceholder")}
                 disabled={nameLocked || isAdmin}
                 required
               />
             </Field>
             <PermissionPicker catalog={catalog} selected={form.editor.permissions} onToggle={toggle} disabled={permsLocked} />
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => form.setOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={isAdmin}>{editing ? "Save role" : "Create role"}</Button>
+              <Button type="button" variant="outline" onClick={() => form.setOpen(false)}>{t("cancel")}</Button>
+              <Button type="submit" disabled={isAdmin}>{editing ? t("rolesSaveRole") : t("rolesCreateRole")}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

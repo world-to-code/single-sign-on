@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { Pencil, Plus, Save, Trash2 } from "lucide-react";
@@ -39,7 +39,7 @@ interface SessionPolicy {
 interface Role { id: string; name: string }
 
 export default function SessionPolicyPage() {
-  const { t } = useTranslation("states");
+  const { t } = useTranslation(["console", "states"]);
   const confirmDelete = useDeleteConfirm();
   const [policies, setPolicies] = useState<SessionPolicy[] | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -65,8 +65,8 @@ export default function SessionPolicyPage() {
 
   async function remove(p: SessionPolicy) {
     await confirmDelete({
-      title: "Delete session policy?",
-      description: `"${p.name}" will be permanently removed.`,
+      title: t("sessionPolicyDeleteTitle"),
+      description: t("sessionPolicyDeleteDescription", { name: p.name }),
       path: `/api/admin/session-policies/${p.id}`,
       onDeleted: reload,
     });
@@ -79,16 +79,14 @@ export default function SessionPolicyPage() {
   return (
     <>
       <PageHeader
-        title="Session Policy"
-        description="Named session policies applied per role or user — the highest-priority matching policy wins."
-        actions={<Button asChild><Link to="new"><Plus /> New policy</Link></Button>}
+        title={t("sessionPolicyTitle")}
+        description={t("sessionPolicyDescription")}
+        actions={<Button asChild><Link to="new"><Plus /> {t("sessionPolicyNew")}</Link></Button>}
       />
 
       <Alert variant="info" className="mb-4">
         <AlertDescription>
-          The <strong>highest-priority</strong> matching policy wins. Assign a policy to roles/users to target them,
-          or <strong>leave the assignment empty to apply it to everyone</strong> (global). The built-in Default is the
-          lowest-priority fallback (and supplies the global cookie settings below).
+          <Trans t={t} i18nKey="sessionPolicyInfo" components={[<strong key="0" />, <strong key="1" />]} />
         </AlertDescription>
       </Alert>
 
@@ -96,19 +94,19 @@ export default function SessionPolicyPage() {
         data={policies}
         error={error}
         isEmpty={(items) => items.length === 0}
-        empty={<EmptyState title={t("sessionPoliciesEmptyTitle")} hint={t("sessionPoliciesEmptyHint")} />}
+        empty={<EmptyState title={t("states:sessionPoliciesEmptyTitle")} hint={t("states:sessionPoliciesEmptyHint")} />}
       >
         {(items) => (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Priority</TableHead>
-                <TableHead>Enabled</TableHead>
-                <TableHead>Absolute / Idle</TableHead>
-                <TableHead>Max sessions</TableHead>
-                <TableHead>Roles</TableHead>
-                <TableHead>Users</TableHead>
+                <TableHead>{t("sessionPolicyColName")}</TableHead>
+                <TableHead>{t("sessionPolicyColPriority")}</TableHead>
+                <TableHead>{t("sessionPolicyColEnabled")}</TableHead>
+                <TableHead>{t("sessionPolicyColTimeouts")}</TableHead>
+                <TableHead>{t("sessionPolicyColMaxSessions")}</TableHead>
+                <TableHead>{t("sessionPolicyColRoles")}</TableHead>
+                <TableHead>{t("sessionPolicyColUsers")}</TableHead>
                 <TableHead className="w-0" />
               </TableRow>
             </TableHeader>
@@ -119,20 +117,20 @@ export default function SessionPolicyPage() {
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Link to={p.id} className="hover:underline">{p.name}</Link>
                       {(p.assignedRoleIds.length === 0 && p.assignedUserIds.length === 0) && p.name !== "Default" && (
-                        <Badge variant="default">Global</Badge>
+                        <Badge variant="default">{t("badgeGlobal")}</Badge>
                       )}
-                      {p.rotateOnReauth && <Badge variant="muted">Rotate on re-auth</Badge>}
+                      {p.rotateOnReauth && <Badge variant="muted">{t("sessionPolicyRotateBadge")}</Badge>}
                     </div>
                   </TableCell>
                   <TableCell><Badge variant="muted">{p.priority}</Badge></TableCell>
                   <TableCell>
-                    <Badge variant={p.enabled ? "success" : "muted"}>{p.enabled ? "Enabled" : "Disabled"}</Badge>
+                    <Badge variant={p.enabled ? "success" : "muted"}>{p.enabled ? t("badgeEnabled") : t("badgeDisabled")}</Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {p.absoluteTimeoutMinutes}m / {p.idleTimeoutMinutes}m
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {p.maxConcurrentSessions === 0 ? "Unlimited" : p.maxConcurrentSessions}
+                    {p.maxConcurrentSessions === 0 ? t("sessionPolicyUnlimited") : p.maxConcurrentSessions}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{p.assignedRoleIds.map(roleName).join(", ") || "—"}</TableCell>
                   <TableCell className="text-muted-foreground">{p.assignedUserIds.map(userName).join(", ") || "—"}</TableCell>
@@ -145,7 +143,7 @@ export default function SessionPolicyPage() {
                     ) : (
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon" asChild><Link to={p.id}><Pencil /></Link></Button>
-                        <Badge variant="outline">Built-in</Badge>
+                        <Badge variant="outline">{t("badgeBuiltIn")}</Badge>
                       </div>
                     )}
                   </TableCell>
@@ -163,6 +161,7 @@ export default function SessionPolicyPage() {
 
 /** Global session-cookie attributes — applied for every session, so they live on the Default policy. */
 function CookieCard({ policy, onSaved }: { policy: SessionPolicy; onSaved: () => void }) {
+  const { t } = useTranslation("console");
   const [sameSite, setSameSite] = useState(policy.cookieSameSite);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -196,7 +195,7 @@ function CookieCard({ policy, onSaved }: { policy: SessionPolicy; onSaved: () =>
         // the Default policy's network rules on every cookie save.
         ipRules: policy.ipRules,
       });
-      setStatus("Cookie settings saved.");
+      setStatus(t("sessionPolicyCookieSaved"));
       onSaved();
     } catch (e) {
       setError(errorMessage(e));
@@ -208,26 +207,22 @@ function CookieCard({ policy, onSaved }: { policy: SessionPolicy; onSaved: () =>
   return (
     <Card className="mt-6 max-w-xl">
       <CardHeader>
-        <CardTitle>Session cookie (global)</CardTitle>
-        <CardDescription>
-          Attributes applied to the JSESSIONID cookie. These are global — the cookie is issued before
-          the user is known, so only the Default policy's settings take effect.
-        </CardDescription>
+        <CardTitle>{t("sessionPolicyCookieTitle")}</CardTitle>
+        <CardDescription>{t("sessionPolicyCookieDescription")}</CardDescription>
       </CardHeader>
       <CardContent>
         {status && <Alert variant="success" className="mb-4"><AlertDescription>{status}</AlertDescription></Alert>}
         {error && <Alert variant="destructive" className="mb-4"><AlertDescription>{error}</AlertDescription></Alert>}
         <form onSubmit={save} className="space-y-4">
-          <Field label="SameSite" hint="Cross-site cookie policy.">
+          <Field label={t("sessionPolicySameSiteLabel")} hint={t("sessionPolicySameSiteHint")}>
             <Select value={sameSite} onChange={(e) => setSameSite(e.target.value)}>
               <option>Lax</option><option>Strict</option><option>None</option>
             </Select>
           </Field>
           <p className="text-sm text-muted-foreground">
-            The cookie's <strong>Secure</strong> (HTTPS-only) attribute is enforced by deployment
-            config (<code>server.servlet.session.cookie.secure</code>) in production, not here.
+            <Trans t={t} i18nKey="sessionPolicySecureHint" components={[<strong key="0" />, <code key="1" />]} />
           </p>
-          <Button type="submit" disabled={busy}><Save /> Save cookie settings</Button>
+          <Button type="submit" disabled={busy}><Save /> {t("sessionPolicySaveCookie")}</Button>
         </form>
       </CardContent>
     </Card>

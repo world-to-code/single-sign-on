@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiGet, apiPost, apiPut, errorMessage, type Page } from "../api";
 import { EditorPage } from "@/components/EditorPage";
@@ -55,6 +56,7 @@ function toEditor(rp: RelyingParty): Editor {
 
 /** Okta-style full-page create/edit for a SAML relying party (routes `relying-parties/new` + `:id`). */
 export default function RelyingPartyDetail() {
+  const { t } = useTranslation("console");
   const { id } = useParams();
   const navigate = useNavigate();
   const isNew = !id;
@@ -68,7 +70,7 @@ export default function RelyingPartyDetail() {
       .then((p) => {
         const found = p.items.find((x) => x.id === id);
         if (found) setEditor(toEditor(found));
-        else setError("Relying party not found.");
+        else setError(t("rpDetailNotFound"));
       })
       .catch((e) => setError(errorMessage(e)));
   }, [id, isNew]);
@@ -79,7 +81,7 @@ export default function RelyingPartyDetail() {
     event.preventDefault();
     if (!editor) return;
     if (!editor.entityId.trim() || !editor.acsUrl.trim()) {
-      setError("Entity ID and ACS URL are required.");
+      setError(t("rpDetailRequired"));
       return;
     }
     setError(null); setBusy(true);
@@ -93,91 +95,91 @@ export default function RelyingPartyDetail() {
     }
   }
 
-  const crumbName = isNew ? "New relying party" : (editor?.entityId || "Edit");
+  const crumbName = isNew ? t("rpDetailNewCrumb") : (editor?.entityId || t("rpDetailEditCrumb"));
 
   return (
     <EditorPage
-      backTo="/admin/relying-parties" backLabel="SAML Relying Parties" crumb={crumbName}
-      title={isNew ? "Register a relying party" : (editor?.displayName || editor?.entityId || "…")}
-      description="Endpoint and per-RP SAML signing and encryption configuration."
+      backTo="/admin/relying-parties" backLabel={t("rpDetailBack")} crumb={crumbName}
+      title={isNew ? t("rpDetailNewTitle") : (editor?.displayName || editor?.entityId || "…")}
+      description={t("rpDetailDescription")}
       error={error} formId="rp-form" onSubmit={submit} busy={busy}
-      submitLabel={isNew ? "Register" : "Save changes"}
+      submitLabel={isNew ? t("rpDetailRegister") : t("saveChanges")}
       onCancel={() => navigate("/admin/relying-parties")} loading={!editor}
     >
       {editor && (
         <>
-          <SettingsSection title="Endpoint" description="How the service provider is identified and where assertions are posted.">
-            <Field label="Entity ID" hint={editor.id ? "The entity ID can't be changed after registration." : undefined}>
+          <SettingsSection title={t("rpDetailEndpoint")} description={t("rpDetailEndpointDesc")}>
+            <Field label={t("rpDetailEntityId")} hint={editor.id ? t("rpDetailEntityIdHint") : undefined}>
               <Input value={editor.entityId} disabled={!!editor.id} onChange={(e) => set({ entityId: e.target.value })} />
             </Field>
-            <Field label="Display name" hint="Friendly name shown in app lists (defaults to the entity ID).">
+            <Field label={t("rpDetailDisplayName")} hint={t("rpDetailDisplayNameHint")}>
               <Input value={editor.displayName} onChange={(e) => set({ displayName: e.target.value })} />
             </Field>
-            <Field label="ACS URL" hint="Assertion Consumer Service — where the SAML response is posted.">
+            <Field label={t("rpDetailAcsUrl")} hint={t("rpDetailAcsUrlHint")}>
               <Input value={editor.acsUrl} onChange={(e) => set({ acsUrl: e.target.value })} />
             </Field>
-            <Field label="NameID format">
+            <Field label={t("rpDetailNameIdFormat")}>
               <Input value={editor.nameIdFormat} onChange={(e) => set({ nameIdFormat: e.target.value })} />
             </Field>
-            <Field label="SP-initiated login URL"
-                   hint="Portal “launch” redirects here so the SP starts SP-initiated SSO. Blank = IdP-initiated (unsolicited) SSO.">
+            <Field label={t("rpDetailSpLoginUrl")}
+                   hint={t("rpDetailSpLoginUrlHint")}>
               <Input value={editor.spLoginUrl} placeholder="https://sp.example.com/login"
                      onChange={(e) => set({ spLoginUrl: e.target.value })} />
             </Field>
-            <Field label="Single Logout URL"
-                   hint="Where the IdP sends LogoutRequests when the user's session ends. Blank = no SLO for this SP.">
+            <Field label={t("rpDetailSloUrl")}
+                   hint={t("rpDetailSloUrlHint")}>
               <Input value={editor.singleLogoutUrl} placeholder="https://sp.example.com/saml/slo"
                      onChange={(e) => set({ singleLogoutUrl: e.target.value })} />
             </Field>
-            <Field label="Logout binding"
-                   hint="REDIRECT/POST are front-channel (explicit logout only). SOAP is back-channel — also logs out on idle expiry.">
+            <Field label={t("rpDetailLogoutBinding")}
+                   hint={t("rpDetailLogoutBindingHint")}>
               <Select value={editor.sloBinding} onChange={(e) => set({ sloBinding: e.target.value })}>
-                <option value="REDIRECT">Redirect (front-channel)</option>
-                <option value="POST">POST (front-channel)</option>
-                <option value="SOAP">SOAP (back-channel)</option>
+                <option value="REDIRECT">{t("rpDetailBindingRedirect")}</option>
+                <option value="POST">{t("rpDetailBindingPost")}</option>
+                <option value="SOAP">{t("rpDetailBindingSoap")}</option>
               </Select>
             </Field>
           </SettingsSection>
 
-          <SettingsSection title="Signing" description="Whether the IdP signs the outgoing assertion and/or response, and with which algorithm.">
-            <Toggle label="Sign assertion" checked={editor.signAssertion} onChange={(v) => set({ signAssertion: v })} />
-            <Toggle label="Sign response" checked={editor.signResponse} onChange={(v) => set({ signResponse: v })} />
-            <Field label="Signature algorithm">
+          <SettingsSection title={t("rpDetailSigning")} description={t("rpDetailSigningDesc")}>
+            <Toggle label={t("rpDetailSignAssertion")} checked={editor.signAssertion} onChange={(v) => set({ signAssertion: v })} />
+            <Toggle label={t("rpDetailSignResponse")} checked={editor.signResponse} onChange={(v) => set({ signResponse: v })} />
+            <Field label={t("rpDetailSignatureAlg")}>
               <Select value={editor.signatureAlgorithm} onChange={(e) => set({ signatureAlgorithm: e.target.value })}>
-                <option>RSA_SHA256</option><option>RSA_SHA512</option><option value="RSA_SHA1">RSA_SHA1 (legacy)</option>
+                <option>RSA_SHA256</option><option>RSA_SHA512</option><option value="RSA_SHA1">{t("rpDetailRsaSha1Legacy")}</option>
               </Select>
             </Field>
           </SettingsSection>
 
-          <SettingsSection title="Assertion encryption" description="Encrypt the assertion to the SP's certificate so only it can read the claims.">
-            <Toggle label="Encrypt assertion" checked={editor.encryptAssertion} onChange={(v) => set({ encryptAssertion: v })} />
+          <SettingsSection title={t("rpDetailEncryption")} description={t("rpDetailEncryptionDesc")}>
+            <Toggle label={t("rpDetailEncryptAssertion")} checked={editor.encryptAssertion} onChange={(v) => set({ encryptAssertion: v })} />
             <div className="grid gap-5 sm:grid-cols-2">
-              <Field label="Data algorithm">
+              <Field label={t("rpDetailDataAlg")}>
                 <Select value={editor.dataEncryptionAlgorithm} onChange={(e) => set({ dataEncryptionAlgorithm: e.target.value })}>
                   <option>AES256_GCM</option><option>AES128_GCM</option>
-                  <option value="AES256_CBC">AES256_CBC (legacy)</option><option value="AES128_CBC">AES128_CBC (legacy)</option>
+                  <option value="AES256_CBC">{t("rpDetailAes256CbcLegacy")}</option><option value="AES128_CBC">{t("rpDetailAes128CbcLegacy")}</option>
                 </Select>
               </Field>
-              <Field label="Key transport">
+              <Field label={t("rpDetailKeyTransport")}>
                 <Select value={editor.keyTransportAlgorithm} onChange={(e) => set({ keyTransportAlgorithm: e.target.value })}>
-                  <option>RSA_OAEP</option><option value="RSA_1_5">RSA_1_5 (legacy)</option>
+                  <option>RSA_OAEP</option><option value="RSA_1_5">{t("rpDetailRsa15Legacy")}</option>
                 </Select>
               </Field>
             </div>
-            <Field label="SP encryption certificate (PEM)">
+            <Field label={t("rpDetailEncCert")}>
               <Textarea rows={3} value={editor.encryptionCertificate} onChange={(e) => set({ encryptionCertificate: e.target.value })} />
             </Field>
           </SettingsSection>
 
-          <SettingsSection title="Inbound AuthnRequest" description="Verify AuthnRequests the SP sends against its signing certificate.">
-            <Toggle label="Require signed AuthnRequests" checked={editor.wantAuthnRequestsSigned} onChange={(v) => set({ wantAuthnRequestsSigned: v })} />
-            <Field label="SP signing certificate (PEM)">
+          <SettingsSection title={t("rpDetailInbound")} description={t("rpDetailInboundDesc")}>
+            <Toggle label={t("rpDetailRequireSigned")} checked={editor.wantAuthnRequestsSigned} onChange={(v) => set({ wantAuthnRequestsSigned: v })} />
+            <Field label={t("rpDetailSignCert")}>
               <Textarea rows={3} value={editor.signingCertificate} onChange={(e) => set({ signingCertificate: e.target.value })} />
             </Field>
           </SettingsSection>
 
-          <SettingsSection title="IdP-initiated SSO" description="Allow this IdP to push an unsolicited assertion to the SP (portal launch).">
-            <Toggle label="Allow IdP-initiated SSO" checked={editor.allowIdpInitiated} onChange={(v) => set({ allowIdpInitiated: v })} />
+          <SettingsSection title={t("rpDetailIdpInit")} description={t("rpDetailIdpInitDesc")}>
+            <Toggle label={t("rpDetailAllowIdpInit")} checked={editor.allowIdpInitiated} onChange={(v) => set({ allowIdpInitiated: v })} />
           </SettingsSection>
         </>
       )}

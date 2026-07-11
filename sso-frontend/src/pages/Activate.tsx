@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { ApiError, errorMessage } from "@/api";
 import { activateWorkspace } from "@/onboarding";
@@ -15,6 +16,7 @@ import { Label } from "@/components/ui/label";
  * the chosen password — nothing was provisioned at signup time. Mirrors the tenant-first auth screens.
  */
 export default function Activate() {
+  const { t } = useTranslation("auth");
   const token = new URLSearchParams(window.location.search).get("token") ?? "";
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -26,11 +28,11 @@ export default function Activate() {
     event.preventDefault();
     setError(null);
     if (!token) {
-      setError("This link is missing its token — please use the link from your verification email.");
+      setError(t("activateMissingToken"));
       return;
     }
     if (password !== confirm) {
-      setError("The passwords don't match.");
+      setError(t("passwordsMismatch"));
       return;
     }
     setBusy(true);
@@ -38,9 +40,7 @@ export default function Activate() {
       const result = await activateWorkspace(token, password);
       setDone({ slug: result.slug, workspaceHost: result.workspaceHost });
     } catch (e) {
-      setError(e instanceof ApiError
-        ? errorMessage(e)
-        : "We couldn't create your workspace. The verification link may have expired.");
+      setError(e instanceof ApiError ? errorMessage(e) : t("activateFailed"));
       setBusy(false);
     }
   }
@@ -52,21 +52,21 @@ export default function Activate() {
       ? `${window.location.protocol}//${done.workspaceHost}.${window.location.host}/login`
       : "/login";
     return (
-      <AuthLayout title="Your workspace is ready" description={`${done.slug} is all set up.`}>
+      <AuthLayout title={t("activateDoneTitle")} description={t("activateDoneDesc", { slug: done.slug })}>
         <div className="space-y-4 text-center">
           <CheckCircle2 className="mx-auto size-10 text-primary" />
           <p className="text-sm text-muted-foreground">
-            Your email is verified and <span className="font-medium text-foreground">{done.slug}</span> has been
-            created with your admin account.
+            <Trans t={t} i18nKey="activateDoneBody" values={{ slug: done.slug }}
+                   components={{ b: <span className="font-medium text-foreground" /> }} />
           </p>
           {done.workspaceHost && (
             <p className="text-sm text-muted-foreground">
-              Your workspace address is{" "}
-              <span className="font-mono font-medium text-foreground">{done.workspaceHost}.{window.location.host}</span>.
+              <Trans t={t} i18nKey="activateDoneAddress" values={{ host: `${done.workspaceHost}.${window.location.host}` }}
+                     components={{ b: <span className="font-mono font-medium text-foreground" /> }} />
             </p>
           )}
           <Button className="w-full" onClick={() => { window.location.href = loginUrl; }}>
-            Continue to sign in
+            {t("continueToSignIn")}
           </Button>
         </div>
       </AuthLayout>
@@ -74,7 +74,7 @@ export default function Activate() {
   }
 
   return (
-    <AuthLayout title="Verify your email" description="Set your admin password to finish creating your workspace.">
+    <AuthLayout title={t("activateTitle")} description={t("activateDescription")}>
       {error && (
         <Alert variant="destructive" className="mb-4">
           <AlertDescription>{error}</AlertDescription>
@@ -82,22 +82,22 @@ export default function Activate() {
       )}
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="password">Admin password</Label>
+          <Label htmlFor="password">{t("adminPassword")}</Label>
           <Input id="password" type="password" value={password} autoFocus required minLength={8}
                  autoComplete="new-password" onChange={(e) => setPassword(e.target.value)} />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="confirm">Confirm password</Label>
+          <Label htmlFor="confirm">{t("confirmPassword")}</Label>
           <Input id="confirm" type="password" value={confirm} required minLength={8}
                  autoComplete="new-password" onChange={(e) => setConfirm(e.target.value)} />
         </div>
         <Button type="submit" className="w-full" disabled={busy}>
           {busy && <Loader2 className="animate-spin" />}
-          Create workspace
+          {t("createWorkspace")}
         </Button>
       </form>
       <p className="mt-3 text-xs text-muted-foreground">
-        Use at least 8 characters. This one-time link expires soon; your workspace is created when you submit.
+        {t("activateHint")}
       </p>
     </AuthLayout>
   );

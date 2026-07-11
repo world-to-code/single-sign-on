@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { apiGet, apiPost, apiPut, errorMessage, type Page } from "../api";
@@ -68,12 +69,6 @@ interface Editor {
 
 const REAUTH_FACTORS = ["TOTP", "FIDO2", "PASSWORD", "EMAIL"];
 type Tab = "general" | "reauth" | "network" | "assign";
-const TABS: { key: Tab; label: string }[] = [
-  { key: "general", label: "General" },
-  { key: "reauth", label: "Re-authentication" },
-  { key: "network", label: "Network" },
-  { key: "assign", label: "Assignments" },
-];
 
 const blankEditor: Editor = {
   id: null, name: "", priority: "10", enabled: true,
@@ -107,6 +102,13 @@ function toEditor(p: SessionPolicy): Editor {
  * controls on the right) and a sticky save bar. Network rules reference reusable Network Zones.
  */
 export default function SessionPolicyDetail() {
+  const { t } = useTranslation("console");
+  const TABS: { key: Tab; label: string }[] = [
+    { key: "general", label: t("spDetailTabGeneral") },
+    { key: "reauth", label: t("spDetailTabReauth") },
+    { key: "network", label: t("spDetailTabNetwork") },
+    { key: "assign", label: t("spDetailTabAssign") },
+  ];
   const { id } = useParams();
   const navigate = useNavigate();
   const isNew = !id;
@@ -128,7 +130,7 @@ export default function SessionPolicyDetail() {
       .then((p) => {
         const found = p.items.find((x) => x.id === id);
         if (found) setEditor(toEditor(found));
-        else setError("Policy not found.");
+        else setError(t("spDetailNotFound"));
       })
       .catch((e) => setError(errorMessage(e)));
   }, [id, isNew]);
@@ -138,16 +140,16 @@ export default function SessionPolicyDetail() {
   /** Client-side check with a jump to the offending tab — the tabbed layout hides other tabs' fields. */
   function validate(e: Editor): { tab: Tab; message: string } | null {
     const intOf = (v: string) => (/^\d+$/.test(v.trim()) ? Number(v) : NaN);
-    if (!e.name.trim()) return { tab: "general", message: "Name is required." };
-    if (Number.isNaN(intOf(e.priority))) return { tab: "general", message: "Priority must be a whole number." };
-    if (!(intOf(e.absoluteTimeoutMinutes) >= 1)) return { tab: "general", message: "Absolute timeout must be at least 1 minute." };
-    if (!(intOf(e.idleTimeoutMinutes) >= 1)) return { tab: "general", message: "Idle timeout must be at least 1 minute." };
-    if (Number.isNaN(intOf(e.maxConcurrentSessions))) return { tab: "general", message: "Max concurrent sessions must be a whole number (0 = unlimited)." };
-    if (!(intOf(e.reauthIntervalMinutes) >= 1)) return { tab: "reauth", message: "Re-auth interval must be at least 1 minute." };
-    if (!(intOf(e.sensitiveReauthWindowMinutes) >= 1)) return { tab: "reauth", message: "Step-up window must be at least 1 minute." };
-    if (!(intOf(e.elevationTokenTtlMinutes) >= 1)) return { tab: "reauth", message: "Elevation token lifetime must be at least 1 minute." };
-    if (tokens(e.reauthFactors, ",").length === 0) return { tab: "reauth", message: "Pick at least one re-auth factor." };
-    if (tokens(e.stepUpFactors, ",").length === 0) return { tab: "reauth", message: "Pick at least one step-up factor." };
+    if (!e.name.trim()) return { tab: "general", message: t("spDetailNameRequired") };
+    if (Number.isNaN(intOf(e.priority))) return { tab: "general", message: t("spDetailPriorityWhole") };
+    if (!(intOf(e.absoluteTimeoutMinutes) >= 1)) return { tab: "general", message: t("spDetailAbsoluteMin") };
+    if (!(intOf(e.idleTimeoutMinutes) >= 1)) return { tab: "general", message: t("spDetailIdleMin") };
+    if (Number.isNaN(intOf(e.maxConcurrentSessions))) return { tab: "general", message: t("spDetailMaxWhole") };
+    if (!(intOf(e.reauthIntervalMinutes) >= 1)) return { tab: "reauth", message: t("spDetailReauthMinErr") };
+    if (!(intOf(e.sensitiveReauthWindowMinutes) >= 1)) return { tab: "reauth", message: t("spDetailStepupWindowMin") };
+    if (!(intOf(e.elevationTokenTtlMinutes) >= 1)) return { tab: "reauth", message: t("spDetailElevationMin") };
+    if (tokens(e.reauthFactors, ",").length === 0) return { tab: "reauth", message: t("spDetailPickReauth") };
+    if (tokens(e.stepUpFactors, ",").length === 0) return { tab: "reauth", message: t("spDetailPickStepup") };
     return null;
   }
 
@@ -187,19 +189,19 @@ export default function SessionPolicyDetail() {
     }
   }
 
-  const crumbName = isNew ? "New policy" : (editor?.name || "Edit");
+  const crumbName = isNew ? t("spDetailNewCrumb") : (editor?.name || t("spDetailEditCrumb"));
   // The "Default" is the tier's unconditional fallback: its priority, enabled state and assignments are fixed
   // (the server rejects changes) so it always covers every user not matched by a higher-priority policy.
   const isDefault = !!editor?.id && editor.name === "Default";
 
   return (
     <EditorPage<Tab>
-      backTo="/admin/session-policy" backLabel="Session Policies" crumb={crumbName}
-      title={isNew ? "New session policy" : (editor?.name ?? "…")}
-      description="Session lifetimes, re-authentication, network access, and where this policy applies."
+      backTo="/admin/session-policy" backLabel={t("spDetailBack")} crumb={crumbName}
+      title={isNew ? t("spDetailNewTitle") : (editor?.name ?? "…")}
+      description={t("spDetailDescription")}
       tabs={TABS} activeTab={tab} onTab={setTab}
       error={error} formId="policy-form" onSubmit={submit} busy={busy}
-      submitLabel={isNew ? "Create policy" : "Save changes"}
+      submitLabel={isNew ? t("spDetailCreate") : t("saveChanges")}
       onCancel={() => navigate("/admin/session-policy")} loading={!editor}
     >
       {editor && (
@@ -240,44 +242,43 @@ function FactorChips({ selected, onToggle }: { selected: string[]; onToggle: (f:
 
 function GeneralTab({ editor, set, isDefault }:
   { editor: Editor; set: (p: Partial<Editor>) => void; isDefault: boolean }) {
+  const { t } = useTranslation("console");
   return (
     <>
-      <SettingsSection title="Basics" description="Identify the policy and set how it ranks against others.">
-        <Field label="Name" hint={editor.id ? "The name can't be changed after creation." : undefined}>
+      <SettingsSection title={t("spDetailBasics")} description={t("spDetailBasicsDesc")}>
+        <Field label={t("spDetailName")} hint={editor.id ? t("spDetailNameHint") : undefined}>
           <Input value={editor.name} disabled={!!editor.id} onChange={(e) => set({ name: e.target.value })} />
         </Field>
         <div className="grid gap-5 sm:grid-cols-2">
-          <Field label="Priority"
-                 hint={isDefault ? "The Default is fixed at the lowest priority so it always applies as the fallback."
-                                 : "Higher wins when several policies match a user."}>
+          <Field label={t("spDetailPriority")}
+                 hint={isDefault ? t("spDetailPriorityDefaultHint") : t("spDetailPriorityHint")}>
             <Input value={editor.priority} inputMode="numeric" disabled={isDefault}
                    onChange={(e) => set({ priority: e.target.value })} />
           </Field>
-          <Toggle label="Enabled"
-                  hint={isDefault ? "The Default can't be disabled — it's the required fallback."
-                                  : "Disabled policies are ignored during resolution."}
+          <Toggle label={t("spDetailEnabled")}
+                  hint={isDefault ? t("spDetailEnabledDefaultHint") : t("spDetailEnabledHint")}
                   checked={editor.enabled} disabled={isDefault} onChange={(v) => set({ enabled: v })} />
         </div>
       </SettingsSection>
 
-      <SettingsSection title="Session lifetime" description="How long a session lasts before it must be re-established.">
+      <SettingsSection title={t("spDetailLifetime")} description={t("spDetailLifetimeDesc")}>
         <div className="grid gap-5 sm:grid-cols-2">
-          <Field label="Absolute timeout (min)" hint="Max lifetime — forces a full re-auth.">
+          <Field label={t("spDetailAbsolute")} hint={t("spDetailAbsoluteHint")}>
             <Input type="number" min={1} value={editor.absoluteTimeoutMinutes} onChange={(e) => set({ absoluteTimeoutMinutes: e.target.value })} />
           </Field>
-          <Field label="Idle timeout (min)" hint="Expires after this much inactivity.">
+          <Field label={t("spDetailIdle")} hint={t("spDetailIdleHint")}>
             <Input type="number" min={1} value={editor.idleTimeoutMinutes} onChange={(e) => set({ idleTimeoutMinutes: e.target.value })} />
           </Field>
         </div>
-        <Field label="Max concurrent sessions" hint="0 = unlimited; over the cap evicts the oldest session.">
+        <Field label={t("spDetailMaxSessions")} hint={t("spDetailMaxSessionsHint")}>
           <Input type="number" min={0} value={editor.maxConcurrentSessions} onChange={(e) => set({ maxConcurrentSessions: e.target.value })} />
         </Field>
       </SettingsSection>
 
-      <SettingsSection title="Session hardening" description="Defenses that bind and rotate the session cookie.">
-        <Toggle label="Bind session to client" hint="Reject a session cookie replayed from a different browser or device."
+      <SettingsSection title={t("spDetailHardening")} description={t("spDetailHardeningDesc")}>
+        <Toggle label={t("spDetailBindClient")} hint={t("spDetailBindClientHint")}
                 checked={editor.bindClient} onChange={(v) => set({ bindClient: v })} />
-        <Toggle label="Rotate session id on re-auth" hint="Issue a fresh session id after a successful step-up re-authentication."
+        <Toggle label={t("spDetailRotate")} hint={t("spDetailRotateHint")}
                 checked={editor.rotateOnReauth} onChange={(v) => set({ rotateOnReauth: v })} />
       </SettingsSection>
     </>
@@ -285,40 +286,41 @@ function GeneralTab({ editor, set, isDefault }:
 }
 
 function ReauthTab({ editor, set }: { editor: Editor; set: (p: Partial<Editor>) => void }) {
+  const { t } = useTranslation("console");
   const factors = tokens(editor.reauthFactors, ",");
   const stepUp = tokens(editor.stepUpFactors, ",");
   const toggle = (list: string[], f: string) => (list.includes(f) ? list.filter((x) => x !== f) : [...list, f]);
   return (
     <>
-      <SettingsSection title="Re-authentication"
-                       description="Prompt for a fresh factor after the session has been idle for a while.">
-        <Field label="Re-auth interval (min)" hint="After this much inactivity, re-authentication is required.">
+      <SettingsSection title={t("spDetailReauthTitle")}
+                       description={t("spDetailReauthDesc")}>
+        <Field label={t("spDetailReauthInterval")} hint={t("spDetailReauthIntervalHint")}>
           <Input type="number" min={1} value={editor.reauthIntervalMinutes} onChange={(e) => set({ reauthIntervalMinutes: e.target.value })} />
         </Field>
         <div className="space-y-2">
-          <Label>Allowed factors</Label>
+          <Label>{t("spDetailAllowedFactors")}</Label>
           <FactorChips selected={factors} onToggle={(f) => set({ reauthFactors: toggle(factors, f).join(",") })} />
         </div>
       </SettingsSection>
 
-      <SettingsSection title="Sensitive actions"
-                       description="Deletes, grants and key rotation need a stricter, more recent step-up — and can require a stronger factor.">
-        <Field label="Step-up window (min)" hint="The step-up must be at least this recent for a sensitive action.">
+      <SettingsSection title={t("spDetailSensitive")}
+                       description={t("spDetailSensitiveDesc")}>
+        <Field label={t("spDetailStepupWindow")} hint={t("spDetailStepupWindowHint")}>
           <Input type="number" min={1} value={editor.sensitiveReauthWindowMinutes} onChange={(e) => set({ sensitiveReauthWindowMinutes: e.target.value })} />
         </Field>
         <div className="space-y-2">
-          <Label>Step-up factors</Label>
+          <Label>{t("spDetailStepupFactors")}</Label>
           <FactorChips selected={stepUp} onToggle={(f) => set({ stepUpFactors: toggle(stepUp, f).join(",") })} />
-          <p className="text-xs text-muted-foreground">Can be stronger than the general factors — e.g. passkey (FIDO2) only.</p>
+          <p className="text-xs text-muted-foreground">{t("spDetailStepupNote")}</p>
         </div>
       </SettingsSection>
 
-      <SettingsSection title="Admin console"
-                       description="Applied when this policy governs the admin console (select it under Applications → Admin Portal security).">
-        <Field label="Elevation token lifetime (min)" hint="TTL of the admin-console access token (the privilege-elevation proof).">
+      <SettingsSection title={t("spDetailAdminConsole")}
+                       description={t("spDetailAdminConsoleDesc")}>
+        <Field label={t("spDetailElevation")} hint={t("spDetailElevationHint")}>
           <Input type="number" min={1} value={editor.elevationTokenTtlMinutes} onChange={(e) => set({ elevationTokenTtlMinutes: e.target.value })} />
         </Field>
-        <Field label="Admin console IP allowlist" hint="Comma-separated CIDRs. Empty allows any network.">
+        <Field label={t("spDetailIpAllowlist")} hint={t("spDetailIpAllowlistHint")}>
           <Input placeholder="e.g. 203.0.113.0/24, 10.0.0.0/8" value={editor.adminAllowedCidrs}
                  onChange={(e) => set({ adminAllowedCidrs: e.target.value })} />
         </Field>
@@ -330,6 +332,7 @@ function ReauthTab({ editor, set }: { editor: Editor; set: (p: Partial<Editor>) 
 function NetworkTab({ editor, set, zoneNames, addKey, onAdd }:
     { editor: Editor; set: (p: Partial<Editor>) => void; zoneNames: Record<string, string>; addKey: number;
       onAdd: (zoneId: string, label: string) => void }) {
+  const { t } = useTranslation("console");
   const rules = editor.ipRules;
   const setRule = (i: number, action: string) => set({ ipRules: rules.map((r, j) => (j === i ? { ...r, action } : r)) });
   const removeRule = (i: number) => set({ ipRules: rules.filter((_, j) => j !== i) });
@@ -342,10 +345,10 @@ function NetworkTab({ editor, set, zoneNames, addKey, onAdd }:
   };
   return (
     <SettingsSection
-      title="Network zones"
-      description="Allow or block reusable network zones. Rules are first-match, top to bottom — the first zone that contains the visitor's IP decides; no match means allowed.">
+      title={t("spDetailNetworkZones")}
+      description={t("spDetailNetworkZonesDesc")}>
       {rules.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No network restriction — this policy's users may connect from anywhere.</p>
+        <p className="text-sm text-muted-foreground">{t("spDetailNoRestriction")}</p>
       ) : (
         <div className="space-y-2">
           {rules.map((r, i) => (
@@ -353,29 +356,30 @@ function NetworkTab({ editor, set, zoneNames, addKey, onAdd }:
               <span className="w-5 text-center text-xs tabular-nums text-muted-foreground">{i + 1}</span>
               <Badge variant="muted" className="flex-1 justify-start truncate">{zoneNames[r.zoneId] ?? r.zoneId}</Badge>
               <Select className="w-28" value={r.action} onChange={(e) => setRule(i, e.target.value)}>
-                <option value="ALLOW">Allow</option>
-                <option value="BLOCK">Block</option>
+                <option value="ALLOW">{t("spDetailActionAllow")}</option>
+                <option value="BLOCK">{t("spDetailActionBlock")}</option>
               </Select>
-              <Button type="button" variant="ghost" size="icon" disabled={i === 0} onClick={() => moveRule(i, -1)} aria-label="Move up"><ChevronUp /></Button>
-              <Button type="button" variant="ghost" size="icon" disabled={i === rules.length - 1} onClick={() => moveRule(i, 1)} aria-label="Move down"><ChevronDown /></Button>
-              <Button type="button" variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" onClick={() => removeRule(i)} aria-label="Remove"><Trash2 /></Button>
+              <Button type="button" variant="ghost" size="icon" disabled={i === 0} onClick={() => moveRule(i, -1)} aria-label={t("spDetailMoveUp")}><ChevronUp /></Button>
+              <Button type="button" variant="ghost" size="icon" disabled={i === rules.length - 1} onClick={() => moveRule(i, 1)} aria-label={t("spDetailMoveDown")}><ChevronDown /></Button>
+              <Button type="button" variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" onClick={() => removeRule(i)} aria-label={t("spDetailRemove")}><Trash2 /></Button>
             </div>
           ))}
         </div>
       )}
       <div className="max-w-sm">
-        <SearchSelect placeholder="Search zones to add…" fetcher={searchZones} resetKey={addKey}
+        <SearchSelect placeholder={t("spDetailSearchZones")} fetcher={searchZones} resetKey={addKey}
                       onSelect={(s) => { if (s) onAdd(s.id, s.label); }} />
       </div>
       <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
         <span>
-          Zones are defined in <Link to="/admin/network-zones" className="font-medium text-foreground hover:underline">Network Zones</Link>.
-          A catch-all block should cover both IPv4 (<code>0.0.0.0/0</code>) and IPv6 (<code>::/0</code>).
+          <Trans t={t} i18nKey="spDetailZonesDefinedIn"
+                 components={[
+                   <Link key="0" to="/admin/network-zones" className="font-medium text-foreground hover:underline" />,
+                   <code key="1" />, <code key="2" />,
+                 ]} />
         </span>
-        <InfoHint label="How zone rules are evaluated">
-          Rules are checked top to bottom. The first rule any of whose zone ranges contains the visitor's IP
-          decides — <strong>Allow</strong> admits, <strong>Block</strong> denies. No match → allowed. Checked
-          after sign-in and also on OIDC single sign-on.
+        <InfoHint label={t("spDetailInfoLabel")}>
+          <Trans t={t} i18nKey="spDetailInfoBody" components={[<strong key="0" />, <strong key="1" />]} />
         </InfoHint>
       </div>
     </SettingsSection>
@@ -384,32 +388,31 @@ function NetworkTab({ editor, set, zoneNames, addKey, onAdd }:
 
 function AssignTab({ editor, set, roles, isDefault }:
   { editor: Editor; set: (p: Partial<Editor>) => void; roles: Role[]; isDefault: boolean }) {
+  const { t } = useTranslation("console");
   const toggle = (v: string) => (editor.roleIds.includes(v) ? editor.roleIds.filter((x) => x !== v) : [...editor.roleIds, v]);
   if (isDefault) {
     return (
-      <SettingsSection title="Applies to" description="Who this policy governs.">
+      <SettingsSection title={t("spDetailAppliesTo")} description={t("spDetailDefaultAppliesDesc")}>
         <p className="text-sm text-muted-foreground">
-          The <strong>Default</strong> policy is the unconditional fallback: it applies to <strong>every user</strong>
-          {" "}not matched by a higher-priority policy, so it can't be targeted at specific roles or users. To scope
-          different rules to some users, create another policy with a higher priority and assign it there.
+          <Trans t={t} i18nKey="spDetailDefaultAppliesBody" components={[<strong key="0" />, <strong key="1" />]} />
         </p>
       </SettingsSection>
     );
   }
   return (
     <SettingsSection
-      title="Applies to"
-      description="Target this policy at roles and/or users. Leave both empty to apply it to everyone (global). Cookie attributes are global and edited on the Default policy.">
+      title={t("spDetailAppliesTo")}
+      description={t("spDetailAssignDesc")}>
       <div className="space-y-2">
-        <Label>Roles</Label>
+        <Label>{t("spDetailRoles")}</Label>
         <CheckboxGroup
           options={roles.map((r) => ({ value: r.id, label: r.name }))}
-          selected={editor.roleIds} onToggle={(v) => set({ roleIds: toggle(v) })} emptyText="No roles"
+          selected={editor.roleIds} onToggle={(v) => set({ roleIds: toggle(v) })} emptyText={t("spDetailNoRoles")}
         />
       </div>
       <div className="space-y-2">
-        <Label>Users</Label>
-        <UserMultiSelect selected={editor.userIds} onChange={(ids) => set({ userIds: ids })} placeholder="Search users to target…" />
+        <Label>{t("spDetailUsers")}</Label>
+        <UserMultiSelect selected={editor.userIds} onChange={(ids) => set({ userIds: ids })} placeholder={t("spDetailUsersPlaceholder")} />
       </div>
     </SettingsSection>
   );

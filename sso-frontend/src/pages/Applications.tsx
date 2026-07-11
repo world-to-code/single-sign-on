@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { AppWindow, Lock, Network, Settings, Trash2, UserPlus, Users as UsersIcon } from "lucide-react";
 import { apiGet, apiPost, apiPut, errorMessage, type Page } from "../api";
 import { PageHeader } from "@/components/PageHeader";
@@ -27,7 +27,7 @@ interface Assignment { id: string; subjectType: string; subjectName: string; req
 interface Policy { id: string; name: string; appliesToLogin: boolean; }
 
 export default function Applications() {
-  const { t } = useTranslation("states");
+  const { t } = useTranslation(["console", "states"]);
   const confirmDelete = useDeleteConfirm();
   const { items: apps, total, page, setPage, size, error, reload } = usePaginated<Application>("/api/admin/applications");
   const [policies, setPolicies] = useState<Policy[]>([]);
@@ -110,9 +110,9 @@ export default function Applications() {
 
   async function removeAssignment(a: Assignment) {
     await confirmDelete({
-      title: "Remove access?",
-      description: `${a.subjectName} will lose access to ${active?.name}.`,
-      confirmText: "Remove",
+      title: t("applicationsRemoveAccessTitle"),
+      description: t("applicationsRemoveAccessDescription", { name: a.subjectName, app: active?.name ?? "" }),
+      confirmText: t("applicationsRemoveAccessConfirm"),
       path: `/api/admin/applications/assignments/${a.id}`,
       onDeleted: () => { if (active) loadAssignments(active); },
     });
@@ -120,18 +120,18 @@ export default function Applications() {
 
   return (
     <>
-      <PageHeader title="Applications" description="Assign OIDC and SAML applications to users and groups for the user portal." />
+      <PageHeader title={t("applicationsTitle")} description={t("applicationsDescription")} />
 
       <DataList
         data={apps}
         error={error}
         isEmpty={(items) => items.length === 0}
-        empty={<EmptyState icon={<AppWindow className="size-8" />} title={t("applicationsEmptyTitle")} hint={t("applicationsEmptyHint")} />}
+        empty={<EmptyState icon={<AppWindow className="size-8" />} title={t("states:applicationsEmptyTitle")} hint={t("states:applicationsEmptyHint")} />}
       >
         {(items) => (
           <Table>
             <TableHeader>
-              <TableRow><TableHead>Application</TableHead><TableHead>Type</TableHead><TableHead>Launch URL</TableHead><TableHead className="w-0" /></TableRow>
+              <TableRow><TableHead>{t("applicationsColApplication")}</TableHead><TableHead>{t("applicationsColType")}</TableHead><TableHead>{t("applicationsColLaunchUrl")}</TableHead><TableHead className="w-0" /></TableRow>
             </TableHeader>
             <TableBody>
               {items.map((app) => (
@@ -140,16 +140,16 @@ export default function Applications() {
                     <span className="inline-flex flex-wrap items-center gap-2">
                       {app.type === "SAML" ? <Network className="size-4 text-muted-foreground" /> : <AppWindow className="size-4 text-muted-foreground" />}
                       {app.name}
-                      {app.system && <Badge variant="secondary" title="Platform-managed: auto-granted to admins, cannot be edited or deleted"><Lock className="size-3" /> System</Badge>}
-                      {app.requiredPolicyName && <Badge variant="default" title="Sign-on policy required for all users">🔒 {app.requiredPolicyName}</Badge>}
+                      {app.system && <Badge variant="secondary" title={t("applicationsSystemTitle")}><Lock className="size-3" /> {t("badgeSystem")}</Badge>}
+                      {app.requiredPolicyName && <Badge variant="default" title={t("applicationsPolicyRequiredTitle")}>🔒 {app.requiredPolicyName}</Badge>}
                     </span>
                   </TableCell>
                   <TableCell><Badge variant="muted">{app.type}</Badge></TableCell>
                   <TableCell className="max-w-xs truncate font-mono text-xs text-muted-foreground">{app.launchUrl ?? "—"}</TableCell>
                   <TableCell className="text-right">
                     {app.system
-                      ? <Button variant="outline" size="sm" onClick={openSettings}><Settings /> Portal settings</Button>
-                      : <Button variant="outline" size="sm" onClick={() => manage(app)}><UsersIcon /> Manage access</Button>}
+                      ? <Button variant="outline" size="sm" onClick={openSettings}><Settings /> {t("applicationsPortalSettings")}</Button>
+                      : <Button variant="outline" size="sm" onClick={() => manage(app)}><UsersIcon /> {t("applicationsManageAccess")}</Button>}
                   </TableCell>
                 </TableRow>
               ))}
@@ -162,36 +162,34 @@ export default function Applications() {
       <Dialog open={!!active} onOpenChange={(o) => { if (!o) setActive(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Manage access — {active?.name}</DialogTitle>
-            <DialogDescription>Users and groups assigned here can launch this app from their portal.</DialogDescription>
+            <DialogTitle>{t("applicationsManageTitle", { name: active?.name ?? "" })}</DialogTitle>
+            <DialogDescription>{t("applicationsManageDescription")}</DialogDescription>
           </DialogHeader>
 
           {formError && <Alert variant="destructive"><AlertDescription>{formError}</AlertDescription></Alert>}
 
           <div className="space-y-2 rounded-md border bg-muted/30 p-3">
-            <Label>Sign-on policy <span className="text-muted-foreground">(required for everyone accessing this app)</span></Label>
+            <Label>{t("applicationsSignOnPolicy")} <span className="text-muted-foreground">{t("applicationsSignOnPolicyHint")}</span></Label>
             <div className="flex gap-2">
               <Select value={appPolicyId} onChange={(e) => setAppPolicyId(e.target.value)} className="flex-1">
-                <option value="">No app policy (base login only)</option>
+                <option value="">{t("applicationsNoAppPolicy")}</option>
                 {appOnlyPolicies.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </Select>
-              <Button variant="outline" onClick={saveAppPolicy}>Save</Button>
+              <Button variant="outline" onClick={saveAppPolicy}>{t("save")}</Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Every user opening this app must complete this policy's factors (step-up) — independent of the per-group/user
-              assignments below. Only <strong>app-only</strong> policies appear (create one in Authentication Policies with
-              “Use for login” <strong>off</strong>).
+              <Trans t={t} i18nKey="applicationsSignOnPolicyDetail" components={[<strong key="0" />, <strong key="1" />]} />
             </p>
           </div>
 
-          <Label className="pt-1">Per-user / group access</Label>
+          <Label className="pt-1">{t("applicationsPerUserGroupAccess")}</Label>
           <div className="rounded-md border">
             {assignments.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">No assignments yet.</p>
+              <p className="p-4 text-sm text-muted-foreground">{t("applicationsNoAssignments")}</p>
             ) : assignments.map((a) => (
               <div key={a.id} className="flex items-center justify-between border-b p-3 last:border-0">
                 <span className="flex flex-wrap items-center gap-2 text-sm">
-                  <Badge variant={a.subjectType === "USER" ? "outline" : "secondary"}>{a.subjectType === "USER" ? "User" : "Group"}</Badge>
+                  <Badge variant={a.subjectType === "USER" ? "outline" : "secondary"}>{a.subjectType === "USER" ? t("applicationsSubjectUser") : t("applicationsSubjectGroup")}</Badge>
                   {a.subjectName}
                   {a.requiredPolicyId && <Badge variant="default">+ {policyName(a.requiredPolicyId)}</Badge>}
                 </span>
@@ -201,29 +199,29 @@ export default function Applications() {
           </div>
 
           <div className="space-y-2">
-            <Label>Assign to</Label>
+            <Label>{t("applicationsAssignTo")}</Label>
             <div className="flex gap-2">
               <Select value={subjectType} className="w-32"
                       onChange={(e) => { setSubjectType(e.target.value as "USER" | "GROUP"); setSubjectId(""); setPickerKey((k) => k + 1); }}>
-                <option value="GROUP">Group</option><option value="USER">User</option>
+                <option value="GROUP">{t("applicationsSubjectGroup")}</option><option value="USER">{t("applicationsSubjectUser")}</option>
               </Select>
               <SearchSelect
                 resetKey={`${subjectType}:${pickerKey}`}
-                placeholder={subjectType === "GROUP" ? "Search groups…" : "Search users…"}
+                placeholder={subjectType === "GROUP" ? t("applicationsSearchGroups") : t("applicationsSearchUsers")}
                 fetcher={(q) => (subjectType === "GROUP" ? searchGroups(q) : searchUsers(q))}
                 onSelect={(s) => setSubjectId(s?.id ?? "")}
               />
             </div>
-            <Label>Extra authentication <span className="text-muted-foreground">(optional)</span></Label>
+            <Label>{t("applicationsExtraAuth")} <span className="text-muted-foreground">{t("applicationsOptional")}</span></Label>
             <div className="flex gap-2">
               <Select value={requiredPolicyId} onChange={(e) => setRequiredPolicyId(e.target.value)} className="flex-1">
-                <option value="">No extra authentication</option>
+                <option value="">{t("applicationsNoExtraAuth")}</option>
                 {appOnlyPolicies.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </Select>
-              <Button onClick={add} disabled={!subjectId}><UserPlus /> Add</Button>
+              <Button onClick={add} disabled={!subjectId}><UserPlus /> {t("add")}</Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Selecting a policy requires the assigned users to complete its factors (e.g. an extra passkey/TOTP) when launching this app.
+              {t("applicationsExtraAuthHint")}
             </p>
           </div>
         </DialogContent>
@@ -232,39 +230,36 @@ export default function Applications() {
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Lock className="size-4" /> Admin Portal security</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Lock className="size-4" /> {t("applicationsPortalSecurityTitle")}</DialogTitle>
             <DialogDescription>
-              Choose the <strong>session policy</strong> that governs the admin console. It supplies everything
-              the console enforces — idle/absolute timeouts, step-up freshness, the elevation token lifetime and
-              the console IP allowlist. Leave it unset to use the policy resolved for each admin.
-              Changes take effect on the next admin request.
+              <Trans t={t} i18nKey="applicationsPortalSecurityDescription" components={[<strong key="0" />]} />
             </DialogDescription>
           </DialogHeader>
 
           {settingsError && <Alert variant="destructive"><AlertDescription>{settingsError}</AlertDescription></Alert>}
-          {settingsSaved && <Alert variant="success"><AlertDescription>Saved.</AlertDescription></Alert>}
+          {settingsSaved && <Alert variant="success"><AlertDescription>{t("applicationsSaved")}</AlertDescription></Alert>}
 
           {settings ? (
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="console-policy">Session policy</Label>
+                <Label htmlFor="console-policy">{t("applicationsSessionPolicyLabel")}</Label>
                 <Select id="console-policy" value={settings.sessionPolicyId ?? ""}
                         onChange={(e) => setSettings({ sessionPolicyId: e.target.value || null })}>
-                  <option value="">Each admin&apos;s own policy</option>
+                  <option value="">{t("applicationsEachAdminPolicy")}</option>
                   {sessionPolicies.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Edit the elevation token lifetime and the IP allowlist on the chosen policy, under Session policies.
+                  {t("applicationsPortalPolicyHint")}
                 </p>
               </div>
             </div>
-          ) : !settingsError ? <p className="text-sm text-muted-foreground">Loading…</p> : null}
+          ) : !settingsError ? <p className="text-sm text-muted-foreground">{t("loading")}</p> : null}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSettingsOpen(false)}>Close</Button>
-            <Button onClick={saveSettings} disabled={!settings}>Save changes</Button>
+            <Button variant="outline" onClick={() => setSettingsOpen(false)}>{t("close")}</Button>
+            <Button onClick={saveSettings} disabled={!settings}>{t("saveChanges")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

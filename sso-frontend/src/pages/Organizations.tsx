@@ -8,6 +8,7 @@ import {
 import { setDrillIn } from "@/drillIn";
 import { usePaginated } from "@/usePaginated";
 import { errorMessage } from "@/api";
+import { formatDate } from "@/lib/format";
 import { Pagination } from "@/components/Pagination";
 import { PageHeader } from "@/components/PageHeader";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -41,7 +42,7 @@ const blankEditor: Editor = { id: null, slug: "", name: "", status: "ACTIVE", pa
  * roles, policies) is done by drilling into an org (SA-3), not here.
  */
 export default function Organizations() {
-  const { t } = useTranslation("states");
+  const { t, i18n } = useTranslation(["console", "states"]);
   const navigate = useNavigate();
   const confirmDelete = useDeleteConfirm();
   const { items: orgs, total, page, setPage, size, error: listError, reload } =
@@ -80,9 +81,8 @@ export default function Organizations() {
 
   async function remove(org: Organization) {
     await confirmDelete({
-      title: "Delete organization?",
-      description: `Tenant "${org.name}" (${org.slug}) and its memberships will be permanently removed. `
-        + "Users are global and are not deleted.",
+      title: t("organizationsDeleteTitle"),
+      description: t("organizationsDeleteDescription", { name: org.name, slug: org.slug }),
       path: `/api/admin/organizations/${org.id}`,
       onDeleted: reload,
     });
@@ -91,26 +91,26 @@ export default function Organizations() {
   return (
     <>
       <PageHeader
-        title="Organizations"
-        description="Tenants served by this identity provider. Create and manage organizations; drill into one to configure its users, roles, and policies."
-        actions={<Button onClick={openCreate}><Plus /> New organization</Button>}
+        title={t("organizationsTitle")}
+        description={t("organizationsDescription")}
+        actions={<Button onClick={openCreate}><Plus /> {t("organizationsNew")}</Button>}
       />
 
       <DataList
         data={orgs}
         error={listError}
         isEmpty={(items) => items.length === 0}
-        empty={<EmptyState icon={<Building2 className="size-8" />} title={t("organizationsEmptyTitle")}
-                           hint={t("organizationsEmptyHint")} />}
+        empty={<EmptyState icon={<Building2 className="size-8" />} title={t("states:organizationsEmptyTitle")}
+                           hint={t("states:organizationsEmptyHint")} />}
       >
         {(items) => (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Organization</TableHead>
-                <TableHead>Identifier</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Created</TableHead>
+                <TableHead>{t("organizationsColOrganization")}</TableHead>
+                <TableHead>{t("organizationsColIdentifier")}</TableHead>
+                <TableHead>{t("organizationsColStatus")}</TableHead>
+                <TableHead>{t("organizationsColCreated")}</TableHead>
                 <TableHead className="w-0" />
               </TableRow>
             </TableHeader>
@@ -125,34 +125,34 @@ export default function Organizations() {
                   <TableCell className="font-mono text-xs text-muted-foreground">{org.slug}</TableCell>
                   <TableCell>
                     <Badge variant={org.status === "ACTIVE" ? "success" : "destructive"}>
-                      {org.status === "ACTIVE" ? "Active" : "Suspended"}
+                      {org.status === "ACTIVE" ? t("organizationsActive") : t("organizationsSuspended")}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {new Date(org.createdAt).toLocaleDateString()}
+                    {formatDate(org.createdAt, i18n.language)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="icon" title="Analytics"
+                      <Button variant="ghost" size="icon" title={t("organizationsAnalytics")}
                               onClick={() => navigate(`/admin/organizations/${org.id}`)}>
                         <BarChart3 />
                       </Button>
-                      <Button variant="ghost" size="sm" title="Manage this organization"
+                      <Button variant="ghost" size="sm" title={t("organizationsManageTitle")}
                               disabled={org.status !== "ACTIVE"} onClick={() => manage(org)}>
-                        <LogIn /> Manage
+                        <LogIn /> {t("organizationsManage")}
                       </Button>
-                      <Button variant="ghost" size="icon" title="Edit" onClick={() =>
+                      <Button variant="ghost" size="icon" title={t("organizationsEdit")} onClick={() =>
                         openEdit({ id: org.id, slug: org.slug, name: org.name, status: org.status,
                           passwordlessLoginEnabled: org.passwordlessLoginEnabled })}>
                         <Pencil />
                       </Button>
                       <Button variant="ghost" size="icon"
-                              title={org.status === "ACTIVE" ? "Suspend" : "Activate"}
+                              title={org.status === "ACTIVE" ? t("organizationsSuspend") : t("organizationsActivate")}
                               onClick={() => toggleStatus(org)}>
                         {org.status === "ACTIVE" ? <Pause /> : <Play />}
                       </Button>
                       <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive"
-                              title="Delete" onClick={() => remove(org)}>
+                              title={t("organizationsDelete")} onClick={() => remove(org)}>
                         <Trash2 />
                       </Button>
                     </div>
@@ -168,11 +168,9 @@ export default function Organizations() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editor.id ? `Edit: ${editor.slug}` : "Create organization"}</DialogTitle>
+            <DialogTitle>{editor.id ? t("organizationsDialogEdit", { slug: editor.slug }) : t("organizationsDialogCreate")}</DialogTitle>
             <DialogDescription>
-              {editor.id
-                ? "The identifier is permanent; change the display name and sign-in options."
-                : "The identifier is what users enter first to sign in — lowercase, no spaces."}
+              {editor.id ? t("organizationsEditHint") : t("organizationsCreateHint")}
             </DialogDescription>
           </DialogHeader>
 
@@ -181,21 +179,21 @@ export default function Organizations() {
           <form onSubmit={save} className="space-y-4">
             {!editor.id && (
               <div className="space-y-2">
-                <Label htmlFor="org-slug">Identifier</Label>
+                <Label htmlFor="org-slug">{t("organizationsIdentifierLabel")}</Label>
                 <Input id="org-slug" value={editor.slug} required autoFocus
                        autoCapitalize="none" autoCorrect="off" spellCheck={false}
                        placeholder="acme" onChange={(e) => set({ slug: e.target.value })} />
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="org-name">Display name</Label>
+              <Label htmlFor="org-name">{t("organizationsNameLabel")}</Label>
               <Input id="org-name" value={editor.name} required autoFocus={!!editor.id}
                      placeholder="Acme, Inc." onChange={(e) => set({ name: e.target.value })} />
             </div>
             {editor.id && (
               <Toggle
-                label="Passwordless passkey sign-in"
-                hint="Let this tenant's members sign in with a passkey as the first factor (no password)."
+                label={t("organizationsPasswordlessLabel")}
+                hint={t("organizationsPasswordlessHint")}
                 checked={editor.passwordlessLoginEnabled}
                 onChange={(v) => set({ passwordlessLoginEnabled: v })}
               />
@@ -203,8 +201,8 @@ export default function Organizations() {
 
             <DialogFooter>
               <Button type="button" variant="outline"
-                      onClick={() => { setEditor(blankEditor); setOpen(false); }}>Cancel</Button>
-              <Button type="submit">{editor.id ? "Save changes" : "Create organization"}</Button>
+                      onClick={() => { setEditor(blankEditor); setOpen(false); }}>{t("cancel")}</Button>
+              <Button type="submit">{editor.id ? t("saveChanges") : t("organizationsCreateOrg")}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

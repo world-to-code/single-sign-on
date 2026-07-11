@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { Coins, KeyRound } from "lucide-react";
 import { apiPost, errorMessage } from "../api";
 import { PageHeader } from "@/components/PageHeader";
@@ -15,6 +16,7 @@ interface ScimTokenIssued {
 }
 
 export default function ScimTokens() {
+  const { t } = useTranslation("console");
   const [description, setDescription] = useState("");
   const [ttlDays, setTtlDays] = useState("");
   const [issued, setIssued] = useState<ScimTokenIssued | null>(null);
@@ -38,43 +40,43 @@ export default function ScimTokens() {
   return (
     <>
       <PageHeader
-        title="SCIM Tokens"
-        description="Issue bearer tokens for external systems to provision users and groups over SCIM 2.0."
+        title={t("scimTitle")}
+        description={t("scimDescription")}
       />
 
       <div className="grid gap-6 lg:max-w-2xl">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Coins className="size-4 text-primary" /> Issue SCIM bearer token
+              <Coins className="size-4 text-primary" /> {t("scimIssueTitle")}
             </CardTitle>
-            <CardDescription>The plaintext token is shown only once at creation time.</CardDescription>
+            <CardDescription>{t("scimIssueDescription")}</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={submit} className="grid gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="description">Description</Label>
+                <Label htmlFor="description">{t("scimDescLabel")}</Label>
                 <Input
                   id="description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="e.g. Workday provisioning"
+                  placeholder={t("scimDescPlaceholder")}
                   required
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="ttlDays">TTL (days)</Label>
+                <Label htmlFor="ttlDays">{t("scimTtlLabel")}</Label>
                 <Input
                   id="ttlDays"
                   value={ttlDays}
                   onChange={(e) => setTtlDays(e.target.value)}
                   inputMode="numeric"
-                  placeholder="Blank = no expiry"
+                  placeholder={t("scimTtlPlaceholder")}
                 />
               </div>
               <div>
                 <Button type="submit">
-                  <KeyRound /> Issue token
+                  <KeyRound /> {t("scimIssueButton")}
                 </Button>
               </div>
             </form>
@@ -83,16 +85,17 @@ export default function ScimTokens() {
 
         {error && (
           <Alert variant="destructive">
-            <AlertDescription>Error: {error}</AlertDescription>
+            <AlertDescription>{t("scimErrorPrefix", { message: error })}</AlertDescription>
           </Alert>
         )}
 
         {issued && (
           <Alert variant="success">
-            <AlertTitle>Token issued — copy it now</AlertTitle>
+            <AlertTitle>{t("scimIssuedTitle")}</AlertTitle>
             <AlertDescription>
               <p className="mb-2 text-muted-foreground">
-                This token for <strong>{issued.description}</strong> is shown once and cannot be retrieved later.
+                <Trans t={t} i18nKey="scimIssuedBody" values={{ description: issued.description }}
+                       components={[<strong key="0" />]} />
               </p>
               <code className="block break-all rounded-md bg-muted px-3 py-2 font-mono text-xs text-foreground">
                 {issued.token}

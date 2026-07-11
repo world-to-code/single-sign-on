@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { CheckCircle2, Loader2, Mail } from "lucide-react";
 import { errorMessage } from "@/api";
 import { applyForWorkspace } from "@/onboarding";
@@ -23,6 +24,7 @@ const blank = {
  * tells them to check their email. A taken subdomain returns 409 and is surfaced inline so they can pick another.
  */
 export default function Signup() {
+  const { t } = useTranslation("auth");
   const [form, setForm] = useState({ ...blank });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -33,7 +35,7 @@ export default function Signup() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!form.slug.trim() || !form.companyName.trim() || !form.adminName.trim() || !form.adminEmail.trim()) {
-      setError("A subdomain, company name, and the admin's name and email are required.");
+      setError(t("signupRequiredFields"));
       return;
     }
     setError(null);
@@ -57,18 +59,16 @@ export default function Signup() {
 
   if (done) {
     return (
-      <AuthLayout title="Check your email"
-                  footer={<a href="/login" className="font-medium text-primary hover:underline">Go to sign in</a>}>
+      <AuthLayout title={t("signupCheckEmail")}
+                  footer={<a href="/login" className="font-medium text-primary hover:underline">{t("goToSignIn")}</a>}>
         <div className="space-y-4 text-center">
           <Mail className="mx-auto size-10 text-primary" />
           <p className="text-sm text-muted-foreground">
-            We've emailed <span className="font-medium text-foreground">{done.email}</span> a link to verify
-            your address and finish creating{" "}
-            <span className="font-medium text-foreground">{done.slug}</span>. Open it to set your admin
-            password — your workspace is created once you do.
+            <Trans t={t} i18nKey="signupEmailedBody" values={{ email: done.email, slug: done.slug }}
+                   components={{ b: <span className="font-medium text-foreground" /> }} />
           </p>
           <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-            <CheckCircle2 className="size-3.5 text-primary" /> No approval needed — just confirm your email.
+            <CheckCircle2 className="size-3.5 text-primary" /> {t("signupNoApproval")}
           </div>
         </div>
       </AuthLayout>
@@ -77,63 +77,64 @@ export default function Signup() {
 
   return (
     <AuthLayout
-      title="Get started"
-      description="Create your organization's workspace. We'll email your admin a link to verify and finish setup."
+      title={t("signupTitle")}
+      description={t("signupDescription")}
       onBack={() => window.location.assign("/")}
-      backLabel="Home"
-      footer={<>Already have a workspace? <a href="/login" className="font-medium text-primary hover:underline">Sign in</a></>}
+      backLabel={t("home")}
+      footer={<Trans t={t} i18nKey="signupHaveWorkspace"
+                     components={{ a: <a href="/login" className="font-medium text-primary hover:underline" /> }} />}
     >
       {error && <Alert variant="destructive" className="mb-4"><AlertDescription>{error}</AlertDescription></Alert>}
 
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="slug">Company subdomain</Label>
+          <Label htmlFor="slug">{t("signupSubdomain")}</Label>
           <Input id="slug" value={form.slug} required autoFocus
                  autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="acme"
                  onChange={(e) => set({ slug: e.target.value.toLowerCase() })} />
           <p className="text-xs text-muted-foreground">
-            Lowercase letters, digits, and hyphens. Your first workspace will live at{" "}
-            <span className="font-mono">main.{form.slug || "acme"}</span> — add more later.
+            <Trans t={t} i18nKey="signupSubdomainHint" values={{ slug: form.slug || "acme" }}
+                   components={{ b: <span className="font-mono" /> }} />
           </p>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="company">Company name</Label>
+          <Label htmlFor="company">{t("signupCompanyName")}</Label>
           <Input id="company" value={form.companyName} required placeholder="Acme, Inc."
                  onChange={(e) => set({ companyName: e.target.value })} />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="size">Company size <span className="text-muted-foreground">(optional)</span></Label>
+          <Label htmlFor="size">{t("signupCompanySize")} <span className="text-muted-foreground">{t("optional")}</span></Label>
           <Select id="size" value={form.companySize} onChange={(e) => set({ companySize: e.target.value })}>
-            <option value="">Prefer not to say</option>
-            {SIZES.map((s) => <option key={s} value={s}>{s} employees</option>)}
+            <option value="">{t("signupPreferNotToSay")}</option>
+            {SIZES.map((s) => <option key={s} value={s}>{t("signupEmployees", { range: s })}</option>)}
           </Select>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
-            <Label htmlFor="country">Country <span className="text-muted-foreground">(optional)</span></Label>
+            <Label htmlFor="country">{t("signupCountry")} <span className="text-muted-foreground">{t("optional")}</span></Label>
             <Input id="country" value={form.companyCountry} onChange={(e) => set({ companyCountry: e.target.value })} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="industry">Industry <span className="text-muted-foreground">(optional)</span></Label>
+            <Label htmlFor="industry">{t("signupIndustry")} <span className="text-muted-foreground">{t("optional")}</span></Label>
             <Input id="industry" value={form.companyIndustry} onChange={(e) => set({ companyIndustry: e.target.value })} />
           </div>
         </div>
 
         <div className="space-y-2 border-t pt-4">
-          <Label htmlFor="adminName">Administrator name</Label>
+          <Label htmlFor="adminName">{t("signupAdminName")}</Label>
           <Input id="adminName" value={form.adminName} required placeholder="Ada Lovelace"
                  onChange={(e) => set({ adminName: e.target.value })} />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="adminEmail">Work email</Label>
+          <Label htmlFor="adminEmail">{t("signupWorkEmail")}</Label>
           <Input id="adminEmail" type="email" value={form.adminEmail} required placeholder="ada@acme.com"
                  onChange={(e) => set({ adminEmail: e.target.value })} />
-          <p className="text-xs text-muted-foreground">The admin gets an email to set their password and manage the workspace.</p>
+          <p className="text-xs text-muted-foreground">{t("signupAdminEmailHint")}</p>
         </div>
 
         <Button type="submit" className="w-full" disabled={busy}>
           {busy && <Loader2 className="animate-spin" />}
-          Create workspace
+          {t("createWorkspace")}
         </Button>
       </form>
     </AuthLayout>

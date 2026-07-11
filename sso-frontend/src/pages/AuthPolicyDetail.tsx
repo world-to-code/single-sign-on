@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiGet, apiPost, apiPut, errorMessage, type Page } from "../api";
 import { EditorPage } from "@/components/EditorPage";
@@ -54,25 +56,26 @@ function toEditor(p: Policy): Editor {
   };
 }
 
-const onOff = (b: boolean) => (b ? "On" : "Off");
-const factorCount = (steps: string[][]) => `${steps.reduce((n, s) => n + s.length, 0)} factors`;
-
 /** The save bar names the diff against the loaded policy — old value struck through (DESIGN.md §4). */
-function diffEntries(base: Editor, cur: Editor): DiffEntry[] {
+function diffEntries(base: Editor, cur: Editor, t: TFunction<"console">): DiffEntry[] {
+  const onOff = (b: boolean) => (b ? t("authPolicyDetailOn") : t("authPolicyDetailOff"));
+  const factorCount = (steps: string[][]) => t("authPolicyDetailFactors", { count: steps.reduce((n, s) => n + s.length, 0) });
+  const min = (v: string) => t("authPolicyDetailReauthMin", { minutes: v });
   const out: DiffEntry[] = [];
-  if (base.priority !== cur.priority) out.push({ label: "Priority", from: base.priority, to: cur.priority });
-  if (base.enabled !== cur.enabled) out.push({ label: "Status", from: base.enabled ? "Enabled" : "Disabled", to: cur.enabled ? "Enabled" : "Disabled" });
-  if (base.appliesToLogin !== cur.appliesToLogin) out.push({ label: "Use for login", from: onOff(base.appliesToLogin), to: onOff(cur.appliesToLogin) });
-  if (base.allowEnrollmentAtLogin !== cur.allowEnrollmentAtLogin) out.push({ label: "Enroll at login", from: onOff(base.allowEnrollmentAtLogin), to: onOff(cur.allowEnrollmentAtLogin) });
-  if (base.stepUpFreshnessMinutes !== cur.stepUpFreshnessMinutes) out.push({ label: "Re-auth window", from: `${base.stepUpFreshnessMinutes} min`, to: `${cur.stepUpFreshnessMinutes} min` });
-  if (JSON.stringify(base.steps) !== JSON.stringify(cur.steps)) out.push({ label: "Sign-on chain", from: factorCount(base.steps), to: factorCount(cur.steps) });
-  if (JSON.stringify(base.roleIds) !== JSON.stringify(cur.roleIds)) out.push({ label: "Roles", from: base.roleIds.length, to: cur.roleIds.length });
-  if (JSON.stringify(base.userIds) !== JSON.stringify(cur.userIds)) out.push({ label: "Users", from: base.userIds.length, to: cur.userIds.length });
+  if (base.priority !== cur.priority) out.push({ label: t("authPolicyDetailDiffPriority"), from: base.priority, to: cur.priority });
+  if (base.enabled !== cur.enabled) out.push({ label: t("authPolicyDetailDiffStatus"), from: base.enabled ? t("badgeEnabled") : t("badgeDisabled"), to: cur.enabled ? t("badgeEnabled") : t("badgeDisabled") });
+  if (base.appliesToLogin !== cur.appliesToLogin) out.push({ label: t("authPolicyDetailDiffUseForLogin"), from: onOff(base.appliesToLogin), to: onOff(cur.appliesToLogin) });
+  if (base.allowEnrollmentAtLogin !== cur.allowEnrollmentAtLogin) out.push({ label: t("authPolicyDetailDiffEnrollAtLogin"), from: onOff(base.allowEnrollmentAtLogin), to: onOff(cur.allowEnrollmentAtLogin) });
+  if (base.stepUpFreshnessMinutes !== cur.stepUpFreshnessMinutes) out.push({ label: t("authPolicyDetailDiffReauthWindow"), from: min(base.stepUpFreshnessMinutes), to: min(cur.stepUpFreshnessMinutes) });
+  if (JSON.stringify(base.steps) !== JSON.stringify(cur.steps)) out.push({ label: t("authPolicyDetailDiffChain"), from: factorCount(base.steps), to: factorCount(cur.steps) });
+  if (JSON.stringify(base.roleIds) !== JSON.stringify(cur.roleIds)) out.push({ label: t("authPolicyDetailDiffRoles"), from: base.roleIds.length, to: cur.roleIds.length });
+  if (JSON.stringify(base.userIds) !== JSON.stringify(cur.userIds)) out.push({ label: t("authPolicyDetailDiffUsers"), from: base.userIds.length, to: cur.userIds.length });
   return out;
 }
 
 /** Okta-style full-page create/edit for an authentication policy (routes `auth-policies/new` + `:id`). */
 export default function AuthPolicyDetail() {
+  const { t } = useTranslation("console");
   const { id } = useParams();
   const navigate = useNavigate();
   const isNew = !id;
@@ -91,7 +94,7 @@ export default function AuthPolicyDetail() {
       .then((p) => {
         const found = p.items.find((x) => x.id === id);
         if (found) { const ed = toEditor(found); setEditor(ed); setBaseline(ed); }
-        else setError("Policy not found.");
+        else setError(t("authPolicyDetailNotFound"));
       })
       .catch((e) => setError(errorMessage(e)));
   }, [id, isNew]);
@@ -103,8 +106,8 @@ export default function AuthPolicyDetail() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!editor) return;
-    if (!editor.name.trim()) { setError("Name is required."); return; }
-    if (editor.steps.every((s) => s.length === 0)) { setError("Add at least one sign-on step."); return; }
+    if (!editor.name.trim()) { setError(t("authPolicyDetailNameRequired")); return; }
+    if (editor.steps.every((s) => s.length === 0)) { setError(t("authPolicyDetailAddStep")); return; }
     setError(null); setBusy(true);
     const body = {
       name: editor.name,
@@ -127,35 +130,35 @@ export default function AuthPolicyDetail() {
     }
   }
 
-  const crumbName = isNew ? "New policy" : (editor?.name || "Edit");
+  const crumbName = isNew ? t("authPolicyDetailNewCrumb") : (editor?.name || t("authPolicyDetailEditCrumb"));
   // Edits raise a diff bar; creation keeps the always-enabled create bar (opt-in — pass diff only when editing).
-  const diff = !isNew && editor && baseline ? diffEntries(baseline, editor) : undefined;
+  const diff = !isNew && editor && baseline ? diffEntries(baseline, editor, t) : undefined;
 
   return (
     <EditorPage
-      backTo="/admin/auth-policies" backLabel="Authentication Policies" crumb={crumbName}
-      title={isNew ? "New authentication policy" : (editor?.name ?? "…")}
-      description="Define the ordered factor chain, whether it governs login, and where it applies."
+      backTo="/admin/auth-policies" backLabel={t("authPolicyDetailBack")} crumb={crumbName}
+      title={isNew ? t("authPolicyDetailNewTitle") : (editor?.name ?? "…")}
+      description={t("authPolicyDetailDescription")}
       error={error} formId="auth-policy-form" onSubmit={submit} busy={busy}
-      submitLabel={isNew ? "Create policy" : "Save changes"}
+      submitLabel={isNew ? t("authPolicyDetailCreate") : t("saveChanges")}
       onCancel={() => navigate("/admin/auth-policies")} loading={!editor} diff={diff}
     >
       {editor && (
         <>
-          <SettingsSection title="Basics" description="Identify the policy and set how it ranks against others.">
-            <Field label="Name" hint={editor.id ? "The name can't be changed after creation." : undefined}>
+          <SettingsSection title={t("authPolicyDetailBasics")} description={t("authPolicyDetailBasicsDesc")}>
+            <Field label={t("authPolicyDetailNameLabel")} hint={editor.id ? t("authPolicyDetailNameHint") : undefined}>
               <Input value={editor.name} disabled={!!editor.id} onChange={(e) => set({ name: e.target.value })} />
             </Field>
             <div className="grid gap-5 sm:grid-cols-2">
-              <Field label="Priority" hint="Higher wins when several policies match a user.">
+              <Field label={t("authPolicyDetailPriority")} hint={t("authPolicyDetailPriorityHint")}>
                 <Input value={editor.priority} inputMode="numeric" onChange={(e) => set({ priority: e.target.value })} />
               </Field>
-              <Toggle label="Enabled" hint="Disabled policies are ignored during resolution."
+              <Toggle label={t("authPolicyDetailEnabled")} hint={t("authPolicyDetailEnabledHint")}
                       checked={editor.enabled} onChange={(v) => set({ enabled: v })} />
             </div>
           </SettingsSection>
 
-          <SettingsSection title="Sign-on chain" description="The factors a user must complete, verified step by step.">
+          <SettingsSection title={t("authPolicyDetailChain")} description={t("authPolicyDetailChainDesc")}>
             {/* editorgrid: preview sits beside the builder, dropping below it at ≤1180px (DESIGN.md §3). */}
             <div className="grid grid-cols-1 gap-5 min-[1180px]:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
               <StepsBuilder steps={editor.steps} onChange={(steps) => set({ steps })} />
@@ -163,33 +166,33 @@ export default function AuthPolicyDetail() {
             </div>
           </SettingsSection>
 
-          <SettingsSection title="Behavior" description="How this policy is used and whether users can enroll factors while signing in.">
-            <Toggle label="Use for login (sign-on policy)"
-                    hint="Off = app-only policy, used only for per-app extra authentication (never for login)."
+          <SettingsSection title={t("authPolicyDetailBehavior")} description={t("authPolicyDetailBehaviorDesc")}>
+            <Toggle label={t("authPolicyDetailUseForLogin")}
+                    hint={t("authPolicyDetailUseForLoginHint")}
                     checked={editor.appliesToLogin} onChange={(v) => set({ appliesToLogin: v })} />
             {!editor.appliesToLogin && (
-              <Field label="Re-authentication window (minutes)"
-                     hint="Attached to an app, the user steps up on entry; it stays valid this long before challenging again. Login alone never satisfies it.">
+              <Field label={t("authPolicyDetailReauthWindow")}
+                     hint={t("authPolicyDetailReauthWindowHint")}>
                 <Input type="number" min={1} className="max-w-40" value={editor.stepUpFreshnessMinutes}
                        onChange={(e) => set({ stepUpFreshnessMinutes: e.target.value })} />
               </Field>
             )}
-            <Toggle label="Allow enrollment at login"
-                    hint="On: a user missing a required factor sets it up (TOTP QR / passkey) during login. Off: login only verifies existing factors (admin must pre-provision)."
+            <Toggle label={t("authPolicyDetailAllowEnroll")}
+                    hint={t("authPolicyDetailAllowEnrollHint")}
                     checked={editor.allowEnrollmentAtLogin} onChange={(v) => set({ allowEnrollmentAtLogin: v })} />
           </SettingsSection>
 
-          <SettingsSection title="Applies to"
-                           description="Target roles and/or users. Leave both empty to apply this policy to everyone (global).">
+          <SettingsSection title={t("authPolicyDetailAppliesTo")}
+                           description={t("authPolicyDetailAppliesToDesc")}>
             <div className="space-y-2">
-              <Label>Roles</Label>
+              <Label>{t("authPolicyDetailRoles")}</Label>
               <CheckboxGroup options={roles.map((r) => ({ value: r.id, label: r.name }))}
-                             selected={editor.roleIds} onToggle={toggleRole} emptyText="No roles" />
+                             selected={editor.roleIds} onToggle={toggleRole} emptyText={t("authPolicyDetailNoRoles")} />
             </div>
             <div className="space-y-2">
-              <Label>Users</Label>
+              <Label>{t("authPolicyDetailUsers")}</Label>
               <UserMultiSelect selected={editor.userIds} onChange={(ids) => set({ userIds: ids })}
-                               placeholder="Search users to target…" />
+                               placeholder={t("authPolicyDetailUsersPlaceholder")} />
             </div>
           </SettingsSection>
         </>

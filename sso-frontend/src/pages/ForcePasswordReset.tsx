@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { Loader2 } from "lucide-react";
 import { ApiError, errorMessage } from "../api";
 import { changePassword, logout, getSession } from "../auth";
@@ -17,6 +18,7 @@ import { Label } from "../components/ui/label";
  */
 export default function ForcePasswordReset({ session, onDone }:
   { session: SessionView; onDone: (s: SessionView) => void }) {
+  const { t } = useTranslation("auth");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -26,18 +28,18 @@ export default function ForcePasswordReset({ session, onDone }:
     event.preventDefault();
     setError(null);
     if (password.length < 8) {
-      setError("Choose a password of at least 8 characters.");
+      setError(t("forceResetTooShort"));
       return;
     }
     if (password !== confirm) {
-      setError("The passwords don't match.");
+      setError(t("passwordsMismatch"));
       return;
     }
     setBusy(true);
     try {
       onDone(await changePassword(password));
     } catch (e) {
-      setError(e instanceof ApiError ? errorMessage(e) : "We couldn't update your password. Please try again.");
+      setError(e instanceof ApiError ? errorMessage(e) : t("forceResetFailed"));
       setBusy(false);
     }
   }
@@ -50,11 +52,11 @@ export default function ForcePasswordReset({ session, onDone }:
 
   return (
     <AuthLayout
-      title="Set a new password"
-      description="Your account was created with a temporary password. Choose your own to finish signing in."
+      title={t("forceResetTitle")}
+      description={t("forceResetDescription")}
       org={session.org}
       onBack={cancel}
-      backLabel="Cancel and sign out"
+      backLabel={t("forceResetCancel")}
     >
       {error && (
         <Alert variant="destructive" className="mb-4">
@@ -64,19 +66,19 @@ export default function ForcePasswordReset({ session, onDone }:
 
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="new-password">New password</Label>
+          <Label htmlFor="new-password">{t("newPassword")}</Label>
           <Input id="new-password" type="password" value={password} autoFocus required
                  autoComplete="new-password" minLength={8}
                  onChange={(e) => setPassword(e.target.value)} />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="confirm-password">Confirm password</Label>
+          <Label htmlFor="confirm-password">{t("confirmPassword")}</Label>
           <Input id="confirm-password" type="password" value={confirm} required
                  autoComplete="new-password" onChange={(e) => setConfirm(e.target.value)} />
         </div>
         <Button type="submit" className="w-full" disabled={busy}>
           {busy && <Loader2 className="animate-spin" />}
-          Set password and continue
+          {t("forceResetSubmit")}
         </Button>
       </form>
     </AuthLayout>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Fingerprint, Loader2, Lock, Mail } from "lucide-react";
 import { getStepUp } from "../portal";
 import type { StepUpInfo } from "../portal";
@@ -17,6 +18,7 @@ import { Input } from "../components/ui/input";
  * (which grants it into the session) and resume the original request.
  */
 export default function AppStepUp() {
+  const { t } = useTranslation("auth");
   const [info, setInfo] = useState<StepUpInfo | null>(null);
   const {
     factor, setFactor, code, setCode, password, setPassword, emailSent,
@@ -32,42 +34,42 @@ export default function AppStepUp() {
     setFactor((f) => (i.pendingFactors.includes(f) ? f : i.pendingFactors[0]));
   }, [setFactor]);
 
-  useEffect(() => { refresh().catch(() => setError("Could not load the required verification.")); }, [refresh, setError]);
+  useEffect(() => { refresh().catch(() => setError(t("stepUpLoadFailed"))); }, [refresh, setError, t]);
 
   if (!info) {
-    return <AuthLayout step="Additional verification" title="Checking requirements…"><div className="flex justify-center py-4"><Loader2 className="animate-spin" /></div></AuthLayout>;
+    return <AuthLayout step={t("stepUpStep")} title={t("stepUpChecking")}><div className="flex justify-center py-4"><Loader2 className="animate-spin" /></div></AuthLayout>;
   }
 
   const Icon = factorMeta(factor).icon;
   return (
-    <AuthLayout step="Additional verification" title="Extra security required"
-                description="This application requires an additional verification step before you can continue.">
+    <AuthLayout step={t("stepUpStep")} title={t("stepUpTitle")}
+                description={t("stepUpDescription")}>
       <FactorChooser factors={info.pendingFactors} value={factor} onSelect={setFactor} />
 
       {error && <Alert variant="destructive" className="mb-4"><AlertDescription>{error}</AlertDescription></Alert>}
 
       {factor === "FIDO2" && (
         <Button type="button" className="w-full" onClick={fido2} disabled={busy || !webAuthnSupported()}>
-          {busy ? <Loader2 className="animate-spin" /> : <Fingerprint />} Use your passkey
+          {busy ? <Loader2 className="animate-spin" /> : <Fingerprint />} {t("usePasskey")}
         </Button>
       )}
       {factor === "PASSWORD" && (
         <form onSubmit={submitPassword} className="space-y-3">
-          <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" autoFocus required />
-          <Button type="submit" className="w-full" disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : <Lock />} Verify</Button>
+          <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t("passwordPlaceholder")} autoFocus required />
+          <Button type="submit" className="w-full" disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : <Lock />} {t("verify")}</Button>
         </form>
       )}
       {factor === "EMAIL" && !emailSent && (
-        <Button type="button" className="w-full" onClick={sendEmail}><Mail /> Email me a code</Button>
+        <Button type="button" className="w-full" onClick={sendEmail}><Mail /> {t("emailMeCode")}</Button>
       )}
       {(factor === "TOTP" || (factor === "EMAIL" && emailSent)) && (
         <form onSubmit={submitCode} className="space-y-3">
           <OtpInput value={code} onChange={(e) => setCode(e.target.value)} />
-          <Button type="submit" className="w-full" disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : <Icon />} Verify</Button>
+          <Button type="submit" className="w-full" disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : <Icon />} {t("verify")}</Button>
         </form>
       )}
 
-      <a href={info.returnUrl || "/"} className="mt-4 block text-center text-sm text-muted-foreground hover:text-foreground">Cancel</a>
+      <a href={info.returnUrl || "/"} className="mt-4 block text-center text-sm text-muted-foreground hover:text-foreground">{t("cancel")}</a>
     </AuthLayout>
   );
 }

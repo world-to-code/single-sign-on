@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { ArrowRight, Building2, Loader2 } from "lucide-react";
 import { ApiError } from "../api";
 import { goHome, organization } from "../auth";
@@ -25,6 +26,7 @@ function tenantOrigin(slug: string): string {
  * offered their last-used organization for a one-tap continue.
  */
 export default function OrgSelect() {
+  const { t } = useTranslation("auth");
   const remembered = lastOrg();
   // Start on the one-tap card when we remember an org; otherwise ask for the slug.
   const [manual, setManual] = useState(!remembered);
@@ -45,9 +47,7 @@ export default function OrgSelect() {
       window.location.assign(tenantOrigin(trimmed) + "/");
     } catch (e) {
       if (e instanceof ApiError) {
-        setError(e.status === 404
-          ? "We couldn't find that organization. Check the identifier with your administrator."
-          : "Could not continue. Please try again.");
+        setError(e.status === 404 ? t("orgNotFound") : t("orgContinueFailed"));
       }
       setManual(true); // let the user correct the slug
       setBusy(false);
@@ -60,8 +60,8 @@ export default function OrgSelect() {
   }
 
   return (
-    <AuthLayout title="Sign in" description="Enter your organization to continue."
-                onBack={goHome} backLabel="Home">
+    <AuthLayout title={t("loginTitle")} description={t("orgSelectDescription")}
+                onBack={goHome} backLabel={t("home")}>
       {error && (
         <Alert variant="destructive" className="mb-4">
           <AlertDescription>{error}</AlertDescription>
@@ -81,7 +81,7 @@ export default function OrgSelect() {
             </span>
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-medium">{remembered}</span>
-              <span className="block text-xs text-muted-foreground">Continue to this organization</span>
+              <span className="block text-xs text-muted-foreground">{t("orgContinueToThis")}</span>
             </span>
             {busy
               ? <Loader2 className="size-4 shrink-0 animate-spin" />
@@ -89,26 +89,26 @@ export default function OrgSelect() {
           </button>
           <Button type="button" variant="ghost" className="w-full" disabled={busy}
                   onClick={() => { setSlug(""); setManual(true); }}>
-            Use a different organization
+            {t("useDifferentOrg")}
           </Button>
         </div>
       ) : (
         <form onSubmit={submit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="org">Organization</Label>
+            <Label htmlFor="org">{t("orgLabel")}</Label>
             <Input id="org" type="text" value={slug} autoFocus required
                    autoCapitalize="none" autoCorrect="off" spellCheck={false}
-                   placeholder="your-org" onChange={(e) => setSlug(e.target.value)} />
+                   placeholder={t("orgPlaceholder")} onChange={(e) => setSlug(e.target.value)} />
           </div>
           <Button type="submit" className="w-full" disabled={busy}>
             {busy && <Loader2 className="animate-spin" />}
-            Continue
+            {t("continue")}
           </Button>
         </form>
       )}
 
       <p className="mt-3 text-xs text-muted-foreground">
-        Don't know your organization identifier? Contact your administrator.
+        {t("orgSelectHint")}
       </p>
     </AuthLayout>
   );

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
 import { apiGet, type Page } from "../api";
@@ -27,7 +27,7 @@ interface Policy {
 interface Role { id: string; name: string }
 
 export default function AuthPolicies() {
-  const { t } = useTranslation("states");
+  const { t } = useTranslation(["console", "states"]);
   const confirmDelete = useDeleteConfirm();
   const [policies, setPolicies] = useState<Policy[] | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -53,8 +53,8 @@ export default function AuthPolicies() {
 
   async function remove(p: Policy) {
     await confirmDelete({
-      title: "Delete policy?",
-      description: `"${p.name}" will be permanently removed.`,
+      title: t("authPoliciesDeleteTitle"),
+      description: t("authPoliciesDeleteDescription", { name: p.name }),
       path: `/api/admin/auth-policies/${p.id}`,
       onDeleted: reload,
     });
@@ -66,16 +66,14 @@ export default function AuthPolicies() {
   return (
     <>
       <PageHeader
-        title="Authentication Policies"
-        description="Factor chains applied per role or user — the highest-priority matching policy wins."
-        actions={<Button asChild><Link to="/admin/auth-policies/new"><Plus /> New policy</Link></Button>}
+        title={t("authPoliciesTitle")}
+        description={t("authPoliciesDescription")}
+        actions={<Button asChild><Link to="/admin/auth-policies/new"><Plus /> {t("authPoliciesNew")}</Link></Button>}
       />
 
       <Alert variant="info" className="mb-4">
         <AlertDescription>
-          The <strong>highest-priority</strong> matching policy wins. Assign a policy to roles/users to target them,
-          or <strong>leave the assignment empty to apply it to everyone</strong> (global). The built-in Default is the
-          lowest-priority fallback.
+          <Trans t={t} i18nKey="authPoliciesInfo" components={[<strong key="0" />, <strong key="1" />]} />
         </AlertDescription>
       </Alert>
 
@@ -83,18 +81,18 @@ export default function AuthPolicies() {
         data={policies}
         error={error}
         isEmpty={(items) => items.length === 0}
-        empty={<EmptyState title={t("authPoliciesEmptyTitle")} hint={t("authPoliciesEmptyHint")} />}
+        empty={<EmptyState title={t("states:authPoliciesEmptyTitle")} hint={t("states:authPoliciesEmptyHint")} />}
       >
         {(items) => (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Priority</TableHead>
-                <TableHead>Enabled</TableHead>
-                <TableHead>Chain</TableHead>
-                <TableHead>Roles</TableHead>
-                <TableHead>Users</TableHead>
+                <TableHead>{t("authPoliciesColName")}</TableHead>
+                <TableHead>{t("authPoliciesColPriority")}</TableHead>
+                <TableHead>{t("authPoliciesColEnabled")}</TableHead>
+                <TableHead>{t("authPoliciesColChain")}</TableHead>
+                <TableHead>{t("authPoliciesColRoles")}</TableHead>
+                <TableHead>{t("authPoliciesColUsers")}</TableHead>
                 <TableHead className="w-0" />
               </TableRow>
             </TableHeader>
@@ -105,22 +103,22 @@ export default function AuthPolicies() {
                     <div className="flex flex-wrap items-center gap-1.5">
                       {p.name}
                       {!p.appliesToLogin
-                        ? <Badge variant="outline">App-only</Badge>
+                        ? <Badge variant="outline">{t("authPoliciesAppOnly")}</Badge>
                         : (p.assignedRoleIds.length === 0 && p.assignedUserIds.length === 0)
-                          ? <Badge variant="default">Global</Badge> : null}
-                      {p.appliesToLogin && !p.allowEnrollmentAtLogin && <Badge variant="muted">No self-enroll</Badge>}
+                          ? <Badge variant="default">{t("badgeGlobal")}</Badge> : null}
+                      {p.appliesToLogin && !p.allowEnrollmentAtLogin && <Badge variant="muted">{t("authPoliciesNoSelfEnroll")}</Badge>}
                     </div>
                   </TableCell>
                   <TableCell><Badge variant="muted">{p.priority}</Badge></TableCell>
                   <TableCell>
-                    <Badge variant={p.enabled ? "success" : "muted"}>{p.enabled ? "Enabled" : "Disabled"}</Badge>
+                    <Badge variant={p.enabled ? "success" : "muted"}>{p.enabled ? t("badgeEnabled") : t("badgeDisabled")}</Badge>
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap items-center gap-1">
                       {p.steps.map((s, i) => (
                         <span key={i} className="flex items-center gap-1">
                           {i > 0 && <ChevronRight className="size-3 text-muted-foreground" />}
-                          <Badge variant="secondary">{s.join(" or ")}</Badge>
+                          <Badge variant="secondary">{s.join(` ${t("authPoliciesStepOr")} `)}</Badge>
                         </span>
                       ))}
                     </div>
@@ -134,7 +132,7 @@ export default function AuthPolicies() {
                         <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" onClick={() => remove(p)}><Trash2 /></Button>
                       </div>
                     ) : (
-                      <Badge variant="outline">Built-in</Badge>
+                      <Badge variant="outline">{t("badgeBuiltIn")}</Badge>
                     )}
                   </TableCell>
                 </TableRow>
@@ -144,7 +142,7 @@ export default function AuthPolicies() {
         )}
       </DataList>
 
-      <p className="mt-4 text-sm text-muted-foreground">Factors: PASSWORD, TOTP, EMAIL, FIDO2.</p>
+      <p className="mt-4 text-sm text-muted-foreground">{t("authPoliciesFactorsHint")}</p>
     </>
   );
 }

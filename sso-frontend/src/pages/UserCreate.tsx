@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { apiGet } from "@/api";
 import { createUser } from "@/users";
@@ -15,6 +16,7 @@ const blank = { username: "", email: "", displayName: "", password: "", roles: [
 
 /** Full-page create form for a directory user (route `users/new`), matching the Okta-style editor shell. */
 export default function UserCreate() {
+  const { t } = useTranslation("console");
   const navigate = useNavigate();
   const [form, setForm] = useState({ ...blank });
   const [roles, setRoles] = useState<Role[]>([]);
@@ -32,7 +34,7 @@ export default function UserCreate() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!form.username.trim() || !form.email.trim() || !form.password) {
-      setError("Username, email and a temporary password are required.");
+      setError(t("userCreateRequired"));
       return;
     }
     setError(null); setBusy(true);
@@ -53,33 +55,33 @@ export default function UserCreate() {
 
   return (
     <EditorPage
-      backTo="/admin/users" backLabel="Users" crumb="New user"
-      title="New user" description="New users complete email verification and TOTP enrollment on first sign-in."
-      error={error} formId="user-form" onSubmit={submit} busy={busy} submitLabel="Create user"
+      backTo="/admin/users" backLabel={t("userCreateBack")} crumb={t("userCreateCrumb")}
+      title={t("userCreateTitle")} description={t("userCreateDescription")}
+      error={error} formId="user-form" onSubmit={submit} busy={busy} submitLabel={t("userCreateSubmit")}
       onCancel={() => navigate("/admin/users")}
     >
-      <SettingsSection title="Identity" description="How this user signs in and is shown across the console.">
-        <Field label="Username">
+      <SettingsSection title={t("userCreateIdentityTitle")} description={t("userCreateIdentityDesc")}>
+        <Field label={t("userCreateUsername")}>
           <Input value={form.username} onChange={(e) => set({ username: e.target.value })} required />
         </Field>
-        <Field label="Email" hint="A verification email is sent on first sign-in.">
+        <Field label={t("userCreateEmail")} hint={t("userCreateEmailHint")}>
           <Input type="email" value={form.email} onChange={(e) => set({ email: e.target.value })} required />
         </Field>
-        <Field label="Display name" hint="Optional — falls back to the username.">
+        <Field label={t("userCreateDisplayName")} hint={t("userCreateDisplayNameHint")}>
           <Input value={form.displayName} onChange={(e) => set({ displayName: e.target.value })} />
         </Field>
       </SettingsSection>
 
-      <SettingsSection title="Credentials" description="A temporary password the user replaces on first sign-in.">
-        <Field label="Temporary password">
+      <SettingsSection title={t("userCreateCredentialsTitle")} description={t("userCreateCredentialsDesc")}>
+        <Field label={t("userCreateTempPassword")}>
           <Input type="password" value={form.password} onChange={(e) => set({ password: e.target.value })} required />
         </Field>
       </SettingsSection>
 
-      <SettingsSection title="Roles" description="Roles grant the user permissions. Defaults to ROLE_USER.">
+      <SettingsSection title={t("userCreateRolesTitle")} description={t("userCreateRolesDesc")}>
         <CheckboxGroup
           options={roles.map((r) => ({ value: r.name, label: r.name }))}
-          selected={form.roles} onToggle={toggleRole} emptyText="No roles"
+          selected={form.roles} onToggle={toggleRole} emptyText={t("userCreateNoRoles")}
         />
       </SettingsSection>
     </EditorPage>

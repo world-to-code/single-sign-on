@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, Loader2, XCircle } from "lucide-react";
 import { errorMessage } from "@/api";
@@ -25,6 +26,7 @@ const settled = (s: OnboardingView["status"]) => s === "INVITED" || s === "INVIT
  * submit, then poll the async job while the workspace is provisioned and the admin is invited by email.
  */
 export default function Onboarding() {
+  const { t } = useTranslation("console");
   const navigate = useNavigate();
   const [form, setForm] = useState({ ...blank });
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +38,7 @@ export default function Onboarding() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!form.slug.trim() || !form.companyName.trim() || !form.adminName.trim() || !form.adminEmail.trim()) {
-      setError("Subdomain, company name, and the admin's name and email are required.");
+      setError(t("onboardingRequired"));
       return;
     }
     setError(null);
@@ -82,42 +84,42 @@ export default function Onboarding() {
 
   return (
     <EditorPage
-      backTo="/admin/organizations" backLabel="Organizations" crumb="Onboard tenant"
-      title="Onboard a tenant" description="Create a customer workspace and invite its first administrator by email."
-      error={error} formId="onboarding-form" onSubmit={submit} busy={busy} submitLabel="Create workspace"
+      backTo="/admin/organizations" backLabel={t("onboardingBack")} crumb={t("onboardingCrumb")}
+      title={t("onboardingTitle")} description={t("onboardingDescription")}
+      error={error} formId="onboarding-form" onSubmit={submit} busy={busy} submitLabel={t("onboardingSubmit")}
       onCancel={() => navigate("/admin/organizations")}
     >
-      <SettingsSection title="Company" description="How the tenant is identified and shown across the platform.">
-        <Field label="Subdomain" hint="Lowercase letters, digits and hyphens — the tenant's stable identifier.">
+      <SettingsSection title={t("onboardingCompany")} description={t("onboardingCompanyDesc")}>
+        <Field label={t("onboardingSubdomain")} hint={t("onboardingSubdomainHint")}>
           <Input value={form.slug} autoCapitalize="none" autoCorrect="off" spellCheck={false}
                  placeholder="acme" onChange={(e) => set({ slug: e.target.value })} required />
         </Field>
-        <Field label="Company name">
+        <Field label={t("onboardingCompanyName")}>
           <Input value={form.companyName} onChange={(e) => set({ companyName: e.target.value })} required />
         </Field>
-        <Field label="Company size" hint="Optional.">
+        <Field label={t("onboardingCompanySize")} hint={t("onboardingOptional")}>
           <Select value={form.companySize} onChange={(e) => set({ companySize: e.target.value })}>
-            <option value="">Prefer not to say</option>
-            {SIZES.map((s) => <option key={s} value={s}>{s} employees</option>)}
+            <option value="">{t("onboardingPreferNotToSay")}</option>
+            {SIZES.map((s) => <option key={s} value={s}>{t("onboardingEmployees", { range: s })}</option>)}
           </Select>
         </Field>
-        <Field label="Country" hint="Optional.">
+        <Field label={t("onboardingCountry")} hint={t("onboardingOptional")}>
           <Input value={form.companyCountry} onChange={(e) => set({ companyCountry: e.target.value })} />
         </Field>
-        <Field label="Industry" hint="Optional.">
+        <Field label={t("onboardingIndustry")} hint={t("onboardingOptional")}>
           <Input value={form.companyIndustry} onChange={(e) => set({ companyIndustry: e.target.value })} />
         </Field>
-        <Field label="Phone" hint="Optional.">
+        <Field label={t("onboardingPhone")} hint={t("onboardingOptional")}>
           <Input value={form.companyPhone} onChange={(e) => set({ companyPhone: e.target.value })} />
         </Field>
       </SettingsSection>
 
-      <SettingsSection title="Administrator"
-                       description="Gets an email invitation to set their password and manage the tenant.">
-        <Field label="Full name">
+      <SettingsSection title={t("onboardingAdministrator")}
+                       description={t("onboardingAdministratorDesc")}>
+        <Field label={t("onboardingFullName")}>
           <Input value={form.adminName} onChange={(e) => set({ adminName: e.target.value })} required />
         </Field>
-        <Field label="Work email">
+        <Field label={t("onboardingWorkEmail")}>
           <Input type="email" value={form.adminEmail} onChange={(e) => set({ adminEmail: e.target.value })} required />
         </Field>
       </SettingsSection>
@@ -128,52 +130,51 @@ export default function Onboarding() {
 function StatusView({ job, onDone, onRestart, onReinvite }: {
   job: OnboardingView; onDone: () => void; onRestart: () => void; onReinvite: () => void;
 }) {
+  const { t } = useTranslation("console");
   const provisioning = job.status === "PENDING" || job.status === "PROVISIONING";
   return (
     <div className="mx-auto max-w-xl space-y-4 py-16 text-center">
       {provisioning && (
         <>
           <Loader2 className="mx-auto size-10 animate-spin text-primary" />
-          <h1 className="text-lg font-semibold">Setting up {job.slug}…</h1>
+          <h1 className="text-lg font-semibold">{t("onboardingSettingUp", { slug: job.slug })}</h1>
           <p className="text-sm text-muted-foreground">
-            Your workspace is being provisioned. The administrator will receive an invitation email shortly
-            — this can take a few minutes.
+            {t("onboardingProvisioningBody")}
           </p>
         </>
       )}
       {job.status === "INVITED" && (
         <>
           <CheckCircle2 className="mx-auto size-10 text-primary" />
-          <h1 className="text-lg font-semibold">{job.slug} is ready</h1>
+          <h1 className="text-lg font-semibold">{t("onboardingReady", { slug: job.slug })}</h1>
           <p className="text-sm text-muted-foreground">
-            The administrator has been emailed an invitation to set their password.
+            {t("onboardingReadyBody")}
           </p>
           <div className="flex justify-center gap-2">
-            <Button onClick={onDone}>Back to organizations</Button>
-            <Button variant="outline" onClick={onRestart}>Onboard another</Button>
+            <Button onClick={onDone}>{t("onboardingBackToOrgs")}</Button>
+            <Button variant="outline" onClick={onRestart}>{t("onboardingAnother")}</Button>
           </div>
         </>
       )}
       {job.status === "INVITE_FAILED" && (
         <>
           <AlertTriangle className="mx-auto size-10 text-amber-500" />
-          <h1 className="text-lg font-semibold">{job.slug} was created</h1>
+          <h1 className="text-lg font-semibold">{t("onboardingCreatedTitle", { slug: job.slug })}</h1>
           <p className="text-sm text-muted-foreground">
-            The tenant and its administrator were provisioned, but the invitation email could not be sent.
-            Re-invite the administrator to send a fresh link.
+            {t("onboardingInviteFailedBody")}
           </p>
           <div className="flex justify-center gap-2">
-            <Button onClick={onReinvite}>Resend invitation</Button>
-            <Button variant="outline" onClick={onDone}>Back to organizations</Button>
+            <Button onClick={onReinvite}>{t("onboardingResend")}</Button>
+            <Button variant="outline" onClick={onDone}>{t("onboardingBackToOrgs")}</Button>
           </div>
         </>
       )}
       {job.status === "FAILED" && (
         <>
           <XCircle className="mx-auto size-10 text-destructive" />
-          <h1 className="text-lg font-semibold">Onboarding failed</h1>
-          <p className="text-sm text-muted-foreground">{job.error ?? "Provisioning failed."} You can try again.</p>
-          <Button variant="outline" onClick={onRestart}>Try again</Button>
+          <h1 className="text-lg font-semibold">{t("onboardingFailedTitle")}</h1>
+          <p className="text-sm text-muted-foreground">{t("onboardingFailedBody", { message: job.error ?? t("onboardingProvisioningFailed") })}</p>
+          <Button variant="outline" onClick={onRestart}>{t("onboardingTryAgain")}</Button>
         </>
       )}
     </div>

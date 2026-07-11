@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { Lock, Pencil, Plus, Trash2 } from "lucide-react";
 import { createGroup, updateGroup, type Group, type GroupRequest } from "@/groups";
 import { usePaginated } from "@/usePaginated";
@@ -30,7 +30,7 @@ interface Editor {
 const blankEditor: Editor = { id: null, name: "", description: "", externalId: "", userIds: [] };
 
 export default function Groups() {
-  const { t } = useTranslation("states");
+  const { t } = useTranslation(["console", "states"]);
   const confirmDelete = useDeleteConfirm();
   const { items: groups, total, page, setPage, size, error: listError, reload } = usePaginated<Group>("/api/admin/groups");
 
@@ -58,8 +58,8 @@ export default function Groups() {
 
   async function remove(g: Group) {
     await confirmDelete({
-      title: "Delete group?",
-      description: `"${g.name}" will be permanently removed.`,
+      title: t("groupsDeleteTitle"),
+      description: t("groupsDeleteDescription", { name: g.name }),
       path: `/api/admin/groups/${g.id}`,
       onDeleted: reload,
     });
@@ -68,16 +68,14 @@ export default function Groups() {
   return (
     <>
       <PageHeader
-        title="Groups"
-        description="Organizational groups bundle users by department/team — separate from RBAC roles."
-        actions={<Button onClick={openCreate}><Plus /> New group</Button>}
+        title={t("groupsTitle")}
+        description={t("groupsDescription")}
+        actions={<Button onClick={openCreate}><Plus /> {t("groupsNew")}</Button>}
       />
 
       <Alert variant="info" className="mb-4">
         <AlertDescription>
-          Groups are a <strong>directory</strong> concern for org/department membership, independent of
-          roles and access policy. The optional <strong>External ID</strong> is reserved for future
-          LDAP/SCIM synchronization.
+          <Trans t={t} i18nKey="groupsInfo" components={[<strong key="0" />, <strong key="1" />]} />
         </AlertDescription>
       </Alert>
 
@@ -85,16 +83,16 @@ export default function Groups() {
         data={groups}
         error={listError}
         isEmpty={(items) => items.length === 0}
-        empty={<EmptyState title={t("groupsEmptyTitle")} hint={t("groupsEmptyHint")} />}
+        empty={<EmptyState title={t("states:groupsEmptyTitle")} hint={t("states:groupsEmptyHint")} />}
       >
         {(items) => (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>External ID</TableHead>
-                <TableHead>Members</TableHead>
+                <TableHead>{t("groupsColName")}</TableHead>
+                <TableHead>{t("groupsColDescription")}</TableHead>
+                <TableHead>{t("groupsColExternalId")}</TableHead>
+                <TableHead>{t("groupsColMembers")}</TableHead>
                 <TableHead className="w-0" />
               </TableRow>
             </TableHeader>
@@ -104,7 +102,7 @@ export default function Groups() {
                   <TableCell className="font-medium">
                     <span className="inline-flex items-center gap-2">
                       <Link to={`/admin/groups/${g.id}`} className="text-primary hover:underline">{g.name}</Link>
-                      {g.system && <Badge variant="secondary"><Lock className="size-3" /> System</Badge>}
+                      {g.system && <Badge variant="secondary"><Lock className="size-3" /> {t("badgeSystem")}</Badge>}
                     </span>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{g.description || "—"}</TableCell>
@@ -114,7 +112,7 @@ export default function Groups() {
                   <TableCell><Badge variant="muted">{g.memberCount}</Badge></TableCell>
                   <TableCell className="text-right">
                     {g.system ? (
-                      <span className="text-xs text-muted-foreground">managed</span>
+                      <span className="text-xs text-muted-foreground">{t("groupsManaged")}</span>
                     ) : (
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon" onClick={() => editGroup(g)}><Pencil /></Button>
@@ -133,40 +131,40 @@ export default function Groups() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editor.id ? `Edit group: ${editor.name}` : "Create group"}</DialogTitle>
-            <DialogDescription>Bundle users into an organizational group.</DialogDescription>
+            <DialogTitle>{editor.id ? t("groupsDialogEdit", { name: editor.name }) : t("groupsDialogCreate")}</DialogTitle>
+            <DialogDescription>{t("groupsDialogDescription")}</DialogDescription>
           </DialogHeader>
 
           {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
 
           <form onSubmit={save} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="grp-name">Name</Label>
+              <Label htmlFor="grp-name">{t("groupsNameLabel")}</Label>
               <Input id="grp-name" value={editor.name}
                      onChange={(e) => set({ name: e.target.value })} required />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="grp-description">Description</Label>
+              <Label htmlFor="grp-description">{t("groupsDescriptionLabel")}</Label>
               <Input id="grp-description" value={editor.description}
                      onChange={(e) => set({ description: e.target.value })} />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="grp-external-id">External ID (for LDAP/SCIM sync, optional)</Label>
+              <Label htmlFor="grp-external-id">{t("groupsExternalIdLabel")}</Label>
               <Input id="grp-external-id" value={editor.externalId}
                      onChange={(e) => set({ externalId: e.target.value })} />
             </div>
 
             <div className="space-y-2">
-              <Label>Members</Label>
+              <Label>{t("groupsMembersLabel")}</Label>
               <UserMultiSelect selected={editor.userIds} onChange={(ids) => set({ userIds: ids })}
-                               placeholder="Search users to add as members…" />
+                               placeholder={t("groupsMembersPlaceholder")} />
             </div>
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => { setEditor(blankEditor); setOpen(false); }}>Cancel</Button>
-              <Button type="submit">{editor.id ? "Save changes" : "Create group"}</Button>
+              <Button type="button" variant="outline" onClick={() => { setEditor(blankEditor); setOpen(false); }}>{t("cancel")}</Button>
+              <Button type="submit">{editor.id ? t("saveChanges") : t("groupsCreateGroup")}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
