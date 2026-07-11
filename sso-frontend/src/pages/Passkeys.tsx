@@ -1,12 +1,14 @@
+import { useTranslation } from "react-i18next";
 import { PageHeader } from "../components/PageHeader";
 import PasskeyManager from "../components/PasskeyManager";
 
 export default function Passkeys() {
+  const { t } = useTranslation("auth");
   return (
     <>
       <PageHeader
-        title="My Passkeys"
-        description="Security keys and platform passkeys on your account. One passkey works for both passwordless sign-in and the FIDO2 step of your policy."
+        title={t("passkeysTitle")}
+        description={t("passkeysDescription")}
       />
       <PasskeyManager />
     </>

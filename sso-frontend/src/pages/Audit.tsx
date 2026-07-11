@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DataList, EmptyState } from "@/components/states";
+import { formatDateTime } from "@/lib/format";
 
 interface AuditEvent {
   id: number;
@@ -25,7 +26,7 @@ const CATEGORIES = [
 const label = (c: string) => c.replace(/_/g, " ").toLowerCase();
 
 export default function Audit() {
-  const { t } = useTranslation("states");
+  const { t, i18n } = useTranslation("states");
   const [category, setCategory] = useState<string>("ALL");
   const path = category === "ALL" ? "/api/admin/audit" : `/api/admin/audit?category=${category}`;
   const { items, total, page, setPage, size, error } = usePaginated<AuditEvent>(path);
@@ -74,7 +75,7 @@ export default function Audit() {
             <TableBody>
               {events.map((e) => (
                 <TableRow key={e.id}>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">{new Date(e.occurredAt).toLocaleString()}</TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">{formatDateTime(e.occurredAt, i18n.language)}</TableCell>
                   <TableCell><Badge variant="muted" className="text-xs">{label(e.category ?? "system")}</Badge></TableCell>
                   <TableCell className="font-medium">{e.type}</TableCell>
                   <TableCell>{e.principal ?? <span className="text-muted-foreground">—</span>}</TableCell>

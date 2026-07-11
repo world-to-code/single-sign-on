@@ -14,7 +14,7 @@ void i18n.use(initReactI18next).init({
   lng: initialLng,
   fallbackLng: "en",
   defaultNS: "common",
-  ns: ["common", "nav", "auth", "console", "errors", "states"],
+  ns: ["common", "nav", "auth", "console", "errors", "states", "validation"],
   interpolation: { escapeValue: false }, // React already escapes; double-escaping mangles copy
 });
 

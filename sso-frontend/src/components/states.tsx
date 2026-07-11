@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { AlertTriangle, RefreshCw, SearchX, ServerCrash, ShieldX, WifiOff } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { ApiError } from "@/api";
+import type { errors as errorsResources } from "@/i18n/en/errors";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -56,48 +58,31 @@ export function failureKind(error: unknown): FailureKind {
   return "network";
 }
 
+type ErrorsKey = keyof typeof errorsResources;
+
 interface FailureCopy {
   icon: LucideIcon;
-  title: string;
-  hint: string;
+  titleKey: ErrorsKey;
+  hintKey: ErrorsKey;
   retryable: boolean;
 }
 
 // A 403/404 is NOT retryable — offering a retry teaches people to hammer a wall (DESIGN.md §5). A 403
-// discloses nothing about existence. Only server/network failures carry a retry and a trace ID.
+// discloses nothing about existence. Only server/network failures carry a retry and a trace ID. The
+// copy resolves from the `errors` namespace at render (see FailurePanel).
 const FAILURES: Record<FailureKind, FailureCopy> = {
-  network: {
-    icon: WifiOff,
-    title: "Couldn't reach the server",
-    hint: "Check your connection, then try again.",
-    retryable: true,
-  },
-  forbidden: {
-    icon: ShieldX,
-    title: "You don't have permission to view this",
-    hint: "Ask an administrator if you need access to this area.",
-    retryable: false,
-  },
-  notFound: {
-    icon: SearchX,
-    title: "Not found",
-    hint: "It may have been removed, or the link is out of date.",
-    retryable: false,
-  },
-  server: {
-    icon: ServerCrash,
-    title: "The request couldn't be completed",
-    hint: "This is on our side. Try again in a moment.",
-    retryable: false, // overridden below to true; kept explicit for readability
-  },
+  network: { icon: WifiOff, titleKey: "failureNetworkTitle", hintKey: "failureNetworkHint", retryable: true },
+  forbidden: { icon: ShieldX, titleKey: "failureForbiddenTitle", hintKey: "failureForbiddenHint", retryable: false },
+  notFound: { icon: SearchX, titleKey: "failureNotFoundTitle", hintKey: "failureNotFoundHint", retryable: false },
+  server: { icon: ServerCrash, titleKey: "failureServerTitle", hintKey: "failureServerHint", retryable: true },
 };
-FAILURES.server.retryable = true;
 
 /**
  * Replaces a panel's body on a load failure. Retry + a trace ID appear only for network/server
  * failures — the two the operator can act on. forbidden/notFound get neither.
  */
 export function FailurePanel({ kind, traceId, onRetry }: { kind: FailureKind; traceId?: string; onRetry?: () => void }) {
+  const { t } = useTranslation("errors");
   const copy = FAILURES[kind];
   const Icon = copy.icon;
   return (
@@ -105,17 +90,17 @@ export function FailurePanel({ kind, traceId, onRetry }: { kind: FailureKind; tr
       <CardContent className="flex flex-col items-center gap-3 px-6 py-12 text-center">
         <Icon className="size-8 text-muted-foreground/70" />
         <div className="space-y-1">
-          <p className="text-sm font-semibold text-ink">{copy.title}</p>
-          <p className="max-w-sm text-sm text-muted-foreground">{copy.hint}</p>
+          <p className="text-sm font-semibold text-ink">{t(copy.titleKey)}</p>
+          <p className="max-w-sm text-sm text-muted-foreground">{t(copy.hintKey)}</p>
         </div>
         {copy.retryable && onRetry && (
           <Button variant="secondary" size="sm" onClick={onRetry} data-failure-retry>
-            <RefreshCw className="size-4" /> Try again
+            <RefreshCw className="size-4" /> {t("failureRetry")}
           </Button>
         )}
         {copy.retryable && traceId && (
           <p className="font-mono text-xs text-faint" data-failure-trace>
-            Trace ID {traceId}
+            {t("failureTraceId", { id: traceId })}
           </p>
         )}
       </CardContent>

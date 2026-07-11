@@ -1,5 +1,6 @@
 import { cloneElement, isValidElement, useEffect, useId } from "react";
 import type { ReactElement, ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { AlertCircle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Label } from "@/components/ui/label";
@@ -66,6 +67,7 @@ export interface FieldError {
  * links to each bad field. On appearance, focus moves to the first invalid control.
  */
 export function FormErrorSummary({ errors }: { errors: FieldError[] }) {
+  const { t } = useTranslation("validation");
   const firstId = errors[0]?.id;
   useEffect(() => {
     if (firstId) document.getElementById(firstId)?.focus();
@@ -77,7 +79,9 @@ export function FormErrorSummary({ errors }: { errors: FieldError[] }) {
     <Alert variant="destructive" className="mb-5">
       <AlertCircle className="size-4" />
       <AlertTitle>
-        {errors.length === 1 ? "1 field needs your attention" : `${errors.length} fields need your attention`}
+        {errors.length === 1
+          ? t("oneFieldNeedsAttention")
+          : t("fieldsNeedAttention", { count: errors.length })}
       </AlertTitle>
       <AlertDescription>
         <ul className="mt-1 space-y-0.5">

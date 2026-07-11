@@ -1,15 +1,17 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { ArrowLeft, Building2, Lock } from "lucide-react";
 import { Brand } from "@/components/Brand";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 /** Centered authentication shell used by the login / MFA screens. */
 export default function AuthLayout({
-  title, description, step, org, children, footer, onBack, backLabel = "Back",
+  title, description, step, org, children, footer, onBack, backLabel,
 }: {
   title: string; description?: string; step?: string; org?: string | null; children: ReactNode;
   footer?: ReactNode; onBack?: () => void; backLabel?: string;
 }) {
+  const { t } = useTranslation("auth");
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
       <div className="w-full max-w-md">
@@ -19,7 +21,7 @@ export default function AuthLayout({
             {onBack && (
               <button type="button" onClick={onBack}
                       className="mb-1 -ml-1 inline-flex w-fit items-center gap-1 rounded-md px-1 py-0.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-                <ArrowLeft className="size-4" /> {backLabel}
+                <ArrowLeft className="size-4" /> {backLabel ?? t("layoutBack")}
               </button>
             )}
             {org && (
@@ -38,7 +40,7 @@ export default function AuthLayout({
           <CardContent>{children}</CardContent>
         </Card>
         {footer && <div className="mt-4 text-center text-sm text-muted-foreground">{footer}</div>}
-        <p className="mt-6 text-center text-xs text-muted-foreground">Secured by Mini SSO · single-node Identity Provider</p>
+        <p className="mt-6 text-center text-xs text-muted-foreground">{t("layoutSecuredBy")}</p>
       </div>
     </div>
   );

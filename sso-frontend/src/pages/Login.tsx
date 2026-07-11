@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { KeyRound, Loader2 } from "lucide-react";
 import { ApiError } from "../api";
 import { getSession, identify, logout } from "../auth";
@@ -24,6 +25,7 @@ import { Label } from "../components/ui/label";
  * provisioned by an administrator (invite-only). A returning user's email is prefilled for this org.
  */
 export default function Login({ session, onDone }: { session: SessionView; onDone: (s: SessionView) => void }) {
+  const { t } = useTranslation("auth");
   const org = session.org;
   const passkeyOffered = session.passwordlessLoginAllowed && webAuthnSupported();
   const [email, setEmail] = useState(() => (org ? lastEmail(org) ?? "" : ""));
@@ -54,7 +56,7 @@ export default function Login({ session, onDone }: { session: SessionView; onDon
     try {
       onDone(await passwordlessLogin());
     } catch {
-      setError("Passkey sign-in did not complete. You can continue with your email instead.");
+      setError(t("loginPasskeyFailed"));
       setPasskeyBusy(false);
     }
   }
@@ -69,9 +71,7 @@ export default function Login({ session, onDone }: { session: SessionView; onDon
       onDone(next);
     } catch (e) {
       if (e instanceof ApiError) {
-        setError(e.status === 404
-          ? "No account found for that email. Accounts are created by an administrator — please contact them."
-          : "Could not start sign-in. Please try again.");
+        setError(e.status === 404 ? t("loginNoAccount") : t("loginStartFailed"));
       }
       setBusy(false);
     }
@@ -86,11 +86,11 @@ export default function Login({ session, onDone }: { session: SessionView; onDon
 
   return (
     <AuthLayout
-      title="Sign in"
-      description="Enter your email to continue with your organization's sign-in policy."
+      title={t("loginTitle")}
+      description={t("loginDescription")}
       org={org}
       onBack={useDifferentOrg}
-      backLabel="Use a different organization"
+      backLabel={t("useDifferentOrg")}
     >
       {error && (
         <Alert variant="destructive" className="mb-4">
@@ -100,14 +100,14 @@ export default function Login({ session, onDone }: { session: SessionView; onDon
 
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="email">{t("emailLabel")}</Label>
           <Input id="email" type="email" value={email} autoFocus required
                  autoComplete="username webauthn"
-                 placeholder="you@example.com" onChange={(e) => setEmail(e.target.value)} />
+                 placeholder={t("loginEmailPlaceholder")} onChange={(e) => setEmail(e.target.value)} />
         </div>
         <Button type="submit" className="w-full" disabled={busy}>
           {busy && <Loader2 className="animate-spin" />}
-          Continue
+          {t("continue")}
         </Button>
       </form>
 
@@ -115,20 +115,19 @@ export default function Login({ session, onDone }: { session: SessionView; onDon
         <>
           <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
             <span className="h-px flex-1 bg-border" />
-            or
+            {t("or")}
             <span className="h-px flex-1 bg-border" />
           </div>
           <Button type="button" variant="outline" className="w-full" disabled={passkeyBusy}
                   onClick={signInWithPasskey}>
             {passkeyBusy ? <Loader2 className="animate-spin" /> : <KeyRound />}
-            Sign in with a passkey
+            {t("signInWithPasskey")}
           </Button>
         </>
       )}
 
       <p className="mt-3 text-xs text-muted-foreground">
-        We'll ask for your password or other factors based on your sign-in policy.
-        Need an account? Contact your administrator.
+        {t("loginPolicyHint")}
       </p>
     </AuthLayout>
   );

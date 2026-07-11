@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { KeyRound, UserCircle } from "lucide-react";
 import type { SessionView } from "../auth";
@@ -38,33 +39,34 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 export default function Dashboard({ session }: { session: SessionView }) {
+  const { t } = useTranslation("auth");
   return (
     <>
-      <PageHeader title={`Welcome, ${session.username}`} description="Your identity and security status at a glance." />
+      <PageHeader title={t("dashboardWelcome", { name: session.username ?? "" })} description={t("dashboardDescription")} />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <FactorStat label="Authenticator (TOTP)" enrolled={session.totpEnrolled}
-                    value={session.totpEnrolled ? "Enrolled" : "Not set up"} />
-        <FactorStat label="Passkey (FIDO2)" enrolled={session.fido2Enrolled}
-                    value={session.fido2Enrolled ? "Registered" : "None"} />
-        <Metric label="Factors this session" value={session.factors.length} />
+        <FactorStat label={t("dashboardTotpLabel")} enrolled={session.totpEnrolled}
+                    value={session.totpEnrolled ? t("enrolled") : t("notSetUp")} />
+        <FactorStat label={t("dashboardPasskeyLabel")} enrolled={session.fido2Enrolled}
+                    value={session.fido2Enrolled ? t("registered") : t("none")} />
+        <Metric label={t("dashboardFactorsThisSession")} value={session.factors.length} />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><UserCircle className="size-4 text-primary" /> Identity</CardTitle>
-            <CardDescription>Details of your current session.</CardDescription>
+            <CardTitle className="flex items-center gap-2"><UserCircle className="size-4 text-primary" /> {t("dashboardIdentity")}</CardTitle>
+            <CardDescription>{t("dashboardIdentityDesc")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <Row label="User"><span className="font-medium">{session.username}</span></Row>
-            <Row label="Roles">
+            <Row label={t("user")}><span className="font-medium">{session.username}</span></Row>
+            <Row label={t("roles")}>
               <div className="flex flex-wrap gap-1">
                 {session.roles.length ? session.roles.map((r) => <Badge key={r} variant="secondary">{r}</Badge>)
                   : <span className="text-muted-foreground">—</span>}
               </div>
             </Row>
-            <Row label="Factors satisfied">
+            <Row label={t("dashboardFactorsSatisfied")}>
               <div className="flex flex-wrap justify-end gap-1">
                 {session.factors.length ? session.factors.map((f) => <Badge key={f} variant="success">{f.replace("FACTOR_", "")}</Badge>)
                   : <span className="text-muted-foreground">—</span>}
@@ -75,11 +77,11 @@ export default function Dashboard({ session }: { session: SessionView }) {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><KeyRound className="size-4 text-primary" /> Security keys</CardTitle>
-            <CardDescription>One passkey covers passwordless sign-in and your FIDO2 policy step.</CardDescription>
+            <CardTitle className="flex items-center gap-2"><KeyRound className="size-4 text-primary" /> {t("dashboardSecurityKeys")}</CardTitle>
+            <CardDescription>{t("dashboardSecurityKeysDesc")}</CardDescription>
           </CardHeader>
           <CardContent>
-            <Button asChild variant="outline"><Link to="/passkeys"><KeyRound /> Manage my passkeys</Link></Button>
+            <Button asChild variant="outline"><Link to="/passkeys"><KeyRound /> {t("manageMyPasskeys")}</Link></Button>
           </CardContent>
         </Card>
       </div>

@@ -1,5 +1,6 @@
 import type { FormEvent, ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { ChevronRight } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,7 @@ export function EditorPage<K extends string>({
   diff?: DiffEntry[];
   children: ReactNode;
 }) {
+  const { t } = useTranslation("console");
   return (
     <div>
       <nav className="mb-5 flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -89,7 +91,7 @@ export function EditorPage<K extends string>({
           <div className="sticky bottom-0 z-10 mt-2 flex items-center justify-between gap-4 border-t border-border bg-background/90 py-4 backdrop-blur">
             <div className="min-w-0 flex-1 overflow-x-auto text-sm">
               {diff !== undefined && (diff.length === 0
-                ? <span className="text-muted-foreground">Nothing to save</span>
+                ? <span className="text-muted-foreground">{t("editorNothingToSave")}</span>
                 : (
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                     {diff.map((d, i) => (
@@ -104,7 +106,7 @@ export function EditorPage<K extends string>({
                 ))}
             </div>
             <div className="flex shrink-0 items-center gap-3">
-              <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
+              <Button type="button" variant="outline" onClick={onCancel}>{t("editorCancel")}</Button>
               <Button form={formId} type="submit" disabled={busy || (diff !== undefined && diff.length === 0)}>{submitLabel}</Button>
             </div>
           </div>
