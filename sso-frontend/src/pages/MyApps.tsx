@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState, ErrorCard, LoadingCard } from "@/components/states";
 
 export default function MyApps() {
-  const { t } = useTranslation("states");
+  const { t } = useTranslation(["auth", "states"]);
   const [apps, setApps] = useState<Application[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,11 +24,11 @@ export default function MyApps() {
 
   return (
     <>
-      <PageHeader title="My Applications" description="Single sign-on to the apps assigned to you." />
+      <PageHeader title={t("myAppsTitle")} description={t("myAppsDescription")} />
       {error ? <ErrorCard message={error} /> : !apps ? <LoadingCard /> : apps.length === 0 ? (
         <Card><CardContent className="p-0">
-          <EmptyState icon={<LayoutGrid className="size-8" />} title={t("myAppsEmptyTitle")}
-                      hint={t("myAppsEmptyHint")} />
+          <EmptyState icon={<LayoutGrid className="size-8" />} title={t("states:myAppsEmptyTitle")}
+                      hint={t("states:myAppsEmptyHint")} />
         </CardContent></Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -44,11 +44,11 @@ export default function MyApps() {
                 <div className="flex-1">
                   <p className="font-semibold leading-tight">{app.name}</p>
                   <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                    <ShieldCheck className="size-3" /> SSO enabled
+                    <ShieldCheck className="size-3" /> {t("myAppsSsoEnabled")}
                   </p>
                 </div>
                 <Button className="w-full" onClick={() => launch(app)} disabled={!app.launchUrl}>
-                  <ExternalLink /> Launch
+                  <ExternalLink /> {t("myAppsLaunch")}
                 </Button>
               </CardContent>
             </Card>

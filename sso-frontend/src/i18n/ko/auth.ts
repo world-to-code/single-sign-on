@@ -92,6 +92,7 @@ export const auth: Record<keyof typeof enAuth, string> = {
   mfaVerifyPassword: "비밀번호 확인",
   mfaTotpEnrollBlocked: "인증 앱이 아직 설정되지 않았고 로그인 중 설정이 비활성화되어 있습니다. 관리자에게 계정 활성화를 요청하세요.",
   mfaScanWithApp: "인증 앱으로 스캔",
+  mfaEnterKeyManually: "키 직접 입력",
   mfaEnrollStartFailed: "등록을 시작할 수 없습니다.",
   mfaVerifyAndEnroll: "확인 후 등록",
 
@@ -160,6 +161,10 @@ export const auth: Record<keyof typeof enAuth, string> = {
   profileTitle: "내 프로필",
   profileDescription: "본인의 보안 인증 수단, 패스키, 활성 세션을 관리합니다.",
   profileSecurityFactors: "보안 인증 수단",
+  profileEmailTitle: "이메일",
+  profileRolesLabel: "역할:",
+  profilePasskeysSection: "패스키",
+  profileActiveSessions: "활성 세션",
   profileTotpCardTitle: "인증 앱 (TOTP)",
   profileTotpDetail: "시간 기반 일회용 코드",
   profilePasskeysDetail: "비밀번호 없는 로그인 + FIDO2",

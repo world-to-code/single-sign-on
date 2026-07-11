@@ -42,6 +42,7 @@ function FactorCard({ icon, title, badge, detail, action }: { icon: ReactNode; t
  * enters a code, and confirms. `onEnrolled` reloads the profile so the card flips to "Enrolled".
  */
 function TotpSetupDialog({ open, onOpenChange, onEnrolled }: { open: boolean; onOpenChange: (o: boolean) => void; onEnrolled: () => void }) {
+  const { t } = useTranslation("auth");
   const [setup, setSetup] = useState<TotpSetup | null>(null);
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -56,8 +57,8 @@ function TotpSetupDialog({ open, onOpenChange, onEnrolled }: { open: boolean; on
     setupTotp()
       .then(setSetup)
       .catch((e) => setError(e instanceof ApiError && e.status === 409
-        ? "An authenticator is already enrolled."
-        : "Could not start enrollment. Please try again."));
+        ? t("profileTotpAlreadyEnrolled")
+        : t("profileTotpStartFailed")));
   }, [open]);
 
   async function verify(event: React.FormEvent) {
@@ -68,7 +69,7 @@ function TotpSetupDialog({ open, onOpenChange, onEnrolled }: { open: boolean; on
       onEnrolled();
       onOpenChange(false);
     } catch (e) {
-      setError(e instanceof ApiError && e.status === 400 ? "Invalid code, try again." : "Could not verify the code.");
+      setError(e instanceof ApiError && e.status === 400 ? t("profileTotpInvalidCode") : t("profileTotpVerifyFailed"));
       setBusy(false);
     }
   }
@@ -77,8 +78,8 @@ function TotpSetupDialog({ open, onOpenChange, onEnrolled }: { open: boolean; on
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Set up authenticator app</DialogTitle>
-          <DialogDescription>Scan the QR code with your authenticator app, then enter the 6-digit code to enable it.</DialogDescription>
+          <DialogTitle>{t("profileTotpDialogTitle")}</DialogTitle>
+          <DialogDescription>{t("profileTotpDialogDesc")}</DialogDescription>
         </DialogHeader>
 
         {error && <p className="text-sm text-destructive">{error}</p>}
@@ -92,14 +93,14 @@ function TotpSetupDialog({ open, onOpenChange, onEnrolled }: { open: boolean; on
             <div className="flex flex-col items-center gap-3 rounded-lg border bg-muted/40 p-4">
               <img src={setup.qrDataUri} alt="TOTP QR code" width={170} height={170} className="rounded-md bg-white p-2 shadow-sm" />
               <details className="w-full text-center text-xs text-muted-foreground">
-                <summary className="cursor-pointer">Enter key manually</summary>
+                <summary className="cursor-pointer">{t("mfaEnterKeyManually")}</summary>
                 <code className="mt-1 block break-all font-mono">{setup.secret}</code>
               </details>
             </div>
             <form onSubmit={verify} className="space-y-3">
               <OtpInput value={code} onChange={(e) => setCode(e.target.value)} />
               <Button type="submit" className="w-full" disabled={busy}>
-                {busy ? <Loader2 className="animate-spin" /> : <Smartphone />} Verify &amp; enable
+                {busy ? <Loader2 className="animate-spin" /> : <Smartphone />} {t("profileVerifyAndEnable")}
               </Button>
             </form>
           </>
@@ -110,7 +111,7 @@ function TotpSetupDialog({ open, onOpenChange, onEnrolled }: { open: boolean; on
 }
 
 export default function Profile() {
-  const { t } = useTranslation("states");
+  const { t } = useTranslation(["auth", "states"]);
   const confirmRevoke = useDeleteConfirm();
   const confirmDelete = useDeleteConfirm();
   const [totpOpen, setTotpOpen] = useState(false);
@@ -119,9 +120,9 @@ export default function Profile() {
 
   async function removeTotp() {
     await confirmDelete({
-      title: "Remove authenticator?",
-      description: "Time-based one-time codes will no longer be accepted for your account.",
-      confirmText: "Remove",
+      title: t("profileRemoveTotpTitle"),
+      description: t("profileRemoveTotpDesc"),
+      confirmText: t("remove"),
       run: () => disableTotp(),
       onDeleted: () => profile.reload(),
     });
@@ -129,11 +130,11 @@ export default function Profile() {
 
   async function revoke(s: SessionDevice) {
     await confirmRevoke({
-      title: s.current ? "Sign out this device?" : "Revoke session?",
+      title: s.current ? t("profileSignOutDeviceTitle") : t("profileRevokeSessionTitle"),
       description: s.current
-        ? "You will be signed out on this device on your next request."
-        : `The session on "${s.device}" (${s.ip}) will be ended.`,
-      confirmText: s.current ? "Sign out" : "Revoke",
+        ? t("profileSignOutDeviceDesc")
+        : t("profileRevokeSessionDesc", { device: s.device, ip: s.ip }),
+      confirmText: s.current ? t("signOut") : t("revoke"),
       run: () => revokeSession(s.id),
       onDeleted: () => sessions.reload(),
     });
@@ -142,41 +143,41 @@ export default function Profile() {
   return (
     <>
       <PageHeader
-        title="My Profile"
-        description="Manage your own security factors, passkeys, and active sessions."
+        title={t("profileTitle")}
+        description={t("profileDescription")}
       />
 
       {/* Security factors ---------------------------------------------------- */}
-      <h3 className="mb-3 text-sm font-semibold text-muted-foreground">Security factors</h3>
+      <h3 className="mb-3 text-sm font-semibold text-muted-foreground">{t("profileSecurityFactors")}</h3>
       {profile.error && <p className="mb-4 text-sm text-destructive">{profile.error}</p>}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <FactorCard
           icon={<Mail className="size-5" />}
-          title="Email"
+          title={t("profileEmailTitle")}
           detail={profile.data?.email ?? undefined}
           badge={profile.data
-            ? <Badge variant={profile.data.emailVerified ? "success" : "muted"}>{profile.data.emailVerified ? "Verified" : "Unverified"}</Badge>
+            ? <Badge variant={profile.data.emailVerified ? "success" : "muted"}>{profile.data.emailVerified ? t("verified") : t("unverified")}</Badge>
             : <Badge variant="muted">…</Badge>}
         />
         <FactorCard
           icon={<Smartphone className="size-5" />}
-          title="Authenticator app (TOTP)"
-          detail="Time-based one-time codes"
+          title={t("profileTotpCardTitle")}
+          detail={t("profileTotpDetail")}
           badge={profile.data
-            ? <Badge variant={profile.data.totpEnrolled ? "success" : "muted"}>{profile.data.totpEnrolled ? "Enrolled" : "Not set up"}</Badge>
+            ? <Badge variant={profile.data.totpEnrolled ? "success" : "muted"}>{profile.data.totpEnrolled ? t("enrolled") : t("notSetUp")}</Badge>
             : <Badge variant="muted">…</Badge>}
           action={profile.data && (profile.data.totpEnrolled
-            ? <Button variant="outline" size="sm" onClick={removeTotp}><Trash2 /> Remove</Button>
-            : <Button size="sm" onClick={() => setTotpOpen(true)}><Plus /> Set up</Button>)}
+            ? <Button variant="outline" size="sm" onClick={removeTotp}><Trash2 /> {t("remove")}</Button>
+            : <Button size="sm" onClick={() => setTotpOpen(true)}><Plus /> {t("setUp")}</Button>)}
         />
         <FactorCard
           icon={<KeyRound className="size-5" />}
-          title="Passkeys"
-          detail="Passwordless sign-in + FIDO2"
+          title={t("passkeys")}
+          detail={t("profilePasskeysDetail")}
           badge={profile.data
-            ? <Badge variant={profile.data.passkeyCount > 0 ? "success" : "muted"}>{profile.data.passkeyCount} registered</Badge>
+            ? <Badge variant={profile.data.passkeyCount > 0 ? "success" : "muted"}>{t("profilePasskeysCount", { count: profile.data.passkeyCount })}</Badge>
             : <Badge variant="muted">…</Badge>}
-          action={<Button asChild variant="outline" size="sm"><Link to="/passkeys"><KeyRound /> Manage passkeys</Link></Button>}
+          action={<Button asChild variant="outline" size="sm"><Link to="/passkeys"><KeyRound /> {t("managePasskeys")}</Link></Button>}
         />
       </div>
 
@@ -185,31 +186,31 @@ export default function Profile() {
       {profile.data && profile.data.roles.length > 0 && (
         <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
           <ShieldCheck className="size-4" />
-          <span>Roles:</span>
+          <span>{t("profileRolesLabel")}</span>
           {profile.data.roles.map((r) => <Badge key={r} variant="secondary">{r}</Badge>)}
         </div>
       )}
 
       {/* Passkeys ------------------------------------------------------------ */}
-      <h3 className="mb-3 mt-8 text-sm font-semibold text-muted-foreground">Passkeys</h3>
+      <h3 className="mb-3 mt-8 text-sm font-semibold text-muted-foreground">{t("profilePasskeysSection")}</h3>
       <PasskeyManager onChanged={profile.reload} />
 
       {/* Active sessions ---------------------------------------------------- */}
-      <h3 className="mb-3 mt-8 text-sm font-semibold text-muted-foreground">Active sessions</h3>
+      <h3 className="mb-3 mt-8 text-sm font-semibold text-muted-foreground">{t("profileActiveSessions")}</h3>
       <DataList
         data={sessions.data}
         error={sessions.error}
         errorAlways
         isEmpty={(items) => items.length === 0}
-        empty={<EmptyState icon={<MonitorSmartphone className="size-8" />} title={t("profileSessionsEmptyTitle")} />}
+        empty={<EmptyState icon={<MonitorSmartphone className="size-8" />} title={t("states:profileSessionsEmptyTitle")} />}
       >
         {(items) => (
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Device</TableHead>
-                <TableHead>IP address</TableHead>
-                <TableHead>Last seen</TableHead>
+                <TableHead>{t("ipAddress")}</TableHead>
+                <TableHead>{t("lastSeen")}</TableHead>
                 <TableHead className="w-0" />
               </TableRow>
             </TableHeader>
@@ -220,14 +221,14 @@ export default function Profile() {
                     <span className="inline-flex items-center gap-2">
                       <MonitorSmartphone className="size-4 text-muted-foreground" />
                       {s.device}
-                      {s.current && <Badge variant="default">This device</Badge>}
+                      {s.current && <Badge variant="default">{t("thisDevice")}</Badge>}
                     </span>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{s.ip}</TableCell>
                   <TableCell className="text-muted-foreground">{s.lastSeenAt ? new Date(s.lastSeenAt).toLocaleString() : "—"}</TableCell>
                   <TableCell className="text-right">
                     <Button variant={s.current ? "ghost" : "outline"} size="sm" onClick={() => revoke(s)}>
-                      <LogOut /> {s.current ? "Sign out" : "Revoke"}
+                      <LogOut /> {s.current ? t("signOut") : t("revoke")}
                     </Button>
                   </TableCell>
                 </TableRow>

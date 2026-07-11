@@ -48,7 +48,7 @@ export default function MfaStep({ session, onDone }: { session: SessionView; onD
   useEffect(() => {
     setChallenge(null);
     if (factor === "TOTP" && !session.totpEnrolled && session.mfaEnrollmentAllowed) {
-      prepareFactor("TOTP").then(setChallenge).catch(() => setError("Could not start enrollment"));
+      prepareFactor("TOTP").then(setChallenge).catch(() => setError(t("mfaEnrollStartFailed")));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [factor, session.totpEnrolled]);
@@ -64,13 +64,13 @@ export default function MfaStep({ session, onDone }: { session: SessionView; onD
   return (
     <AuthLayout
       onBack={useDifferentEmail}
-      backLabel="Back to sign in"
+      backLabel={t("mfaBackToSignIn")}
       org={session.org}
-      step={`Signing in${session.username ? ` as ${session.username}` : ""}`}
-      title="Verify your identity"
+      step={session.username ? t("mfaSigningInAs", { name: session.username }) : t("mfaSigningIn")}
+      title={t("mfaTitle")}
       description={needEnroll
-        ? "Set up your authenticator app to finish securing your account."
-        : `Complete the ${t(factorMeta(factor).label)} step required by your sign-in policy.`}
+        ? t("mfaEnrollDescription")
+        : t("mfaFactorDescription", { factor: t(factorMeta(factor).label) })}
     >
       <FactorChooser factors={factors} value={factor} onSelect={setFactor} />
 
@@ -78,50 +78,43 @@ export default function MfaStep({ session, onDone }: { session: SessionView; onD
 
       {factor === "FIDO2" && (session.fido2Enrolled ? (
         <Button type="button" className="w-full" onClick={fido2} disabled={busy || !webAuthnSupported()}>
-          {busy ? <Loader2 className="animate-spin" /> : <Fingerprint />} Use your passkey
+          {busy ? <Loader2 className="animate-spin" /> : <Fingerprint />} {t("usePasskey")}
         </Button>
       ) : session.mfaEnrollmentAllowed ? (
         <div className="space-y-2">
           <Button type="button" className="w-full" onClick={fido2Register} disabled={busy || !webAuthnSupported()}>
-            {busy ? <Loader2 className="animate-spin" /> : <Fingerprint />} Register a passkey &amp; continue
+            {busy ? <Loader2 className="animate-spin" /> : <Fingerprint />} {t("mfaRegisterPasskey")}
           </Button>
-          <p className="text-center text-xs text-muted-foreground">
-            Your device will prompt you to create a passkey, then you'll be signed in.
-          </p>
+          <p className="text-center text-xs text-muted-foreground">{t("mfaRegisterPasskeyHint")}</p>
         </div>
       ) : (
-        <Alert variant="info"><AlertDescription>
-          No passkey is set up, and registration during login is disabled. Ask an administrator to enable it.
-        </AlertDescription></Alert>
+        <Alert variant="info"><AlertDescription>{t("mfaPasskeyDisabled")}</AlertDescription></Alert>
       ))}
 
       {factor === "PASSWORD" && (
         <form onSubmit={submitPassword} className="space-y-3">
           <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                 placeholder="Password" autoFocus required />
+                 placeholder={t("passwordPlaceholder")} autoFocus required />
           <Button type="submit" className="w-full" disabled={busy}>
-            {busy ? <Loader2 className="animate-spin" /> : <Lock />} Verify password
+            {busy ? <Loader2 className="animate-spin" /> : <Lock />} {t("mfaVerifyPassword")}
           </Button>
         </form>
       )}
 
       {factor === "EMAIL" && !emailSent && (
-        <Button type="button" className="w-full" onClick={sendEmail}><Mail /> Email me a code</Button>
+        <Button type="button" className="w-full" onClick={sendEmail}><Mail /> {t("emailMeCode")}</Button>
       )}
 
       {enrollBlocked && (
-        <Alert variant="info"><AlertDescription>
-          Your authenticator app isn't set up yet, and setup during login is disabled. Ask an administrator
-          to enable it for your account.
-        </AlertDescription></Alert>
+        <Alert variant="info"><AlertDescription>{t("mfaTotpEnrollBlocked")}</AlertDescription></Alert>
       )}
 
       {needEnroll && !enrollBlocked && challenge?.qrDataUri && (
         <div className="mb-4 flex flex-col items-center gap-3 rounded-lg border bg-muted/40 p-4">
-          <p className="text-sm text-muted-foreground">Scan with your authenticator app</p>
+          <p className="text-sm text-muted-foreground">{t("mfaScanWithApp")}</p>
           <img src={challenge.qrDataUri} alt="TOTP QR code" width={170} height={170} className="rounded-md bg-white p-2 shadow-sm" />
           <details className="w-full text-center text-xs text-muted-foreground">
-            <summary className="cursor-pointer">Enter key manually</summary>
+            <summary className="cursor-pointer">{t("mfaEnterKeyManually")}</summary>
             <code className="mt-1 block break-all font-mono">{challenge.secret}</code>
           </details>
         </div>
@@ -131,7 +124,7 @@ export default function MfaStep({ session, onDone }: { session: SessionView; onD
         <form onSubmit={submitCode} className="space-y-3">
           <OtpInput value={code} onChange={(e) => setCode(e.target.value)} />
           <Button type="submit" className="w-full" disabled={busy}>
-            {busy ? <Loader2 className="animate-spin" /> : <Icon />} {needEnroll ? "Verify & enroll" : "Verify"}
+            {busy ? <Loader2 className="animate-spin" /> : <Icon />} {needEnroll ? t("mfaVerifyAndEnroll") : t("verify")}
           </Button>
         </form>
       )}

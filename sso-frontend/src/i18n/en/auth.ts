@@ -90,6 +90,7 @@ export const auth = {
   mfaVerifyPassword: "Verify password",
   mfaTotpEnrollBlocked: "Your authenticator app isn't set up yet, and setup during login is disabled. Ask an administrator to enable it for your account.",
   mfaScanWithApp: "Scan with your authenticator app",
+  mfaEnterKeyManually: "Enter key manually",
   mfaEnrollStartFailed: "Could not start enrollment.",
   mfaVerifyAndEnroll: "Verify & enroll",
 
@@ -158,6 +159,10 @@ export const auth = {
   profileTitle: "My Profile",
   profileDescription: "Manage your own security factors, passkeys, and active sessions.",
   profileSecurityFactors: "Security factors",
+  profileEmailTitle: "Email",
+  profileRolesLabel: "Roles:",
+  profilePasskeysSection: "Passkeys",
+  profileActiveSessions: "Active sessions",
   profileTotpCardTitle: "Authenticator app (TOTP)",
   profileTotpDetail: "Time-based one-time codes",
   profilePasskeysDetail: "Passwordless sign-in + FIDO2",
