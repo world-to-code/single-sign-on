@@ -2,7 +2,7 @@ package com.example.sso.ratelimit.internal;
 
 import io.github.bucket4j.distributed.ExpirationAfterWriteStrategy;
 import io.github.bucket4j.distributed.proxy.ProxyManager;
-import io.github.bucket4j.redis.lettuce.cas.LettuceBasedProxyManager;
+import io.github.bucket4j.redis.lettuce.Bucket4jLettuce;
 import io.lettuce.core.ClientOptions;
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
@@ -88,8 +88,8 @@ public class RateLimitRedisConfig {
     @Bean
     ProxyManager<String> rateLimitBuckets(StatefulRedisConnection<String, byte[]> connection,
                                           @Value("${sso.ratelimit.window-seconds}") long windowSeconds) {
-        return LettuceBasedProxyManager.builderFor(connection)
-                .withExpirationStrategy(ExpirationAfterWriteStrategy
+        return Bucket4jLettuce.casBasedBuilder(connection)
+                .expirationAfterWrite(ExpirationAfterWriteStrategy
                         .basedOnTimeForRefillingBucketUpToMax(Duration.ofSeconds(windowSeconds)))
                 .build();
     }
