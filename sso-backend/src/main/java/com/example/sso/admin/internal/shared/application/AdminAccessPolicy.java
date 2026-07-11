@@ -1,13 +1,13 @@
 package com.example.sso.admin.internal.shared.application;
 
 import com.example.sso.admin.internal.audit.application.AuditScope;
-import com.example.sso.resource.ApplicationAuthorization;
-import com.example.sso.resource.GroupAuthorization;
-import com.example.sso.resource.ResourceAuthorization;
+import com.example.sso.resource.authorization.ApplicationAuthorization;
+import com.example.sso.resource.authorization.GroupAuthorization;
+import com.example.sso.resource.authorization.ResourceAuthorization;
 import com.example.sso.organization.OrganizationAuthorization;
 import com.example.sso.portal.ApplicationService;
 import com.example.sso.portal.ApplicationView;
-import com.example.sso.resource.UserAuthorization;
+import com.example.sso.resource.authorization.UserAuthorization;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.Permissions;
 import com.example.sso.user.RoleHierarchyService;

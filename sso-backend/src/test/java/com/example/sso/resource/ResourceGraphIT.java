@@ -1,5 +1,9 @@
 package com.example.sso.resource;
 
+import com.example.sso.resource.authorization.ApplicationAuthorization;
+import com.example.sso.resource.authorization.GroupAuthorization;
+import com.example.sso.resource.authorization.ResourceAuthorization;
+import com.example.sso.resource.authorization.UserAuthorization;
 import com.example.sso.resource.internal.application.ResourceGraphService;
 import com.example.sso.resource.internal.application.ResourceScope;
 import com.example.sso.resource.internal.domain.MemberType;

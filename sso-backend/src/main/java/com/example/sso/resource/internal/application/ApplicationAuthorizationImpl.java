@@ -1,6 +1,6 @@
 package com.example.sso.resource.internal.application;
 
-import com.example.sso.resource.ApplicationAuthorization;
+import com.example.sso.resource.authorization.ApplicationAuthorization;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.ResourceRepository;
 import java.util.Set;

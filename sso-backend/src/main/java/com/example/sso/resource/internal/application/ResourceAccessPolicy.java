@@ -1,9 +1,9 @@
 package com.example.sso.resource.internal.application;
 
-import com.example.sso.resource.ApplicationAuthorization;
-import com.example.sso.resource.GroupAuthorization;
-import com.example.sso.resource.ResourceAuthorization;
-import com.example.sso.resource.UserAuthorization;
+import com.example.sso.resource.authorization.ApplicationAuthorization;
+import com.example.sso.resource.authorization.GroupAuthorization;
+import com.example.sso.resource.authorization.ResourceAuthorization;
+import com.example.sso.resource.authorization.UserAuthorization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.shared.error.BadRequestException;

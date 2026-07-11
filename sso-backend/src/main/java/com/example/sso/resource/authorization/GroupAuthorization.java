@@ -1,4 +1,4 @@
-package com.example.sso.resource;
+package com.example.sso.resource.authorization;
 
 import java.util.Set;
 import java.util.UUID;

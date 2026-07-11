@@ -1,6 +1,6 @@
 package com.example.sso.resource.internal.application;
 
-import com.example.sso.resource.ResourceAuthorization;
+import com.example.sso.resource.authorization.ResourceAuthorization;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
