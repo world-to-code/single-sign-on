@@ -1,7 +1,6 @@
 package com.example.sso.portal.internal.catalog.application;
 
 import com.example.sso.portal.access.AppAssignmentFilter;
-
 import com.example.sso.portal.access.AppAssignmentView;
 import com.example.sso.authpolicy.policy.AuthPolicyResolver;
 import com.example.sso.portal.application.AppType;
@@ -107,7 +106,7 @@ class AppAssignmentManager {
         List<AppAssignment> list = assignments.findByAppTypeAndAppId(appType, appId);
         Map<UUID, String> names = subjectNames(list);
 
-        return list.stream().map(a -> AppAssignmentView.of(a, appName, subjectName(names, a))).toList();
+        return list.stream().map(a -> toView(a, appName, subjectName(names, a))).toList();
     }
 
     /** Projects one assignment (RLS-scoped read), so the admin layer can gate an unassign by its app. */
@@ -119,7 +118,14 @@ class AppAssignmentManager {
     private AppAssignmentView toView(AppAssignment assignment) {
         ApplicationView app = catalog.index().get(AppKey.of(assignment.getAppType(), assignment.getAppId()));
         String appName = app == null ? assignment.getAppId() : app.name();
-        return AppAssignmentView.of(assignment, appName, subjectName(subjectNames(List.of(assignment)), assignment));
+        return toView(assignment, appName, subjectName(subjectNames(List.of(assignment)), assignment));
+    }
+
+    /** Boundary factory: the app and subject display names are resolved by the caller. */
+    private AppAssignmentView toView(AppAssignment a, String appName, String subjectName) {
+        return new AppAssignmentView(a.getId().toString(), a.getAppType().name(), a.getAppId(), appName,
+                a.getSubjectType().name(), a.getSubjectId().toString(), subjectName,
+                a.getRequiredPolicyId() == null ? null : a.getRequiredPolicyId().toString());
     }
 
     @Transactional
@@ -137,7 +143,7 @@ class AppAssignmentManager {
         ApplicationView app = catalog.index().get(AppKey.of(appType, request.appId()));
         String appName = app == null ? request.appId() : app.name();
 
-        return AppAssignmentView.of(saved, appName, subjectName(subjectNames(List.of(saved)), saved));
+        return toView(saved, appName, subjectName(subjectNames(List.of(saved)), saved));
     }
 
     @Transactional

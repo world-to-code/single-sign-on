@@ -91,7 +91,7 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
         return repository.findAll().stream()
                 .filter(zone -> Objects.equals(zone.getOrgId(), tier))
                 .sorted(Comparator.comparing(NetworkZone::getName, String.CASE_INSENSITIVE_ORDER))
-                .map(zone -> NetworkZoneView.of(zone, byZone.getOrDefault(zone.getId(), List.of())))
+                .map(zone -> toView(zone, byZone.getOrDefault(zone.getId(), List.of())))
                 .toList();
     }
 
@@ -106,7 +106,7 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
         NetworkZone zone = repository.save(new NetworkZone(spec.name(), spec.description(), creationOrg));
         validated.forEach(cidr -> cidrs.save(new NetworkZoneCidr(zone.getId(), cidr)));
         events.publishEvent(new NetworkZoneCacheChanged());
-        return NetworkZoneView.of(zone, validated);
+        return toView(zone, validated);
     }
 
     @Override
@@ -121,7 +121,7 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
         replaceCidrs(id, validated);
         NetworkZone saved = repository.save(zone);
         events.publishEvent(new NetworkZoneCacheChanged());
-        return NetworkZoneView.of(saved, validated);
+        return toView(saved, validated);
     }
 
     /** Replaces the zone's CIDR set: delete the rows dropped from the set, insert the newly added ones. */
@@ -185,5 +185,10 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
             }
         }
         return trimmed;
+    }
+
+    /** Boundary factory: the CIDR strings are resolved by the caller. */
+    private NetworkZoneView toView(NetworkZone zone, List<String> cidrs) {
+        return new NetworkZoneView(zone.getId().toString(), zone.getName(), zone.getDescription(), cidrs);
     }
 }
