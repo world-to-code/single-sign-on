@@ -28,4 +28,21 @@ export const nav: Record<keyof typeof enNav, string> = {
   networkZones: "네트워크 영역",
   scimTokens: "SCIM 토큰",
   auditLog: "감사 로그",
+  // Shell chrome
+  backToPortal: "포털로 돌아가기",
+  adminConsole: "관리자 콘솔",
+  exitOrganization: "조직에서 나가기",
+  managing: "관리 중",
+  signOut: "로그아웃",
+  account: "계정",
+  administrator: "관리자",
+  member: "구성원",
+  language: "English", // the label always names the OTHER language you can switch to
+  theme: "테마",
+  themeLight: "라이트",
+  themeDark: "다크",
+  collapseSidebar: "사이드바 접기",
+  expandSidebar: "사이드바 펼치기",
+  openNavigation: "메뉴 열기",
+  closeNavigation: "메뉴 닫기",
 };

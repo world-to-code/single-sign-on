@@ -12,13 +12,10 @@ import { triggerStepUp } from "@/api";
 import { Brand } from "@/components/Brand";
 import { NAV, isNavActive } from "@/components/layout/nav";
 import type { NavItem } from "@/components/layout/nav";
+import { LanguageToggle } from "@/components/layout/LanguageToggle";
+import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { useAdminConsoleAccess } from "@/hooks/useAdminConsoleAccess";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
-  DropdownMenuSeparator, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 export default function AppShell(
@@ -82,6 +79,8 @@ export default function AppShell(
     }
   }
 
+  const initials = (session.username ?? "?").slice(0, 2).toUpperCase();
+
   const navLink = ({ to, label, icon: Icon }: NavItem) => {
     const active = isNavActive(location.pathname, to);
     const text = t(label);
@@ -113,15 +112,15 @@ export default function AppShell(
         <button
           type="button"
           onClick={exitAdmin}
-          title={rail ? "Back to portal" : undefined}
-          aria-label={rail ? "Back to portal" : undefined}
+          title={rail ? t("backToPortal") : undefined}
+          aria-label={rail ? t("backToPortal") : undefined}
           className={cn(
             "flex w-full items-center gap-3 rounded-md py-2 text-sm font-medium text-ink-2 transition-colors hover:bg-sunken hover:text-ink",
             rail ? "justify-center px-0" : "px-3",
           )}
         >
           <ArrowLeft className="size-4 shrink-0" />
-          {!rail && "Back to portal"}
+          {!rail && t("backToPortal")}
         </button>
       )}
       {groups.map((group) => {
@@ -194,19 +193,44 @@ export default function AppShell(
           <Brand />
         )}
         {mobile && (
-          <button className="ml-auto text-muted hover:text-ink" aria-label="Close navigation" onClick={() => setOpen(false)}>
+          <button className="ml-auto text-muted hover:text-ink" aria-label={t("closeNavigation")} onClick={() => setOpen(false)}>
             <X className="size-5" />
           </button>
         )}
       </div>
       {nav}
-      {!rail && (
-        <div className="border-t border-line px-5 py-3 text-[11px] text-faint">Mini SSO · single-node IdP</div>
-      )}
+      {/* Foot: account, language, theme, sign out — DESIGN.md §3 keeps these here, never in the topbar. */}
+      <div className="border-t border-line p-3">
+        <div className={cn("flex items-center gap-2.5 rounded-lg", rail ? "justify-center py-1" : "px-1 py-1")}>
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-bold text-accent-foreground">
+            {initials}
+          </span>
+          {!rail && (
+            <span className="min-w-0 leading-tight">
+              <span className="block truncate text-[13px] font-semibold text-ink">{session.username}</span>
+              <span className="block text-[11px] text-faint">{canEnterAdmin ? t("administrator") : t("member")}</span>
+            </span>
+          )}
+        </div>
+        <div className={cn("mt-1.5 flex gap-1", rail && "flex-col items-center")}>
+          <LanguageToggle iconOnly={rail} />
+          <ThemeToggle iconOnly={rail} />
+          <button
+            type="button"
+            onClick={doLogout}
+            title={rail ? t("signOut") : undefined}
+            aria-label={t("signOut")}
+            className={cn(
+              "flex h-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-sunken hover:text-destructive",
+              rail ? "w-9" : "w-9",
+            )}
+          >
+            <LogOut className="size-4" />
+          </button>
+        </div>
+      </div>
     </div>
   );
-
-  const initials = (session.username ?? "?").slice(0, 2).toUpperCase();
 
   return (
     <div
@@ -224,7 +248,7 @@ export default function AppShell(
             <button
               type="button"
               onClick={() => setUserCollapsed((c) => !c)}
-              aria-label={rail ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={rail ? t("expandSidebar") : t("collapseSidebar")}
               className="absolute -right-3 top-16 z-40 flex size-6 items-center justify-center rounded-full border border-line bg-card text-muted shadow-sm transition-colors hover:text-ink"
             >
               {rail ? <PanelLeftOpen className="size-3.5" /> : <PanelLeftClose className="size-3.5" />}
@@ -244,7 +268,7 @@ export default function AppShell(
       <div className="flex min-w-0 flex-col">
         <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-line bg-background/80 px-4 backdrop-blur sm:px-6">
           {mobile && (
-            <button data-nav-toggle aria-label="Open navigation" onClick={() => setOpen(true)}>
+            <button data-nav-toggle aria-label={t("openNavigation")} onClick={() => setOpen(true)}>
               <Menu className="size-5" />
             </button>
           )}
@@ -253,33 +277,20 @@ export default function AppShell(
             <div className="flex min-w-0 items-center gap-2">
               <span className="inline-flex items-center gap-2 rounded-full border border-accent-line bg-accent px-3 py-1 text-sm font-medium text-accent-foreground">
                 <span className="size-1.5 shrink-0 rounded-full bg-current" />
-                <span className="truncate">관리 중 · <span className="font-mono">{drill.slug}</span></span>
+                <span className="truncate">{t("managing")} · <span className="font-mono">{drill.slug}</span></span>
               </span>
-              <Button variant="outline" size="sm" onClick={exitDrillIn}>Exit organization</Button>
+              <Button variant="outline" size="sm" onClick={exitDrillIn}>{t("exitOrganization")}</Button>
             </div>
           )}
-          <div className="ml-auto flex items-center gap-3">
-            {variant === "user" && canEnterAdmin && (
+          {/* Topbar carries only navigation context and the admin-console entry. Identity, language,
+              theme and sign-out live in the sidebar foot (DESIGN.md §3), not here. */}
+          {variant === "user" && canEnterAdmin && (
+            <div className="ml-auto flex items-center gap-3">
               <Button variant="outline" size="sm" onClick={() => { void enterAdmin(); }}>
-                <ShieldCheck /> Admin console
+                <ShieldCheck /> {t("adminConsole")}
               </Button>
-            )}
-            <DropdownMenu>
-              <DropdownMenuTrigger className="flex items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                <Avatar><AvatarFallback>{initials}</AvatarFallback></Avatar>
-                <div className="hidden text-left sm:block">
-                  <div className="text-sm font-medium leading-tight">{session.username}</div>
-                </div>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>{session.username}</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={doLogout} className="text-destructive focus:text-destructive">
-                  <LogOut /> Sign out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+            </div>
+          )}
         </header>
         <main className="mx-auto w-full max-w-[1400px] p-4 sm:p-6 lg:p-8">{children}</main>
       </div>

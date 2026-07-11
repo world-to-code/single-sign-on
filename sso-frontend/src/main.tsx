@@ -5,6 +5,10 @@ import { ConfirmProvider } from "./components/ConfirmProvider";
 import { ToastProvider } from "./components/ToastProvider";
 import "./i18n"; // side-effecting: inits i18next and sets the initial <html lang> before first paint
 import "./index.css";
+import { applyTheme, resolvedTheme } from "./lib/prefs";
+
+// Stamp the theme before first paint so an explicit dark choice never flashes light (and vice versa).
+applyTheme(resolvedTheme());
 
 // React.StrictMode is intentionally NOT used: in development it double-invokes every effect, which
 // fires every data fetch (and side effect) twice — the duplicate-request noise. Production builds

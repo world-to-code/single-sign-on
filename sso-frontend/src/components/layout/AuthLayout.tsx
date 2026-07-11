@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, Building2, Lock } from "lucide-react";
 import { Brand } from "@/components/Brand";
+import { LanguageToggle } from "@/components/layout/LanguageToggle";
+import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 /** Centered authentication shell used by the login / MFA screens. */
@@ -13,7 +15,12 @@ export default function AuthLayout({
 }) {
   const { t } = useTranslation("auth");
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
+    <div className="relative flex min-h-screen items-center justify-center bg-background px-4 py-10">
+      {/* Pre-login language/theme switch — a signed-out visitor still needs to pick their language. */}
+      <div className="absolute right-4 top-4 flex items-center gap-1">
+        <LanguageToggle iconOnly />
+        <ThemeToggle iconOnly />
+      </div>
       <div className="w-full max-w-md">
         <div className="mb-6 flex justify-center"><Brand /></div>
         <Card>

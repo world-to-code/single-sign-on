@@ -26,4 +26,21 @@ export const nav = {
   networkZones: "Network Zones",
   scimTokens: "SCIM Tokens",
   auditLog: "Audit Log",
+  // Shell chrome
+  backToPortal: "Back to portal",
+  adminConsole: "Admin console",
+  exitOrganization: "Leave organization",
+  managing: "Managing",
+  signOut: "Sign out",
+  account: "Account",
+  administrator: "Administrator",
+  member: "Member",
+  language: "한국어", // the label always names the OTHER language you can switch to
+  theme: "Theme",
+  themeLight: "Light",
+  themeDark: "Dark",
+  collapseSidebar: "Collapse sidebar",
+  expandSidebar: "Expand sidebar",
+  openNavigation: "Open navigation",
+  closeNavigation: "Close navigation",
 } as const;
