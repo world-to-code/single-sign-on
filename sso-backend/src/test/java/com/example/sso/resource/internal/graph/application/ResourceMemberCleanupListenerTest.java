@@ -1,6 +1,6 @@
 package com.example.sso.resource.internal.graph.application;
 
-import com.example.sso.portal.ApplicationDeletedEvent;
+import com.example.sso.portal.application.ApplicationDeletedEvent;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.ResourceRepository;
 import com.example.sso.user.GroupDeletedEvent;

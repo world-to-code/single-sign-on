@@ -1,5 +1,7 @@
 package com.example.sso.security;
 
+import com.example.sso.portal.access.AppAssignmentFilter;
+
 import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;

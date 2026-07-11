@@ -15,7 +15,7 @@ import com.example.sso.admin.internal.user.application.UserDetailView;
 import com.example.sso.admin.internal.user.application.UserDevicesView;
 import com.example.sso.admin.internal.user.application.UserSessionView;
 import com.example.sso.audit.AuditEntry;
-import com.example.sso.portal.ApplicationView;
+import com.example.sso.portal.application.ApplicationView;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;

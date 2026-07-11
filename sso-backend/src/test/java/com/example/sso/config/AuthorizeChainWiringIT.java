@@ -1,7 +1,7 @@
 package com.example.sso.config;
 
-import com.example.sso.portal.AppAssignmentFilter;
-import com.example.sso.portal.AppStepUpFilter;
+import com.example.sso.portal.access.AppAssignmentFilter;
+import com.example.sso.portal.stepup.AppStepUpFilter;
 import com.example.sso.support.AbstractIntegrationTest;
 import java.util.List;
 import org.junit.jupiter.api.Test;

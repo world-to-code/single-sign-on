@@ -2,7 +2,7 @@ package com.example.sso.admin.internal.group.api;
 
 import com.example.sso.admin.internal.group.application.GroupAdminService;
 import com.example.sso.admin.internal.shared.security.CanAssignGroupRoles;
-import com.example.sso.portal.ApplicationView;
+import com.example.sso.portal.application.ApplicationView;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;

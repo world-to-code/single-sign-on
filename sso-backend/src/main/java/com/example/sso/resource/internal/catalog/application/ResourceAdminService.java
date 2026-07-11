@@ -4,7 +4,7 @@ import com.example.sso.resource.internal.authorization.application.MemberIds;
 import com.example.sso.resource.internal.authorization.application.ResourceAccessPolicy;
 import com.example.sso.resource.internal.graph.application.ResourceGraphService;
 
-import com.example.sso.portal.ApplicationService;
+import com.example.sso.portal.application.ApplicationService;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.Resource;
 import com.example.sso.resource.internal.domain.ResourceEdge;

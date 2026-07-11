@@ -1,5 +1,7 @@
 package com.example.sso.config.internal;
 
+import com.example.sso.portal.access.AppAssignmentFilter;
+
 import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.ratelimit.AuthRateLimitFilter;

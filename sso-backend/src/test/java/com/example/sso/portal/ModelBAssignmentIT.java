@@ -1,9 +1,13 @@
 package com.example.sso.portal;
 
+import com.example.sso.portal.access.AppAssignmentFilter;
+import com.example.sso.portal.application.AppType;
+import com.example.sso.portal.application.ApplicationService;
+
 import com.example.sso.oidc.AdminPortalSeeder;
-import com.example.sso.portal.internal.domain.AppAssignment;
-import com.example.sso.portal.internal.domain.AppAssignment.SubjectType;
-import com.example.sso.portal.internal.domain.AppAssignmentRepository;
+import com.example.sso.portal.internal.catalog.domain.AppAssignment;
+import com.example.sso.portal.internal.catalog.domain.AppAssignment.SubjectType;
+import com.example.sso.portal.internal.catalog.domain.AppAssignmentRepository;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.GroupSpec;
 import com.example.sso.user.NewUser;

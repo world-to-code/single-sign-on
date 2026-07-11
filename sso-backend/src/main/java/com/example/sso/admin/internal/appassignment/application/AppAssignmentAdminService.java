@@ -1,11 +1,11 @@
 package com.example.sso.admin.internal.appassignment.application;
 
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
-import com.example.sso.portal.AppAssignmentView;
-import com.example.sso.portal.AppType;
-import com.example.sso.portal.ApplicationService;
-import com.example.sso.portal.ApplicationView;
-import com.example.sso.portal.AssignAppRequest;
+import com.example.sso.portal.access.AppAssignmentView;
+import com.example.sso.portal.application.AppType;
+import com.example.sso.portal.application.ApplicationService;
+import com.example.sso.portal.application.ApplicationView;
+import com.example.sso.portal.access.AssignAppRequest;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.error.ForbiddenException;
 import java.util.List;

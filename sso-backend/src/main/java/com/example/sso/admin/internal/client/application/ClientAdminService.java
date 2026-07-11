@@ -16,7 +16,7 @@ import com.example.sso.admin.internal.client.domain.OAuth2RegisteredClientReposi
 import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.oidc.BackChannelLogout;
-import com.example.sso.portal.ApplicationDeletedEvent;
+import com.example.sso.portal.application.ApplicationDeletedEvent;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;

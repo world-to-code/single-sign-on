@@ -1,11 +1,11 @@
 package com.example.sso.admin.internal.appassignment.api;
 
 import com.example.sso.admin.internal.appassignment.application.AppAssignmentAdminService;
-import com.example.sso.portal.AppAssignmentView;
-import com.example.sso.portal.AppPolicyRequest;
-import com.example.sso.portal.AppType;
-import com.example.sso.portal.ApplicationView;
-import com.example.sso.portal.AssignAppRequest;
+import com.example.sso.portal.access.AppAssignmentView;
+import com.example.sso.portal.access.AppPolicyRequest;
+import com.example.sso.portal.application.AppType;
+import com.example.sso.portal.application.ApplicationView;
+import com.example.sso.portal.access.AssignAppRequest;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;

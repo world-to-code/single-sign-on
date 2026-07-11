@@ -1,5 +1,9 @@
 package com.example.sso.portal;
 
+import com.example.sso.portal.access.AppAssignmentFilter;
+import com.example.sso.portal.application.AppType;
+import com.example.sso.portal.application.ApplicationService;
+
 import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.oidc.AdminPortalSeeder;

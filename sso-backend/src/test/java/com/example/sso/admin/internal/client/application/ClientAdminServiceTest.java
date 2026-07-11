@@ -3,7 +3,7 @@ package com.example.sso.admin.internal.client.application;
 import com.example.sso.admin.internal.client.domain.OAuth2RegisteredClientEntity;
 import com.example.sso.admin.internal.client.domain.OAuth2RegisteredClientRepository;
 import com.example.sso.oidc.AdminPortalSeeder;
-import com.example.sso.portal.ApplicationDeletedEvent;
+import com.example.sso.portal.application.ApplicationDeletedEvent;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;

@@ -4,7 +4,7 @@ import com.example.sso.admin.internal.appassignment.application.AppAssignmentAdm
 import com.example.sso.admin.internal.group.application.GroupAdminService;
 import com.example.sso.admin.internal.user.application.AdminUserView;
 import com.example.sso.admin.internal.user.application.UserAdminService;
-import com.example.sso.portal.AppType;
+import com.example.sso.portal.application.AppType;
 import com.example.sso.resource.internal.graph.application.ResourceGraphService;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.Resource;

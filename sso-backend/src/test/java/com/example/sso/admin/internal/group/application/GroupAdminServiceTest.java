@@ -4,7 +4,7 @@ import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
-import com.example.sso.portal.ApplicationService;
+import com.example.sso.portal.application.ApplicationService;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.tenancy.OrgContext;

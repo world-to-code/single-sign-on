@@ -1,9 +1,9 @@
 package com.example.sso.admin.internal.client.application;
 
 import com.example.sso.oidc.AdminPortalSeeder;
-import com.example.sso.portal.AppType;
-import com.example.sso.portal.ApplicationDescriptor;
-import com.example.sso.portal.ApplicationSource;
+import com.example.sso.portal.application.AppType;
+import com.example.sso.portal.application.ApplicationDescriptor;
+import com.example.sso.portal.application.ApplicationSource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;

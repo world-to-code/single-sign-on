@@ -1,6 +1,6 @@
 package com.example.sso.saml.internal.relyingparty.application;
 
-import com.example.sso.portal.ApplicationDeletedEvent;
+import com.example.sso.portal.application.ApplicationDeletedEvent;
 import com.example.sso.saml.relyingparty.RelyingPartyRequest;
 import com.example.sso.saml.relyingparty.RelyingPartyView;
 import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;

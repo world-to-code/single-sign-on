@@ -1,8 +1,8 @@
 package com.example.sso.saml.internal.relyingparty.application;
 
-import com.example.sso.portal.AppType;
-import com.example.sso.portal.ApplicationDescriptor;
-import com.example.sso.portal.ApplicationSource;
+import com.example.sso.portal.application.AppType;
+import com.example.sso.portal.application.ApplicationDescriptor;
+import com.example.sso.portal.application.ApplicationSource;
 import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;
 import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingPartyRepository;
 import com.example.sso.tenancy.OrgTierGuard;

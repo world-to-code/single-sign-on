@@ -2,7 +2,7 @@ package com.example.sso.bootstrap.internal;
 
 import com.example.sso.organization.OrganizationCreatedEvent;
 import com.example.sso.organization.OrganizationService;
-import com.example.sso.portal.AdminConsoleAccess;
+import com.example.sso.portal.access.AdminConsoleAccess;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.RbacService;
 import com.example.sso.user.RoleService;
