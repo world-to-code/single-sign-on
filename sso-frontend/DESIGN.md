@@ -49,6 +49,15 @@ Define as CSS custom properties on `:root` in `src/index.css`. Redefine **only t
 `:root[data-theme="light"]` so an explicit toggle beats the OS in both directions. Style components
 through tokens — never inside the media query.
 
+> **Implementation note (how these actually ship).** The hexes below are the source of truth for the
+> *rendered colour*, but they are stored in `src/index.css` as **HSL channel triples**
+> (`--accent: 183 76% 25%`), consumed as `hsl(var(--x) / <alpha-value>)`. This is not cosmetic: the
+> codebase uses Tailwind alpha modifiers (`bg-primary/10`, `border-destructive/40`) in 50+ places,
+> and those only resolve against a channel triple. For the same reason `--accent-soft` / `--accent-line`
+> are **precomputed** triples (accent at 8% / 26% over surface), not `color-mix()` — `color-mix` can't
+> take a bare triple. And because `text-primary` already meant "accent" across the code, petrol lives
+> in the existing `--primary` alias rather than a new `--accent` token.
+
 ### Colour
 
 The neutral scale is warm-biased. A pure mid-grey reads as unconsidered; this one reads as chosen.
@@ -148,6 +157,9 @@ Two shadows only. Both are near-invisible in light and do the lifting in dark.
 --shadow      resting cards
 --shadow-lift modals, drawers, toasts, the save bar
 ```
+
+*(As built, only `--shadow` exists as a token; the lifted surfaces use Tailwind's `shadow-lg`. If a
+distinct `--shadow-lift` is wanted, add it — nothing depends on its absence.)*
 
 Density is **roomy**: setting rows are 18px vertical padding with a description line, not 32px
 data rows. Complex settings are made legible by explanation, not by compression.
@@ -326,7 +338,8 @@ Never render a spinner where the shape is known. Render the shape.
 ### The four failures
 
 Each is a distinct panel: icon, title, one sentence of what to do, actions, and — for the two that
-are the server's fault — a trace ID.
+are the server's fault — a trace ID. The backend stamps every `ProblemDetail` with a `traceId`
+(alongside `code` and `instance`); `ApiError` in `src/api.ts` captures it and the panel shows it.
 
 | Kind | Title | Retry? | Trace ID? |
 |---|---|---|---|
@@ -509,11 +522,15 @@ Screens: `조직 선택 · 로그인 · 비밀번호 · 인증 앱 · 이메일 
 > **It is not React.** It is Thymeleaf under a CSP that forbids inline script. The whole interaction
 > is checkboxes and two `<form method="post" action="/oauth2/authorize">` elements. **No JavaScript
 > may be required for any part of it.** The input contract is fixed and must survive any redesign:
-> checkbox `name="scope"`, hidden `client_id`, hidden `state`, optional `user_code`.
+> checkbox `name="scope"`, hidden `client_id`, hidden `state`, optional `user_code`. A live verifier
+> (`scripts/oidc_authcode_flow.py`) regexes the page for `name="state"` *before* `value=`, so keep
+> that attribute order. **Do not add a CSRF field** — `/oauth2/authorize` is CSRF-exempt by design
+> (the OAuth `state` is the protection); Spring's data-value processor injects a hidden `_csrf`
+> anyway, which is harmless and pre-existing.
 >
 > That template carries its **own copy of the design tokens**. Changing `src/index.css` does not
 > touch it. Any token change in §2 must be mirrored there, or this one screen stays indigo while the
-> rest of the product moves on.
+> rest of the product moves on. (As of this writing, done — the redesign mirrors the §2 triples.)
 
 Four rules, in order of importance:
 
