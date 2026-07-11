@@ -279,31 +279,40 @@ class AdminAccessPolicyTest {
 
     @Test
     void nonSuperAdminMayNotAssignARoleAboveThemEvenHoldingItsPermissions() {
-        // ROLE_ADMIN is above the actor in the DAG — actorDominatesRoleName is false (mock default) — so it is
-        // unassignable regardless of any other stub. Dominance is a REQUIRED conjunct, not merely holdings.
+        // ROLE_ADMIN is strictly above the actor — actorMayManageRoleName is false (mock default) — so it is
+        // unassignable regardless of any other stub. "Not above" is a REQUIRED conjunct, not merely holdings.
         assertThat(policy.mayAssignRoles(Set.of(Roles.ADMIN))).isFalse();
     }
 
     @Test
-    void nonSuperAdminMayNotAssignAPeerRoleTheyDoNotDominate() {
-        // Their own ROLE_ORG_ADMIN is a peer (not a strict descendant), so it is not dominated → unassignable,
-        // even though the actor holds all of its permissions. This is the self-escalation block.
-        assertThat(policy.mayAssignRoles(Set.of(Roles.ORG_ADMIN))).isFalse();
+    void nonSuperAdminMayAssignAPeerRoleAtTheirOwnLevel() {
+        // A tenant ORG_ADMIN manages their whole tier: a role at their OWN level (not above them) that carries
+        // no platform perm and whose permissions they hold IS assignable — they can hand out ROLE_ORG_ADMIN to
+        // another tenant user. Escalation is still blocked by grant-only-what-you-hold + the "not above" rule.
+        UUID roleId = UUID.randomUUID();
+        RoleRef peer = mock(RoleRef.class);
+        when(peer.getId()).thenReturn(roleId);
+        when(roleService.findByName("ROLE_PEER", null)).thenReturn(Optional.of(peer));
+        when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.USER_READ));
+        signInWith(Permissions.USER_READ);
+        when(roleHierarchy.actorMayManageRoleName(ACTOR_ID, "ROLE_PEER", null)).thenReturn(true);
+
+        assertThat(policy.mayAssignRoles(Set.of("ROLE_PEER"))).isTrue();
     }
 
     @Test
-    void nonSuperAdminMayNotAssignARoleTheyDoNotDominateEvenHoldingAllItsPermissions() {
-        // A sibling/global role whose permissions the actor fully holds and which carries no platform perm is
-        // STILL unassignable unless it sits strictly below the actor — dominance closes the "I hold the perms,
-        // so let me hand out the role" gap that holdings-only allowed.
+    void nonSuperAdminMayNotAssignARoleStrictlyAboveThemEvenHoldingAllItsPermissions() {
+        // A role ABOVE the actor is unassignable even when the actor holds all of its permissions and it carries
+        // no platform perm — "not above" is the guard that stops self-escalation to a higher role.
         UUID roleId = UUID.randomUUID();
-        RoleRef sibling = mock(RoleRef.class);
-        lenient().when(sibling.getId()).thenReturn(roleId);
-        lenient().when(roleService.findByName("ROLE_SIBLING", null)).thenReturn(Optional.of(sibling));
-        lenient().when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.USER_READ));
+        RoleRef higher = mock(RoleRef.class);
+        when(higher.getId()).thenReturn(roleId);
+        when(roleService.findByName("ROLE_HIGHER", null)).thenReturn(Optional.of(higher));
+        when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.USER_READ));
         signInWith(Permissions.USER_READ); // holds the perm...
-        // ...but does NOT dominate the role (actorDominatesRoleName mock defaults to false).
-        assertThat(policy.mayAssignRoles(Set.of("ROLE_SIBLING"))).isFalse();
+        when(roleHierarchy.actorMayManageRoleName(ACTOR_ID, "ROLE_HIGHER", null)).thenReturn(false); // ...but ABOVE
+
+        assertThat(policy.mayAssignRoles(Set.of("ROLE_HIGHER"))).isFalse();
     }
 
     @Test
@@ -316,7 +325,7 @@ class AdminAccessPolicyTest {
         when(reporting.getId()).thenReturn(roleId);
         when(roleService.findByName("ROLE_REPORTING", null)).thenReturn(Optional.of(reporting));
         when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.ORG_CREATE));
-        when(roleHierarchy.actorDominatesRoleName(ACTOR_ID, "ROLE_REPORTING", null)).thenReturn(true);
+        when(roleHierarchy.actorMayManageRoleName(ACTOR_ID, "ROLE_REPORTING", null)).thenReturn(true);
 
         assertThat(policy.mayAssignRoles(Set.of("ROLE_REPORTING"))).isFalse();
     }
@@ -328,19 +337,19 @@ class AdminAccessPolicyTest {
         lenient().when(reporting.getName()).thenReturn("ROLE_REPORTING");
         when(roleService.findById(roleId)).thenReturn(Optional.of(reporting)); // roleName() lookup
         when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.KEY_ROTATE));
-        when(roleHierarchy.actorDominatesRole(ACTOR_ID, roleId)).thenReturn(true); // dominance OK; holdings is the blocker
+        when(roleHierarchy.actorMayManageRole(ACTOR_ID, roleId)).thenReturn(true); // dominance OK; holdings is the blocker
 
         assertThat(policy.canGrantRole(OTHER_ID, roleId)).isFalse();
     }
 
     @Test
-    void nonSuperAdminMayAssignAnOrdinaryRoleTheyDominate() {
+    void nonSuperAdminMayAssignAnOrdinaryRoleTheyMayManage() {
         UUID roleId = UUID.randomUUID();
         RoleRef support = mock(RoleRef.class);
         when(support.getId()).thenReturn(roleId);
         when(roleService.findByName("ROLE_SUPPORT", null)).thenReturn(Optional.of(support));
         when(roleService.permissionNames(roleId)).thenReturn(Set.of());
-        when(roleHierarchy.actorDominatesRoleName(ACTOR_ID, "ROLE_SUPPORT", null)).thenReturn(true);
+        when(roleHierarchy.actorMayManageRoleName(ACTOR_ID, "ROLE_SUPPORT", null)).thenReturn(true);
 
         assertThat(policy.mayAssignRoles(Set.of("ROLE_SUPPORT"))).isTrue();
     }
@@ -427,7 +436,7 @@ class AdminAccessPolicyTest {
         when(appManager.getId()).thenReturn(roleId);
         when(roleService.findByName("appManager", orgId)).thenReturn(Optional.of(appManager));
         when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.CLIENT_CREATE));
-        when(roleHierarchy.actorDominatesRoleName(ACTOR_ID, "appManager", orgId)).thenReturn(true);
+        when(roleHierarchy.actorMayManageRoleName(ACTOR_ID, "appManager", orgId)).thenReturn(true);
 
         // The actor holds only user:create/user:read (see signInWith) — never oidc-client:create.
         signInWith(Permissions.USER_CREATE, Permissions.USER_READ);
@@ -443,20 +452,20 @@ class AdminAccessPolicyTest {
         when(reader.getId()).thenReturn(roleId);
         when(roleService.findByName("ROLE_READER", null)).thenReturn(Optional.of(reader));
         when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.USER_READ));
-        when(roleHierarchy.actorDominatesRoleName(ACTOR_ID, "ROLE_READER", null)).thenReturn(true);
+        when(roleHierarchy.actorMayManageRoleName(ACTOR_ID, "ROLE_READER", null)).thenReturn(true);
 
         assertThat(policy.mayAssignRoles(Set.of("ROLE_READER"))).isFalse();
     }
 
     @Test
-    void nonSuperAdminMayAssignADominatedRoleWhosePermissionsTheyAllHold() {
+    void nonSuperAdminMayAssignAManageableRoleWhosePermissionsTheyAllHold() {
         signInWith(Permissions.USER_READ); // holds user:read, but is not a super admin (hasRole not stubbed)
         UUID roleId = UUID.randomUUID();
         RoleRef reader = mock(RoleRef.class);
         when(reader.getId()).thenReturn(roleId);
         when(roleService.findByName("ROLE_READER", null)).thenReturn(Optional.of(reader));
         when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.USER_READ));
-        when(roleHierarchy.actorDominatesRoleName(ACTOR_ID, "ROLE_READER", null)).thenReturn(true);
+        when(roleHierarchy.actorMayManageRoleName(ACTOR_ID, "ROLE_READER", null)).thenReturn(true);
 
         assertThat(policy.mayAssignRoles(Set.of("ROLE_READER"))).isTrue();
     }
@@ -466,7 +475,7 @@ class AdminAccessPolicyTest {
         UUID roleId = stubRole("ROLE_READER");
         when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.USER_READ));
         when(userAuth.canManage(ACTOR_ID, OTHER_ID)).thenReturn(true);
-        when(roleHierarchy.actorDominatesRole(ACTOR_ID, roleId)).thenReturn(true); // dominance OK; holdings blocks
+        when(roleHierarchy.actorMayManageRole(ACTOR_ID, roleId)).thenReturn(true); // dominance OK; holdings blocks
 
         assertThat(policy.canGrantRole(OTHER_ID, roleId)).isFalse();
     }
@@ -551,7 +560,7 @@ class AdminAccessPolicyTest {
         when(auditor.getId()).thenReturn(roleId);
         when(roleService.findByName("ROLE_AUDITOR", null)).thenReturn(Optional.of(auditor));
         when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.ORG_CREATE));
-        when(roleHierarchy.actorDominatesRoleName(ACTOR_ID, "ROLE_AUDITOR", null)).thenReturn(true);
+        when(roleHierarchy.actorMayManageRoleName(ACTOR_ID, "ROLE_AUDITOR", null)).thenReturn(true);
 
         assertThat(policy.canUpdateUser(OTHER_ID, true, Set.of("ROLE_AUDITOR"))).isFalse();
     }
@@ -637,18 +646,18 @@ class AdminAccessPolicyTest {
     // --- role-membership grant/revoke (from a role's member list) ---
 
     @Test
-    void scopedAdminMayGrantAnOrdinaryRoleTheyDominateToAManagedUser() {
+    void scopedAdminMayGrantARoleTheyMayManageToAManagedUser() {
         UUID roleId = stubRole("ROLE_SUPPORT");
         when(userAuth.canManage(ACTOR_ID, OTHER_ID)).thenReturn(true);
-        when(roleHierarchy.actorDominatesRole(ACTOR_ID, roleId)).thenReturn(true);
+        when(roleHierarchy.actorMayManageRole(ACTOR_ID, roleId)).thenReturn(true);
 
         assertThat(policy.canGrantRole(OTHER_ID, roleId)).isTrue();
     }
 
     @Test
-    void scopedAdminMayNotGrantARoleTheyDoNotDominate() {
-        // A role the actor does not dominate (a peer or one above) is ungrantable even to a managed user and
-        // even with its permissions held — the dominance conjunct fails (mock default false).
+    void scopedAdminMayNotGrantARoleAboveThem() {
+        // A role strictly ABOVE the actor (actorMayManageRole false) is ungrantable even to a managed user and
+        // even with its permissions held — the "not above" conjunct fails.
         UUID roleId = stubRole("ROLE_ORG_ADMIN");
         when(userAuth.canManage(ACTOR_ID, OTHER_ID)).thenReturn(true);
 
@@ -665,9 +674,9 @@ class AdminAccessPolicyTest {
     }
 
     @Test
-    void scopedAdminMayNotGrantADominatedRoleToAnOutOfScopeUser() {
+    void scopedAdminMayNotGrantAManageableRoleToAnOutOfScopeUser() {
         UUID roleId = stubRole("ROLE_SUPPORT");
-        when(roleHierarchy.actorDominatesRole(ACTOR_ID, roleId)).thenReturn(true); // dominance OK; scope blocks
+        when(roleHierarchy.actorMayManageRole(ACTOR_ID, roleId)).thenReturn(true); // dominance OK; scope blocks
 
         assertThat(policy.canGrantRole(OTHER_ID, roleId)).isFalse();
     }

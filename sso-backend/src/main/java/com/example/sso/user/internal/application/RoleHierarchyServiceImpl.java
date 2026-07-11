@@ -29,29 +29,46 @@ class RoleHierarchyServiceImpl implements RoleHierarchyService {
 
     @Override
     @Transactional(readOnly = true)
-    public boolean actorDominatesRole(UUID actorUserId, UUID targetRoleId) {
-        return targetRoleId != null && roleClosure.descendants(heldRoleIds(actorUserId)).contains(targetRoleId);
+    public boolean actorMayManageRole(UUID actorUserId, UUID targetRoleId) {
+        return targetRoleId != null && !rolesAboveApex(actorUserId).contains(targetRoleId);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public boolean actorDominatesRoleName(UUID actorUserId, String roleName, UUID actingOrg) {
+    public boolean actorMayManageRoleName(UUID actorUserId, String roleName, UUID actingOrg) {
         return roleTierResolver.resolve(roleName, actingOrg)
-                .map(role -> roleClosure.descendants(heldRoleIds(actorUserId)).contains(role.getId()))
-                .orElse(false); // fail-closed: an unknown/unresolved name is never dominated (never assignable)
+                .map(role -> !rolesAboveApex(actorUserId).contains(role.getId()))
+                .orElse(false); // fail-closed: an unknown/unresolved name is never manageable
     }
 
     @Override
     @Transactional(readOnly = true)
     public Set<UUID> rolesAboveActor(UUID actorUserId) {
-        return roleClosure.ancestors(heldRoleIds(actorUserId));
+        return rolesAboveApex(actorUserId);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Set<UUID> apexRolesOf(UUID actorUserId) {
+        return apexRoleIds(actorUserId);
+    }
+
+    /**
+     * The roles strictly ABOVE the actor: the ancestors of the actor's APEX (highest-held) roles. Reducing to
+     * the apex first is what makes this correct when an actor holds a role REDUNDANTLY — e.g. ROLE_USER
+     * alongside ROLE_ORG_ADMIN. The actor's position is their highest role, so only what is above THAT is
+     * above them; the low role's own ancestors (which include the actor's own higher roles, and — in a
+     * diamond — a sibling of a higher role) are correctly not counted. Ancestors of a maximal set never loop
+     * back to a reachable role, so no further subtraction is needed.
+     */
+    private Set<UUID> rolesAboveApex(UUID actorUserId) {
+        return new HashSet<>(roleClosure.ancestors(apexRoleIds(actorUserId)));
+    }
+
+    /** The actor's APEX roles: their held roles minus any that another held role already dominates. */
+    private Set<UUID> apexRoleIds(UUID actorUserId) {
         Set<UUID> held = heldRoleIds(actorUserId);
-        held.removeAll(roleClosure.descendants(held)); // drop any held role dominated by another held role
+        held.removeAll(roleClosure.descendants(held));
         return held;
     }
 

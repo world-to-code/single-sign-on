@@ -4,11 +4,11 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * The DAG-position (dominance) authority for the role-inheritance hierarchy: which roles a given actor
- * strictly OUTRANKS (their held roles' transitive descendants) and which strictly outrank the actor
- * (their held roles' transitive ancestors). Consumed by the admin authorization policy to bound what a
- * non-super admin may assign or even see: an admin may act only on roles strictly below their own
- * position — never a peer, never one above.
+ * The DAG-position authority for the role-inheritance hierarchy: which roles a given actor may manage
+ * (everything NOT strictly above their own position) and which strictly outrank them. Consumed by the
+ * admin authorization policy to bound what a non-super admin may assign or even see: an admin may act on
+ * roles at OR below their own level — never one above. (Peer/at-level management is safe: the
+ * grant-only-what-you-hold and platform-permission guards, applied alongside, stop any actual escalation.)
  *
  * <p>Position is computed from the actor's HELD role ids (direct + group-delegated), not from their
  * authority strings — a custom role contributes no name authority, so only the id-based walk is truthful.
@@ -16,17 +16,22 @@ import java.util.UUID;
  */
 public interface RoleHierarchyService {
 
-    /** Whether {@code targetRoleId} sits strictly BELOW the actor in the DAG (a proper descendant). */
-    boolean actorDominatesRole(UUID actorUserId, UUID targetRoleId);
+    /** Whether {@code targetRoleId} is NOT strictly above the actor — i.e. at or below their level (manageable). */
+    boolean actorMayManageRole(UUID actorUserId, UUID targetRoleId);
 
     /**
      * Whether the role named {@code roleName}, resolved in {@code actingOrg}'s tier (org-first, then global —
-     * the same resolution the assignment uses), sits strictly below the actor. Fails CLOSED: an unknown or
-     * unresolved name is never dominated.
+     * the same resolution the assignment uses), is at or below the actor's level (not strictly above). Fails
+     * CLOSED: an unknown or unresolved name is never manageable.
      */
-    boolean actorDominatesRoleName(UUID actorUserId, String roleName, UUID actingOrg);
+    boolean actorMayManageRoleName(UUID actorUserId, String roleName, UUID actingOrg);
 
-    /** The roles that strictly outrank the actor: the transitive ancestors of their held roles (self excluded). */
+    /**
+     * The roles that strictly outrank the actor: the ancestors of the actor's APEX (highest-held) roles. The
+     * actor's position is their highest role, so an actor holding a low role (e.g. ROLE_USER) alongside a
+     * high one (ROLE_ORG_ADMIN) is judged by the high one — the low role's ancestry (which includes the
+     * actor's OWN higher roles) is never miscounted as being above them.
+     */
     Set<UUID> rolesAboveActor(UUID actorUserId);
 
     /**

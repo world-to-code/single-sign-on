@@ -214,7 +214,7 @@ class RoleAdminServiceTest {
         when(orgContext.currentOrg()).thenReturn(Optional.of(org));
         when(roleService.orgIdOf(roleId)).thenReturn(Optional.of(org));
         when(roleService.updateRole(eq(roleId), eq("ROLE_SUPPORT"), any())).thenReturn(updated);
-        when(accessPolicy.currentActorDominatesRole(roleId)).thenReturn(true); // strictly below the actor
+        when(accessPolicy.currentActorMayManageRole(roleId)).thenReturn(true); // at or below the actor (manageable)
         when(accessPolicy.mayGrantPermissions(any())).thenReturn(true);        // holds the permissions set
 
         RoleView view = service.updateRole(roleId, "ROLE_SUPPORT", Set.of(Permissions.USER_READ));
@@ -327,14 +327,14 @@ class RoleAdminServiceTest {
     }
 
     @Test
-    void updateRoleRejectsARoleTheActorDoesNotDominate() {
+    void updateRoleRejectsARoleAboveTheActor() {
         // A non-super editing a role that is NOT strictly below them (a peer/system role such as their own
         // ORG_ADMIN) is refused, even though it is in their tier — closes a "same-tier so editable" gap.
         UUID org = UUID.randomUUID();
         UUID roleId = UUID.randomUUID();
         when(orgContext.currentOrg()).thenReturn(Optional.of(org));
         when(roleService.orgIdOf(roleId)).thenReturn(Optional.of(org)); // in-tier, passes requireRoleInTier
-        when(accessPolicy.currentActorDominatesRole(roleId)).thenReturn(false); // but NOT below the actor
+        when(accessPolicy.currentActorMayManageRole(roleId)).thenReturn(false); // but strictly ABOVE the actor
 
         assertThatThrownBy(() -> service.updateRole(roleId, "ROLE_ORG_ADMIN", Set.of()))
                 .isInstanceOf(ForbiddenException.class);

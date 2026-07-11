@@ -95,7 +95,7 @@ public class RoleAdminService {
         // peer/system role such as their own ORG_ADMIN) and may set only permissions they hold — otherwise a
         // tenant admin could rewrite a role to carry an authority they lack, or edit a role at their level.
         if (!accessPolicy.currentIsSuperAdmin()
-                && !(accessPolicy.currentActorDominatesRole(id) && accessPolicy.mayGrantPermissions(permissions))) {
+                && !(accessPolicy.currentActorMayManageRole(id) && accessPolicy.mayGrantPermissions(permissions))) {
             throw new ForbiddenException("not permitted to modify this role");
         }
         RoleView view = RoleView.of(roleService.updateRole(id, name, permissions));

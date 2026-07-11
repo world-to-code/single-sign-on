@@ -47,7 +47,7 @@ class RoleCreationHierarchyIT extends AbstractIntegrationTest {
         assertThat(edges).isOne();
 
         UUID holder = userHolding(parent.getId());
-        assertThat(hierarchy.actorDominatesRole(holder, child.getId())).isTrue();
+        assertThat(hierarchy.actorMayManageRole(holder, child.getId())).isTrue(); // below the holder's role
     }
 
     @Test
@@ -58,10 +58,10 @@ class RoleCreationHierarchyIT extends AbstractIntegrationTest {
                 "select count(*) from role_hierarchy where child_role_id = ?", Long.class, root.getId());
         assertThat(edges).isZero();
 
-        // A detached root is dominated by nobody but a super admin (who bypasses dominance) — a plain holder
-        // does not dominate it (it is their own role, not a descendant).
+        // A detached root has no parent edge, yet its holder may still manage it — it is their OWN level, not
+        // a role above them.
         UUID holder = userHolding(root.getId());
-        assertThat(hierarchy.actorDominatesRole(holder, root.getId())).isFalse();
+        assertThat(hierarchy.actorMayManageRole(holder, root.getId())).isTrue();
     }
 
     @Test

@@ -121,13 +121,13 @@ public class AdminAccessPolicy {
         if (roleNames == null) {
             return true;
         }
-        // A non-super may assign a role only if it sits strictly BELOW them in the inheritance DAG (never a
-        // peer such as their own ROLE_ORG_ADMIN, never one above such as ROLE_ADMIN), carries no platform-only
-        // permission, and they themselves hold every permission it carries (grant-only-what-you-hold).
-        // Dominance REPLACES the former fixed privileged-role denylist; all three compose with AND, and each
-        // fails closed on an unknown/unresolved name.
+        // A non-super may assign a role only if it is NOT strictly above them in the inheritance DAG (at or
+        // below their level — so a tenant ORG_ADMIN can hand out ORG_ADMIN/GROUP_ADMIN/USER within their
+        // tenant, but nobody can hand out ROLE_ADMIN), carries no platform-only permission, and they
+        // themselves hold every permission it carries (grant-only-what-you-hold — the real escalation floor).
+        // All three compose with AND, and each fails closed on an unknown/unresolved name.
         return roleNames.stream().allMatch(name ->
-                currentActorDominatesRoleName(name)
+                currentActorMayManageRoleName(name)
                         && !roleCarriesPlatformPermission(name)
                         && actorHoldsAllPermissionsOfRole(name));
     }
@@ -148,18 +148,22 @@ public class AdminAccessPolicy {
         return currentUserId().map(roleHierarchy::apexRolesOf).orElse(Set.of());
     }
 
-    /** Whether the role (by id) sits strictly BELOW the acting admin in the inheritance DAG (fail-closed). */
-    public boolean currentActorDominatesRole(UUID roleId) {
-        return currentUserId().map(actorId -> roleHierarchy.actorDominatesRole(actorId, roleId)).orElse(false);
+    /**
+     * Whether the acting admin may manage the role (by id) — i.e. it is NOT strictly above them in the DAG
+     * (at or below their level). Fail-closed on an unresolved actor. Escalation is still blocked by the
+     * grant-only-what-you-hold and platform-permission guards that compose with this on the endpoints.
+     */
+    public boolean currentActorMayManageRole(UUID roleId) {
+        return currentUserId().map(actorId -> roleHierarchy.actorMayManageRole(actorId, roleId)).orElse(false);
     }
 
     /**
-     * Whether the role NAMED here — resolved in the acting tier, org-first — sits strictly below the acting
-     * admin. Fail-closed on an unresolved actor or unknown name.
+     * Whether the acting admin may manage the role NAMED here — resolved in the acting tier, org-first — i.e.
+     * it is not strictly above them. Fail-closed on an unresolved actor or unknown name.
      */
-    public boolean currentActorDominatesRoleName(String roleName) {
+    public boolean currentActorMayManageRoleName(String roleName) {
         return currentUserId()
-                .map(actorId -> roleHierarchy.actorDominatesRoleName(actorId, roleName, actingOrg()))
+                .map(actorId -> roleHierarchy.actorMayManageRoleName(actorId, roleName, actingOrg()))
                 .orElse(false);
     }
 
@@ -390,14 +394,14 @@ public class AdminAccessPolicy {
 
     private boolean canManageRoleMembership(UUID userId, UUID roleId) {
         if (!currentIsSuperAdmin()
-                && (isAdmin(userId) || !currentActorDominatesRole(roleId)
+                && (isAdmin(userId) || !currentActorMayManageRole(roleId)
                         || roleCarriesPlatformPermission(roleId)
                         || !actorHoldsAllPermissionsOf(roleId))) {
-            // A scoped/tenant admin may never touch an admin account, grant a role they do NOT dominate (a
-            // peer such as their own ROLE_ORG_ADMIN or one above them), grant a role carrying a platform-only
-            // permission, nor grant a role carrying any permission they do not themselves hold — all of which
-            // would escalate the target or themselves. The dominance check REPLACES the old privileged-role
-            // denylist and applies identically whether the role is granted to a user or delegated to a group.
+            // A scoped/tenant admin may never touch an admin account, grant a role strictly ABOVE them (e.g.
+            // ROLE_ADMIN), grant a role carrying a platform-only permission, nor grant a role carrying any
+            // permission they do not themselves hold — all of which would escalate the target or themselves.
+            // A role at or below their level IS grantable (a tenant admin manages their whole tier); this
+            // applies identically whether the role is granted to a user or delegated to a group.
             return false;
         }
         return canAccessUser(userId);
