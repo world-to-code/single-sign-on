@@ -1,6 +1,6 @@
 package com.example.sso.auth;
 
-import com.example.sso.auth.internal.application.PreAuthOrgSession;
+import com.example.sso.auth.internal.login.application.PreAuthOrgSession;
 import com.example.sso.authpolicy.Factors;
 import com.example.sso.user.LoginResolutionScope;
 import jakarta.servlet.FilterChain;
