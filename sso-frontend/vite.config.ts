@@ -20,5 +20,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: { alias: { "@": path.resolve(__dirname, "src") } },
   server: { port: 5173, proxy },
-  build: { outDir: "../sso-backend/src/main/resources/static", emptyOutDir: true },
+  // SPA loaded once behind the login gate — a single ~770KB (gzip ~220KB) bundle is fine, and
+  // route-splitting an app served from one origin buys little. Raise the generic 500KB warning.
+  build: { outDir: "../sso-backend/src/main/resources/static", emptyOutDir: true, chunkSizeWarningLimit: 1000 },
 });
