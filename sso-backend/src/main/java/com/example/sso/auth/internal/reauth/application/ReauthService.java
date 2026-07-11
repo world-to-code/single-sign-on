@@ -15,7 +15,7 @@ import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.session.lifecycle.StepUpInterceptor;
 import com.example.sso.shared.error.BadRequestException;
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.account.UserAccount;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;

@@ -3,7 +3,7 @@ package com.example.sso.portal.access;
 import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.application.ApplicationService;
 
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.account.UserAccount;
 
 import java.time.Instant;
 import java.util.Set;

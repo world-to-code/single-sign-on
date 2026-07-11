@@ -7,7 +7,7 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
 import com.example.sso.session.lifecycle.DeviceLabeler;
 import com.example.sso.session.lifecycle.UserSessions;
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.account.UserAccount;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.util.List;

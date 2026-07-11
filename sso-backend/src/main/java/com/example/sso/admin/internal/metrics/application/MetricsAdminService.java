@@ -4,7 +4,7 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationView;
 import com.example.sso.shared.error.NotFoundException;
-import com.example.sso.user.UserService;
+import com.example.sso.user.account.UserService;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;

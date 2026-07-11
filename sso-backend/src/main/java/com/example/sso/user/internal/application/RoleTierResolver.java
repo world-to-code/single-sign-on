@@ -1,8 +1,8 @@
 package com.example.sso.user.internal.application;
 
 import com.example.sso.tenancy.OrgContext;
-import com.example.sso.user.internal.domain.Role;
-import com.example.sso.user.internal.domain.RoleRepository;
+import com.example.sso.user.internal.role.domain.Role;
+import com.example.sso.user.internal.role.domain.RoleRepository;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;

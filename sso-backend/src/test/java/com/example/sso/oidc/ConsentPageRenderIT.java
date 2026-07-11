@@ -1,5 +1,7 @@
 package com.example.sso.oidc;
 
+import com.example.sso.user.rbac.Permissions;
+
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;

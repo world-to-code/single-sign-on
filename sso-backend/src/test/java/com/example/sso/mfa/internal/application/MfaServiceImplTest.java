@@ -4,7 +4,7 @@ import com.example.sso.crypto.SecretCipher;
 import com.example.sso.mfa.internal.domain.MfaFactor;
 import com.example.sso.mfa.internal.domain.MfaFactorRepository;
 import com.example.sso.mfa.internal.domain.MfaType;
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.account.UserAccount;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;

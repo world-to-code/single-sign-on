@@ -2,9 +2,9 @@ package com.example.sso.resource.internal.authorization.application;
 
 import com.example.sso.resource.internal.domain.ResourceRepository;
 import com.example.sso.resource.internal.domain.ResourceRoleTier;
-import com.example.sso.user.Roles;
-import com.example.sso.user.UserGroupService;
-import com.example.sso.user.UserService;
+import com.example.sso.user.role.Roles;
+import com.example.sso.user.group.UserGroupService;
+import com.example.sso.user.account.UserService;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;

@@ -5,7 +5,7 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.session.lifecycle.SessionLifecycle;
-import com.example.sso.user.LoginResolutionScope;
+import com.example.sso.user.account.LoginResolutionScope;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

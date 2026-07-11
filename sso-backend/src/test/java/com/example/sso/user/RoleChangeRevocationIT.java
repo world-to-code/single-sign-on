@@ -1,5 +1,13 @@
 package com.example.sso.user;
 
+import com.example.sso.user.account.NewUser;
+import com.example.sso.user.account.UserAccessChangedEvent;
+import com.example.sso.user.account.UserService;
+import com.example.sso.user.rbac.Permissions;
+import com.example.sso.user.role.RoleRef;
+import com.example.sso.user.role.RoleService;
+import com.example.sso.user.role.Roles;
+
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.support.AbstractIntegrationTest;

@@ -1,5 +1,10 @@
 package com.example.sso.user;
 
+import com.example.sso.user.account.NewUser;
+import com.example.sso.user.account.UserAccount;
+import com.example.sso.user.account.UserService;
+import com.example.sso.user.rbac.Permissions;
+
 import com.example.sso.support.AbstractIntegrationTest;
 import java.util.Set;
 import java.util.UUID;

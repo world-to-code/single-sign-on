@@ -1,6 +1,6 @@
 package com.example.sso.webauthn;
 
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.account.UserAccount;
 
 import java.util.List;
 

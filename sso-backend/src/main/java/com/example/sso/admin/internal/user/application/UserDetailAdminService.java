@@ -11,8 +11,8 @@ import com.example.sso.session.lifecycle.SessionMetadataStore;
 import com.example.sso.session.lifecycle.UserSessions;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.error.NotFoundException;
-import com.example.sso.user.UserAccount;
-import com.example.sso.user.UserService;
+import com.example.sso.user.account.UserAccount;
+import com.example.sso.user.account.UserService;
 import com.example.sso.webauthn.PasskeyService;
 
 import java.util.List;

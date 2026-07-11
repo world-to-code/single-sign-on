@@ -7,7 +7,7 @@ import com.example.sso.portal.access.AppAssignmentView;
 import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.application.ApplicationView;
 import com.example.sso.portal.access.AssignAppRequest;
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.account.UserAccount;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;

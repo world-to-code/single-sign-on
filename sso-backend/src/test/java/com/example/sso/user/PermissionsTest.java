@@ -1,5 +1,7 @@
 package com.example.sso.user;
 
+import com.example.sso.user.rbac.Permissions;
+
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

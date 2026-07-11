@@ -9,7 +9,7 @@ import com.example.sso.session.lifecycle.SessionLifecycle;
 import com.example.sso.session.lifecycle.StepUpInterceptor;
 import com.example.sso.shared.web.ClientIp;
 import com.example.sso.tenancy.OrgContext;
-import com.example.sso.user.LoginResolutionScope;
+import com.example.sso.user.account.LoginResolutionScope;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.Instant;

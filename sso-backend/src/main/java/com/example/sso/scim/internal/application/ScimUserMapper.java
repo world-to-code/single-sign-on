@@ -1,6 +1,6 @@
 package com.example.sso.scim.internal.application;
 
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.account.UserAccount;
 import de.captaingoldfish.scim.sdk.common.constants.ResourceTypeNames;
 import de.captaingoldfish.scim.sdk.common.resources.User;
 import de.captaingoldfish.scim.sdk.common.resources.complex.Meta;

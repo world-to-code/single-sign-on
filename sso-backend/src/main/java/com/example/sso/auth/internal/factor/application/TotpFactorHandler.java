@@ -4,7 +4,7 @@ import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.mfa.MfaService;
 import com.example.sso.mfa.QrCodeService;
 import com.example.sso.mfa.TotpEnrollment;
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.account.UserAccount;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.stereotype.Component;

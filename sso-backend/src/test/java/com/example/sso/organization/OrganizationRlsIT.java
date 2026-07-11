@@ -2,8 +2,8 @@ package com.example.sso.organization;
 
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
-import com.example.sso.user.NewUser;
-import com.example.sso.user.UserService;
+import com.example.sso.user.account.NewUser;
+import com.example.sso.user.account.UserService;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;

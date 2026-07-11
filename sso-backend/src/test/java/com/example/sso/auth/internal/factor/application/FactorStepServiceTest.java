@@ -20,7 +20,7 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.LockedException;
 import com.example.sso.tenancy.OrgContext;
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.account.UserAccount;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

@@ -1,6 +1,6 @@
 package com.example.sso.mfa;
 
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.account.UserAccount;
 
 import java.util.UUID;
 

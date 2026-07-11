@@ -1,8 +1,8 @@
 package com.example.sso.user.internal.application;
 
-import com.example.sso.user.RoleHierarchyService;
-import com.example.sso.user.internal.domain.UserGroupRepository;
-import com.example.sso.user.internal.domain.UserRoleRepository;
+import com.example.sso.user.role.RoleHierarchyService;
+import com.example.sso.user.internal.group.domain.UserGroupRepository;
+import com.example.sso.user.internal.role.domain.UserRoleRepository;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;

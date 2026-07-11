@@ -1,8 +1,8 @@
 package com.example.sso.organization;
 
 import com.example.sso.support.AbstractIntegrationTest;
-import com.example.sso.user.UserAccount;
-import com.example.sso.user.UserService;
+import com.example.sso.user.account.UserAccount;
+import com.example.sso.user.account.UserService;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

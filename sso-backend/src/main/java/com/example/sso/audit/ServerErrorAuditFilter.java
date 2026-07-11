@@ -1,6 +1,5 @@
 package com.example.sso.audit;
 
-import com.example.sso.audit.AuditType;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

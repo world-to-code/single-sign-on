@@ -1,7 +1,7 @@
 package com.example.sso.scim.internal.application;
 
-import com.example.sso.user.UserAccount;
-import com.example.sso.user.RoleRef;
+import com.example.sso.user.account.UserAccount;
+import com.example.sso.user.role.RoleRef;
 import de.captaingoldfish.scim.sdk.common.constants.ResourceTypeNames;
 import de.captaingoldfish.scim.sdk.common.resources.Group;
 import de.captaingoldfish.scim.sdk.common.resources.complex.Meta;

@@ -1,6 +1,6 @@
 package com.example.sso.user.internal.application;
 
-import com.example.sso.user.internal.domain.RoleHierarchyEdgeRepository;
+import com.example.sso.user.internal.role.domain.RoleHierarchyEdgeRepository;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;

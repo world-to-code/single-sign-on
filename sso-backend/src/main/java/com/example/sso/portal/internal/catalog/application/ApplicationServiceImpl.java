@@ -8,7 +8,7 @@ import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.application.ApplicationService;
 import com.example.sso.portal.application.ApplicationView;
 import com.example.sso.portal.access.AssignAppRequest;
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.account.UserAccount;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;

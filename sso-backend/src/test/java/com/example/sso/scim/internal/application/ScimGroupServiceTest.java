@@ -1,9 +1,9 @@
 package com.example.sso.scim.internal.application;
 
 import com.example.sso.tenancy.OrgContext;
-import com.example.sso.user.RoleRef;
-import com.example.sso.user.RoleService;
-import com.example.sso.user.Roles;
+import com.example.sso.user.role.RoleRef;
+import com.example.sso.user.role.RoleService;
+import com.example.sso.user.role.Roles;
 import de.captaingoldfish.scim.sdk.common.exceptions.BadRequestException;
 import de.captaingoldfish.scim.sdk.common.exceptions.ForbiddenException;
 import de.captaingoldfish.scim.sdk.common.resources.Group;

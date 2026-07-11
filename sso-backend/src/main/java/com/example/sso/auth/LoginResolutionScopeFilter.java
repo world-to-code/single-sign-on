@@ -2,7 +2,7 @@ package com.example.sso.auth;
 
 import com.example.sso.auth.internal.login.application.PreAuthOrgSession;
 import com.example.sso.authpolicy.factor.Factors;
-import com.example.sso.user.LoginResolutionScope;
+import com.example.sso.user.account.LoginResolutionScope;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

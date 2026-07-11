@@ -1,7 +1,7 @@
 package com.example.sso.webauthn.internal.application;
 
 import com.example.sso.shared.error.NotFoundException;
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.account.UserAccount;
 import com.example.sso.webauthn.PasskeyService;
 import com.example.sso.webauthn.PasskeyView;
 import lombok.RequiredArgsConstructor;

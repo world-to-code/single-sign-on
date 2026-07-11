@@ -1,8 +1,8 @@
 package com.example.sso.user.internal.application;
 
-import com.example.sso.user.internal.domain.RoleHierarchyEdge;
-import com.example.sso.user.internal.domain.RoleHierarchyEdgeId;
-import com.example.sso.user.internal.domain.RoleHierarchyEdgeRepository;
+import com.example.sso.user.internal.role.domain.RoleHierarchyEdge;
+import com.example.sso.user.internal.role.domain.RoleHierarchyEdgeId;
+import com.example.sso.user.internal.role.domain.RoleHierarchyEdgeRepository;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;

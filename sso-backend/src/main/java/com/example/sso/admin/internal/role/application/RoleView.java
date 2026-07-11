@@ -1,6 +1,6 @@
 package com.example.sso.admin.internal.role.application;
 
-import com.example.sso.user.RoleRef;
+import com.example.sso.user.role.RoleRef;
 
 import java.util.List;
 

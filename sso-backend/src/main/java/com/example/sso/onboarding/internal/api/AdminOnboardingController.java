@@ -4,7 +4,7 @@ import com.example.sso.onboarding.internal.application.OnboardingServiceImpl;
 import com.example.sso.onboarding.internal.application.OnboardingView;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
-import com.example.sso.user.Permissions;
+import com.example.sso.user.rbac.Permissions;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;

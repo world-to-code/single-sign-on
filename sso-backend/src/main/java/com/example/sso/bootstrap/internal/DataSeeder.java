@@ -2,11 +2,11 @@ package com.example.sso.bootstrap.internal;
 
 import com.example.sso.authpolicy.policy.AuthPolicyAdminService;
 import com.example.sso.organization.OrganizationService;
-import com.example.sso.user.Roles;
-import com.example.sso.user.NewUser;
-import com.example.sso.user.RbacService;
-import com.example.sso.user.RoleService;
-import com.example.sso.user.UserService;
+import com.example.sso.user.role.Roles;
+import com.example.sso.user.account.NewUser;
+import com.example.sso.user.rbac.RbacService;
+import com.example.sso.user.role.RoleService;
+import com.example.sso.user.account.UserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;

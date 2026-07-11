@@ -9,11 +9,11 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.mfa.MfaService;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.error.ConflictException;
-import com.example.sso.user.NewUser;
-import com.example.sso.user.Roles;
-import com.example.sso.user.UserAccount;
-import com.example.sso.user.UserGroupService;
-import com.example.sso.user.UserService;
+import com.example.sso.user.account.NewUser;
+import com.example.sso.user.role.Roles;
+import com.example.sso.user.account.UserAccount;
+import com.example.sso.user.group.UserGroupService;
+import com.example.sso.user.account.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

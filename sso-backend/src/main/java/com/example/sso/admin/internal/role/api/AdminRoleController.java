@@ -8,7 +8,7 @@ import com.example.sso.admin.internal.shared.security.CanGrantRole;
 import com.example.sso.admin.internal.shared.security.CanRevokeRole;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
-import com.example.sso.user.Permissions;
+import com.example.sso.user.rbac.Permissions;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;

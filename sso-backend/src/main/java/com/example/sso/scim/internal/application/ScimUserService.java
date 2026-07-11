@@ -1,11 +1,13 @@
 package com.example.sso.scim.internal.application;
 
+import com.example.sso.user.internal.account.domain.AppUser;
+
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.tenancy.OrgContext;
-import com.example.sso.user.Roles;
-import com.example.sso.user.NewUser;
-import com.example.sso.user.UserAccount;
-import com.example.sso.user.UserService;
+import com.example.sso.user.role.Roles;
+import com.example.sso.user.account.NewUser;
+import com.example.sso.user.account.UserAccount;
+import com.example.sso.user.account.UserService;
 import de.captaingoldfish.scim.sdk.common.exceptions.BadRequestException;
 import de.captaingoldfish.scim.sdk.common.exceptions.ConflictException;
 import de.captaingoldfish.scim.sdk.common.exceptions.ResourceNotFoundException;

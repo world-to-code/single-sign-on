@@ -1,7 +1,7 @@
 package com.example.sso.auth.internal.profile.application;
 
-import com.example.sso.user.RoleRef;
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.role.RoleRef;
+import com.example.sso.user.account.UserAccount;
 import java.util.List;
 
 /**

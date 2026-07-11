@@ -1,12 +1,14 @@
 package com.example.sso.user.internal.application;
 
-import com.example.sso.user.LoginResolutionScope;
-import com.example.sso.user.Permissions;
-import com.example.sso.user.internal.domain.UserGroupRepository;
-import com.example.sso.user.internal.domain.AppUser;
-import com.example.sso.user.internal.domain.AppUserRepository;
-import com.example.sso.user.internal.domain.Role;
-import com.example.sso.user.internal.domain.RoleRepository;
+import com.example.sso.user.role.Roles;
+
+import com.example.sso.user.account.LoginResolutionScope;
+import com.example.sso.user.rbac.Permissions;
+import com.example.sso.user.internal.group.domain.UserGroupRepository;
+import com.example.sso.user.internal.account.domain.AppUser;
+import com.example.sso.user.internal.account.domain.AppUserRepository;
+import com.example.sso.user.internal.role.domain.Role;
+import com.example.sso.user.internal.role.domain.RoleRepository;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.HashSet;

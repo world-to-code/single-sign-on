@@ -1,6 +1,6 @@
 package com.example.sso.admin.internal.user.api;
 
-import com.example.sso.user.UserUpdate;
+import com.example.sso.user.account.UserUpdate;
 import jakarta.validation.constraints.Email;
 import java.util.Set;
 

@@ -2,9 +2,9 @@ package com.example.sso.auth;
 
 import com.example.sso.mfa.EmailOwnershipProof;
 import com.example.sso.support.AbstractIntegrationTest;
-import com.example.sso.user.NewUser;
-import com.example.sso.user.UserAccount;
-import com.example.sso.user.UserService;
+import com.example.sso.user.account.NewUser;
+import com.example.sso.user.account.UserAccount;
+import com.example.sso.user.account.UserService;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;

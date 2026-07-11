@@ -2,9 +2,9 @@ package com.example.sso.onboarding.internal.application;
 
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.support.AbstractIntegrationTest;
-import com.example.sso.user.NewUser;
-import com.example.sso.user.UserAccount;
-import com.example.sso.user.UserService;
+import com.example.sso.user.account.NewUser;
+import com.example.sso.user.account.UserAccount;
+import com.example.sso.user.account.UserService;
 import java.time.Duration;
 import java.util.Set;
 import java.util.UUID;

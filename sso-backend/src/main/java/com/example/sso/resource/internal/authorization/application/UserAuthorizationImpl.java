@@ -4,7 +4,7 @@ import com.example.sso.resource.authorization.GroupAuthorization;
 import com.example.sso.resource.authorization.UserAuthorization;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.ResourceRepository;
-import com.example.sso.user.UserGroupService;
+import com.example.sso.user.group.UserGroupService;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;

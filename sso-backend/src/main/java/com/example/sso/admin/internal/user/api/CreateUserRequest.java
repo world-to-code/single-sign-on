@@ -1,7 +1,7 @@
 package com.example.sso.admin.internal.user.api;
 
-import com.example.sso.user.NewUser;
-import com.example.sso.user.Roles;
+import com.example.sso.user.account.NewUser;
+import com.example.sso.user.role.Roles;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;

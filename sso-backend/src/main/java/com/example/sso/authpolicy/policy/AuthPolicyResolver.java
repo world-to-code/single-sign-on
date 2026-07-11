@@ -1,7 +1,7 @@
 package com.example.sso.authpolicy.policy;
 
 import com.example.sso.shared.IdName;
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.account.UserAccount;
 
 import java.util.Collection;
 import java.util.List;

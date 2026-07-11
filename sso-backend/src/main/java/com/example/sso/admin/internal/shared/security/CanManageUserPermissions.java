@@ -1,6 +1,6 @@
 package com.example.sso.admin.internal.shared.security;
 
-import com.example.sso.user.Permissions;
+import com.example.sso.user.rbac.Permissions;
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;

@@ -1,6 +1,6 @@
 package com.example.sso.session.policy;
 
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.account.UserAccount;
 
 import java.util.List;
 import java.util.Optional;

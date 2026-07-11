@@ -1,9 +1,9 @@
 package com.example.sso.user.internal.application;
 
-import com.example.sso.user.internal.domain.Permission;
-import com.example.sso.user.internal.domain.PermissionRepository;
-import com.example.sso.user.internal.domain.RolePermission;
-import com.example.sso.user.internal.domain.RolePermissionRepository;
+import com.example.sso.user.internal.rbac.domain.Permission;
+import com.example.sso.user.internal.rbac.domain.PermissionRepository;
+import com.example.sso.user.internal.rbac.domain.RolePermission;
+import com.example.sso.user.internal.rbac.domain.RolePermissionRepository;
 import java.util.Collection;
 import java.util.Set;
 import java.util.UUID;

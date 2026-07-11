@@ -2,7 +2,7 @@ package com.example.sso.auth.internal.factor.application;
 
 import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.shared.error.BadRequestException;
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.account.UserAccount;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;

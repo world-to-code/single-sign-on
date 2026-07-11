@@ -5,7 +5,7 @@ import com.example.sso.audit.AuditCategory;
 import com.example.sso.audit.AuditEntry;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.security.RequirePermission;
-import com.example.sso.user.Permissions;
+import com.example.sso.user.rbac.Permissions;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;

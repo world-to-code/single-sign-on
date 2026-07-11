@@ -2,7 +2,7 @@ package com.example.sso.auth.internal.passkey.application;
 
 import com.example.sso.auth.internal.login.application.CurrentUserProvider;
 
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.account.UserAccount;
 import com.example.sso.webauthn.PasskeyService;
 import com.example.sso.webauthn.PasskeyView;
 import java.util.List;

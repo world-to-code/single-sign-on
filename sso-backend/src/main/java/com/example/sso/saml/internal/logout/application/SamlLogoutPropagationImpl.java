@@ -3,7 +3,6 @@ package com.example.sso.saml.internal.logout.application;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
-import com.example.sso.saml.internal.logout.application.SamlSloSessionIndex;
 import com.example.sso.saml.relyingparty.SloBinding;
 import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;
 import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingPartyRepository;

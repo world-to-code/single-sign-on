@@ -1,7 +1,7 @@
 package com.example.sso.auth.internal.login.application;
 
-import com.example.sso.user.LockoutPolicy;
-import com.example.sso.user.UserService;
+import com.example.sso.user.account.LockoutPolicy;
+import com.example.sso.user.account.UserService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 

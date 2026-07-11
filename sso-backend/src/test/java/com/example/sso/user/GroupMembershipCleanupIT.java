@@ -1,5 +1,11 @@
 package com.example.sso.user;
 
+import com.example.sso.user.account.NewUser;
+import com.example.sso.user.account.UserService;
+import com.example.sso.user.group.GroupMembersPage;
+import com.example.sso.user.group.GroupSpec;
+import com.example.sso.user.group.UserGroupService;
+
 import com.example.sso.support.AbstractIntegrationTest;
 import java.util.Set;
 import java.util.UUID;

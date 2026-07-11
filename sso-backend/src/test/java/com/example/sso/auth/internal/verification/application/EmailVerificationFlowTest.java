@@ -4,8 +4,8 @@ import com.example.sso.auth.internal.login.application.CurrentUserProvider;
 
 import com.example.sso.mfa.EmailOwnershipProof;
 import com.example.sso.shared.error.BadRequestException;
-import com.example.sso.user.UserAccount;
-import com.example.sso.user.UserService;
+import com.example.sso.user.account.UserAccount;
+import com.example.sso.user.account.UserService;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

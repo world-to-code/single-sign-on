@@ -5,7 +5,7 @@ import com.example.sso.authpolicy.internal.application.PolicyView;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
-import com.example.sso.user.Permissions;
+import com.example.sso.user.rbac.Permissions;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;

@@ -12,7 +12,7 @@ import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.oidc.ConsentPage;
 import com.example.sso.organization.OrganizationAuthorization;
 import com.example.sso.organization.OrganizationService;
-import com.example.sso.user.UserService;
+import com.example.sso.user.account.UserService;
 import com.example.sso.security.AdminConsolePolicy;
 import com.example.sso.security.AdminElevationFilter;
 import com.example.sso.security.PolicyIpAccessFilter;

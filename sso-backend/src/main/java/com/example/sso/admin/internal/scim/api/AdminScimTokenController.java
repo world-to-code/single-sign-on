@@ -5,7 +5,7 @@ import com.example.sso.scim.IssueScimTokenRequest;
 import com.example.sso.scim.ScimTokenIssued;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
-import com.example.sso.user.Permissions;
+import com.example.sso.user.rbac.Permissions;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;

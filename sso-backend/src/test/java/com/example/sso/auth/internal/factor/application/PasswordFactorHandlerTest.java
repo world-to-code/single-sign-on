@@ -1,8 +1,8 @@
 package com.example.sso.auth.internal.factor.application;
 
 import com.example.sso.authpolicy.factor.AuthFactor;
-import com.example.sso.user.UserAccount;
-import com.example.sso.user.UserService;
+import com.example.sso.user.account.UserAccount;
+import com.example.sso.user.account.UserService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;

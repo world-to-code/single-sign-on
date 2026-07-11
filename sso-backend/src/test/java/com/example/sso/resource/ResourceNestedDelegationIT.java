@@ -14,10 +14,10 @@ import com.example.sso.resource.internal.domain.ResourceTypeAllowedMemberReposit
 import com.example.sso.resource.internal.domain.ResourceTypeRepository;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.support.AbstractIntegrationTest;
-import com.example.sso.user.NewUser;
-import com.example.sso.user.Permissions;
-import com.example.sso.user.Roles;
-import com.example.sso.user.UserService;
+import com.example.sso.user.account.NewUser;
+import com.example.sso.user.rbac.Permissions;
+import com.example.sso.user.role.Roles;
+import com.example.sso.user.account.UserService;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import java.util.ArrayList;
 import java.util.List;

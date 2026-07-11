@@ -1,7 +1,9 @@
 package com.example.sso.admin.internal.shared.application;
 
-import com.example.sso.user.PermissionGrantPolicy;
-import com.example.sso.user.Permissions;
+import com.example.sso.user.role.RoleService;
+
+import com.example.sso.user.rbac.PermissionGrantPolicy;
+import com.example.sso.user.rbac.Permissions;
 import java.util.Set;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;

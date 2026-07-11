@@ -1,7 +1,7 @@
 package com.example.sso.user.internal.application;
 
-import com.example.sso.user.UserAccessChangedEvent;
-import com.example.sso.user.internal.domain.AppUserRepository;
+import com.example.sso.user.account.UserAccessChangedEvent;
+import com.example.sso.user.internal.account.domain.AppUserRepository;
 import java.util.Collection;
 import java.util.Set;
 import java.util.UUID;

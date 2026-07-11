@@ -3,7 +3,7 @@ package com.example.sso.admin.internal.signingkey.api;
 import com.example.sso.admin.internal.shared.application.AdminService;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
-import com.example.sso.user.Permissions;
+import com.example.sso.user.rbac.Permissions;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;

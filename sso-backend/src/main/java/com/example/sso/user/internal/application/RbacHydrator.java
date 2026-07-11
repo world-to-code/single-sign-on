@@ -1,16 +1,20 @@
 package com.example.sso.user.internal.application;
 
-import com.example.sso.user.internal.domain.AppUser;
-import com.example.sso.user.internal.domain.Permission;
-import com.example.sso.user.internal.domain.PermissionRepository;
-import com.example.sso.user.internal.domain.Role;
-import com.example.sso.user.internal.domain.RolePermission;
-import com.example.sso.user.internal.domain.RolePermissionRepository;
-import com.example.sso.user.internal.domain.RoleRepository;
-import com.example.sso.user.internal.domain.UserDirectPermission;
-import com.example.sso.user.internal.domain.UserDirectPermissionRepository;
-import com.example.sso.user.internal.domain.UserRole;
-import com.example.sso.user.internal.domain.UserRoleRepository;
+import com.example.sso.user.account.UserAccount;
+import com.example.sso.user.role.RoleRef;
+import com.example.sso.user.role.Roles;
+
+import com.example.sso.user.internal.account.domain.AppUser;
+import com.example.sso.user.internal.rbac.domain.Permission;
+import com.example.sso.user.internal.rbac.domain.PermissionRepository;
+import com.example.sso.user.internal.role.domain.Role;
+import com.example.sso.user.internal.rbac.domain.RolePermission;
+import com.example.sso.user.internal.rbac.domain.RolePermissionRepository;
+import com.example.sso.user.internal.role.domain.RoleRepository;
+import com.example.sso.user.internal.rbac.domain.UserDirectPermission;
+import com.example.sso.user.internal.rbac.domain.UserDirectPermissionRepository;
+import com.example.sso.user.internal.role.domain.UserRole;
+import com.example.sso.user.internal.role.domain.UserRoleRepository;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;

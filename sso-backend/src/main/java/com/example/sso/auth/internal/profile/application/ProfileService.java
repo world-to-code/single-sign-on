@@ -3,7 +3,7 @@ package com.example.sso.auth.internal.profile.application;
 import com.example.sso.auth.internal.login.application.CurrentUserProvider;
 
 import com.example.sso.mfa.MfaService;
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.account.UserAccount;
 import com.example.sso.webauthn.PasskeyService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;

@@ -1,5 +1,8 @@
 package com.example.sso.admin.internal.role.application;
 
+import com.example.sso.user.internal.account.domain.AppUser;
+import com.example.sso.user.internal.role.domain.Role;
+
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.shared.application.LastAdminGuard;
@@ -9,11 +12,11 @@ import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.tenancy.OrgTierGuard;
-import com.example.sso.user.Permissions;
-import com.example.sso.user.RbacService;
-import com.example.sso.user.RoleService;
-import com.example.sso.user.Roles;
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.rbac.Permissions;
+import com.example.sso.user.rbac.RbacService;
+import com.example.sso.user.role.RoleService;
+import com.example.sso.user.role.Roles;
+import com.example.sso.user.account.UserAccount;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;

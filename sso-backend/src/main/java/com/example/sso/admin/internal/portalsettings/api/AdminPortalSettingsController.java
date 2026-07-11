@@ -2,7 +2,7 @@ package com.example.sso.admin.internal.portalsettings.api;
 
 import com.example.sso.admin.AdminPortalSettingsService;
 import com.example.sso.shared.security.RequirePermission;
-import com.example.sso.user.Permissions;
+import com.example.sso.user.rbac.Permissions;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;

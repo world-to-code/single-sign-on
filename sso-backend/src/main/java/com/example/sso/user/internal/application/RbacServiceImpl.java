@@ -1,16 +1,16 @@
 package com.example.sso.user.internal.application;
 
 import com.example.sso.tenancy.OrgContext;
-import com.example.sso.user.Roles;
-import com.example.sso.user.internal.domain.Permission;
-import com.example.sso.user.Permissions;
-import com.example.sso.user.RbacService;
-import com.example.sso.user.internal.domain.Role;
-import com.example.sso.user.internal.domain.RolePermission;
-import com.example.sso.user.internal.domain.RolePermissionId;
-import com.example.sso.user.internal.domain.RolePermissionRepository;
-import com.example.sso.user.internal.domain.RoleRepository;
-import com.example.sso.user.internal.domain.PermissionRepository;
+import com.example.sso.user.role.Roles;
+import com.example.sso.user.internal.rbac.domain.Permission;
+import com.example.sso.user.rbac.Permissions;
+import com.example.sso.user.rbac.RbacService;
+import com.example.sso.user.internal.role.domain.Role;
+import com.example.sso.user.internal.rbac.domain.RolePermission;
+import com.example.sso.user.internal.rbac.domain.RolePermissionId;
+import com.example.sso.user.internal.rbac.domain.RolePermissionRepository;
+import com.example.sso.user.internal.role.domain.RoleRepository;
+import com.example.sso.user.internal.rbac.domain.PermissionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

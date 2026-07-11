@@ -6,7 +6,7 @@ import com.example.sso.resource.internal.catalog.application.ResourceTypeView;
 import com.example.sso.resource.internal.catalog.application.ResourceView;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
-import com.example.sso.user.Permissions;
+import com.example.sso.user.rbac.Permissions;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;

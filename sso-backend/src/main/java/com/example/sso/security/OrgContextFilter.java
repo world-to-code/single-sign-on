@@ -2,7 +2,7 @@ package com.example.sso.security;
 
 import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.tenancy.OrgContext;
-import com.example.sso.user.Roles;
+import com.example.sso.user.role.Roles;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

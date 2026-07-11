@@ -1,6 +1,5 @@
 package com.example.sso.saml.internal.logout.application;
 
-import com.example.sso.saml.internal.logout.application.SamlSloSessionIndex;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;

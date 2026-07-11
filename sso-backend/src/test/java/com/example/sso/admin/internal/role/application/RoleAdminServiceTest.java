@@ -10,12 +10,12 @@ import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.tenancy.OrgTierGuard;
-import com.example.sso.user.Permissions;
-import com.example.sso.user.RbacService;
-import com.example.sso.user.RoleRef;
-import com.example.sso.user.RoleService;
-import com.example.sso.user.Roles;
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.rbac.Permissions;
+import com.example.sso.user.rbac.RbacService;
+import com.example.sso.user.role.RoleRef;
+import com.example.sso.user.role.RoleService;
+import com.example.sso.user.role.Roles;
+import com.example.sso.user.account.UserAccount;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

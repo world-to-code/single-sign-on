@@ -1,11 +1,13 @@
 package com.example.sso.user.internal.application;
 
-import com.example.sso.user.internal.domain.AppUser;
-import com.example.sso.user.internal.domain.AppUserRepository;
-import com.example.sso.user.internal.domain.UserGroup;
-import com.example.sso.user.internal.domain.UserGroupMember;
-import com.example.sso.user.internal.domain.UserGroupMemberRepository;
-import com.example.sso.user.internal.domain.UserGroupRepository;
+import com.example.sso.user.account.UserService;
+
+import com.example.sso.user.internal.account.domain.AppUser;
+import com.example.sso.user.internal.account.domain.AppUserRepository;
+import com.example.sso.user.internal.group.domain.UserGroup;
+import com.example.sso.user.internal.group.domain.UserGroupMember;
+import com.example.sso.user.internal.group.domain.UserGroupMemberRepository;
+import com.example.sso.user.internal.group.domain.UserGroupRepository;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;

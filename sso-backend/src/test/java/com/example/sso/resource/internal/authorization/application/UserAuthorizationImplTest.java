@@ -3,7 +3,7 @@ package com.example.sso.resource.internal.authorization.application;
 import com.example.sso.resource.authorization.GroupAuthorization;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.ResourceRepository;
-import com.example.sso.user.UserGroupService;
+import com.example.sso.user.group.UserGroupService;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;

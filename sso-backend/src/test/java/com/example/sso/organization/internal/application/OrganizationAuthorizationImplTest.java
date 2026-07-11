@@ -1,8 +1,8 @@
 package com.example.sso.organization.internal.application;
 
 import com.example.sso.organization.OrganizationService;
-import com.example.sso.user.Roles;
-import com.example.sso.user.UserService;
+import com.example.sso.user.role.Roles;
+import com.example.sso.user.account.UserService;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;

@@ -1,7 +1,6 @@
 package com.example.sso.saml.internal.logout.application;
 
 import com.example.sso.saml.logout.SamlFrontChannelLogout;
-import com.example.sso.saml.internal.logout.application.SamlSloSessionIndex;
 import com.example.sso.saml.relyingparty.SloBinding;
 import com.example.sso.saml.internal.logout.application.SamlLogoutChainStore.Participant;
 import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;

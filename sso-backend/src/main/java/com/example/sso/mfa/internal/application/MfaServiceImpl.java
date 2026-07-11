@@ -6,7 +6,7 @@ import com.example.sso.mfa.TotpEnrollment;
 import com.example.sso.mfa.internal.domain.MfaFactor;
 import com.example.sso.mfa.internal.domain.MfaFactorRepository;
 import com.example.sso.mfa.internal.domain.MfaType;
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.account.UserAccount;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

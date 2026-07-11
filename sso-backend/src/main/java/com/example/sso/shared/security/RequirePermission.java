@@ -1,5 +1,7 @@
 package com.example.sso.shared.security;
 
+import com.example.sso.user.rbac.Permissions;
+
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -12,7 +14,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
  *
  * <p>A readable, compile-time-checked alternative to
  * {@code @PreAuthorize("hasAuthority('" + Permissions.X + "')")}: the value is a
- * {@code com.example.sso.user.Permissions} constant, so a renamed/removed permission fails the build
+ * {@code com.example.sso.user.rbac.Permissions} constant, so a renamed/removed permission fails the build
  * and IDE navigation works. The {@code {value}} placeholder is substituted by Spring Security's
  * meta-annotation templating (enabled by the {@code AnnotationTemplateExpressionDefaults} bean in
  * {@code MethodSecurityConfig}).

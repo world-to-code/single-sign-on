@@ -1,10 +1,10 @@
 package com.example.sso.admin.internal.shared.application;
 
 import com.example.sso.shared.error.ConflictException;
-import com.example.sso.user.RoleRef;
-import com.example.sso.user.RoleService;
-import com.example.sso.user.Roles;
-import com.example.sso.user.UserAccount;
+import com.example.sso.user.role.RoleRef;
+import com.example.sso.user.role.RoleService;
+import com.example.sso.user.role.Roles;
+import com.example.sso.user.account.UserAccount;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
