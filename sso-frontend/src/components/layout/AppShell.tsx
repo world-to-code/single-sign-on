@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
-  ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, LogOut, Menu, Search, ShieldCheck, X,
+  ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, LogOut, Menu, ShieldCheck, X,
 } from "lucide-react";
 import type { SessionView } from "@/auth";
 import { isPlatformAdmin, logout } from "@/auth";
@@ -312,17 +312,6 @@ export default function AppShell(
           </nav>
 
           <div className="ml-auto flex items-center gap-3">
-            {!mobile && (
-              <button
-                type="button"
-                aria-label={t("search")}
-                className="flex h-9 min-w-[200px] items-center gap-2 rounded-full border border-line bg-card px-3 text-[13px] text-faint transition-colors hover:border-faint"
-              >
-                <Search className="size-4 shrink-0" />
-                <span>{t("search")}</span>
-                <kbd className="ml-auto rounded bg-line-soft px-1.5 py-0.5 text-[11px] font-semibold text-muted-foreground">⌘K</kbd>
-              </button>
-            )}
             {variant === "user" && canEnterAdmin && (
               <Button variant="outline" size="sm" onClick={() => { void enterAdmin(); }}>
                 <ShieldCheck /> {t("adminConsole")}

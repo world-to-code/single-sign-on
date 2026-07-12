@@ -43,6 +43,5 @@ export const nav = {
   expandSidebar: "Expand sidebar",
   openNavigation: "Open navigation",
   closeNavigation: "Close navigation",
-  search: "Search",
   breadcrumb: "Breadcrumb",
 } as const;
