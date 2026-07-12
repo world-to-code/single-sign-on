@@ -9,7 +9,6 @@ import com.example.sso.authpolicy.policy.AuthPolicyStepView;
 import com.example.sso.authpolicy.policy.AuthPolicyView;
 import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.organization.OrganizationService;
-import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
 import org.junit.jupiter.api.Test;
@@ -26,13 +25,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -51,7 +48,7 @@ class AuthStateServiceTest {
     @Mock private AuthPolicyView policy;
     @Mock private AuthPolicyStepView step;
     @Mock private UserAccount user;
-    @Mock private OrgContext orgContext;
+    @Mock private LoginPolicyResolver loginPolicy;
     @Mock private OrganizationService organizations;
 
     @InjectMocks private AuthStateService service;
@@ -65,7 +62,7 @@ class AuthStateServiceTest {
     private void identifiedAlice() {
         lenient().when(user.getUsername()).thenReturn("alice");
         when(users.findByUsernameInOrg(eq("alice"), any())).thenReturn(Optional.of(user));
-        when(policyService.resolveForUser(user)).thenReturn(policy);
+        when(loginPolicy.resolve(eq(user), any())).thenReturn(policy);
         when(policy.isAllowEnrollmentAtLogin()).thenReturn(true);
         lenient().when(factorHandlers.isEnrolled(eq(AuthFactor.TOTP), any())).thenReturn(true);
         lenient().when(factorHandlers.isEnrolled(eq(AuthFactor.FIDO2), any())).thenReturn(false);
@@ -184,29 +181,15 @@ class AuthStateServiceTest {
     }
 
     @Test
-    void withNoLoginOrgResolutionNeverBindsAnOrgContext() {
-        identifiedAlice();
-        when(evaluator.currentStep(eq(policy), any())).thenReturn(Optional.empty());
-
-        service.describe(authed(Factors.PASSWORD, Factors.TOTP), "acme", null);
-
-        // No org resolved yet (pre-org step / post-login step-up) → must resolve the global/default policy
-        // WITHOUT binding any tenant context (binding an unverified org would be a cross-tenant risk).
-        verify(orgContext, never()).callInOrg(any(), any());
-    }
-
-    @Test
-    void policyResolutionBindsTheLoginOrgSoTenantPoliciesApply() {
+    void threadsTheLoginOrgToThePolicyResolver() {
+        // The org-scoped binding/RLS resolution itself lives in LoginPolicyResolver (tested there); here we
+        // only assert the login org the caller resolved is passed through so tenant policies can participate.
         UUID loginOrg = UUID.randomUUID();
         identifiedAlice();
-        // Bind the login org around resolution so the tenant's own (RLS-scoped) auth policies participate.
-        when(orgContext.callInOrg(eq(loginOrg), any()))
-                .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(1)).get());
         when(evaluator.currentStep(eq(policy), any())).thenReturn(Optional.empty());
 
-        AuthSessionView view = service.describe(authed(Factors.PASSWORD, Factors.TOTP), "acme", loginOrg);
+        service.describe(authed(Factors.PASSWORD, Factors.TOTP), "acme", loginOrg);
 
-        assertThat(view.next()).isEqualTo(AuthSessionView.NEXT_DONE);
-        verify(orgContext).callInOrg(eq(loginOrg), any());
+        verify(loginPolicy).resolve(user, loginOrg);
     }
 }

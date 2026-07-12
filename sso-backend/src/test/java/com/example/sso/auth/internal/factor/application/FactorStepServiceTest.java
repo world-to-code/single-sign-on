@@ -5,13 +5,13 @@ import com.example.sso.auth.internal.login.application.AuthStateService;
 import com.example.sso.auth.internal.login.application.AuthenticationCompletionService;
 import com.example.sso.auth.internal.login.application.CurrentUserProvider;
 import com.example.sso.auth.internal.login.application.LoginAttemptService;
+import com.example.sso.auth.internal.login.application.LoginPolicyResolver;
 import com.example.sso.auth.internal.login.application.PreAuthOrgSession;
 
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.authpolicy.factor.Factors;
-import com.example.sso.authpolicy.policy.AuthPolicyResolver;
 import com.example.sso.authpolicy.policy.AuthPolicyView;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.organization.OrganizationService;
@@ -19,7 +19,6 @@ import com.example.sso.portal.stepup.AppStepUp;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.LockedException;
-import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserAccount;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,7 +35,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -57,14 +55,13 @@ class FactorStepServiceTest {
     @Mock private CurrentUserProvider currentUser;
     @Mock private AuthStateService authState;
     @Mock private FactorHandlers factorHandlers;
-    @Mock private AuthPolicyResolver authPolicies;
+    @Mock private LoginPolicyResolver loginPolicy;
     @Mock private LoginAttemptService loginAttempts;
     @Mock private FactorAuthorizationService factorAuth;
     @Mock private AuthenticationCompletionService completionService;
     @Mock private AppStepUp appStepUp;
     @Mock private AuditService audit;
     @Mock private PreAuthOrgSession preAuthOrg;
-    @Mock private OrgContext orgContext;
     @Mock private OrganizationService organizations;
 
     @Mock private UserAccount user;
@@ -149,7 +146,7 @@ class FactorStepServiceTest {
         when(factorHandlers.get(AuthFactor.TOTP)).thenReturn(handler);
         when(handler.enrollableAtLogin()).thenReturn(true);
         when(handler.isEnrolled(user)).thenReturn(false);
-        when(authPolicies.resolveForUser(user)).thenReturn(policy);
+        when(loginPolicy.resolve(eq(user), any())).thenReturn(policy);
         when(policy.isAllowEnrollmentAtLogin()).thenReturn(false);
 
         assertThatThrownBy(() -> service.prepare(AuthFactor.TOTP, request))
@@ -158,23 +155,22 @@ class FactorStepServiceTest {
     }
 
     @Test
-    void theEnrollAtLoginGateResolvesInTheLoginOrgSoTheTenantPolicyGovernsNotTheGlobalDefault() {
+    void theEnrollAtLoginGateResolvesTheLoginPolicyForTheBoundLoginOrg() {
+        // The org-scoped, tenant-vs-global resolution itself lives in LoginPolicyResolver (tested there); here
+        // we assert the gate threads the LOGIN org so a user cannot dodge a tenant's stricter policy through
+        // the no-context (global-default) window.
         UUID loginOrg = UUID.randomUUID();
         expectTotpStep();
         when(preAuthOrg.orgId(request)).thenReturn(Optional.of(loginOrg));
-        when(orgContext.callInOrg(eq(loginOrg), any()))
-                .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(1)).get());
         when(factorHandlers.get(AuthFactor.TOTP)).thenReturn(handler);
         when(handler.enrollableAtLogin()).thenReturn(true);
         when(handler.isEnrolled(user)).thenReturn(false);
-        when(authPolicies.resolveForUser(user)).thenReturn(policy);
+        when(loginPolicy.resolve(user, loginOrg)).thenReturn(policy);
         when(policy.isAllowEnrollmentAtLogin()).thenReturn(false); // the LOGIN org's policy forbids enroll-at-login
 
         assertThatThrownBy(() -> service.prepare(AuthFactor.TOTP, request))
                 .isInstanceOf(ForbiddenException.class);
-        // The gate was evaluated bound to the login org — a user cannot dodge a tenant's stricter policy
-        // by exploiting the no-context (global-default) resolution window.
-        verify(orgContext).callInOrg(eq(loginOrg), any());
+        verify(loginPolicy).resolve(user, loginOrg);
         verify(handler, never()).prepare(any(), any());
     }
 

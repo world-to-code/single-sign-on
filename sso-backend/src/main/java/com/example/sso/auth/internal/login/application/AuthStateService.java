@@ -9,7 +9,6 @@ import com.example.sso.authpolicy.policy.AuthPolicyStepView;
 import com.example.sso.authpolicy.policy.AuthPolicyView;
 import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.organization.OrganizationService;
-import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.role.Roles;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
@@ -38,7 +37,7 @@ public class AuthStateService {
     private final FactorHandlers factorHandlers;
     private final AuthPolicyResolver policyService;
     private final AuthPolicyEvaluator evaluator;
-    private final OrgContext orgContext;
+    private final LoginPolicyResolver loginPolicy;
     private final OrganizationService organizations;
 
     /**
@@ -104,12 +103,8 @@ public class AuthStateService {
         return AuthSessionView.NEXT_DONE.equals(describe(authentication, null, loginOrgId).next());
     }
 
-    // Resolve within the LOGIN org so the tenant's own auth policies (RLS-scoped) participate in
-    // resolution; with no org bound (pre-org steps / step-up) only global/default policies resolve.
     private AuthPolicyView resolvePolicy(UserAccount user, UUID loginOrgId) {
-        return loginOrgId == null
-                ? policyService.resolveForUser(user)
-                : orgContext.callInOrg(loginOrgId, () -> policyService.resolveForUser(user));
+        return loginPolicy.resolve(user, loginOrgId);
     }
 
     private AuthSessionView anonymous(String activeOrgSlug, boolean passwordless) {

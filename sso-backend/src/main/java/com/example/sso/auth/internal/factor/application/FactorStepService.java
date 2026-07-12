@@ -5,13 +5,13 @@ import com.example.sso.auth.internal.login.application.AuthStateService;
 import com.example.sso.auth.internal.login.application.AuthenticationCompletionService;
 import com.example.sso.auth.internal.login.application.CurrentUserProvider;
 import com.example.sso.auth.internal.login.application.LoginAttemptService;
+import com.example.sso.auth.internal.login.application.LoginPolicyResolver;
 import com.example.sso.auth.internal.login.application.PreAuthOrgSession;
 
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
 import com.example.sso.authpolicy.factor.AuthFactor;
-import com.example.sso.authpolicy.policy.AuthPolicyResolver;
 import com.example.sso.authpolicy.policy.AuthPolicyView;
 import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.mfa.FactorAuthorizationService;
@@ -20,7 +20,6 @@ import com.example.sso.portal.stepup.AppStepUp;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.LockedException;
-import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserAccount;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -42,14 +41,13 @@ public class FactorStepService {
     private final CurrentUserProvider currentUser;
     private final AuthStateService authState;
     private final FactorHandlers factorHandlers;
-    private final AuthPolicyResolver authPolicies;
+    private final LoginPolicyResolver loginPolicy;
     private final LoginAttemptService loginAttempts;
     private final FactorAuthorizationService factorAuth;
     private final AuthenticationCompletionService completionService;
     private final AppStepUp appStepUp;
     private final AuditService audit;
     private final PreAuthOrgSession preAuthOrg;
-    private final OrgContext orgContext;
     private final OrganizationService organizations;
 
     /** Issues any pre-step data for the factor (TOTP QR, WebAuthn options, or sends an email code). */
@@ -71,11 +69,8 @@ public class FactorStepService {
         return handler.prepare(user, request);
     }
 
-    // Resolve the winning login policy bound to the login org, so tenant-scoped policies participate.
     private AuthPolicyView resolveForLogin(UserAccount user, UUID loginOrgId) {
-        return loginOrgId == null
-                ? authPolicies.resolveForUser(user)
-                : orgContext.callInOrg(loginOrgId, () -> authPolicies.resolveForUser(user));
+        return loginPolicy.resolve(user, loginOrgId);
     }
 
     /** Verifies the user's response; on success grants the factor and returns the (possibly completed) view. */
