@@ -1,6 +1,9 @@
 package com.example.sso.portal.application;
 
-/** The kind of launchable application: an OIDC client or a SAML service provider. */
+/**
+ * The kind of application a policy binding targets: an OIDC client, a SAML service provider, or an
+ * IdP-served portal ({@code PORTAL} — the admin console or the end-user portal).
+ */
 public enum AppType {
-    OIDC, SAML
+    OIDC, SAML, PORTAL
 }
