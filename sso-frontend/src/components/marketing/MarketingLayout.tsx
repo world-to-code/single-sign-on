@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { ArrowRight, Menu, X } from "lucide-react";
 import { Brand } from "@/components/Brand";
+import { LanguageToggle } from "@/components/layout/LanguageToggle";
+import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -59,6 +61,10 @@ export default function MarketingLayout() {
             </nav>
           </div>
           <div className="flex items-center gap-2">
+            <div className="flex items-center">
+              <LanguageToggle iconOnly />
+              <ThemeToggle iconOnly />
+            </div>
             <Button variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={signIn}>{t("signIn")}</Button>
             <Button size="sm" onClick={getStarted}>{t("getStarted")} <ArrowRight /></Button>
             <button className="ml-1 md:hidden" aria-label={t("ariaMenu")} aria-expanded={menuOpen}
