@@ -5,5 +5,6 @@ import { console } from "./console";
 import { errors } from "./errors";
 import { states } from "./states";
 import { validation } from "./validation";
+import { marketing } from "./marketing";
 
-export const ko = { common, nav, auth, console, errors, states, validation } as const;
+export const ko = { common, nav, auth, console, errors, states, validation, marketing } as const;

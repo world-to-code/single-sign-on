@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   ArrowRight, Blocks, Check, CheckCircle2, Eye, KeyRound, Network, RefreshCw, ShieldAlert,
   ShieldCheck, UserCheck, UsersRound, Workflow,
@@ -8,29 +9,27 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Section, CtaBand, getStarted, signIn } from "@/components/marketing/MarketingLayout";
 
+type MKey = keyof (typeof import("@/i18n/en/marketing"))["marketing"];
+
 /** Marketing home ("/"): an asymmetric landing hero with a live product mock, a sticky "why switch"
  *  narrative, and wide entry-point rows that route to the detail pages — a story, not a card wall. */
 export default function Home() {
+  const { t } = useTranslation("marketing");
   return (
     <>
       <section className="relative overflow-hidden border-b">
         <div className="relative mx-auto grid max-w-6xl gap-12 px-4 py-20 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-center lg:py-24">
           <div>
-            <Badge variant="muted" className="mb-5">Central identity provider</Badge>
-            <h1 className="text-balance text-4xl font-bold tracking-tight sm:text-5xl">
-              One identity for every app your team touches
-            </h1>
-            <p className="mt-5 max-w-xl text-pretty text-lg text-muted-foreground">
-              Mini SSO is a self-hostable, multi-tenant identity provider — single sign-on over OIDC and SAML,
-              passkeys and step-up MFA, SCIM provisioning, and per-tenant isolation, all from one deploy.
-            </p>
+            <Badge variant="muted" className="mb-5">{t("homeHeroBadge")}</Badge>
+            <h1 className="text-balance text-4xl font-bold tracking-tight sm:text-5xl">{t("homeHeroTitle")}</h1>
+            <p className="mt-5 max-w-xl text-pretty text-lg text-muted-foreground">{t("homeHeroBody")}</p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Button size="lg" onClick={getStarted}>Start free <ArrowRight /></Button>
-              <Button size="lg" variant="outline" onClick={signIn}>Sign in to your workspace</Button>
+              <Button size="lg" onClick={getStarted}>{t("homeHeroStartFree")} <ArrowRight /></Button>
+              <Button size="lg" variant="outline" onClick={signIn}>{t("homeHeroSignIn")}</Button>
             </div>
             <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
-              {["No credit card", "Set up in minutes", "Standards-based"].map((t) => (
-                <span key={t} className="inline-flex items-center gap-1.5"><Check className="size-4 text-primary" /> {t}</span>
+              {(["homeHeroChipNoCard", "homeHeroChipMinutes", "homeHeroChipStandards"] as MKey[]).map((k) => (
+                <span key={k} className="inline-flex items-center gap-1.5"><Check className="size-4 text-primary" /> {t(k)}</span>
               ))}
             </div>
           </div>
@@ -40,7 +39,7 @@ export default function Home() {
 
       <Section tone="muted" className="!py-12">
         <p className="text-center text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Built on open standards — connect anything
+          {t("homeStandardsHeading")}
         </p>
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           {["OpenID Connect", "SAML 2.0", "SCIM 2.0", "OAuth 2.1", "WebAuthn / passkeys"].map((p) => (
@@ -52,14 +51,9 @@ export default function Home() {
       <Section>
         <div className="grid gap-10 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)]">
           <div className="lg:sticky lg:top-24 lg:self-start">
-            <Badge variant="muted" className="mb-4">Why teams switch</Badge>
-            <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-              Stop juggling logins and access
-            </h2>
-            <p className="mt-3 text-muted-foreground">
-              Scattered accounts, manual onboarding, and blind spots are incidents waiting to happen. Mini SSO
-              replaces them with one governed front door — and each fix is a link away.
-            </p>
+            <Badge variant="muted" className="mb-4">{t("homeWhyBadge")}</Badge>
+            <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">{t("homeWhyTitle")}</h2>
+            <p className="mt-3 text-muted-foreground">{t("homeWhyBody")}</p>
           </div>
           <div className="space-y-3">
             {PROBLEMS.map((p) => (
@@ -68,10 +62,10 @@ export default function Home() {
                   <p.icon className="size-5" />
                 </div>
                 <div>
-                  <h3 className="font-semibold">{p.title}</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">{p.body}</p>
+                  <h3 className="font-semibold">{t(p.title)}</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">{t(p.body)}</p>
                   <p className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-primary">
-                    <CheckCircle2 className="size-4" /> {p.fix}
+                    <CheckCircle2 className="size-4" /> {t(p.fix)}
                   </p>
                 </div>
               </div>
@@ -83,14 +77,10 @@ export default function Home() {
       <Section tone="muted">
         <div className="mb-8 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <Badge variant="muted" className="mb-3">Explore</Badge>
-            <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-              Four ways to go deeper
-            </h2>
+            <Badge variant="muted" className="mb-3">{t("homeExploreBadge")}</Badge>
+            <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">{t("homeExploreTitle")}</h2>
           </div>
-          <p className="max-w-sm text-sm text-muted-foreground">
-            Each page tells a different part of the story — from capabilities to the isolation model.
-          </p>
+          <p className="max-w-sm text-sm text-muted-foreground">{t("homeExploreBody")}</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           {EXPLORE.map((e) => (
@@ -100,8 +90,8 @@ export default function Home() {
                 <e.icon className="size-5" />
               </div>
               <div className="min-w-0 flex-1">
-                <h3 className="font-semibold">{e.title}</h3>
-                <p className="mt-0.5 text-sm text-muted-foreground">{e.body}</p>
+                <h3 className="font-semibold">{t(e.title)}</h3>
+                <p className="mt-0.5 text-sm text-muted-foreground">{t(e.body)}</p>
               </div>
               <ArrowRight className="size-5 shrink-0 text-muted-foreground transition-all group-hover:translate-x-0.5 group-hover:text-primary" />
             </Link>
@@ -116,8 +106,14 @@ export default function Home() {
 
 /** A stylized in-browser product preview — a tenant admin dashboard — built entirely from tokens. */
 function ProductPreview() {
+  const { t } = useTranslation("marketing");
   const bars = ["h-[38%]", "h-[52%]", "h-[44%]", "h-[61%]", "h-[55%]", "h-[72%]",
     "h-[66%]", "h-[80%]", "h-[74%]", "h-[90%]", "h-[62%]", "h-[84%]"];
+  const stats: { label: MKey; value: string; icon: LucideIcon }[] = [
+    { label: "homePreviewUsers", value: "1,284", icon: UsersRound },
+    { label: "homePreviewSignins", value: "3,907", icon: UserCheck },
+    { label: "homePreviewApps", value: "24", icon: Blocks },
+  ];
   return (
     <div className="overflow-hidden rounded-xl border bg-card shadow-2xl">
       <div className="flex items-center gap-2 border-b bg-muted/50 px-4 py-2.5">
@@ -129,14 +125,10 @@ function ProductPreview() {
         </span>
       </div>
       <div className="grid gap-4 p-5 sm:grid-cols-3">
-        {[
-          { label: "Active users", value: "1,284", icon: UsersRound },
-          { label: "Sign-ins today", value: "3,907", icon: UserCheck },
-          { label: "Connected apps", value: "24", icon: Blocks },
-        ].map((s) => (
+        {stats.map((s) => (
           <div key={s.label} className="rounded-lg border bg-background p-4 text-left">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">{s.label}</span>
+              <span className="text-xs text-muted-foreground">{t(s.label)}</span>
               <s.icon className="size-4 text-primary" />
             </div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">{s.value}</div>
@@ -146,7 +138,7 @@ function ProductPreview() {
       <div className="px-5 pb-5">
         <div className="rounded-lg border bg-background p-4">
           <div className="mb-3 flex items-center justify-between">
-            <span className="text-sm font-medium">Sign-ins this week</span>
+            <span className="text-sm font-medium">{t("homePreviewChartTitle")}</span>
             <Badge variant="success">+12%</Badge>
           </div>
           <div className="flex h-24 items-end gap-1.5">
@@ -160,16 +152,16 @@ function ProductPreview() {
   );
 }
 
-const PROBLEMS: { icon: LucideIcon; title: string; body: string; fix: string }[] = [
-  { icon: KeyRound, title: "Password sprawl", body: "Every app becomes another password to reset and another way in for attackers.", fix: "One login, everywhere" },
-  { icon: RefreshCw, title: "Manual joiners and leavers", body: "Onboarding drags and offboarding gets missed — orphaned accounts linger for months.", fix: "Automated with SCIM" },
-  { icon: Eye, title: "No visibility", body: "Who signed in, from where, with which factor? Without a trail you can't answer an auditor.", fix: "Full audit and analytics" },
-  { icon: ShieldAlert, title: "Inconsistent MFA", body: "Some apps enforce it, some don't — the weakest link defines your security posture.", fix: "MFA and step-up, centrally" },
+const PROBLEMS: { icon: LucideIcon; title: MKey; body: MKey; fix: MKey }[] = [
+  { icon: KeyRound, title: "homeProblem1Title", body: "homeProblem1Body", fix: "homeProblem1Fix" },
+  { icon: RefreshCw, title: "homeProblem2Title", body: "homeProblem2Body", fix: "homeProblem2Fix" },
+  { icon: Eye, title: "homeProblem3Title", body: "homeProblem3Body", fix: "homeProblem3Fix" },
+  { icon: ShieldAlert, title: "homeProblem4Title", body: "homeProblem4Body", fix: "homeProblem4Fix" },
 ];
 
-const EXPLORE: { to: string; icon: LucideIcon; title: string; body: string }[] = [
-  { to: "/product", icon: Workflow, title: "Product", body: "SSO, MFA, provisioning, RBAC, and analytics in one place." },
-  { to: "/integrations", icon: Blocks, title: "Integrations", body: "Connect OIDC and SAML apps and sync users with SCIM." },
-  { to: "/security", icon: ShieldCheck, title: "Security", body: "Row-level isolation, encryption, and revocation that propagates." },
-  { to: "/how-it-works", icon: Network, title: "How it works", body: "From signup to connected apps in four steps." },
+const EXPLORE: { to: string; icon: LucideIcon; title: MKey; body: MKey }[] = [
+  { to: "/product", icon: Workflow, title: "homeExploreProductTitle", body: "homeExploreProductBody" },
+  { to: "/integrations", icon: Blocks, title: "homeExploreIntegrationsTitle", body: "homeExploreIntegrationsBody" },
+  { to: "/security", icon: ShieldCheck, title: "homeExploreSecurityTitle", body: "homeExploreSecurityBody" },
+  { to: "/how-it-works", icon: Network, title: "homeExploreHowTitle", body: "homeExploreHowBody" },
 ];

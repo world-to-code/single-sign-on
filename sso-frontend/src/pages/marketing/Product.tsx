@@ -1,4 +1,5 @@
 import type { ComponentType } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Building2, Check, CheckCircle2, Fingerprint, KeyRound, Lock, Minus, RefreshCw,
   ScrollText, ShieldCheck, UsersRound,
@@ -6,23 +7,21 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Section, CtaBand } from "@/components/marketing/MarketingLayout";
+
+type MKey = keyof (typeof import("@/i18n/en/marketing"))["marketing"];
 import { cn } from "@/lib/utils";
 
 /** Product page ("/product"): a capability-by-capability deep dive as alternating feature rows, each
  *  paired with its own purpose-built tokenized mock — no repeated card grid. */
 export default function Product() {
+  const { t } = useTranslation("marketing");
   return (
     <>
       <section className="relative overflow-hidden border-b">
         <div className="relative mx-auto max-w-3xl px-4 py-20 text-center sm:px-6 sm:py-24">
-          <Badge variant="muted" className="mb-5">Capabilities</Badge>
-          <h1 className="text-balance text-4xl font-bold tracking-tight sm:text-5xl">
-            Everything an identity provider should do
-          </h1>
-          <p className="mx-auto mt-5 max-w-xl text-pretty text-lg text-muted-foreground">
-            Standards-based, secure by default, and built to serve many organizations from a single origin —
-            every capability works the moment your workspace is created.
-          </p>
+          <Badge variant="muted" className="mb-5">{t("productHeroBadge")}</Badge>
+          <h1 className="text-balance text-4xl font-bold tracking-tight sm:text-5xl">{t("productHeroTitle")}</h1>
+          <p className="mx-auto mt-5 max-w-xl text-pretty text-lg text-muted-foreground">{t("productHeroBody")}</p>
         </div>
       </section>
 
@@ -34,12 +33,12 @@ export default function Product() {
                 <div className="mb-4 flex size-11 items-center justify-center rounded-lg bg-accent text-accent-foreground">
                   <c.icon className="size-5" />
                 </div>
-                <h2 className="text-2xl font-semibold tracking-tight">{c.title}</h2>
-                <p className="mt-3 text-muted-foreground">{c.body}</p>
+                <h2 className="text-2xl font-semibold tracking-tight">{t(c.title)}</h2>
+                <p className="mt-3 text-muted-foreground">{t(c.body)}</p>
                 <ul className="mt-5 space-y-2.5">
                   {c.points.map((p) => (
                     <li key={p} className="flex gap-2.5 text-sm">
-                      <Check className="mt-0.5 size-4 shrink-0 text-primary" /> <span>{p}</span>
+                      <Check className="mt-0.5 size-4 shrink-0 text-primary" /> <span>{t(p)}</span>
                     </li>
                   ))}
                 </ul>
@@ -54,16 +53,14 @@ export default function Product() {
 
       <Section tone="muted">
         <div className="mb-8 max-w-2xl">
-          <Badge variant="muted" className="mb-3">At a glance</Badge>
-          <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-            The spec sheet, in one line each
-          </h2>
+          <Badge variant="muted" className="mb-3">{t("productSpecBadge")}</Badge>
+          <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">{t("productSpecTitle")}</h2>
         </div>
         <dl className="grid overflow-hidden rounded-xl border bg-card sm:grid-cols-2 lg:grid-cols-4 [&>div]:border-b [&>div:last-child]:border-b-0 sm:[&>div]:border-b-0 sm:[&>div]:border-r sm:[&>div:nth-child(2n)]:border-r-0 lg:[&>div]:border-r lg:[&>div:last-child]:border-r-0">
           {SPECS.map((s) => (
             <div key={s.label} className="p-6">
-              <dt className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{s.label}</dt>
-              <dd className="mt-1.5 font-medium">{s.value}</dd>
+              <dt className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t(s.label)}</dt>
+              <dd className="mt-1.5 font-medium">{t(s.value)}</dd>
             </div>
           ))}
         </dl>
@@ -77,6 +74,7 @@ export default function Product() {
 /* ---------- Per-capability mocks (each visually distinct) ---------- */
 
 function SsoMock() {
+  const { t } = useTranslation("marketing");
   return (
     <div className="space-y-3">
       {[
@@ -95,18 +93,19 @@ function SsoMock() {
         </div>
       ))}
       <div className="flex items-center gap-2 rounded-lg border border-dashed px-4 py-2.5 text-xs text-muted-foreground">
-        <KeyRound className="size-3.5 text-primary" /> One session · signed with the tenant's own key
+        <KeyRound className="size-3.5 text-primary" /> {t("productMockSsoOne")}
       </div>
     </div>
   );
 }
 
 function MfaMock() {
+  const { t } = useTranslation("marketing");
   return (
     <div className="space-y-3">
       {[
-        { icon: Fingerprint, name: "Passkey", meta: "WebAuthn · platform authenticator", state: "Verified" },
-        { icon: KeyRound, name: "Authenticator app", meta: "TOTP · replay-protected", state: "Enabled" },
+        { icon: Fingerprint, name: t("productMockPasskey"), meta: t("productMockPasskeyMeta"), state: t("productMockPasskeyState") },
+        { icon: KeyRound, name: t("productMockAuthApp"), meta: t("productMockAuthAppMeta"), state: t("productMockAuthAppState") },
       ].map((f) => (
         <div key={f.name} className="flex items-center justify-between rounded-lg border bg-card px-4 py-3">
           <div className="flex items-center gap-3">
@@ -120,23 +119,24 @@ function MfaMock() {
         </div>
       ))}
       <div className="flex items-center gap-2 rounded-lg bg-primary/10 px-4 py-2.5 text-xs font-medium text-primary">
-        <ShieldCheck className="size-3.5" /> Step-up required — fresh factor within 5 min
+        <ShieldCheck className="size-3.5" /> {t("productMockMfaStepup")}
       </div>
     </div>
   );
 }
 
 function ScimMock() {
+  const { t } = useTranslation("marketing");
   const rows = [
-    { user: "jordan@acme.com", state: "Provisioned", tone: "success" as const },
-    { user: "priya@acme.com", state: "Provisioned", tone: "success" as const },
-    { user: "sam@acme.com", state: "Deprovisioned", tone: "muted" as const },
+    { user: "jordan@acme.com", state: t("productMockProvisioned"), tone: "success" as const },
+    { user: "priya@acme.com", state: t("productMockProvisioned"), tone: "success" as const },
+    { user: "sam@acme.com", state: t("productMockDeprovisioned"), tone: "muted" as const },
   ];
   return (
     <div className="rounded-lg border bg-card">
       <div className="flex items-center justify-between border-b px-4 py-2.5">
-        <span className="flex items-center gap-2 text-sm font-medium"><RefreshCw className="size-4 text-primary" /> Directory sync</span>
-        <span className="inline-flex items-center gap-1.5 text-xs text-success"><span className="size-1.5 rounded-full bg-success" /> Live</span>
+        <span className="flex items-center gap-2 text-sm font-medium"><RefreshCw className="size-4 text-primary" /> {t("productMockDirectorySync")}</span>
+        <span className="inline-flex items-center gap-1.5 text-xs text-success"><span className="size-1.5 rounded-full bg-success" /> {t("productMockLive")}</span>
       </div>
       <ul className="divide-y">
         {rows.map((r) => (
@@ -151,6 +151,7 @@ function ScimMock() {
 }
 
 function TenantMock() {
+  const { t } = useTranslation("marketing");
   const orgs = ["acme.mysso.com", "globex.mysso.com", "initech.mysso.com"];
   return (
     <div className="space-y-2.5">
@@ -161,26 +162,27 @@ function TenantMock() {
             <span className="font-mono text-xs">{o}</span>
           </span>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-            <Lock className="size-3" /> RLS isolated
+            <Lock className="size-3" /> {t("productMockRlsIsolated")}
           </span>
         </div>
       ))}
-      <p className="pt-1 text-center text-xs text-muted-foreground">Row-level security · fail-closed by default</p>
+      <p className="pt-1 text-center text-xs text-muted-foreground">{t("productMockRlsFooter")}</p>
     </div>
   );
 }
 
 function RbacMock() {
-  const caps = ["Read", "Write", "Admin"];
+  const { t } = useTranslation("marketing");
+  const caps = [t("productMockCapRead"), t("productMockCapWrite"), t("productMockCapAdmin")];
   const roles: { role: string; grants: boolean[] }[] = [
-    { role: "Org admin", grants: [true, true, true] },
-    { role: "Member", grants: [true, true, false] },
-    { role: "Auditor", grants: [true, false, false] },
+    { role: t("productMockRoleOrgAdmin"), grants: [true, true, true] },
+    { role: t("productMockRoleMember"), grants: [true, true, false] },
+    { role: t("productMockRoleAuditor"), grants: [true, false, false] },
   ];
   return (
     <div className="overflow-hidden rounded-lg border bg-card">
       <div className="grid grid-cols-[1.4fr_repeat(3,1fr)] border-b bg-muted/40 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-        <span className="px-3 py-2">Role</span>
+        <span className="px-3 py-2">{t("productMockColRole")}</span>
         {caps.map((c) => <span key={c} className="px-3 py-2 text-center">{c}</span>)}
       </div>
       {roles.map((r) => (
@@ -221,72 +223,36 @@ function AuditMock() {
   );
 }
 
-const CAPABILITIES: { icon: LucideIcon; title: string; body: string; points: string[]; Mock: ComponentType }[] = [
+const CAPABILITIES: { icon: LucideIcon; title: MKey; body: MKey; points: MKey[]; Mock: ComponentType }[] = [
   {
-    icon: KeyRound, title: "Single sign-on", Mock: SsoMock,
-    body: "One login for every connected application. Register an OIDC client or a SAML relying party and your users authenticate once, then move between apps without re-entering credentials.",
-    points: [
-      "OpenID Connect (authorization code + PKCE) and SAML 2.0",
-      "A branded consent screen you control",
-      "Per-application sign-on policies and step-up",
-      "Per-tenant signing keys and issuer",
-    ],
+    icon: KeyRound, title: "productSsoTitle", Mock: SsoMock, body: "productSsoBody",
+    points: ["productSsoPoint1", "productSsoPoint2", "productSsoPoint3", "productSsoPoint4"],
   },
   {
-    icon: Fingerprint, title: "Multi-factor and passkeys", Mock: MfaMock,
-    body: "Raise assurance without friction. WebAuthn passkeys, TOTP authenticator apps, and step-up re-authentication for sensitive actions — with factor ordering enforced on the server.",
-    points: [
-      "WebAuthn / FIDO2 passkeys with challenge and origin validation",
-      "TOTP with replay protection",
-      "Step-up (RFC 9470) on privileged operations",
-      "Adaptive rules by network zone",
-    ],
+    icon: Fingerprint, title: "productMfaTitle", Mock: MfaMock, body: "productMfaBody",
+    points: ["productMfaPoint1", "productMfaPoint2", "productMfaPoint3", "productMfaPoint4"],
   },
   {
-    icon: RefreshCw, title: "Automated provisioning", Mock: ScimMock,
-    body: "Keep every app in sync with your source of truth. SCIM 2.0 pushes users and groups automatically, so a new hire has access on day one and a departure is deprovisioned the moment it happens.",
-    points: [
-      "SCIM 2.0 Users and Groups endpoints",
-      "Per-tenant, scoped provisioning tokens",
-      "Create, update, disable, and delete flows",
-      "Group-driven role assignment",
-    ],
+    icon: RefreshCw, title: "productScimTitle", Mock: ScimMock, body: "productScimBody",
+    points: ["productScimPoint1", "productScimPoint2", "productScimPoint3", "productScimPoint4"],
   },
   {
-    icon: Building2, title: "Multi-tenant organizations", Mock: TenantMock,
-    body: "Serve many customers from one deploy. Every organization gets its own users, policies, applications, and signing keys, isolated from every other tenant at the database.",
-    points: [
-      "Tenant-first login at a per-tenant subdomain",
-      "Row-level security isolation per organization",
-      "Delegated administration by scope",
-      "Platform super-admin with drill-in",
-    ],
+    icon: Building2, title: "productTenantTitle", Mock: TenantMock, body: "productTenantBody",
+    points: ["productTenantPoint1", "productTenantPoint2", "productTenantPoint3", "productTenantPoint4"],
   },
   {
-    icon: UsersRound, title: "Roles and access policies", Mock: RbacMock,
-    body: "Grant exactly the access each person needs. Fine-grained RBAC, per-app assignment, authentication policies, and network zones let you shape who gets in, from where, and how.",
-    points: [
-      "Role-based access control with implied permissions",
-      "Per-application assignment (who can use what)",
-      "Authentication policies and network zones",
-      "Self-protection and last-admin safeguards",
-    ],
+    icon: UsersRound, title: "productRbacTitle", Mock: RbacMock, body: "productRbacBody",
+    points: ["productRbacPoint1", "productRbacPoint2", "productRbacPoint3", "productRbacPoint4"],
   },
   {
-    icon: ScrollText, title: "Audit and analytics", Mock: AuditMock,
-    body: "See everything that matters. Every security-relevant action is recorded, with per-organization trends and platform-wide dashboards so you can answer an auditor and spot anomalies early.",
-    points: [
-      "Immutable audit trail of admin and auth events",
-      "Per-organization sign-in trends",
-      "Platform-wide analytics for operators",
-      "Non-revealing errors — no account enumeration",
-    ],
+    icon: ScrollText, title: "productAuditTitle", Mock: AuditMock, body: "productAuditBody",
+    points: ["productAuditPoint1", "productAuditPoint2", "productAuditPoint3", "productAuditPoint4"],
   },
 ];
 
-const SPECS: { label: string; value: string }[] = [
-  { label: "Protocols", value: "OIDC · SAML 2.0" },
-  { label: "Factors", value: "Passkeys · TOTP · Step-up" },
-  { label: "Provisioning", value: "SCIM 2.0 Users & Groups" },
-  { label: "Isolation", value: "Postgres RLS · per-tenant keys" },
+const SPECS: { label: MKey; value: MKey }[] = [
+  { label: "productSpecProtocolsLabel", value: "productSpecProtocolsValue" },
+  { label: "productSpecFactorsLabel", value: "productSpecFactorsValue" },
+  { label: "productSpecProvisioningLabel", value: "productSpecProvisioningValue" },
+  { label: "productSpecIsolationLabel", value: "productSpecIsolationValue" },
 ];
