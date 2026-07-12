@@ -363,7 +363,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
             repository.delete(policy);
             repository.flush();
         } catch (DataIntegrityViolationException e) {
-            throw ConflictException.of("session.policy.governsConsole");
+            throw ConflictException.of("session.policy.inUseByBinding");
         }
         events.publishEvent(new SessionPolicyCacheChanged());
     }

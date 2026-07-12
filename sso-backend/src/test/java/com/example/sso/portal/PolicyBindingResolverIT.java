@@ -58,6 +58,7 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
     private static final String GROUP = "pbt-group";
     private static final String DISABLED = "pbt-disabled";
     private static final String SHADOW = "pbt-shadow";
+    private static final String DISTIER = "pbt-distier";
     private static final String NONE = "pbt-none";
 
     private UserAccount kim;   // roles: finance + roleB, group: marketing
@@ -115,6 +116,9 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
             // shadow: a DISABLED higher-specificity USER binding must be transparent to the ENABLED ROLE one
             bind(SHADOW, SubjectType.ROLE, finance, authStrong, sess15, 20);
             bind(SHADOW, SubjectType.USER, kimId, authDisabled, sessDisabled, 40);
+            // distier: a DISABLED ROLE-tier binding must be transparent to the ENABLED all-subjects one below it
+            bind(DISTIER, null, null, null, sessAll, 10);
+            bind(DISTIER, SubjectType.ROLE, finance, null, sessDisabled, 20);
 
             kim = users.findById(kimId).orElseThrow();
             lee = users.findById(leeId).orElseThrow();
@@ -177,6 +181,30 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
     @Test
     void aDisabledBoundSessionPolicyResolvesToEmpty() {
         assertThat(resolveSession(kim, DISABLED)).isEmpty();
+    }
+
+    @Test
+    void aDisabledRoleBindingIsTransparentToTheAllSubjectsOne() {
+        assertThat(resolveSession(kim, DISTIER)).map(SessionPolicyDetails::getId).contains(sessAll);
+    }
+
+    @Test
+    void specificityDominatesOrgOwnership() {
+        // A GLOBAL USER binding (specificity 3, org_id null) must beat a tenant-OWNED all-subjects binding
+        // (specificity 1) even though org-ownership ranks below priority — specificity is the primary key, so
+        // a reorder of the comparator that put org-ownership above specificity would be caught here.
+        String app = "pbt-spec";
+        UUID org = orgContext.callAsPlatform(
+                () -> organizations.create(new NewOrganization("pbt-spec-" + suffix(), "PBT")).id());
+        createdOrgs.add(org);
+        orgContext.runAsPlatform(() -> bindings.saveAndFlush(PolicyBinding.builder()
+                .appType(APP).appId(app).subjectType(SubjectType.USER).subjectId(kim.getId())
+                .sessionPolicyId(sess5).priority(1).build()));                 // global USER
+        orgContext.runInOrg(org, () -> bindings.saveAndFlush(PolicyBinding.builder()
+                .appType(APP).appId(app).sessionPolicyId(sess15).priority(50).orgId(org).build())); // tenant all-subjects
+
+        assertThat(orgContext.callInOrg(org, () -> resolver.resolveSessionPolicy(kim, APP, app)))
+                .map(SessionPolicyDetails::getId).contains(sess5);
     }
 
     @Test

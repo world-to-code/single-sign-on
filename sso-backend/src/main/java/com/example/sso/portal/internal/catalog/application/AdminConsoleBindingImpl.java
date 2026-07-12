@@ -34,6 +34,8 @@ class AdminConsoleBindingImpl implements AdminConsoleBinding {
     @Override
     @Transactional(readOnly = true)
     public Optional<UUID> sessionPolicyId() {
+        // own-else-global mirrors PolicyBindingResolverImpl#orgRank (a tenant's own binding beats the inherited
+        // global); keep the two in step if a tenancy tier is ever inserted between org and global.
         UUID org = orgContext.currentOrg().orElse(null);
         return ownRow(org).or(this::globalRow).map(PolicyBinding::getSessionPolicyId);
     }

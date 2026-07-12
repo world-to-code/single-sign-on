@@ -3,6 +3,8 @@ package com.example.sso.admin;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.portal.binding.AdminConsoleBinding;
+import com.example.sso.security.AdminConsolePolicy;
+import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.session.policy.SessionPolicySpec;
 import com.example.sso.shared.error.BadRequestException;
@@ -10,6 +12,9 @@ import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.user.account.NewUser;
+import com.example.sso.user.account.UserService;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -40,9 +45,14 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
     OrganizationService organizations;
     @Autowired
     SessionPolicyService sessionPolicies;
+    @Autowired
+    UserService users;
+    @Autowired
+    AdminConsolePolicy adminConsole;
 
     private UUID orgA;
     private UUID orgB;
+    private final List<UUID> createdUsers = new ArrayList<>();
 
     @AfterEach
     void tearDown() {
@@ -54,6 +64,8 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
         if (orgB != null) {
             organizations.delete(orgB);
         }
+        createdUsers.forEach(users::delete);
+        createdUsers.clear();
     }
 
     private Optional<UUID> globalConsolePolicy() {
@@ -85,6 +97,10 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
     void aFreshTenantInheritsTheGlobalConsolePolicy() {
         orgA = org();
 
+        // Independent oracle: V84 must migrate the GLOBAL pin (a fresh tenant inheriting nothing would let a
+        // hardened console posture silently fail open). Asserted separately so the inherit check below is not a
+        // vacuous empty==empty if the global row were dropped.
+        assertThat(globalConsolePolicy()).isPresent();
         assertThat(consolePolicyOf(orgA)).isEqualTo(globalConsolePolicy()); // no own binding → inherits global
         assertThat(bindingRows(orgA)).isZero();                             // a pure read materializes no row
     }
@@ -159,6 +175,43 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void thePlatformMayWriteAndClearTheGlobalConsolePin() {
+        // Positive control for the write path (the deny case above only proves a tenant is refused): the
+        // platform context CAN set and clear the global pin. Restores the original migrated pin afterwards.
+        Optional<UUID> original = globalConsolePolicy();
+        UUID alt = orgContext.callAsPlatform(() -> sessionPolicies.create(globalSpec("GlobalConsole-" + suffix())).getId());
+        try {
+            orgContext.runAsPlatform(() -> consoleBinding.setSessionPolicy(alt));
+            assertThat(globalConsolePolicy()).contains(alt);
+        } finally {
+            orgContext.runAsPlatform(() -> consoleBinding.setSessionPolicy(original.orElse(null))); // restore + unbind alt
+            ownerJdbc().update("delete from session_policy where id = ?", alt);
+        }
+        assertThat(globalConsolePolicy()).isEqualTo(original);
+    }
+
+    @Test
+    void anUnDrilledPlatformConsoleResolvesTheGlobalPinNotATenantsBinding() {
+        // The elevation gate must resolve the console policy scoped to the ACTING org, never the ambient
+        // platform context: an un-drilled super-admin must NOT inherit a tenant's PORTAL/admin binding (RLS
+        // under the platform GUC would expose every tenant's rows, and org-ownership ranks a tenant row above
+        // the global pin). Without the callInOrg scoping in AdminConsolePolicy, orgA's binding would leak here.
+        orgA = org();
+        UUID policyOfA = defaultPolicyOf(orgA);
+        orgContext.runInOrg(orgA, () -> consoleBinding.setSessionPolicy(policyOfA)); // orgA pins its own policy
+        UUID globalPin = globalConsolePolicy().orElseThrow();
+
+        String superAdmin = "sa-" + suffix();
+        UUID id = orgContext.callAsPlatform(() -> users.createUser(new NewUser(
+                superAdmin, superAdmin + "@example.com", "SA", "S3cret!pw9", Set.of("ROLE_USER"))).getId());
+        createdUsers.add(id);
+
+        SessionPolicyDetails resolved = orgContext.callAsPlatform(() -> adminConsole.resolveFor(superAdmin));
+        assertThat(resolved.getId()).isNotEqualTo(policyOfA); // orgA's tenant binding must not leak to the platform console
+        assertThat(resolved.getId()).isEqualTo(globalPin);    // the global pin governs the un-drilled super-admin
+    }
+
+    @Test
     void aPolicyGoverningTheConsoleCannotBeDeletedUntilItIsDeselected() {
         orgA = org();
         UUID custom = orgContext.callInOrg(orgA, () -> sessionPolicies.create(
@@ -175,5 +228,14 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
         orgContext.runInOrg(orgA, () -> consoleBinding.setSessionPolicy(null));
         assertThatCode(() -> orgContext.runInOrg(orgA, () -> sessionPolicies.delete(custom)))
                 .doesNotThrowAnyException();
+    }
+
+    private SessionPolicySpec globalSpec(String name) {
+        return new SessionPolicySpec(name, 5, true, 480, 30, 5, "TOTP", 2, "TOTP", false, 0, false,
+                "Lax", 5, null, Set.of(), Set.of(), List.of());
+    }
+
+    private static String suffix() {
+        return UUID.randomUUID().toString().substring(0, 8);
     }
 }
