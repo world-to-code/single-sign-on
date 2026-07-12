@@ -5,7 +5,7 @@ import com.example.sso.authpolicy.policy.AuthPolicyAdminService;
 import com.example.sso.authpolicy.policy.AuthPolicySpec;
 import com.example.sso.authpolicy.policy.AuthPolicyView;
 import com.example.sso.portal.application.AppType;
-import com.example.sso.portal.internal.catalog.application.PolicyBindingResolver;
+import com.example.sso.portal.binding.PolicyBindingResolver;
 import com.example.sso.portal.internal.catalog.domain.PolicyBinding;
 import com.example.sso.portal.internal.catalog.domain.PolicyBinding.SubjectType;
 import com.example.sso.portal.internal.catalog.domain.PolicyBindingRepository;
@@ -133,7 +133,7 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
 
     @Test
     void aUserBindingOverridesTheRoleAndAllSubjectsSessionPolicy() {
-        assertThat(resolveSession(kim, PAYMENTS).getId()).isEqualTo(sess5);
+        assertThat(resolveSession(kim, PAYMENTS)).map(SessionPolicyDetails::getId).contains(sess5);
     }
 
     @Test
@@ -141,13 +141,13 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
         // Independent per-field resolution: kim's USER binding carries only a session, so auth still resolves
         // from the ROLE binding — a session override does not drag the auth policy with it.
         assertThat(resolveAuth(kim, PAYMENTS)).map(AuthPolicyView::getId).contains(authStrong);
-        assertThat(resolveSession(kim, PAYMENTS).getId()).isEqualTo(sess5);
+        assertThat(resolveSession(kim, PAYMENTS)).map(SessionPolicyDetails::getId).contains(sess5);
     }
 
     @Test
     void anUnmatchedUserGetsTheAllSubjectsBinding() {
         assertThat(resolveAuth(lee, PAYMENTS)).map(AuthPolicyView::getId).contains(authBasic);
-        assertThat(resolveSession(lee, PAYMENTS).getId()).isEqualTo(sessAll);
+        assertThat(resolveSession(lee, PAYMENTS)).map(SessionPolicyDetails::getId).contains(sessAll);
     }
 
     @Test
@@ -158,20 +158,18 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
 
     @Test
     void aGroupMembershipBindingMatches() {
-        assertThat(resolveSession(kim, GROUP).getId()).isEqualTo(sess15);
+        assertThat(resolveSession(kim, GROUP)).map(SessionPolicyDetails::getId).contains(sess15);
     }
 
     @Test
-    void noBindingFallsBackToTheGlobalResolution() {
+    void noBindingResolvesToEmpty() {
         assertThat(resolveAuth(kim, NONE)).isEmpty();
-        assertThat(resolveSession(kim, NONE).getName()).isEqualTo(SessionPolicyService.DEFAULT_NAME);
+        assertThat(resolveSession(kim, NONE)).isEmpty();
     }
 
     @Test
-    void aDisabledBoundSessionPolicyFallsBack() {
-        SessionPolicyDetails resolved = resolveSession(kim, DISABLED);
-        assertThat(resolved.getId()).isNotEqualTo(sessDisabled);
-        assertThat(resolved.getName()).isEqualTo(SessionPolicyService.DEFAULT_NAME);
+    void aDisabledBoundSessionPolicyResolvesToEmpty() {
+        assertThat(resolveSession(kim, DISABLED)).isEmpty();
     }
 
     @Test
@@ -179,7 +177,7 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
         // kim's USER binding (specificity 3) points at DISABLED policies; the enabled ROLE binding below it
         // must still apply — a disabled strict binding must never silently weaken to the fallback/Default.
         assertThat(resolveAuth(kim, SHADOW)).map(AuthPolicyView::getId).contains(authStrong);
-        assertThat(resolveSession(kim, SHADOW).getId()).isEqualTo(sess15);
+        assertThat(resolveSession(kim, SHADOW)).map(SessionPolicyDetails::getId).contains(sess15);
     }
 
     // --- helpers ---
@@ -188,7 +186,7 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
         return orgContext.callAsPlatform(() -> resolver.resolveAuthPolicy(user, APP, appId));
     }
 
-    private SessionPolicyDetails resolveSession(UserAccount user, String appId) {
+    private java.util.Optional<SessionPolicyDetails> resolveSession(UserAccount user, String appId) {
         return orgContext.callAsPlatform(() -> resolver.resolveSessionPolicy(user, APP, appId));
     }
 

@@ -3,6 +3,7 @@ package com.example.sso.portal.internal.catalog.application;
 import com.example.sso.authpolicy.policy.AuthPolicyResolver;
 import com.example.sso.authpolicy.policy.AuthPolicyView;
 import com.example.sso.portal.application.AppType;
+import com.example.sso.portal.binding.PolicyBindingResolver;
 import com.example.sso.portal.internal.catalog.domain.PolicyBinding;
 import com.example.sso.portal.internal.catalog.domain.PolicyBindingRepository;
 import com.example.sso.session.policy.SessionPolicyDetails;
@@ -23,49 +24,34 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Resolves the effective authentication and session policy for a user in the context of a given app or
- * portal from the {@code policy_binding} matrix. Auth and session are resolved INDEPENDENTLY: for each,
- * the bindings whose subject matches the user and whose field is set are walked most-specific first
- * (USER &gt; GROUP/ROLE &gt; all-subjects, then {@code priority}, then a stable id tie-break) and the first
- * one whose referenced policy is still ENABLED wins. A disabled/deleted binding is transparent — it does
- * NOT collapse resolution to the fallback, so a disabled strict binding can never silently mask an enabled
- * stricter one below it. With no usable binding it falls back to the user's global session resolution
- * ({@link SessionPolicyService#resolveForUser}) / empty for auth so the caller applies its own fallback.
- *
- * <p>SECURITY INVARIANT (enforce when wiring consumers): this MUST run inside the login user's bound org
- * context ({@code callInOrg(loginOrg)}), never as platform. Org confinement of a binding rides RLS, and a
- * USER-subject id is a GLOBAL identity — resolving in a platform/no-org context would let another tenant's
- * {@code USER→policy} binding on a shared app match this user.
+ * Reads the {@code policy_binding} matrix and returns the most specific matching, still-enabled binding per
+ * field (see {@link PolicyBindingResolver}). Walks candidates most-specific first (USER &gt; GROUP/ROLE &gt;
+ * all-subjects, then priority, then a stable id tie-break) and returns the first whose referenced policy is
+ * enabled, so a disabled higher-specificity binding never masks an enabled lower-specificity one.
  */
 @Service
 @RequiredArgsConstructor
-public class PolicyBindingResolver {
+class PolicyBindingResolverImpl implements PolicyBindingResolver {
 
     private final PolicyBindingRepository bindings;
     private final UserGroupService userGroups;
     private final AuthPolicyResolver authPolicies;
     private final SessionPolicyService sessionPolicies;
 
-    /** The auth policy bound for this user in this app, or empty (caller applies login/step-up fallback). */
+    @Override
     @Transactional(readOnly = true)
     public Optional<AuthPolicyView> resolveAuthPolicy(UserAccount user, AppType appType, String appId) {
         return resolveField(user, appType, appId, PolicyBinding::getAuthPolicyId,
                 id -> authPolicies.highestPriorityEnabled(List.of(id)));
     }
 
-    /** The session policy bound for this user in this app, else the user's global session policy / Default. */
+    @Override
     @Transactional(readOnly = true)
-    public SessionPolicyDetails resolveSessionPolicy(UserAccount user, AppType appType, String appId) {
+    public Optional<SessionPolicyDetails> resolveSessionPolicy(UserAccount user, AppType appType, String appId) {
         return resolveField(user, appType, appId, PolicyBinding::getSessionPolicyId,
-                id -> sessionPolicies.findById(id).filter(SessionPolicyDetails::isEnabled))
-                .orElseGet(() -> sessionPolicies.resolveForUser(user));
+                id -> sessionPolicies.findById(id).filter(SessionPolicyDetails::isEnabled));
     }
 
-    /**
-     * Walks the matching bindings most-specific first and returns the first whose {@code field} policy
-     * {@code load}s to an enabled policy — so a disabled higher-specificity binding is skipped rather than
-     * shadowing an enabled lower-specificity one.
-     */
     private <P> Optional<P> resolveField(UserAccount user, AppType appType, String appId,
             Function<PolicyBinding, UUID> field, Function<UUID, Optional<P>> load) {
         UUID userId = user.getId();
