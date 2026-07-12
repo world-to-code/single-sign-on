@@ -10,6 +10,8 @@ import com.example.sso.portal.internal.catalog.domain.PolicyBinding;
 import com.example.sso.portal.internal.catalog.domain.PolicyBinding.SubjectType;
 import com.example.sso.portal.internal.catalog.domain.PolicyBindingRepository;
 import com.example.sso.session.policy.SessionPolicyDetails;
+import com.example.sso.organization.NewOrganization;
+import com.example.sso.organization.OrganizationService;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.session.policy.SessionPolicySpec;
 import com.example.sso.support.AbstractIntegrationTest;
@@ -22,6 +24,7 @@ import com.example.sso.user.group.UserGroupService;
 import com.example.sso.user.role.RoleService;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -46,6 +49,7 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
     @Autowired UserGroupService groups;
     @Autowired AuthPolicyAdminService authPolicies;
     @Autowired SessionPolicyService sessionPolicies;
+    @Autowired OrganizationService organizations;
     @Autowired OrgContext orgContext;
 
     private static final AppType APP = AppType.OIDC;
@@ -65,6 +69,7 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
     private UUID holderRole;
 
     private final List<UUID> createdUsers = new ArrayList<>();
+    private final List<UUID> createdOrgs = new ArrayList<>();
     private final List<UUID> createdGroups = new ArrayList<>();
     private final List<UUID> createdSessionPolicies = new ArrayList<>();
     private final List<UUID> createdAuthPolicies = new ArrayList<>();
@@ -124,11 +129,13 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
             createdAuthPolicies.forEach(id -> ownerJdbc().update("delete from auth_policy where id = ?", id));
             createdGroups.forEach(groups::delete);
             createdUsers.forEach(users::delete);
+            createdOrgs.forEach(id -> ownerJdbc().update("delete from organization where id = ?", id));
         });
         createdSessionPolicies.clear();
         createdAuthPolicies.clear();
         createdGroups.clear();
         createdUsers.clear();
+        createdOrgs.clear();
     }
 
     @Test
@@ -170,6 +177,25 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
     @Test
     void aDisabledBoundSessionPolicyResolvesToEmpty() {
         assertThat(resolveSession(kim, DISABLED)).isEmpty();
+    }
+
+    @Test
+    void aTenantOwnedBindingBeatsTheGlobalOneItInherits() {
+        // Both are all-subjects (specificity ties), so the tenant's OWN binding must win over the global one
+        // it inherits — preserving the old "tenant overrides the platform default" semantics — even though the
+        // global here carries the HIGHER priority (org-ownership is ranked above priority).
+        String app = "pbt-inherit";
+        UUID org = orgContext.callAsPlatform(
+                () -> organizations.create(new NewOrganization("pbt-org-" + suffix(), "PBT")).id());
+        createdOrgs.add(org);
+        orgContext.runAsPlatform(() -> bindings.saveAndFlush(PolicyBinding.builder()
+                .appType(APP).appId(app).sessionPolicyId(sessAll).priority(10).build())); // global default
+        orgContext.runInOrg(org, () -> bindings.saveAndFlush(PolicyBinding.builder()
+                .appType(APP).appId(app).sessionPolicyId(sess5).priority(1).orgId(org).build())); // tenant's own
+
+        Optional<SessionPolicyDetails> resolved =
+                orgContext.callInOrg(org, () -> resolver.resolveSessionPolicy(kim, APP, app));
+        assertThat(resolved).map(SessionPolicyDetails::getId).contains(sess5);
     }
 
     @Test

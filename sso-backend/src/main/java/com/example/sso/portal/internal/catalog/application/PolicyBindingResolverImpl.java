@@ -61,6 +61,7 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
                 .filter(b -> field.apply(b) != null)
                 .filter(b -> subjectMatches(b, userId, roleIds, groupIds))
                 .sorted(Comparator.comparingInt(this::specificity)
+                        .thenComparingInt(this::orgRank)
                         .thenComparingInt(PolicyBinding::getPriority)
                         .thenComparing(PolicyBinding::getId)
                         .reversed())
@@ -75,6 +76,11 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
             return 1;
         }
         return b.getSubjectType() == PolicyBinding.SubjectType.USER ? 3 : 2;
+    }
+
+    /** A tenant's OWN binding beats the GLOBAL one it inherits at the same subject specificity. */
+    private int orgRank(PolicyBinding b) {
+        return b.getOrgId() != null ? 1 : 0;
     }
 
     private boolean subjectMatches(PolicyBinding b, UUID userId, Set<UUID> roleIds, Set<UUID> groupIds) {
