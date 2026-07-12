@@ -125,7 +125,7 @@ export function Section(
   const tones = {
     default: "",
     muted: "border-y bg-muted/30",
-    dark: "bg-ink text-bg",
+    dark: "bg-band text-band-fg",
   } as const;
   return (
     <section id={id} className={cn(tones[tone])}>

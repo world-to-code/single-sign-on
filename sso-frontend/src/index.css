@@ -30,6 +30,10 @@
     --faint: 60 3% 65%;
     --ink-2: 60 3% 22%;
     --ink: 60 4% 10%;
+    /* Theme-INVARIANT spotlight band (marketing dark sections / code terminals): committed dark in BOTH
+       themes so it never inverts. Defined once here; the dark/light theme blocks deliberately do not override it. */
+    --band: 60 6% 8%;
+    --band-fg: 60 8% 96%;
     --accent-soft: 180 23% 94%;
     --accent-line: 182 24% 80%;
     --allow: 145 46% 34%;

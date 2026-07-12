@@ -123,19 +123,19 @@ type Line = Span[];
 const spanClass: Record<NonNullable<Span["c"]>, string> = {
   k: "text-primary",
   s: "text-success",
-  c: "text-bg/40",
+  c: "text-band-fg/40",
 };
 
 function CodeBlock({ title, lines }: { title: string; lines: Line[] }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-white/10 bg-ink shadow-lg">
+    <div className="overflow-hidden rounded-xl border border-white/10 bg-band shadow-lg">
       <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
         <span className="size-2.5 rounded-full bg-destructive/50" />
         <span className="size-2.5 rounded-full bg-amber-400/50" />
         <span className="size-2.5 rounded-full bg-success/50" />
-        <span className="ml-2 truncate font-mono text-xs text-bg/70">{title}</span>
+        <span className="ml-2 truncate font-mono text-xs text-band-fg/70">{title}</span>
       </div>
-      <pre className="overflow-x-auto px-4 py-4 font-mono text-xs leading-relaxed text-bg">
+      <pre className="overflow-x-auto px-4 py-4 font-mono text-xs leading-relaxed text-band-fg">
         <code>
           {lines.map((line, i) => (
             <div key={i}>

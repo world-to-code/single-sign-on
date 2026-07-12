@@ -22,6 +22,7 @@ export default {
         success: { DEFAULT: "hsl(var(--success))", foreground: "hsl(var(--success-foreground))" },
         // Raw semantic tokens (DESIGN.md §2), exposed as their own color names with alpha support.
         ink: { DEFAULT: "hsl(var(--ink) / <alpha-value>)", 2: "hsl(var(--ink-2) / <alpha-value>)" },
+        band: { DEFAULT: "hsl(var(--band) / <alpha-value>)", fg: "hsl(var(--band-fg) / <alpha-value>)" },
         surface: "hsl(var(--surface) / <alpha-value>)",
         sunken: "hsl(var(--sunken) / <alpha-value>)",
         line: { DEFAULT: "hsl(var(--line) / <alpha-value>)", soft: "hsl(var(--line-soft) / <alpha-value>)" },
