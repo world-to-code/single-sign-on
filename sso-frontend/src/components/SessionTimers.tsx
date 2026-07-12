@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { Clock } from "lucide-react";
 import { lastActivityMillis, markActivity, triggerStepUp } from "@/api";
 import { logout } from "@/auth";
@@ -23,6 +24,7 @@ async function signOut() {
  *    protected requests until the re-auth is done, so the modal cannot be bypassed by dismissing it.
  */
 export function SessionTimers() {
+  const { t } = useTranslation("auth");
   const ticker = useRef<number | undefined>(undefined);
   const prompting = useRef(false); // a re-auth modal is already open — don't stack another
   // Seconds left before idle sign-out, or null when outside the warning window. A LIVE value — a static
@@ -93,17 +95,21 @@ export function SessionTimers() {
               <Clock className="size-5" />
             </span>
             <div className="space-y-1">
-              <DialogTitle>Still there?</DialogTitle>
+              <DialogTitle>{t("idleTitle")}</DialogTitle>
               <DialogDescription>
-                You'll be signed out in <span className="font-semibold text-ink" data-idle-countdown>{secondsLeft ?? 0}</span>{" "}
-                seconds due to inactivity.
+                <Trans
+                  t={t}
+                  i18nKey="idleDescription"
+                  values={{ seconds: secondsLeft ?? 0 }}
+                  components={[<span key="0" className="font-semibold text-ink" data-idle-countdown />]}
+                />
               </DialogDescription>
             </div>
           </div>
         </DialogHeader>
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button variant="outline" onClick={() => void signOut()}>Sign out now</Button>
-          <Button onClick={stay}>Stay signed in</Button>
+          <Button variant="outline" onClick={() => void signOut()}>{t("idleSignOutNow")}</Button>
+          <Button onClick={stay}>{t("idleStaySignedIn")}</Button>
         </div>
       </DialogContent>
     </Dialog>

@@ -25,6 +25,7 @@ interface PreviewNode {
 }
 
 function Timeline({ nodes }: { nodes: PreviewNode[] }) {
+  const { t } = useTranslation("auth");
   return (
     <ol className="relative mt-3">
       {nodes.map((node, i) => (
@@ -36,7 +37,7 @@ function Timeline({ nodes }: { nodes: PreviewNode[] }) {
               <p className="text-sm font-semibold text-ink">{node.title}</p>
               {node.chips && (
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-xs text-muted-foreground">any one of</span>
+                  <span className="text-xs text-muted-foreground">{t("previewAnyOneOf")}</span>
                   {node.chips.map((f) => <FactorChip key={f} factor={f} />)}
                 </div>
               )}
@@ -50,9 +51,10 @@ function Timeline({ nodes }: { nodes: PreviewNode[] }) {
 }
 
 function Panel({ children }: { children: ReactNode }) {
+  const { t } = useTranslation("auth");
   return (
     <div className="rounded-[18px] border border-line bg-sunken p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sign-in preview</p>
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("previewTitle")}</p>
       {children}
     </div>
   );
@@ -64,6 +66,7 @@ function Panel({ children }: { children: ReactNode }) {
  * Empty step 1 => "Nobody can sign in"; an empty later step collapses to "No second step".
  */
 export function SignInPreview({ steps }: { steps: string[][] }) {
+  const { t } = useTranslation("auth");
   const [idleMinutes, setIdleMinutes] = useState<number | null>(null);
   useEffect(() => {
     getSessionConfig().then((cfg) => setIdleMinutes(cfg.idleTimeoutMinutes)).catch(() => undefined);
@@ -74,26 +77,26 @@ export function SignInPreview({ steps }: { steps: string[][] }) {
     return (
       <Panel>
         <div className={cn("mt-3 rounded-[12px] border border-deny/30 bg-deny/[0.05] p-4")}>
-          <p className="text-sm font-semibold text-deny">Nobody can sign in</p>
-          <p className="mt-1 text-sm text-muted-foreground">Step 1 has no factors. Turn at least one on.</p>
+          <p className="text-sm font-semibold text-deny">{t("previewDeadTitle")}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{t("previewDeadHint")}</p>
         </div>
       </Panel>
     );
   }
 
   const lifetime = idleMinutes !== null
-    ? `Session active · expires after ${idleMinutes} min idle`
-    : "Session established.";
+    ? t("previewSessionActive", { minutes: idleMinutes })
+    : t("previewSessionEstablished");
 
-  const nodes: PreviewNode[] = [{ title: "Enter email", detail: "We find the person and pick their policy." }];
+  const nodes: PreviewNode[] = [{ title: t("previewEnterEmail"), detail: t("previewEnterEmailDetail") }];
   steps.forEach((step, i) => {
     if (step.length === 0) {
-      nodes.push({ title: i === 1 ? "No second step" : `Step ${i + 1} — no factors` });
+      nodes.push({ title: i === 1 ? t("previewNoSecondStep") : t("previewStepNoFactors", { n: i + 1 }) });
     } else {
-      nodes.push({ title: `Step ${i + 1}`, chips: step });
+      nodes.push({ title: t("stepsStep", { n: i + 1 }), chips: step });
     }
   });
-  nodes.push({ title: "Signed in", detail: lifetime });
+  nodes.push({ title: t("previewSignedIn"), detail: lifetime });
 
   return (
     <Panel>

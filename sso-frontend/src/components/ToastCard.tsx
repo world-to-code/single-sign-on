@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AnimationEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ToastItem, ToastTone } from "./ToastProvider";
@@ -33,6 +34,7 @@ function Pip({ tone }: { tone: ToastTone }) {
  * Removal never depends on animationend alone — a fallback timer covers a suppressed exit animation.
  */
 export function ToastCard({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: number) => void }) {
+  const { t } = useTranslation();
   const reducedMotion = usePrefersReducedMotion();
   const life = LIFE_MS[toast.tone];
   const [paused, setPaused] = useState(false);
@@ -125,7 +127,7 @@ export function ToastCard({ toast, onDismiss }: { toast: ToastItem; onDismiss: (
         )}
         <button
           type="button"
-          aria-label="Dismiss"
+          aria-label={t("dismiss")}
           onClick={dismiss}
           className="shrink-0 rounded-md p-1 text-faint transition-colors hover:text-ink"
         >

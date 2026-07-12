@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 import { AppWindow, ArrowLeft, Lock, ShieldCheck } from "lucide-react";
 import {
@@ -16,12 +17,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const SIZE = 20;
 type Tab = "members" | "roles" | "apps";
 
 export default function GroupDetail() {
+  const { t } = useTranslation("console");
   const { id = "" } = useParams();
   const [group, setGroup] = useState<Group | null>(null);
   const [tab, setTab] = useState<Tab>("members");
@@ -65,23 +68,25 @@ export default function GroupDetail() {
   return (
     <>
       <Link to="/admin/groups" className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-4" /> Back to groups
+        <ArrowLeft className="size-4" /> {t("groupDetailBack")}
       </Link>
       <PageHeader
-        title={group ? group.name : "Group"}
-        description={group?.description || "Organizational group"}
-        actions={group?.system ? <Badge variant="secondary"><Lock className="size-3" /> System group</Badge> : undefined}
+        title={group ? group.name : t("groupDetailFallbackName")}
+        description={group?.description || t("groupDetailFallbackDescription")}
+        actions={group?.system
+          ? <Badge variant="secondary"><Lock className="size-3" /> {t("groupDetailSystemBadge")}</Badge>
+          : undefined}
       />
 
       {error && <Alert variant="destructive" className="mb-4"><AlertDescription>{error}</AlertDescription></Alert>}
 
-      <div className="mb-4 flex gap-1 border-b">
-        {(["members", "roles", "apps"] as Tab[]).map((t) => (
-          <button key={t} onClick={() => setTab(t)}
-                  className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${tab === t ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
-            {t === "members" ? `Members${members ? ` (${members.total})` : ""}`
-              : t === "roles" ? `Roles${group ? ` (${group.roleNames.length})` : ""}`
-              : "Applications"}
+      <div role="tablist" className="mb-4 flex gap-1 border-b">
+        {(["members", "roles", "apps"] as Tab[]).map((key) => (
+          <button key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)}
+                  className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${tab === key ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+            {key === "members" ? `${t("groupDetailTabMembers")}${members ? ` (${members.total})` : ""}`
+              : key === "roles" ? `${t("groupDetailTabRoles")}${group ? ` (${group.roleNames.length})` : ""}`
+              : t("groupDetailTabApps")}
           </button>
         ))}
       </div>
@@ -89,11 +94,15 @@ export default function GroupDetail() {
       {tab === "members" && (
         <>
           <Table>
-            <TableHeader><TableRow><TableHead>Username</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>{t("groupDetailColUsername")}</TableHead></TableRow></TableHeader>
             <TableBody>
-              {members?.items.length === 0 ? (
-                <TableRow><TableCell className="text-muted-foreground">No members.</TableCell></TableRow>
-              ) : members?.items.map((m) => (
+              {members === null ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={i}><TableCell><Skeleton className="h-5 w-48" /></TableCell></TableRow>
+                ))
+              ) : members.items.length === 0 ? (
+                <TableRow><TableCell className="text-muted-foreground">{t("groupDetailNoMembers")}</TableCell></TableRow>
+              ) : members.items.map((m) => (
                 <TableRow key={m.id}><TableCell className="font-medium">{m.label}</TableCell></TableRow>
               ))}
             </TableBody>
@@ -105,13 +114,13 @@ export default function GroupDetail() {
       {tab === "roles" && group && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">Roles delegated to this group are inherited by every member.</p>
+            <p className="text-sm text-muted-foreground">{t("groupDetailRolesHint")}</p>
             <Button variant="outline" size="sm" disabled={group.system} onClick={openRoles}>
-              <ShieldCheck className="size-4" /> Edit roles
+              <ShieldCheck className="size-4" /> {t("groupDetailEditRoles")}
             </Button>
           </div>
           {group.roleNames.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No roles delegated to this group.</p>
+            <p className="text-sm text-muted-foreground">{t("groupDetailNoRoles")}</p>
           ) : (
             <div className="flex flex-wrap gap-1">
               {group.roleNames.map((r) => <Badge key={r} variant="secondary">{r}</Badge>)}
@@ -122,11 +131,15 @@ export default function GroupDetail() {
 
       {tab === "apps" && (
         <Table>
-          <TableHeader><TableRow><TableHead>Application</TableHead><TableHead>Type</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>{t("groupDetailColApplication")}</TableHead><TableHead>{t("groupDetailColType")}</TableHead></TableRow></TableHeader>
           <TableBody>
-            {apps?.length === 0 ? (
-              <TableRow><TableCell colSpan={2} className="text-muted-foreground">No applications assigned to this group.</TableCell></TableRow>
-            ) : apps?.map((a) => (
+            {apps === null ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <TableRow key={i}><TableCell><Skeleton className="h-5 w-48" /></TableCell><TableCell><Skeleton className="h-5 w-16" /></TableCell></TableRow>
+              ))
+            ) : apps.length === 0 ? (
+              <TableRow><TableCell colSpan={2} className="text-muted-foreground">{t("groupDetailNoApps")}</TableCell></TableRow>
+            ) : apps.map((a) => (
               <TableRow key={`${a.type}:${a.id}`}>
                 <TableCell className="font-medium"><span className="inline-flex items-center gap-2"><AppWindow className="size-4 text-muted-foreground" />{a.name}</span></TableCell>
                 <TableCell><Badge variant="muted">{a.type}</Badge></TableCell>
@@ -139,13 +152,18 @@ export default function GroupDetail() {
       <Dialog open={rolesOpen} onOpenChange={setRolesOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delegate roles</DialogTitle>
+            <DialogTitle>{t("groupDetailDelegateTitle")}</DialogTitle>
             <DialogDescription>
-              Members of <strong>{group?.name}</strong> inherit the selected roles and their permissions.
+              <Trans
+                t={t}
+                i18nKey="groupDetailDelegateDescription"
+                values={{ name: group?.name ?? "" }}
+                components={[<strong key="0" />]}
+              />
             </DialogDescription>
           </DialogHeader>
           {allRoles.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No roles available.</p>
+            <p className="text-sm text-muted-foreground">{t("groupDetailNoRolesAvailable")}</p>
           ) : (
             <div className="grid max-h-72 grid-cols-1 gap-1 overflow-y-auto sm:grid-cols-2">
               {allRoles.map((role) => {
@@ -160,8 +178,8 @@ export default function GroupDetail() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRolesOpen(false)}>Cancel</Button>
-            <Button onClick={saveRoles}>Save roles</Button>
+            <Button variant="outline" onClick={() => setRolesOpen(false)}>{t("cancel")}</Button>
+            <Button onClick={saveRoles}>{t("groupDetailSaveRoles")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

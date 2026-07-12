@@ -2,14 +2,14 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
-  ArrowLeft, ChevronDown, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, ShieldCheck, X,
+  ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, LogOut, Menu, Search, ShieldCheck, X,
 } from "lucide-react";
 import type { SessionView } from "@/auth";
 import { isPlatformAdmin, logout } from "@/auth";
 import { setDrillIn, useDrillIn } from "@/drillIn";
 import { clearAdminUnlock, startAdminOidc } from "@/adminPortal";
 import { triggerStepUp } from "@/api";
-import { Brand } from "@/components/Brand";
+import { Brand, BrandMark } from "@/components/Brand";
 import { NAV, crumbsFor, isNavActive } from "@/components/layout/nav";
 import type { NavItem } from "@/components/layout/nav";
 import { LanguageToggle } from "@/components/layout/LanguageToggle";
@@ -84,7 +84,6 @@ export default function AppShell(
   // The org this shell is scoped to: a super-admin's drilled-in tenant, else the admin's own org.
   // The user portal has no org context, so its sidebar top keeps the product wordmark.
   const orgSlug = variant === "admin" ? (drill?.slug ?? session.org) : null;
-  const orgInitial = (orgSlug ?? "?").slice(0, 1).toUpperCase();
 
   const navLink = ({ to, label, icon: Icon }: NavItem) => {
     const active = isNavActive(location.pathname, to);
@@ -190,25 +189,17 @@ export default function AppShell(
   const sidebar = (
     <div className="flex h-full flex-col bg-card">
       <div className="flex h-16 items-center gap-2 border-b border-line px-4">
-        {orgSlug ? (
-          rail ? (
-            <div className="flex size-9 items-center justify-center rounded-lg bg-ink text-sm font-bold text-bg" title={orgSlug}>
-              {orgInitial}
-            </div>
-          ) : (
-            <div className="flex min-w-0 items-center gap-2.5">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-ink text-sm font-bold text-bg">
-                {orgInitial}
-              </span>
-              <span className="min-w-0 leading-tight">
-                <span className="block truncate text-sm font-bold text-ink">{orgSlug}</span>
-                <span className="block truncate text-[11px] text-faint">{t("groupAdministration")}</span>
-              </span>
-            </div>
-          )
-        ) : rail ? (
-          <div className="flex size-9 items-center justify-center rounded-lg bg-ink text-bg">
-            <ShieldCheck className="size-5" />
+        {/* One mark for both portals — the user portal and the admin console show the SAME glyph; only the
+            label beside it names the context (product wordmark vs. the org being administered). */}
+        {rail ? (
+          <BrandMark title={orgSlug ?? undefined} />
+        ) : orgSlug ? (
+          <div className="flex min-w-0 items-center gap-2.5">
+            <BrandMark />
+            <span className="min-w-0 leading-tight">
+              <span className="block truncate text-sm font-bold text-ink">{orgSlug}</span>
+              <span className="block truncate text-[11px] text-faint">{t("groupAdministration")}</span>
+            </span>
           </div>
         ) : (
           <Brand />
@@ -256,7 +247,8 @@ export default function AppShell(
   return (
     <div
       className={cn(
-        "grid min-h-screen bg-background",
+        // The collapse animates the track width (DESIGN.md §2: 260–280ms), so the rail doesn't snap.
+        "grid min-h-screen bg-background transition-[grid-template-columns] duration-collapse ease-out",
         mobile ? "grid-cols-[minmax(0,1fr)]" : rail ? "grid-cols-[68px_minmax(0,1fr)]" : "grid-cols-[248px_minmax(0,1fr)]",
       )}
     >
@@ -265,14 +257,19 @@ export default function AppShell(
       {!mobile && (
         <aside className="sticky top-0 z-30 h-screen w-full border-r border-line bg-card">
           {sidebar}
+          {/* Edge handle (DESIGN.md §3). Vertically centred so it never straddles the sidebar-header and
+              topbar dividers, and shaped as a pill that sits ON the border rather than floating over the
+              content. Faint at rest, ink on hover. */}
           {wide && (
             <button
               type="button"
               onClick={() => setUserCollapsed((c) => !c)}
+              title={rail ? t("expandSidebar") : t("collapseSidebar")}
               aria-label={rail ? t("expandSidebar") : t("collapseSidebar")}
-              className="absolute -right-3 top-16 z-40 flex size-6 items-center justify-center rounded-full border border-line bg-card text-muted-foreground shadow-sm transition-colors hover:text-ink"
+              aria-expanded={!rail}
+              className="absolute -right-[10px] top-1/2 z-40 flex h-11 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-line bg-card text-faint shadow-sm transition-colors hover:border-faint hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {rail ? <PanelLeftOpen className="size-3.5" /> : <PanelLeftClose className="size-3.5" />}
+              {rail ? <ChevronRight className="size-3.5" /> : <ChevronLeft className="size-3.5" />}
             </button>
           )}
         </aside>
@@ -296,7 +293,7 @@ export default function AppShell(
           {/* The topbar carries navigation context (scope pill + breadcrumb) and search. Identity,
               language, theme and sign-out live in the sidebar foot (DESIGN.md §3), never here. The
               breadcrumb names the section — it never repeats the page's own <h1> below it. */}
-          <nav aria-label="breadcrumb" className="flex min-w-0 flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
+          <nav aria-label={t("breadcrumb")} className="flex min-w-0 flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
             {variant === "admin" && drill && (
               <>
                 <span className="inline-flex items-center gap-2 rounded-full border border-accent-line bg-accent px-3 py-1 font-medium text-accent-foreground">

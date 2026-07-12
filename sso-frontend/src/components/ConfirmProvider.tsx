@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,7 @@ const ConfirmContext = createContext<ConfirmFn | null>(null);
 
 /** Provides an imperative, styled replacement for window.confirm: `await confirm({...}) -> boolean`. */
 export function ConfirmProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
   const [opts, setOpts] = useState<ConfirmOptions | null>(null);
   const [phrase, setPhrase] = useState("");
   const resolver = useRef<((value: boolean) => void) | null>(null);
@@ -81,7 +83,12 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             {opts.confirmPhrase && (
               <div className="grid gap-1.5">
                 <Label htmlFor="confirm-phrase">
-                  Type <span className="font-mono font-semibold text-ink">{opts.confirmPhrase}</span> to confirm
+                  <Trans
+                    t={t}
+                    i18nKey="confirmPhraseLabel"
+                    values={{ phrase: opts.confirmPhrase }}
+                    components={[<span key="0" className="font-mono font-semibold text-ink" />]}
+                  />
                 </Label>
                 <Input
                   id="confirm-phrase"
@@ -89,20 +96,20 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                   autoComplete="off"
                   value={phrase}
                   onChange={(e) => setPhrase(e.target.value)}
-                  aria-label={`Type ${opts.confirmPhrase} to confirm`}
+                  aria-label={t("confirmPhraseAria", { phrase: opts.confirmPhrase })}
                 />
               </div>
             )}
 
             <DialogFooter>
-              <Button variant="outline" onClick={() => close(false)}>{opts.cancelText ?? "Cancel"}</Button>
+              <Button variant="outline" onClick={() => close(false)}>{opts.cancelText ?? t("cancel")}</Button>
               <Button
                 data-confirm
                 variant={destructive ? "destructive" : "default"}
                 disabled={!phraseOk}
                 onClick={() => close(true)}
               >
-                {opts.confirmText ?? "Confirm"}
+                {opts.confirmText ?? t("confirm")}
               </Button>
             </DialogFooter>
           </DialogContent>

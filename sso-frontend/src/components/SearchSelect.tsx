@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Input } from "@/components/ui/input";
 
 export interface Suggestion {
@@ -16,6 +17,7 @@ export function SearchSelect({ placeholder, fetcher, onSelect, resetKey }: {
   onSelect: (s: Suggestion | null) => void;
   resetKey?: unknown;
 }) {
+  const { t } = useTranslation();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Suggestion[]>([]);
@@ -55,9 +57,9 @@ export function SearchSelect({ placeholder, fetcher, onSelect, resetKey }: {
       {open && (
         <div className="absolute z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-md border bg-popover shadow-md">
           {loading ? (
-            <div className="px-3 py-2 text-sm text-muted-foreground">Searching…</div>
+            <div className="px-3 py-2 text-sm text-muted-foreground">{t("searching")}</div>
           ) : items.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-muted-foreground">No matches</div>
+            <div className="px-3 py-2 text-sm text-muted-foreground">{t("noMatches")}</div>
           ) : items.map((s) => (
             <button type="button" key={s.id}
                     className="block w-full px-3 py-2 text-left text-sm hover:bg-accent"

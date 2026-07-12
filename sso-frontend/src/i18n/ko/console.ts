@@ -83,6 +83,27 @@ export const console: Record<keyof typeof enConsole, string> = {
   groupsMembersPlaceholder: "구성원으로 추가할 사용자 검색…",
   groupsCreateGroup: "그룹 생성",
 
+  // GroupDetail
+  groupDetailBack: "그룹 목록으로",
+  groupDetailFallbackName: "그룹",
+  groupDetailFallbackDescription: "조직 그룹",
+  groupDetailSystemBadge: "시스템 그룹",
+  groupDetailTabMembers: "구성원",
+  groupDetailTabRoles: "역할",
+  groupDetailTabApps: "애플리케이션",
+  groupDetailColUsername: "사용자명",
+  groupDetailNoMembers: "구성원이 없습니다.",
+  groupDetailRolesHint: "이 그룹에 위임된 역할은 모든 구성원이 상속받습니다.",
+  groupDetailEditRoles: "역할 편집",
+  groupDetailNoRoles: "이 그룹에 위임된 역할이 없습니다.",
+  groupDetailColApplication: "애플리케이션",
+  groupDetailColType: "유형",
+  groupDetailNoApps: "이 그룹에 할당된 애플리케이션이 없습니다.",
+  groupDetailDelegateTitle: "역할 위임",
+  groupDetailDelegateDescription: "<0>{{name}}</0> 그룹의 구성원은 선택한 역할과 그 권한을 상속받습니다.",
+  groupDetailNoRolesAvailable: "사용할 수 있는 역할이 없습니다.",
+  groupDetailSaveRoles: "역할 저장",
+
   // Clients list
   clientsTitle: "OAuth2 / OIDC 클라이언트",
   clientsDescription: "이 아이덴티티 제공자에 인증을 위임하는 애플리케이션입니다.",

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { SignInDay } from "@/metrics";
 
 const W = 600;
@@ -17,11 +18,12 @@ function shortDate(iso: string): string {
  * viewBox; colors come from the theme's allow/deny tokens.
  */
 export function SignInTrendChart({ days }: { days: SignInDay[] }) {
+  const { t } = useTranslation();
   const total = days.reduce((sum, d) => sum + d.successes + d.failures, 0);
   if (days.length === 0 || total === 0) {
     return (
       <div className="flex h-44 items-center justify-center text-sm text-muted-foreground">
-        No sign-ins recorded in this period.
+        {t("signInTrendEmpty")}
       </div>
     );
   }
@@ -37,13 +39,13 @@ export function SignInTrendChart({ days }: { days: SignInDay[] }) {
 
   return (
     <div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Daily sign-in trend">
-        {ticks.map((t) => (
-          <g key={t}>
-            <line x1={PAD_L} x2={W - PAD_R} y1={y(t)} y2={y(t)}
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={t("signInTrendAlt")}>
+        {ticks.map((tick) => (
+          <g key={tick}>
+            <line x1={PAD_L} x2={W - PAD_R} y1={y(tick)} y2={y(tick)}
                   className="stroke-line" strokeWidth={1} opacity={0.6} />
-            <text x={PAD_L - 5} y={y(t) + 3} textAnchor="end" fontSize={10} className="fill-muted-foreground">
-              {t}
+            <text x={PAD_L - 5} y={y(tick) + 3} textAnchor="end" fontSize={10} className="fill-muted-foreground">
+              {tick}
             </text>
           </g>
         ))}
@@ -59,10 +61,10 @@ export function SignInTrendChart({ days }: { days: SignInDay[] }) {
       </svg>
       <div className="mt-2 flex items-center justify-center gap-5 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block size-2.5 rounded-sm bg-allow" /> Successful
+          <span className="inline-block size-2.5 rounded-sm bg-allow" /> {t("signInTrendSuccessful")}
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block size-2.5 rounded-sm bg-deny" /> Failed
+          <span className="inline-block size-2.5 rounded-sm bg-deny" /> {t("signInTrendFailed")}
         </span>
       </div>
     </div>

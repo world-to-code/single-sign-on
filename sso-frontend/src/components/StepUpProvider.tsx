@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { ChevronLeft, Fingerprint, KeyRound, Loader2, Lock, ShieldAlert, Smartphone } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { ApiError, registerStepUpHandler } from "@/api";
@@ -16,6 +17,11 @@ import { useReturnFocus } from "@/hooks/useReturnFocus";
 
 type Method = "choose" | "totp" | "password";
 
+/** Failures are held as an i18n KEY, not a resolved string, so a locale switch re-renders them. */
+type ErrorKey =
+  | "reauthInvalidCode" | "reauthIncorrectPassword" | "reauthFailed"
+  | "reauthPasskeyFailed" | "reauthPasskeyCancelled";
+
 /**
  * Step-up / re-authentication modal. Lets the user PICK a factor allowed by the policy (passkey /
  * authenticator / password) and verify it. Registered with the API layer, so any request the server
@@ -27,13 +33,14 @@ type Method = "choose" | "totp" | "password";
  *    because the server also gates the session on it (a dismissed modal would just be re-challenged).
  */
 export function StepUpProvider({ session, children }: { session: SessionView; children: ReactNode }) {
+  const { t } = useTranslation("auth");
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState<StepUpReason>("action");
   const [allowed, setAllowed] = useState<string[] | null>(null); // policy-allowed factors; null = no restriction
   const [method, setMethod] = useState<Method>("choose");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [errorKey, setErrorKey] = useState<ErrorKey | null>(null);
   const [busy, setBusy] = useState(false);
   // True while a proactive step-up is still fetching the policy's allowed factors — the method chooser is
   // withheld until then, so a method the server would reject (e.g. password) is NEVER momentarily offered.
@@ -73,12 +80,12 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
     onSelect: () => void;
   }
   const factorRows: FactorRow[] = [
-    { key: "FIDO2", label: "Passkey", explain: "Your device biometric or security key", keycap: "1",
+    { key: "FIDO2", label: t("factorPasskey"), explain: t("reauthPasskeyExplain"), keycap: "1",
       Icon: Fingerprint, enrolled: session.fido2Enrolled && webAuthnSupported(), onSelect: () => verifyPasskey() },
-    { key: "TOTP", label: "Authenticator app", explain: "A 6-digit code from your authenticator app", keycap: "2",
-      Icon: Smartphone, enrolled: session.totpEnrolled, onSelect: () => { setError(null); setMethod("totp"); } },
-    { key: "PASSWORD", label: "Password", explain: "Your account password", keycap: "3",
-      Icon: KeyRound, enrolled: true, onSelect: () => { setError(null); setMethod("password"); } },
+    { key: "TOTP", label: t("factorTotp"), explain: t("reauthTotpExplain"), keycap: "2",
+      Icon: Smartphone, enrolled: session.totpEnrolled, onSelect: () => { setErrorKey(null); setMethod("totp"); } },
+    { key: "PASSWORD", label: t("factorPassword"), explain: t("reauthPasswordExplain"), keycap: "3",
+      Icon: KeyRound, enrolled: true, onSelect: () => { setErrorKey(null); setMethod("password"); } },
   ].filter((r) => allow(r.key)); // allow() folds policy allow + the held-factor exclusion (not enrollment)
   const rowsRef = useRef<FactorRow[]>([]);
   rowsRef.current = factorRows;
@@ -96,15 +103,19 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
     return () => window.removeEventListener("keydown", onKey);
   }, [open, method, resolvingFactors, busy]);
 
-  const badgeText = reason === "elevation" ? "Elevation required" : "Confirm it's you";
+  const badgeText = reason === "elevation" ? t("reauthBadgeElevation") : t("reauthBadgeConfirm");
+  const title = reason === "elevation"
+    ? t("reauthTitleElevation")
+    : mandatory ? t("reauthTitleSession") : t("reauthTitleAction");
+  const description = reason === "elevation"
+    ? t("reauthDescElevation")
+    : mandatory ? t("reauthDescSession") : t("reauthDescAction");
   const requested = reason === "elevation"
-    ? "Enter the admin console"
-    : reason === "session" ? "Continue your session" : "A sensitive change";
+    ? t("reauthRequestedElevation")
+    : mandatory ? t("reauthRequestedSession") : t("reauthRequestedAction");
   const unlocks = reason === "elevation"
-    ? "Admin actions stay unlocked for this session's elevated window."
-    : reason === "session"
-      ? "Your session continues without signing in again."
-      : "This change proceeds; you won't be asked again for a short while.";
+    ? t("reauthUnlocksElevation")
+    : mandatory ? t("reauthUnlocksSession") : t("reauthUnlocksAction");
 
   const { capture, restore } = useReturnFocus();
 
@@ -114,7 +125,7 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
     }
     capture();
     setReason(why); setMethod("choose");
-    setCode(""); setPassword(""); setError(null); setBusy(false); setOpen(true);
+    setCode(""); setPassword(""); setErrorKey(null); setBusy(false); setOpen(true);
     pending.current = new Promise<boolean>((resolve) => { resolver.current = resolve; });
     if (factors) {
       setAllowed(factors); setResolvingFactors(false); // reactive: the server named the exact allowed factors
@@ -150,36 +161,36 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
 
   async function verifyTotp(event: React.FormEvent) {
     event.preventDefault();
-    setError(null); setBusy(true);
+    setErrorKey(null); setBusy(true);
     try {
       await reauthVerify("TOTP", { code });
       finish(true);
     } catch (e) {
-      setError(e instanceof ApiError ? "Invalid code — try again." : "Re-authentication failed.");
+      setErrorKey(e instanceof ApiError ? "reauthInvalidCode" : "reauthFailed");
       setBusy(false);
     }
   }
 
   async function verifyPassword(event: React.FormEvent) {
     event.preventDefault();
-    setError(null); setBusy(true);
+    setErrorKey(null); setBusy(true);
     try {
       await reauthVerify("PASSWORD", { password });
       finish(true);
     } catch (e) {
-      setError(e instanceof ApiError ? "Incorrect password — try again." : "Re-authentication failed.");
+      setErrorKey(e instanceof ApiError ? "reauthIncorrectPassword" : "reauthFailed");
       setBusy(false);
     }
   }
 
   async function verifyPasskey() {
-    setError(null); setBusy(true);
+    setErrorKey(null); setBusy(true);
     try {
       const prepared = await reauthPrepare("FIDO2");
       await reauthVerify("FIDO2", { credential: await assertFactorCredential(prepared) });
       finish(true);
     } catch (e) {
-      setError(e instanceof ApiError ? "Passkey re-authentication failed." : "Passkey ceremony was cancelled.");
+      setErrorKey(e instanceof ApiError ? "reauthPasskeyFailed" : "reauthPasskeyCancelled");
       setBusy(false);
     }
   }
@@ -209,18 +220,8 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
                 <Lock className="size-5" />
               </span>
               <div className="space-y-1">
-                <DialogTitle>
-                  {reason === "elevation"
-                    ? "Elevate to continue"
-                    : mandatory ? "Re-authentication required" : "Confirm it's you"}
-                </DialogTitle>
-                <DialogDescription>
-                  {reason === "elevation"
-                    ? "The admin console needs a stronger proof of identity than your current session holds."
-                    : mandatory
-                      ? "Your session needs to be re-verified to continue. This step can't be skipped."
-                      : "This action is sensitive — please re-authenticate to continue."}
-                </DialogDescription>
+                <DialogTitle>{title}</DialogTitle>
+                <DialogDescription>{description}</DialogDescription>
               </div>
             </div>
           </DialogHeader>
@@ -228,16 +229,16 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
           {/* Why this appeared and what complying buys — a modal without a stated reason trains click-through (§7). */}
           <dl className="space-y-1.5 rounded-[12px] bg-sunken p-3 text-sm">
             <div className="flex items-start justify-between gap-4">
-              <dt className="text-muted-foreground">Requested</dt>
+              <dt className="text-muted-foreground">{t("reauthRequested")}</dt>
               <dd className="text-right font-medium text-ink">{requested}</dd>
             </div>
             <div className="flex items-start justify-between gap-4">
-              <dt className="text-muted-foreground">After you confirm</dt>
+              <dt className="text-muted-foreground">{t("reauthAfterConfirm")}</dt>
               <dd className="text-right text-ink">{unlocks}</dd>
             </div>
           </dl>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {errorKey && <p className="text-sm text-destructive">{t(errorKey)}</p>}
 
           {/* Still resolving which factors the policy allows — withhold the chooser so no rejected method shows */}
           {resolvingFactors && (
@@ -249,7 +250,7 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
           {/* Step 1: pick a factor. Allowed-but-unenrolled factors show as disabled rows, not omissions. */}
           {!resolvingFactors && method === "choose" && factorRows.length > 0 && (
             <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Choose how to verify:</p>
+              <p className="text-sm text-muted-foreground">{t("reauthChooseMethod")}</p>
               {factorRows.map((row) => {
                 const Icon = row.Icon;
                 if (!row.enrolled) {
@@ -261,7 +262,7 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
                         <span className="text-sm font-medium text-muted-foreground">{row.label}</span>
                         <span className="text-xs text-faint">{row.explain}</span>
                       </span>
-                      <span className="shrink-0 text-xs font-medium text-faint">Not enrolled</span>
+                      <span className="shrink-0 text-xs font-medium text-faint">{t("reauthNotEnrolled")}</span>
                     </div>
                   );
                 }
@@ -284,11 +285,11 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
           {method === "totp" && (
             <form onSubmit={verifyTotp} className="space-y-3">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Smartphone className="size-4" /> Enter the code from your authenticator
+                <Smartphone className="size-4" /> {t("reauthEnterTotp")}
               </div>
               <OtpInput value={code} onChange={(e) => setCode(e.target.value)} />
               <Button type="submit" className="w-full" disabled={busy}>
-                {busy ? <Loader2 className="animate-spin" /> : <Lock />} Verify
+                {busy ? <Loader2 className="animate-spin" /> : <Lock />} {t("verify")}
               </Button>
             </form>
           )}
@@ -297,39 +298,41 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
           {method === "password" && (
             <form onSubmit={verifyPassword} className="space-y-3">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <KeyRound className="size-4" /> Enter your account password
+                <KeyRound className="size-4" /> {t("reauthEnterPassword")}
               </div>
               <Input type="password" autoFocus autoComplete="current-password" value={password}
-                     onChange={(e) => setPassword(e.target.value)} placeholder="Password" />
+                     onChange={(e) => setPassword(e.target.value)} placeholder={t("passwordPlaceholder")} />
               <Button type="submit" className="w-full" disabled={busy || !password}>
-                {busy ? <Loader2 className="animate-spin" /> : <Lock />} Verify
+                {busy ? <Loader2 className="animate-spin" /> : <Lock />} {t("verify")}
               </Button>
             </form>
           )}
 
           {noMethods && (
             <p className="text-sm text-muted-foreground">
-              {needsNewFactor
-                ? "The admin console requires a second, different factor. Set up an authenticator app or passkey in your profile first."
-                : "No allowed re-authentication factor is available. Set up an authenticator or passkey in your profile first."}
+              {needsNewFactor ? t("reauthNoMethodsElevation") : t("reauthNoMethods")}
             </p>
           )}
 
           {/* Back to the method chooser (only when more than one method exists) */}
           {method !== "choose" && [passkeyAvailable, totpAvailable, passwordAvailable].filter(Boolean).length > 1 && (
             <Button type="button" variant="ghost" className="w-full"
-                    onClick={() => { setError(null); setCode(""); setPassword(""); setMethod("choose"); }} disabled={busy}>
-              <ChevronLeft /> Use a different method
+                    onClick={() => { setErrorKey(null); setCode(""); setPassword(""); setMethod("choose"); }} disabled={busy}>
+              <ChevronLeft /> {t("reauthDifferentMethod")}
             </Button>
           )}
 
           {/* "action" step-ups may be cancelled; the mandatory session re-auth may not. When mandatory and
               no factor is available, offer sign-out so the user is never fully stuck. */}
           {!mandatory && (
-            <Button type="button" variant="ghost" className="w-full" onClick={() => finish(false)} disabled={busy}>Cancel</Button>
+            <Button type="button" variant="ghost" className="w-full" onClick={() => finish(false)} disabled={busy}>
+              {t("cancel")}
+            </Button>
           )}
           {mandatory && noMethods && (
-            <Button type="button" variant="ghost" className="w-full" onClick={signOut} disabled={busy}>Sign out</Button>
+            <Button type="button" variant="ghost" className="w-full" onClick={signOut} disabled={busy}>
+              {t("signOut")}
+            </Button>
           )}
         </DialogContent>
       </Dialog>

@@ -83,6 +83,27 @@ export const console = {
   groupsMembersPlaceholder: "Search users to add as members…",
   groupsCreateGroup: "Create group",
 
+  // GroupDetail -------------------------------------------------------------
+  groupDetailBack: "Back to groups",
+  groupDetailFallbackName: "Group",
+  groupDetailFallbackDescription: "Organizational group",
+  groupDetailSystemBadge: "System group",
+  groupDetailTabMembers: "Members",
+  groupDetailTabRoles: "Roles",
+  groupDetailTabApps: "Applications",
+  groupDetailColUsername: "Username",
+  groupDetailNoMembers: "No members.",
+  groupDetailRolesHint: "Roles delegated to this group are inherited by every member.",
+  groupDetailEditRoles: "Edit roles",
+  groupDetailNoRoles: "No roles delegated to this group.",
+  groupDetailColApplication: "Application",
+  groupDetailColType: "Type",
+  groupDetailNoApps: "No applications assigned to this group.",
+  groupDetailDelegateTitle: "Delegate roles",
+  groupDetailDelegateDescription: "Members of <0>{{name}}</0> inherit the selected roles and their permissions.",
+  groupDetailNoRolesAvailable: "No roles available.",
+  groupDetailSaveRoles: "Save roles",
+
   // Clients list ------------------------------------------------------------
   clientsTitle: "OAuth2 / OIDC Clients",
   clientsDescription: "Applications that delegate authentication to this identity provider.",

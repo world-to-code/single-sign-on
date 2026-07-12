@@ -1,5 +1,5 @@
 import { ArrowDown, ChevronDown, ChevronUp, Plus, Trash2, X } from "lucide-react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { FACTORS, factorMeta } from "@/factors";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -29,7 +29,7 @@ export function StepsBuilder({ steps, onChange }: { steps: string[][]; onChange:
 
   return (
     <div className="space-y-2">
-      <Label>Sign-on steps <span className="text-muted-foreground">(verified in order)</span></Label>
+      <Label>{t("stepsLabel")} <span className="text-muted-foreground">{t("stepsLabelHint")}</span></Label>
       <div className="space-y-1">
         {steps.map((step, i) => {
           const remaining = FACTORS.filter((f) => !step.includes(f));
@@ -37,30 +37,30 @@ export function StepsBuilder({ steps, onChange }: { steps: string[][]; onChange:
             <div key={i}>
               {i > 0 && (
                 <div className="flex items-center gap-1.5 py-0.5 pl-3 text-xs font-medium text-muted-foreground">
-                  <ArrowDown className="size-3" /> then
+                  <ArrowDown className="size-3" /> {t("stepsThen")}
                 </div>
               )}
               <div className="rounded-lg border bg-card p-3">
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Step {i + 1}</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("stepsStep", { n: i + 1 })}</span>
                   <div className="flex items-center gap-0.5">
-                    <Button type="button" variant="ghost" size="icon" className="size-7" disabled={i === 0} onClick={() => moveStep(i, -1)}><ChevronUp className="size-4" /></Button>
-                    <Button type="button" variant="ghost" size="icon" className="size-7" disabled={i === steps.length - 1} onClick={() => moveStep(i, 1)}><ChevronDown className="size-4" /></Button>
-                    <Button type="button" variant="ghost" size="icon" className="size-7 text-muted-foreground hover:text-destructive" disabled={steps.length === 1} onClick={() => removeStep(i)}><Trash2 className="size-4" /></Button>
+                    <Button type="button" variant="ghost" size="icon" className="size-7" aria-label={t("stepsMoveUp")} disabled={i === 0} onClick={() => moveStep(i, -1)}><ChevronUp className="size-4" /></Button>
+                    <Button type="button" variant="ghost" size="icon" className="size-7" aria-label={t("stepsMoveDown")} disabled={i === steps.length - 1} onClick={() => moveStep(i, 1)}><ChevronDown className="size-4" /></Button>
+                    <Button type="button" variant="ghost" size="icon" className="size-7 text-muted-foreground hover:text-destructive" aria-label={t("stepsRemoveStep")} disabled={steps.length === 1} onClick={() => removeStep(i)}><Trash2 className="size-4" /></Button>
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  {step.length === 0 && <span className="text-xs text-destructive">pick a factor</span>}
+                  {step.length === 0 && <span className="text-xs text-destructive">{t("stepsPickFactor")}</span>}
                   {step.map((f, fi) => {
                     const meta = factorMeta(f);
                     const Icon = meta.icon;
                     return (
                       <span key={f} className="flex items-center gap-1.5">
-                        {fi > 0 && <span className="text-xs font-medium text-muted-foreground">or</span>}
+                        {fi > 0 && <span className="text-xs font-medium text-muted-foreground">{t("stepsOr")}</span>}
                         <span className="inline-flex items-center gap-1.5 rounded-md border bg-background py-1 pl-2 pr-1 text-sm">
                           <Icon className="size-3.5 text-primary" />
                           {t(meta.label)}
-                          <button type="button" className="rounded text-muted-foreground hover:text-destructive" onClick={() => setStep(i, step.filter((x) => x !== f))}><X className="size-3.5" /></button>
+                          <button type="button" aria-label={t("stepsRemoveFactor")} className="rounded text-muted-foreground hover:text-destructive" onClick={() => setStep(i, step.filter((x) => x !== f))}><X className="size-3.5" /></button>
                         </span>
                       </span>
                     );
@@ -69,7 +69,7 @@ export function StepsBuilder({ steps, onChange }: { steps: string[][]; onChange:
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button type="button" variant="outline" size="sm" className="h-7 gap-1 border-dashed">
-                          <Plus className="size-3.5" /> {step.length === 0 ? "Add factor" : "or"}
+                          <Plus className="size-3.5" /> {step.length === 0 ? t("stepsAddFactor") : t("stepsOr")}
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start">
@@ -92,10 +92,10 @@ export function StepsBuilder({ steps, onChange }: { steps: string[][]; onChange:
         })}
       </div>
       <Button type="button" variant="outline" size="sm" className="w-full border-dashed" onClick={addStep}>
-        <Plus className="size-4" /> Add step
+        <Plus className="size-4" /> {t("stepsAddStep")}
       </Button>
       <p className="text-xs text-muted-foreground">
-        Steps are required <strong>in order</strong>. Two+ factors in one step means the user may use <strong>any one</strong> of them.
+        <Trans t={t} i18nKey="stepsHint" components={[<strong key="0" />, <strong key="1" />]} />
       </p>
     </div>
   );

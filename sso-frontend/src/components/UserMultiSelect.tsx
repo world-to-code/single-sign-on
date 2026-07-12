@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import { searchUsers, usersByIds } from "@/groups";
 import { SearchSelect, type Suggestion } from "@/components/SearchSelect";
@@ -14,6 +15,7 @@ export function UserMultiSelect({ selected, onChange, placeholder }: {
   onChange: (ids: string[]) => void;
   placeholder?: string;
 }) {
+  const { t } = useTranslation();
   const [labels, setLabels] = useState<Record<string, string>>({});
   const [addKey, setAddKey] = useState(0);
 
@@ -41,14 +43,14 @@ export function UserMultiSelect({ selected, onChange, placeholder }: {
             <Badge key={id} variant="secondary" className="gap-1">
               {labels[id] ?? id}
               <button type="button" onClick={() => onChange(selected.filter((x) => x !== id))}
-                      className="text-muted-foreground hover:text-destructive" aria-label="Remove">
+                      className="text-muted-foreground hover:text-destructive" aria-label={t("remove")}>
                 <X className="size-3" />
               </button>
             </Badge>
           ))}
         </div>
       )}
-      <SearchSelect resetKey={addKey} placeholder={placeholder ?? "Search users by name…"} fetcher={searchUsers} onSelect={add} />
+      <SearchSelect resetKey={addKey} placeholder={placeholder ?? t("searchUsersPlaceholder")} fetcher={searchUsers} onSelect={add} />
     </div>
   );
 }

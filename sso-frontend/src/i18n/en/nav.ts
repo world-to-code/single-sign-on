@@ -44,4 +44,5 @@ export const nav = {
   openNavigation: "Open navigation",
   closeNavigation: "Close navigation",
   search: "Search",
+  breadcrumb: "Breadcrumb",
 } as const;

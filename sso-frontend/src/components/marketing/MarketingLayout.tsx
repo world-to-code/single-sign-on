@@ -85,7 +85,7 @@ export default function MarketingLayout() {
         <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
           <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-3">
-              <Brand subtitle="Identity Provider" />
+              <Brand />
               <p className="max-w-xs text-sm text-muted-foreground">
                 A central identity provider for single sign-on, MFA, and provisioning — self-hosted, one deploy.
               </p>

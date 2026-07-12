@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Navigate } from "react-router-dom";
 import { Loader2, ShieldAlert } from "lucide-react";
 import { handleAdminCallback, isAdminUnlocked, startAdminOidc } from "@/adminPortal";
@@ -58,18 +59,16 @@ export function AdminGuard({ children }: { children: ReactNode }) {
 
 /** Shown when the admin session needs a fresh re-elevation and the user declined — stay in context, offer retry. */
 function ReElevatePrompt({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation("auth");
   return (
-    <AuthLayout step="Admin console" title="Re-authentication required"
-                description="This admin session needs a fresh verification to continue.">
+    <AuthLayout step={t("adminGateStep")} title={t("adminGateTitle")} description={t("adminGateDescription")}>
       <Alert className="mb-4">
         <ShieldAlert className="size-4" />
-        <AlertDescription>
-          Sensitive admin actions require you to re-verify it's you. You haven't been signed out — verify to continue.
-        </AlertDescription>
+        <AlertDescription>{t("adminGateAlert")}</AlertDescription>
       </Alert>
-      <Button className="w-full" onClick={onRetry}>Re-authenticate</Button>
+      <Button className="w-full" onClick={onRetry}>{t("adminGateRetry")}</Button>
       <a href="/" className="mt-4 block text-center text-sm text-muted-foreground hover:text-foreground">
-        Back to portal
+        {t("adminGateBackToPortal")}
       </a>
     </AuthLayout>
   );
@@ -81,7 +80,9 @@ function ReElevatePrompt({ onRetry }: { onRetry: () => void }) {
  * was started (AppShell button / AdminGuard), so here we only exchange the code. Errors show a retry.
  */
 export function AdminCallback() {
-  const [error, setError] = useState<string | null>(null);
+  const { t } = useTranslation("auth");
+  // `detail` is the server's own message when there is one; null falls back to translated copy.
+  const [failure, setFailure] = useState<{ detail: string | null } | null>(null);
   const ran = useRef(false); // the authorization code is single-use — never exchange it twice (StrictMode)
 
   useEffect(() => {
@@ -93,30 +94,30 @@ export function AdminCallback() {
       .then(() => {
         window.location.replace("/admin");
       })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : "Could not complete admin sign-in."));
+      .catch((e: unknown) => setFailure({ detail: e instanceof Error ? e.message : null }));
   }, []);
 
-  if (error) {
+  if (failure) {
     return (
-      <AuthLayout step="Admin console" title="Admin sign-in failed"
-                  description="The step-up verification could not be completed.">
+      <AuthLayout step={t("adminGateStep")} title={t("adminCallbackFailedTitle")}
+                  description={t("adminCallbackFailedDesc")}>
         <Alert variant="destructive" className="mb-4">
           <ShieldAlert className="size-4" />
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{failure.detail ?? t("adminCallbackFailedFallback")}</AlertDescription>
         </Alert>
         <Button className="w-full" onClick={() => {
           void (async () => { if (await triggerStepUp("elevation")) await startAdminOidc(); })();
-        }}>Try again</Button>
+        }}>{t("adminCallbackRetry")}</Button>
         <a href="/" className="mt-4 block text-center text-sm text-muted-foreground hover:text-foreground">
-          Back to portal
+          {t("adminGateBackToPortal")}
         </a>
       </AuthLayout>
     );
   }
 
   return (
-    <AuthLayout step="Admin console" title="Verifying…"
-                description="Completing the secure admin sign-in.">
+    <AuthLayout step={t("adminGateStep")} title={t("adminCallbackVerifyingTitle")}
+                description={t("adminCallbackVerifyingDesc")}>
       <div className="flex justify-center py-4"><Loader2 className="animate-spin" /></div>
     </AuthLayout>
   );

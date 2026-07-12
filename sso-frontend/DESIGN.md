@@ -173,7 +173,8 @@ data rows. Complex settings are made legible by explanation, not by compression.
 - Hover / focus: 120–160ms.
 - Page and panel entry: 260–340ms, `translateY(6–8px)` + fade. First paint only.
 - Modal entry: 200ms on `transform`, `cubic-bezier(.2,.9,.3,1.1)` — it should *snap*.
-- Drawer, sidebar collapse: 260–280ms.
+- Drawer, sidebar collapse: 260–280ms (`duration-collapse` in `tailwind.config.js` — never an
+  arbitrary `duration-[280ms]`; Tailwind cannot tell transition- from animation-duration and warns).
 - Save bar rise, toast entry: 280–340ms.
 
 Nothing ambient. No floating glows, no gradient meshes, no looping animation. Motion appears where
@@ -213,6 +214,18 @@ above the content.
 **The sidebar collapses** to a 68px icon rail via a handle on its right edge. Collapsed, every label
 becomes a tooltip. Icons must be **individually distinguishable** — an icon-only rail with three
 identical glyphs is unusable. One glyph per nav item, no reuse.
+
+The handle is a **20×44 pill, vertically centred, straddling the border** — faint at rest, ink on
+hover. Two rules it exists to enforce, both learned from getting them wrong: a control placed at the
+sidebar-header/topbar divider junction cuts across two rules at once and reads as a rendering
+artifact, so keep it away from every divider; and a 24px circle floating in the content column
+belongs to neither pane, so sit it **on** the border. The rail width animates (§2, 280ms) — a track
+that snaps between 248px and 68px looks broken.
+
+**One mark, both shells.** The user portal and the admin console show the *same* glyph in the
+sidebar head. Only the label beside it names the context — product wordmark in the portal, the
+administered org's slug in the console. A different icon per shell makes them read as different
+products, which they are not.
 
 **Scope is a breadcrumb pill**, not a banner. When a platform admin has drilled into a tenant, the
 breadcrumb leads with `● 관리 중 · Acme` in accent. A separate full-width banner restating the same
@@ -588,10 +601,25 @@ Semantic HTML. Radix primitives give keyboard-navigable dialogs and menus — ke
 ## 10. Language
 
 Both languages are first-class. Ship `ko` and `en` with **byte-identical key sets** — a key present
-in one dictionary and absent in the other is a build failure, not a runtime fallback.
+in one dictionary and absent in the other is a build failure, not a runtime fallback. (`resources.d.ts`
+declaration-merges the `en` bundle as the resource shape, so `tsc` enforces this.)
+
+**No user-visible string is ever a literal in JSX.** Every one is a `t()` key — including the ones
+that don't look like copy: `aria-label`, `title`, `placeholder`, `sr-only` text, SVG `aria-label`,
+and the default value of a `label`/`emptyText` prop. The failure this rule prevents is not
+theoretical: the step-up modal, the sign-on step builder and the sign-in preview each shipped fully
+hardcoded, and *looked* translated because the surrounding page was. A component that resolves only
+part of its copy through `t()` (a factor chip's label, but not the "any one of" beside it) is the
+worst case — the bug hides behind the keys that do work.
+
+**Hold failures as keys, not resolved strings.** `setError(t("reauthInvalidCode"))` freezes the
+message in whatever language was active when it was thrown; the user switches language, the modal
+is still open, and the error alone stays behind. Store the key, resolve at render.
 
 Interpolate with `{name}` placeholders. Never concatenate sentence fragments; Korean word order is
-not English word order.
+not English word order. When copy carries inline markup or an element the code depends on (a
+`<strong>`, a `data-idle-countdown` span), use `<Trans components={[…]}>` — do not split the
+sentence around the tag.
 
 Write from the reader's side of the screen. Name things by what people control, not how the system
 is built. Active voice. A control says exactly what happens: `변경사항 저장` → toast `저장했습니다`.
@@ -615,12 +643,14 @@ Where it lands in the codebase:
 | Radius, colour aliases | `tailwind.config.js` |
 | Button / badge / card / input variants | `src/components/ui/*` |
 | Shell, topbar, sidebar, collapse, drawer | `src/components/layout/AppShell.tsx` |
+| The shared shell mark (both portals) | `src/components/Brand.tsx` (`BrandMark`) |
 | Nav model + icons | `src/components/layout/nav.ts` |
 | Page title (the only one) | `src/components/PageHeader.tsx` |
 | Loading / empty / error / DataList | `src/components/states.tsx` |
 | Modals: confirm, re-auth, step-up | `src/components/ConfirmProvider.tsx`, `StepUpProvider.tsx` |
-| Live sign-in preview | `src/pages/AuthPolicyDetail.tsx` |
+| Live sign-in preview + step builder | `src/components/form/SignInPreview.tsx`, `StepsBuilder.tsx` |
 | Charts | `src/components/charts/*` |
+| Copy, both languages | `src/i18n/{en,ko}/*.ts` (shape enforced by `src/i18n/resources.d.ts`) |
 
 Known deletions this document requires:
 

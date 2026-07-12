@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -8,6 +9,7 @@ import { Label } from "@/components/ui/label";
  * horizontally by default, or wrap onto the next line when {@code wrap} is set (e.g. a long URL).
  */
 export function CodeBlock({ label, code, hint, wrap }: { label?: string; code: string; hint?: string; wrap?: boolean }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
   async function copy() {
@@ -27,8 +29,8 @@ export function CodeBlock({ label, code, hint, wrap }: { label?: string; code: s
         <pre className={`rounded-md border bg-muted px-3 py-2 pr-11 font-mono text-xs leading-relaxed ${wrap ? "whitespace-pre-wrap break-all" : "overflow-x-auto"}`}>
           <code>{code}</code>
         </pre>
-        <Button type="button" variant="outline" size="icon" onClick={copy} title="Copy to clipboard"
-                aria-label="Copy" className="absolute right-1.5 top-1.5 size-7">
+        <Button type="button" variant="outline" size="icon" onClick={copy} title={t("copyToClipboard")}
+                aria-label={t("copy")} className="absolute right-1.5 top-1.5 size-7">
           {copied ? <Check className="size-3.5 text-allow" /> : <Copy className="size-3.5" />}
         </Button>
       </div>

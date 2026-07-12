@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -8,6 +9,7 @@ import { Label } from "@/components/ui/label";
  * URLs and identifiers an integrator needs to paste into their OIDC client configuration.
  */
 export function CopyField({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
   async function copy() {
@@ -27,7 +29,7 @@ export function CopyField({ label, value, hint }: { label: string; value: string
         <code className="min-w-0 flex-1 truncate rounded-md border bg-muted px-3 py-2 font-mono text-xs" title={value}>
           {value}
         </code>
-        <Button type="button" variant="outline" size="icon" onClick={copy} title="Copy to clipboard" aria-label="Copy">
+        <Button type="button" variant="outline" size="icon" onClick={copy} title={t("copyToClipboard")} aria-label={t("copy")}>
           {copied ? <Check className="size-4 text-allow" /> : <Copy className="size-4" />}
         </Button>
       </div>

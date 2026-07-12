@@ -68,7 +68,8 @@ export default function Applications() {
   function openSettings() {
     setSettingsError(null); setSettingsSaved(false); setSettings(null); setSettingsOpen(true);
     apiGet<PortalSettings>("/api/admin/portal-settings").then(setSettings).catch((e) => setSettingsError(errorMessage(e)));
-    apiGet<SessionPolicy[]>("/api/admin/session-policies").then(setSessionPolicies).catch(() => undefined);
+    apiGet<Page<SessionPolicy>>("/api/admin/session-policies?size=100")
+      .then((p) => setSessionPolicies(p.items)).catch(() => undefined);
   }
 
   async function saveSettings() {
@@ -141,7 +142,7 @@ export default function Applications() {
                       {app.type === "SAML" ? <Network className="size-4 text-muted-foreground" /> : <AppWindow className="size-4 text-muted-foreground" />}
                       {app.name}
                       {app.system && <Badge variant="secondary" title={t("applicationsSystemTitle")}><Lock className="size-3" /> {t("badgeSystem")}</Badge>}
-                      {app.requiredPolicyName && <Badge variant="default" title={t("applicationsPolicyRequiredTitle")}>🔒 {app.requiredPolicyName}</Badge>}
+                      {app.requiredPolicyName && <Badge variant="default" title={t("applicationsPolicyRequiredTitle")}><Lock className="size-3" /> {app.requiredPolicyName}</Badge>}
                     </span>
                   </TableCell>
                   <TableCell><Badge variant="muted">{app.type}</Badge></TableCell>
