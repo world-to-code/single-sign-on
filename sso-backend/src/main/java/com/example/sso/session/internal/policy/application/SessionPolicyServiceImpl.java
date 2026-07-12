@@ -358,9 +358,8 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         policyRoles.deleteByPolicyId(id);
         policyIpRules.deleteByPolicyId(id);
         try {
-            // A policy governing an admin console is referenced by admin_portal_settings (ON DELETE RESTRICT):
-            // deleting it would silently revert that console to the acting admin's policy, dropping the tenant's
-            // admin IP allowlist. Refuse, and say so, instead of failing open.
+            // A policy in use is referenced by a policy_binding (ON DELETE RESTRICT) — e.g. it governs an admin
+            // console. Deleting it would silently drop that bindings posture; refuse instead of failing open.
             repository.delete(policy);
             repository.flush();
         } catch (DataIntegrityViolationException e) {

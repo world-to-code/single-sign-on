@@ -68,4 +68,9 @@ public class PolicyBinding extends AuditedEntity implements OrgOwned {
         this.priority = priority;
         this.orgId = orgId;
     }
+
+    /** Point this binding at a different session policy (intent-revealing mutation, not a JavaBean setter). */
+    public void assignSessionPolicy(UUID sessionPolicyId) {
+        this.sessionPolicyId = sessionPolicyId;
+    }
 }

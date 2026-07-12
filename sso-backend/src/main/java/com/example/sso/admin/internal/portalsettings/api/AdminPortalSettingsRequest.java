@@ -1,6 +1,5 @@
 package com.example.sso.admin.internal.portalsettings.api;
 
-import com.example.sso.admin.AdminPortalSettingsData;
 import com.example.sso.shared.error.BadRequestException;
 import java.util.UUID;
 
@@ -11,13 +10,13 @@ import java.util.UUID;
  */
 public record AdminPortalSettingsRequest(String sessionPolicyId) {
 
-    /** The settings update command (same shape as the public {@link AdminPortalSettingsData} projection). */
-    public AdminPortalSettingsData toData() {
+    /** The selected policy id, or {@code null} to clear the selection. */
+    public UUID toPolicyId() {
         if (sessionPolicyId == null || sessionPolicyId.isBlank()) {
-            return new AdminPortalSettingsData(null);
+            return null;
         }
         try {
-            return new AdminPortalSettingsData(UUID.fromString(sessionPolicyId));
+            return UUID.fromString(sessionPolicyId);
         } catch (IllegalArgumentException e) {
             throw BadRequestException.of("admin.sessionPolicy.invalidId");
         }

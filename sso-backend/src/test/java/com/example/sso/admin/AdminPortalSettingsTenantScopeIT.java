@@ -1,17 +1,17 @@
 package com.example.sso.admin;
 
-import com.example.sso.admin.internal.portalsettings.domain.AdminPortalSettingsRepository;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
-import com.example.sso.session.policy.SessionPolicyDetails;
+import com.example.sso.portal.binding.AdminConsoleBinding;
 import com.example.sso.session.policy.SessionPolicyService;
-import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.session.policy.SessionPolicySpec;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -24,21 +24,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 /**
- * Tenant scoping of the admin-portal settings — now a single choice: WHICH session policy governs the admin
- * console. One row per org plus a single GLOBAL default (org_id NULL, seeded in V25): a tenant inherits the
- * global default until it saves its own (copy-on-write), and one tenant's selection never bleeds into
- * another's or into the platform default. The acting tenant is resolved from {@link OrgContext}; there is no
- * RLS on the table, so this proves the app-layer scoping for real. A tenant may only select a policy of its
- * OWN tier.
+ * Tenant scoping of the admin console's governing session policy, now stored as a {@code PORTAL}/{@code admin}
+ * all-subjects binding in {@code policy_binding}. A tenant with no binding defaults to its admin's own resolved
+ * policy; a tenant's selection is org-owned and never bleeds into another's or into the platform default; a
+ * tenant may select only a policy of its OWN tier; and a policy governing a console cannot be deleted until it
+ * is deselected (the binding's ON DELETE RESTRICT).
  */
 class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
 
     @Autowired
-    AdminPortalSettingsService settings;
+    AdminConsoleBinding consoleBinding;
     @Autowired
     OrgContext orgContext;
-    @Autowired
-    AdminPortalSettingsRepository repository;
     @Autowired
     OrganizationService organizations;
     @Autowired
@@ -49,15 +46,18 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
 
     @AfterEach
     void tearDown() {
-        // Remove only the per-tenant rows this test created; leave the global default row intact.
+        // Deleting the org cascades its own bindings/policies. The GLOBAL console binding (migrated seed data
+        // every tenant inherits) is left untouched — tests read it but must never mutate or delete it.
         if (orgA != null) {
-            repository.findByOrgId(orgA).ifPresent(repository::delete);
             organizations.delete(orgA);
         }
         if (orgB != null) {
-            repository.findByOrgId(orgB).ifPresent(repository::delete);
             organizations.delete(orgB);
         }
+    }
+
+    private Optional<UUID> globalConsolePolicy() {
+        return orgContext.callAsPlatform(() -> consoleBinding.sessionPolicyId());
     }
 
     private UUID org() {
@@ -71,30 +71,35 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
         return orgContext.callInOrg(orgId, () -> sessionPolicies.listAll().getFirst()).getId();
     }
 
-    @Test
-    void aTenantInheritsTheGlobalDefaultUntilItSaves() {
-        orgA = org();
-        AdminPortalSettingsData global = orgContext.callAsPlatform(settings::get);
+    private Optional<UUID> consolePolicyOf(UUID orgId) {
+        return orgContext.callInOrg(orgId, () -> consoleBinding.sessionPolicyId());
+    }
 
-        AdminPortalSettingsData asA = orgContext.callInOrg(orgA, settings::get);
-
-        assertThat(asA.sessionPolicyId()).isEqualTo(global.sessionPolicyId());
-        assertThat(repository.findByOrgId(orgA)).isEmpty(); // a pure read never materializes a row
+    private int bindingRows(UUID orgId) {
+        return ownerJdbc().queryForObject(
+                "select count(*) from policy_binding where app_type = 'PORTAL' and app_id = 'admin' and org_id = ?",
+                Integer.class, orgId);
     }
 
     @Test
-    void savingCreatesAnIsolatedTenantRowThatLeavesGlobalAndOtherTenantsUntouched() {
+    void aFreshTenantInheritsTheGlobalConsolePolicy() {
+        orgA = org();
+
+        assertThat(consolePolicyOf(orgA)).isEqualTo(globalConsolePolicy()); // no own binding → inherits global
+        assertThat(bindingRows(orgA)).isZero();                             // a pure read materializes no row
+    }
+
+    @Test
+    void savingCreatesAnIsolatedTenantBindingThatLeavesOtherTenantsUntouched() {
         orgA = org();
         orgB = org();
-        AdminPortalSettingsData global = orgContext.callAsPlatform(settings::get);
         UUID policyOfA = defaultPolicyOf(orgA);
 
-        orgContext.callInOrg(orgA, () -> settings.update(new AdminPortalSettingsData(policyOfA)));
+        orgContext.runInOrg(orgA, () -> consoleBinding.setSessionPolicy(policyOfA));
 
-        assertThat(orgContext.callInOrg(orgA, settings::get).sessionPolicyId()).isEqualTo(policyOfA);
-        // orgB still inherits the untouched global default; the global record is unchanged.
-        assertThat(orgContext.callInOrg(orgB, settings::get)).isEqualTo(global);
-        assertThat(orgContext.callAsPlatform(settings::get)).isEqualTo(global);
+        assertThat(consolePolicyOf(orgA)).contains(policyOfA);
+        assertThat(consolePolicyOf(orgB)).isEqualTo(globalConsolePolicy()); // orgB untouched — still inherits global
+        assertThat(bindingRows(orgB)).isZero();
     }
 
     @Test
@@ -104,32 +109,31 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
         UUID policyOfB = defaultPolicyOf(orgB);
 
         // Pointing A's console at B's policy would govern A with a posture A neither owns nor can inspect.
-        assertThatThrownBy(() -> orgContext.callInOrg(orgA,
-                () -> settings.update(new AdminPortalSettingsData(policyOfB))))
+        assertThatThrownBy(() -> orgContext.runInOrg(orgA, () -> consoleBinding.setSessionPolicy(policyOfB)))
                 .isInstanceOf(BadRequestException.class);
-        assertThat(repository.findByOrgId(orgA)).isEmpty(); // the rejected write materialized no row
+        assertThat(bindingRows(orgA)).isZero(); // the rejected write materialized no row
     }
 
     @Test
     void updateRejectsAnUnknownPolicy() {
         orgA = org();
+        UUID unknown = UUID.randomUUID();
 
-        assertThatThrownBy(() -> orgContext.callInOrg(orgA,
-                () -> settings.update(new AdminPortalSettingsData(UUID.randomUUID()))))
+        assertThatThrownBy(() -> orgContext.runInOrg(orgA, () -> consoleBinding.setSessionPolicy(unknown)))
                 .isInstanceOf(BadRequestException.class);
-        assertThat(repository.findByOrgId(orgA)).isEmpty();
+        assertThat(bindingRows(orgA)).isZero();
     }
 
     @Test
-    void clearingTheSelectionIsAlwaysAllowed() {
+    void clearingTheSelectionReturnsToTheInheritedGlobal() {
         orgA = org();
         UUID policyOfA = defaultPolicyOf(orgA);
-        orgContext.callInOrg(orgA, () -> settings.update(new AdminPortalSettingsData(policyOfA)));
+        orgContext.runInOrg(orgA, () -> consoleBinding.setSessionPolicy(policyOfA));
 
-        orgContext.callInOrg(orgA, () -> settings.update(new AdminPortalSettingsData(null)));
+        orgContext.runInOrg(orgA, () -> consoleBinding.setSessionPolicy(null));
 
-        // Cleared: the console falls back to the policy resolved for the acting admin.
-        assertThat(orgContext.callInOrg(orgA, settings::get).sessionPolicyId()).isNull();
+        assertThat(consolePolicyOf(orgA)).isEqualTo(globalConsolePolicy()); // own binding gone — back to global
+        assertThat(bindingRows(orgA)).isZero();
     }
 
     @Test
@@ -139,30 +143,19 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
         UUID policyOfA = defaultPolicyOf(orgA);
         UUID policyOfB = defaultPolicyOf(orgB);
 
-        orgContext.callInOrg(orgA, () -> settings.update(new AdminPortalSettingsData(policyOfA)));
-        orgContext.callInOrg(orgB, () -> settings.update(new AdminPortalSettingsData(policyOfB)));
+        orgContext.runInOrg(orgA, () -> consoleBinding.setSessionPolicy(policyOfA));
+        orgContext.runInOrg(orgB, () -> consoleBinding.setSessionPolicy(policyOfB));
 
-        assertThat(orgContext.callInOrg(orgA, settings::get).sessionPolicyId()).isEqualTo(policyOfA);
-        assertThat(orgContext.callInOrg(orgB, settings::get).sessionPolicyId()).isEqualTo(policyOfB);
+        assertThat(consolePolicyOf(orgA)).contains(policyOfA);
+        assertThat(consolePolicyOf(orgB)).contains(policyOfB);
     }
 
     @Test
     void onlyThePlatformContextMayWriteTheGlobalDefault() {
         // A bound-but-orgless, non-platform context (an org user that authenticated without a resolved tenant)
-        // must NOT fall through to rewriting the platform-wide default every tenant inherits.
-        assertThatThrownBy(() -> orgContext.callInOrg(null,
-                () -> settings.update(new AdminPortalSettingsData(null))))
+        // must NOT fall through to rewriting the platform-wide default.
+        assertThatThrownBy(() -> orgContext.runInOrg(null, () -> consoleBinding.setSessionPolicy(null)))
                 .isInstanceOf(ForbiddenException.class);
-    }
-
-    @Test
-    void theGlobalDefaultIsSelectableByThePlatform() {
-        SessionPolicyDetails globalDefault = orgContext.callAsPlatform(sessionPolicies::defaultPolicy);
-
-        orgContext.callAsPlatform(() -> settings.update(new AdminPortalSettingsData(globalDefault.getId())));
-
-        assertThat(orgContext.callAsPlatform(settings::get).sessionPolicyId()).isEqualTo(globalDefault.getId());
-        orgContext.callAsPlatform(() -> settings.update(new AdminPortalSettingsData(null))); // restore
     }
 
     @Test
@@ -172,15 +165,14 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
                 new SessionPolicySpec("Console-" + UUID.randomUUID().toString().substring(0, 8), 20, true,
                         480, 30, 5, "TOTP", 2, "TOTP", true, 0, true, "Lax", 5, "10.0.0.0/8",
                         Set.of(), Set.of(), List.of()))).getId();
-        orgContext.callInOrg(orgA, () -> settings.update(new AdminPortalSettingsData(custom)));
+        orgContext.runInOrg(orgA, () -> consoleBinding.setSessionPolicy(custom));
 
-        // Deleting it would silently revert the console to the acting admin's policy — dropping this tenant's
-        // admin IP allowlist and lengthening its elevation TTL. Refuse until the selection is cleared.
+        // The binding's ON DELETE RESTRICT refuses the delete (it would silently drop that console posture).
         assertThatThrownBy(() -> orgContext.runInOrg(orgA, () -> sessionPolicies.delete(custom)))
                 .isInstanceOf(ConflictException.class);
-        assertThat(orgContext.callInOrg(orgA, settings::get).sessionPolicyId()).isEqualTo(custom);
+        assertThat(consolePolicyOf(orgA)).contains(custom);
 
-        orgContext.callInOrg(orgA, () -> settings.update(new AdminPortalSettingsData(null)));
+        orgContext.runInOrg(orgA, () -> consoleBinding.setSessionPolicy(null));
         assertThatCode(() -> orgContext.runInOrg(orgA, () -> sessionPolicies.delete(custom)))
                 .doesNotThrowAnyException();
     }
