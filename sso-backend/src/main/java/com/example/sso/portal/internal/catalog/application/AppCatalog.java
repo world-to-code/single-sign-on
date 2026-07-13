@@ -4,10 +4,11 @@ import com.example.sso.authpolicy.policy.AuthPolicyResolver;
 import com.example.sso.portal.application.ApplicationDescriptor;
 import com.example.sso.portal.application.ApplicationSource;
 import com.example.sso.portal.application.ApplicationView;
-import com.example.sso.portal.internal.catalog.domain.AppPolicy;
-import com.example.sso.portal.internal.catalog.domain.AppPolicyRepository;
+import com.example.sso.portal.internal.catalog.domain.PolicyBinding;
+import com.example.sso.portal.internal.catalog.domain.PolicyBindingRepository;
 import com.example.sso.shared.IdName;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,7 +28,7 @@ class AppCatalog {
 
     /** Each protocol module contributes its launchable apps here (OIDC in admin, SAML in saml). */
     private final List<ApplicationSource> applicationSources;
-    private final AppPolicyRepository appPolicies;
+    private final PolicyBindingRepository bindings;
     private final AuthPolicyResolver authPolicies;
 
     @Transactional(readOnly = true)
@@ -38,9 +39,14 @@ class AppCatalog {
     /** All applications keyed by {@code type:id}, so assignment lookups resolve app names in one build. */
     @Transactional(readOnly = true)
     Map<String, ApplicationView> index() {
-        // app-level sign-on policy per app + policy-id -> name (one lookup pass, not per-app queries)
-        Map<String, UUID> appPolicyByKey = appPolicies.findAll().stream()
-                .collect(Collectors.toMap(ap -> AppKey.of(ap.getAppType(), ap.getAppId()), AppPolicy::getRequiredPolicyId, (a, b) -> a));
+        // App-wide sign-on policy per app = the all-subjects auth binding (own-org beats the inherited global,
+        // mirroring the resolver's orgRank); + policy-id -> name. One lookup pass, not per-app queries.
+        Map<String, PolicyBinding> appWide = new HashMap<>();
+        for (PolicyBinding b : bindings.findBySubjectTypeIsNullAndAuthPolicyIdNotNull()) {
+            appWide.merge(AppKey.of(b.getAppType(), b.getAppId()), b, (a, c) -> a.getOrgId() != null ? a : c);
+        }
+        Map<String, UUID> appPolicyByKey = appWide.entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().getAuthPolicyId()));
         Map<UUID, String> policyNames = authPolicies.policyNames().stream()
                 .collect(Collectors.toMap(IdName::getId, IdName::getName));
 

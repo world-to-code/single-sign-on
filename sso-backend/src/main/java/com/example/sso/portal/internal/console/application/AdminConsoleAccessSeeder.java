@@ -70,7 +70,7 @@ public class AdminConsoleAccessSeeder implements AdminConsoleAccess {
             return;
         }
         assignments.saveAndFlush(new AppAssignment(AppType.OIDC, console.getId(),
-                AppAssignment.SubjectType.ROLE, roleId, null, orgId));
+                AppAssignment.SubjectType.ROLE, roleId, orgId));
         log.info("Assigned the admin console to role {} (assignment-based console entry).", roleId);
     }
 }

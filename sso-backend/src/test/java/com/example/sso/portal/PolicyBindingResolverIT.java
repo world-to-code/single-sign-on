@@ -234,6 +234,27 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
         assertThat(resolveSession(kim, SHADOW)).map(SessionPolicyDetails::getId).contains(sess15);
     }
 
+    @Test
+    void aPerSubjectAuthBindingOverridesAHigherPriorityAppWideOne() {
+        // LOCKED matrix rule made explicit for AUTH: a per-subject (USER) binding is MORE SPECIFIC than the
+        // app-wide (all-subjects) one and wins REGARDLESS of the binding priority — even when the app-wide row
+        // carries the higher priority. So a per-app sign-on policy set for one user is an EXPLICIT override of
+        // the app-wide floor: it can raise OR lower the required factors. This pins the specificity-over-priority
+        // direction so the intended (and security-relevant) semantics can't be silently reordered.
+        String app = "pbt-auth-override";
+        UUID subjectPolicy = authPolicy("pbt-auth-subject");
+        UUID appWidePolicy = authPolicy("pbt-auth-appwide");
+        orgContext.runAsPlatform(() -> {
+            bindings.saveAndFlush(PolicyBinding.builder().appType(APP).appId(app)
+                    .authPolicyId(appWidePolicy).priority(99).build());            // app-wide, HIGH priority
+            bindings.saveAndFlush(PolicyBinding.builder().appType(APP).appId(app)
+                    .subjectType(SubjectType.USER).subjectId(kim.getId())
+                    .authPolicyId(subjectPolicy).priority(1).build());             // per-subject, LOW priority
+        });
+
+        assertThat(resolveAuth(kim, app)).map(AuthPolicyView::getId).contains(subjectPolicy);
+    }
+
     // --- helpers ---
 
     private java.util.Optional<AuthPolicyView> resolveAuth(UserAccount user, String appId) {

@@ -6,8 +6,9 @@ import com.example.sso.portal.application.ApplicationView;
 import com.example.sso.portal.access.AssignAppRequest;
 import com.example.sso.portal.internal.catalog.domain.AppAssignment;
 import com.example.sso.portal.internal.catalog.domain.AppAssignment.SubjectType;
-import com.example.sso.authpolicy.policy.AuthPolicyResolver;
 import com.example.sso.portal.internal.catalog.domain.AppAssignmentRepository;
+import com.example.sso.portal.internal.catalog.domain.PolicyBinding;
+import com.example.sso.portal.internal.catalog.domain.PolicyBindingRepository;
 import com.example.sso.shared.IdName;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
@@ -34,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -57,7 +59,8 @@ class AppAssignmentManagerTest {
     private AppCatalog catalog;
     private OrgContext orgContext;
     private AppAssignmentManager manager;
-    private AuthPolicyResolver authPolicies;
+    private AppAuthBinding appAuthBinding;
+    private PolicyBindingRepository bindings;
 
     @BeforeEach
     void setUp() {
@@ -67,11 +70,12 @@ class AppAssignmentManagerTest {
         userGroups = mock(UserGroupService.class);
         catalog = mock(AppCatalog.class);
         orgContext = mock(OrgContext.class);
-        authPolicies = mock(AuthPolicyResolver.class);
+        appAuthBinding = mock(AppAuthBinding.class);
+        bindings = mock(PolicyBindingRepository.class);
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.empty()); // platform/global tier by default
         // REAL guard over the mocked context so tier-ownership logic is exercised, not stubbed.
         manager = new AppAssignmentManager(assignments, users, roles, userGroups, catalog,
-                new OrgTierGuard(orgContext), authPolicies);
+                new OrgTierGuard(orgContext), appAuthBinding, bindings);
     }
 
     // --- hasAssignment ---
@@ -138,7 +142,6 @@ class AppAssignmentManagerTest {
         when(saved.getAppId()).thenReturn(APP_ID);
         when(saved.getSubjectType()).thenReturn(SubjectType.USER);
         when(saved.getSubjectId()).thenReturn(subjectId);
-        when(saved.getRequiredPolicyId()).thenReturn(null);
         when(assignments.save(any(AppAssignment.class))).thenReturn(saved);
         IdName alice = idName(subjectId, "alice");
         when(users.idNames(any())).thenReturn(List.of(alice));
@@ -152,7 +155,6 @@ class AppAssignmentManagerTest {
         assertThat(built.getValue().getAppId()).isEqualTo(APP_ID);
         assertThat(built.getValue().getSubjectType()).isEqualTo(SubjectType.USER);
         assertThat(built.getValue().getSubjectId()).isEqualTo(subjectId);
-        assertThat(built.getValue().getRequiredPolicyId()).isNull();
         assertThat(built.getValue().getOrgId()).isNull(); // platform tier -> a global assignment
         assertThat(view.id()).isEqualTo(assignmentId.toString());
         assertThat(view.appType()).isEqualTo("OIDC");
@@ -163,11 +165,10 @@ class AppAssignmentManagerTest {
     }
 
     @Test
-    void assignParsesAndPersistsANonNullRequiredPolicyId() {
+    void assignWritesANonNullRequiredPolicyAsAPerSubjectAuthBinding() {
         UUID subjectId = UUID.randomUUID();
         UUID policyId = UUID.randomUUID();
         AssignAppRequest request = new AssignAppRequest("OIDC", APP_ID, "ROLE", subjectId.toString(), policyId.toString());
-        when(authPolicies.exists(policyId)).thenReturn(true);
         when(assignments.existsByAppTypeAndAppIdAndSubjectTypeAndSubjectId(
                 APP_TYPE, APP_ID, SubjectType.ROLE, subjectId)).thenReturn(false);
         AppAssignment saved = assignment(SubjectType.ROLE, subjectId);
@@ -176,11 +177,12 @@ class AppAssignmentManagerTest {
         when(roles.idNames(any())).thenReturn(List.of(admins));
         when(catalog.index()).thenReturn(Map.of());
 
-        manager.assign(request);
+        AppAssignmentView view = manager.assign(request);
 
-        ArgumentCaptor<AppAssignment> built = ArgumentCaptor.forClass(AppAssignment.class);
-        verify(assignments).save(built.capture());
-        assertThat(built.getValue().getRequiredPolicyId()).isEqualTo(policyId);
+        // The ACL row carries no policy; the sign-on policy is a separate per-subject auth binding.
+        verify(appAuthBinding).setForSubject(
+                APP_TYPE, APP_ID, PolicyBinding.SubjectType.ROLE, subjectId, policyId);
+        assertThat(view.requiredPolicyId()).isEqualTo(policyId.toString());
     }
 
     @Test
@@ -383,15 +385,18 @@ class AppAssignmentManagerTest {
     }
 
     @Test
-    void assignRejectsARequiredPolicyThatDoesNotExist() {
-        // The per-assignment step-up policy is enforced at /oauth2/authorize; a dangling id silently resolves
-        // to "no policy", so the app quietly loses the extra authentication the admin thought they configured.
+    void assignPropagatesAnUnknownRequiredPolicyRejection() {
+        // The per-subject step-up policy is validated by the auth-binding writer; a dangling id is refused so
+        // the app never silently loses the extra authentication. The surrounding transaction rolls back the ACL
+        // row too — that atomicity is covered by an integration test.
+        UUID subjectId = UUID.randomUUID();
         UUID policyId = UUID.randomUUID();
-        when(authPolicies.exists(policyId)).thenReturn(false);
-        AssignAppRequest request = new AssignAppRequest("OIDC", "app-1", "USER",
-                UUID.randomUUID().toString(), policyId.toString());
+        AssignAppRequest request = new AssignAppRequest("OIDC", APP_ID, "USER", subjectId.toString(), policyId.toString());
+        when(assignments.existsByAppTypeAndAppIdAndSubjectTypeAndSubjectId(
+                APP_TYPE, APP_ID, SubjectType.USER, subjectId)).thenReturn(false);
+        doThrow(new NotFoundException("policy not found")).when(appAuthBinding)
+                .setForSubject(APP_TYPE, APP_ID, PolicyBinding.SubjectType.USER, subjectId, policyId);
 
         assertThatThrownBy(() -> manager.assign(request)).isInstanceOf(NotFoundException.class);
-        verify(assignments, never()).save(any());
     }
 }

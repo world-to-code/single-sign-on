@@ -2,13 +2,14 @@ package com.example.sso.portal.internal.catalog.application;
 
 import com.example.sso.portal.access.AppAssignmentFilter;
 import com.example.sso.portal.access.AppAssignmentView;
-import com.example.sso.authpolicy.policy.AuthPolicyResolver;
 import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.application.ApplicationView;
 import com.example.sso.portal.access.AssignAppRequest;
 import com.example.sso.portal.internal.catalog.domain.AppAssignment;
 import com.example.sso.portal.internal.catalog.domain.AppAssignment.SubjectType;
 import com.example.sso.portal.internal.catalog.domain.AppAssignmentRepository;
+import com.example.sso.portal.internal.catalog.domain.PolicyBinding;
+import com.example.sso.portal.internal.catalog.domain.PolicyBindingRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
@@ -49,7 +50,8 @@ class AppAssignmentManager {
     private final UserGroupService userGroups;
     private final AppCatalog catalog;
     private final OrgTierGuard tierGuard;
-    private final AuthPolicyResolver authPolicies;
+    private final AppAuthBinding appAuthBinding;
+    private final PolicyBindingRepository bindings;
 
     @Transactional(readOnly = true)
     List<ApplicationView> appsForUser(UserAccount user) {
@@ -106,8 +108,11 @@ class AppAssignmentManager {
         String appName = app == null ? appId : app.name();
         List<AppAssignment> list = assignments.findByAppTypeAndAppId(appType, appId);
         Map<UUID, String> names = subjectNames(list);
+        Map<String, UUID> authByKey = perSubjectAuthPolicies(appType, appId); // ONE binding query for the list
 
-        return list.stream().map(a -> toView(a, appName, subjectName(names, a))).toList();
+        return list.stream()
+                .map(a -> toView(a, appName, subjectName(names, a), authPolicyId(authByKey, a)))
+                .toList();
     }
 
     /** Projects one assignment (RLS-scoped read), so the admin layer can gate an unassign by its app. */
@@ -119,14 +124,37 @@ class AppAssignmentManager {
     private AppAssignmentView toView(AppAssignment assignment) {
         ApplicationView app = catalog.index().get(AppKey.of(assignment.getAppType(), assignment.getAppId()));
         String appName = app == null ? assignment.getAppId() : app.name();
-        return toView(assignment, appName, subjectName(subjectNames(List.of(assignment)), assignment));
+        String requiredPolicyId = authPolicyId(
+                perSubjectAuthPolicies(assignment.getAppType(), assignment.getAppId()), assignment);
+        return toView(assignment, appName, subjectName(subjectNames(List.of(assignment)), assignment), requiredPolicyId);
     }
 
-    /** Boundary factory: the app and subject display names are resolved by the caller. */
-    private AppAssignmentView toView(AppAssignment a, String appName, String subjectName) {
+    /** Boundary factory: the app/subject display names AND the per-subject sign-on policy id are resolved by
+     *  the caller (the policy now lives in a separate {@code policy_binding} row, not on the assignment). */
+    private AppAssignmentView toView(AppAssignment a, String appName, String subjectName, String requiredPolicyId) {
         return new AppAssignmentView(a.getId().toString(), a.getAppType().name(), a.getAppId(), appName,
-                a.getSubjectType().name(), a.getSubjectId().toString(), subjectName,
-                a.getRequiredPolicyId() == null ? null : a.getRequiredPolicyId().toString());
+                a.getSubjectType().name(), a.getSubjectId().toString(), subjectName, requiredPolicyId);
+    }
+
+    /** The per-subject sign-on policy id for each subject of an app, keyed subjectType:subjectId:org — resolved
+     *  from the auth bindings in one query so a list view never runs N+1. */
+    private Map<String, UUID> perSubjectAuthPolicies(AppType appType, String appId) {
+        Map<String, UUID> byKey = new HashMap<>();
+        for (PolicyBinding b : bindings.findByAppTypeAndAppId(appType, appId)) {
+            if (b.getSubjectType() != null && b.getAuthPolicyId() != null) {
+                byKey.put(subjectKey(b.getSubjectType().name(), b.getSubjectId(), b.getOrgId()), b.getAuthPolicyId());
+            }
+        }
+        return byKey;
+    }
+
+    private String authPolicyId(Map<String, UUID> byKey, AppAssignment a) {
+        UUID id = byKey.get(subjectKey(a.getSubjectType().name(), a.getSubjectId(), a.getOrgId()));
+        return id == null ? null : id.toString();
+    }
+
+    private String subjectKey(String subjectType, UUID subjectId, UUID orgId) {
+        return subjectType + ":" + subjectId + ":" + (orgId == null ? "global" : orgId);
     }
 
     @Transactional
@@ -143,13 +171,20 @@ class AppAssignmentManager {
             throw ConflictException.of("portal.assignment.duplicate");
         }
 
-        UUID policyId = requiredPolicy(request.requiredPolicyId());
+        // The ACL row (who may launch) and the optional per-subject sign-on policy (a policy_binding auth row)
+        // are written in ONE transaction: a dangling policy id thrown by setForSubject rolls back the ACL too.
         AppAssignment saved = assignments.save(new AppAssignment(appType, request.appId(), subjectType, subjectId,
-                policyId, tierGuard.currentTier())); // stamp the acting admin's tier so it applies only in-org
+                tierGuard.currentTier())); // stamp the acting admin's tier so it applies only in-org
+        String requiredPolicyId = request.requiredPolicyId();
+        if (requiredPolicyId != null && !requiredPolicyId.isBlank()) {
+            appAuthBinding.setForSubject(appType, request.appId(),
+                    PolicyBinding.SubjectType.valueOf(subjectType.name()), subjectId, UUID.fromString(requiredPolicyId));
+        }
         ApplicationView app = catalog.index().get(AppKey.of(appType, request.appId()));
         String appName = app == null ? request.appId() : app.name();
 
-        return toView(saved, appName, subjectName(subjectNames(List.of(saved)), saved));
+        return toView(saved, appName, subjectName(subjectNames(List.of(saved)), saved),
+                requiredPolicyId == null || requiredPolicyId.isBlank() ? null : requiredPolicyId);
     }
 
     @Transactional
@@ -160,6 +195,10 @@ class AppAssignmentManager {
         AppAssignment assignment = tierGuard.requireInTier(assignments.findById(assignmentId),
                 () -> new NotFoundException("assignment not found"));
         assignments.delete(assignment);
+        // Drop the per-subject sign-on binding this assignment carried (if any) — no orphan governing a subject
+        // that can no longer launch the app.
+        appAuthBinding.clearForSubject(assignment.getAppType(), assignment.getAppId(),
+                PolicyBinding.SubjectType.valueOf(assignment.getSubjectType().name()), assignment.getSubjectId());
     }
 
     /** Resolves subject (user/role) display names for a batch of assignments in two queries, not per-row. */
@@ -190,21 +229,5 @@ class AppAssignmentManager {
     /** The resolved display name for an assignment's subject, falling back to its id. */
     private String subjectName(Map<UUID, String> names, AppAssignment a) {
         return names.getOrDefault(a.getSubjectId(), a.getSubjectId().toString());
-    }
-
-    /**
-     * Resolves (and validates) the assignment's extra-authentication policy. A dangling id would silently
-     * resolve to "no policy" at enforcement time, quietly dropping the step-up the admin configured — so an
-     * unknown policy is refused here, exactly as the app-level policy path refuses one.
-     */
-    private UUID requiredPolicy(String requiredPolicyId) {
-        if (requiredPolicyId == null || requiredPolicyId.isBlank()) {
-            return null;
-        }
-        UUID policyId = UUID.fromString(requiredPolicyId);
-        if (!authPolicies.exists(policyId)) {
-            throw new NotFoundException("policy not found");
-        }
-        return policyId;
     }
 }

@@ -13,7 +13,11 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/** Assigns an application (OIDC client / SAML SP) to a subject (a user or a role/group). */
+/**
+ * Assigns an application (OIDC client / SAML SP) to a subject (a user or a role/group) — a pure ACL: which
+ * subjects MAY launch the app. The optional per-subject sign-on (step-up) policy is no longer stored here; it
+ * lives in {@code policy_binding} (a per-subject auth binding).
+ */
 @Entity
 @Table(name = "app_assignment")
 @Getter
@@ -36,27 +40,21 @@ public class AppAssignment extends AuditedEntity implements OrgOwned {
     @Column(name = "subject_id", nullable = false)
     private UUID subjectId;
 
-    /** Optional per-app auth policy requiring extra/step-up authentication for this assignment. */
-    @Column(name = "required_policy_id")
-    private UUID requiredPolicyId;
-
     /** Owning tenant, or {@code null} for a GLOBAL assignment (e.g. the seeded admin-console grant) that
      *  applies across tenants; RLS confines an org assignment to its tenant's users (see {@code V53}). */
     @Column(name = "org_id")
     private UUID orgId;
 
-    public AppAssignment(AppType appType, String appId, SubjectType subjectType, UUID subjectId,
-            UUID requiredPolicyId, UUID orgId) {
+    public AppAssignment(AppType appType, String appId, SubjectType subjectType, UUID subjectId, UUID orgId) {
         this.appType = appType;
         this.appId = appId;
         this.subjectType = subjectType;
         this.subjectId = subjectId;
-        this.requiredPolicyId = requiredPolicyId;
         this.orgId = orgId;
     }
 
     /** GLOBAL assignment (no owning tenant) — used by the admin-console seeder. */
-    public AppAssignment(AppType appType, String appId, SubjectType subjectType, UUID subjectId, UUID requiredPolicyId) {
-        this(appType, appId, subjectType, subjectId, requiredPolicyId, null);
+    public AppAssignment(AppType appType, String appId, SubjectType subjectType, UUID subjectId) {
+        this(appType, appId, subjectType, subjectId, null);
     }
 }

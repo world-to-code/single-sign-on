@@ -2,53 +2,43 @@ package com.example.sso.portal.internal.catalog.application;
 
 import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.authpolicy.policy.AuthPolicyEvaluator;
-import com.example.sso.authpolicy.policy.AuthPolicyResolver;
 import com.example.sso.authpolicy.policy.AuthPolicyStepView;
 import com.example.sso.authpolicy.policy.AuthPolicyView;
 import com.example.sso.portal.access.AppAccess;
 import com.example.sso.portal.access.AppAccessQuery;
 import com.example.sso.portal.application.AppType;
-import com.example.sso.portal.internal.catalog.domain.AppAssignment;
-import com.example.sso.portal.internal.catalog.domain.AppAssignmentRepository;
-import com.example.sso.portal.internal.catalog.domain.AppPolicy;
-import com.example.sso.portal.internal.catalog.domain.AppPolicyRepository;
-import com.example.sso.shared.error.NotFoundException;
-import com.example.sso.user.role.RoleRef;
+import com.example.sso.portal.binding.PolicyBindingResolver;
 import com.example.sso.user.account.UserAccount;
-import com.example.sso.user.group.UserGroupService;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Per-app sign-on policy resolution and step-up gating: the highest-priority enabled policy that applies
- * to a user for an app (app-level plus per-subject assignment policy), and whether they currently satisfy
- * it (all factors held plus a fresh deliberate step-up).
+ * Per-app sign-on policy resolution and step-up gating: the sign-on policy required for a user to access an
+ * app — resolved from the unified {@code policy_binding} matrix (a per-subject binding beats the app-wide one
+ * by specificity, then priority) — and whether the user currently satisfies it (all factors held plus a fresh
+ * deliberate step-up). The app-auth bindings are written through {@link AppAuthBinding}.
  */
 @Service
 @RequiredArgsConstructor
 class AppAccessResolver {
 
-    private final AppAssignmentRepository assignments;
-    private final AppPolicyRepository appPolicies;
-    private final AuthPolicyResolver authPolicies;
+    private final PolicyBindingResolver bindings;
+    private final AppAuthBinding appAuthBinding;
     private final AuthPolicyEvaluator evaluator;
-    private final UserGroupService userGroups;
 
     @Transactional(readOnly = true)
     AppAccess appAccess(AppAccessQuery query) {
         UserAccount user = query.user();
-        Optional<AuthPolicyView> resolved = resolveAppPolicy(user, query.appType(), query.appId());
+        // Resolved in the acting (host-derived) org context — the app launch always runs in the user's tenant,
+        // so the binding matrix is scoped to that tenant plus GLOBAL, never another tenant's rows.
+        Optional<AuthPolicyView> resolved = bindings.resolveAuthPolicy(user, query.appType(), query.appId());
         if (resolved.isEmpty()) {
             return new AppAccess(true, List.of());
         }
@@ -73,53 +63,16 @@ class AppAccessResolver {
         return new AppAccess(false, factorNames(last));
     }
 
+    /** Sets (or, when blank/null, clears) the app-wide sign-on policy for an app — an all-subjects auth binding. */
     @Transactional
     void setAppPolicy(AppType appType, String appId, String requiredPolicyId) {
-        appPolicies.deleteByAppTypeAndAppId(appType, appId); // one policy per app: replace any existing
-
-        if (requiredPolicyId != null && !requiredPolicyId.isBlank()) {
-            UUID policyId = UUID.fromString(requiredPolicyId);
-            if (!authPolicies.exists(policyId)) {
-                throw new NotFoundException("policy not found");
-            }
-
-            appPolicies.save(new AppPolicy(appType, appId, policyId));
-        }
+        UUID policyId = requiredPolicyId == null || requiredPolicyId.isBlank() ? null : UUID.fromString(requiredPolicyId);
+        appAuthBinding.setAppWide(appType, appId, policyId);
     }
 
     private List<String> factorNames(AuthPolicyStepView step) {
         return step.getAllowedFactors().stream()
                 .sorted(Comparator.comparingInt(Enum::ordinal))
                 .map(AuthFactor::name).toList();
-    }
-
-    /**
-     * The highest-priority enabled policy required to access this app: the app-level sign-on policy
-     * (applies to everyone) plus any per-subject assignment policy matching the user (directly/via role or group).
-     */
-    private Optional<AuthPolicyView> resolveAppPolicy(UserAccount user, AppType appType, String appId) {
-        Set<UUID> roleIds = user.getRoles().stream().map(RoleRef::getId).collect(Collectors.toSet());
-        Set<UUID> groupIds = new HashSet<>(userGroups.groupIdsOf(user.getId()));
-        List<UUID> candidateIds = new ArrayList<>();
-
-        assignments.findByAppTypeAndAppId(appType, appId).stream()
-                .filter(a -> a.getRequiredPolicyId() != null)
-                .filter(a -> subjectMatches(a, user.getId(), roleIds, groupIds))
-                .forEach(a -> candidateIds.add(a.getRequiredPolicyId()));
-        appPolicies.findByAppTypeAndAppId(appType, appId).ifPresent(ap -> candidateIds.add(ap.getRequiredPolicyId()));
-
-        if (candidateIds.isEmpty()) {
-            return Optional.empty();
-        }
-
-        return authPolicies.highestPriorityEnabled(candidateIds);
-    }
-
-    private boolean subjectMatches(AppAssignment a, UUID userId, Set<UUID> roleIds, Set<UUID> groupIds) {
-        return switch (a.getSubjectType()) {
-            case USER -> a.getSubjectId().equals(userId);
-            case ROLE -> roleIds.contains(a.getSubjectId());
-            case GROUP -> groupIds.contains(a.getSubjectId());
-        };
     }
 }

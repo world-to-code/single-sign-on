@@ -5,8 +5,8 @@ import com.example.sso.portal.application.ApplicationDescriptor;
 import com.example.sso.portal.application.ApplicationSource;
 import com.example.sso.portal.application.ApplicationView;
 import com.example.sso.portal.application.AppType;
-import com.example.sso.portal.internal.catalog.domain.AppPolicy;
-import com.example.sso.portal.internal.catalog.domain.AppPolicyRepository;
+import com.example.sso.portal.internal.catalog.domain.PolicyBinding;
+import com.example.sso.portal.internal.catalog.domain.PolicyBindingRepository;
 import com.example.sso.shared.IdName;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,8 +21,8 @@ import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link AppCatalog}: aggregates each {@link ApplicationSource}'s descriptors into
- * {@link ApplicationView}s keyed by {@code type:id}, resolving each app's app-level sign-on policy name
- * in one pass. {@code list()} flattens the same index.
+ * {@link ApplicationView}s keyed by {@code type:id}, resolving each app's app-wide sign-on policy name (the
+ * all-subjects auth binding) in one pass. {@code list()} flattens the same index.
  */
 class AppCatalogTest {
 
@@ -31,23 +31,24 @@ class AppCatalogTest {
     private static final ApplicationDescriptor SAML_APP =
             new ApplicationDescriptor(AppType.SAML, "app2", "App Two", "/launch/app2", false);
 
-    private AppPolicyRepository appPolicies;
+    private PolicyBindingRepository bindings;
     private AuthPolicyResolver authPolicies;
     private AppCatalog catalog;
 
     @BeforeEach
     void setUp() {
-        appPolicies = mock(AppPolicyRepository.class);
+        bindings = mock(PolicyBindingRepository.class);
         authPolicies = mock(AuthPolicyResolver.class);
         ApplicationSource source = () -> List.of(OIDC_APP, SAML_APP);
-        catalog = new AppCatalog(List.of(source), appPolicies, authPolicies);
+        catalog = new AppCatalog(List.of(source), bindings, authPolicies);
     }
 
     @Test
-    void indexKeysEachAppAndResolvesTheAppLevelPolicyName() {
+    void indexKeysEachAppAndResolvesTheAppWidePolicyName() {
         UUID policyId = UUID.randomUUID();
-        IdName policyName = idName(policyId, "Strong MFA");
-        when(appPolicies.findAll()).thenReturn(List.of(new AppPolicy(AppType.OIDC, "app1", policyId)));
+        IdName policyName = idName(policyId, "Strong MFA"); // build before stubbing (no nested stubbing)
+        PolicyBinding appWide = appWideAuth(AppType.OIDC, "app1", policyId);
+        when(bindings.findBySubjectTypeIsNullAndAuthPolicyIdNotNull()).thenReturn(List.of(appWide));
         when(authPolicies.policyNames()).thenReturn(List.of(policyName));
 
         Map<String, ApplicationView> index = catalog.index();
@@ -66,12 +67,16 @@ class AppCatalogTest {
 
     @Test
     void listReturnsEveryAggregatedView() {
-        when(appPolicies.findAll()).thenReturn(List.of());
+        when(bindings.findBySubjectTypeIsNullAndAuthPolicyIdNotNull()).thenReturn(List.of());
         when(authPolicies.policyNames()).thenReturn(List.of());
 
         List<ApplicationView> views = catalog.list();
 
         assertThat(views).extracting(ApplicationView::id).containsExactlyInAnyOrder("app1", "app2");
+    }
+
+    private PolicyBinding appWideAuth(AppType appType, String appId, UUID authPolicyId) {
+        return PolicyBinding.builder().appType(appType).appId(appId).authPolicyId(authPolicyId).build();
     }
 
     private IdName idName(UUID id, String name) {

@@ -73,4 +73,14 @@ public class PolicyBinding extends AuditedEntity implements OrgOwned {
     public void assignSessionPolicy(UUID sessionPolicyId) {
         this.sessionPolicyId = sessionPolicyId;
     }
+
+    /** Point this binding at a different auth (sign-on) policy (intent-revealing mutation, not a setter). */
+    public void assignAuthPolicy(UUID authPolicyId) {
+        this.authPolicyId = authPolicyId;
+    }
+
+    /** Whether this binding no longer carries any policy — the caller then deletes it (DB CHECK needs ≥1). */
+    public boolean carriesNoPolicy() {
+        return authPolicyId == null && sessionPolicyId == null;
+    }
 }

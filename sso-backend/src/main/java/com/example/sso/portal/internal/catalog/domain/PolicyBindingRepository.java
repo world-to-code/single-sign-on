@@ -17,6 +17,17 @@ public interface PolicyBindingRepository extends JpaRepository<PolicyBinding, UU
     /** The GLOBAL app-wide (all-subjects) binding (org_id NULL) tenants inherit. */
     Optional<PolicyBinding> findByAppTypeAndAppIdAndSubjectTypeIsNullAndOrgIdIsNull(AppType appType, String appId);
 
+    /** A specific subject's binding for an app within a tenant (the per-subject auth row). */
+    Optional<PolicyBinding> findByAppTypeAndAppIdAndSubjectTypeAndSubjectIdAndOrgId(
+            AppType appType, String appId, PolicyBinding.SubjectType subjectType, UUID subjectId, UUID orgId);
+
+    /** A specific subject's GLOBAL binding for an app (org_id NULL). */
+    Optional<PolicyBinding> findByAppTypeAndAppIdAndSubjectTypeAndSubjectIdAndOrgIdIsNull(
+            AppType appType, String appId, PolicyBinding.SubjectType subjectType, UUID subjectId);
+
+    /** Every app-wide (all-subjects) AUTH binding (RLS-scoped) — the admin catalog's app sign-on-policy badge. */
+    List<PolicyBinding> findBySubjectTypeIsNullAndAuthPolicyIdNotNull();
+
     /** Bindings referencing a session policy — the impact view before edit/delete. */
     List<PolicyBinding> findBySessionPolicyId(UUID sessionPolicyId);
 
