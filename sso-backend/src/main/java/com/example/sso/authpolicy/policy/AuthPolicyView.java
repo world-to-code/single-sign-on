@@ -1,7 +1,6 @@
 package com.example.sso.authpolicy.policy;
 
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -19,15 +18,9 @@ public interface AuthPolicyView {
 
     boolean isEnabled();
 
-    boolean isAppliesToLogin();
-
     boolean isAllowEnrollmentAtLogin();
 
     int getStepUpFreshnessMinutes();
 
     List<? extends AuthPolicyStepView> getSteps();
-
-    Set<UUID> getAssignedUserIds();
-
-    Set<UUID> getAssignedRoleIds();
 }

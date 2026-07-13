@@ -36,21 +36,6 @@ public interface AuthPolicyRepository extends JpaRepository<AuthPolicy, UUID> {
 
     List<AuthPolicy> findAllByOrderByPriorityDesc();
 
-    /** Enabled login policies directly assigned to the given user (matched at the join table). */
-    @Query("select distinct p from AuthPolicy p left join fetch p.steps s left join fetch s.factors "
-            + "join p.userAssignments ua where p.enabled = true and p.signOnRules.appliesToLogin = true and ua.userId = :userId")
-    List<AuthPolicy> findEnabledAssignedToUser(@Param("userId") UUID userId);
-
-    /** Enabled login policies assigned to any of the given roles (matched at the join table). */
-    @Query("select distinct p from AuthPolicy p left join fetch p.steps s left join fetch s.factors "
-            + "join p.roleAssignments ra where p.enabled = true and p.signOnRules.appliesToLogin = true and ra.roleId in :roleIds")
-    List<AuthPolicy> findEnabledAssignedToAnyRole(@Param("roleIds") Collection<UUID> roleIds);
-
-    /** Enabled login policies with NO user and NO role assignment — they apply to every user (incl. Default). */
-    @Query("select distinct p from AuthPolicy p left join fetch p.steps s left join fetch s.factors "
-            + "where p.enabled = true and p.signOnRules.appliesToLogin = true and p.userAssignments is empty and p.roleAssignments is empty")
-    List<AuthPolicy> findEnabledGlobal();
-
     /** The given policies with steps + factors fetched (for per-app step-up resolution, read detached). */
     @Query("select distinct p from AuthPolicy p left join fetch p.steps s left join fetch s.factors "
             + "where p.id in :ids")

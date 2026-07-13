@@ -16,20 +16,16 @@ import lombok.NoArgsConstructor;
 import com.example.sso.authpolicy.policy.AuthPolicyView;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
- * An authentication policy: an ordered chain of {@link AuthPolicyStep}s assigned to users
- * and/or roles (groups). When several policies apply to a user, the one with the highest
- * {@code priority} wins. No setters — mutated via intention-revealing methods.
+ * An authentication policy: an ordered chain of {@link AuthPolicyStep}s. When several policies apply to a
+ * user, the one with the highest {@code priority} wins. No setters — mutated via intention-revealing methods.
  *
- * <p>The steps and assignment rows are plain read associations — NO cascade or orphan removal. The
- * admin service inserts/deletes them explicitly (via their own repositories), so every write is
- * visible in the service code. These collections are read-only projections here.
+ * <p>Which users/roles a policy governs (its login scope) lives in the {@code policy_binding} matrix, not on
+ * the entity. The steps are a plain read association — NO cascade or orphan removal; the admin service
+ * inserts/deletes them explicitly (via their own repositories), so every write is visible in the service.
  */
 @Entity
 @Table(name = "auth_policy")
@@ -61,12 +57,6 @@ public class AuthPolicy extends AuditedEntity implements AuthPolicyView, OrgOwne
     @OrderBy("stepOrder ASC")
     private List<AuthPolicyStep> steps = new ArrayList<>();
 
-    @OneToMany(mappedBy = "policy", fetch = FetchType.LAZY)
-    private Set<AuthPolicyUser> userAssignments = new HashSet<>();
-
-    @OneToMany(mappedBy = "policy", fetch = FetchType.LAZY)
-    private Set<AuthPolicyRole> roleAssignments = new HashSet<>();
-
     /** A global/default policy (no owning org). */
     public AuthPolicy(String name, int priority) {
         this.name = name;
@@ -81,11 +71,6 @@ public class AuthPolicy extends AuditedEntity implements AuthPolicyView, OrgOwne
 
     public void updatePriority(int priority) {
         this.priority = priority;
-    }
-
-    /** Whether this policy governs login (true) or is reserved for per-app step-up only (false). */
-    public void useForLogin(boolean appliesToLogin) {
-        this.signOnRules = signOnRules.forLogin(appliesToLogin);
     }
 
     /** Whether users governed by this policy may enroll a missing factor during login. */
@@ -108,10 +93,6 @@ public class AuthPolicy extends AuditedEntity implements AuthPolicyView, OrgOwne
 
     // Read-only views; the sign-on posture is delegated to the embedded value object.
 
-    public boolean isAppliesToLogin() {
-        return signOnRules.appliesToLogin();
-    }
-
     public boolean isAllowEnrollmentAtLogin() {
         return signOnRules.allowEnrollmentAtLogin();
     }
@@ -120,17 +101,9 @@ public class AuthPolicy extends AuditedEntity implements AuthPolicyView, OrgOwne
         return signOnRules.stepUpFreshnessMinutes();
     }
 
-    // The assignment/step rows are persisted explicitly (override Lombok's @Getter).
+    // The step rows are persisted explicitly (override Lombok's @Getter).
 
     public List<AuthPolicyStep> getSteps() {
         return Collections.unmodifiableList(steps);
-    }
-
-    public Set<UUID> getAssignedUserIds() {
-        return userAssignments.stream().map(AuthPolicyUser::getUserId).collect(Collectors.toUnmodifiableSet());
-    }
-
-    public Set<UUID> getAssignedRoleIds() {
-        return roleAssignments.stream().map(AuthPolicyRole::getRoleId).collect(Collectors.toUnmodifiableSet());
     }
 }

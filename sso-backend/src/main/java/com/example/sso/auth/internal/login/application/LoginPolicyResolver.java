@@ -13,10 +13,10 @@ import org.springframework.stereotype.Service;
 
 /**
  * The login (sign-on) authentication policy for a user: the auth policy BOUND to the user portal (the
- * {@code policy_binding} matrix, per role/user/group), else the legacy {@code appliesToLogin} resolution.
- * Resolved inside the LOGIN org so the tenant's own bindings/policies (RLS-scoped) participate; with no org
- * bound (pre-org steps / step-up) only global/default policies resolve. Shared by the login-state and
- * factor-step services so every login step agrees on the same winning policy.
+ * {@code policy_binding} matrix, per user/role/all-subjects), else the seeded Default. Resolved inside the
+ * LOGIN org so the tenant's own bindings/policies (RLS-scoped) participate; with no org bound (pre-org steps
+ * / step-up) only global/default bindings resolve. Shared by the login-state and factor-step services so
+ * every login step agrees on the same winning policy.
  */
 @Service
 @RequiredArgsConstructor
@@ -35,6 +35,6 @@ public class LoginPolicyResolver {
 
     private AuthPolicyView resolveInScope(UserAccount user) {
         return bindings.resolveAuthPolicy(user, AppType.PORTAL, PortalApps.USER)
-                .orElseGet(() -> authPolicies.resolveForUser(user));
+                .orElseGet(authPolicies::defaultPolicy);
     }
 }

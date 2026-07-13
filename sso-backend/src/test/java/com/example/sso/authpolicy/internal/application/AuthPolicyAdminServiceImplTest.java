@@ -5,14 +5,13 @@ import com.example.sso.authpolicy.policy.AuthPolicyResolver;
 import com.example.sso.authpolicy.policy.AuthPolicySpec;
 import com.example.sso.authpolicy.policy.AuthPolicyUpdate;
 import com.example.sso.authpolicy.policy.AuthPolicyView;
+import com.example.sso.authpolicy.policy.LoginAuthBindings;
 import com.example.sso.authpolicy.internal.domain.AuthPolicy;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyRepository;
-import com.example.sso.authpolicy.internal.domain.AuthPolicyRoleRepository;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyStep;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyStepFactor;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyStepFactorRepository;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyStepRepository;
-import com.example.sso.authpolicy.internal.domain.AuthPolicyUserRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
@@ -37,6 +36,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -45,9 +47,10 @@ import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link AuthPolicyAdminServiceImpl}: duplicate-name and empty-step validation on create,
- * the "Default fallback policy is immutable" guard on update/delete, and the not-found paths. Steps,
- * factors and assignments are now persisted EXPLICITLY, so create/delete are asserted with
- * {@code verify(...)} against the step/factor/assignment repositories (no JPA cascade).
+ * the "Default fallback policy is immutable" guard on update/delete, and the not-found paths. Steps and
+ * factors are persisted EXPLICITLY (no JPA cascade); the login scope is written to the policy_binding matrix
+ * via {@link LoginAuthBindings}, so create/delete are asserted with {@code verify(...)} against the step/
+ * factor repositories and the login-bindings collaborator.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -57,8 +60,7 @@ class AuthPolicyAdminServiceImplTest {
     @Mock private OrgContext orgContext;
     @Mock private AuthPolicyStepRepository stepRepository;
     @Mock private AuthPolicyStepFactorRepository stepFactorRepository;
-    @Mock private AuthPolicyUserRepository userRepository;
-    @Mock private AuthPolicyRoleRepository roleRepository;
+    @Mock private LoginAuthBindings loginBindings;
     @Mock private UserService users;
     @Mock private RoleService roles;
 
@@ -71,7 +73,7 @@ class AuthPolicyAdminServiceImplTest {
         // Exercise the REAL tier guard (driven by the mocked OrgContext) so the isolation checks are genuine.
         service = new AuthPolicyAdminServiceImpl(
                 repository, new OrgTierGuard(orgContext), orgContext,
-                stepRepository, stepFactorRepository, userRepository, roleRepository, users, roles);
+                stepRepository, stepFactorRepository, loginBindings, users, roles);
     }
 
     private AuthPolicySpec spec(String name, List<Set<AuthFactor>> steps) {
@@ -152,7 +154,7 @@ class AuthPolicyAdminServiceImplTest {
     }
 
     @Test
-    void deleteExplicitlyRemovesStepsAssignmentsThenThePolicy() {
+    void deleteRemovesStepsThenClearsLoginBindingsThenThePolicy() {
         UUID id = UUID.randomUUID();
         AuthPolicy policy = new AuthPolicy("MFA", 5);
         when(repository.findById(id)).thenReturn(Optional.of(policy));
@@ -161,8 +163,7 @@ class AuthPolicyAdminServiceImplTest {
         service.delete(id);
 
         verify(stepRepository).findByPolicyId(id);
-        verify(userRepository).deleteByPolicyId(id);
-        verify(roleRepository).deleteByPolicyId(id);
+        verify(loginBindings).clearForPolicy(id); // login bindings cleared before the policy (FK RESTRICT)
         verify(repository).delete(policy);
     }
 
@@ -198,9 +199,10 @@ class AuthPolicyAdminServiceImplTest {
     }
 
     @Test
-    void createAcceptsAUserAndRoleInThePolicysOwnOrg() {
+    void createWritesTheLoginScopeForSameOrgSubjectsToTheMatrix() {
         // The accept branch: a subject whose org EQUALS the policy's org is assignable (the reject tests cover
-        // the other-org path; global subjects are covered by createAcceptsAGlobalRole).
+        // the other-org path; global subjects are covered by createAcceptsAGlobalRole). The scope is handed
+        // whole to the login-bindings collaborator, which reconciles the per-subject bindings.
         UUID orgA = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
         UUID roleId = UUID.randomUUID();
@@ -216,8 +218,7 @@ class AuthPolicyAdminServiceImplTest {
 
         service.create(spec);
 
-        verify(userRepository).save(any());
-        verify(roleRepository).save(any());
+        verify(loginBindings).replaceForPolicy(any(), anyInt(), eq(true), eq(Set.of(userId)), eq(Set.of(roleId)));
     }
 
     @Test
@@ -342,7 +343,7 @@ class AuthPolicyAdminServiceImplTest {
                 List.of(Set.of(AuthFactor.PASSWORD)), Set.of(userB), Set.of(), 15);
 
         assertThatThrownBy(() -> service.create(spec)).isInstanceOf(BadRequestException.class);
-        verify(userRepository, never()).save(any());
+        verify(loginBindings, never()).replaceForPolicy(any(), anyInt(), anyBoolean(), any(), any());
     }
 
     @Test
@@ -357,7 +358,7 @@ class AuthPolicyAdminServiceImplTest {
                 List.of(Set.of(AuthFactor.PASSWORD)), Set.of(), Set.of(roleB), 15);
 
         assertThatThrownBy(() -> service.create(spec)).isInstanceOf(BadRequestException.class);
-        verify(roleRepository, never()).save(any());
+        verify(loginBindings, never()).replaceForPolicy(any(), anyInt(), anyBoolean(), any(), any());
     }
 
     @Test
@@ -373,7 +374,7 @@ class AuthPolicyAdminServiceImplTest {
 
         service.create(spec);
 
-        verify(roleRepository).save(any());
+        verify(loginBindings).replaceForPolicy(any(), anyInt(), eq(true), eq(Set.of()), eq(Set.of(globalRole)));
     }
 
     @Test
@@ -388,7 +389,7 @@ class AuthPolicyAdminServiceImplTest {
                 List.of(Set.of(AuthFactor.PASSWORD)), Set.of(userB), Set.of(), 30);
 
         assertThatThrownBy(() -> service.update(id, upd)).isInstanceOf(BadRequestException.class);
-        verify(userRepository, never()).save(any());
+        verify(loginBindings, never()).replaceForPolicy(any(), anyInt(), anyBoolean(), any(), any());
     }
 
     private AuthPolicy orgScoped(String name, UUID orgId) {

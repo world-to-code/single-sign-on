@@ -6,16 +6,13 @@ import com.example.sso.authpolicy.policy.AuthPolicyResolver;
 import com.example.sso.authpolicy.policy.AuthPolicySpec;
 import com.example.sso.authpolicy.policy.AuthPolicyUpdate;
 import com.example.sso.authpolicy.policy.AuthPolicyView;
+import com.example.sso.authpolicy.policy.LoginAuthBindings;
 import com.example.sso.authpolicy.internal.domain.AuthPolicy;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyRepository;
-import com.example.sso.authpolicy.internal.domain.AuthPolicyRole;
-import com.example.sso.authpolicy.internal.domain.AuthPolicyRoleRepository;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyStep;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyStepFactor;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyStepFactorRepository;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyStepRepository;
-import com.example.sso.authpolicy.internal.domain.AuthPolicyUser;
-import com.example.sso.authpolicy.internal.domain.AuthPolicyUserRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
@@ -40,11 +37,11 @@ import java.util.UUID;
  * creates/edits only their org's policies; the platform super-admin (no org bound) manages global policies
  * and, after drilling into an org, that org's policies. RLS enforces the same boundary at the row level.
  *
- * <p>Steps, their factor rows, and the user/role assignment rows are managed EXPLICITLY through their
- * own repositories — there is no JPA cascade or orphan removal. Every insert/delete a mutation performs
- * is therefore visible here: replacing a policy's steps deletes the old factor rows, then the old step
- * rows, then inserts the new ones; deleting a policy deletes its steps' factors, its steps, and its
- * assignments before the policy itself.
+ * <p>Steps and their factor rows are managed EXPLICITLY through their own repositories — there is no JPA
+ * cascade or orphan removal. Every insert/delete a mutation performs is therefore visible here: replacing a
+ * policy's steps deletes the old factor rows, then the old step rows, then inserts the new ones. A policy's
+ * login scope (which users/roles it governs) lives in the {@code policy_binding} matrix, written through
+ * {@link LoginAuthBindings}; deleting a policy clears those bindings before the policy itself (FK RESTRICT).
  */
 @Service
 @RequiredArgsConstructor
@@ -54,8 +51,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
     private final OrgContext orgContext;
     private final AuthPolicyStepRepository stepRepository;
     private final AuthPolicyStepFactorRepository stepFactorRepository;
-    private final AuthPolicyUserRepository userRepository;
-    private final AuthPolicyRoleRepository roleRepository;
+    private final LoginAuthBindings loginBindings;
     private final UserService users;
     private final RoleService roles;
 
@@ -67,10 +63,10 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
                 .orElseGet(() -> new AuthPolicy(AuthPolicyResolver.DEFAULT_NAME, 0));
 
         policy.enable();
-        policy.useForLogin(true);
         policy.allowEnrollmentAtLogin(true); // the fallback must let users bootstrap a required factor
         AuthPolicy saved = repository.save(policy);
         replaceSteps(saved, List.of(Set.of(AuthFactor.PASSWORD), Set.of(AuthFactor.TOTP)));
+        loginBindings.replaceForPolicy(saved.getId(), saved.getPriority(), true, Set.of(), Set.of()); // every user's login
     }
 
     @Override
@@ -91,10 +87,10 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
             // login with enrollment allowed (so a member can bootstrap their required factor). Editable by
             // the tenant admin — it is NOT the immutable GLOBAL Default (org_id is non-null).
             AuthPolicy policy = new AuthPolicy(AuthPolicyResolver.DEFAULT_NAME, TENANT_DEFAULT_PRIORITY, orgId);
-            policy.useForLogin(true);
             policy.allowEnrollmentAtLogin(true);
             AuthPolicy saved = repository.saveAndFlush(policy);
             replaceSteps(saved, List.of(Set.of(AuthFactor.PASSWORD), Set.of(AuthFactor.TOTP)));
+            loginBindings.replaceForPolicy(saved.getId(), saved.getPriority(), true, Set.of(), Set.of()); // every member's login
         });
     }
 
@@ -122,18 +118,14 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         if (!spec.enabled()) {
             policy.disable();
         }
-        policy.useForLogin(spec.appliesToLogin());
         policy.allowEnrollmentAtLogin(spec.allowEnrollmentAtLogin());
         policy.updateStepUpFreshnessMinutes(spec.stepUpFreshnessMinutes());
 
         AuthPolicy saved = repository.save(policy);
-        Set<UUID> userIds = spec.userIds() == null ? Set.of() : spec.userIds();
-        Set<UUID> roleIds = spec.roleIds() == null ? Set.of() : spec.roleIds();
         replaceSteps(saved, spec.steps());
-        replaceUserAssignments(saved, userIds);
-        replaceRoleAssignments(saved, roleIds);
+        applyLoginScope(saved, spec.appliesToLogin(), spec.userIds(), spec.roleIds());
 
-        return AuthPolicyProjection.of(saved, spec.steps(), userIds, roleIds);
+        return AuthPolicyProjection.of(saved, spec.steps());
     }
 
     @Override
@@ -150,18 +142,14 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         } else {
             policy.disable();
         }
-        policy.useForLogin(update.appliesToLogin());
         policy.allowEnrollmentAtLogin(update.allowEnrollmentAtLogin());
         policy.updateStepUpFreshnessMinutes(update.stepUpFreshnessMinutes());
 
-        Set<UUID> userIds = update.userIds() == null ? Set.of() : update.userIds();
-        Set<UUID> roleIds = update.roleIds() == null ? Set.of() : update.roleIds();
         replaceSteps(policy, update.steps());
-        replaceUserAssignments(policy, userIds);
-        replaceRoleAssignments(policy, roleIds);
+        applyLoginScope(policy, update.appliesToLogin(), update.userIds(), update.roleIds());
 
         AuthPolicy saved = repository.save(policy);
-        return AuthPolicyProjection.of(saved, update.steps(), userIds, roleIds);
+        return AuthPolicyProjection.of(saved, update.steps());
     }
 
     @Override
@@ -172,10 +160,9 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
             throw BadRequestException.of("authpolicy.defaultNoDelete");
         }
 
-        deleteSteps(id);                        // each step's factor rows, then the step rows
-        userRepository.deleteByPolicyId(id);    // user assignments
-        roleRepository.deleteByPolicyId(id);    // role assignments
-        repository.delete(policy);              // finally the policy itself (no reliance on DB cascade)
+        deleteSteps(id);                    // each step's factor rows, then the step rows
+        loginBindings.clearForPolicy(id);   // login bindings first — policy_binding.auth_policy_id is FK RESTRICT
+        repository.delete(policy);          // finally the policy itself (no reliance on DB cascade)
     }
 
     // The immutable fallback is only the GLOBAL Default (org_id null); a tenant may legitimately own an
@@ -221,22 +208,25 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         stepRepository.flush(); // ensure the old rows are gone before re-inserting
     }
 
-    /** Diff-based reassignment: drop the policy's user rows, then insert the requested (same-org) set. */
-    private void replaceUserAssignments(AuthPolicy policy, Set<UUID> userIds) {
-        userRepository.deleteByPolicyId(policy.getId());
-        for (UUID userId : userIds) {
-            requireAssignable(policy, users.orgIdOf(userId), "user");
-            userRepository.save(new AuthPolicyUser(policy, userId));
+    /**
+     * Write the policy's login scope into the {@code policy_binding} matrix: validate that every targeted
+     * subject is assignable (same-org or global), then hand the whole scope to {@link LoginAuthBindings},
+     * which reconciles the all-subjects/per-subject bindings. Assignability is checked only for a scope that
+     * is actually bound (a non-login policy binds nothing, so its stray ids reference no principal).
+     */
+    private void applyLoginScope(AuthPolicy policy, boolean appliesToLogin, Set<UUID> requestedUsers,
+                                 Set<UUID> requestedRoles) {
+        Set<UUID> userIds = requestedUsers == null ? Set.of() : requestedUsers;
+        Set<UUID> roleIds = requestedRoles == null ? Set.of() : requestedRoles;
+        if (appliesToLogin) {
+            for (UUID userId : userIds) {
+                requireAssignable(policy, users.orgIdOf(userId), "user");
+            }
+            for (UUID roleId : roleIds) {
+                requireAssignable(policy, roles.orgIdOf(roleId), "role");
+            }
         }
-    }
-
-    /** Diff-based reassignment: drop the policy's role rows, then insert the requested (same-org) set. */
-    private void replaceRoleAssignments(AuthPolicy policy, Set<UUID> roleIds) {
-        roleRepository.deleteByPolicyId(policy.getId());
-        for (UUID roleId : roleIds) {
-            requireAssignable(policy, roles.orgIdOf(roleId), "role");
-            roleRepository.save(new AuthPolicyRole(policy, roleId));
-        }
+        loginBindings.replaceForPolicy(policy.getId(), policy.getPriority(), appliesToLogin, userIds, roleIds);
     }
 
     /**

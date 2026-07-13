@@ -6,6 +6,8 @@ import com.example.sso.authpolicy.policy.AuthPolicySpec;
 import com.example.sso.authpolicy.policy.AuthPolicyStepView;
 import com.example.sso.authpolicy.policy.AuthPolicyUpdate;
 import com.example.sso.authpolicy.policy.AuthPolicyView;
+import com.example.sso.authpolicy.policy.LoginAssignment;
+import com.example.sso.authpolicy.policy.LoginAuthBindings;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -15,6 +17,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -28,29 +31,34 @@ import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for the {@link PolicyAdminService} presentation adapter: each projecting method maps the
- * domain policy view to a {@link PolicyView} (factor enums to sorted names, ids to strings) and delete
- * merely delegates. Delegation is the unit's job, so {@code verify(...)} the underlying service call.
- * The underlying {@link AuthPolicyView} is mocked (its LAZY-loaded projection is covered by an IT).
+ * domain policy view plus its login scope (read from the policy_binding matrix via {@link LoginAuthBindings})
+ * to a {@link PolicyView} (factor enums to sorted names, ids to strings) and delete merely delegates.
+ * Delegation is the unit's job, so {@code verify(...)} the underlying service call. The underlying
+ * {@link AuthPolicyView} is mocked (its LAZY-loaded projection is covered by an IT).
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class PolicyAdminServiceTest {
 
     @Mock private AuthPolicyAdminService delegate;
+    @Mock private LoginAuthBindings loginBindings;
 
     @InjectMocks private PolicyAdminService service;
 
-    /** A view stub carrying two ordered steps and one user assignment, so PolicyView.of maps real data. */
+    private final UUID assignedUser = UUID.randomUUID();
+
+    /** A view stub with two ordered steps; its matrix login scope (one assigned user) is stubbed alongside. */
     private AuthPolicyView policy(String name) {
+        UUID id = UUID.randomUUID();
         AuthPolicyView view = mock(AuthPolicyView.class);
-        when(view.getId()).thenReturn(UUID.randomUUID());
+        when(view.getId()).thenReturn(id);
         when(view.getName()).thenReturn(name);
         when(view.getPriority()).thenReturn(7);
         doReturn(List.of(
                 step(Set.of(AuthFactor.PASSWORD)),
                 step(Set.of(AuthFactor.TOTP, AuthFactor.EMAIL)))).when(view).getSteps();
-        when(view.getAssignedUserIds()).thenReturn(Set.of(UUID.randomUUID()));
-        when(view.getAssignedRoleIds()).thenReturn(Set.of());
+        when(loginBindings.describe(any()))
+                .thenReturn(Map.of(id, new LoginAssignment(true, Set.of(assignedUser), Set.of())));
         return view;
     }
 
@@ -72,7 +80,8 @@ class PolicyAdminServiceTest {
         assertThat(view.name()).isEqualTo("MFA");
         assertThat(view.priority()).isEqualTo(7);
         assertThat(view.steps()).containsExactly(List.of("PASSWORD"), List.of("EMAIL", "TOTP"));
-        assertThat(view.assignedUserIds()).hasSize(1);
+        assertThat(view.appliesToLogin()).isTrue();
+        assertThat(view.assignedUserIds()).containsExactly(assignedUser.toString());
     }
 
     @Test

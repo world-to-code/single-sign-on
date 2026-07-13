@@ -1,7 +1,6 @@
 package com.example.sso.authpolicy.policy;
 
 import com.example.sso.shared.IdName;
-import com.example.sso.user.account.UserAccount;
 
 import java.util.Collection;
 import java.util.List;
@@ -9,15 +8,14 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Read path of the authentication-policy engine: resolves the effective policy for a user
- * (highest-priority assigned policy, else the seeded default) and answers per-app policy queries.
- * Returns the public {@link AuthPolicyView}; the backing entity stays module-internal.
+ * Read path of the authentication-policy engine: resolves the seeded default policy and answers per-app
+ * policy queries. Login-scope resolution now runs off the {@code policy_binding} matrix (PORTAL/user auth
+ * bindings), not off assignments held on the policy. Returns the public {@link AuthPolicyView}; the backing
+ * entity stays module-internal.
  */
 public interface AuthPolicyResolver {
 
     String DEFAULT_NAME = "Default";
-
-    AuthPolicyView resolveForUser(UserAccount user);
 
     AuthPolicyView defaultPolicy();
 

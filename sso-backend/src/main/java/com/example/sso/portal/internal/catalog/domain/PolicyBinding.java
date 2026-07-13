@@ -79,6 +79,11 @@ public class PolicyBinding extends AuditedEntity implements OrgOwned {
         this.authPolicyId = authPolicyId;
     }
 
+    /** Reset the same-specificity tie-break weight (used when a binding is re-pointed at another policy). */
+    public void reprioritize(int priority) {
+        this.priority = priority;
+    }
+
     /** Whether this binding no longer carries any policy — the caller then deletes it (DB CHECK needs ≥1). */
     public boolean carriesNoPolicy() {
         return authPolicyId == null && sessionPolicyId == null;

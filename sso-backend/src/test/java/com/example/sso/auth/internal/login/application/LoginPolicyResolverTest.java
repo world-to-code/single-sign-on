@@ -24,9 +24,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * The login policy is the auth policy BOUND to the user portal (per role/user/group), else the legacy
- * appliesToLogin resolution — and it is resolved inside the login org so tenant-scoped bindings/policies
- * participate. Both login-step services share this so every step agrees on one winning policy.
+ * The login policy is the auth policy BOUND to the user portal (per user/role/all-subjects in the
+ * policy_binding matrix), else the seeded Default — and it is resolved inside the login org so tenant-scoped
+ * bindings/policies participate. Both login-step services share this so every step agrees on one winning policy.
  */
 @ExtendWith(MockitoExtension.class)
 class LoginPolicyResolverTest {
@@ -38,7 +38,7 @@ class LoginPolicyResolverTest {
     @Mock private OrgContext orgContext;
     @Mock private UserAccount user;
     @Mock private AuthPolicyView bound;
-    @Mock private AuthPolicyView legacy;
+    @Mock private AuthPolicyView fallback;
 
     private LoginPolicyResolver resolver() {
         return new LoginPolicyResolver(bindings, authPolicies, orgContext);
@@ -49,21 +49,21 @@ class LoginPolicyResolverTest {
     }
 
     @Test
-    void aUserPortalBindingWinsOverTheLegacyLoginResolution() {
+    void aUserPortalBindingWinsOverTheDefault() {
         runInOrg();
         when(bindings.resolveAuthPolicy(user, AppType.PORTAL, PortalApps.USER)).thenReturn(Optional.of(bound));
 
         assertThat(resolver().resolve(user, ORG)).isSameAs(bound);
-        verify(authPolicies, never()).resolveForUser(user);
+        verify(authPolicies, never()).defaultPolicy();
     }
 
     @Test
-    void fallsBackToTheLegacyLoginResolutionWhenNoBindingApplies() {
+    void fallsBackToTheDefaultWhenNoBindingApplies() {
         runInOrg();
         when(bindings.resolveAuthPolicy(user, AppType.PORTAL, PortalApps.USER)).thenReturn(Optional.empty());
-        when(authPolicies.resolveForUser(user)).thenReturn(legacy);
+        when(authPolicies.defaultPolicy()).thenReturn(fallback);
 
-        assertThat(resolver().resolve(user, ORG)).isSameAs(legacy);
+        assertThat(resolver().resolve(user, ORG)).isSameAs(fallback);
     }
 
     @Test
@@ -72,9 +72,9 @@ class LoginPolicyResolverTest {
         // can never inherit a super-admin's ambient platform context that RLS would widen to every tenant.
         when(orgContext.callInOrg(isNull(), any())).thenAnswer(inv -> ((Supplier<?>) inv.getArgument(1)).get());
         when(bindings.resolveAuthPolicy(user, AppType.PORTAL, PortalApps.USER)).thenReturn(Optional.empty());
-        when(authPolicies.resolveForUser(user)).thenReturn(legacy);
+        when(authPolicies.defaultPolicy()).thenReturn(fallback);
 
-        assertThat(resolver().resolve(user, null)).isSameAs(legacy);
+        assertThat(resolver().resolve(user, null)).isSameAs(fallback);
         verify(orgContext).callInOrg(isNull(), any());
     }
 }

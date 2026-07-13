@@ -1,6 +1,7 @@
 package com.example.sso.portal.internal.catalog.domain;
 
 import com.example.sso.portal.application.AppType;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -33,4 +34,7 @@ public interface PolicyBindingRepository extends JpaRepository<PolicyBinding, UU
 
     /** Bindings referencing an auth policy — the impact view before edit/delete. */
     List<PolicyBinding> findByAuthPolicyId(UUID authPolicyId);
+
+    /** Auth bindings of one app referencing any of the given policies (RLS-scoped) — reconstructs login scope. */
+    List<PolicyBinding> findByAppTypeAndAppIdAndAuthPolicyIdIn(AppType appType, String appId, Collection<UUID> authPolicyIds);
 }
