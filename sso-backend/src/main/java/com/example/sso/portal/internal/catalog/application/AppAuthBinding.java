@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 class AppAuthBinding {
 
     private final PolicyBindingRepository bindings;
+    private final PolicyBindingSlot slot;
     private final AuthPolicyResolver authPolicies;
     private final OrgTierGuard tierGuard;
 
@@ -42,7 +43,7 @@ class AppAuthBinding {
     /** Remove a subject's sign-on binding for an app (on unassign) — no-op if none. */
     @Transactional
     void clearForSubject(AppType appType, String appId, SubjectType subjectType, UUID subjectId) {
-        row(appType, appId, subjectType, subjectId, tierGuard.currentTier()).ifPresent(bindings::delete);
+        slot.find(appType, appId, subjectType, subjectId, tierGuard.currentTier()).ifPresent(bindings::delete);
     }
 
     private void upsert(AppType appType, String appId, SubjectType subjectType, UUID subjectId, UUID authPolicyId) {
@@ -51,15 +52,11 @@ class AppAuthBinding {
             throw new NotFoundException("policy not found");
         }
         UUID org = tierGuard.currentTier();
-        Optional<PolicyBinding> existing = row(appType, appId, subjectType, subjectId, org);
+        Optional<PolicyBinding> existing = slot.find(appType, appId, subjectType, subjectId, org);
         if (authPolicyId == null) {
             existing.ifPresent(binding -> {
                 binding.assignAuthPolicy(null);
-                if (binding.carriesNoPolicy()) {
-                    bindings.delete(binding);
-                } else {
-                    bindings.saveAndFlush(binding); // a session binding on the same row survives
-                }
+                slot.deleteIfEmptyElseSave(binding); // a session binding on the same row survives
             });
             return;
         }
@@ -67,17 +64,6 @@ class AppAuthBinding {
                 .appType(appType).appId(appId).subjectType(subjectType).subjectId(subjectId)
                 .authPolicyId(authPolicyId).orgId(org).build());
         binding.assignAuthPolicy(authPolicyId);
-        bindings.saveAndFlush(binding); // flush in the acting tier so RLS WITH CHECK sees the right org
-    }
-
-    private Optional<PolicyBinding> row(AppType appType, String appId, SubjectType subjectType, UUID subjectId, UUID org) {
-        if (subjectType == null) {
-            return org == null
-                    ? bindings.findByAppTypeAndAppIdAndSubjectTypeIsNullAndOrgIdIsNull(appType, appId)
-                    : bindings.findByAppTypeAndAppIdAndSubjectTypeIsNullAndOrgId(appType, appId, org);
-        }
-        return org == null
-                ? bindings.findByAppTypeAndAppIdAndSubjectTypeAndSubjectIdAndOrgIdIsNull(appType, appId, subjectType, subjectId)
-                : bindings.findByAppTypeAndAppIdAndSubjectTypeAndSubjectIdAndOrgId(appType, appId, subjectType, subjectId, org);
+        slot.save(binding); // flush in the acting tier so RLS WITH CHECK sees the right org
     }
 }
