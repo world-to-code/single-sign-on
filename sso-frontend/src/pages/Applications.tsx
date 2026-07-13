@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -20,7 +21,9 @@ import { SearchSelect } from "@/components/SearchSelect";
 import { searchGroups, searchUsers } from "@/groups";
 
 interface Application { id: string; type: "OIDC" | "SAML" | "PORTAL"; name: string; launchUrl: string | null; system: boolean; requiredPolicyId: string | null; requiredPolicyName: string | null; }
-interface PortalSettings { sessionPolicyId: string | null; }
+// The admin console carries two extra, console-only knobs (elevation TTL + entry IP allowlist); the user
+// portal settings are just the session policy. Both come back from their respective portal-settings endpoint.
+interface PortalSettings { sessionPolicyId: string | null; elevationTokenTtlMinutes?: number; adminAllowedCidrs?: string | null; }
 // Which portal a "Portal settings" dialog governs: the admin console vs the end-user portal (distinct bindings).
 type PortalKind = "admin" | "user";
 const PORTAL_SETTINGS_PATH: Record<PortalKind, string> = {
@@ -253,7 +256,7 @@ export default function Applications() {
               <div className="space-y-1.5">
                 <Label htmlFor="console-policy">{t("applicationsSessionPolicyLabel")}</Label>
                 <Select id="console-policy" value={settings.sessionPolicyId ?? ""}
-                        onChange={(e) => setSettings({ sessionPolicyId: e.target.value || null })}>
+                        onChange={(e) => setSettings({ ...settings, sessionPolicyId: e.target.value || null })}>
                   <option value="">{t(settingsPortal === "user" ? "applicationsEachUserPolicy" : "applicationsEachAdminPolicy")}</option>
                   {sessionPolicies.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
@@ -263,6 +266,24 @@ export default function Applications() {
                   {t(settingsPortal === "user" ? "applicationsUserPortalPolicyHint" : "applicationsPortalPolicyHint")}
                 </p>
               </div>
+              {settingsPortal === "admin" && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="console-elevation">{t("applicationsElevationTtl")}</Label>
+                    <Input id="console-elevation" type="number" min={1}
+                           value={settings.elevationTokenTtlMinutes ?? 5}
+                           onChange={(e) => setSettings({ ...settings, elevationTokenTtlMinutes: Number(e.target.value) })} />
+                    <p className="text-xs text-muted-foreground">{t("applicationsElevationTtlHint")}</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="console-cidrs">{t("applicationsAdminCidrs")}</Label>
+                    <Input id="console-cidrs" placeholder="e.g. 203.0.113.0/24, 10.0.0.0/8"
+                           value={settings.adminAllowedCidrs ?? ""}
+                           onChange={(e) => setSettings({ ...settings, adminAllowedCidrs: e.target.value || null })} />
+                    <p className="text-xs text-muted-foreground">{t("applicationsAdminCidrsHint")}</p>
+                  </div>
+                </>
+              )}
             </div>
           ) : !settingsError ? <p className="text-sm text-muted-foreground">{t("loading")}</p> : null}
 
