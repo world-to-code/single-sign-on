@@ -59,8 +59,8 @@ public class PortalService {
     /**
      * The session policy governing the END-USER PORTAL for this user: the {@code PORTAL}/{@code user} binding
      * (resolved in the acting tenant's context, most-specific first), else the user's own resolved policy. This
-     * is the user-portal twin of {@code AdminConsolePolicy}; scoping to the acting org (never the ambient
-     * platform context) keeps a tenant's binding from leaking across tenants under RLS.
+     * mirrors how the admin console resolves its own governing policy; scoping to the acting org (never the
+     * ambient platform context) keeps a tenant's binding from leaking across tenants under RLS.
      */
     private SessionPolicyDetails resolveSessionPolicy(String username) {
         return users.findByUsername(username)

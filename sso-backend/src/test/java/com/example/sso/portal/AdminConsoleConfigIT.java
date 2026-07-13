@@ -116,6 +116,15 @@ class AdminConsoleConfigIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void updateRejectsAnElevationTtlAboveThePlatformCap() {
+        // Zero-trust: a tenant cannot set an effectively-unexpiring elevation. The cap is 240 minutes (yml).
+        orgA = org();
+        assertThatThrownBy(() -> orgContext.runInOrg(orgA, () -> consoleConfig.update(241, null)))
+                .isInstanceOf(BadRequestException.class);
+        assertThatCode(() -> orgContext.runInOrg(orgA, () -> consoleConfig.update(240, null))).doesNotThrowAnyException();
+    }
+
+    @Test
     void updateNormalizesTheAllowlistAndTreatsBlankAsAnyNetwork() {
         orgA = org();
 

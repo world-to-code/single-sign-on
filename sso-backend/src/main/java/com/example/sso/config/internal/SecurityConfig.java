@@ -13,7 +13,6 @@ import com.example.sso.oidc.ConsentPage;
 import com.example.sso.organization.OrganizationAuthorization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.user.account.UserService;
-import com.example.sso.security.AdminConsolePolicy;
 import com.example.sso.security.AdminElevationFilter;
 import com.example.sso.security.PolicyIpAccessFilter;
 import com.example.sso.security.HostOrgResolver;
@@ -121,7 +120,7 @@ public class SecurityConfig {
             OrganizationService organizations, OrganizationAuthorization orgAuthorization, UserService users,
             SessionPolicyService policyService,
             NetworkZoneService networkZones, JwtDecoder jwtDecoder,
-            AdminConsolePolicy adminConsolePolicy, AdminConsoleConfigService adminConsoleConfig, AuditService audit,
+            AdminConsoleConfigService adminConsoleConfig, AuditService audit,
             PublicKeyCredentialCreationOptionsRepository creationOptionsRepository,
             @Value("${sso.issuer}") String issuer,
             @Value("${sso.webauthn.rp-id:localhost}") String rpId,
@@ -231,7 +230,7 @@ public class SecurityConfig {
                 // Anchored AFTER the authorization filter so the session MFA_COMPLETE check
                 // (and @RequirePermission) still run first — a non-admin gets 403 there, never the 401 challenge.
                 .addFilterAfter(new AdminElevationFilter(jwtDecoder, issuer, AdminPortalSeeder.CLIENT_ID,
-                        adminConsolePolicy, adminConsoleConfig, audit), AuthorizationFilter.class)
+                        adminConsoleConfig, audit), AuthorizationFilter.class)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .exceptionHandling(ex -> ex
                         .defaultAuthenticationEntryPointFor(

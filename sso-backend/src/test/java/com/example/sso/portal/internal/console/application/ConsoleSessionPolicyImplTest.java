@@ -1,4 +1,4 @@
-package com.example.sso.security;
+package com.example.sso.portal.internal.console.application;
 
 import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.binding.PolicyBindingResolver;
@@ -22,12 +22,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * The admin console resolves its session policy from the policy_binding matrix, scoped to the ACTING org
- * (never the ambient platform context): a policy bound to the admin portal for the acting admin wins, else
- * it falls back to the admin's own resolved policy so a missing binding never locks anyone out.
+ * The admin console's step-up policy resolves from the policy_binding matrix, scoped to the ACTING org (never
+ * the ambient platform context): a policy bound to the admin portal wins, else it falls back to the user's own
+ * resolved policy so a missing binding never breaks step-up.
  */
 @ExtendWith(MockitoExtension.class)
-class AdminConsolePolicyTest {
+class ConsoleSessionPolicyImplTest {
 
     private static final String ADMIN = "admin@example.com";
 
@@ -46,42 +46,41 @@ class AdminConsolePolicyTest {
     @Mock
     private SessionPolicyDetails resolvedForAdmin;
 
-    private AdminConsolePolicy consolePolicy() {
-        return new AdminConsolePolicy(bindings, sessionPolicies, users, orgContext);
+    private ConsoleSessionPolicyImpl consolePolicy() {
+        return new ConsoleSessionPolicyImpl(bindings, sessionPolicies, users, orgContext);
     }
 
-    /** The resolution runs scoped through callInOrg(actingOrg); execute the wrapped supplier for the test. */
+    /** Resolution runs scoped through callInOrg(actingOrg); execute the wrapped supplier for the test. */
     private void scopeToActingOrg() {
         when(orgContext.currentOrg()).thenReturn(Optional.empty());
         when(orgContext.callInOrg(any(), any())).thenAnswer(inv -> ((Supplier<?>) inv.getArgument(1)).get());
     }
 
     @Test
-    void usesThePolicyBoundToTheAdminPortalWhenPresent() {
+    void usesThePolicyBoundToTheAdminConsoleWhenPresent() {
         when(users.findByUsername(ADMIN)).thenReturn(Optional.of(adminUser));
         scopeToActingOrg();
         when(bindings.resolveSessionPolicy(adminUser, AppType.PORTAL, PortalApps.ADMIN)).thenReturn(Optional.of(bound));
 
-        assertThat(consolePolicy().resolveFor(ADMIN)).isSameAs(bound);
+        assertThat(consolePolicy().resolveForConsole(ADMIN)).isSameAs(bound);
         verify(sessionPolicies, never()).resolveForUsername(ADMIN);
     }
 
     @Test
-    void fallsBackToTheActingAdminsOwnPolicyWhenNoBindingApplies() {
+    void fallsBackToTheAdminsOwnPolicyWhenNoBindingApplies() {
         when(users.findByUsername(ADMIN)).thenReturn(Optional.of(adminUser));
         scopeToActingOrg();
         when(bindings.resolveSessionPolicy(adminUser, AppType.PORTAL, PortalApps.ADMIN)).thenReturn(Optional.empty());
         when(sessionPolicies.resolveForUsername(ADMIN)).thenReturn(resolvedForAdmin);
 
-        assertThat(consolePolicy().resolveFor(ADMIN)).isSameAs(resolvedForAdmin);
+        assertThat(consolePolicy().resolveForConsole(ADMIN)).isSameAs(resolvedForAdmin);
     }
 
     @Test
     void fallsBackWhenTheUserIsUnknown() {
-        // An elevation token whose subject no longer resolves must not lock the console — fall back cleanly.
         when(users.findByUsername(ADMIN)).thenReturn(Optional.empty());
         when(sessionPolicies.resolveForUsername(ADMIN)).thenReturn(resolvedForAdmin);
 
-        assertThat(consolePolicy().resolveFor(ADMIN)).isSameAs(resolvedForAdmin);
+        assertThat(consolePolicy().resolveForConsole(ADMIN)).isSameAs(resolvedForAdmin);
     }
 }

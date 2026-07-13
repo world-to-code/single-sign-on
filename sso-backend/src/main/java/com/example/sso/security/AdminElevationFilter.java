@@ -8,7 +8,6 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.portal.binding.AdminConsoleConfigService;
 import com.example.sso.portal.binding.AdminConsoleConfigView;
-import com.example.sso.session.policy.SessionPolicyDetails;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -65,8 +64,6 @@ public class AdminElevationFilter extends OncePerRequestFilter {
     private final JwtDecoder jwtDecoder;
     private final String issuer;
     private final String clientId;
-    /** The session policy governing the console: the tenant's selection, else the acting admin's own. */
-    private final AdminConsolePolicy consolePolicy;
     /** The console's per-tenant enforcement config: elevation-token lifetime + entry IP allowlist. */
     private final AdminConsoleConfigService consoleConfig;
     private final AuditService audit;
@@ -94,7 +91,6 @@ public class AdminElevationFilter extends OncePerRequestFilter {
             return;
         }
 
-        SessionPolicyDetails policy = consolePolicy.resolveFor(jwt.getSubject());
         // Elevation TTL + IP allowlist come from the admin console's per-tenant config (own row, else the global
         // default), resolved for the acting tenant — an un-drilled super-admin resolves the global default.
         AdminConsoleConfigView config = consoleConfig.current();
@@ -108,13 +104,13 @@ public class AdminElevationFilter extends OncePerRequestFilter {
             forbidNetwork(response);
             return;
         }
-        // Step-up freshness comes from the admin's SESSION POLICY (assign a session policy to the admin's
-        // role/user and it governs the console too). The session's idle/absolute lifetimes are enforced for
-        // EVERY authenticated request — admin included — by SessionIntegrityFilter, so there is no separate
-        // admin-session window here.
-        Duration freshness = Duration.ofMinutes(policy.getSensitiveReauthWindowMinutes());
-        Duration tokenTtl = Duration.ofMinutes(config.elevationTokenTtlMinutes());
-        if (!isElevated(jwt, freshness, tokenTtl, expectedIssuer(request, issuer))
+        // The elevation lasts the console's ELEVATION TTL — how long a fresh step-up keeps the console unlocked.
+        // It is NOT the sensitive-action window: that stricter freshness (sensitiveReauthWindowMinutes) governs
+        // only individual @RequireStepUp destructive actions (StepUpInterceptor), so a short action window can no
+        // longer force the WHOLE console to re-elevate on every request. Idle/absolute session lifetimes are
+        // enforced for every authenticated request by SessionIntegrityFilter, independent of this gate.
+        Duration elevationWindow = Duration.ofMinutes(config.elevationTokenTtlMinutes());
+        if (!isElevated(jwt, elevationWindow, expectedIssuer(request, issuer))
                 || !boundToSession(jwt)) {
             // A decoded token that fails elevation or session-binding is the forge/replay/stale signal — audit it.
             audit.record(new AuditRecord(AuditType.ADMIN_ELEVATION_DENIED, jwt.getSubject(), false,
@@ -132,7 +128,7 @@ public class AdminElevationFilter extends OncePerRequestFilter {
      * ({@code AppAssignmentFilter} gates {@code /oauth2/authorize}), and what the caller may do is
      * decided per endpoint by {@code @RequirePermission}.
      */
-    private boolean isElevated(Jwt jwt, Duration freshnessWindow, Duration tokenTtl, String expectedIssuer) {
+    boolean isElevated(Jwt jwt, Duration elevationWindow, String expectedIssuer) {
         if (jwt.getIssuer() == null || !expectedIssuer.equals(jwt.getIssuer().toString())) {
             return false;
         }
@@ -146,25 +142,27 @@ public class AdminElevationFilter extends OncePerRequestFilter {
             return false;
         }
 
-        // Elevation-token lifetime, enforced PER TENANT here. The shared admin-console client mints a
-        // long-lived token (one client serves every tenant); the acting tenant's TTL bounds how long that
-        // token actually elevates, measured from its issuance (iat).
+        // The elevation lasts the console's ELEVATION TTL, enforced PER TENANT here. The shared admin-console
+        // client mints a long-lived token (one client serves every tenant); the acting tenant's TTL bounds how
+        // long that token actually elevates, measured from its issuance (iat).
         Instant issuedAt = jwt.getIssuedAt();
         if (issuedAt == null) {
             return false;
         }
         long tokenAge = Instant.now().getEpochSecond() - issuedAt.getEpochSecond();
-        if (tokenAge < 0 || tokenAge > tokenTtl.toSeconds()) {
+        if (tokenAge < 0 || tokenAge > elevationWindow.toSeconds()) {
             return false;
         }
 
-        Long stepUp = epochSeconds(jwt, "stepup_time"); // null => no deliberate re-auth => reject
+        // Require a DELIBERATE step-up (not a plain login), fresh within the SAME elevation window — so the
+        // token proves a recent re-authentication, and the window is the one knob (elevation TTL) that governs it.
+        Long stepUp = epochSeconds(jwt, "stepup_time");
         if (stepUp == null) {
             return false;
         }
 
-        long age = Instant.now().getEpochSecond() - stepUp;
-        return age >= 0 && age <= freshnessWindow.toSeconds();
+        long stepUpAge = Instant.now().getEpochSecond() - stepUp;
+        return stepUpAge >= 0 && stepUpAge <= elevationWindow.toSeconds();
     }
 
     /**

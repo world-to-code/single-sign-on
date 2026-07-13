@@ -1,5 +1,6 @@
 package com.example.sso.session.lifecycle;
 
+import com.example.sso.session.policy.ConsoleSessionPolicy;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 
@@ -51,9 +52,11 @@ public class StepUpInterceptor implements HandlerInterceptor {
             HttpMethod.POST.name(), HttpMethod.PUT.name(), HttpMethod.DELETE.name(), HttpMethod.PATCH.name());
 
     private final SessionPolicyService policyService;
+    private final ConsoleSessionPolicy consoleSessionPolicy;
 
-    public StepUpInterceptor(SessionPolicyService policyService) {
+    public StepUpInterceptor(SessionPolicyService policyService, ConsoleSessionPolicy consoleSessionPolicy) {
         this.policyService = policyService;
+        this.consoleSessionPolicy = consoleSessionPolicy;
     }
 
     /** Records general activity (login / any allowed request) on the idle-based re-auth clock — NOT a step-up. */
@@ -97,16 +100,22 @@ public class StepUpInterceptor implements HandlerInterceptor {
                 : policyService.resolveForUsername(authentication.getName());
 
         if (sensitive) {
+            // Sensitive admin actions follow the ADMIN CONSOLE's policy (its PORTAL/admin selection, else the
+            // user's own), so an admin can require STRONGER or FRESHER step-up for destructive actions than a
+            // regular user. The general mutation re-auth below stays on the user's own policy — consistent with
+            // the idle/absolute + reauth-interval SessionIntegrityFilter enforces per SESSION (one session).
+            SessionPolicyDetails consolePolicy = authentication == null ? policy
+                    : consoleSessionPolicy.resolveForConsole(authentication.getName());
             // Requires a fresh DELIBERATE step-up (not a plain login) within the window AND that its factor
             // is one of the policy's step-up factors — so stepUpFactors is a real strength floor, not advisory.
             long sinceStepUp = attr(session, STEPUP_TIME) instanceof Long t ? now - t : Long.MAX_VALUE;
             boolean strongEnough = attr(session, STEPUP_FACTOR) instanceof String f
-                    && csv(policy.getStepUpFactors()).contains(f);
-            if (strongEnough && sinceStepUp <= policy.getSensitiveReauthWindowMinutes() * 60_000L) {
+                    && csv(consolePolicy.getStepUpFactors()).contains(f);
+            if (strongEnough && sinceStepUp <= consolePolicy.getSensitiveReauthWindowMinutes() * 60_000L) {
                 touchActivity(session, now);
                 return true;
             }
-            return challenge(session, response, policy.getStepUpFactors());
+            return challenge(session, response, consolePolicy.getStepUpFactors());
         }
 
         // General mutation: idle-based. A challenged request does NOT refresh the clock (so it can't be

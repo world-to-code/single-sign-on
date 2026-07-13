@@ -15,9 +15,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Admin API for a portal's governing session policy. The root path governs the ADMIN CONSOLE (its step-up
- * freshness, elevation TTL, IP allowlist); {@code /user} governs the end-user portal's session lifetime and
- * reauth. Both are all-subjects {@code PORTAL} bindings in the same matrix, per tenant.
+ * Admin API for portal settings. The root path configures the ADMIN CONSOLE — the session policy governing its
+ * step-up posture (a {@code PORTAL}/{@code admin} binding) plus its console-only enforcement knobs (elevation-
+ * token lifetime + entry IP allowlist, in {@code admin_console_config}); {@code /user} selects the session policy
+ * governing the end-user portal (a {@code PORTAL}/{@code user} binding). Both are per tenant.
  */
 @RestController
 @RequestMapping("/api/admin/portal-settings")

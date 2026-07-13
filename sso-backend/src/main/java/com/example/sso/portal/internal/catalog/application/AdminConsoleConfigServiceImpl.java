@@ -27,12 +27,15 @@ class AdminConsoleConfigServiceImpl implements AdminConsoleConfigService {
     private final AdminConsoleConfigRepository configs;
     private final PortalOrgScope orgScope;
     private final int defaultElevationTtlMinutes;
+    private final int maxElevationTtlMinutes;
 
     AdminConsoleConfigServiceImpl(AdminConsoleConfigRepository configs, PortalOrgScope orgScope,
-            @Value("${sso.admin-console.default-elevation-ttl-minutes}") int defaultElevationTtlMinutes) {
+            @Value("${sso.admin-console.default-elevation-ttl-minutes}") int defaultElevationTtlMinutes,
+            @Value("${sso.admin-console.max-elevation-ttl-minutes}") int maxElevationTtlMinutes) {
         this.configs = configs;
         this.orgScope = orgScope;
         this.defaultElevationTtlMinutes = defaultElevationTtlMinutes;
+        this.maxElevationTtlMinutes = maxElevationTtlMinutes;
     }
 
     @Override
@@ -47,8 +50,10 @@ class AdminConsoleConfigServiceImpl implements AdminConsoleConfigService {
     @Override
     @Transactional
     public void update(int elevationTokenTtlMinutes, String adminAllowedCidrs) {
-        if (elevationTokenTtlMinutes < 1) {
-            throw BadRequestException.of("admin.console.elevationTtl.invalid");
+        // Bounded BOTH ways: the platform ceiling keeps the console's privilege time-boxed (zero-trust) — a
+        // tenant cannot set an effectively-unexpiring elevation.
+        if (elevationTokenTtlMinutes < 1 || elevationTokenTtlMinutes > maxElevationTtlMinutes) {
+            throw BadRequestException.of("admin.console.elevationTtl.invalid", maxElevationTtlMinutes);
         }
         String cidrs = normalizeCidrs(adminAllowedCidrs);
         UUID org = orgScope.writableOrg();

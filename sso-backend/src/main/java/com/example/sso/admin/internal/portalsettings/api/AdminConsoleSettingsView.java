@@ -5,8 +5,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Read model for the admin console's settings: its governing session policy (null = the acting admin's own
- * policy) and the console-only enforcement knobs (elevation-token lifetime, entry IP allowlist).
+ * Read model for the admin console's settings: the session policy governing its step-up posture (null = the
+ * acting admin's own policy) and the console-only enforcement knobs (elevation-token lifetime, entry IP
+ * allowlist).
  */
 public record AdminConsoleSettingsView(String sessionPolicyId, int elevationTokenTtlMinutes,
                                        String adminAllowedCidrs) {

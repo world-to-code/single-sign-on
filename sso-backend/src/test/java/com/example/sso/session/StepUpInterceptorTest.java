@@ -1,6 +1,7 @@
 package com.example.sso.session;
 
 import com.example.sso.session.lifecycle.StepUpInterceptor;
+import com.example.sso.session.policy.ConsoleSessionPolicy;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 
@@ -22,6 +23,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit test for {@link StepUpInterceptor}. Drives {@code preHandle} directly with a {@link HandlerMethod}
@@ -37,6 +41,7 @@ import static org.mockito.Mockito.mock;
 class StepUpInterceptorTest {
 
     private SessionPolicyService policyService;
+    private ConsoleSessionPolicy consoleSessionPolicy;
     private StepUpInterceptor interceptor;
 
     @SuppressWarnings("unused")
@@ -50,7 +55,8 @@ class StepUpInterceptorTest {
     @BeforeEach
     void setUp() {
         policyService = mock(SessionPolicyService.class);
-        interceptor = new StepUpInterceptor(policyService);
+        consoleSessionPolicy = mock(ConsoleSessionPolicy.class);
+        interceptor = new StepUpInterceptor(policyService, consoleSessionPolicy);
 
         SessionPolicyDetails policy = mock(SessionPolicyDetails.class);
         lenient().when(policy.getReauthIntervalMinutes()).thenReturn(5);          // 300s idle window
@@ -59,6 +65,9 @@ class StepUpInterceptorTest {
         lenient().when(policy.getStepUpFactors()).thenReturn("FIDO2");            // stronger set for sensitive
         lenient().when(policyService.resolveForUsername(anyString())).thenReturn(policy);
         lenient().when(policyService.defaultPolicy()).thenReturn(policy);
+        // By default the console policy == the user's own, so the sensitive-action cases below read the same
+        // window/factors; a dedicated test overrides it to prove the console policy is what actually governs.
+        lenient().when(consoleSessionPolicy.resolveForConsole(anyString())).thenReturn(policy);
 
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken("alice", null, List.of()));
@@ -162,7 +171,41 @@ class StepUpInterceptorTest {
         assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
     }
 
-    // --- ordinary mutation: idle-based on the re-auth interval, general factors ---
+    @Test
+    void sensitiveStepUpFollowsTheAdminConsolePolicyNotTheUsersOwn() throws Exception {
+        // The user's OWN policy would accept this step-up (TOTP is in its factors, 30s is fresh); the ADMIN
+        // CONSOLE binds a stricter passkey-only policy. The sensitive gate must apply the CONSOLE policy and
+        // challenge — otherwise a tenant admin could not require stronger step-up for destructive actions.
+        SessionPolicyDetails lenientPersonal = mock(SessionPolicyDetails.class);
+        lenient().when(lenientPersonal.getStepUpFactors()).thenReturn("TOTP,FIDO2");
+        lenient().when(lenientPersonal.getSensitiveReauthWindowMinutes()).thenReturn(10);
+        when(policyService.resolveForUsername("alice")).thenReturn(lenientPersonal);
+        SessionPolicyDetails strictConsole = mock(SessionPolicyDetails.class);
+        when(strictConsole.getStepUpFactors()).thenReturn("FIDO2");
+        lenient().when(strictConsole.getSensitiveReauthWindowMinutes()).thenReturn(1);
+        when(consoleSessionPolicy.resolveForConsole("alice")).thenReturn(strictConsole);
+
+        MockHttpServletRequest request = request("DELETE");
+        stepUp(request, 30_000, "TOTP"); // fresh + TOTP — enough for the user's own policy, NOT the console's
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThat(interceptor.preHandle(request, response, handler("sensitive"))).isFalse();
+        assertThat(response.getContentAsString()).contains("\"FIDO2\"").doesNotContain("\"TOTP\"");
+    }
+
+    // --- ordinary mutation: idle-based on the re-auth interval, general factors (user's OWN policy) ---
+
+    @Test
+    void mutationReauthDoesNotConsultTheConsolePolicy() throws Exception {
+        // The console policy governs ONLY sensitive-action step-up; the general mutation re-auth stays on the
+        // user's own policy (consistent with SessionIntegrityFilter, which enforces the session's reauth interval).
+        MockHttpServletRequest request = request("DELETE");
+        activityAge(request, 100_000); // within the personal 300s interval → proceeds without any step-up
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThat(interceptor.preHandle(request, response, handler("plain"))).isTrue();
+        verify(consoleSessionPolicy, never()).resolveForConsole(anyString());
+    }
 
     @Test
     void mutationWithinTheIdleWindowProceeds() throws Exception {
