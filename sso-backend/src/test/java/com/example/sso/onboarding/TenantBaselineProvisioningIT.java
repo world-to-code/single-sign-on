@@ -134,7 +134,7 @@ class TenantBaselineProvisioningIT extends AbstractIntegrationTest {
         return new SessionPolicyUpdate(priority, false, p.getAbsoluteTimeoutMinutes(), p.getIdleTimeoutMinutes(),
                 p.getReauthIntervalMinutes(), p.getReauthFactors(), p.getSensitiveReauthWindowMinutes(),
                 p.getStepUpFactors(), p.isBindClient(), p.getMaxConcurrentSessions(), p.isRotateOnReauth(),
-                p.getCookieSameSite(), p.getElevationTokenTtlMinutes(), p.getAdminAllowedCidrs(),
+                p.getCookieSameSite(),
                 Set.of(), Set.of(roleId), List.of());
     }
 }

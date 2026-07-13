@@ -88,16 +88,6 @@ record CachedSessionPolicy(SessionPolicy policy, Set<UUID> assignedUserIds,
     }
 
     @Override
-    public int getElevationTokenTtlMinutes() {
-        return policy.getRules().elevationTokenTtlMinutes();
-    }
-
-    @Override
-    public String getAdminAllowedCidrs() {
-        return policy.getRules().adminAllowedCidrs();
-    }
-
-    @Override
     public Set<UUID> getAssignedUserIds() {
         return assignedUserIds;
     }

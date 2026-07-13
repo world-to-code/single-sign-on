@@ -217,7 +217,7 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
         orgA = org();
         UUID custom = orgContext.callInOrg(orgA, () -> sessionPolicies.create(
                 new SessionPolicySpec("Console-" + UUID.randomUUID().toString().substring(0, 8), 20, true,
-                        480, 30, 5, "TOTP", 2, "TOTP", true, 0, true, "Lax", 5, "10.0.0.0/8",
+                        480, 30, 5, "TOTP", 2, "TOTP", true, 0, true, "Lax",
                         Set.of(), Set.of(), List.of()))).getId();
         orgContext.runInOrg(orgA, () -> portals.setSessionPolicy(PortalApps.ADMIN, custom));
 
@@ -233,7 +233,7 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
 
     private SessionPolicySpec globalSpec(String name) {
         return new SessionPolicySpec(name, 5, true, 480, 30, 5, "TOTP", 2, "TOTP", false, 0, false,
-                "Lax", 5, null, Set.of(), Set.of(), List.of());
+                "Lax", Set.of(), Set.of(), List.of());
     }
 
     private static String suffix() {

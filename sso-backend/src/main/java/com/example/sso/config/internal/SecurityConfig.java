@@ -3,6 +3,7 @@ package com.example.sso.config.internal;
 import com.example.sso.session.lifecycle.SessionLifecycle;
 
 import com.example.sso.portal.access.AppAssignmentFilter;
+import com.example.sso.portal.binding.AdminConsoleConfigService;
 
 import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.factor.Factors;
@@ -120,7 +121,7 @@ public class SecurityConfig {
             OrganizationService organizations, OrganizationAuthorization orgAuthorization, UserService users,
             SessionPolicyService policyService,
             NetworkZoneService networkZones, JwtDecoder jwtDecoder,
-            AdminConsolePolicy adminConsolePolicy, AuditService audit,
+            AdminConsolePolicy adminConsolePolicy, AdminConsoleConfigService adminConsoleConfig, AuditService audit,
             PublicKeyCredentialCreationOptionsRepository creationOptionsRepository,
             @Value("${sso.issuer}") String issuer,
             @Value("${sso.webauthn.rp-id:localhost}") String rpId,
@@ -230,7 +231,7 @@ public class SecurityConfig {
                 // Anchored AFTER the authorization filter so the session MFA_COMPLETE check
                 // (and @RequirePermission) still run first — a non-admin gets 403 there, never the 401 challenge.
                 .addFilterAfter(new AdminElevationFilter(jwtDecoder, issuer, AdminPortalSeeder.CLIENT_ID,
-                        adminConsolePolicy, audit), AuthorizationFilter.class)
+                        adminConsolePolicy, adminConsoleConfig, audit), AuthorizationFilter.class)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .exceptionHandling(ex -> ex
                         .defaultAuthenticationEntryPointFor(

@@ -32,8 +32,6 @@ public record SessionPolicyRequest(
         @Min(0) @Max(100) int maxConcurrentSessions,
         boolean rotateOnReauth,
         @Pattern(regexp = "Lax|Strict|None") String cookieSameSite,
-        @Min(1) @Max(1440) int elevationTokenTtlMinutes,
-        String adminAllowedCidrs,
         List<String> assignedUserIds,
         List<String> assignedRoleIds,
         List<@Valid IpRuleSpec> ipRules) {
@@ -45,7 +43,7 @@ public record SessionPolicyRequest(
         return new SessionPolicySpec(name, priority, enabled, absoluteTimeoutMinutes, idleTimeoutMinutes,
                 reauthIntervalMinutes, reauthFactors, sensitiveReauthWindowMinutes, stepUpFactors,
                 bindClient, maxConcurrentSessions, rotateOnReauth,
-                cookieSameSite, elevationTokenTtlMinutes, adminAllowedCidrs,
+                cookieSameSite,
                 uuids(assignedUserIds), uuids(assignedRoleIds), ipRules());
     }
 
@@ -56,7 +54,7 @@ public record SessionPolicyRequest(
         return new SessionPolicyUpdate(priority, enabled, absoluteTimeoutMinutes, idleTimeoutMinutes,
                 reauthIntervalMinutes, reauthFactors, sensitiveReauthWindowMinutes, stepUpFactors,
                 bindClient, maxConcurrentSessions, rotateOnReauth,
-                cookieSameSite, elevationTokenTtlMinutes, adminAllowedCidrs,
+                cookieSameSite,
                 uuids(assignedUserIds), uuids(assignedRoleIds), ipRules());
     }
 

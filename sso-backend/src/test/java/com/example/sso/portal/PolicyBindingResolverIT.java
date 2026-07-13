@@ -263,7 +263,7 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
 
     private UUID sessionPolicy(String name, boolean enabled) {
         UUID id = sessionPolicies.create(new SessionPolicySpec(name, 5, enabled, 480, 30, 15, "TOTP", 2, "TOTP",
-                false, 0, false, "Lax", 5, null, Set.of(), Set.of(holderRole), List.of())).getId();
+                false, 0, false, "Lax", Set.of(), Set.of(holderRole), List.of())).getId();
         createdSessionPolicies.add(id);
         return id;
     }

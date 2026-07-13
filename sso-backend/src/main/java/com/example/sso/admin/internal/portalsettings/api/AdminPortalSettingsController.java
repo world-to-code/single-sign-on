@@ -1,5 +1,7 @@
 package com.example.sso.admin.internal.portalsettings.api;
 
+import com.example.sso.admin.internal.portalsettings.application.AdminConsoleSettingsService;
+import com.example.sso.portal.binding.AdminConsoleConfigService;
 import com.example.sso.portal.binding.PortalApps;
 import com.example.sso.portal.binding.PortalSessionBinding;
 import com.example.sso.shared.security.RequirePermission;
@@ -23,18 +25,22 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminPortalSettingsController {
 
     private final PortalSessionBinding portalBinding;
+    private final AdminConsoleConfigService consoleConfig;
+    private final AdminConsoleSettingsService consoleSettings;
 
     @GetMapping
     @RequirePermission(Permissions.PORTAL_SETTINGS_READ)
-    public AdminPortalSettingsView portalSettings() {
-        return AdminPortalSettingsView.of(portalBinding.sessionPolicyId(PortalApps.ADMIN));
+    public AdminConsoleSettingsView portalSettings() {
+        return AdminConsoleSettingsView.of(portalBinding.sessionPolicyId(PortalApps.ADMIN), consoleConfig.current());
     }
 
     @PutMapping
     @RequirePermission(Permissions.PORTAL_SETTINGS_UPDATE)
-    public AdminPortalSettingsView updatePortalSettings(@Valid @RequestBody AdminPortalSettingsRequest request) {
-        portalBinding.setSessionPolicy(PortalApps.ADMIN, request.toPolicyId());
-        return AdminPortalSettingsView.of(portalBinding.sessionPolicyId(PortalApps.ADMIN));
+    public AdminConsoleSettingsView updatePortalSettings(@Valid @RequestBody AdminConsoleSettingsRequest request) {
+        // One transaction for both writes: a malformed CIDR must not leave a new session policy applied with a
+        // stale allowlist (a half-applied, fail-open network control).
+        consoleSettings.update(request.toPolicyId(), request.elevationTokenTtlMinutes(), request.adminAllowedCidrs());
+        return AdminConsoleSettingsView.of(portalBinding.sessionPolicyId(PortalApps.ADMIN), consoleConfig.current());
     }
 
     @GetMapping("/user")

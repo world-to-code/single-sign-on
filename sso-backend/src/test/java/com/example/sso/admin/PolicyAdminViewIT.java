@@ -56,8 +56,7 @@ class PolicyAdminViewIT extends AbstractIntegrationTest {
         String all = networkZones.create(new NetworkZoneSpec("IT-All-" + suffix(), null, List.of("0.0.0.0/0"))).id();
 
         SessionPolicyView created = sessionPolicyAdmin.create(new SessionPolicyRequest(
-                "IT-Session-" + suffix(), 50, true, 480, 30, 5, "TOTP,FIDO2", 2, "TOTP,FIDO2", true, 0, true, "Lax",
-                5, null, List.of(user), List.of(role),
+                "IT-Session-" + suffix(), 50, true, 480, 30, 5, "TOTP,FIDO2", 2, "TOTP,FIDO2", true, 0, true, "Lax", List.of(user), List.of(role),
                 List.of(new IpRuleSpec(office, "ALLOW", 0), new IpRuleSpec(all, "BLOCK", 1))));
         cleanups.add(() -> {
             sessionPolicyAdmin.delete(UUID.fromString(created.id()));

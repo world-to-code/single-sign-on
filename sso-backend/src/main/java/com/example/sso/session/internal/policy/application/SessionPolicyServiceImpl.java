@@ -30,7 +30,6 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.security.web.util.matcher.IpAddressMatcher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -289,8 +288,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         }
         policy.update(new SessionRules(spec.absoluteTimeoutMinutes(), spec.idleTimeoutMinutes(),
                 spec.reauthIntervalMinutes(), reauthFactors, spec.sensitiveReauthWindowMinutes(), stepUpFactors,
-                spec.bindClient(), spec.maxConcurrentSessions(), spec.rotateOnReauth(), cookieSameSite,
-                spec.elevationTokenTtlMinutes(), normalizeCidrs(spec.adminAllowedCidrs())));
+                spec.bindClient(), spec.maxConcurrentSessions(), spec.rotateOnReauth(), cookieSameSite));
         SessionPolicy saved = repository.save(policy);
 
         replaceUsers(saved.getId(), userIds);
@@ -428,27 +426,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         return new SessionRules(update.absoluteTimeoutMinutes(), update.idleTimeoutMinutes(),
                 update.reauthIntervalMinutes(), reauthFactors, update.sensitiveReauthWindowMinutes(),
                 stepUpFactors, update.bindClient(), update.maxConcurrentSessions(), update.rotateOnReauth(),
-                cookieSameSite, update.elevationTokenTtlMinutes(),
-                normalizeCidrs(update.adminAllowedCidrs()));
-    }
-
-    /** Trims and validates each admin-console CIDR (rejecting an invalid one, 400); blank -> null (any network). */
-    private String normalizeCidrs(String cidrs) {
-        if (cidrs == null || cidrs.isBlank()) {
-            return null;
-        }
-        List<String> cleaned = Arrays.stream(cidrs.split(","))
-                .map(String::trim).filter(cidr -> !cidr.isEmpty()).toList();
-        cleaned.forEach(this::validateCidr);
-        return cleaned.isEmpty() ? null : String.join(",", cleaned);
-    }
-
-    private void validateCidr(String cidr) {
-        try {
-            new IpAddressMatcher(cidr);
-        } catch (IllegalArgumentException e) {
-            throw BadRequestException.of("session.cidr.invalid", cidr);
-        }
+                cookieSameSite);
     }
 
     /**

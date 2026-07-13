@@ -151,7 +151,9 @@ sso:
     access-token-ttl-minutes: 1440
     refresh-token-ttl-minutes: 30
     # Elevation freshness + admin session idle/absolute lifetimes are now runtime-editable in the
-    # admin console (Applications -> Admin Portal -> Portal settings), stored in admin_portal_settings.
+    # admin console (Applications -> Admin Portal -> Portal settings), stored in policy_binding.
+    # Fallback elevation TTL for a fresh install before the global admin_console_config row exists.
+    default-elevation-ttl-minutes: 5
   metrics:
     trend-days: 30   # analytics window for the dashboards' sign-in trend + platform totals
 

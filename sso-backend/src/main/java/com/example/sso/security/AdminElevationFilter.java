@@ -6,6 +6,8 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.oidc.AdminPortalSeeder;
+import com.example.sso.portal.binding.AdminConsoleConfigService;
+import com.example.sso.portal.binding.AdminConsoleConfigView;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -65,6 +67,8 @@ public class AdminElevationFilter extends OncePerRequestFilter {
     private final String clientId;
     /** The session policy governing the console: the tenant's selection, else the acting admin's own. */
     private final AdminConsolePolicy consolePolicy;
+    /** The console's per-tenant enforcement config: elevation-token lifetime + entry IP allowlist. */
+    private final AdminConsoleConfigService consoleConfig;
     private final AuditService audit;
 
     @Override
@@ -91,11 +95,14 @@ public class AdminElevationFilter extends OncePerRequestFilter {
         }
 
         SessionPolicyDetails policy = consolePolicy.resolveFor(jwt.getSubject());
+        // Elevation TTL + IP allowlist come from the admin console's per-tenant config (own row, else the global
+        // default), resolved for the acting tenant — an un-drilled super-admin resolves the global default.
+        AdminConsoleConfigView config = consoleConfig.current();
         // Keyed on the direct peer address (getRemoteAddr), NOT the spoofable X-Forwarded-For. Behind a
         // reverse proxy that does not preserve the client IP, allowlist the proxy's address. The allowlist is
         // per-tenant now: an admin (or a super-admin drilled into that tenant) whose network is excluded is
         // locked out of THAT tenant's console only — recover by editing the tenant's row in the DB.
-        if (!AdminConsoleNetwork.allows(policy.getAdminAllowedCidrs(), request.getRemoteAddr())) {
+        if (!AdminConsoleNetwork.allows(config.adminAllowedCidrs(), request.getRemoteAddr())) {
             audit.record(new AuditRecord(AuditType.ADMIN_IP_BLOCKED, jwt.getSubject(), false,
                     "uri=" + request.getRequestURI(), request.getRemoteAddr()));
             forbidNetwork(response);
@@ -106,7 +113,7 @@ public class AdminElevationFilter extends OncePerRequestFilter {
         // EVERY authenticated request — admin included — by SessionIntegrityFilter, so there is no separate
         // admin-session window here.
         Duration freshness = Duration.ofMinutes(policy.getSensitiveReauthWindowMinutes());
-        Duration tokenTtl = Duration.ofMinutes(policy.getElevationTokenTtlMinutes());
+        Duration tokenTtl = Duration.ofMinutes(config.elevationTokenTtlMinutes());
         if (!isElevated(jwt, freshness, tokenTtl, expectedIssuer(request, issuer))
                 || !boundToSession(jwt)) {
             // A decoded token that fails elevation or session-binding is the forge/replay/stale signal — audit it.

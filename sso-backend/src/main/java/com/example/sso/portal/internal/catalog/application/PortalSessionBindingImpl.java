@@ -7,8 +7,6 @@ import com.example.sso.portal.internal.catalog.domain.PolicyBindingRepository;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.shared.error.BadRequestException;
-import com.example.sso.shared.error.ForbiddenException;
-import com.example.sso.tenancy.OrgContext;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -32,22 +30,21 @@ class PortalSessionBindingImpl implements PortalSessionBinding {
 
     private final PolicyBindingRepository bindings;
     private final SessionPolicyService sessionPolicies;
-    private final OrgContext orgContext;
+    private final PortalOrgScope orgScope;
 
     @Override
     @Transactional(readOnly = true)
     public Optional<UUID> sessionPolicyId(String appId) {
         // own-else-global mirrors PolicyBindingResolverImpl#orgRank (a tenant's own binding beats the inherited
         // global); keep the two in step if a tenancy tier is ever inserted between org and global.
-        UUID org = orgContext.currentOrg().orElse(null);
-        return ownRow(appId, org).or(() -> globalRow(appId)).map(PolicyBinding::getSessionPolicyId);
+        return ownRow(appId, orgScope.actingOrg()).or(() -> globalRow(appId)).map(PolicyBinding::getSessionPolicyId);
     }
 
     @Override
     @Transactional
     public void setSessionPolicy(String appId, UUID sessionPolicyId) {
         requireSelectableInTier(sessionPolicyId);
-        UUID org = writableOrg();
+        UUID org = orgScope.writableOrg();
         Optional<PolicyBinding> existing = ownRow(appId, org);
         if (sessionPolicyId == null) {
             existing.ifPresent(bindings::delete); // clearing restores the inherited/own resolved policy
@@ -72,16 +69,6 @@ class PortalSessionBindingImpl implements PortalSessionBinding {
         if (!selectable) {
             throw BadRequestException.of("admin.sessionPolicy.unknown");
         }
-    }
-
-    /** The acting org for a write: the bound tenant, or null for the platform super-admin editing the global. */
-    private UUID writableOrg() {
-        UUID org = orgContext.currentOrg().orElse(null);
-        if (org == null && !orgContext.isPlatform()) {
-            // Deny-by-default: only the platform context may edit the global default every tenant inherits.
-            throw new ForbiddenException("only a platform administrator may edit the global portal policy");
-        }
-        return org;
     }
 
     private Optional<PolicyBinding> ownRow(String appId, UUID org) {
