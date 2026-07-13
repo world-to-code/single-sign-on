@@ -5,7 +5,7 @@ import com.example.sso.portal.binding.PolicyBindingResolver;
 import com.example.sso.portal.binding.PortalApps;
 import com.example.sso.session.networkzone.IpRuleSpec;
 import com.example.sso.session.networkzone.NetworkZoneService;
-import com.example.sso.session.policy.SessionLifetimeFloor;
+import com.example.sso.session.policy.EffectiveSessionPolicy;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.tenancy.OrgContext;
@@ -173,43 +173,47 @@ class UserSessionPolicyImplTest {
         assertThat(resolver().maxConcurrentSessionsFor(USER)).isEqualTo(3);
     }
 
-    // --- floor-type controls: idle + absolute lifetimes (smallest across ALL matching policies) ---
+    // --- effectiveForUsername: winner (most-specific, element 0) + floored idle/absolute across ALL policies ---
 
     @Test
-    void lifetimeFloorForTakesTheSmallestIdleAndAbsoluteAcrossMatchingPolicies() {
-        SessionPolicyDetails broad = policyWithLifetimes(30, 120); // shorter idle, longer absolute
-        SessionPolicyDetails narrow = policyWithLifetimes(60, 90); // longer idle, shorter absolute
+    void effectiveForUsernameTakesTheWinnerFromTheFirstPolicyAndFloorsIdleAndAbsolute() {
+        SessionPolicyDetails winner = policyWithLifetimes(60, 90);  // most-specific (governing() orders it first)
+        SessionPolicyDetails broad = policyWithLifetimes(30, 120);  // broader org policy, shorter idle
         when(users.findByUsername(USER)).thenReturn(Optional.of(user));
         scopeToActingOrg();
+        // resolveSessionPolicies returns most-specific first, so element 0 is the winner; each field floored.
         when(bindings.resolveSessionPolicies(user, AppType.PORTAL, PortalApps.USER))
-                .thenReturn(List.of(broad, narrow)); // each field floored independently
+                .thenReturn(List.of(winner, broad));
 
-        SessionLifetimeFloor floor = resolver().lifetimeFloorFor(USER);
-        assertThat(floor.idleTimeoutMinutes()).isEqualTo(30);
-        assertThat(floor.absoluteTimeoutMinutes()).isEqualTo(90);
+        EffectiveSessionPolicy effective = resolver().effectiveForUsername(USER);
+        assertThat(effective.winner()).isSameAs(winner);
+        assertThat(effective.idleTimeoutMinutes()).isEqualTo(30); // min(60, 30)
+        assertThat(effective.absoluteTimeoutMinutes()).isEqualTo(90); // min(90, 120)
     }
 
     @Test
-    void lifetimeFloorForUsesTheDefaultWhenNoBindingMatches() {
+    void effectiveForUsernameUsesTheDefaultWhenNoBindingMatches() {
         SessionPolicyDetails orgDefault = policyWithLifetimes(15, 240);
         when(users.findByUsername(USER)).thenReturn(Optional.of(user));
         scopeToActingOrg();
         when(bindings.resolveSessionPolicies(user, AppType.PORTAL, PortalApps.USER)).thenReturn(List.of());
         when(sessionPolicies.resolveDefault()).thenReturn(orgDefault);
 
-        SessionLifetimeFloor floor = resolver().lifetimeFloorFor(USER);
-        assertThat(floor.idleTimeoutMinutes()).isEqualTo(15);
-        assertThat(floor.absoluteTimeoutMinutes()).isEqualTo(240);
+        EffectiveSessionPolicy effective = resolver().effectiveForUsername(USER);
+        assertThat(effective.winner()).isSameAs(orgDefault);
+        assertThat(effective.idleTimeoutMinutes()).isEqualTo(15);
+        assertThat(effective.absoluteTimeoutMinutes()).isEqualTo(240);
     }
 
     @Test
-    void lifetimeFloorForFallsBackToTheGlobalDefaultWhenTheUserIsUnknown() {
+    void effectiveForUsernameFallsBackToTheGlobalDefaultWhenTheUserIsUnknown() {
         SessionPolicyDetails globalDefault = policyWithLifetimes(10, 60);
         when(users.findByUsername(USER)).thenReturn(Optional.empty());
         when(sessionPolicies.defaultPolicy()).thenReturn(globalDefault);
 
-        SessionLifetimeFloor floor = resolver().lifetimeFloorFor(USER);
-        assertThat(floor.idleTimeoutMinutes()).isEqualTo(10);
-        assertThat(floor.absoluteTimeoutMinutes()).isEqualTo(60);
+        EffectiveSessionPolicy effective = resolver().effectiveForUsername(USER);
+        assertThat(effective.winner()).isSameAs(globalDefault);
+        assertThat(effective.idleTimeoutMinutes()).isEqualTo(10);
+        assertThat(effective.absoluteTimeoutMinutes()).isEqualTo(60);
     }
 }

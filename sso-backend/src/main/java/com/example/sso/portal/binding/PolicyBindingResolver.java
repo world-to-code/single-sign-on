@@ -26,8 +26,10 @@ public interface PolicyBindingResolver {
 
     /**
      * EVERY enabled session policy whose binding matches the user for the app (not just the most-specific
-     * winner). For floor-type controls (IP allowlist, concurrent-session cap) that a request must satisfy across
-     * ALL applicable policies, not the single specificity winner. Same org-context invariant as above.
+     * winner), ordered MOST-SPECIFIC FIRST — so element 0 is the same policy {@link #resolveSessionPolicy}
+     * returns, and a caller can derive both the specificity winner and the floor from one resolution. For
+     * floor-type controls (IP allowlist, concurrent-session cap, idle/absolute lifetime) that a request must
+     * satisfy across ALL applicable policies. Same org-context invariant as above.
      */
     List<SessionPolicyDetails> resolveSessionPolicies(UserAccount user, AppType appType, String appId);
 }

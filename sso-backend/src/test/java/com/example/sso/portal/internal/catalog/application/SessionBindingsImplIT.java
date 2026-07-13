@@ -10,8 +10,8 @@ import com.example.sso.portal.binding.PolicyBindingResolver;
 import com.example.sso.portal.binding.PortalApps;
 import com.example.sso.session.networkzone.IpRuleSpec;
 import com.example.sso.session.policy.SessionAssignment;
+import com.example.sso.session.policy.EffectiveSessionPolicy;
 import com.example.sso.session.policy.SessionBindings;
-import com.example.sso.session.policy.SessionLifetimeFloor;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.session.policy.SessionPolicySpec;
@@ -216,7 +216,7 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void lifetimeFloorForComposesTheShortestIdleAndAbsoluteAcrossMatchingPolicies() {
+    void effectiveForUsernameKeepsTheWinnerButFloorsIdleAndAbsoluteAcrossMatchingPolicies() {
         UUID org = org();
         UUID strict = policyInWithLifetimes(org, "strict", 15, 120); // org-wide: short idle + short absolute
         UUID lax = policyInWithLifetimes(org, "lax", 30, 480);        // user-specific: longer both
@@ -231,11 +231,13 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
             sessionBindings.replaceForPolicy(lax, 10, Set.of(member.getId()), Set.of()); // this user (specificity winner)
         });
 
-        // The user-specific lax policy is the specificity winner, but idle/absolute are FLOORS — the shortest of
-        // each across every governing policy wins, so the broad org lifetimes cannot be extended by the user policy.
-        SessionLifetimeFloor floor = orgContext.callInOrg(org, () -> userSessionPolicy.lifetimeFloorFor(username));
-        assertThat(floor.idleTimeoutMinutes()).isEqualTo(15);
-        assertThat(floor.absoluteTimeoutMinutes()).isEqualTo(120);
+        // The user-specific lax policy is the specificity WINNER (its preference fields apply), but idle/absolute
+        // are FLOORS — the shortest of each across every governing policy, so the broad org lifetimes cannot be
+        // extended by the user policy. One resolution yields both.
+        EffectiveSessionPolicy effective = orgContext.callInOrg(org, () -> userSessionPolicy.effectiveForUsername(username));
+        assertThat(effective.winner().getId()).isEqualTo(lax);
+        assertThat(effective.idleTimeoutMinutes()).isEqualTo(15);
+        assertThat(effective.absoluteTimeoutMinutes()).isEqualTo(120);
     }
 
     private UUID org() {

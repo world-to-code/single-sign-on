@@ -5,7 +5,7 @@ import com.example.sso.session.lifecycle.SessionLifecycle;
 import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditService;
 import com.example.sso.session.lifecycle.SessionMetadataStore;
-import com.example.sso.session.policy.SessionLifetimeFloor;
+import com.example.sso.session.policy.EffectiveSessionPolicy;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.session.lifecycle.StepUpInterceptor;
@@ -65,11 +65,11 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
         Authentication authentication = contextHolder.getContext().getAuthentication();
         if (session != null && isAuthenticated(authentication)) {
             String username = authentication.getName();
-            SessionPolicyDetails policy = userSessionPolicy.resolveForUsername(username);
-            // Idle/absolute lifetimes are FLOOR-composed across every governing policy (a narrow lax policy
-            // cannot extend a broad org-wide lifetime); re-auth interval, factors and client binding below stay
-            // the specificity winner resolved above.
-            SessionLifetimeFloor lifetime = userSessionPolicy.lifetimeFloorFor(username);
+            // One resolution yields both the specificity winner (re-auth interval, factors, client binding below)
+            // and the FLOOR-composed idle/absolute lifetimes (a narrow lax policy cannot extend a broad org-wide
+            // lifetime).
+            EffectiveSessionPolicy effective = userSessionPolicy.effectiveForUsername(username);
+            SessionPolicyDetails policy = effective.winner();
             long now = System.currentTimeMillis();
 
             // (Per-policy network/IP access is enforced separately by PolicyIpAccessFilter, which runs on
@@ -79,7 +79,7 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
             // Drive the servlet container's idle timeout from the policy (a small grace so the precise
             // idle check below rejects first, with its audit); otherwise the fixed server.servlet.session
             // .timeout would silently cap any policy idle above it.
-            session.setMaxInactiveInterval((int) (lifetime.idleTimeoutMinutes() * 60L + 60));
+            session.setMaxInactiveInterval((int) (effective.idleTimeoutMinutes() * 60L + 60));
 
             // Concurrent-session control: SessionLifecycle (SessionManagerImpl) evicts the oldest overflow sessions by
             // marking them expired in the SessionRegistry. Mirror Spring's ConcurrentSessionFilter —
@@ -94,13 +94,13 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
                 info.refreshLastRequest();
             }
 
-            if (now - session.getCreationTime() > lifetime.absoluteTimeoutMinutes() * 60_000L) {
+            if (now - session.getCreationTime() > effective.absoluteTimeoutMinutes() * 60_000L) {
                 reject(session, response, AuditType.SESSION_EXPIRED_ABSOLUTE, username);
                 return;
             }
 
             Object last = session.getAttribute(LAST_ACTIVITY);
-            if (last instanceof Long lastMillis && now - lastMillis > lifetime.idleTimeoutMinutes() * 60_000L) {
+            if (last instanceof Long lastMillis && now - lastMillis > effective.idleTimeoutMinutes() * 60_000L) {
                 reject(session, response, AuditType.SESSION_EXPIRED_IDLE, username);
                 return;
             }

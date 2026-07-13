@@ -58,8 +58,11 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
     @Transactional(readOnly = true)
     public List<SessionPolicyDetails> resolveSessionPolicies(UserAccount user, AppType appType, String appId) {
         // Every enabled matching binding's policy — including the all-subjects org-wide one (subject_type null
-        // matches everyone) — so floor-type controls can be composed across all of them, not just the winner.
+        // matches everyone) — so floor-type controls can be composed across all of them. Ordered MOST-SPECIFIC
+        // FIRST (same order as resolveField), so element 0 is the specificity winner and the caller can derive
+        // both the winner and the floor from one resolution.
         return matching(user, appType, appId, PolicyBinding::getSessionPolicyId)
+                .sorted(mostSpecificFirst(PolicyBinding::getSessionPriority))
                 .map(b -> sessionPolicies.findById(b.getSessionPolicyId()).filter(SessionPolicyDetails::isEnabled))
                 .flatMap(Optional::stream)
                 .toList();
@@ -68,17 +71,24 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
     private <P> Optional<P> resolveField(UserAccount user, AppType appType, String appId,
             Function<PolicyBinding, UUID> field, ToIntFunction<PolicyBinding> priority,
             Function<UUID, Optional<P>> load) {
-        // Tie-break on the FIELD's own priority (auth vs session), not a shared column: a co-located row carries
-        // an independently-assigned auth policy and session policy, each with its own weight.
         return matching(user, appType, appId, field)
-                .sorted(Comparator.comparingInt(this::specificity)
-                        .thenComparingInt(this::orgRank)
-                        .thenComparingInt(priority)
-                        .thenComparing(PolicyBinding::getId)
-                        .reversed())
+                .sorted(mostSpecificFirst(priority))
                 .map(b -> load.apply(field.apply(b)))
                 .flatMap(Optional::stream)
                 .findFirst();
+    }
+
+    /**
+     * Most-specific-first ordering: USER &gt; GROUP/ROLE &gt; all-subjects, then a tenant's OWN binding over the
+     * GLOBAL one, then the FIELD's own priority (auth vs session — a co-located row carries an independently
+     * assigned auth policy and session policy, each with its own weight), then a stable id tie-break.
+     */
+    private Comparator<PolicyBinding> mostSpecificFirst(ToIntFunction<PolicyBinding> priority) {
+        return Comparator.comparingInt(this::specificity)
+                .thenComparingInt(this::orgRank)
+                .thenComparingInt(priority)
+                .thenComparing(PolicyBinding::getId)
+                .reversed();
     }
 
     /** The bindings for this app whose FIELD is set and whose subject matches the user (RLS-scoped by context). */

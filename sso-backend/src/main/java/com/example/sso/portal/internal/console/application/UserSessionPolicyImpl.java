@@ -5,7 +5,7 @@ import com.example.sso.portal.binding.PolicyBindingResolver;
 import com.example.sso.portal.binding.PortalApps;
 import com.example.sso.session.networkzone.IpRules;
 import com.example.sso.session.networkzone.NetworkZoneService;
-import com.example.sso.session.policy.SessionLifetimeFloor;
+import com.example.sso.session.policy.EffectiveSessionPolicy;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.session.policy.UserSessionPolicy;
@@ -72,11 +72,14 @@ class UserSessionPolicyImpl implements UserSessionPolicy {
     }
 
     @Override
-    public SessionLifetimeFloor lifetimeFloorFor(String username) {
-        // Floor each lifetime independently: the smallest idle and smallest absolute across governing policies.
-        // Both are @Min(1), so a smaller value is unambiguously stricter (no 0 = unlimited case as for the cap).
+    public EffectiveSessionPolicy effectiveForUsername(String username) {
+        // One resolution serves both the winner and the lifetime floor: governing() is ordered most-specific
+        // first, so element 0 is the specificity winner (== resolveForUsername), and each lifetime is floored
+        // independently — the smallest idle and smallest absolute across governing policies. Both are @Min(1),
+        // so a smaller value is unambiguously stricter (no 0 = unlimited case as for the concurrent-session cap).
         List<SessionPolicyDetails> governing = governing(username);
-        return new SessionLifetimeFloor(floor(governing, SessionPolicyDetails::getIdleTimeoutMinutes),
+        return new EffectiveSessionPolicy(governing.get(0),
+                floor(governing, SessionPolicyDetails::getIdleTimeoutMinutes),
                 floor(governing, SessionPolicyDetails::getAbsoluteTimeoutMinutes));
     }
 
@@ -85,7 +88,8 @@ class UserSessionPolicyImpl implements UserSessionPolicy {
         return governing.stream().mapToInt(field).min().orElseThrow();
     }
 
-    /** Every enabled session policy governing the user (all matching bindings), else the single acting Default. */
+    /** Every enabled session policy governing the user, most-specific first (element 0 is the specificity winner),
+     *  else the single acting Default. */
     private List<SessionPolicyDetails> governing(String username) {
         return users.findByUsername(username)
                 .map(user -> orgContext.callInOrg(orgContext.currentOrg().orElse(null), () -> {

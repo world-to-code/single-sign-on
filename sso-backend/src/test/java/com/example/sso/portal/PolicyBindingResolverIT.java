@@ -256,11 +256,13 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void resolveSessionPoliciesReturnsEveryMatchingEnabledPolicy() {
+    void resolveSessionPoliciesReturnsEveryMatchingEnabledPolicyMostSpecificFirst() {
         // kim matches all three PAYMENTS session bindings: all-subjects (sessAll), finance ROLE (sess15), USER (sess5).
-        // The floor-type controls compose across ALL of these, not just the specificity winner.
+        // The floor-type controls compose across ALL of these; the list is ordered most-specific first, so element
+        // 0 (USER > ROLE > all-subjects) is the same policy the singular resolveSessionPolicy winner returns.
         assertThat(resolveSessions(kim, PAYMENTS)).extracting(SessionPolicyDetails::getId)
-                .containsExactlyInAnyOrder(sessAll, sess15, sess5);
+                .containsExactly(sess5, sess15, sessAll);
+        assertThat(resolveSession(kim, PAYMENTS)).map(SessionPolicyDetails::getId).contains(sess5);
     }
 
     @Test

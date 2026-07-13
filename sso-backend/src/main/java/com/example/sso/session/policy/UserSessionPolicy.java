@@ -32,10 +32,10 @@ public interface UserSessionPolicy {
     int maxConcurrentSessionsFor(String username);
 
     /**
-     * The floor-composed idle and absolute lifetimes for the user — the smallest of each across every governing
-     * policy, so a narrow lax policy cannot extend a broad org-wide policy's session lifetime. The re-auth
-     * interval, factors and client binding stay the specificity winner ({@link #resolveForUsername}); only the
-     * two hard-expiry lifetimes are floored.
+     * The request-effective session policy for the user, resolved in ONE pass: the specificity winner (as
+     * {@link #resolveForUsername}) for the preference fields, plus floor-composed idle and absolute lifetimes
+     * (the smallest of each across every governing policy, so a narrow lax policy cannot extend a broad org-wide
+     * lifetime). Consolidates the winner + lifetime-floor resolution the session-integrity filter needs.
      */
-    SessionLifetimeFloor lifetimeFloorFor(String username);
+    EffectiveSessionPolicy effectiveForUsername(String username);
 }
