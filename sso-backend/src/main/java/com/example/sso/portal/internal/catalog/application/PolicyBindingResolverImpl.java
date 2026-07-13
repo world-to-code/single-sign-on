@@ -20,6 +20,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,17 +54,23 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
                 id -> sessionPolicies.findById(id).filter(SessionPolicyDetails::isEnabled));
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<SessionPolicyDetails> resolveSessionPolicies(UserAccount user, AppType appType, String appId) {
+        // Every enabled matching binding's policy — including the all-subjects org-wide one (subject_type null
+        // matches everyone) — so floor-type controls can be composed across all of them, not just the winner.
+        return matching(user, appType, appId, PolicyBinding::getSessionPolicyId)
+                .map(b -> sessionPolicies.findById(b.getSessionPolicyId()).filter(SessionPolicyDetails::isEnabled))
+                .flatMap(Optional::stream)
+                .toList();
+    }
+
     private <P> Optional<P> resolveField(UserAccount user, AppType appType, String appId,
             Function<PolicyBinding, UUID> field, ToIntFunction<PolicyBinding> priority,
             Function<UUID, Optional<P>> load) {
-        UUID userId = user.getId();
-        Set<UUID> roleIds = user.getRoles().stream().map(RoleRef::getId).collect(Collectors.toSet());
-        Set<UUID> groupIds = new HashSet<>(userGroups.groupIdsOf(userId));
         // Tie-break on the FIELD's own priority (auth vs session), not a shared column: a co-located row carries
         // an independently-assigned auth policy and session policy, each with its own weight.
-        return bindings.findByAppTypeAndAppId(appType, appId).stream()
-                .filter(b -> field.apply(b) != null)
-                .filter(b -> subjectMatches(b, userId, roleIds, groupIds))
+        return matching(user, appType, appId, field)
                 .sorted(Comparator.comparingInt(this::specificity)
                         .thenComparingInt(this::orgRank)
                         .thenComparingInt(priority)
@@ -72,6 +79,17 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
                 .map(b -> load.apply(field.apply(b)))
                 .flatMap(Optional::stream)
                 .findFirst();
+    }
+
+    /** The bindings for this app whose FIELD is set and whose subject matches the user (RLS-scoped by context). */
+    private Stream<PolicyBinding> matching(UserAccount user, AppType appType, String appId,
+            Function<PolicyBinding, UUID> field) {
+        UUID userId = user.getId();
+        Set<UUID> roleIds = user.getRoles().stream().map(RoleRef::getId).collect(Collectors.toSet());
+        Set<UUID> groupIds = new HashSet<>(userGroups.groupIdsOf(userId));
+        return bindings.findByAppTypeAndAppId(appType, appId).stream()
+                .filter(b -> field.apply(b) != null)
+                .filter(b -> subjectMatches(b, userId, roleIds, groupIds));
     }
 
     /** USER is the most specific, then a role/group membership, then the app-wide (all-subjects) default. */

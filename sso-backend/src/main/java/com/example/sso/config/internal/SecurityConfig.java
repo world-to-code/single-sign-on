@@ -23,7 +23,6 @@ import com.example.sso.tenancy.OrgContext;
 import com.example.sso.security.SessionIntegrityFilter;
 import com.example.sso.security.TenantSessionHostGuard;
 import com.example.sso.security.TenantUnknownSubdomainGuard;
-import com.example.sso.session.networkzone.NetworkZoneService;
 import com.example.sso.session.policy.UserSessionPolicy;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -119,7 +118,7 @@ public class SecurityConfig {
             SessionIntegrityFilter sessionIntegrityFilter, OrgContext orgContext, HostOrgResolver hostOrgResolver,
             OrganizationService organizations, OrganizationAuthorization orgAuthorization, UserService users,
             UserSessionPolicy userSessionPolicy,
-            NetworkZoneService networkZones, JwtDecoder jwtDecoder,
+            JwtDecoder jwtDecoder,
             AdminConsoleConfigService adminConsoleConfig, AuditService audit,
             PublicKeyCredentialCreationOptionsRepository creationOptionsRepository,
             @Value("${sso.issuer}") String issuer,
@@ -219,7 +218,7 @@ public class SecurityConfig {
                 // on every request — under the bound org, so a tenant's stricter session policy actually applies.
                 .addFilterAfter(sessionIntegrityFilter, TenantSessionHostGuard.class)
                 // Per-policy network (IP) access, post-authentication (also registered on the OIDC chain).
-                .addFilterAfter(new PolicyIpAccessFilter(userSessionPolicy, networkZones, audit), SessionIntegrityFilter.class)
+                .addFilterAfter(new PolicyIpAccessFilter(userSessionPolicy, audit), SessionIntegrityFilter.class)
                 // Platform super-admin drill-in: an X-Org-Context header on /api/admin/** scopes the request
                 // to one tenant (super-admin only; a tenant admin sending it is refused). Runs AFTER the
                 // session-security filters so the super-admin's OWN session still follows its base/platform

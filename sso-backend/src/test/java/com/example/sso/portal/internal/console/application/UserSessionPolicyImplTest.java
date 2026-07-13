@@ -3,12 +3,16 @@ package com.example.sso.portal.internal.console.application;
 import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.binding.PolicyBindingResolver;
 import com.example.sso.portal.binding.PortalApps;
+import com.example.sso.session.networkzone.IpRuleSpec;
+import com.example.sso.session.networkzone.NetworkZoneService;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
+import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,6 +21,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -24,7 +29,8 @@ import static org.mockito.Mockito.when;
 /**
  * The per-user session policy resolves from the policy_binding matrix, scoped to the ACTING org (never the
  * ambient platform context): the {@code PORTAL/user} binding wins, else it falls back to the seeded Default —
- * mirroring {@link ConsoleSessionPolicyImpl} for {@code PORTAL/admin}.
+ * mirroring {@link ConsoleSessionPolicyImpl} for {@code PORTAL/admin}. The floor-type controls (IP allowlist,
+ * concurrent-session cap) compose the MOST-RESTRICTIVE value across EVERY matching policy, not the winner.
  */
 @ExtendWith(MockitoExtension.class)
 class UserSessionPolicyImplTest {
@@ -33,6 +39,7 @@ class UserSessionPolicyImplTest {
 
     @Mock private PolicyBindingResolver bindings;
     @Mock private SessionPolicyService sessionPolicies;
+    @Mock private NetworkZoneService networkZones;
     @Mock private UserService users;
     @Mock private OrgContext orgContext;
     @Mock private UserAccount user;
@@ -40,13 +47,19 @@ class UserSessionPolicyImplTest {
     @Mock private SessionPolicyDetails fallback;
 
     private UserSessionPolicyImpl resolver() {
-        return new UserSessionPolicyImpl(bindings, sessionPolicies, users, orgContext);
+        return new UserSessionPolicyImpl(bindings, sessionPolicies, networkZones, users, orgContext);
     }
 
     /** Resolution runs scoped through callInOrg(actingOrg); execute the wrapped supplier for the test. */
     private void scopeToActingOrg() {
         when(orgContext.currentOrg()).thenReturn(Optional.empty());
         when(orgContext.callInOrg(any(), any())).thenAnswer(inv -> ((Supplier<?>) inv.getArgument(1)).get());
+    }
+
+    private SessionPolicyDetails policyWithMax(int maxConcurrent) {
+        SessionPolicyDetails policy = mock(SessionPolicyDetails.class);
+        when(policy.getMaxConcurrentSessions()).thenReturn(maxConcurrent);
+        return policy;
     }
 
     @Test
@@ -84,5 +97,71 @@ class UserSessionPolicyImplTest {
         when(sessionPolicies.defaultPolicy()).thenReturn(fallback);
 
         assertThat(resolver().resolveForUsername(USER)).isSameAs(fallback);
+    }
+
+    // --- floor-type controls: IP allowlist + concurrent-session cap across ALL matching policies ---
+
+    @Test
+    void isRemoteAllowedRequiresEveryGoverningPolicyToAllowTheAddress() {
+        UUID blockZone = UUID.randomUUID();
+        SessionPolicyDetails strict = mock(SessionPolicyDetails.class);
+        when(strict.getIpRules()).thenReturn(List.of(new IpRuleSpec(blockZone.toString(), "BLOCK", 0)));
+        SessionPolicyDetails lax = mock(SessionPolicyDetails.class);
+        when(lax.getIpRules()).thenReturn(List.of()); // no restriction on its own
+        when(users.findByUsername(USER)).thenReturn(Optional.of(user));
+        scopeToActingOrg();
+        when(bindings.resolveSessionPolicies(user, AppType.PORTAL, PortalApps.USER)).thenReturn(List.of(strict, lax));
+        when(networkZones.cidrsForZone(blockZone)).thenReturn(List.of("1.2.3.0/24"));
+
+        // The lax policy alone would allow the blocked network, but the strict org policy's BLOCK zone denies it.
+        assertThat(resolver().isRemoteAllowed(USER, "1.2.3.4")).isFalse();
+        // An address outside every policy's block passes all of them.
+        assertThat(resolver().isRemoteAllowed(USER, "9.9.9.9")).isTrue();
+    }
+
+    @Test
+    void isRemoteAllowedUsesTheDefaultWhenNoBindingMatches() {
+        when(users.findByUsername(USER)).thenReturn(Optional.of(user));
+        scopeToActingOrg();
+        when(bindings.resolveSessionPolicies(user, AppType.PORTAL, PortalApps.USER)).thenReturn(List.of());
+        when(sessionPolicies.resolveDefault()).thenReturn(fallback);
+        when(fallback.getIpRules()).thenReturn(List.of()); // Default has no IP rules → allow
+
+        assertThat(resolver().isRemoteAllowed(USER, "1.2.3.4")).isTrue();
+    }
+
+    @Test
+    void maxConcurrentSessionsForTakesTheSmallestNonZeroCapAcrossMatchingPolicies() {
+        SessionPolicyDetails cap5 = policyWithMax(5); // hoisted: stubbing must not nest inside thenReturn(List.of(...))
+        SessionPolicyDetails unlimited = policyWithMax(0);
+        SessionPolicyDetails cap2 = policyWithMax(2);
+        when(users.findByUsername(USER)).thenReturn(Optional.of(user));
+        scopeToActingOrg();
+        when(bindings.resolveSessionPolicies(user, AppType.PORTAL, PortalApps.USER))
+                .thenReturn(List.of(cap5, unlimited, cap2)); // 0 = unlimited, excluded from the minimum
+
+        assertThat(resolver().maxConcurrentSessionsFor(USER)).isEqualTo(2);
+    }
+
+    @Test
+    void maxConcurrentSessionsForIsUnlimitedOnlyWhenEveryPolicyIsUnlimited() {
+        SessionPolicyDetails a = policyWithMax(0);
+        SessionPolicyDetails b = policyWithMax(0);
+        when(users.findByUsername(USER)).thenReturn(Optional.of(user));
+        scopeToActingOrg();
+        when(bindings.resolveSessionPolicies(user, AppType.PORTAL, PortalApps.USER)).thenReturn(List.of(a, b));
+
+        assertThat(resolver().maxConcurrentSessionsFor(USER)).isZero();
+    }
+
+    @Test
+    void maxConcurrentSessionsForUsesTheDefaultWhenNoBindingMatches() {
+        SessionPolicyDetails orgDefault = policyWithMax(3);
+        when(users.findByUsername(USER)).thenReturn(Optional.of(user));
+        scopeToActingOrg();
+        when(bindings.resolveSessionPolicies(user, AppType.PORTAL, PortalApps.USER)).thenReturn(List.of());
+        when(sessionPolicies.resolveDefault()).thenReturn(orgDefault);
+
+        assertThat(resolver().maxConcurrentSessionsFor(USER)).isEqualTo(3);
     }
 }

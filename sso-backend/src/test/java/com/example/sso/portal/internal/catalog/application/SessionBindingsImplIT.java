@@ -14,6 +14,7 @@ import com.example.sso.session.policy.SessionBindings;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.session.policy.SessionPolicySpec;
+import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.NewUser;
@@ -44,6 +45,7 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
 
     @Autowired SessionBindings sessionBindings;
     @Autowired PolicyBindingResolver resolver;
+    @Autowired UserSessionPolicy userSessionPolicy;
     @Autowired SessionPolicyService sessionPolicies;
     @Autowired AuthPolicyAdminService authPolicies;
     @Autowired OrganizationService organizations;
@@ -191,6 +193,27 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
         assertThat(afterClear.get("session_policy_id")).isNull();
     }
 
+    @Test
+    void maxConcurrentSessionsForComposesTheFloorAcrossMatchingPolicies() {
+        UUID org = org();
+        UUID strict = policyInWithMax(org, "strict", 1); // org-wide cap 1
+        UUID lax = policyInWithMax(org, "lax", 0);        // user-specific unlimited
+        String s = suffix();
+        String username = "floor-" + s;
+        UserAccount member = orgContext.callInOrg(org, () -> users.createUser(new NewUser(
+                username, username + "@example.com", "Floor", "S3cret!pw9", Set.of("ROLE_USER")), org));
+        createdUsers.add(member.getId());
+
+        orgContext.runInOrg(org, () -> {
+            sessionBindings.replaceForPolicy(strict, 10, Set.of(), Set.of());            // all-subjects (everyone)
+            sessionBindings.replaceForPolicy(lax, 10, Set.of(member.getId()), Set.of()); // this user (specificity winner)
+        });
+
+        // The user-specific lax policy (cap 0 = unlimited) is the specificity winner, but the broad org cap 1 is a
+        // FLOOR — the most-restrictive non-zero cap across every governing policy wins.
+        assertThat(orgContext.callInOrg(org, () -> userSessionPolicy.maxConcurrentSessionsFor(username))).isEqualTo(1);
+    }
+
     private UUID org() {
         String slug = "session-bind-it-" + suffix();
         UUID id = orgContext.callAsPlatform(() -> organizations.create(new NewOrganization(slug, slug)).id());
@@ -208,6 +231,16 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
     private UUID policyIn(UUID org, String name) {
         UUID id = orgContext.callInOrg(org, () -> sessionPolicies.create(new SessionPolicySpec(
                 name + "-" + suffix(), 5, true, 480, 30, 15, "TOTP", 2, "TOTP", false, 0, false, "Lax",
+                Set.<UUID>of(), Set.<UUID>of(), List.<IpRuleSpec>of())).getId());
+        orgContext.runAsPlatform(() -> ownerJdbc().update("delete from policy_binding where org_id = ? "
+                + "and app_type = 'PORTAL' and app_id = 'user' and session_policy_id = ?", org, id));
+        return id;
+    }
+
+    /** A bare org-owned session policy with an explicit concurrent-session cap (for the floor test). */
+    private UUID policyInWithMax(UUID org, String name, int max) {
+        UUID id = orgContext.callInOrg(org, () -> sessionPolicies.create(new SessionPolicySpec(
+                name + "-" + suffix(), 5, true, 480, 30, 15, "TOTP", 2, "TOTP", false, max, false, "Lax",
                 Set.<UUID>of(), Set.<UUID>of(), List.<IpRuleSpec>of())).getId());
         orgContext.runAsPlatform(() -> ownerJdbc().update("delete from policy_binding where org_id = ? "
                 + "and app_type = 'PORTAL' and app_id = 'user' and session_policy_id = ?", org, id));

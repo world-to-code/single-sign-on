@@ -17,4 +17,17 @@ public interface UserSessionPolicy {
 
     /** As {@link #resolveForUser}, by username; the Default when the user is unknown. */
     SessionPolicyDetails resolveForUsername(String username);
+
+    /**
+     * Whether {@code remoteAddr} passes the IP allowlist of EVERY session policy that governs the user — a
+     * floor, not the single specificity winner: each applicable policy must allow, so a narrowly-targeted lax
+     * policy cannot bypass a broad org-wide allowlist.
+     */
+    boolean isRemoteAllowed(String username, String remoteAddr);
+
+    /**
+     * The most-restrictive concurrent-session cap across every session policy governing the user (0 = unlimited)
+     * — a floor: a narrow policy with a looser cap cannot lift a broad org-wide cap.
+     */
+    int maxConcurrentSessionsFor(String username);
 }

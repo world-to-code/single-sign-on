@@ -4,7 +4,6 @@ import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.organization.OrganizationAccessRevokedEvent;
 import com.example.sso.session.lifecycle.SessionMetadata;
 import com.example.sso.session.lifecycle.SessionMetadataStore;
-import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.account.UserAccessChangedEvent;
@@ -84,9 +83,8 @@ class SessionManagerImplTest {
     }
 
     private void policyWithLimit(int max) {
-        SessionPolicyDetails policy = mock(SessionPolicyDetails.class);
-        when(policy.getMaxConcurrentSessions()).thenReturn(max);
-        when(sessionPolicy.resolveForUsername(USER)).thenReturn(policy);
+        // The manager reads the composed FLOOR cap (min non-zero across governing policies), not a raw policy.
+        when(sessionPolicy.maxConcurrentSessionsFor(USER)).thenReturn(max);
     }
 
     private SessionInformation session(String id, Instant lastRequest) {

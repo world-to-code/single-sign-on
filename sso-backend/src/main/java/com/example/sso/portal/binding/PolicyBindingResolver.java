@@ -4,6 +4,7 @@ import com.example.sso.authpolicy.policy.AuthPolicyView;
 import com.example.sso.portal.application.AppType;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.user.account.UserAccount;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -22,4 +23,11 @@ public interface PolicyBindingResolver {
     Optional<AuthPolicyView> resolveAuthPolicy(UserAccount user, AppType appType, String appId);
 
     Optional<SessionPolicyDetails> resolveSessionPolicy(UserAccount user, AppType appType, String appId);
+
+    /**
+     * EVERY enabled session policy whose binding matches the user for the app (not just the most-specific
+     * winner). For floor-type controls (IP allowlist, concurrent-session cap) that a request must satisfy across
+     * ALL applicable policies, not the single specificity winner. Same org-context invariant as above.
+     */
+    List<SessionPolicyDetails> resolveSessionPolicies(UserAccount user, AppType appType, String appId);
 }

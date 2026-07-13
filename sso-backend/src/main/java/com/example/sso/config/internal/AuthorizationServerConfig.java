@@ -14,7 +14,6 @@ import com.example.sso.security.PolicyIpAccessFilter;
 import com.example.sso.security.HostOrgResolver;
 import com.example.sso.security.TenantHostFilter;
 import com.example.sso.tenancy.OrgContext;
-import com.example.sso.session.networkzone.NetworkZoneService;
 import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.user.role.RoleRef;
 import com.example.sso.user.account.UserService;
@@ -82,7 +81,7 @@ public class AuthorizationServerConfig {
     SecurityFilterChain authorizationServerSecurityFilterChain(
             HttpSecurity http, JWKSource<SecurityContext> jwkSource,
             RegisteredClientRepository registeredClients, UserService users, ApplicationService applications,
-            UserSessionPolicy userSessionPolicy, NetworkZoneService networkZones, AuditService audit,
+            UserSessionPolicy userSessionPolicy, AuditService audit,
             OrgContext orgContext, HostOrgResolver hostOrgResolver)
             throws Exception {
 
@@ -136,7 +135,7 @@ public class AuthorizationServerConfig {
                 // Per-policy network (IP) access on the OIDC chain too: a blocked network must not be able to
                 // complete SSO (/oauth2/authorize) even though it reached login. Anchored after the org
                 // context filter so the resolved user's tenant policy (and its IP rules) is available.
-                .addFilterAfter(new PolicyIpAccessFilter(userSessionPolicy, networkZones, audit), OrgContextFilter.class)
+                .addFilterAfter(new PolicyIpAccessFilter(userSessionPolicy, audit), OrgContextFilter.class)
                 // Per-app step-up: redirect to /stepup when the client requires extra factors. Anchored
                 // after the context filter (a registered-order filter) so it runs once the session is loaded.
                 .addFilterAfter(new AppStepUpFilter(registeredClients, users, applications, audit),

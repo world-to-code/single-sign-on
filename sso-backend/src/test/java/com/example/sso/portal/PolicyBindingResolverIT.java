@@ -255,6 +255,20 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
         assertThat(resolveAuth(kim, app)).map(AuthPolicyView::getId).contains(subjectPolicy);
     }
 
+    @Test
+    void resolveSessionPoliciesReturnsEveryMatchingEnabledPolicy() {
+        // kim matches all three PAYMENTS session bindings: all-subjects (sessAll), finance ROLE (sess15), USER (sess5).
+        // The floor-type controls compose across ALL of these, not just the specificity winner.
+        assertThat(resolveSessions(kim, PAYMENTS)).extracting(SessionPolicyDetails::getId)
+                .containsExactlyInAnyOrder(sessAll, sess15, sess5);
+    }
+
+    @Test
+    void resolveSessionPoliciesExcludesDisabledBoundPolicies() {
+        // SHADOW: finance ROLE → sess15 (enabled), kim USER → sessDisabled (disabled). Only the enabled one governs.
+        assertThat(resolveSessions(kim, SHADOW)).extracting(SessionPolicyDetails::getId).containsExactly(sess15);
+    }
+
     // --- helpers ---
 
     private java.util.Optional<AuthPolicyView> resolveAuth(UserAccount user, String appId) {
@@ -263,6 +277,10 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
 
     private java.util.Optional<SessionPolicyDetails> resolveSession(UserAccount user, String appId) {
         return orgContext.callAsPlatform(() -> resolver.resolveSessionPolicy(user, APP, appId));
+    }
+
+    private List<SessionPolicyDetails> resolveSessions(UserAccount user, String appId) {
+        return orgContext.callAsPlatform(() -> resolver.resolveSessionPolicies(user, APP, appId));
     }
 
     private void bind(String appId, SubjectType st, UUID subjectId, UUID auth, UUID sess, int prio) {
