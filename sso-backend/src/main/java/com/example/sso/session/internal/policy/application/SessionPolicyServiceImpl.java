@@ -123,6 +123,23 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
                 .orElseThrow(() -> new IllegalStateException("Default session policy is missing"));
     }
 
+    @Override
+    public SessionPolicyDetails resolveDefault() {
+        // Prefer the bound org's own Default (the tenant's unconditional catch-all) over the global baseline,
+        // so a member never steps down to the weaker global Default when no more-specific binding applies.
+        UUID org = orgContext.currentOrg().orElse(null);
+        if (org != null) {
+            Optional<SessionPolicyDetails> orgDefault = cached.stream()
+                    .filter(p -> org.equals(p.policy().getOrgId()) && DEFAULT_NAME.equals(p.getName()))
+                    .<SessionPolicyDetails>map(p -> p)
+                    .findFirst();
+            if (orgDefault.isPresent()) {
+                return orgDefault.get();
+            }
+        }
+        return defaultPolicy();
+    }
+
     // --- Write path (admin CRUD + seeding) ---
 
     @Override

@@ -89,6 +89,12 @@ class SessionPolicyServiceImplTest {
         return p;
     }
 
+    private SessionPolicy orgPolicy(String name, int priority, UUID orgId) {
+        SessionPolicy p = new SessionPolicy(name, priority, orgId);
+        ReflectionTestUtils.setField(p, "id", UUID.randomUUID());
+        return p;
+    }
+
     private void loadCache(List<SessionPolicy> policies) {
         when(repository.findAllByOrderByPriorityDesc()).thenReturn(policies);
         when(policyIpRules.findAll()).thenReturn(List.of());
@@ -114,6 +120,26 @@ class SessionPolicyServiceImplTest {
         loadCache(List.of()); // empty cache → the invariant is violated
 
         assertThatThrownBy(() -> service.defaultPolicy()).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void resolveDefaultPrefersTheActingOrgsOwnDefaultOverTheGlobal() {
+        UUID orgA = UUID.randomUUID();
+        loadCache(List.of(orgPolicy(SessionPolicyService.DEFAULT_NAME, 1, orgA),
+                policy(SessionPolicyService.DEFAULT_NAME, 0))); // org A's Default (1) + the global (0)
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgA));
+
+        // The bound org keeps its OWN (possibly hardened) Default, not the global baseline.
+        assertThat(service.resolveDefault().getPriority()).isEqualTo(1);
+    }
+
+    @Test
+    void resolveDefaultFallsBackToTheGlobalWhenTheActingOrgHasNoOwnDefault() {
+        UUID orgB = UUID.randomUUID();
+        loadCache(List.of(policy(SessionPolicyService.DEFAULT_NAME, 0))); // only the global Default
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgB));
+
+        assertThat(service.resolveDefault().getPriority()).isEqualTo(0);
     }
 
     // --- create ---

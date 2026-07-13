@@ -32,10 +32,11 @@ class UserSessionPolicyImpl implements UserSessionPolicy {
     public SessionPolicyDetails resolveForUser(UserAccount user) {
         // Resolve scoped to the ACTING org, never the ambient context — an un-drilled platform super-admin must
         // not inherit a tenant's binding (RLS under the platform GUC would expose every tenant's rows). In
-        // platform context currentOrg() is empty, so callInOrg(null) collapses RLS to GLOBAL-only.
+        // platform context currentOrg() is empty, so callInOrg(null) collapses RLS to GLOBAL-only. The Default
+        // fallback runs INSIDE the scope so it lands on the acting org's own Default, not the global one.
         return orgContext.callInOrg(orgContext.currentOrg().orElse(null),
-                        () -> bindings.resolveSessionPolicy(user, AppType.PORTAL, PortalApps.USER))
-                .orElseGet(sessionPolicies::defaultPolicy);
+                () -> bindings.resolveSessionPolicy(user, AppType.PORTAL, PortalApps.USER)
+                        .orElseGet(sessionPolicies::resolveDefault));
     }
 
     @Override

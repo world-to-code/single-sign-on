@@ -20,8 +20,16 @@ public interface SessionPolicyService {
      */
     int TENANT_DEFAULT_PRIORITY = 1;
 
-    /** The non-editable Default fallback (also supplies the GLOBAL session-cookie attributes). */
+    /** The GLOBAL Default fallback (also supplies the GLOBAL session-cookie attributes). */
     SessionPolicyDetails defaultPolicy();
+
+    /**
+     * The unconditional Default for the acting context — the bound org's own Default when present, else the
+     * GLOBAL Default. This is the resolution fallback: it keeps a tenant on its OWN (possibly hardened) Default
+     * rather than the global baseline when no more-specific binding applies (e.g. a custom all-subjects policy
+     * that took the tenant's catch-all slot is later disabled).
+     */
+    SessionPolicyDetails resolveDefault();
 
     /** A policy by id (from the in-memory cache), or empty when it no longer exists. */
     Optional<SessionPolicyDetails> findById(UUID id);

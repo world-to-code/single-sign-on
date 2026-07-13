@@ -55,14 +55,16 @@ class UserSessionPolicyImplTest {
         when(bindings.resolveSessionPolicy(user, AppType.PORTAL, PortalApps.USER)).thenReturn(Optional.of(bound));
 
         assertThat(resolver().resolveForUser(user)).isSameAs(bound);
-        verify(sessionPolicies, never()).defaultPolicy();
+        verify(sessionPolicies, never()).resolveDefault();
     }
 
     @Test
-    void resolveForUserFallsBackToTheDefaultWhenNoBindingApplies() {
+    void resolveForUserFallsBackToTheActingOrgsDefaultWhenNoBindingApplies() {
+        // The fallback is resolveDefault (org-aware), not the global defaultPolicy, so a tenant whose catch-all
+        // slot was taken by a since-disabled custom policy stays on its OWN Default, not the weaker global one.
         scopeToActingOrg();
         when(bindings.resolveSessionPolicy(user, AppType.PORTAL, PortalApps.USER)).thenReturn(Optional.empty());
-        when(sessionPolicies.defaultPolicy()).thenReturn(fallback);
+        when(sessionPolicies.resolveDefault()).thenReturn(fallback);
 
         assertThat(resolver().resolveForUser(user)).isSameAs(fallback);
     }
