@@ -19,8 +19,14 @@ import { DataList, EmptyState } from "@/components/states";
 import { SearchSelect } from "@/components/SearchSelect";
 import { searchGroups, searchUsers } from "@/groups";
 
-interface Application { id: string; type: "OIDC" | "SAML"; name: string; launchUrl: string | null; system: boolean; requiredPolicyId: string | null; requiredPolicyName: string | null; }
+interface Application { id: string; type: "OIDC" | "SAML" | "PORTAL"; name: string; launchUrl: string | null; system: boolean; requiredPolicyId: string | null; requiredPolicyName: string | null; }
 interface PortalSettings { sessionPolicyId: string | null; }
+// Which portal a "Portal settings" dialog governs: the admin console vs the end-user portal (distinct bindings).
+type PortalKind = "admin" | "user";
+const PORTAL_SETTINGS_PATH: Record<PortalKind, string> = {
+  admin: "/api/admin/portal-settings",
+  user: "/api/admin/portal-settings/user",
+};
 interface SessionPolicy { id: string; name: string; }
 
 interface Assignment { id: string; subjectType: string; subjectName: string; requiredPolicyId: string | null; }
@@ -41,8 +47,9 @@ export default function Applications() {
   const [appPolicyId, setAppPolicyId] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Admin-portal security settings (only for the system app).
+  // Portal session-policy settings (system apps: the admin console and the end-user portal).
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsPortal, setSettingsPortal] = useState<PortalKind>("admin");
   const [settings, setSettings] = useState<PortalSettings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsSaved, setSettingsSaved] = useState(false);
@@ -65,9 +72,10 @@ export default function Applications() {
     loadAssignments(app);
   }
 
-  function openSettings() {
+  function openSettings(portal: PortalKind) {
+    setSettingsPortal(portal);
     setSettingsError(null); setSettingsSaved(false); setSettings(null); setSettingsOpen(true);
-    apiGet<PortalSettings>("/api/admin/portal-settings").then(setSettings).catch((e) => setSettingsError(errorMessage(e)));
+    apiGet<PortalSettings>(PORTAL_SETTINGS_PATH[portal]).then(setSettings).catch((e) => setSettingsError(errorMessage(e)));
     apiGet<Page<SessionPolicy>>("/api/admin/session-policies?size=100")
       .then((p) => setSessionPolicies(p.items)).catch(() => undefined);
   }
@@ -76,7 +84,7 @@ export default function Applications() {
     if (!settings) return;
     setSettingsError(null); setSettingsSaved(false);
     try {
-      const saved = await apiPut<PortalSettings>("/api/admin/portal-settings", settings);
+      const saved = await apiPut<PortalSettings>(PORTAL_SETTINGS_PATH[settingsPortal], settings);
       setSettings(saved); setSettingsSaved(true);
     } catch (e) {
       setSettingsError(errorMessage(e));
@@ -149,7 +157,7 @@ export default function Applications() {
                   <TableCell className="max-w-xs truncate font-mono text-xs text-muted-foreground">{app.launchUrl ?? "—"}</TableCell>
                   <TableCell className="text-right">
                     {app.system
-                      ? <Button variant="outline" size="sm" onClick={openSettings}><Settings /> {t("applicationsPortalSettings")}</Button>
+                      ? <Button variant="outline" size="sm" onClick={() => openSettings(app.type === "PORTAL" ? "user" : "admin")}><Settings /> {t("applicationsPortalSettings")}</Button>
                       : <Button variant="outline" size="sm" onClick={() => manage(app)}><UsersIcon /> {t("applicationsManageAccess")}</Button>}
                   </TableCell>
                 </TableRow>
@@ -231,9 +239,9 @@ export default function Applications() {
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Lock className="size-4" /> {t("applicationsPortalSecurityTitle")}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Lock className="size-4" /> {t(settingsPortal === "user" ? "applicationsUserPortalSettingsTitle" : "applicationsPortalSecurityTitle")}</DialogTitle>
             <DialogDescription>
-              <Trans t={t} i18nKey="applicationsPortalSecurityDescription" components={[<strong key="0" />]} />
+              <Trans t={t} i18nKey={settingsPortal === "user" ? "applicationsUserPortalSettingsDescription" : "applicationsPortalSecurityDescription"} components={[<strong key="0" />]} />
             </DialogDescription>
           </DialogHeader>
 
@@ -246,13 +254,13 @@ export default function Applications() {
                 <Label htmlFor="console-policy">{t("applicationsSessionPolicyLabel")}</Label>
                 <Select id="console-policy" value={settings.sessionPolicyId ?? ""}
                         onChange={(e) => setSettings({ sessionPolicyId: e.target.value || null })}>
-                  <option value="">{t("applicationsEachAdminPolicy")}</option>
+                  <option value="">{t(settingsPortal === "user" ? "applicationsEachUserPolicy" : "applicationsEachAdminPolicy")}</option>
                   {sessionPolicies.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  {t("applicationsPortalPolicyHint")}
+                  {t(settingsPortal === "user" ? "applicationsUserPortalPolicyHint" : "applicationsPortalPolicyHint")}
                 </p>
               </div>
             </div>

@@ -155,6 +155,10 @@ export const console: Record<keyof typeof enConsole, string> = {
   applicationsSessionPolicyLabel: "세션 정책",
   applicationsEachAdminPolicy: "각 관리자 고유 정책",
   applicationsPortalPolicyHint: "승격 토큰 수명과 IP 허용 목록은 세션 정책의 선택한 정책에서 편집하세요.",
+  applicationsUserPortalSettingsTitle: "사용자 포털 세션",
+  applicationsUserPortalSettingsDescription: "사용자 포털을 관장하는 <0>세션 정책</0>을 선택하세요. 유휴/절대 제한 시간과 재인증 주기를 이 정책이 제공합니다. 설정하지 않으면 각 사용자에게 적용되는 정책이 사용됩니다. 변경 사항은 다음 포털 요청부터 적용됩니다.",
+  applicationsEachUserPolicy: "각 사용자 고유 정책",
+  applicationsUserPortalPolicyHint: "관리 콘솔과 별개로, 포털에 로그인하는 모든 사용자의 SPA 세션 타이머를 관장합니다.",
 
   // AuthPolicies list
   authPoliciesTitle: "인증 정책",

@@ -155,6 +155,10 @@ export const console = {
   applicationsSessionPolicyLabel: "Session policy",
   applicationsEachAdminPolicy: "Each admin's own policy",
   applicationsPortalPolicyHint: "Edit the elevation token lifetime and the IP allowlist on the chosen policy, under Session policies.",
+  applicationsUserPortalSettingsTitle: "User Portal session",
+  applicationsUserPortalSettingsDescription: "Choose the <0>session policy</0> that governs the end-user portal — its idle/absolute timeouts and reauthentication interval. Leave it unset to use the policy resolved for each user. Changes take effect on the next portal request.",
+  applicationsEachUserPolicy: "Each user's own policy",
+  applicationsUserPortalPolicyHint: "This governs the SPA session timers for everyone signing in to the portal, independently of the admin console.",
 
   // AuthPolicies list -------------------------------------------------------
   authPoliciesTitle: "Authentication Policies",
