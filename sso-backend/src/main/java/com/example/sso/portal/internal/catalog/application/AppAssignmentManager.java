@@ -9,6 +9,7 @@ import com.example.sso.portal.access.AssignAppRequest;
 import com.example.sso.portal.internal.catalog.domain.AppAssignment;
 import com.example.sso.portal.internal.catalog.domain.AppAssignment.SubjectType;
 import com.example.sso.portal.internal.catalog.domain.AppAssignmentRepository;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgTierGuard;
@@ -131,6 +132,11 @@ class AppAssignmentManager {
     @Transactional
     AppAssignmentView assign(AssignAppRequest request) {
         AppType appType = AppType.valueOf(request.appType());
+        if (appType == AppType.PORTAL) {
+            // Portals are catalog/management-only: a user is never "assigned" to the user portal (everyone
+            // uses it), so a PORTAL assignment would only produce a self-referential launch tile.
+            throw BadRequestException.of("portal.assignment.notAssignable");
+        }
         SubjectType subjectType = SubjectType.valueOf(request.subjectType());
         UUID subjectId = UUID.fromString(request.subjectId());
         if (assignments.existsByAppTypeAndAppIdAndSubjectTypeAndSubjectId(appType, request.appId(), subjectType, subjectId)) {

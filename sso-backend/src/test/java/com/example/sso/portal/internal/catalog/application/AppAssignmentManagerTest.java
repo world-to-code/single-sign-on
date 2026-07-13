@@ -9,6 +9,7 @@ import com.example.sso.portal.internal.catalog.domain.AppAssignment.SubjectType;
 import com.example.sso.authpolicy.policy.AuthPolicyResolver;
 import com.example.sso.portal.internal.catalog.domain.AppAssignmentRepository;
 import com.example.sso.shared.IdName;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
@@ -211,6 +212,17 @@ class AppAssignmentManagerTest {
                 APP_TYPE, APP_ID, SubjectType.USER, subjectId)).thenReturn(true);
 
         assertThatThrownBy(() -> manager.assign(request)).isInstanceOf(ConflictException.class);
+        verify(assignments, never()).save(any());
+    }
+
+    @Test
+    void assignRejectsAPortalApp() {
+        // A portal (e.g. the user portal) is catalog/management-only: assigning a subject to it would only
+        // produce a self-referential launch tile, so the write is refused before any duplicate check.
+        AssignAppRequest request = new AssignAppRequest("PORTAL", "user", "USER", UUID.randomUUID().toString(), null);
+
+        assertThatThrownBy(() -> manager.assign(request)).isInstanceOf(BadRequestException.class);
+        verify(assignments, never()).existsByAppTypeAndAppIdAndSubjectTypeAndSubjectId(any(), any(), any(), any());
         verify(assignments, never()).save(any());
     }
 

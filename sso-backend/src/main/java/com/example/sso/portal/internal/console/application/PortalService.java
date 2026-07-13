@@ -10,9 +10,12 @@ import com.example.sso.portal.stepup.AppStepUpFilter;
 import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.application.ApplicationService;
 import com.example.sso.portal.application.ApplicationView;
+import com.example.sso.portal.binding.PolicyBindingResolver;
+import com.example.sso.portal.binding.PortalApps;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.shared.error.UnauthorizedException;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -42,13 +45,28 @@ public class PortalService {
     private final ApplicationService applications;
     private final UserService users;
     private final SessionPolicyService sessionPolicy;
+    private final PolicyBindingResolver bindings;
+    private final OrgContext orgContext;
     private final RegisteredClientRepository registeredClients;
 
     public SessionConfigView sessionConfig(String username) {
-        SessionPolicyDetails p = sessionPolicy.resolveForUsername(username);
+        SessionPolicyDetails p = resolveSessionPolicy(username);
         List<String> reauthFactors = Arrays.stream(p.getReauthFactors().split(","))
                 .map(String::trim).filter(s -> !s.isEmpty()).toList();
         return new SessionConfigView(p.getIdleTimeoutMinutes(), p.getReauthIntervalMinutes(), reauthFactors);
+    }
+
+    /**
+     * The session policy governing the END-USER PORTAL for this user: the {@code PORTAL}/{@code user} binding
+     * (resolved in the acting tenant's context, most-specific first), else the user's own resolved policy. This
+     * is the user-portal twin of {@code AdminConsolePolicy}; scoping to the acting org (never the ambient
+     * platform context) keeps a tenant's binding from leaking across tenants under RLS.
+     */
+    private SessionPolicyDetails resolveSessionPolicy(String username) {
+        return users.findByUsername(username)
+                .flatMap(user -> orgContext.callInOrg(orgContext.currentOrg().orElse(null),
+                        () -> bindings.resolveSessionPolicy(user, AppType.PORTAL, PortalApps.USER)))
+                .orElseGet(() -> sessionPolicy.resolveForUsername(username));
     }
 
     public List<ApplicationView> myApps(String username) {
