@@ -3,6 +3,7 @@ package com.example.sso.security;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
 import com.example.sso.session.lifecycle.SessionMetadataStore;
+import com.example.sso.session.policy.SessionLifetimeFloor;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.session.lifecycle.StepUpInterceptor;
@@ -64,8 +65,8 @@ class SessionIntegrityFilterTest {
     void setUp() {
         filter = new SessionIntegrityFilter(audit, policyService, sessionRegistry, sessionMetadata);
         lenient().when(policyService.resolveForUsername("alice")).thenReturn(policy);
-        lenient().when(policy.getAbsoluteTimeoutMinutes()).thenReturn(480); // 8h
-        lenient().when(policy.getIdleTimeoutMinutes()).thenReturn(30);
+        // Idle/absolute lifetimes come from the floor (composed across all governing policies), not the winner.
+        lenient().when(policyService.lifetimeFloorFor("alice")).thenReturn(new SessionLifetimeFloor(30, 480)); // 30m idle, 8h abs
         lenient().when(policy.getReauthIntervalMinutes()).thenReturn(15);
         lenient().when(policy.getReauthFactors()).thenReturn("TOTP,PASSWORD");
         lenient().when(policy.isBindClient()).thenReturn(false);

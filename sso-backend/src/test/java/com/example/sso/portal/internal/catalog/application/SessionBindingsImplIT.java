@@ -11,6 +11,7 @@ import com.example.sso.portal.binding.PortalApps;
 import com.example.sso.session.networkzone.IpRuleSpec;
 import com.example.sso.session.policy.SessionAssignment;
 import com.example.sso.session.policy.SessionBindings;
+import com.example.sso.session.policy.SessionLifetimeFloor;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.session.policy.SessionPolicySpec;
@@ -214,6 +215,29 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
         assertThat(orgContext.callInOrg(org, () -> userSessionPolicy.maxConcurrentSessionsFor(username))).isEqualTo(1);
     }
 
+    @Test
+    void lifetimeFloorForComposesTheShortestIdleAndAbsoluteAcrossMatchingPolicies() {
+        UUID org = org();
+        UUID strict = policyInWithLifetimes(org, "strict", 15, 120); // org-wide: short idle + short absolute
+        UUID lax = policyInWithLifetimes(org, "lax", 30, 480);        // user-specific: longer both
+        String s = suffix();
+        String username = "lifetime-" + s;
+        UserAccount member = orgContext.callInOrg(org, () -> users.createUser(new NewUser(
+                username, username + "@example.com", "Lifetime", "S3cret!pw9", Set.of("ROLE_USER")), org));
+        createdUsers.add(member.getId());
+
+        orgContext.runInOrg(org, () -> {
+            sessionBindings.replaceForPolicy(strict, 10, Set.of(), Set.of());            // all-subjects (everyone)
+            sessionBindings.replaceForPolicy(lax, 10, Set.of(member.getId()), Set.of()); // this user (specificity winner)
+        });
+
+        // The user-specific lax policy is the specificity winner, but idle/absolute are FLOORS — the shortest of
+        // each across every governing policy wins, so the broad org lifetimes cannot be extended by the user policy.
+        SessionLifetimeFloor floor = orgContext.callInOrg(org, () -> userSessionPolicy.lifetimeFloorFor(username));
+        assertThat(floor.idleTimeoutMinutes()).isEqualTo(15);
+        assertThat(floor.absoluteTimeoutMinutes()).isEqualTo(120);
+    }
+
     private UUID org() {
         String slug = "session-bind-it-" + suffix();
         UUID id = orgContext.callAsPlatform(() -> organizations.create(new NewOrganization(slug, slug)).id());
@@ -242,6 +266,16 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
         UUID id = orgContext.callInOrg(org, () -> sessionPolicies.create(new SessionPolicySpec(
                 name + "-" + suffix(), 5, true, 480, 30, 15, "TOTP", 2, "TOTP", false, max, false, "Lax",
                 Set.<UUID>of(), Set.<UUID>of(), List.<IpRuleSpec>of())).getId());
+        orgContext.runAsPlatform(() -> ownerJdbc().update("delete from policy_binding where org_id = ? "
+                + "and app_type = 'PORTAL' and app_id = 'user' and session_policy_id = ?", org, id));
+        return id;
+    }
+
+    /** A bare org-owned session policy with explicit idle/absolute lifetimes (for the lifetime-floor test). */
+    private UUID policyInWithLifetimes(UUID org, String name, int idleMinutes, int absoluteMinutes) {
+        UUID id = orgContext.callInOrg(org, () -> sessionPolicies.create(new SessionPolicySpec(
+                name + "-" + suffix(), 5, true, absoluteMinutes, idleMinutes, 15, "TOTP", 2, "TOTP", false, 0, false,
+                "Lax", Set.<UUID>of(), Set.<UUID>of(), List.<IpRuleSpec>of())).getId());
         orgContext.runAsPlatform(() -> ownerJdbc().update("delete from policy_binding where org_id = ? "
                 + "and app_type = 'PORTAL' and app_id = 'user' and session_policy_id = ?", org, id));
         return id;

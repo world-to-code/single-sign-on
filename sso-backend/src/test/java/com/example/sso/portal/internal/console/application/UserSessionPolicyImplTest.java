@@ -5,6 +5,7 @@ import com.example.sso.portal.binding.PolicyBindingResolver;
 import com.example.sso.portal.binding.PortalApps;
 import com.example.sso.session.networkzone.IpRuleSpec;
 import com.example.sso.session.networkzone.NetworkZoneService;
+import com.example.sso.session.policy.SessionLifetimeFloor;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.tenancy.OrgContext;
@@ -59,6 +60,13 @@ class UserSessionPolicyImplTest {
     private SessionPolicyDetails policyWithMax(int maxConcurrent) {
         SessionPolicyDetails policy = mock(SessionPolicyDetails.class);
         when(policy.getMaxConcurrentSessions()).thenReturn(maxConcurrent);
+        return policy;
+    }
+
+    private SessionPolicyDetails policyWithLifetimes(int idleMinutes, int absoluteMinutes) {
+        SessionPolicyDetails policy = mock(SessionPolicyDetails.class);
+        when(policy.getIdleTimeoutMinutes()).thenReturn(idleMinutes);
+        when(policy.getAbsoluteTimeoutMinutes()).thenReturn(absoluteMinutes);
         return policy;
     }
 
@@ -163,5 +171,45 @@ class UserSessionPolicyImplTest {
         when(sessionPolicies.resolveDefault()).thenReturn(orgDefault);
 
         assertThat(resolver().maxConcurrentSessionsFor(USER)).isEqualTo(3);
+    }
+
+    // --- floor-type controls: idle + absolute lifetimes (smallest across ALL matching policies) ---
+
+    @Test
+    void lifetimeFloorForTakesTheSmallestIdleAndAbsoluteAcrossMatchingPolicies() {
+        SessionPolicyDetails broad = policyWithLifetimes(30, 120); // shorter idle, longer absolute
+        SessionPolicyDetails narrow = policyWithLifetimes(60, 90); // longer idle, shorter absolute
+        when(users.findByUsername(USER)).thenReturn(Optional.of(user));
+        scopeToActingOrg();
+        when(bindings.resolveSessionPolicies(user, AppType.PORTAL, PortalApps.USER))
+                .thenReturn(List.of(broad, narrow)); // each field floored independently
+
+        SessionLifetimeFloor floor = resolver().lifetimeFloorFor(USER);
+        assertThat(floor.idleTimeoutMinutes()).isEqualTo(30);
+        assertThat(floor.absoluteTimeoutMinutes()).isEqualTo(90);
+    }
+
+    @Test
+    void lifetimeFloorForUsesTheDefaultWhenNoBindingMatches() {
+        SessionPolicyDetails orgDefault = policyWithLifetimes(15, 240);
+        when(users.findByUsername(USER)).thenReturn(Optional.of(user));
+        scopeToActingOrg();
+        when(bindings.resolveSessionPolicies(user, AppType.PORTAL, PortalApps.USER)).thenReturn(List.of());
+        when(sessionPolicies.resolveDefault()).thenReturn(orgDefault);
+
+        SessionLifetimeFloor floor = resolver().lifetimeFloorFor(USER);
+        assertThat(floor.idleTimeoutMinutes()).isEqualTo(15);
+        assertThat(floor.absoluteTimeoutMinutes()).isEqualTo(240);
+    }
+
+    @Test
+    void lifetimeFloorForFallsBackToTheGlobalDefaultWhenTheUserIsUnknown() {
+        SessionPolicyDetails globalDefault = policyWithLifetimes(10, 60);
+        when(users.findByUsername(USER)).thenReturn(Optional.empty());
+        when(sessionPolicies.defaultPolicy()).thenReturn(globalDefault);
+
+        SessionLifetimeFloor floor = resolver().lifetimeFloorFor(USER);
+        assertThat(floor.idleTimeoutMinutes()).isEqualTo(10);
+        assertThat(floor.absoluteTimeoutMinutes()).isEqualTo(60);
     }
 }

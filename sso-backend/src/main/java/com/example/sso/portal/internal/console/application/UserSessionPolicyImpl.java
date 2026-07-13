@@ -5,6 +5,7 @@ import com.example.sso.portal.binding.PolicyBindingResolver;
 import com.example.sso.portal.binding.PortalApps;
 import com.example.sso.session.networkzone.IpRules;
 import com.example.sso.session.networkzone.NetworkZoneService;
+import com.example.sso.session.policy.SessionLifetimeFloor;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.session.policy.UserSessionPolicy;
@@ -12,6 +13,7 @@ import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
 import java.util.List;
+import java.util.function.ToIntFunction;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -67,6 +69,20 @@ class UserSessionPolicyImpl implements UserSessionPolicy {
                 .filter(max -> max > 0)
                 .min()
                 .orElse(0);
+    }
+
+    @Override
+    public SessionLifetimeFloor lifetimeFloorFor(String username) {
+        // Floor each lifetime independently: the smallest idle and smallest absolute across governing policies.
+        // Both are @Min(1), so a smaller value is unambiguously stricter (no 0 = unlimited case as for the cap).
+        List<SessionPolicyDetails> governing = governing(username);
+        return new SessionLifetimeFloor(floor(governing, SessionPolicyDetails::getIdleTimeoutMinutes),
+                floor(governing, SessionPolicyDetails::getAbsoluteTimeoutMinutes));
+    }
+
+    /** The smallest value of {@code field} across the governing policies (never empty — Default is the fallback). */
+    private int floor(List<SessionPolicyDetails> governing, ToIntFunction<SessionPolicyDetails> field) {
+        return governing.stream().mapToInt(field).min().orElseThrow();
     }
 
     /** Every enabled session policy governing the user (all matching bindings), else the single acting Default. */

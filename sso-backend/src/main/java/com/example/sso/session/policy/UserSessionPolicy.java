@@ -30,4 +30,12 @@ public interface UserSessionPolicy {
      * — a floor: a narrow policy with a looser cap cannot lift a broad org-wide cap.
      */
     int maxConcurrentSessionsFor(String username);
+
+    /**
+     * The floor-composed idle and absolute lifetimes for the user — the smallest of each across every governing
+     * policy, so a narrow lax policy cannot extend a broad org-wide policy's session lifetime. The re-auth
+     * interval, factors and client binding stay the specificity winner ({@link #resolveForUsername}); only the
+     * two hard-expiry lifetimes are floored.
+     */
+    SessionLifetimeFloor lifetimeFloorFor(String username);
 }
