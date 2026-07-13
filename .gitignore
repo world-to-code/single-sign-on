@@ -18,6 +18,8 @@ sso-backend/src/main/resources/static/
 .project
 .classpath
 .settings/
+.factorypath
+bin/
 
 # ---- Secrets & keystores ----
 *.p12
