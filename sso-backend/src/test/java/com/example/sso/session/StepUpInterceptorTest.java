@@ -4,6 +4,7 @@ import com.example.sso.session.lifecycle.StepUpInterceptor;
 import com.example.sso.session.policy.ConsoleSessionPolicy;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
+import com.example.sso.session.policy.UserSessionPolicy;
 
 import com.example.sso.shared.security.RequireStepUp;
 import jakarta.servlet.http.HttpServletResponse;
@@ -41,6 +42,7 @@ import static org.mockito.Mockito.when;
 class StepUpInterceptorTest {
 
     private SessionPolicyService policyService;
+    private UserSessionPolicy userSessionPolicy;
     private ConsoleSessionPolicy consoleSessionPolicy;
     private StepUpInterceptor interceptor;
 
@@ -55,15 +57,16 @@ class StepUpInterceptorTest {
     @BeforeEach
     void setUp() {
         policyService = mock(SessionPolicyService.class);
+        userSessionPolicy = mock(UserSessionPolicy.class);
         consoleSessionPolicy = mock(ConsoleSessionPolicy.class);
-        interceptor = new StepUpInterceptor(policyService, consoleSessionPolicy);
+        interceptor = new StepUpInterceptor(policyService, userSessionPolicy, consoleSessionPolicy);
 
         SessionPolicyDetails policy = mock(SessionPolicyDetails.class);
         lenient().when(policy.getReauthIntervalMinutes()).thenReturn(5);          // 300s idle window
         lenient().when(policy.getReauthFactors()).thenReturn("TOTP,FIDO2");
         lenient().when(policy.getSensitiveReauthWindowMinutes()).thenReturn(2);   // 120s sensitive window
         lenient().when(policy.getStepUpFactors()).thenReturn("FIDO2");            // stronger set for sensitive
-        lenient().when(policyService.resolveForUsername(anyString())).thenReturn(policy);
+        lenient().when(userSessionPolicy.resolveForUsername(anyString())).thenReturn(policy);
         lenient().when(policyService.defaultPolicy()).thenReturn(policy);
         // By default the console policy == the user's own, so the sensitive-action cases below read the same
         // window/factors; a dedicated test overrides it to prove the console policy is what actually governs.
@@ -179,7 +182,7 @@ class StepUpInterceptorTest {
         SessionPolicyDetails lenientPersonal = mock(SessionPolicyDetails.class);
         lenient().when(lenientPersonal.getStepUpFactors()).thenReturn("TOTP,FIDO2");
         lenient().when(lenientPersonal.getSensitiveReauthWindowMinutes()).thenReturn(10);
-        when(policyService.resolveForUsername("alice")).thenReturn(lenientPersonal);
+        when(userSessionPolicy.resolveForUsername("alice")).thenReturn(lenientPersonal);
         SessionPolicyDetails strictConsole = mock(SessionPolicyDetails.class);
         when(strictConsole.getStepUpFactors()).thenReturn("FIDO2");
         lenient().when(strictConsole.getSensitiveReauthWindowMinutes()).thenReturn(1);

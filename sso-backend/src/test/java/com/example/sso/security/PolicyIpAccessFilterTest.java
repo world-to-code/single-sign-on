@@ -5,7 +5,7 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.session.networkzone.IpRuleSpec;
 import com.example.sso.session.networkzone.NetworkZoneService;
 import com.example.sso.session.policy.SessionPolicyDetails;
-import com.example.sso.session.policy.SessionPolicyService;
+import com.example.sso.session.policy.UserSessionPolicy;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.AfterEach;
@@ -44,7 +44,7 @@ class PolicyIpAccessFilterTest {
     private static final UUID OFFICE = UUID.randomUUID();
     private static final UUID EVERYWHERE = UUID.randomUUID();
 
-    @Mock private SessionPolicyService policyService;
+    @Mock private UserSessionPolicy policyService;
     @Mock private NetworkZoneService networkZones;
     @Mock private AuditService audit;
     @Mock private SessionPolicyDetails policy;

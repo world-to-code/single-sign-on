@@ -5,7 +5,7 @@ import com.example.sso.organization.OrganizationAccessRevokedEvent;
 import com.example.sso.session.lifecycle.SessionMetadata;
 import com.example.sso.session.lifecycle.SessionMetadataStore;
 import com.example.sso.session.policy.SessionPolicyDetails;
-import com.example.sso.session.policy.SessionPolicyService;
+import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.account.UserAccessChangedEvent;
 import com.example.sso.user.account.UserAccount;
@@ -63,7 +63,7 @@ class SessionManagerImplTest {
     @Mock
     private SessionMetadataStore sessionMetadata;
     @Mock
-    private SessionPolicyService sessionPolicy;
+    private UserSessionPolicy sessionPolicy;
     @Mock
     private FindByIndexNameSessionRepository<Session> sessionRepository;
     @Mock

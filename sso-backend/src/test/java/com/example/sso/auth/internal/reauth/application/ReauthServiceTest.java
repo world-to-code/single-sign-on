@@ -12,7 +12,7 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.session.lifecycle.SessionLifecycle;
 import com.example.sso.session.policy.SessionPolicyDetails;
-import com.example.sso.session.policy.SessionPolicyService;
+import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.session.lifecycle.StepUpInterceptor;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.shared.error.BadRequestException;
@@ -58,7 +58,7 @@ import static org.mockito.Mockito.when;
 class ReauthServiceTest {
 
     @Mock private CurrentUserProvider currentUser;
-    @Mock private SessionPolicyService sessionPolicy;
+    @Mock private UserSessionPolicy sessionPolicy;
     @Mock private FactorHandlers factorHandlers;
     @Mock private SessionLifecycle sessions;
     @Mock private FactorAuthorizationService factorAuth;

@@ -18,6 +18,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -41,28 +42,31 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
     @Override
     @Transactional(readOnly = true)
     public Optional<AuthPolicyView> resolveAuthPolicy(UserAccount user, AppType appType, String appId) {
-        return resolveField(user, appType, appId, PolicyBinding::getAuthPolicyId,
+        return resolveField(user, appType, appId, PolicyBinding::getAuthPolicyId, PolicyBinding::getPriority,
                 id -> authPolicies.highestPriorityEnabled(List.of(id)));
     }
 
     @Override
     @Transactional(readOnly = true)
     public Optional<SessionPolicyDetails> resolveSessionPolicy(UserAccount user, AppType appType, String appId) {
-        return resolveField(user, appType, appId, PolicyBinding::getSessionPolicyId,
+        return resolveField(user, appType, appId, PolicyBinding::getSessionPolicyId, PolicyBinding::getSessionPriority,
                 id -> sessionPolicies.findById(id).filter(SessionPolicyDetails::isEnabled));
     }
 
     private <P> Optional<P> resolveField(UserAccount user, AppType appType, String appId,
-            Function<PolicyBinding, UUID> field, Function<UUID, Optional<P>> load) {
+            Function<PolicyBinding, UUID> field, ToIntFunction<PolicyBinding> priority,
+            Function<UUID, Optional<P>> load) {
         UUID userId = user.getId();
         Set<UUID> roleIds = user.getRoles().stream().map(RoleRef::getId).collect(Collectors.toSet());
         Set<UUID> groupIds = new HashSet<>(userGroups.groupIdsOf(userId));
+        // Tie-break on the FIELD's own priority (auth vs session), not a shared column: a co-located row carries
+        // an independently-assigned auth policy and session policy, each with its own weight.
         return bindings.findByAppTypeAndAppId(appType, appId).stream()
                 .filter(b -> field.apply(b) != null)
                 .filter(b -> subjectMatches(b, userId, roleIds, groupIds))
                 .sorted(Comparator.comparingInt(this::specificity)
                         .thenComparingInt(this::orgRank)
-                        .thenComparingInt(PolicyBinding::getPriority)
+                        .thenComparingInt(priority)
                         .thenComparing(PolicyBinding::getId)
                         .reversed())
                 .map(b -> load.apply(field.apply(b)))

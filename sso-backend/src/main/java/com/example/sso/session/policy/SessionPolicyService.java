@@ -1,15 +1,13 @@
 package com.example.sso.session.policy;
 
-import com.example.sso.user.account.UserAccount;
-
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
- * The single session-policy contract injected by the security filters, interceptors and controllers:
- * resolves the effective policy per user and owns admin CRUD plus seeding/self-healing of the
- * non-editable {@code Default} fallback. The implementation (with its in-memory cache) stays
+ * The session-policy contract owning admin CRUD, seeding/self-healing of the non-editable {@code Default}
+ * fallback, and by-id/default lookups. Per-user resolution lives in {@link UserSessionPolicy} (off the
+ * {@code policy_binding} matrix). The implementation (with its in-memory cache of policy scalars) stays
  * module-internal.
  */
 public interface SessionPolicyService {
@@ -21,12 +19,6 @@ public interface SessionPolicyService {
      * resolution for that org, and low enough that a tenant's own higher-priority policies still override it.
      */
     int TENANT_DEFAULT_PRIORITY = 1;
-
-    /** The effective session policy for the user: highest-priority assigned/global, else Default. */
-    SessionPolicyDetails resolveForUser(UserAccount user);
-
-    /** Resolves by username for the filter/interceptor callers; Default if the user is unknown. */
-    SessionPolicyDetails resolveForUsername(String username);
 
     /** The non-editable Default fallback (also supplies the GLOBAL session-cookie attributes). */
     SessionPolicyDetails defaultPolicy();

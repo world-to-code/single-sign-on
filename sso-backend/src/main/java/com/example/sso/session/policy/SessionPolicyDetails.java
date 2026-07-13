@@ -3,7 +3,6 @@ package com.example.sso.session.policy;
 import com.example.sso.session.networkzone.IpRuleSpec;
 
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -42,10 +41,6 @@ public interface SessionPolicyDetails {
     boolean isRotateOnReauth();
 
     String getCookieSameSite();
-
-    Set<UUID> getAssignedUserIds();
-
-    Set<UUID> getAssignedRoleIds();
 
     /** IP access rules in evaluation order (priority asc). First rule whose CIDR matches the client IP decides. */
     List<IpRuleSpec> getIpRules();

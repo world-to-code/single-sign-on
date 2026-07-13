@@ -4,7 +4,7 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
 import com.example.sso.session.lifecycle.SessionMetadataStore;
 import com.example.sso.session.policy.SessionPolicyDetails;
-import com.example.sso.session.policy.SessionPolicyService;
+import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.session.lifecycle.StepUpInterceptor;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletResponse;
@@ -53,7 +53,7 @@ class SessionIntegrityFilterTest {
     private static final long MIN = 60_000L;
 
     @Mock private AuditService audit;
-    @Mock private SessionPolicyService policyService;
+    @Mock private UserSessionPolicy policyService;
     @Mock private SessionRegistry sessionRegistry;
     @Mock private SessionMetadataStore sessionMetadata;
     @Mock private SessionPolicyDetails policy;

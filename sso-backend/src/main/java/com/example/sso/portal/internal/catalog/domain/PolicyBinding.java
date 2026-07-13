@@ -48,9 +48,14 @@ public class PolicyBinding extends AuditedEntity implements OrgOwned {
     @Column(name = "session_policy_id")
     private UUID sessionPolicyId;
 
-    /** Tie-break among bindings of the same specificity tier; higher wins. */
+    /** Same-specificity tie-break for the AUTH field; higher wins. Independent of {@link #sessionPriority}
+     *  because a co-located row's auth and session policies (assigned separately) carry their own weights. */
     @Column(name = "priority", nullable = false)
     private int priority;
+
+    /** Same-specificity tie-break for the SESSION field; higher wins (mirror of {@link #priority} for auth). */
+    @Column(name = "session_priority", nullable = false)
+    private int sessionPriority;
 
     /** Owning tenant, or {@code null} for a GLOBAL binding that applies across tenants. */
     @Column(name = "org_id")
@@ -58,7 +63,7 @@ public class PolicyBinding extends AuditedEntity implements OrgOwned {
 
     @Builder
     public PolicyBinding(AppType appType, String appId, SubjectType subjectType, UUID subjectId,
-            UUID authPolicyId, UUID sessionPolicyId, int priority, UUID orgId) {
+            UUID authPolicyId, UUID sessionPolicyId, int priority, int sessionPriority, UUID orgId) {
         this.appType = appType;
         this.appId = appId;
         this.subjectType = subjectType;
@@ -66,6 +71,7 @@ public class PolicyBinding extends AuditedEntity implements OrgOwned {
         this.authPolicyId = authPolicyId;
         this.sessionPolicyId = sessionPolicyId;
         this.priority = priority;
+        this.sessionPriority = sessionPriority;
         this.orgId = orgId;
     }
 
@@ -79,9 +85,14 @@ public class PolicyBinding extends AuditedEntity implements OrgOwned {
         this.authPolicyId = authPolicyId;
     }
 
-    /** Reset the same-specificity tie-break weight (used when a binding is re-pointed at another policy). */
+    /** Reset the AUTH tie-break weight (used when the auth field is re-pointed at another policy). */
     public void reprioritize(int priority) {
         this.priority = priority;
+    }
+
+    /** Reset the SESSION tie-break weight (used when the session field is re-pointed at another policy). */
+    public void reprioritizeSession(int sessionPriority) {
+        this.sessionPriority = sessionPriority;
     }
 
     /** Whether this binding no longer carries any policy — the caller then deletes it (DB CHECK needs ≥1). */

@@ -268,7 +268,7 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
     private void bind(String appId, SubjectType st, UUID subjectId, UUID auth, UUID sess, int prio) {
         bindings.saveAndFlush(PolicyBinding.builder()
                 .appType(APP).appId(appId).subjectType(st).subjectId(subjectId)
-                .authPolicyId(auth).sessionPolicyId(sess).priority(prio).orgId(null).build());
+                .authPolicyId(auth).sessionPolicyId(sess).priority(prio).sessionPriority(prio).orgId(null).build());
     }
 
     private UUID authPolicy(String name) {
@@ -288,6 +288,10 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
     private UUID sessionPolicy(String name, boolean enabled) {
         UUID id = sessionPolicies.create(new SessionPolicySpec(name, 5, enabled, 480, 30, 15, "TOTP", 2, "TOTP",
                 false, 0, false, "Lax", Set.of(), Set.of(holderRole), List.of())).getId();
+        // These are OIDC app-binding fixtures, not PORTAL/user session policies — drop the PORTAL/user assignment
+        // binding the create writes so it can't block the raw-SQL session_policy cleanup below (its FK RESTRICT).
+        ownerJdbc().update(
+                "delete from policy_binding where app_type = 'PORTAL' and app_id = 'user' and session_policy_id = ?", id);
         createdSessionPolicies.add(id);
         return id;
     }

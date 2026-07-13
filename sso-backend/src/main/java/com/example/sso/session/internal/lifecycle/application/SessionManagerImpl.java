@@ -7,7 +7,7 @@ import com.example.sso.session.lifecycle.UserSessions;
 import com.example.sso.session.lifecycle.SessionMetadata;
 import com.example.sso.session.lifecycle.SessionMetadataStore;
 import com.example.sso.session.policy.SessionPolicyDetails;
-import com.example.sso.session.policy.SessionPolicyService;
+import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.shared.web.ClientIp;
 import com.example.sso.user.account.UserAccessChangedEvent;
@@ -48,7 +48,7 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
 
     private final SessionRegistry sessionRegistry;
     private final SessionMetadataStore sessionMetadata;
-    private final SessionPolicyService sessionPolicy;
+    private final UserSessionPolicy userSessionPolicy;
     private final FindByIndexNameSessionRepository<? extends Session> sessionRepository;
     private final UserService users;
 
@@ -62,7 +62,7 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
         // Spring Session registers + principal-indexes the session automatically (it holds the security
         // context), so we don't register here — the backing registry queries Redis by principal.
         sessionMetadata.record(session.getId(), username, request.getHeader(HttpHeaders.USER_AGENT), ClientIp.of(request));
-        SessionPolicyDetails policy = sessionPolicy.resolveForUsername(username);
+        SessionPolicyDetails policy = userSessionPolicy.resolveForUsername(username);
         int max = policy.getMaxConcurrentSessions();
         if (max <= 0) {
             return; // 0 = unlimited

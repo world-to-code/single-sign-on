@@ -4,7 +4,7 @@ import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.binding.PolicyBindingResolver;
 import com.example.sso.portal.binding.PortalApps;
 import com.example.sso.session.policy.SessionPolicyDetails;
-import com.example.sso.session.policy.SessionPolicyService;
+import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
@@ -34,7 +34,7 @@ class ConsoleSessionPolicyImplTest {
     @Mock
     private PolicyBindingResolver bindings;
     @Mock
-    private SessionPolicyService sessionPolicies;
+    private UserSessionPolicy sessionPolicies;
     @Mock
     private UserService users;
     @Mock

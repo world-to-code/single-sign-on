@@ -6,9 +6,12 @@ import com.example.sso.organization.CompanyProfile;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationView;
+import com.example.sso.session.policy.SessionAssignment;
+import com.example.sso.session.policy.SessionBindings;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.session.policy.SessionPolicyUpdate;
+import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
@@ -39,6 +42,10 @@ class TenantBaselineProvisioningIT extends AbstractIntegrationTest {
     OrganizationService organizations;
     @Autowired
     SessionPolicyService sessionPolicies;
+    @Autowired
+    UserSessionPolicy userSessionPolicy;
+    @Autowired
+    SessionBindings sessionBindings;
     @Autowired
     AuthPolicyAdminService authPolicies;
     @Autowired
@@ -89,7 +96,7 @@ class TenantBaselineProvisioningIT extends AbstractIntegrationTest {
         // The per-org Default (priority 1) beats the GLOBAL Default (priority 0), so the tenant runs on its own.
         await().untilAsserted(() -> {
             SessionPolicyDetails resolved =
-                    orgContext.callInOrg(orgId, () -> sessionPolicies.resolveForUser(member));
+                    orgContext.callInOrg(orgId, () -> userSessionPolicy.resolveForUser(member));
             assertThat(resolved.getName()).isEqualTo(SessionPolicyService.DEFAULT_NAME);
             assertThat(resolved.getPriority()).isEqualTo(SessionPolicyService.TENANT_DEFAULT_PRIORITY);
         });
@@ -113,8 +120,10 @@ class TenantBaselineProvisioningIT extends AbstractIntegrationTest {
             sessionPolicies.update(def.getId(), reassign(def, UUID.randomUUID(), 99));
 
             SessionPolicyDetails after = theDefault();
-            assertThat(after.getAssignedRoleIds()).isEmpty();
-            assertThat(after.getAssignedUserIds()).isEmpty();
+            // Reassignment refused: the Default stays an all-subjects binding (no per-subject scope in the matrix).
+            SessionAssignment scope = sessionBindings.describe(List.of(after.getId())).get(after.getId());
+            assertThat(scope.roleIds()).isEmpty();
+            assertThat(scope.userIds()).isEmpty();
             assertThat(after.getPriority()).isEqualTo(SessionPolicyService.TENANT_DEFAULT_PRIORITY);
             assertThat(after.isEnabled()).isTrue();
 

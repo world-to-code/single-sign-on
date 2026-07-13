@@ -5,7 +5,7 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.session.networkzone.IpRules;
 import com.example.sso.session.networkzone.NetworkZoneService;
 import com.example.sso.session.policy.SessionPolicyDetails;
-import com.example.sso.session.policy.SessionPolicyService;
+import com.example.sso.session.policy.UserSessionPolicy;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -34,7 +34,7 @@ import java.io.IOException;
 public class PolicyIpAccessFilter extends OncePerRequestFilter {
 
     private final SecurityContextHolderStrategy contextHolder = SecurityContextHolder.getContextHolderStrategy();
-    private final SessionPolicyService policyService;
+    private final UserSessionPolicy userSessionPolicy;
     private final NetworkZoneService networkZones;
     private final AuditService audit;
 
@@ -43,7 +43,7 @@ public class PolicyIpAccessFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         Authentication authentication = contextHolder.getContext().getAuthentication();
         if (isAuthenticated(authentication)) {
-            SessionPolicyDetails policy = policyService.resolveForUsername(authentication.getName());
+            SessionPolicyDetails policy = userSessionPolicy.resolveForUsername(authentication.getName());
             if (!IpRules.isAllowed(policy.getIpRules(), networkZones::cidrsForZone, request.getRemoteAddr())) {
                 audit.record(AuditType.IP_BLOCKED, authentication.getName(), false);
                 response.setStatus(HttpStatus.FORBIDDEN.value());

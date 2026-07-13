@@ -12,7 +12,7 @@ import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.session.lifecycle.SessionLifecycle;
 import com.example.sso.session.policy.SessionPolicyDetails;
-import com.example.sso.session.policy.SessionPolicyService;
+import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.session.lifecycle.StepUpInterceptor;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.user.account.UserAccount;
@@ -33,7 +33,7 @@ import org.springframework.stereotype.Service;
 public class ReauthService {
 
     private final CurrentUserProvider currentUser;
-    private final SessionPolicyService sessionPolicy;
+    private final UserSessionPolicy sessionPolicy;
     private final FactorHandlers factorHandlers;
     private final SessionLifecycle sessions;
     private final FactorAuthorizationService factorAuth;

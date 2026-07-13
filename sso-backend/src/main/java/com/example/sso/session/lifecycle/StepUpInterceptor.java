@@ -3,6 +3,7 @@ package com.example.sso.session.lifecycle;
 import com.example.sso.session.policy.ConsoleSessionPolicy;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
+import com.example.sso.session.policy.UserSessionPolicy;
 
 import com.example.sso.shared.security.RequireStepUp;
 import jakarta.servlet.http.HttpServletRequest;
@@ -52,10 +53,13 @@ public class StepUpInterceptor implements HandlerInterceptor {
             HttpMethod.POST.name(), HttpMethod.PUT.name(), HttpMethod.DELETE.name(), HttpMethod.PATCH.name());
 
     private final SessionPolicyService policyService;
+    private final UserSessionPolicy userSessionPolicy;
     private final ConsoleSessionPolicy consoleSessionPolicy;
 
-    public StepUpInterceptor(SessionPolicyService policyService, ConsoleSessionPolicy consoleSessionPolicy) {
+    public StepUpInterceptor(SessionPolicyService policyService, UserSessionPolicy userSessionPolicy,
+            ConsoleSessionPolicy consoleSessionPolicy) {
         this.policyService = policyService;
+        this.userSessionPolicy = userSessionPolicy;
         this.consoleSessionPolicy = consoleSessionPolicy;
     }
 
@@ -97,7 +101,7 @@ public class StepUpInterceptor implements HandlerInterceptor {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         SessionPolicyDetails policy = authentication == null
                 ? policyService.defaultPolicy()
-                : policyService.resolveForUsername(authentication.getName());
+                : userSessionPolicy.resolveForUsername(authentication.getName());
 
         if (sensitive) {
             // Sensitive admin actions follow the ADMIN CONSOLE's policy (its PORTAL/admin selection, else the

@@ -37,4 +37,7 @@ public interface PolicyBindingRepository extends JpaRepository<PolicyBinding, UU
 
     /** Auth bindings of one app referencing any of the given policies (RLS-scoped) — reconstructs login scope. */
     List<PolicyBinding> findByAppTypeAndAppIdAndAuthPolicyIdIn(AppType appType, String appId, Collection<UUID> authPolicyIds);
+
+    /** Session bindings of one app referencing any of the given policies (RLS-scoped) — reconstructs assignment scope. */
+    List<PolicyBinding> findByAppTypeAndAppIdAndSessionPolicyIdIn(AppType appType, String appId, Collection<UUID> sessionPolicyIds);
 }

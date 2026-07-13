@@ -174,7 +174,9 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
             assertThat(globalConsolePolicy()).contains(alt);
         } finally {
             orgContext.runAsPlatform(() -> portals.setSessionPolicy(PortalApps.ADMIN, original.orElse(null))); // restore + unbind alt
-            ownerJdbc().update("delete from session_policy where id = ?", alt);
+            // Delete via the service so it clears alt's own PORTAL/user assignment binding (written by create)
+            // before removing the policy — a raw delete would hit that binding's FK RESTRICT.
+            orgContext.runAsPlatform(() -> sessionPolicies.delete(alt));
         }
         assertThat(globalConsolePolicy()).isEqualTo(original);
     }
@@ -182,6 +184,7 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
     @Test
     void aPolicyGoverningTheConsoleCannotBeDeletedUntilItIsDeselected() {
         orgA = org();
+        defaultPolicyOf(orgA); // await the async baseline (its all-subjects binding) before writing our own
         UUID custom = orgContext.callInOrg(orgA, () -> sessionPolicies.create(
                 new SessionPolicySpec("Console-" + UUID.randomUUID().toString().substring(0, 8), 20, true,
                         480, 30, 5, "TOTP", 2, "TOTP", true, 0, true, "Lax",

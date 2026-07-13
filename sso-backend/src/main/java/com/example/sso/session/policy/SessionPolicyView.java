@@ -15,14 +15,15 @@ public record SessionPolicyView(String id, String name, int priority, boolean en
                                 List<String> assignedUserIds, List<String> assignedRoleIds,
                                 List<IpRuleSpec> ipRules) {
 
-    public static SessionPolicyView of(SessionPolicyDetails p) {
+    /** Projects a policy plus its assignment scope (from the policy_binding matrix) to the admin view. */
+    public static SessionPolicyView of(SessionPolicyDetails p, SessionAssignment assignment) {
         return new SessionPolicyView(p.getId().toString(), p.getName(), p.getPriority(), p.isEnabled(),
                 p.getAbsoluteTimeoutMinutes(), p.getIdleTimeoutMinutes(), p.getReauthIntervalMinutes(),
                 p.getReauthFactors(), p.getSensitiveReauthWindowMinutes(), p.getStepUpFactors(),
                 p.isBindClient(), p.getMaxConcurrentSessions(), p.isRotateOnReauth(),
                 p.getCookieSameSite(),
-                p.getAssignedUserIds().stream().map(UUID::toString).toList(),
-                p.getAssignedRoleIds().stream().map(UUID::toString).toList(),
+                assignment.userIds().stream().map(UUID::toString).sorted().toList(),
+                assignment.roleIds().stream().map(UUID::toString).sorted().toList(),
                 p.getIpRules());
     }
 }

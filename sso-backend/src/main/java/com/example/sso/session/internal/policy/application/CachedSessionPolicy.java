@@ -5,17 +5,15 @@ import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.internal.policy.domain.SessionPolicy;
 
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 /**
- * A {@link SessionPolicy} entity composed with its explicitly-loaded assignment sets and IP rules into the
- * public {@link SessionPolicyDetails} view. The entity carries only its own columns now, so the service pairs
- * it with the child rows it read/wrote — this is what the in-memory cache holds and what resolution and the
- * admin projections consume. Scalars delegate to the entity's embedded {@code SessionRules}.
+ * A {@link SessionPolicy} entity composed with its explicitly-loaded IP rules into the public
+ * {@link SessionPolicyDetails} view. The entity carries only its own columns, so the service pairs it with the
+ * IP-rule rows it read/wrote — this is what the in-memory cache holds. Which users/roles a policy governs now
+ * lives in the {@code policy_binding} matrix, not on the view. Scalars delegate to the embedded {@code SessionRules}.
  */
-record CachedSessionPolicy(SessionPolicy policy, Set<UUID> assignedUserIds,
-                           Set<UUID> assignedRoleIds, List<IpRuleSpec> ipRules) implements SessionPolicyDetails {
+record CachedSessionPolicy(SessionPolicy policy, List<IpRuleSpec> ipRules) implements SessionPolicyDetails {
 
     @Override
     public UUID getId() {
@@ -85,16 +83,6 @@ record CachedSessionPolicy(SessionPolicy policy, Set<UUID> assignedUserIds,
     @Override
     public String getCookieSameSite() {
         return policy.getRules().cookieSameSite();
-    }
-
-    @Override
-    public Set<UUID> getAssignedUserIds() {
-        return assignedUserIds;
-    }
-
-    @Override
-    public Set<UUID> getAssignedRoleIds() {
-        return assignedRoleIds;
     }
 
     @Override

@@ -7,12 +7,9 @@ import com.example.sso.portal.stepup.AppStepUpFilter;
 import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.application.ApplicationService;
 import com.example.sso.portal.application.ApplicationView;
-import com.example.sso.portal.binding.PolicyBindingResolver;
-import com.example.sso.portal.binding.PortalApps;
 import com.example.sso.session.policy.SessionPolicyDetails;
-import com.example.sso.session.policy.SessionPolicyService;
+import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.shared.error.UnauthorizedException;
-import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
 import org.junit.jupiter.api.BeforeEach;
@@ -52,9 +49,7 @@ class PortalServiceTest {
 
     private ApplicationService applications;
     private UserService users;
-    private SessionPolicyService sessionPolicy;
-    private PolicyBindingResolver bindings;
-    private OrgContext orgContext;
+    private UserSessionPolicy userSessionPolicy;
     private RegisteredClientRepository registeredClients;
     private PortalService service;
 
@@ -62,51 +57,26 @@ class PortalServiceTest {
     void setUp() {
         applications = mock(ApplicationService.class);
         users = mock(UserService.class);
-        sessionPolicy = mock(SessionPolicyService.class);
-        bindings = mock(PolicyBindingResolver.class);
-        orgContext = mock(OrgContext.class);
+        userSessionPolicy = mock(UserSessionPolicy.class);
         registeredClients = mock(RegisteredClientRepository.class);
-        service = new PortalService(applications, users, sessionPolicy, bindings, orgContext, registeredClients);
-    }
-
-    /** The user-portal session resolution runs scoped through callInOrg(actingOrg); run the wrapped supplier. */
-    private void scopeToActingOrg() {
-        when(orgContext.currentOrg()).thenReturn(Optional.empty());
-        when(orgContext.callInOrg(any(), any())).thenAnswer(inv -> ((Supplier<?>) inv.getArgument(1)).get());
+        service = new PortalService(applications, users, userSessionPolicy, registeredClients);
     }
 
     @Test
     void sessionConfigParsesAndTrimsTheReauthFactorCsv() {
-        // No user-portal binding applies (findByUsername returns empty) → fall back to the user's own policy.
+        // The SPA timers follow the user's governing policy (resolved via UserSessionPolicy — PORTAL/user
+        // binding else Default; that resolution is covered by UserSessionPolicyImplTest).
         SessionPolicyDetails policy = mock(SessionPolicyDetails.class);
         when(policy.getIdleTimeoutMinutes()).thenReturn(15);
         when(policy.getReauthIntervalMinutes()).thenReturn(5);
         when(policy.getReauthFactors()).thenReturn(" TOTP , FIDO2 ,");
-        when(sessionPolicy.resolveForUsername(USERNAME)).thenReturn(policy);
+        when(userSessionPolicy.resolveForUsername(USERNAME)).thenReturn(policy);
 
         SessionConfigView view = service.sessionConfig(USERNAME);
 
         assertThat(view.idleTimeoutMinutes()).isEqualTo(15);
         assertThat(view.reauthIntervalMinutes()).isEqualTo(5);
         assertThat(view.reauthFactors()).containsExactly("TOTP", "FIDO2"); // trimmed, blank entry dropped
-    }
-
-    @Test
-    void sessionConfigUsesTheUserPortalBindingWhenOneApplies() {
-        UserAccount user = mock(UserAccount.class);
-        when(users.findByUsername(USERNAME)).thenReturn(Optional.of(user));
-        scopeToActingOrg();
-        SessionPolicyDetails bound = mock(SessionPolicyDetails.class);
-        when(bound.getIdleTimeoutMinutes()).thenReturn(3);
-        when(bound.getReauthIntervalMinutes()).thenReturn(2);
-        when(bound.getReauthFactors()).thenReturn("TOTP");
-        when(bindings.resolveSessionPolicy(user, AppType.PORTAL, PortalApps.USER)).thenReturn(Optional.of(bound));
-
-        SessionConfigView view = service.sessionConfig(USERNAME);
-
-        assertThat(view.idleTimeoutMinutes()).isEqualTo(3);       // the portal binding governs, not the user's own
-        assertThat(view.reauthFactors()).containsExactly("TOTP");
-        verify(sessionPolicy, never()).resolveForUsername(USERNAME);
     }
 
     @Test

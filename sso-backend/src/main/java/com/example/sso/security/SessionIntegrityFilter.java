@@ -6,7 +6,7 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditService;
 import com.example.sso.session.lifecycle.SessionMetadataStore;
 import com.example.sso.session.policy.SessionPolicyDetails;
-import com.example.sso.session.policy.SessionPolicyService;
+import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.session.lifecycle.StepUpInterceptor;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -53,7 +53,7 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
 
     private final SecurityContextHolderStrategy contextHolder = SecurityContextHolder.getContextHolderStrategy();
     private final AuditService audit;
-    private final SessionPolicyService policyService;
+    private final UserSessionPolicy userSessionPolicy;
     private final SessionRegistry sessionRegistry;
     private final SessionMetadataStore sessionMetadata;
 
@@ -64,7 +64,7 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
         Authentication authentication = contextHolder.getContext().getAuthentication();
         if (session != null && isAuthenticated(authentication)) {
             String username = authentication.getName();
-            SessionPolicyDetails policy = policyService.resolveForUsername(username);
+            SessionPolicyDetails policy = userSessionPolicy.resolveForUsername(username);
             long now = System.currentTimeMillis();
 
             // (Per-policy network/IP access is enforced separately by PolicyIpAccessFilter, which runs on

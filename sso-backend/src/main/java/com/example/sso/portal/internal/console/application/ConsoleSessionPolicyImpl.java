@@ -5,7 +5,7 @@ import com.example.sso.portal.binding.PolicyBindingResolver;
 import com.example.sso.portal.binding.PortalApps;
 import com.example.sso.session.policy.ConsoleSessionPolicy;
 import com.example.sso.session.policy.SessionPolicyDetails;
-import com.example.sso.session.policy.SessionPolicyService;
+import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserService;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +21,7 @@ import org.springframework.stereotype.Component;
 class ConsoleSessionPolicyImpl implements ConsoleSessionPolicy {
 
     private final PolicyBindingResolver bindings;
-    private final SessionPolicyService sessionPolicies;
+    private final UserSessionPolicy userSessionPolicy;
     private final UserService users;
     private final OrgContext orgContext;
 
@@ -34,6 +34,6 @@ class ConsoleSessionPolicyImpl implements ConsoleSessionPolicy {
         return users.findByUsername(username)
                 .flatMap(user -> orgContext.callInOrg(orgContext.currentOrg().orElse(null),
                         () -> bindings.resolveSessionPolicy(user, AppType.PORTAL, PortalApps.ADMIN)))
-                .orElseGet(() -> sessionPolicies.resolveForUsername(username));
+                .orElseGet(() -> userSessionPolicy.resolveForUsername(username));
     }
 }

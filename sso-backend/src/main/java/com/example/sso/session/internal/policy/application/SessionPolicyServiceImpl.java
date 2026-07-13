@@ -3,6 +3,7 @@ package com.example.sso.session.internal.policy.application;
 import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.session.networkzone.IpRuleSpec;
 import com.example.sso.session.networkzone.NetworkZoneService;
+import com.example.sso.session.policy.SessionBindings;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.session.policy.SessionPolicySpec;
@@ -14,17 +15,12 @@ import com.example.sso.session.internal.policy.domain.SessionRules;
 import com.example.sso.session.internal.policy.domain.SessionPolicyIpRule;
 import com.example.sso.session.internal.policy.domain.SessionPolicyIpRuleRepository;
 import com.example.sso.session.internal.policy.domain.SessionPolicyRepository;
-import com.example.sso.session.internal.policy.domain.SessionPolicyRole;
-import com.example.sso.session.internal.policy.domain.SessionPolicyRoleRepository;
-import com.example.sso.session.internal.policy.domain.SessionPolicyUser;
-import com.example.sso.session.internal.policy.domain.SessionPolicyUserRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.tenancy.OrgTierGuard;
-import com.example.sso.user.role.RoleRef;
-import com.example.sso.user.account.UserAccount;
+import com.example.sso.user.role.RoleService;
 import com.example.sso.user.account.UserService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -55,19 +51,19 @@ import java.util.stream.Collectors;
  * cache without a database round-trip. The cache is refreshed on every mutation. Also owns admin CRUD and
  * seeding/self-healing of the non-editable Default fallback.
  *
- * <p>The user/role assignments and IP rules are stored as explicit child rows
- * ({@link SessionPolicyUser}/{@link SessionPolicyRole}/{@link SessionPolicyIpRule}); this service issues each
- * insert/delete itself (whole-set replaces compute the diff), so the code shows exactly which rows change.
+ * <p>Which users/roles a policy governs lives in the {@code policy_binding} matrix, written through
+ * {@link SessionBindings}. IP rules stay as explicit child rows ({@link SessionPolicyIpRule}) managed here
+ * (whole-set replace computes the diff), so the code shows exactly which rows change.
  */
 @Service
 @RequiredArgsConstructor
 public class SessionPolicyServiceImpl implements SessionPolicyService {
 
     private final SessionPolicyRepository repository;
-    private final SessionPolicyUserRepository policyUsers;
-    private final SessionPolicyRoleRepository policyRoles;
     private final SessionPolicyIpRuleRepository policyIpRules;
+    private final SessionBindings sessionBindings;
     private final UserService users;
+    private final RoleService roles;
     private final NetworkZoneService networkZones;
     private final OrgContext orgContext;
     private final OrgTierGuard tierGuard;
@@ -95,55 +91,19 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         reload();
     }
 
-    /** Loads every policy with its child rows in a fixed number of queries (no per-policy N+1). */
+    /** Loads every policy with its IP rules in a fixed number of queries (no per-policy N+1). */
     private List<CachedSessionPolicy> loadAll() {
-        Map<UUID, Set<UUID>> usersByPolicy = policyUsers.findAll().stream()
-                .collect(Collectors.groupingBy(SessionPolicyUser::policyId,
-                        Collectors.mapping(SessionPolicyUser::userId, Collectors.toSet())));
-        Map<UUID, Set<UUID>> rolesByPolicy = policyRoles.findAll().stream()
-                .collect(Collectors.groupingBy(SessionPolicyRole::policyId,
-                        Collectors.mapping(SessionPolicyRole::roleId, Collectors.toSet())));
         Map<UUID, List<IpRuleEntry>> ipRulesByPolicy = policyIpRules.findAll().stream()
                 .collect(Collectors.groupingBy(SessionPolicyIpRule::policyId,
                         Collectors.mapping(SessionPolicyIpRule::toEntry, Collectors.toList())));
 
         return repository.findAllByOrderByPriorityDesc().stream()
                 .map(policy -> new CachedSessionPolicy(policy,
-                        usersByPolicy.getOrDefault(policy.getId(), Set.of()),
-                        rolesByPolicy.getOrDefault(policy.getId(), Set.of()),
                         toSpecs(ipRulesByPolicy.getOrDefault(policy.getId(), List.of()))))
                 .toList();
     }
 
     // --- Read path (served from the cache) ---
-
-    @Override
-    public SessionPolicyDetails resolveForUser(UserAccount user) {
-        Set<UUID> roleIds = user.getRoles().stream().map(RoleRef::getId).collect(Collectors.toSet());
-        UUID currentOrg = orgContext.currentOrg().orElse(null);
-
-        return cached.stream()
-                .filter(SessionPolicyDetails::isEnabled)
-                .filter(p -> inScope(p, currentOrg))
-                .filter(p -> appliesTo(p, user.getId(), roleIds))
-                .max(Comparator.comparingInt(SessionPolicyDetails::getPriority))
-                .<SessionPolicyDetails>map(p -> p)
-                .orElseGet(this::defaultPolicy);
-    }
-
-    // A policy applies to a request only if it is GLOBAL (org_id null) or owned by the request's bound org.
-    // With no org bound (e.g. an unauthenticated chain) only global policies apply — never another tenant's.
-    private boolean inScope(CachedSessionPolicy p, UUID currentOrg) {
-        UUID orgId = p.policy().getOrgId();
-        return orgId == null || orgId.equals(currentOrg);
-    }
-
-    @Override
-    public SessionPolicyDetails resolveForUsername(String username) {
-        return users.findByUsername(username)
-                .map(this::resolveForUser)
-                .orElseGet(this::defaultPolicy);
-    }
 
     @Override
     public Optional<SessionPolicyDetails> findById(UUID id) {
@@ -163,23 +123,15 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
                 .orElseThrow(() -> new IllegalStateException("Default session policy is missing"));
     }
 
-    private boolean appliesTo(SessionPolicyDetails p, UUID userId, Set<UUID> roleIds) {
-        boolean assignedToUser = p.getAssignedUserIds().contains(userId);
-        boolean assignedToRole = p.getAssignedRoleIds().stream().anyMatch(roleIds::contains);
-        boolean global = p.getAssignedUserIds().isEmpty() && p.getAssignedRoleIds().isEmpty();
-
-        return assignedToUser || assignedToRole || global;
-    }
-
     // --- Write path (admin CRUD + seeding) ---
 
     @Override
     @Transactional
     public void seedDefault() {
-        if (repository.findByNameAndOrgIdIsNull(DEFAULT_NAME).isEmpty()) {
-            repository.save(new SessionPolicy(DEFAULT_NAME, 0)); // the global fallback (org_id null)
-        }
-
+        // The global fallback (org_id null), governing every user's session via its all-subjects binding.
+        SessionPolicy policy = repository.findByNameAndOrgIdIsNull(DEFAULT_NAME)
+                .orElseGet(() -> repository.save(new SessionPolicy(DEFAULT_NAME, 0)));
+        sessionBindings.replaceForPolicy(policy.getId(), policy.getPriority(), Set.of(), Set.of());
         events.publishEvent(new SessionPolicyCacheChanged());
     }
 
@@ -199,7 +151,8 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
             // Org-owned "Default": priority above the global 0 so it wins for this org, no user/role
             // assignments so it applies to every member, standard baseline knobs (SessionRules.defaults()).
             // Editable by the tenant admin — it is NOT the immutable GLOBAL Default (org_id is non-null).
-            repository.saveAndFlush(new SessionPolicy(DEFAULT_NAME, TENANT_DEFAULT_PRIORITY, orgId));
+            SessionPolicy saved = repository.saveAndFlush(new SessionPolicy(DEFAULT_NAME, TENANT_DEFAULT_PRIORITY, orgId));
+            sessionBindings.replaceForPolicy(saved.getId(), saved.getPriority(), Set.of(), Set.of()); // every member
         });
         events.publishEvent(new SessionPolicyCacheChanged());
     }
@@ -291,12 +244,11 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
                 spec.bindClient(), spec.maxConcurrentSessions(), spec.rotateOnReauth(), cookieSameSite));
         SessionPolicy saved = repository.save(policy);
 
-        replaceUsers(saved.getId(), userIds);
-        replaceRoles(saved.getId(), roleIds);
+        applyAssignmentScope(saved, userIds, roleIds);
         replaceIpRules(saved.getId(), ipRules);
         events.publishEvent(new SessionPolicyCacheChanged());
 
-        return new CachedSessionPolicy(saved, userIds, roleIds, toSpecs(ipRules));
+        return new CachedSessionPolicy(saved, toSpecs(ipRules));
     }
 
     @Override
@@ -310,17 +262,13 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         String cookieSameSite = effectiveCookieSameSite(update.cookieSameSite(),
                 policy.getOrgId() == null && DEFAULT_NAME.equals(policy.getName()));
 
-        boolean isDefault = isDefaultFallback(policy);
-        Set<UUID> userIds;
-        Set<UUID> roleIds;
-        if (isDefault) {
+        if (isDefaultFallback(policy)) {
             // The Default (global OR a tenant's per-org Default) is the unconditional catch-all: it stays
-            // UNASSIGNED and keeps its priority so it always covers every user not matched by a higher-priority
-            // policy — an admin can never strand users by targeting it at a specific (or empty) set. Only its
-            // knobs (timeouts, factors, cookie/IP settings) are editable.
+            // UNASSIGNED (an all-subjects binding) and keeps its priority so it always covers every user not
+            // matched by a higher-priority policy — an admin can never strand users by targeting it at a
+            // specific (or empty) set. Only its knobs (timeouts, factors, cookie/IP settings) are editable.
             policy.update(rulesOf(update, reauthFactors, stepUpFactors, cookieSameSite));
-            userIds = currentUserIds(id);
-            roleIds = currentRoleIds(id);
+            applyAssignmentScope(policy, Set.of(), Set.of());
         } else {
             policy.updatePriority(update.priority());
             if (update.enabled()) {
@@ -329,10 +277,9 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
                 policy.disable();
             }
             policy.update(rulesOf(update, reauthFactors, stepUpFactors, cookieSameSite));
-            userIds = update.userIds() == null ? Set.of() : Set.copyOf(update.userIds());
-            roleIds = update.roleIds() == null ? Set.of() : Set.copyOf(update.roleIds());
-            replaceUsers(id, userIds);
-            replaceRoles(id, roleIds);
+            Set<UUID> userIds = update.userIds() == null ? Set.of() : Set.copyOf(update.userIds());
+            Set<UUID> roleIds = update.roleIds() == null ? Set.of() : Set.copyOf(update.roleIds());
+            applyAssignmentScope(policy, userIds, roleIds);
         }
         // IP rules are policy config (not an assignment) — the Default may carry them too (global restriction).
         replaceIpRules(id, ipRules);
@@ -340,7 +287,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         SessionPolicy saved = repository.save(policy);
         events.publishEvent(new SessionPolicyCacheChanged());
 
-        return new CachedSessionPolicy(saved, userIds, roleIds, toSpecs(ipRules));
+        return new CachedSessionPolicy(saved, toSpecs(ipRules));
     }
 
     @Override
@@ -351,13 +298,12 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
             throw BadRequestException.of("session.policy.defaultNoDelete");
         }
 
-        // Explicitly remove the child rows before the owner (no JPA cascade).
-        policyUsers.deleteByPolicyId(id);
-        policyRoles.deleteByPolicyId(id);
+        // Remove this policy's own PORTAL/user assignment bindings and its IP rules before the owner (no cascade).
+        sessionBindings.clearForPolicy(id);
         policyIpRules.deleteByPolicyId(id);
         try {
-            // A policy in use is referenced by a policy_binding (ON DELETE RESTRICT) — e.g. it governs an admin
-            // console. Deleting it would silently drop that bindings posture; refuse instead of failing open.
+            // A policy still referenced by ANOTHER policy_binding (ON DELETE RESTRICT) — e.g. it governs an admin
+            // console or an app — must not be deleted; that would silently drop that binding's posture. Refuse.
             repository.delete(policy);
             repository.flush();
         } catch (DataIntegrityViolationException e) {
@@ -382,32 +328,32 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         return DEFAULT_NAME.equals(policy.getName());
     }
 
-    private Set<UUID> currentUserIds(UUID policyId) {
-        return policyUsers.findByPolicyId(policyId).stream().map(SessionPolicyUser::userId)
-                .collect(Collectors.toSet());
+    /**
+     * Write the policy's assignment scope into the {@code policy_binding} matrix: validate that every targeted
+     * subject is assignable (same-org or global), then hand the whole scope to {@link SessionBindings}, which
+     * reconciles the all-subjects/per-subject bindings.
+     */
+    private void applyAssignmentScope(SessionPolicy policy, Set<UUID> userIds, Set<UUID> roleIds) {
+        for (UUID userId : userIds) {
+            requireAssignable(policy, users.orgIdOf(userId), "user");
+        }
+        for (UUID roleId : roleIds) {
+            requireAssignable(policy, roles.orgIdOf(roleId), "role");
+        }
+        sessionBindings.replaceForPolicy(policy.getId(), policy.getPriority(), userIds, roleIds);
     }
 
-    private Set<UUID> currentRoleIds(UUID policyId) {
-        return policyRoles.findByPolicyId(policyId).stream().map(SessionPolicyRole::roleId)
-                .collect(Collectors.toSet());
-    }
-
-    /** Replaces the policy's user assignments: delete the dropped rows, insert the newly added ones. */
-    private void replaceUsers(UUID policyId, Set<UUID> desired) {
-        List<SessionPolicyUser> current = policyUsers.findByPolicyId(policyId);
-        current.stream().filter(row -> !desired.contains(row.userId())).forEach(policyUsers::delete);
-        Set<UUID> present = current.stream().map(SessionPolicyUser::userId).collect(Collectors.toSet());
-        desired.stream().filter(userId -> !present.contains(userId))
-                .forEach(userId -> policyUsers.save(new SessionPolicyUser(policyId, userId)));
-    }
-
-    /** Replaces the policy's role assignments: delete the dropped rows, insert the newly added ones. */
-    private void replaceRoles(UUID policyId, Set<UUID> desired) {
-        List<SessionPolicyRole> current = policyRoles.findByPolicyId(policyId);
-        current.stream().filter(row -> !desired.contains(row.roleId())).forEach(policyRoles::delete);
-        Set<UUID> present = current.stream().map(SessionPolicyRole::roleId).collect(Collectors.toSet());
-        desired.stream().filter(roleId -> !present.contains(roleId))
-                .forEach(roleId -> policyRoles.save(new SessionPolicyRole(policyId, roleId)));
+    /**
+     * A policy may target a subject that is GLOBAL (org null — e.g. the shared ROLE_USER) or belongs to the
+     * policy's OWN org; never another tenant's user or role. This stops a tenant admin from binding a policy to
+     * a foreign-tenant principal — a reference RLS would leave inert at resolution but which should not exist.
+     */
+    private void requireAssignable(SessionPolicy policy, Optional<UUID> subjectOrg, String kind) {
+        UUID org = subjectOrg.orElse(null);
+        // Org-agnostic message: don't confirm the rejected id belongs to ANOTHER org (a foreign-tenant hint).
+        if (org != null && !Objects.equals(org, policy.getOrgId())) {
+            throw BadRequestException.of("session.policy.assignment.notAllowed", kind);
+        }
     }
 
     /** Replaces the policy's IP rules: delete the dropped rows, insert the newly added ones. */

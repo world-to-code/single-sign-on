@@ -20,10 +20,10 @@ import lombok.NoArgsConstructor;
  * policy that applies to a user wins. The seeded {@code Default} (priority 0, unassigned/global) is
  * the non-editable fallback. No setters — mutated via intention-revealing methods.
  *
- * <p>This entity carries only its own columns. The user/role assignments and IP rules live in their own
- * {@link SessionPolicyUser}/{@link SessionPolicyRole}/{@link SessionPolicyIpRule} rows, written explicitly by
- * the service (no JPA collection cascade). The service composes those rows with this entity into the public
- * {@code SessionPolicyDetails} view.
+ * <p>This entity carries only its own columns. Which users/roles a policy governs lives in the
+ * {@code policy_binding} matrix (PORTAL/user bindings); its IP rules live in their own
+ * {@link SessionPolicyIpRule} rows, written explicitly by the service (no JPA collection cascade). The service
+ * composes the IP rules with this entity into the public {@code SessionPolicyDetails} view.
  *
  * <p>Note: {@code cookieSameSite} is GLOBAL — only the Default policy's value is applied (the session
  * cookie is established before the user is known), so a per-policy SameSite is not meaningful. The
