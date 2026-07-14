@@ -133,6 +133,8 @@ trail recording who entered which tenant. Un-drilled, the super-admin sees only 
 Creating an organization publishes an event that provisions the tenant's **own editable defaults**:
 a default **session policy** and **auth (login) policy** (org-owned, priority above the global
 default so they win for that org, applied to every member), plus a per-org **"All Users" group**.
+Policy **priority is unique within a tier** (each org's own set + the global set), so the
+same-specificity tie-break — and thus the winning policy — is deterministic.
 The **Default policy is a locked fallback** — its assignments, priority and enabled state are
 frozen so an admin can never strand users by targeting the catch-all at an empty set. Admin-console
 knobs (elevation-token TTL, IP allowlist) are per-tenant too; the admin session's lifetimes come
