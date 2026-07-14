@@ -1,6 +1,7 @@
 package com.example.sso.session.lifecycle;
 
 import com.example.sso.session.policy.ConsoleSessionPolicy;
+import com.example.sso.session.policy.EffectiveSessionPolicy;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.session.policy.UserSessionPolicy;
@@ -99,16 +100,13 @@ public class StepUpInterceptor implements HandlerInterceptor {
         }
 
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        SessionPolicyDetails policy = authentication == null
-                ? policyService.defaultPolicy()
-                : userSessionPolicy.resolveForUsername(authentication.getName());
 
         if (sensitive) {
             // Sensitive admin actions follow the ADMIN CONSOLE's policy (its PORTAL/admin selection, else the
             // user's own), so an admin can require STRONGER or FRESHER step-up for destructive actions than a
-            // regular user. The general mutation re-auth below stays on the user's own policy — consistent with
-            // the idle/absolute + reauth-interval SessionIntegrityFilter enforces per SESSION (one session).
-            SessionPolicyDetails consolePolicy = authentication == null ? policy
+            // regular user. The general mutation re-auth below uses the same effective re-auth cadence/factors
+            // SessionIntegrityFilter enforces per SESSION (one session).
+            SessionPolicyDetails consolePolicy = authentication == null ? policyService.defaultPolicy()
                     : consoleSessionPolicy.resolveForConsole(authentication.getName());
             // Requires a fresh DELIBERATE step-up (not a plain login) within the window AND that its factor
             // is one of the policy's step-up factors — so stepUpFactors is a real strength floor, not advisory.
@@ -122,14 +120,27 @@ public class StepUpInterceptor implements HandlerInterceptor {
             return challenge(session, response, consolePolicy.getStepUpFactors());
         }
 
-        // General mutation: idle-based. A challenged request does NOT refresh the clock (so it can't be
-        // bypassed by retrying); only allowed requests and re-auths do. Null clock -> fail closed.
+        // General mutation: idle-based, on the EFFECTIVE (org-authoritative) re-auth cadence/factors — the same
+        // resolution SessionIntegrityFilter uses, so a narrower policy cannot weaken the org's mandatory re-auth
+        // here. A challenged request does NOT refresh the clock (so it can't be bypassed by retrying); only
+        // allowed requests and re-auths do. Null clock -> fail closed.
+        int reauthIntervalMinutes;
+        String reauthFactors;
+        if (authentication == null) {
+            SessionPolicyDetails dflt = policyService.defaultPolicy();
+            reauthIntervalMinutes = dflt.getReauthIntervalMinutes();
+            reauthFactors = dflt.getReauthFactors();
+        } else {
+            EffectiveSessionPolicy effective = userSessionPolicy.effectiveForUsername(authentication.getName());
+            reauthIntervalMinutes = effective.reauthIntervalMinutes();
+            reauthFactors = effective.reauthFactors();
+        }
         long idleGap = attr(session, REAUTH_ACTIVITY) instanceof Long t ? now - t : Long.MAX_VALUE;
-        if (idleGap <= policy.getReauthIntervalMinutes() * 60_000L) {
+        if (idleGap <= reauthIntervalMinutes * 60_000L) {
             touchActivity(session, now);
             return true;
         }
-        return challenge(session, response, policy.getReauthFactors());
+        return challenge(session, response, reauthFactors);
     }
 
     private Object attr(HttpSession session, String name) {

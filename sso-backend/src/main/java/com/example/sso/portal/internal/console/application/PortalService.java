@@ -10,7 +10,7 @@ import com.example.sso.portal.stepup.AppStepUpFilter;
 import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.application.ApplicationService;
 import com.example.sso.portal.application.ApplicationView;
-import com.example.sso.session.policy.SessionPolicyDetails;
+import com.example.sso.session.policy.EffectiveSessionPolicy;
 import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.shared.error.UnauthorizedException;
 import com.example.sso.user.account.UserAccount;
@@ -45,12 +45,12 @@ public class PortalService {
     private final RegisteredClientRepository registeredClients;
 
     public SessionConfigView sessionConfig(String username) {
-        // The end-user portal's session timers follow the user's governing policy (PORTAL/user binding, else
-        // Default) — the same resolver the enforcing filters use, so the SPA and the server agree.
-        SessionPolicyDetails p = userSessionPolicy.resolveForUsername(username);
-        List<String> reauthFactors = Arrays.stream(p.getReauthFactors().split(","))
+        // Show the EFFECTIVE policy the enforcing filters apply (floored idle, org-authoritative re-auth
+        // cadence/factors), not the raw specificity winner — so the SPA timers and prompts match the server.
+        EffectiveSessionPolicy effective = userSessionPolicy.effectiveForUsername(username);
+        List<String> reauthFactors = Arrays.stream(effective.reauthFactors().split(","))
                 .map(String::trim).filter(s -> !s.isEmpty()).toList();
-        return new SessionConfigView(p.getIdleTimeoutMinutes(), p.getReauthIntervalMinutes(), reauthFactors);
+        return new SessionConfigView(effective.idleTimeoutMinutes(), effective.reauthIntervalMinutes(), reauthFactors);
     }
 
     public List<ApplicationView> myApps(String username) {

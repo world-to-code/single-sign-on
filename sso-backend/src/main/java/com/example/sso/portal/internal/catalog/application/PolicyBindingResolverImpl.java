@@ -68,6 +68,20 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
                 .toList();
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<SessionPolicyDetails> resolveBroadestSessionPolicy(UserAccount user, AppType appType, String appId) {
+        // The BROADEST-scope enabled binding — all-subjects (org-wide) &gt; group/role &gt; user, own-org over global.
+        // The reverse of the specificity winner: for controls where the org-wide policy is authoritative and a
+        // narrower policy must not override it (the mandatory re-authentication cadence and factors), not the
+        // most-restrictive floor. A distinct reverse-specificity resolution the most-specific-first list can't yield.
+        return matching(user, appType, appId, PolicyBinding::getSessionPolicyId)
+                .sorted(broadestFirst(PolicyBinding::getSessionPriority))
+                .map(b -> sessionPolicies.findById(b.getSessionPolicyId()).filter(SessionPolicyDetails::isEnabled))
+                .flatMap(Optional::stream)
+                .findFirst();
+    }
+
     private <P> Optional<P> resolveField(UserAccount user, AppType appType, String appId,
             Function<PolicyBinding, UUID> field, ToIntFunction<PolicyBinding> priority,
             Function<UUID, Optional<P>> load) {
@@ -76,6 +90,19 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
                 .map(b -> load.apply(field.apply(b)))
                 .flatMap(Optional::stream)
                 .findFirst();
+    }
+
+    /**
+     * Broadest-scope-first ordering: all-subjects (org-wide) &gt; GROUP/ROLE &gt; USER, then a tenant's OWN binding
+     * over the GLOBAL one, then the field's own priority, then a stable id tie-break. The reverse of
+     * {@link #mostSpecificFirst} on the scope dimension, keeping the same own-org / priority preference within a
+     * scope.
+     */
+    private Comparator<PolicyBinding> broadestFirst(ToIntFunction<PolicyBinding> priority) {
+        return Comparator.comparingInt(this::specificity)                              // ascending: all-subjects (1) first
+                .thenComparing(Comparator.comparingInt(this::orgRank).reversed())      // own-org before global
+                .thenComparing(Comparator.comparingInt(priority).reversed())           // higher priority first
+                .thenComparing(Comparator.comparing(PolicyBinding::getId).reversed()); // stable
     }
 
     /**

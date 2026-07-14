@@ -32,4 +32,12 @@ public interface PolicyBindingResolver {
      * satisfy across ALL applicable policies. Same org-context invariant as above.
      */
     List<SessionPolicyDetails> resolveSessionPolicies(UserAccount user, AppType appType, String appId);
+
+    /**
+     * The BROADEST-scope enabled session policy governing the user — all-subjects (org-wide) &gt; group/role &gt;
+     * user, own-org over global: the reverse of {@link #resolveSessionPolicy}'s specificity winner. For controls
+     * where the org-wide policy is authoritative and a narrower policy must not override it (the mandatory
+     * re-authentication cadence and factors), rather than the most-restrictive floor. Same org-context invariant.
+     */
+    Optional<SessionPolicyDetails> resolveBroadestSessionPolicy(UserAccount user, AppType appType, String appId);
 }

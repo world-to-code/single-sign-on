@@ -2,6 +2,7 @@ package com.example.sso.session;
 
 import com.example.sso.session.lifecycle.StepUpInterceptor;
 import com.example.sso.session.policy.ConsoleSessionPolicy;
+import com.example.sso.session.policy.EffectiveSessionPolicy;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.session.policy.UserSessionPolicy;
@@ -67,6 +68,9 @@ class StepUpInterceptorTest {
         lenient().when(policy.getSensitiveReauthWindowMinutes()).thenReturn(2);   // 120s sensitive window
         lenient().when(policy.getStepUpFactors()).thenReturn("FIDO2");            // stronger set for sensitive
         lenient().when(userSessionPolicy.resolveForUsername(anyString())).thenReturn(policy);
+        // The general mutation branch reads the EFFECTIVE (org-authoritative) re-auth cadence/factors: 5m / TOTP,FIDO2.
+        lenient().when(userSessionPolicy.effectiveForUsername(anyString()))
+                .thenReturn(new EffectiveSessionPolicy(policy, 30, 480, 5, "TOTP,FIDO2"));
         lenient().when(policyService.defaultPolicy()).thenReturn(policy);
         // By default the console policy == the user's own, so the sensitive-action cases below read the same
         // window/factors; a dedicated test overrides it to prove the console policy is what actually governs.
@@ -228,6 +232,27 @@ class StepUpInterceptorTest {
         assertThat(interceptor.preHandle(request, response, handler("plain"))).isFalse();
         assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
         assertThat(response.getContentAsString()).contains("\"TOTP\"", "\"FIDO2\"");
+    }
+
+    @Test
+    void generalMutationReauthUsesTheEffectiveOrgAuthoritativeFactorsNotTheWinner() throws Exception {
+        // The specificity winner (user's own policy) would allow PASSWORD only every 480m; the EFFECTIVE
+        // (org-authoritative) re-auth requires FIDO2 every 15m. The general gate must use the effective values —
+        // a narrower policy cannot weaken the org's mandatory re-auth here (else the org-authoritative invariant
+        // holds only in SessionIntegrityFilter and is bypassable through this interceptor).
+        SessionPolicyDetails winner = mock(SessionPolicyDetails.class);
+        lenient().when(winner.getReauthIntervalMinutes()).thenReturn(480);
+        lenient().when(winner.getReauthFactors()).thenReturn("PASSWORD");
+        lenient().when(userSessionPolicy.resolveForUsername("alice")).thenReturn(winner);
+        when(userSessionPolicy.effectiveForUsername("alice"))
+                .thenReturn(new EffectiveSessionPolicy(winner, 30, 480, 15, "FIDO2"));
+
+        MockHttpServletRequest request = request("DELETE");
+        activityAge(request, 20 * 60_000); // idle 20m > effective 15m (but < the winner's 480m) → must challenge
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThat(interceptor.preHandle(request, response, handler("plain"))).isFalse();
+        assertThat(response.getContentAsString()).contains("\"FIDO2\"").doesNotContain("\"PASSWORD\"");
     }
 
     @Test

@@ -7,6 +7,7 @@ import com.example.sso.portal.stepup.AppStepUpFilter;
 import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.application.ApplicationService;
 import com.example.sso.portal.application.ApplicationView;
+import com.example.sso.session.policy.EffectiveSessionPolicy;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.shared.error.UnauthorizedException;
@@ -64,13 +65,11 @@ class PortalServiceTest {
 
     @Test
     void sessionConfigParsesAndTrimsTheReauthFactorCsv() {
-        // The SPA timers follow the user's governing policy (resolved via UserSessionPolicy — PORTAL/user
-        // binding else Default; that resolution is covered by UserSessionPolicyImplTest).
-        SessionPolicyDetails policy = mock(SessionPolicyDetails.class);
-        when(policy.getIdleTimeoutMinutes()).thenReturn(15);
-        when(policy.getReauthIntervalMinutes()).thenReturn(5);
-        when(policy.getReauthFactors()).thenReturn(" TOTP , FIDO2 ,");
-        when(userSessionPolicy.resolveForUsername(USERNAME)).thenReturn(policy);
+        // The SPA timers follow the EFFECTIVE policy the filters enforce (floored idle, org-authoritative re-auth);
+        // that resolution is covered by UserSessionPolicyImplTest. Only the record's scalars are read here.
+        SessionPolicyDetails winner = mock(SessionPolicyDetails.class);
+        when(userSessionPolicy.effectiveForUsername(USERNAME))
+                .thenReturn(new EffectiveSessionPolicy(winner, 15, 480, 5, " TOTP , FIDO2 ,"));
 
         SessionConfigView view = service.sessionConfig(USERNAME);
 

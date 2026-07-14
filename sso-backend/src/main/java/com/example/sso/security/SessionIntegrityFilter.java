@@ -65,9 +65,9 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
         Authentication authentication = contextHolder.getContext().getAuthentication();
         if (session != null && isAuthenticated(authentication)) {
             String username = authentication.getName();
-            // One resolution yields both the specificity winner (re-auth interval, factors, client binding below)
-            // and the FLOOR-composed idle/absolute lifetimes (a narrow lax policy cannot extend a broad org-wide
-            // lifetime).
+            // One resolution yields: the FLOOR-composed idle/absolute lifetimes (a narrow lax policy cannot extend
+            // a broad org-wide lifetime), the org-authoritative re-auth cadence/factors (broadest-scope), and the
+            // specificity winner for the client binding below.
             EffectiveSessionPolicy effective = userSessionPolicy.effectiveForUsername(username);
             SessionPolicyDetails policy = effective.winner();
             long now = System.currentTimeMillis();
@@ -114,8 +114,8 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
             if (!isReauthExempt(request)) {
                 Object lastReauth = session.getAttribute(StepUpInterceptor.REAUTH_ACTIVITY);
                 long reauthGap = lastReauth instanceof Long r ? now - r : now - session.getCreationTime();
-                if (reauthGap > policy.getReauthIntervalMinutes() * 60_000L) {
-                    challengeReauth(session, response, policy.getReauthFactors());
+                if (reauthGap > effective.reauthIntervalMinutes() * 60_000L) {
+                    challengeReauth(session, response, effective.reauthFactors());
                     return;
                 }
                 session.setAttribute(StepUpInterceptor.REAUTH_ACTIVITY, now);

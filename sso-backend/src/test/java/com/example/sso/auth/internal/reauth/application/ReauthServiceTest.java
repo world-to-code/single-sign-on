@@ -11,6 +11,7 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
 import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.session.lifecycle.SessionLifecycle;
+import com.example.sso.session.policy.EffectiveSessionPolicy;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.session.lifecycle.StepUpInterceptor;
@@ -75,9 +76,14 @@ class ReauthServiceTest {
         user = mock(UserAccount.class);
         lenient().when(user.getUsername()).thenReturn("alice");
         lenient().when(currentUser.require()).thenReturn(user);
-        lenient().when(sessionPolicy.resolveForUser(user)).thenReturn(policy);
-        lenient().when(policy.getReauthFactors()).thenReturn("TOTP,FIDO2");
+        // The effective policy: the winner (policy mock) supplies isRotateOnReauth; the re-auth factors are the
+        // org-authoritative (broadest-scope) value carried on the record, not read off the winner.
+        lenient().when(sessionPolicy.effectiveForUser(user)).thenReturn(effectiveWithFactors("TOTP,FIDO2"));
         lenient().when(policy.isRotateOnReauth()).thenReturn(false);
+    }
+
+    private EffectiveSessionPolicy effectiveWithFactors(String reauthFactors) {
+        return new EffectiveSessionPolicy(policy, 30, 480, 15, reauthFactors);
     }
 
     /** A request whose session already carries a pending challenge for {@code pendingFactors} (or none if null). */
@@ -167,7 +173,7 @@ class ReauthServiceTest {
 
     @Test
     void verifyRejectsAFactorOutsideThePolicyReauthFactorsWhenNoChallengeIsPending() {
-        when(policy.getReauthFactors()).thenReturn("FIDO2");
+        when(sessionPolicy.effectiveForUser(user)).thenReturn(effectiveWithFactors("FIDO2"));
         MockHttpServletRequest request = requestWithPending(null);
 
         assertThatThrownBy(() -> service.verify(AuthFactor.TOTP, response("123456"), request, new MockHttpServletResponse()))

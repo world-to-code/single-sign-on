@@ -73,14 +73,37 @@ class UserSessionPolicyImpl implements UserSessionPolicy {
 
     @Override
     public EffectiveSessionPolicy effectiveForUsername(String username) {
-        // One resolution serves both the winner and the lifetime floor: governing() is ordered most-specific
-        // first, so element 0 is the specificity winner (== resolveForUsername), and each lifetime is floored
-        // independently — the smallest idle and smallest absolute across governing policies. Both are @Min(1),
-        // so a smaller value is unambiguously stricter (no 0 = unlimited case as for the concurrent-session cap).
-        List<SessionPolicyDetails> governing = governing(username);
-        return new EffectiveSessionPolicy(governing.get(0),
-                floor(governing, SessionPolicyDetails::getIdleTimeoutMinutes),
-                floor(governing, SessionPolicyDetails::getAbsoluteTimeoutMinutes));
+        return users.findByUsername(username)
+                .map(this::effectiveForUser)
+                .orElseGet(() -> singlePolicy(sessionPolicies.defaultPolicy()));
+    }
+
+    @Override
+    public EffectiveSessionPolicy effectiveForUser(UserAccount user) {
+        // Resolve in ONE org scope (see resolveForUser for the platform-context rationale). The specificity winner
+        // and the idle/absolute FLOORS come from the most-specific-first list; the re-auth cadence + factors come
+        // from the BROADEST-scope policy (org-wide authoritative — a narrower policy must not override the org's
+        // re-auth requirement), a distinct reverse-specificity resolution, falling back to the winner if none.
+        return orgContext.callInOrg(orgContext.currentOrg().orElse(null), () -> {
+            List<SessionPolicyDetails> governing =
+                    bindings.resolveSessionPolicies(user, AppType.PORTAL, PortalApps.USER);
+            if (governing.isEmpty()) {
+                return singlePolicy(sessionPolicies.resolveDefault());
+            }
+            SessionPolicyDetails winner = governing.get(0);
+            SessionPolicyDetails reauthSource = bindings
+                    .resolveBroadestSessionPolicy(user, AppType.PORTAL, PortalApps.USER).orElse(winner);
+            return new EffectiveSessionPolicy(winner,
+                    floor(governing, SessionPolicyDetails::getIdleTimeoutMinutes),
+                    floor(governing, SessionPolicyDetails::getAbsoluteTimeoutMinutes),
+                    reauthSource.getReauthIntervalMinutes(), reauthSource.getReauthFactors());
+        });
+    }
+
+    /** The effective policy when a single policy governs everything (the Default fallback): every field is its own. */
+    private EffectiveSessionPolicy singlePolicy(SessionPolicyDetails policy) {
+        return new EffectiveSessionPolicy(policy, policy.getIdleTimeoutMinutes(), policy.getAbsoluteTimeoutMinutes(),
+                policy.getReauthIntervalMinutes(), policy.getReauthFactors());
     }
 
     /** The smallest value of {@code field} across the governing policies (never empty — Default is the fallback). */

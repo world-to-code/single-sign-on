@@ -64,10 +64,10 @@ class SessionIntegrityFilterTest {
     @BeforeEach
     void setUp() {
         filter = new SessionIntegrityFilter(audit, policyService, sessionRegistry, sessionMetadata);
-        // One resolution: the winner supplies re-auth/factors/bindClient; idle/absolute are the floor (30m/8h).
-        lenient().when(policyService.effectiveForUsername("alice")).thenReturn(new EffectiveSessionPolicy(policy, 30, 480));
-        lenient().when(policy.getReauthIntervalMinutes()).thenReturn(15);
-        lenient().when(policy.getReauthFactors()).thenReturn("TOTP,PASSWORD");
+        // One resolution: floored idle/absolute (30m/8h), org-authoritative re-auth (15m, TOTP/PASSWORD); the
+        // winner supplies only the client binding.
+        lenient().when(policyService.effectiveForUsername("alice"))
+                .thenReturn(new EffectiveSessionPolicy(policy, 30, 480, 15, "TOTP,PASSWORD"));
         lenient().when(policy.isBindClient()).thenReturn(false);
     }
 

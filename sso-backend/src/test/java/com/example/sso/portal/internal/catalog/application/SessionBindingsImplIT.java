@@ -216,10 +216,10 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void effectiveForUsernameKeepsTheWinnerButFloorsIdleAndAbsoluteAcrossMatchingPolicies() {
+    void effectiveFloorsLifetimesAndTakesReauthFromTheOrgWidePolicy() {
         UUID org = org();
-        UUID strict = policyInWithLifetimes(org, "strict", 15, 120); // org-wide: short idle + short absolute
-        UUID lax = policyInWithLifetimes(org, "lax", 30, 480);        // user-specific: longer both
+        UUID strict = policyInWith(org, "strict", 15, 120, 20, "FIDO2");        // org-wide: short lifetimes, strong re-auth
+        UUID lax = policyInWith(org, "lax", 30, 480, 5, "PASSWORD,TOTP");        // user-specific: long lifetimes, lax re-auth
         String s = suffix();
         String username = "lifetime-" + s;
         UserAccount member = orgContext.callInOrg(org, () -> users.createUser(new NewUser(
@@ -231,13 +231,15 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
             sessionBindings.replaceForPolicy(lax, 10, Set.of(member.getId()), Set.of()); // this user (specificity winner)
         });
 
-        // The user-specific lax policy is the specificity WINNER (its preference fields apply), but idle/absolute
-        // are FLOORS — the shortest of each across every governing policy, so the broad org lifetimes cannot be
-        // extended by the user policy. One resolution yields both.
         EffectiveSessionPolicy effective = orgContext.callInOrg(org, () -> userSessionPolicy.effectiveForUsername(username));
+        // The user-specific lax policy is the specificity WINNER, but idle/absolute are FLOORS (shortest wins) and
+        // the re-auth cadence/factors come from the BROADEST (org-wide) policy — a narrower policy cannot lengthen
+        // the lifetimes NOR weaken the org's re-auth requirement.
         assertThat(effective.winner().getId()).isEqualTo(lax);
         assertThat(effective.idleTimeoutMinutes()).isEqualTo(15);
         assertThat(effective.absoluteTimeoutMinutes()).isEqualTo(120);
+        assertThat(effective.reauthIntervalMinutes()).isEqualTo(20);        // org's, not the user's 5
+        assertThat(effective.reauthFactors()).isEqualTo("FIDO2");           // org's, not the user's PASSWORD,TOTP
     }
 
     private UUID org() {
@@ -273,11 +275,11 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
         return id;
     }
 
-    /** A bare org-owned session policy with explicit idle/absolute lifetimes (for the lifetime-floor test). */
-    private UUID policyInWithLifetimes(UUID org, String name, int idleMinutes, int absoluteMinutes) {
+    /** A bare org-owned session policy with explicit lifetimes and re-auth cadence/factors (for the effective test). */
+    private UUID policyInWith(UUID org, String name, int idleMinutes, int absoluteMinutes, int reauthMinutes, String factors) {
         UUID id = orgContext.callInOrg(org, () -> sessionPolicies.create(new SessionPolicySpec(
-                name + "-" + suffix(), 5, true, absoluteMinutes, idleMinutes, 15, "TOTP", 2, "TOTP", false, 0, false,
-                "Lax", Set.<UUID>of(), Set.<UUID>of(), List.<IpRuleSpec>of())).getId());
+                name + "-" + suffix(), 5, true, absoluteMinutes, idleMinutes, reauthMinutes, factors, 2, factors, false,
+                0, false, "Lax", Set.<UUID>of(), Set.<UUID>of(), List.<IpRuleSpec>of())).getId());
         orgContext.runAsPlatform(() -> ownerJdbc().update("delete from policy_binding where org_id = ? "
                 + "and app_type = 'PORTAL' and app_id = 'user' and session_policy_id = ?", org, id));
         return id;

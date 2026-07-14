@@ -32,10 +32,13 @@ public interface UserSessionPolicy {
     int maxConcurrentSessionsFor(String username);
 
     /**
-     * The request-effective session policy for the user, resolved in ONE pass: the specificity winner (as
-     * {@link #resolveForUsername}) for the preference fields, plus floor-composed idle and absolute lifetimes
-     * (the smallest of each across every governing policy, so a narrow lax policy cannot extend a broad org-wide
-     * lifetime). Consolidates the winner + lifetime-floor resolution the session-integrity filter needs.
+     * The request-effective session policy for the user: the specificity winner for preferences, floor-composed
+     * idle/absolute lifetimes (smallest across governing policies), and the re-auth cadence/factors from the
+     * BROADEST-scope governing policy (org-wide authoritative). See {@link EffectiveSessionPolicy}. The Default
+     * when the user is unknown.
      */
     EffectiveSessionPolicy effectiveForUsername(String username);
+
+    /** As {@link #effectiveForUsername}, for an already-resolved account (the re-auth flow holds the user). */
+    EffectiveSessionPolicy effectiveForUser(UserAccount user);
 }

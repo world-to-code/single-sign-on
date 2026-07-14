@@ -11,7 +11,7 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.session.lifecycle.SessionLifecycle;
-import com.example.sso.session.policy.SessionPolicyDetails;
+import com.example.sso.session.policy.EffectiveSessionPolicy;
 import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.session.lifecycle.StepUpInterceptor;
 import com.example.sso.shared.error.BadRequestException;
@@ -42,7 +42,7 @@ public class ReauthService {
     /** Pre-step data for a re-auth factor (e.g. WebAuthn options); must be allowed for the pending step-up. */
     public FactorChallenge prepare(AuthFactor factor, HttpServletRequest request) {
         UserAccount user = currentUser.require();
-        requireAllowedFactor(request, sessionPolicy.resolveForUser(user), factor);
+        requireAllowedFactor(request, sessionPolicy.effectiveForUser(user), factor);
         return factorHandlers.get(factor).prepare(user, request);
     }
 
@@ -50,8 +50,8 @@ public class ReauthService {
     public void verify(AuthFactor factor, FactorVerificationRequest verification,
                        HttpServletRequest request, HttpServletResponse response) {
         UserAccount user = currentUser.require();
-        SessionPolicyDetails policy = sessionPolicy.resolveForUser(user);
-        requireAllowedFactor(request, policy, factor);
+        EffectiveSessionPolicy effective = sessionPolicy.effectiveForUser(user);
+        requireAllowedFactor(request, effective, factor);
 
         if (!factorHandlers.get(factor).verify(user, verification, request)) {
             audit.record(new AuditRecord(AuditType.REAUTH_FAILURE, user.getUsername(), false, "factor=" + factor, null));
@@ -60,7 +60,7 @@ public class ReauthService {
 
         // Per-policy defence in depth: rotate the session id on a successful re-auth BEFORE the response
         // (and the step-up stamp) are written, keeping the SessionRegistry consistent.
-        if (policy.isRotateOnReauth()) {
+        if (effective.winner().isRotateOnReauth()) {
             sessions.rotateSessionId(request, user.getUsername());
         }
 
@@ -79,12 +79,13 @@ public class ReauthService {
     /**
      * The factor must be in the set the pending step-up demands: the interceptor records the exact allowed
      * factors on the session when it challenges (a sensitive action's may be stronger than the general
-     * re-auth factors); a proactive re-auth with no pending challenge falls back to the policy's re-auth factors.
+     * re-auth factors); a proactive re-auth with no pending challenge falls back to the effective (org-authoritative,
+     * broadest-scope) re-auth factors.
      */
-    private void requireAllowedFactor(HttpServletRequest request, SessionPolicyDetails policy, AuthFactor factor) {
+    private void requireAllowedFactor(HttpServletRequest request, EffectiveSessionPolicy effective, AuthFactor factor) {
         HttpSession session = request.getSession(false);
         Object pending = session == null ? null : session.getAttribute(StepUpInterceptor.STEPUP_FACTORS);
-        String allowed = pending instanceof String s && !s.isBlank() ? s : policy.getReauthFactors();
+        String allowed = pending instanceof String s && !s.isBlank() ? s : effective.reauthFactors();
         boolean ok = Arrays.stream(allowed.split(","))
                 .map(String::trim).anyMatch(f -> f.equals(factor.name()));
         if (!ok) {
