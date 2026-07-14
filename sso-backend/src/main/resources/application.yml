@@ -120,6 +120,15 @@ sso:
   zerotrust:
     bind-client: true                       # bind a session to the client it was established on
     session-absolute-lifetime-minutes: 480  # force full re-authentication after 8h regardless of activity
+  logout:
+    # Dedicated bounded pool for OIDC back-channel + SAML SLO fan-out, kept OFF the shared @Async pool so a
+    # slow relying party can never starve tenant onboarding/provisioning (and vice versa). A full queue
+    # degrades to running the send on the caller (Redis event-listener) thread — best-effort, never dropped.
+    propagation:
+      executor:
+        core-pool-size: 4
+        max-pool-size: 8
+        queue-capacity: 500
   crypto:
     master-password: dev-master-password-change-me  # dev only — override in prod
     salt: 5c0744940b5c369b

@@ -14,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
@@ -63,7 +64,12 @@ class LogoutPropagationImpl implements LogoutPropagation {
         this.http = RestClient.builder().requestFactory(factory).build();
     }
 
+    // @Async on the DEDICATED bounded `logoutPropagationExecutor` (not the shared onboarding pool): the
+    // (blocking, per-RP up to `timeout`) fan-out runs off the Spring Session Redis message-listener thread that
+    // fires SessionDestroyedEvent — a slow/hung RP no longer serializes every other session's termination
+    // propagation. A void @Async failure is surfaced by LoggingAsyncUncaughtExceptionHandler.
     @Override
+    @Async("logoutPropagationExecutor")
     public void propagate(String sid, String username) {
         OidcBackchannelSessionIndex.Participants participants = index.lookup(sid);
         String subject = participants.username() != null ? participants.username() : username;

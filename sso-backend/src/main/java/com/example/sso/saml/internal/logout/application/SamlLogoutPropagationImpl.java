@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
@@ -57,7 +58,12 @@ class SamlLogoutPropagationImpl implements SamlLogoutPropagation {
     // NOT @Transactional: this runs on the browser-less expiry path with no OrgContext bound, and each RP is
     // resolved/signed under its OWN tenant scope below — a method-level tx would pin the first connection's
     // RLS GUC and hide every org-scoped RP (they resolve only in platform or their own org's context).
+    // @Async on the DEDICATED bounded `logoutPropagationExecutor` (not the shared onboarding pool): offload the
+    // blocking SOAP fan-out off the Redis message-listener thread that fires the destroy event, so a slow SP no
+    // longer serializes other sessions' propagation (LoggingAsyncUncaughtExceptionHandler surfaces a void
+    // failure); it also decouples this listener from the sibling OIDC one on the same event.
     @Override
+    @Async("logoutPropagationExecutor")
     public void propagate(String sid, String username) {
         Map<String, String> participants = index.lookup(sid);
         for (Map.Entry<String, String> participant : participants.entrySet()) {
