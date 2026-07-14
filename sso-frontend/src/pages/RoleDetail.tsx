@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Lock, Trash2, UserPlus, Users } from "lucide-react";
-import { listRoleMembers, listRoles, addRoleMember, removeRoleMember, type Role, type RoleMember } from "@/roles";
+import { ArrowLeft, GitBranch, Lock, Trash2, UserPlus, Users, X } from "lucide-react";
+import {
+  getRoleDetail, listRoleMembers, listRoles, setRoleInheritance, addRoleMember, removeRoleMember,
+  type Role, type RoleDetail, type RoleMember,
+} from "@/roles";
 import { searchUsers } from "@/groups";
 import { errorMessage } from "@/api";
 import { PageHeader } from "@/components/PageHeader";
@@ -10,19 +13,22 @@ import { SearchSelect } from "@/components/SearchSelect";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 export default function RoleDetail() {
   const { t } = useTranslation("console");
   const { id = "" } = useParams();
-  const [role, setRole] = useState<Role | null>(null);
+  const [role, setRole] = useState<RoleDetail | null>(null);
   const [members, setMembers] = useState<RoleMember[] | null>(null);
+  const [allRoles, setAllRoles] = useState<Role[]>([]);
   const [addKey, setAddKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    listRoles().then((roles) => setRole(roles.find((r) => r.id === id) ?? null)).catch((e) => setError(errorMessage(e)));
+    getRoleDetail(id).then(setRole).catch((e) => setError(errorMessage(e)));
     listRoleMembers(id).then(setMembers).catch((e) => setError(errorMessage(e)));
+    listRoles().then(setAllRoles).catch(() => undefined);
   }, [id]);
   useEffect(load, [load]);
 
@@ -38,6 +44,22 @@ export default function RoleDetail() {
       return false;
     }
   }
+
+  // Inheritance edits return the fresh detail (server-computed effective permissions), so update from that.
+  async function saveInheritance(nextIds: string[]) {
+    try {
+      setRole(await setRoleInheritance(id, nextIds));
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  const inheritedIds = new Set(role?.inheritsFrom.map((r) => r.id));
+  const directPermissions = new Set(role?.permissions);
+  // Candidate children: in-tier roles this role does not already inherit and is not itself.
+  const candidates = allRoles.filter((r) => r.id !== id && !inheritedIds.has(r.id));
+  const editable = role !== null && !role.system;
 
   return (
     <>
@@ -60,6 +82,70 @@ export default function RoleDetail() {
           ) : (
             <div className="flex flex-wrap gap-1">
               {role.permissions.map((p) => <Badge key={p} variant="outline" className="font-mono text-xs">{p}</Badge>)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {role && (
+        <div className="mb-6">
+          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <GitBranch className="size-4" /> {t("roleDetailInheritance")}
+          </div>
+          <p className="mb-2 text-xs text-muted-foreground">{t("roleDetailInheritanceHint")}</p>
+
+          {role.inheritsFrom.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t("roleDetailInheritsNone")}</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {role.inheritsFrom.map((r) => (
+                <span key={r.id} className="inline-flex items-center gap-1 rounded-full bg-primary/10 py-0.5 pl-2.5 pr-1 text-xs">
+                  {r.name}
+                  {editable && (
+                    <button
+                      type="button"
+                      aria-label={t("roleDetailInheritRemove", { name: r.name })}
+                      className="rounded-full p-0.5 text-muted-foreground hover:text-destructive"
+                      onClick={() => void saveInheritance(role.inheritsFrom.filter((x) => x.id !== r.id).map((x) => x.id))}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {editable && candidates.length > 0 && (
+            <div className="mt-2 max-w-xs">
+              <Select
+                value=""
+                aria-label={t("roleDetailInheritAdd")}
+                onChange={(e) => {
+                  if (e.target.value) void saveInheritance([...role.inheritsFrom.map((r) => r.id), e.target.value]);
+                }}
+              >
+                <option value="">{t("roleDetailInheritAdd")}</option>
+                {candidates.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </Select>
+            </div>
+          )}
+
+          {role.effectivePermissions.length > role.permissions.length && (
+            <div className="mt-3">
+              <p className="mb-1 text-xs font-medium text-muted-foreground">{t("roleDetailEffectivePermissions")}</p>
+              <div className="flex flex-wrap gap-1">
+                {role.effectivePermissions.map((p) => (
+                  <Badge
+                    key={p}
+                    variant={directPermissions.has(p) ? "outline" : "muted"}
+                    className="font-mono text-xs"
+                    title={directPermissions.has(p) ? undefined : t("roleDetailPermInherited")}
+                  >
+                    {p}
+                  </Badge>
+                ))}
+              </div>
             </div>
           )}
         </div>

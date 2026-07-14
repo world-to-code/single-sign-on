@@ -19,6 +19,16 @@ export interface Permission {
   action: string;
 }
 
+/** A role with its inheritance surfaced: the roles it inherits and the resulting effective permissions. */
+export interface RoleDetail {
+  id: string;
+  name: string;
+  permissions: string[];
+  system: boolean;
+  inheritsFrom: { id: string; name: string }[];
+  effectivePermissions: string[];
+}
+
 export const ADMIN_ROLE = "ROLE_ADMIN";
 
 /**
@@ -58,6 +68,9 @@ export interface RoleMember {
 }
 
 export const listRoles = () => apiGet<Role[]>("/api/admin/roles");
+export const getRoleDetail = (id: string) => apiGet<RoleDetail>(`/api/admin/roles/${id}`);
+export const setRoleInheritance = (id: string, inheritsFromRoleIds: string[]) =>
+  apiPut<RoleDetail>(`/api/admin/roles/${id}/inheritance`, { inheritsFromRoleIds });
 export const listPermissions = () => apiGet<Permission[]>("/api/admin/permissions");
 export const createRole = (body: RoleRequest) => apiPost<Role>("/api/admin/roles", body);
 export const updateRole = (id: string, body: RoleRequest) => apiPut<Role>(`/api/admin/roles/${id}`, body);

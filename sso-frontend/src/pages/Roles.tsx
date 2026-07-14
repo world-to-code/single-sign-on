@@ -8,6 +8,7 @@ import {
 } from "@/roles";
 import { PageHeader } from "@/components/PageHeader";
 import { PermissionPicker } from "@/components/PermissionPicker";
+import { PermissionSummary } from "@/components/PermissionSummary";
 import { useEditorForm } from "@/hooks/useEditorForm";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 import { Field } from "@/components/form/fields";
@@ -108,12 +109,8 @@ export default function Roles() {
                   <TableCell>
                     {role.name === ADMIN_ROLE ? (
                       <span className="text-muted-foreground">{t("rolesAllPermissions")}</span>
-                    ) : role.permissions.length ? (
-                      <div className="flex flex-wrap gap-1">
-                        {role.permissions.map((p) => <Badge key={p} variant="outline" className="font-mono text-xs">{p}</Badge>)}
-                      </div>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <PermissionSummary permissions={role.permissions} />
                     )}
                   </TableCell>
                   <TableCell>
