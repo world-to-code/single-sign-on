@@ -8,6 +8,7 @@ import com.example.sso.portal.access.AppAccess;
 import com.example.sso.portal.access.AppAccessQuery;
 import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.binding.PolicyBindingResolver;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.user.account.UserAccount;
 import java.time.Duration;
 import java.time.Instant;
@@ -66,6 +67,12 @@ class AppAccessResolver {
     /** Sets (or, when blank/null, clears) the app-wide sign-on policy for an app — an all-subjects auth binding. */
     @Transactional
     void setAppPolicy(AppType appType, String appId, String requiredPolicyId) {
+        if (appType == AppType.PORTAL) {
+            // A portal is not a catalog app: end-user login resolves the PORTAL/user auth binding and the console
+            // logs in through the admin-console OIDC client, so neither reads a PORTAL sign-on binding. Reject here
+            // (as assignment does) so this write path cannot leave an orphan PORTAL auth binding nothing governs.
+            throw BadRequestException.of("portal.policy.notApplicable");
+        }
         UUID policyId = requiredPolicyId == null || requiredPolicyId.isBlank() ? null : UUID.fromString(requiredPolicyId);
         appAuthBinding.setAppWide(appType, appId, policyId);
     }

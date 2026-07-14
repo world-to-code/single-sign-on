@@ -8,6 +8,7 @@ import com.example.sso.portal.access.AppAccess;
 import com.example.sso.portal.access.AppAccessQuery;
 import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.binding.PolicyBindingResolver;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.user.account.UserAccount;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -124,6 +126,15 @@ class AppAccessResolverTest {
         UUID policyId = UUID.randomUUID();
         resolver.setAppPolicy(APP_TYPE, APP_ID, policyId.toString());
         verify(appAuthBinding).setAppWide(APP_TYPE, APP_ID, policyId);
+    }
+
+    @Test
+    void setAppPolicyRejectsAPortalAppTypeWithoutWriting() {
+        // A portal is not a catalog app — no per-app sign-on binding may be written on it (else it is an orphan
+        // nothing resolves), so the write path rejects PORTAL just as assignment does.
+        assertThatThrownBy(() -> resolver.setAppPolicy(AppType.PORTAL, "admin", UUID.randomUUID().toString()))
+                .isInstanceOf(BadRequestException.class);
+        verify(appAuthBinding, never()).setAppWide(any(), any(), any());
     }
 
     private UserAccount withPolicy(AuthPolicyView policy) {
