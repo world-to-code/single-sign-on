@@ -74,8 +74,8 @@ class ReauthServiceTest {
         user = mock(UserAccount.class);
         lenient().when(user.getUsername()).thenReturn("alice");
         lenient().when(currentUser.require()).thenReturn(user);
-        // The effective policy carries the org-authoritative re-auth factors and the rotate-on-reauth preference
-        // directly (no raw winner policy is exposed).
+        // The effective policy carries the winner's re-auth factors and the rotate-on-reauth preference directly
+        // (no raw winner policy is exposed).
         lenient().when(sessionPolicy.effectiveForUser(user)).thenReturn(effectiveWith("TOTP,FIDO2", false));
     }
 

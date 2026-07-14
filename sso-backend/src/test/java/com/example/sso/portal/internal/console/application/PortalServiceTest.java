@@ -64,7 +64,7 @@ class PortalServiceTest {
 
     @Test
     void sessionConfigParsesAndTrimsTheReauthFactorCsv() {
-        // The SPA timers follow the EFFECTIVE policy the filters enforce (floored idle, org-authoritative re-auth);
+        // The SPA timers follow the EFFECTIVE policy the filters enforce (floored idle, the winner's re-auth);
         // that resolution is covered by UserSessionPolicyImplTest. Only the record's scalars are read here.
         when(userSessionPolicy.effectiveForUsername(USERNAME))
                 .thenReturn(new EffectiveSessionPolicy(15, 480, 5, " TOTP , FIDO2 ,", false, false));

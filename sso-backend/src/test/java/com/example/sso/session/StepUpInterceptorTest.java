@@ -68,7 +68,7 @@ class StepUpInterceptorTest {
         lenient().when(policy.getSensitiveReauthWindowMinutes()).thenReturn(2);   // 120s sensitive window
         lenient().when(policy.getStepUpFactors()).thenReturn("FIDO2");            // stronger set for sensitive
         lenient().when(userSessionPolicy.resolveForUsername(anyString())).thenReturn(policy);
-        // The general mutation branch reads the EFFECTIVE (org-authoritative) re-auth cadence/factors: 5m / TOTP,FIDO2.
+        // The general mutation branch reads the EFFECTIVE (winner's) re-auth cadence/factors: 5m / TOTP,FIDO2.
         lenient().when(userSessionPolicy.effectiveForUsername(anyString()))
                 .thenReturn(new EffectiveSessionPolicy(30, 480, 5, "TOTP,FIDO2", false, false));
         lenient().when(policyService.defaultPolicy()).thenReturn(policy);
@@ -235,20 +235,19 @@ class StepUpInterceptorTest {
     }
 
     @Test
-    void generalMutationReauthUsesTheEffectiveOrgAuthoritativeFactorsNotTheWinner() throws Exception {
-        // The specificity winner (user's own policy) would allow PASSWORD only every 480m; the EFFECTIVE
-        // (org-authoritative) re-auth requires FIDO2 every 15m. The general gate must use the effective values —
-        // a narrower policy cannot weaken the org's mandatory re-auth here (else the org-authoritative invariant
-        // holds only in SessionIntegrityFilter and is bypassable through this interceptor).
-        SessionPolicyDetails winner = mock(SessionPolicyDetails.class);
-        lenient().when(winner.getReauthIntervalMinutes()).thenReturn(480);
-        lenient().when(winner.getReauthFactors()).thenReturn("PASSWORD");
-        lenient().when(userSessionPolicy.resolveForUsername("alice")).thenReturn(winner);
+    void generalMutationReauthUsesTheEffectivePolicyProjectionNotASeparateWinnerLookup() throws Exception {
+        // The gate must read the EFFECTIVE projection (effectiveForUsername) — the same resolution
+        // SessionIntegrityFilter enforces — not a separate raw resolveForUsername lookup that could diverge. The
+        // stale resolveForUsername stub (PASSWORD/480m) must be IGNORED; the effective FIDO2/15m governs.
+        SessionPolicyDetails staleWinner = mock(SessionPolicyDetails.class);
+        lenient().when(staleWinner.getReauthIntervalMinutes()).thenReturn(480);
+        lenient().when(staleWinner.getReauthFactors()).thenReturn("PASSWORD");
+        lenient().when(userSessionPolicy.resolveForUsername("alice")).thenReturn(staleWinner);
         when(userSessionPolicy.effectiveForUsername("alice"))
                 .thenReturn(new EffectiveSessionPolicy(30, 480, 15, "FIDO2", false, false));
 
         MockHttpServletRequest request = request("DELETE");
-        activityAge(request, 20 * 60_000); // idle 20m > effective 15m (but < the winner's 480m) → must challenge
+        activityAge(request, 20 * 60_000); // idle 20m > effective 15m (but < the stale 480m) → must challenge
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         assertThat(interceptor.preHandle(request, response, handler("plain"))).isFalse();

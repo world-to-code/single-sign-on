@@ -32,10 +32,9 @@ public interface UserSessionPolicy {
     int maxConcurrentSessionsFor(String username);
 
     /**
-     * The request-effective session policy for the user: the specificity winner for preferences, floor-composed
-     * idle/absolute lifetimes (smallest across governing policies), and the re-auth cadence/factors from the
-     * BROADEST-scope governing policy (org-wide authoritative). See {@link EffectiveSessionPolicy}. The Default
-     * when the user is unknown.
+     * The request-effective session policy for the user: floor-composed idle/absolute lifetimes (smallest across
+     * governing policies) plus the re-auth cadence/factors and bindClient/rotate preferences from the specificity
+     * WINNER (the most-specific binding). See {@link EffectiveSessionPolicy}. The Default when the user is unknown.
      */
     EffectiveSessionPolicy effectiveForUsername(String username);
 

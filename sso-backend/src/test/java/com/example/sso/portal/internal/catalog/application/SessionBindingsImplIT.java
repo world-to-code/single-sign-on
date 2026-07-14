@@ -216,10 +216,10 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void effectiveFloorsLifetimesAndTakesReauthFromTheOrgWidePolicy() {
+    void effectiveFloorsLifetimesButTakesReauthFromTheUserDirectWinner() {
         UUID org = org();
-        UUID strict = policyInWith(org, "strict", 15, 120, 20, "FIDO2");        // org-wide: short lifetimes, strong re-auth
-        UUID lax = policyInWith(org, "lax", 30, 480, 5, "PASSWORD,TOTP");        // user-specific: long lifetimes, lax re-auth
+        UUID broad = policyInWith(org, "broad", 15, 120, 20, "FIDO2");          // org-wide: short lifetimes
+        UUID direct = policyInWith(org, "direct", 30, 480, 5, "PASSWORD,TOTP");  // user-specific: the specificity winner
         String s = suffix();
         String username = "lifetime-" + s;
         UserAccount member = orgContext.callInOrg(org, () -> users.createUser(new NewUser(
@@ -227,17 +227,17 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
         createdUsers.add(member.getId());
 
         orgContext.runInOrg(org, () -> {
-            sessionBindings.replaceForPolicy(strict, 10, Set.of(), Set.of());            // all-subjects (everyone)
-            sessionBindings.replaceForPolicy(lax, 10, Set.of(member.getId()), Set.of()); // this user (specificity winner)
+            sessionBindings.replaceForPolicy(broad, 10, Set.of(), Set.of());              // all-subjects (everyone)
+            sessionBindings.replaceForPolicy(direct, 10, Set.of(member.getId()), Set.of()); // this user (specificity winner)
         });
 
         EffectiveSessionPolicy effective = orgContext.callInOrg(org, () -> userSessionPolicy.effectiveForUsername(username));
-        // idle/absolute are FLOORS (shortest wins) and the re-auth cadence/factors come from the BROADEST (org-wide)
-        // policy — a narrower policy cannot lengthen the lifetimes NOR weaken the org's re-auth requirement.
+        // idle/absolute are FLOORS (shortest wins) but the re-auth cadence/factors come from the user-direct WINNER —
+        // the most-specific policy assigned to the user governs re-auth; a broader org policy does not override it.
         assertThat(effective.idleTimeoutMinutes()).isEqualTo(15);
         assertThat(effective.absoluteTimeoutMinutes()).isEqualTo(120);
-        assertThat(effective.reauthIntervalMinutes()).isEqualTo(20);        // org's, not the user's 5
-        assertThat(effective.reauthFactors()).isEqualTo("FIDO2");           // org's, not the user's PASSWORD,TOTP
+        assertThat(effective.reauthIntervalMinutes()).isEqualTo(5);         // the user-direct winner's, not the org's 20
+        assertThat(effective.reauthFactors()).isEqualTo("PASSWORD,TOTP");   // the user-direct winner's, not the org's FIDO2
     }
 
     private UUID org() {

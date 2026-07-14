@@ -120,10 +120,10 @@ public class StepUpInterceptor implements HandlerInterceptor {
             return challenge(session, response, consolePolicy.getStepUpFactors());
         }
 
-        // General mutation: idle-based, on the EFFECTIVE (org-authoritative) re-auth cadence/factors — the same
-        // resolution SessionIntegrityFilter uses, so a narrower policy cannot weaken the org's mandatory re-auth
-        // here. A challenged request does NOT refresh the clock (so it can't be bypassed by retrying); only
-        // allowed requests and re-auths do. Null clock -> fail closed.
+        // General mutation: idle-based, on the EFFECTIVE re-auth cadence/factors (the specificity winner's) — the
+        // same resolution SessionIntegrityFilter uses, so this gate and the filter never disagree. A challenged
+        // request does NOT refresh the clock (so it can't be bypassed by retrying); only allowed requests and
+        // re-auths do. Null clock -> fail closed.
         int reauthIntervalMinutes;
         String reauthFactors;
         if (authentication == null) {

@@ -79,8 +79,8 @@ public class ReauthService {
     /**
      * The factor must be in the set the pending step-up demands: the interceptor records the exact allowed
      * factors on the session when it challenges (a sensitive action's may be stronger than the general
-     * re-auth factors); a proactive re-auth with no pending challenge falls back to the effective (org-authoritative,
-     * broadest-scope) re-auth factors.
+     * re-auth factors); a proactive re-auth with no pending challenge falls back to the effective re-auth factors
+     * (the specificity winner's).
      */
     private void requireAllowedFactor(HttpServletRequest request, EffectiveSessionPolicy effective, AuthFactor factor) {
         HttpSession session = request.getSession(false);

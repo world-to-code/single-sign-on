@@ -180,41 +180,26 @@ class UserSessionPolicyImplTest {
         assertThat(resolver().maxConcurrentSessionsFor(USER)).isEqualTo(3);
     }
 
-    // --- effectiveForUsername: winner (preferences) + floored idle/absolute + re-auth from the BROADEST policy ---
+    // --- effectiveForUsername: floored idle/absolute + re-auth AND preferences from the specificity WINNER ---
 
     @Test
-    void effectiveFloorsLifetimesButTakesReauthFromTheBroadestScopePolicy() {
-        SessionPolicyDetails winner = policyWithLifetimes(60, 90);              // most-specific (user) — element 0
+    void effectiveFloorsLifetimesButTakesReauthAndPreferencesFromTheWinner() {
+        SessionPolicyDetails winner = policyWithReauth(60, 90, 25, "PASSWORD"); // most-specific (user) — element 0
         when(winner.isBindClient()).thenReturn(true);                          // preference fields come from the winner —
         when(winner.isRotateOnReauth()).thenReturn(false);                     // DISTINCT values so a field swap is caught
-        SessionPolicyDetails broad = policyWithReauth(30, 120, 15, "TOTP,FIDO2"); // org-wide — the re-auth source
+        SessionPolicyDetails broad = policyWithLifetimes(30, 120);             // broader org policy — floor only
         when(users.findByUsername(USER)).thenReturn(Optional.of(user));
         scopeToActingOrg();
         when(bindings.resolveSessionPolicies(user, AppType.PORTAL, PortalApps.USER))
                 .thenReturn(List.of(winner, broad));                          // most-specific first → winner = get(0)
-        when(bindings.resolveBroadestSessionPolicy(user, AppType.PORTAL, PortalApps.USER))
-                .thenReturn(Optional.of(broad));                              // org-wide governs re-auth
 
         EffectiveSessionPolicy effective = resolver().effectiveForUsername(USER);
         assertThat(effective.bindClient()).isTrue();                         // from the winner (get(0))
         assertThat(effective.rotateOnReauth()).isFalse();                    // from the winner (get(0)), distinct value
         assertThat(effective.idleTimeoutMinutes()).isEqualTo(30);            // min(60, 30) — floor
         assertThat(effective.absoluteTimeoutMinutes()).isEqualTo(90);        // min(90, 120) — floor
-        assertThat(effective.reauthIntervalMinutes()).isEqualTo(15);         // from the broadest (org), not the winner
-        assertThat(effective.reauthFactors()).isEqualTo("TOTP,FIDO2");       // from the broadest (org), not the winner
-    }
-
-    @Test
-    void effectiveFallsBackToTheWinnerReauthWhenItIsTheOnlyPolicy() {
-        SessionPolicyDetails only = policyWithReauth(30, 60, 20, "PASSWORD,TOTP"); // single policy = winner = broadest
-        when(users.findByUsername(USER)).thenReturn(Optional.of(user));
-        scopeToActingOrg();
-        when(bindings.resolveSessionPolicies(user, AppType.PORTAL, PortalApps.USER)).thenReturn(List.of(only));
-        when(bindings.resolveBroadestSessionPolicy(user, AppType.PORTAL, PortalApps.USER)).thenReturn(Optional.of(only));
-
-        EffectiveSessionPolicy effective = resolver().effectiveForUsername(USER);
-        assertThat(effective.reauthIntervalMinutes()).isEqualTo(20);
-        assertThat(effective.reauthFactors()).isEqualTo("PASSWORD,TOTP");
+        assertThat(effective.reauthIntervalMinutes()).isEqualTo(25);         // from the winner, NOT the broader policy
+        assertThat(effective.reauthFactors()).isEqualTo("PASSWORD");         // from the winner, NOT the broader policy
     }
 
     @Test

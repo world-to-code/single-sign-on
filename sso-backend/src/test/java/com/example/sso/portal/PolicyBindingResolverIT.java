@@ -271,14 +271,6 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
         assertThat(resolveSessions(kim, SHADOW)).extracting(SessionPolicyDetails::getId).containsExactly(sess15);
     }
 
-    @Test
-    void resolveBroadestSessionPolicyReturnsTheOrgWideBindingOverTheNarrowerOnes() {
-        // kim matches all three PAYMENTS bindings; the BROADEST (all-subjects/org-wide) wins — the reverse of the
-        // specificity winner (sess5, the USER binding), for the org-authoritative re-auth resolution.
-        assertThat(orgContext.callAsPlatform(() -> resolver.resolveBroadestSessionPolicy(kim, APP, PAYMENTS)))
-                .map(SessionPolicyDetails::getId).contains(sessAll);
-    }
-
     // --- helpers ---
 
     private java.util.Optional<AuthPolicyView> resolveAuth(UserAccount user, String appId) {

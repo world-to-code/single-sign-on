@@ -65,8 +65,7 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
         if (session != null && isAuthenticated(authentication)) {
             String username = authentication.getName();
             // One resolution yields: the FLOOR-composed idle/absolute lifetimes (a narrow lax policy cannot extend
-            // a broad org-wide lifetime), the org-authoritative re-auth cadence/factors (broadest-scope), and the
-            // winner's client-binding preference.
+            // a broad org-wide lifetime), and the specificity winner's re-auth cadence/factors + client binding.
             EffectiveSessionPolicy effective = userSessionPolicy.effectiveForUsername(username);
             long now = System.currentTimeMillis();
 

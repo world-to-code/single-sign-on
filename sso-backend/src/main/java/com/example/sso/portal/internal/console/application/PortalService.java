@@ -45,8 +45,8 @@ public class PortalService {
     private final RegisteredClientRepository registeredClients;
 
     public SessionConfigView sessionConfig(String username) {
-        // Show the EFFECTIVE policy the enforcing filters apply (floored idle, org-authoritative re-auth
-        // cadence/factors), not the raw specificity winner — so the SPA timers and prompts match the server.
+        // Show the EFFECTIVE policy the enforcing filters apply (floored idle, plus the specificity winner's
+        // re-auth cadence/factors) so the SPA timers and prompts match the server.
         EffectiveSessionPolicy effective = userSessionPolicy.effectiveForUsername(username);
         List<String> reauthFactors = Arrays.stream(effective.reauthFactors().split(","))
                 .map(String::trim).filter(s -> !s.isEmpty()).toList();

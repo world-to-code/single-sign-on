@@ -80,10 +80,11 @@ class UserSessionPolicyImpl implements UserSessionPolicy {
 
     @Override
     public EffectiveSessionPolicy effectiveForUser(UserAccount user) {
-        // Resolve in ONE org scope (see resolveForUser for the platform-context rationale). The specificity winner
-        // and the idle/absolute FLOORS come from the most-specific-first list; the re-auth cadence + factors come
-        // from the BROADEST-scope policy (org-wide authoritative — a narrower policy must not override the org's
-        // re-auth requirement), a distinct reverse-specificity resolution, falling back to the winner if none.
+        // Resolve in ONE org scope (see resolveForUser for the platform-context rationale). idle/absolute are the
+        // FLOOR across every governing policy; every other field — re-auth cadence/factors and the bindClient/
+        // rotate preferences — comes from the specificity WINNER (element 0): the most-specific (user-direct)
+        // binding governs, a broader policy cannot override it (own-org over global, then priority — the tie-break
+        // policy priorities are unique per org, so this is deterministic).
         return orgContext.callInOrg(orgContext.currentOrg().orElse(null), () -> {
             List<SessionPolicyDetails> governing =
                     bindings.resolveSessionPolicies(user, AppType.PORTAL, PortalApps.USER);
@@ -91,12 +92,10 @@ class UserSessionPolicyImpl implements UserSessionPolicy {
                 return singlePolicy(sessionPolicies.resolveDefault());
             }
             SessionPolicyDetails winner = governing.get(0);
-            SessionPolicyDetails reauthSource = bindings
-                    .resolveBroadestSessionPolicy(user, AppType.PORTAL, PortalApps.USER).orElse(winner);
             return new EffectiveSessionPolicy(
                     floor(governing, SessionPolicyDetails::getIdleTimeoutMinutes),
                     floor(governing, SessionPolicyDetails::getAbsoluteTimeoutMinutes),
-                    reauthSource.getReauthIntervalMinutes(), reauthSource.getReauthFactors(),
+                    winner.getReauthIntervalMinutes(), winner.getReauthFactors(),
                     winner.isBindClient(), winner.isRotateOnReauth());
         });
     }
