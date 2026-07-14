@@ -79,7 +79,7 @@ class SamlLogoutPropagationImplTest {
     }
 
     @Test
-    void aFrontChannelSpIsTerminalAuditedAsSkippedAndNeverRetried() {
+    void aFrontChannelSpIsTerminalNotedNotDeliveredAndNeverRetried() {
         SamlRelyingParty frontChannel = rp("https://sp/slo", SloBinding.REDIRECT);
         when(index.lookup(SID)).thenReturn(Map.of("sp-fc", "nameid"));
         when(relyingParties.findByEntityId("sp-fc")).thenReturn(Optional.of(frontChannel));
@@ -87,7 +87,7 @@ class SamlLogoutPropagationImplTest {
 
         propagation.propagate(SID, USER);
 
-        verify(audit).record(argThat(skippedFor("sp-fc")));
+        verify(audit).record(argThat(frontChannelNoteFor("sp-fc")));
         // Settled (removed), so nothing to keep — and the retry coordinator is told there is no remainder.
         verify(index).removeParticipants(SID, Set.of("sp-fc"));
         verify(retryCoordinator).reschedule(eq(SamlLogoutRetryDriver.RETRY_QUEUE), eq(SID), eq(USER), eq(false), any());
@@ -227,9 +227,9 @@ class SamlLogoutPropagationImplTest {
         verify(index, never()).clear(SID);
     }
 
-    private static ArgumentMatcher<AuditRecord> skippedFor(String entityId) {
+    private static ArgumentMatcher<AuditRecord> frontChannelNoteFor(String entityId) {
         return r -> r != null && !r.success() && r.detail() != null
-                && r.detail().contains(entityId) && r.detail().contains("skipped");
+                && r.detail().contains(entityId) && r.detail().contains("front-channel");
     }
 
     private static ArgumentMatcher<AuditRecord> abandonedFor(String entityId) {

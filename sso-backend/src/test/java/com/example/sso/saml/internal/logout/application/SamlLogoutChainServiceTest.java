@@ -1,5 +1,7 @@
 package com.example.sso.saml.internal.logout.application;
 
+import com.example.sso.audit.AuditRecord;
+import com.example.sso.audit.AuditService;
 import com.example.sso.saml.internal.core.application.SamlBindingCodec;
 import com.example.sso.saml.internal.core.application.SamlRedirectEncoder;
 import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;
@@ -21,10 +23,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /** The chain service must pick the right browser step per SP binding and complete when the chain is empty. */
@@ -43,6 +47,8 @@ class SamlLogoutChainServiceTest {
     SamlBindingCodec codec;
     @Mock
     OrgContext orgContext;
+    @Mock
+    AuditService audit;
     @InjectMocks
     SamlLogoutChainService service;
 
@@ -110,6 +116,22 @@ class SamlLogoutChainServiceTest {
     }
 
     @Test
+    void emittingAHopAuditsTheFrontChannelLogoutAsDelivered() {
+        SamlRelyingParty rp = rp(SloBinding.REDIRECT);
+        when(chainStore.next("L")).thenReturn(Optional.of(new Hop("sp", "user@x", "sid-1")));
+        when(relyingParties.findByEntityId("sp")).thenReturn(Optional.of(rp));
+        when(messageBuilder.unsignedLogoutRequestXml(any(), eq("user@x"), eq("sid-1"))).thenReturn("<xml/>");
+        when(redirectEncoder.encodeRequest(any(), any(), eq("L"), any())).thenReturn("https://sp.example/slo?..");
+
+        service.next("L", "nonce");
+
+        // A front-channel SP the chain logs out must leave a positive trail, so it is not represented ONLY by
+        // the back-channel path's "not reachable" note.
+        verify(audit).record(argThat(r -> r != null && r.success()
+                && r.detail() != null && r.detail().contains("sp") && r.detail().contains("front-channel")));
+    }
+
+    @Test
     void exhaustedChainCompletesAndClears() {
         when(chainStore.next("L")).thenReturn(Optional.empty());
 
@@ -117,5 +139,6 @@ class SamlLogoutChainServiceTest {
 
         assertThat(step).isInstanceOf(ChainStep.Complete.class);
         verify(chainStore).clear("L");
+        verifyNoInteractions(audit); // nothing emitted → nothing to audit
     }
 }

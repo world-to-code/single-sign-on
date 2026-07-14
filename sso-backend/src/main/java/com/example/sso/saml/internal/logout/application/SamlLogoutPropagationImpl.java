@@ -100,13 +100,14 @@ class SamlLogoutPropagationImpl implements SamlLogoutPropagation {
             if (rp == null || !StringUtils.hasText(rp.getSingleLogoutUrl())) {
                 return true; // SP not configured for SLO — terminal, nothing to retry to
             }
-            // The event-driven (browser-less) path can only reach back-channel SOAP SPs. Front-channel SPs
-            // need the explicit-logout redirect chain (not built here) — audit the SKIP so the gap that the
-            // SP session survives this termination is VISIBLE to operators, never silent. TERMINAL here: a
+            // This event-driven path reaches only back-channel SOAP SPs. A front-channel SP is logged out by
+            // the interactive redirect chain (SamlFrontChannelLogout, which audits it) when the logout is
+            // browser-initiated; otherwise it persists until its own timeout. Record that this path did NOT
+            // deliver it — without falsely asserting a gap, since the chain may have. TERMINAL either way: a
             // sweep re-drive can never reach a front-channel SP, so it must never be kept for retry.
             if (rp.sloBinding() != SloBinding.SOAP) {
                 audit.record(new AuditRecord(AuditType.SAML_SLO, username, false,
-                        "sp=" + entityId + " skipped (front-channel binding, no browser)", null));
+                        "sp=" + entityId + " not reachable on the back-channel path (front-channel binding)", null));
                 return true;
             }
             // A delivered SP is settled; a transient build/send failure is left in the index for the retry sweep.

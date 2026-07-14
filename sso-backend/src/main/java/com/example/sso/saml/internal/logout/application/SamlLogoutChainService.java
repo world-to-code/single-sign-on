@@ -1,5 +1,8 @@
 package com.example.sso.saml.internal.logout.application;
 
+import com.example.sso.audit.AuditRecord;
+import com.example.sso.audit.AuditService;
+import com.example.sso.audit.AuditType;
 import com.example.sso.saml.internal.core.application.SamlBindingCodec;
 import com.example.sso.saml.internal.core.application.SamlRedirectEncoder;
 
@@ -32,6 +35,7 @@ public class SamlLogoutChainService {
     private final SamlRedirectEncoder redirectEncoder;
     private final SamlBindingCodec codec;
     private final OrgContext orgContext;
+    private final AuditService audit;
 
     /** The browser step for this hop. */
     public sealed interface ChainStep {
@@ -64,9 +68,14 @@ public class SamlLogoutChainService {
         // Build the hop bound to the RP's org so its LogoutRequest is signed with that tenant's SAML key; a
         // global RP (org null) builds in the ambient context.
         UUID org = rp.getOrgId();
-        return org == null
+        ChainStep step = org == null
                 ? buildStep(rp, h, logoutId, scriptNonce)
                 : orgContext.callInOrg(org, () -> buildStep(rp, h, logoutId, scriptNonce));
+        // The interactive chain is what actually logs a front-channel SP out. Record it, so a front-channel SP
+        // that WAS logged out has a positive trail — not only the back-channel path's "not reachable" note.
+        audit.record(new AuditRecord(AuditType.SAML_SLO, h.nameId(), true,
+                "sp=" + h.entityId() + " front-channel logout", null));
+        return step;
     }
 
     private ChainStep buildStep(SamlRelyingParty rp, Hop h, String logoutId, String scriptNonce) {
