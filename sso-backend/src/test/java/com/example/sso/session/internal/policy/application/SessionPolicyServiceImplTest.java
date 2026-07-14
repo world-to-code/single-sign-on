@@ -154,6 +154,18 @@ class SessionPolicyServiceImplTest {
     }
 
     @Test
+    void createRejectsADuplicatePriorityInTheSameTier() {
+        // Priority is unique per tier so the same-specificity tie-break is deterministic — a create at a priority
+        // another policy in the tier already holds is refused.
+        when(repository.findByNameAndOrgIdIsNull("DupPrio")).thenReturn(Optional.empty());
+        when(repository.findByPriorityAndOrgIdIsNull(5)).thenReturn(List.of(policy("Other", 5)));
+
+        assertThatThrownBy(() -> service.create(spec("DupPrio", "TOTP")))
+                .isInstanceOf(ConflictException.class);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
     void createRejectsEmptyReauthFactors() {
         when(repository.findByNameAndOrgIdIsNull("Empty")).thenReturn(Optional.empty());
 
@@ -276,6 +288,33 @@ class SessionPolicyServiceImplTest {
 
         assertThatThrownBy(() -> service.update(id, update(3, true, "TOTP")))
                 .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void updateRejectsAPriorityHeldByAnotherPolicyInTheTier() {
+        UUID id = UUID.randomUUID();
+        SessionPolicy editable = policy("Editable", 5); // a non-Default, global policy
+        when(repository.findById(id)).thenReturn(Optional.of(editable));
+        when(repository.findByPriorityAndOrgIdIsNull(7)).thenReturn(List.of(policy("Other", 7))); // taken by another
+
+        assertThatThrownBy(() -> service.update(id, update(7, true, "TOTP")))
+                .isInstanceOf(ConflictException.class);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void updateAllowsAPolicyToKeepItsOwnPriority() {
+        // Self is excluded from the uniqueness check — editing a policy without moving it off its priority is fine.
+        UUID id = UUID.randomUUID();
+        SessionPolicy editable = policy("Editable", 5);
+        when(repository.findById(id)).thenReturn(Optional.of(editable));
+        when(repository.findByPriorityAndOrgIdIsNull(5)).thenReturn(List.of(editable)); // only itself at priority 5
+        when(repository.save(any(SessionPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        SessionPolicyDetails saved = service.update(id, update(5, true, "TOTP"));
+
+        assertThat(saved.getPriority()).isEqualTo(5);
+        verify(repository).save(editable);
     }
 
     @Test

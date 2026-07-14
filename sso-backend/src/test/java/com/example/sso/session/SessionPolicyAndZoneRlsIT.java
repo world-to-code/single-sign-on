@@ -35,6 +35,10 @@ class SessionPolicyAndZoneRlsIT extends AbstractIntegrationTest {
 
     private final List<Runnable> cleanups = new ArrayList<>();
 
+    // session_policy.priority is UNIQUE per tier (V90); hand each seeded/inserted session policy a distinct one
+    // (base 100 avoids the seeded Defaults at 0/1). network_zone has no priority column, so it is untouched.
+    private int nextPriority = 100;
+
     @AfterEach
     void cleanup() {
         cleanups.forEach(Runnable::run);
@@ -111,8 +115,13 @@ class SessionPolicyAndZoneRlsIT extends AbstractIntegrationTest {
 
     /** Insert a row directly (owner connection bypasses RLS) so we control its tier. */
     private void seedRow(String table, String name, UUID orgId) {
-        ownerJdbc().update("insert into " + table + " (id, name, org_id) values (gen_random_uuid(), ?, ?)",
-                name, orgId);
+        if (table.equals("session_policy")) {
+            ownerJdbc().update("insert into session_policy (id, name, org_id, priority) "
+                    + "values (gen_random_uuid(), ?, ?, ?)", name, orgId, nextPriority++);
+        } else {
+            ownerJdbc().update("insert into " + table + " (id, name, org_id) values (gen_random_uuid(), ?, ?)",
+                    name, orgId);
+        }
         cleanups.add(() -> ownerJdbc().update("delete from " + table + " where name = ?", name));
     }
 
@@ -142,10 +151,16 @@ class SessionPolicyAndZoneRlsIT extends AbstractIntegrationTest {
 
     private void insertRow(Connection c, String table, String name, UUID orgId) throws SQLException {
         cleanups.add(() -> ownerJdbc().update("delete from " + table + " where name = ?", name));
-        try (PreparedStatement ps = c.prepareStatement(
-                "insert into " + table + " (id, name, org_id) values (gen_random_uuid(), ?, ?)")) {
+        boolean sessionPolicy = table.equals("session_policy");
+        String sql = sessionPolicy
+                ? "insert into session_policy (id, name, org_id, priority) values (gen_random_uuid(), ?, ?, ?)"
+                : "insert into " + table + " (id, name, org_id) values (gen_random_uuid(), ?, ?)";
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, name);
             ps.setObject(2, orgId);
+            if (sessionPolicy) {
+                ps.setInt(3, nextPriority++);
+            }
             ps.executeUpdate();
         }
     }

@@ -15,6 +15,7 @@ import com.example.sso.session.policy.SessionBindings;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.session.policy.SessionPolicySpec;
+import com.example.sso.shared.error.ConflictException;
 import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
@@ -33,6 +34,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 /**
@@ -48,6 +51,10 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
     @Autowired PolicyBindingResolver resolver;
     @Autowired UserSessionPolicy userSessionPolicy;
     @Autowired SessionPolicyService sessionPolicies;
+
+    // Session-policy priority is UNIQUE per tier; hand each created policy a distinct one (binding priorities, set
+    // explicitly in the tests, are independent). Base 10 avoids the seeded Default (global 0, per-org 1).
+    private int nextPolicyPriority = 10;
     @Autowired AuthPolicyAdminService authPolicies;
     @Autowired OrganizationService organizations;
     @Autowired UserService users;
@@ -240,6 +247,28 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
         assertThat(effective.reauthFactors()).isEqualTo("PASSWORD,TOTP");   // the user-direct winner's, not the org's FIDO2
     }
 
+    @Test
+    void createRejectsADuplicatePriorityInTheSameOrgButAllowsItInAnother() {
+        UUID orgA = org();
+        UUID orgB = org();
+        int priority = 42; // free (per-org Default is 1)
+        orgContext.callInOrg(orgA, () -> sessionPolicies.create(specWithPriority("a-first", priority)));
+
+        // Same priority, same org → rejected.
+        assertThatThrownBy(() -> orgContext.callInOrg(orgA,
+                () -> sessionPolicies.create(specWithPriority("a-second", priority))))
+                .isInstanceOf(ConflictException.class);
+        // Same priority in a DIFFERENT org → allowed (uniqueness is per tier).
+        assertThatCode(() -> orgContext.callInOrg(orgB,
+                () -> sessionPolicies.create(specWithPriority("b-first", priority))))
+                .doesNotThrowAnyException();
+    }
+
+    private SessionPolicySpec specWithPriority(String name, int priority) {
+        return new SessionPolicySpec(name + "-" + suffix(), priority, true, 480, 30, 15, "TOTP", 2, "TOTP", false, 0,
+                false, "Lax", Set.<UUID>of(), Set.<UUID>of(), List.<IpRuleSpec>of());
+    }
+
     private UUID org() {
         String slug = "session-bind-it-" + suffix();
         UUID id = orgContext.callAsPlatform(() -> organizations.create(new NewOrganization(slug, slug)).id());
@@ -256,7 +285,7 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
      *  binding is then dropped so the test can bind it explicitly. */
     private UUID policyIn(UUID org, String name) {
         UUID id = orgContext.callInOrg(org, () -> sessionPolicies.create(new SessionPolicySpec(
-                name + "-" + suffix(), 5, true, 480, 30, 15, "TOTP", 2, "TOTP", false, 0, false, "Lax",
+                name + "-" + suffix(), nextPolicyPriority++, true, 480, 30, 15, "TOTP", 2, "TOTP", false, 0, false, "Lax",
                 Set.<UUID>of(), Set.<UUID>of(), List.<IpRuleSpec>of())).getId());
         orgContext.runAsPlatform(() -> ownerJdbc().update("delete from policy_binding where org_id = ? "
                 + "and app_type = 'PORTAL' and app_id = 'user' and session_policy_id = ?", org, id));
@@ -266,7 +295,7 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
     /** A bare org-owned session policy with an explicit concurrent-session cap (for the floor test). */
     private UUID policyInWithMax(UUID org, String name, int max) {
         UUID id = orgContext.callInOrg(org, () -> sessionPolicies.create(new SessionPolicySpec(
-                name + "-" + suffix(), 5, true, 480, 30, 15, "TOTP", 2, "TOTP", false, max, false, "Lax",
+                name + "-" + suffix(), nextPolicyPriority++, true, 480, 30, 15, "TOTP", 2, "TOTP", false, max, false, "Lax",
                 Set.<UUID>of(), Set.<UUID>of(), List.<IpRuleSpec>of())).getId());
         orgContext.runAsPlatform(() -> ownerJdbc().update("delete from policy_binding where org_id = ? "
                 + "and app_type = 'PORTAL' and app_id = 'user' and session_policy_id = ?", org, id));
@@ -276,7 +305,7 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
     /** A bare org-owned session policy with explicit lifetimes and re-auth cadence/factors (for the effective test). */
     private UUID policyInWith(UUID org, String name, int idleMinutes, int absoluteMinutes, int reauthMinutes, String factors) {
         UUID id = orgContext.callInOrg(org, () -> sessionPolicies.create(new SessionPolicySpec(
-                name + "-" + suffix(), 5, true, absoluteMinutes, idleMinutes, reauthMinutes, factors, 2, factors, false,
+                name + "-" + suffix(), nextPolicyPriority++, true, absoluteMinutes, idleMinutes, reauthMinutes, factors, 2, factors, false,
                 0, false, "Lax", Set.<UUID>of(), Set.<UUID>of(), List.<IpRuleSpec>of())).getId());
         orgContext.runAsPlatform(() -> ownerJdbc().update("delete from policy_binding where org_id = ? "
                 + "and app_type = 'PORTAL' and app_id = 'user' and session_policy_id = ?", org, id));

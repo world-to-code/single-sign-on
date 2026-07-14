@@ -73,6 +73,10 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
     private final List<UUID> createdOrgs = new ArrayList<>();
     private final List<UUID> createdGroups = new ArrayList<>();
     private final List<UUID> createdSessionPolicies = new ArrayList<>();
+
+    // Session-policy priority is UNIQUE per tier; hand each fixture policy a distinct one (the binding priorities
+    // the tests set are independent). Base 5 avoids the seeded global Default (priority 0).
+    private int nextSessionPriority = 5;
     private final List<UUID> createdAuthPolicies = new ArrayList<>();
 
     @BeforeEach
@@ -306,7 +310,7 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
     }
 
     private UUID sessionPolicy(String name, boolean enabled) {
-        UUID id = sessionPolicies.create(new SessionPolicySpec(name, 5, enabled, 480, 30, 15, "TOTP", 2, "TOTP",
+        UUID id = sessionPolicies.create(new SessionPolicySpec(name, nextSessionPriority++, enabled, 480, 30, 15, "TOTP", 2, "TOTP",
                 false, 0, false, "Lax", Set.of(), Set.of(holderRole), List.of())).getId();
         // These are OIDC app-binding fixtures, not PORTAL/user session policies — drop the PORTAL/user assignment
         // binding the create writes so it can't block the raw-SQL session_policy cleanup below (its FK RESTRICT).

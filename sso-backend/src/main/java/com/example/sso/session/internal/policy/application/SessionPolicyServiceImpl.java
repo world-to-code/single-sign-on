@@ -243,6 +243,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         if (existsInTier(spec.name(), creationOrg)) {
             throw ConflictException.of("session.policy.duplicate");
         }
+        requirePriorityAvailable(spec.priority(), creationOrg, null);
 
         String reauthFactors = validateReauthFactors(spec.reauthFactors());
         String stepUpFactors = validateReauthFactors(spec.stepUpFactors());
@@ -287,6 +288,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
             policy.update(rulesOf(update, reauthFactors, stepUpFactors, cookieSameSite));
             applyAssignmentScope(policy, Set.of(), Set.of());
         } else {
+            requirePriorityAvailable(update.priority(), policy.getOrgId(), policy.getId());
             policy.updatePriority(update.priority());
             if (update.enabled()) {
                 policy.enable();
@@ -335,6 +337,21 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         return (org == null
                 ? repository.findByNameAndOrgIdIsNull(name)
                 : repository.findByNameAndOrgId(name, org)).isPresent();
+    }
+
+    /**
+     * Priority is UNIQUE within a tier (each tenant's own set + the global set): the session resolution breaks a
+     * same-specificity tie on priority, so two competing policies must never share one — else the winner would
+     * fall to an arbitrary id order. Reject a create/update that would collide with another policy ({@code selfId}
+     * is the policy being updated, excluded; null on create).
+     */
+    private void requirePriorityAvailable(int priority, UUID org, UUID selfId) {
+        List<SessionPolicy> atPriority = org == null
+                ? repository.findByPriorityAndOrgIdIsNull(priority)
+                : repository.findByPriorityAndOrgId(priority, org);
+        if (atPriority.stream().anyMatch(p -> !p.getId().equals(selfId))) {
+            throw ConflictException.of("session.policy.priority.duplicate");
+        }
     }
 
     // A "Default" policy — the GLOBAL fallback or a tenant's provisioned per-org Default — is the tier's
