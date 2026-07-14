@@ -129,6 +129,19 @@ sso:
         core-pool-size: 4
         max-pool-size: 8
         queue-capacity: 500
+      # Durable retry: a participant whose back-channel delivery failed transiently is kept in the session
+      # index and re-driven by a scheduled sweep until delivered or the give-up cap. Survives RP downtime and
+      # process restarts (state is in Redis), so a logout is never silently lost.
+      retry:
+        sweep-interval: PT30S        # @Scheduled fixedDelay — how often a node tries to drive the sweep
+        lock-ttl: PT25S              # SET NX PX single-driver lock; < sweep-interval, > worst-case pick+dispatch
+        processing-lease: PT2M       # visibility timeout: a claimed sid re-appears if the driver crashes mid-redrive
+        initial-backoff: PT30S       # first retry delay (exponential base)
+        multiplier: 2.0              # exponential growth per attempt
+        randomization-factor: 0.5    # jitter band (±50%)
+        max-attempts: 10             # give-up cap; ~8-12h horizon, well under the P8D index TTL
+        registry-ttl: P8D            # retry ZSET/meta TTL — aligned with the session-index TTLs
+        sweep-batch-size: 100        # max due sids re-driven per queue per tick
   crypto:
     master-password: dev-master-password-change-me  # dev only — override in prod
     salt: 5c0744940b5c369b

@@ -44,6 +44,20 @@ public class OidcBackchannelSessionIndexImpl implements OidcBackchannelSessionIn
     }
 
     @Override
+    public int removeParticipants(String sid, Set<String> clientIds) {
+        String clients = CLIENTS_KEY.formatted(sid);
+        if (!clientIds.isEmpty()) {
+            redis.opsForSet().remove(clients, clientIds.toArray());
+        }
+        Long remaining = redis.opsForSet().size(clients);
+        int count = remaining == null ? 0 : remaining.intValue();
+        if (count == 0) {
+            clear(sid); // last client settled: drop the set and the retained subject together
+        }
+        return count;
+    }
+
+    @Override
     public void clear(String sid) {
         redis.delete(CLIENTS_KEY.formatted(sid));
         redis.delete(SUB_KEY.formatted(sid));

@@ -3,6 +3,7 @@ package com.example.sso.saml.internal.logout.application;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -39,6 +40,16 @@ public class SamlSloSessionIndexImpl implements SamlSloSessionIndex {
         Map<String, String> result = new LinkedHashMap<>();
         entries.forEach((k, v) -> result.put(k.toString(), v.toString()));
         return result;
+    }
+
+    @Override
+    public int removeParticipants(String sid, Set<String> entityIds) {
+        String key = KEY.formatted(sid);
+        if (!entityIds.isEmpty()) {
+            redis.opsForHash().delete(key, entityIds.toArray());
+        }
+        Long remaining = redis.opsForHash().size(key);
+        return remaining == null ? 0 : remaining.intValue();
     }
 
     @Override

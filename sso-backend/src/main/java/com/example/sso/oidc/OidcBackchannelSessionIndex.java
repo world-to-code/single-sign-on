@@ -16,6 +16,14 @@ public interface OidcBackchannelSessionIndex {
     /** The clients (and subject) that participated in the session, or an empty record if none/expired. */
     Participants lookup(String sid);
 
+    /**
+     * Removes the {@code clientIds} whose logout is settled (delivered, or terminally non-deliverable) and
+     * returns how many clients still remain to retry. The subject is retained while any client remains (a
+     * give-up audit needs it) and dropped with the last one. Enables clear-only-delivered: a transiently
+     * failed client stays for the durable retry sweep instead of being lost.
+     */
+    int removeParticipants(String sid, Set<String> clientIds);
+
     /** Drops the mapping once its logout has been dispatched (idempotency: one send per termination). */
     void clear(String sid);
 
