@@ -23,6 +23,7 @@ export const nav = {
   roles: "Roles",
   authPolicies: "Auth Policies",
   sessionPolicy: "Session Policy",
+  bindings: "Policy Bindings",
   networkZones: "Network Zones",
   scimTokens: "SCIM Tokens",
   auditLog: "Audit Log",

@@ -164,6 +164,24 @@ export const console = {
   applicationsEachUserPolicy: "Each user's own policy",
   applicationsUserPortalPolicyHint: "This governs the SPA session timers for everyone signing in to the portal, independently of the admin console.",
 
+  // Bindings ----------------------------------------------------------------
+  bindingsTitle: "Policy Bindings",
+  bindingsDescription: "Every auth and session policy binding in one place — which policy applies to which app, user, or role. Edit each at its source.",
+  bindingsSearchPlaceholder: "Search by app, subject, or policy",
+  bindingsColApp: "Application",
+  bindingsColSubject: "Subject",
+  bindingsColAuthPolicy: "Auth policy",
+  bindingsColSessionPolicy: "Session policy",
+  bindingsSubjectUser: "User",
+  bindingsSubjectGroup: "Group",
+  bindingsSubjectRole: "Role",
+  bindingsSubjectAll: "All subjects",
+  bindingsAppPortal: "Portal",
+  bindingsPortalAdmin: "Admin console",
+  bindingsPortalUser: "User portal",
+  bindingsEdit: "Edit at source",
+  bindingsPartial: "Some policy sources couldn't be read (a missing permission or a temporary error), so this list may be incomplete.",
+
   // AuthPolicies list -------------------------------------------------------
   authPoliciesTitle: "Authentication Policies",
   authPoliciesDescription: "Factor chains applied per role or user — the highest-priority matching policy wins.",

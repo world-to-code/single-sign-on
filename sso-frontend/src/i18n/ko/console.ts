@@ -164,6 +164,24 @@ export const console: Record<keyof typeof enConsole, string> = {
   applicationsEachUserPolicy: "각 사용자 고유 정책",
   applicationsUserPortalPolicyHint: "관리 콘솔과 별개로, 포털에 로그인하는 모든 사용자의 SPA 세션 타이머를 관장합니다.",
 
+  // Bindings
+  bindingsTitle: "정책 바인딩",
+  bindingsDescription: "모든 인증·세션 정책 바인딩을 한 곳에서 — 어떤 정책이 어떤 앱·사용자·역할에 적용되는지. 편집은 각 원본 화면에서 합니다.",
+  bindingsSearchPlaceholder: "앱·대상·정책으로 검색",
+  bindingsColApp: "애플리케이션",
+  bindingsColSubject: "대상",
+  bindingsColAuthPolicy: "인증 정책",
+  bindingsColSessionPolicy: "세션 정책",
+  bindingsSubjectUser: "사용자",
+  bindingsSubjectGroup: "그룹",
+  bindingsSubjectRole: "역할",
+  bindingsSubjectAll: "모든 대상",
+  bindingsAppPortal: "포털",
+  bindingsPortalAdmin: "관리 콘솔",
+  bindingsPortalUser: "사용자 포털",
+  bindingsEdit: "원본에서 편집",
+  bindingsPartial: "일부 정책 소스를 읽지 못해(권한 부족 또는 일시적 오류) 목록이 불완전할 수 있습니다.",
+
   // AuthPolicies list
   authPoliciesTitle: "인증 정책",
   authPoliciesDescription: "역할이나 사용자별로 적용되는 인증 요소 체인 — 우선순위가 가장 높은 매칭 정책이 적용됩니다.",

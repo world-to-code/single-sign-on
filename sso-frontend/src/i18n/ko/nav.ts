@@ -25,6 +25,7 @@ export const nav: Record<keyof typeof enNav, string> = {
   roles: "역할",
   authPolicies: "인증 정책",
   sessionPolicy: "세션 정책",
+  bindings: "정책 바인딩",
   networkZones: "네트워크 영역",
   scimTokens: "SCIM 토큰",
   auditLog: "감사 로그",

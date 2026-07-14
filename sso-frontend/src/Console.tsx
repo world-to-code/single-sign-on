@@ -34,6 +34,7 @@ import SessionPolicyDetail from "./pages/SessionPolicyDetail";
 import NetworkZones from "./pages/NetworkZones";
 import MyApps from "./pages/MyApps";
 import Applications from "./pages/Applications";
+import Bindings from "./pages/Bindings";
 import Profile from "./pages/Profile";
 
 /**
@@ -86,6 +87,7 @@ export default function Console({ session }: { session: SessionView }) {
                     <Route path="session-policy" element={<SessionPolicy />} />
                     <Route path="session-policy/new" element={<SessionPolicyDetail />} />
                     <Route path="session-policy/:id" element={<SessionPolicyDetail />} />
+                    <Route path="bindings" element={<Bindings />} />
                     <Route path="network-zones" element={<NetworkZones />} />
                     <Route path="scim-tokens" element={<ScimTokens />} />
                     <Route path="audit" element={<Audit />} />
