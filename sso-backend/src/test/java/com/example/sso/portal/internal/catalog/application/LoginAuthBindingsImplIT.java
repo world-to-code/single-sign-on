@@ -48,6 +48,10 @@ class LoginAuthBindingsImplIT extends AbstractIntegrationTest {
     private final List<UUID> orgs = new ArrayList<>();
     private final List<UUID> createdUsers = new ArrayList<>();
 
+    // Auth-policy priority is UNIQUE per tier; hand each fixture policy a distinct one. Base 10 avoids the seeded
+    // Defaults (global 0, per-org 1).
+    private int nextAuthPriority = 10;
+
     @AfterEach
     void cleanup() {
         orgContext.runAsPlatform(() -> {
@@ -222,7 +226,7 @@ class LoginAuthBindingsImplIT extends AbstractIntegrationTest {
     /** An org-owned, non-login (appliesToLogin=false) policy — a bare id to bind, no auto-written login row. */
     private UUID policyIn(UUID org, String name) {
         return orgContext.callInOrg(org, () -> authPolicies.create(new AuthPolicySpec(
-                name + "-" + suffix(), 10, true, false, true, List.of(Set.of(AuthFactor.TOTP)), Set.of(), Set.of(), 15))
+                name + "-" + suffix(), nextAuthPriority++, true, false, true, List.of(Set.of(AuthFactor.TOTP)), Set.of(), Set.of(), 15))
                 .getId());
     }
 

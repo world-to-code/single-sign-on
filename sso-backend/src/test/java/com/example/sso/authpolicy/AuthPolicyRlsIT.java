@@ -41,6 +41,10 @@ class AuthPolicyRlsIT extends AbstractIntegrationTest {
 
     private final List<Runnable> cleanups = new ArrayList<>();
 
+    // auth_policy.priority is UNIQUE per tier (V91); hand each seeded/inserted policy a distinct one (base 100
+    // avoids the seeded Defaults at 0/1).
+    private int nextPriority = 100;
+
     @AfterEach
     void cleanup() {
         cleanups.forEach(Runnable::run);
@@ -106,7 +110,8 @@ class AuthPolicyRlsIT extends AbstractIntegrationTest {
 
     /** Insert a policy directly (owner connection bypasses RLS) so we control its tier. */
     private void seedPolicy(String name, UUID orgId) {
-        ownerJdbc().update("insert into auth_policy (id, name, org_id) values (gen_random_uuid(), ?, ?)", name, orgId);
+        ownerJdbc().update("insert into auth_policy (id, name, org_id, priority) values (gen_random_uuid(), ?, ?, ?)",
+                name, orgId, nextPriority++);
         cleanups.add(() -> ownerJdbc().update("delete from auth_policy where name = ?", name));
     }
 
@@ -137,9 +142,10 @@ class AuthPolicyRlsIT extends AbstractIntegrationTest {
     private void insertPolicy(Connection c, String name, UUID orgId) throws SQLException {
         cleanups.add(() -> ownerJdbc().update("delete from auth_policy where name = ?", name));
         try (PreparedStatement ps = c.prepareStatement(
-                "insert into auth_policy (id, name, org_id) values (gen_random_uuid(), ?, ?)")) {
+                "insert into auth_policy (id, name, org_id, priority) values (gen_random_uuid(), ?, ?, ?)")) {
             ps.setString(1, name);
             ps.setObject(2, orgId);
+            ps.setInt(3, nextPriority++);
             ps.executeUpdate();
         }
     }

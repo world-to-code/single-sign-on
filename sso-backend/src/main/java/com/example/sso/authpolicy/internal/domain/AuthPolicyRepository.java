@@ -18,6 +18,12 @@ public interface AuthPolicyRepository extends JpaRepository<AuthPolicy, UUID> {
     /** Name lookup within one tenant's tier — used to reject a duplicate name inside the same org. */
     Optional<AuthPolicy> findByNameAndOrgId(String name, UUID orgId);
 
+    /** Policies at a given priority in the GLOBAL tier — used to keep priority unique within the tier. */
+    List<AuthPolicy> findByPriorityAndOrgIdIsNull(int priority);
+
+    /** Policies at a given priority in one tenant's tier — used to keep priority unique within the tier. */
+    List<AuthPolicy> findByPriorityAndOrgId(int priority, UUID orgId);
+
     /**
      * The resolved policy is read (steps + their allowed factors) AFTER the resolve transaction by the
      * non-transactional login flow, so the finders below fetch-join {@code steps} (a {@code List}) and

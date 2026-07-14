@@ -115,6 +115,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         if (existsInTier(spec.name(), creationOrg)) {
             throw ConflictException.of("authpolicy.name.duplicate");
         }
+        requirePriorityAvailable(spec.priority(), creationOrg, null);
 
         AuthPolicy policy = new AuthPolicy(spec.name(), spec.priority(), creationOrg);
         if (!spec.enabled()) {
@@ -137,6 +138,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         if (isGlobalDefault(policy)) {
             throw BadRequestException.of("authpolicy.defaultNoEdit");
         }
+        requirePriorityAvailable(update.priority(), policy.getOrgId(), policy.getId());
 
         policy.updatePriority(update.priority());
         if (update.enabled()) {
@@ -184,6 +186,20 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         return (org == null
                 ? repository.findByNameAndOrgIdIsNull(name)
                 : repository.findByNameAndOrgId(name, org)).isPresent();
+    }
+
+    /**
+     * Priority is UNIQUE within a tier (each tenant's own set + the global set): login resolution breaks a
+     * same-specificity tie on priority, so two competing policies must never share one. Reject a create/update
+     * that would collide with another policy ({@code selfId} is the policy being updated, excluded; null on create).
+     */
+    private void requirePriorityAvailable(int priority, UUID org, UUID selfId) {
+        List<AuthPolicy> atPriority = org == null
+                ? repository.findByPriorityAndOrgIdIsNull(priority)
+                : repository.findByPriorityAndOrgId(priority, org);
+        if (atPriority.stream().anyMatch(p -> !p.getId().equals(selfId))) {
+            throw ConflictException.of("authpolicy.priority.duplicate");
+        }
     }
 
     /** Replaces a policy's steps: validate, delete the old step/factor rows, then insert the new ones. */

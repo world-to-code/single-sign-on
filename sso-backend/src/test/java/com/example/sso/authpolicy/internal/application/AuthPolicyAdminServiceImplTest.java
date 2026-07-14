@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -84,6 +85,35 @@ class AuthPolicyAdminServiceImplTest {
 
     private AuthPolicyUpdate update(List<Set<AuthFactor>> steps) {
         return new AuthPolicyUpdate(20, true, true, true, steps, Set.of(), Set.of(), 30);
+    }
+
+    /** A policy with a persisted id (so the priority-uniqueness self-exclusion has a real id to compare). */
+    private AuthPolicy persisted(String name, int priority) {
+        AuthPolicy p = new AuthPolicy(name, priority);
+        ReflectionTestUtils.setField(p, "id", UUID.randomUUID());
+        return p;
+    }
+
+    @Test
+    void createRejectsADuplicatePriorityInTheSameTier() {
+        // Priority is unique per tier so the login same-specificity tie-break is deterministic.
+        when(repository.findByNameAndOrgIdIsNull("DupPrio")).thenReturn(Optional.empty());
+        when(repository.findByPriorityAndOrgIdIsNull(10)).thenReturn(List.of(persisted("Other", 10)));
+
+        assertThatThrownBy(() -> service.create(spec("DupPrio", List.of(Set.of(AuthFactor.PASSWORD)))))
+                .isInstanceOf(ConflictException.class);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void updateRejectsAPriorityHeldByAnotherPolicyInTheTier() {
+        UUID id = UUID.randomUUID();
+        when(repository.findById(id)).thenReturn(Optional.of(persisted("Editable", 5))); // a non-Default, global policy
+        when(repository.findByPriorityAndOrgIdIsNull(20)).thenReturn(List.of(persisted("Other", 20))); // taken by another
+
+        assertThatThrownBy(() -> service.update(id, update(List.of(Set.of(AuthFactor.PASSWORD)))))
+                .isInstanceOf(ConflictException.class);
+        verify(repository, never()).save(any());
     }
 
     @Test

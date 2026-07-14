@@ -315,7 +315,7 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
     /** A bare org-owned, non-login (appliesToLogin=false) auth policy — a bare id, no auto-written login binding. */
     private UUID authPolicyIn(UUID org, String name) {
         return orgContext.callInOrg(org, () -> authPolicies.create(new AuthPolicySpec(
-                name + "-" + suffix(), 10, true, false, true, List.of(Set.of(AuthFactor.TOTP)), Set.of(), Set.of(), 15))
+                name + "-" + suffix(), nextPolicyPriority++, true, false, true, List.of(Set.of(AuthFactor.TOTP)), Set.of(), Set.of(), 15))
                 .getId());
     }
 

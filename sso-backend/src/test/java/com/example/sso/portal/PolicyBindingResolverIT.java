@@ -74,9 +74,11 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
     private final List<UUID> createdGroups = new ArrayList<>();
     private final List<UUID> createdSessionPolicies = new ArrayList<>();
 
-    // Session-policy priority is UNIQUE per tier; hand each fixture policy a distinct one (the binding priorities
-    // the tests set are independent). Base 5 avoids the seeded global Default (priority 0).
+    // Session/auth-policy priority is UNIQUE per tier; hand each fixture policy a distinct one (the binding
+    // priorities the tests set are independent). Bases avoid the seeded global Default (priority 0). Auth and
+    // session are separate tables, so their counters need not be disjoint.
     private int nextSessionPriority = 5;
+    private int nextAuthPriority = 5;
     private final List<UUID> createdAuthPolicies = new ArrayList<>();
 
     @BeforeEach
@@ -303,7 +305,7 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
         // appliesToLogin=false: these policies are OIDC app-binding targets, not login policies, so they must
         // NOT write a PORTAL/user login binding (which would fight the single global all-subjects slot and
         // block the raw-SQL auth_policy cleanup below via the binding's FK RESTRICT).
-        UUID id = authPolicies.create(new AuthPolicySpec(name, 10, enabled, false, true,
+        UUID id = authPolicies.create(new AuthPolicySpec(name, nextAuthPriority++, enabled, false, true,
                 List.of(Set.of(AuthFactor.TOTP)), Set.of(), Set.of(), 15)).getId();
         createdAuthPolicies.add(id);
         return id;
