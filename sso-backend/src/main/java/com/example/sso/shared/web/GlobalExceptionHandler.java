@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ProblemDetail;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -15,6 +16,7 @@ import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 
 import java.net.URI;
+import java.sql.SQLException;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
@@ -75,6 +77,31 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     ProblemDetail handleIllegalArgument(IllegalArgumentException ex, WebRequest request) {
         return problem(ErrorCode.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    /**
+     * A UNIQUE-constraint violation that slipped past an app-level pre-check because a concurrent transaction
+     * committed the same key first (e.g. two admins racing the same policy name or priority). Map it to a clean,
+     * non-revealing 409 — the sequential path already returns the specific message from its pre-check. ONLY the
+     * unique case (SQLState 23505) is a 409; every other integrity violation (FK, CHECK, NOT NULL) is a genuine
+     * 5xx and is re-thrown so it is never masked as a client error.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    ProblemDetail handleDataIntegrityViolation(DataIntegrityViolationException ex, WebRequest request) {
+        if (!isUniqueViolation(ex)) {
+            throw ex;
+        }
+        String detail = messageSource.getMessage("error.conflict.concurrent", null, LocaleContextHolder.getLocale());
+        return problem(ErrorCode.CONFLICT, detail, request);
+    }
+
+    private boolean isUniqueViolation(Throwable ex) {
+        for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLException sql && "23505".equals(sql.getSQLState())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private ProblemDetail problem(ErrorCode code, String detail, WebRequest request) {

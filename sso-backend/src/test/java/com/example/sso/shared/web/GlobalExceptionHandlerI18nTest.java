@@ -3,15 +3,18 @@ package com.example.sso.shared.web;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.LockedException;
 import org.junit.jupiter.api.AfterEach;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.http.ProblemDetail;
 
+import java.sql.SQLException;
 import java.util.Locale;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The same {@link BadRequestException} carrying a message key must render a Korean {@code detail} under
@@ -67,6 +70,29 @@ class GlobalExceptionHandlerI18nTest {
         assertThat(problem.getDetail()).isEqualTo("Access is denied."); // generic, non-revealing
         assertThat(problem.getProperties()).containsEntry("code", "FORBIDDEN").containsKey("traceId");
         assertThat(problem.getProperties()).doesNotContainKey("trace"); // no stack trace leaks
+    }
+
+    @Test
+    void aUniqueConstraintRaceMapsToACleanLocalizedConflict() {
+        // A concurrent write that lost the race to a unique index (SQLState 23505) becomes a non-revealing 409,
+        // not a 500 — the sequential path already returns the specific pre-check message.
+        LocaleContextHolder.setLocale(Locale.ENGLISH);
+        ProblemDetail problem = handler.handleDataIntegrityViolation(
+                new DataIntegrityViolationException("dup", new SQLException("duplicate key", "23505")), null);
+
+        assertThat(problem.getStatus()).isEqualTo(409);
+        assertThat(problem.getProperties()).containsEntry("code", "CONFLICT").containsKey("traceId");
+        assertThat(problem.getDetail()).isEqualTo("The change conflicts with an existing record. Please retry.");
+    }
+
+    @Test
+    void aNonUniqueIntegrityViolationIsRethrownAndNotMaskedAsAConflict() {
+        // A foreign-key (23503) or other integrity violation is a genuine 5xx bug — it must NOT be turned into a
+        // 409, so the handler re-throws it to fall through to the framework's (trace-free) 500 handling.
+        DataIntegrityViolationException fk =
+                new DataIntegrityViolationException("fk", new SQLException("fk violation", "23503"));
+
+        assertThatThrownBy(() -> handler.handleDataIntegrityViolation(fk, null)).isSameAs(fk);
     }
 
     @Test
