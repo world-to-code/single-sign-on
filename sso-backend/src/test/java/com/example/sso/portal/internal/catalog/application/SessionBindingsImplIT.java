@@ -179,6 +179,26 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void reAssigningAnAlreadyPopulatedAllSubjectsSlotUpdatesInPlaceWithoutADuplicateKey() {
+        // Race regression: the async baseline provisioner and a concurrent admin assign both target the same
+        // all-subjects PORTAL/user slot. A row already committed by the first writer must NOT make the second
+        // writer's INSERT trip uq_policy_binding_org_all — the atomic upsert updates in place (last write wins).
+        UUID org = org();
+        UUID first = policyIn(org, "race-first");
+        UUID second = policyIn(org, "race-second");
+        // The first writer's row, committed directly (as the provisioner's own transaction would have).
+        orgContext.runAsPlatform(() -> ownerJdbc().update(
+                "insert into policy_binding (app_type, app_id, subject_type, session_policy_id, session_priority, org_id) "
+                        + "values ('PORTAL', 'user', null, ?, 10, ?)", first, org));
+
+        // The second writer hits the populated slot — no duplicate-key, updates in place.
+        orgContext.runInOrg(org, () -> sessionBindings.replaceForPolicy(second, 20, Set.of(), Set.of()));
+
+        assertThat(allSubjectsRows(org)).isEqualTo(1);
+        assertThat(allSubjectsRow(org).get("session_policy_id")).isEqualTo(second);
+    }
+
+    @Test
     void clearingTheSessionBindingPreservesACoLocatedLoginBinding() {
         UUID org = org();
         UUID sessionPolicy = policyIn(org, "co-session");

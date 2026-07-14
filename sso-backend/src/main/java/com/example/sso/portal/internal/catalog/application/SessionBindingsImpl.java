@@ -97,14 +97,13 @@ class SessionBindingsImpl implements SessionBindings {
         };
     }
 
-    /** Take over (or create) the given subject slot for this policy — last write wins over another policy. */
+    /** Take over (or create) the given subject slot for this policy — last write wins over another policy; the
+     *  atomic upsert carries the session tie-break weight (independent of a co-located auth binding) and is
+     *  race-safe. */
     private void upsert(SubjectType subjectType, UUID subjectId, UUID org, UUID policyId, int priority) {
-        PolicyBinding binding = slot.find(APP_TYPE, APP_ID, subjectType, subjectId, org).orElseGet(() ->
-                PolicyBinding.builder().appType(APP_TYPE).appId(APP_ID).subjectType(subjectType).subjectId(subjectId)
-                        .sessionPolicyId(policyId).sessionPriority(priority).orgId(org).build());
-        binding.assignSessionPolicy(policyId);
-        binding.reprioritizeSession(priority); // session tie-break weight, independent of a co-located auth binding
-        slot.save(binding);
+        slot.upsert(PolicyBinding.builder().appType(APP_TYPE).appId(APP_ID).subjectType(subjectType)
+                .subjectId(subjectId).sessionPolicyId(policyId).sessionPriority(priority).orgId(org).build(),
+                PolicyAxis.SESSION);
     }
 
     private void clear(PolicyBinding binding) {

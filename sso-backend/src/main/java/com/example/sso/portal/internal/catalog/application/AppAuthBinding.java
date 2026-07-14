@@ -7,7 +7,6 @@ import com.example.sso.portal.internal.catalog.domain.PolicyBinding.SubjectType;
 import com.example.sso.portal.internal.catalog.domain.PolicyBindingRepository;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgTierGuard;
-import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -52,18 +51,16 @@ class AppAuthBinding {
             throw new NotFoundException("policy not found");
         }
         UUID org = tierGuard.currentTier();
-        Optional<PolicyBinding> existing = slot.find(appType, appId, subjectType, subjectId, org);
         if (authPolicyId == null) {
-            existing.ifPresent(binding -> {
+            slot.find(appType, appId, subjectType, subjectId, org).ifPresent(binding -> {
                 binding.assignAuthPolicy(null);
                 slot.deleteIfEmptyElseSave(binding); // a session binding on the same row survives
             });
             return;
         }
-        PolicyBinding binding = existing.orElseGet(() -> PolicyBinding.builder()
-                .appType(appType).appId(appId).subjectType(subjectType).subjectId(subjectId)
-                .authPolicyId(authPolicyId).orgId(org).build());
-        binding.assignAuthPolicy(authPolicyId);
-        slot.save(binding); // flush in the acting tier so RLS WITH CHECK sees the right org
+        // Atomic upsert (race-safe) in the acting tier so RLS WITH CHECK sees the right org; a co-located session
+        // binding on the same row is preserved.
+        slot.upsert(PolicyBinding.builder().appType(appType).appId(appId).subjectType(subjectType)
+                .subjectId(subjectId).authPolicyId(authPolicyId).orgId(org).build(), PolicyAxis.AUTH);
     }
 }

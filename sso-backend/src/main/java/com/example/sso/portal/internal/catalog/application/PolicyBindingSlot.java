@@ -9,6 +9,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /**
@@ -24,6 +25,7 @@ import org.springframework.stereotype.Service;
 class PolicyBindingSlot {
 
     private final PolicyBindingRepository bindings;
+    private final JdbcTemplate jdbc;
 
     /** The single binding at this (app, subject, tier) slot, or empty. RLS-scoped by the caller's context. */
     Optional<PolicyBinding> find(AppType appType, String appId, SubjectType subjectType, UUID subjectId, UUID org) {
@@ -43,6 +45,46 @@ class PolicyBindingSlot {
      */
     void save(PolicyBinding binding) {
         bindings.saveAndFlush(binding);
+    }
+
+    /**
+     * ATOMICALLY take over (or create) this (app, subject, tier) slot for the binding's {@code axis} policy —
+     * {@code INSERT ... ON CONFLICT DO UPDATE} against the partial unique index for the slot, so two writers
+     * racing the same slot (the async baseline provisioner and a concurrent admin assign) can't both INSERT and
+     * trip a duplicate-key. Only the axis's own columns are written; a co-located binding on the OTHER axis is
+     * left untouched. Runs on the transaction's RLS-bound connection ({@code WITH CHECK} stamps the acting org),
+     * so it must be called INSIDE the org scope like {@link #save}. The target/set fragments are code-controlled
+     * (never user input); every value is a bound parameter.
+     */
+    void upsert(PolicyBinding binding, PolicyAxis axis) {
+        // Flush pending JPA writes first: the referenced auth/session policy is often created in the SAME
+        // transaction (still in the persistence context), and this native statement bypasses Hibernate — without
+        // the flush the FK to that not-yet-inserted policy row fails. (saveAndFlush used to flush it implicitly.)
+        bindings.flush();
+        String set = axis == PolicyAxis.AUTH
+                ? "auth_policy_id = excluded.auth_policy_id, priority = excluded.priority"
+                : "session_policy_id = excluded.session_policy_id, session_priority = excluded.session_priority";
+        jdbc.update("insert into policy_binding (id, app_type, app_id, subject_type, subject_id, auth_policy_id, "
+                + "session_policy_id, priority, session_priority, org_id, created_at) "
+                + "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now()) "
+                + "on conflict " + conflictTarget(binding.getOrgId() == null, binding.getSubjectType() == null)
+                + " do update set " + set,
+                UUID.randomUUID(), binding.getAppType().name(), binding.getAppId(),
+                binding.getSubjectType() == null ? null : binding.getSubjectType().name(), binding.getSubjectId(),
+                binding.getAuthPolicyId(), binding.getSessionPolicyId(),
+                binding.getPriority(), binding.getSessionPriority(), binding.getOrgId());
+    }
+
+    /** The partial unique index (columns + predicate) covering this (org-or-global, all-subjects-or-subject) slot. */
+    private String conflictTarget(boolean global, boolean allSubjects) {
+        if (allSubjects) {
+            return global
+                    ? "(app_type, app_id) where org_id is null and subject_type is null"
+                    : "(org_id, app_type, app_id) where org_id is not null and subject_type is null";
+        }
+        return global
+                ? "(app_type, app_id, subject_type, subject_id) where org_id is null and subject_type is not null"
+                : "(org_id, app_type, app_id, subject_type, subject_id) where org_id is not null and subject_type is not null";
     }
 
     /**

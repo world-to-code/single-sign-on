@@ -102,14 +102,11 @@ class LoginAuthBindingsImpl implements LoginAuthBindings {
         };
     }
 
-    /** Take over (or create) the given subject slot for this policy — last write wins over another policy. */
+    /** Take over (or create) the given subject slot for this policy — last write wins over another policy; the
+     *  atomic upsert also carries the policy's tie-break weight onto a taken-over row and is race-safe. */
     private void upsert(SubjectType subjectType, UUID subjectId, UUID org, UUID policyId, int priority) {
-        PolicyBinding binding = slot.find(APP_TYPE, APP_ID, subjectType, subjectId, org).orElseGet(() ->
-                PolicyBinding.builder().appType(APP_TYPE).appId(APP_ID).subjectType(subjectType).subjectId(subjectId)
-                        .authPolicyId(policyId).priority(priority).orgId(org).build());
-        binding.assignAuthPolicy(policyId);
-        binding.reprioritize(priority); // carry the policy's tie-break weight onto a taken-over row too
-        slot.save(binding);
+        slot.upsert(PolicyBinding.builder().appType(APP_TYPE).appId(APP_ID).subjectType(subjectType)
+                .subjectId(subjectId).authPolicyId(policyId).priority(priority).orgId(org).build(), PolicyAxis.AUTH);
     }
 
     private void clear(PolicyBinding binding) {
