@@ -91,6 +91,10 @@ public class GlobalExceptionHandler {
         if (!isUniqueViolation(ex)) {
             throw ex;
         }
+        // Observable at WARN (not the DEBUG the 4xx path uses): this downgrades what would otherwise be a 500 to a
+        // 409, so a masked unique-constraint conflict stays visible to operators. SQLState only — the driver's
+        // message echoes the offending key values (potential user input / PII), so it is deliberately not logged.
+        log.warn("Mapped a unique-constraint violation (SQLState 23505) to 409 — a concurrent write lost the race");
         String detail = messageSource.getMessage("error.conflict.concurrent", null, LocaleContextHolder.getLocale());
         return problem(ErrorCode.CONFLICT, detail, request);
     }
