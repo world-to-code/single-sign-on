@@ -1,6 +1,7 @@
 package com.example.sso.authpolicy.internal.application;
 
 import com.example.sso.authpolicy.factor.AuthFactor;
+import com.example.sso.authpolicy.policy.AppPolicyBindings;
 import com.example.sso.authpolicy.policy.AuthPolicyResolver;
 import com.example.sso.authpolicy.policy.AuthPolicySpec;
 import com.example.sso.authpolicy.policy.AuthPolicyUpdate;
@@ -61,6 +62,7 @@ class AuthPolicyAdminServiceImplTest {
     @Mock private AuthPolicyStepRepository stepRepository;
     @Mock private AuthPolicyStepFactorRepository stepFactorRepository;
     @Mock private LoginAuthBindings loginBindings;
+    @Mock private AppPolicyBindings appBindings;
     @Mock private UserService users;
     @Mock private RoleService roles;
 
@@ -73,7 +75,7 @@ class AuthPolicyAdminServiceImplTest {
         // Exercise the REAL tier guard (driven by the mocked OrgContext) so the isolation checks are genuine.
         service = new AuthPolicyAdminServiceImpl(
                 repository, new OrgTierGuard(orgContext), orgContext,
-                stepRepository, stepFactorRepository, loginBindings, users, roles);
+                stepRepository, stepFactorRepository, loginBindings, appBindings, users, roles);
     }
 
     private AuthPolicySpec spec(String name, List<Set<AuthFactor>> steps) {
@@ -165,6 +167,19 @@ class AuthPolicyAdminServiceImplTest {
         verify(stepRepository).findByPolicyId(id);
         verify(loginBindings).clearForPolicy(id); // login bindings cleared before the policy (FK RESTRICT)
         verify(repository).delete(policy);
+    }
+
+    @Test
+    void deletingAPolicyStillAssignedToAnAppIsRejectedWithConflict() {
+        UUID id = UUID.randomUUID();
+        AuthPolicy policy = new AuthPolicy("MFA", 5);
+        when(repository.findById(id)).thenReturn(Optional.of(policy));
+        when(appBindings.isAssignedToApp(id)).thenReturn(true); // still an OIDC/SAML app's required sign-on policy
+
+        // A 409 (not a 500 from the FK RESTRICT, and not a silent app-unassign that would weaken the app's sign-on).
+        assertThatThrownBy(() -> service.delete(id)).isInstanceOf(ConflictException.class);
+        verify(loginBindings, never()).clearForPolicy(any()); // blocked before touching any binding
+        verify(repository, never()).delete(any());
     }
 
     // --- adversarial: tenant/platform tier isolation (privilege escalation & cross-tenant access) --------

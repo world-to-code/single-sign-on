@@ -1,6 +1,7 @@
 package com.example.sso.authpolicy.internal.application;
 
 import com.example.sso.authpolicy.factor.AuthFactor;
+import com.example.sso.authpolicy.policy.AppPolicyBindings;
 import com.example.sso.authpolicy.policy.AuthPolicyAdminService;
 import com.example.sso.authpolicy.policy.AuthPolicyResolver;
 import com.example.sso.authpolicy.policy.AuthPolicySpec;
@@ -52,6 +53,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
     private final AuthPolicyStepRepository stepRepository;
     private final AuthPolicyStepFactorRepository stepFactorRepository;
     private final LoginAuthBindings loginBindings;
+    private final AppPolicyBindings appBindings;
     private final UserService users;
     private final RoleService roles;
 
@@ -159,9 +161,14 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         if (isGlobalDefault(policy)) {
             throw BadRequestException.of("authpolicy.defaultNoDelete");
         }
+        // An app assignment is NOT silently cleared (that would weaken the app's sign-on); block with a 409 so the
+        // admin unassigns it first, instead of letting the auth_policy_id FK RESTRICT surface as a 500.
+        if (appBindings.isAssignedToApp(id)) {
+            throw ConflictException.of("authpolicy.assignedToApp");
+        }
 
         deleteSteps(id);                    // each step's factor rows, then the step rows
-        loginBindings.clearForPolicy(id);   // login bindings first — policy_binding.auth_policy_id is FK RESTRICT
+        loginBindings.clearForPolicy(id);   // login bindings next — policy_binding.auth_policy_id is FK RESTRICT
         repository.delete(policy);          // finally the policy itself (no reliance on DB cascade)
     }
 
