@@ -14,6 +14,8 @@ import org.springframework.security.web.context.HttpSessionSecurityContextReposi
 import org.springframework.session.MapSession;
 import org.springframework.session.events.SessionDeletedEvent;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -45,6 +47,21 @@ class SamlSloListenerTest {
         listener.onSessionDestroyed(deletionOf(session));
 
         verify(propagation).propagate("sid-9", "carol");
+    }
+
+    @Test
+    void aPropagationFailureIsContainedNotRethrown() {
+        // A throw would stop the (synchronous, no-errorHandler) multicaster from invoking the sibling OIDC
+        // back-channel listener for the SAME terminated session, so the listener must swallow it, never propagate.
+        MapSession session = new MapSession();
+        var auth = UsernamePasswordAuthenticationToken.authenticated("carol", null,
+                List.of(new SimpleGrantedAuthority(Factors.MFA_COMPLETE),
+                        new SimpleGrantedAuthority(Factors.SID_PREFIX + "sid-9")));
+        session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
+                new SecurityContextImpl(auth));
+        doThrow(new RuntimeException("SP SLO endpoint down")).when(propagation).propagate("sid-9", "carol");
+
+        assertThatCode(() -> listener.onSessionDestroyed(deletionOf(session))).doesNotThrowAnyException();
     }
 
     @Test

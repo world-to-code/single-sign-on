@@ -14,6 +14,8 @@ import org.springframework.security.web.context.HttpSessionSecurityContextReposi
 import org.springframework.session.MapSession;
 import org.springframework.session.events.SessionDeletedEvent;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -45,6 +47,21 @@ class SessionTerminationListenerTest {
         listener.onSessionDestroyed(deletionOf(session));
 
         verify(propagation).propagate("sid-xyz", "bob");
+    }
+
+    @Test
+    void aPropagationFailureIsContainedNotRethrown() {
+        // A throw would stop the (synchronous, no-errorHandler) multicaster from invoking the sibling SAML SLO
+        // listener for the SAME terminated session, so the listener must swallow it (logged), never propagate.
+        MapSession session = new MapSession();
+        var auth = UsernamePasswordAuthenticationToken.authenticated("bob", null,
+                List.of(new SimpleGrantedAuthority(Factors.MFA_COMPLETE),
+                        new SimpleGrantedAuthority(Factors.SID_PREFIX + "sid-xyz")));
+        session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
+                new SecurityContextImpl(auth));
+        doThrow(new RuntimeException("RP back-channel endpoint down")).when(propagation).propagate("sid-xyz", "bob");
+
+        assertThatCode(() -> listener.onSessionDestroyed(deletionOf(session))).doesNotThrowAnyException();
     }
 
     @Test
