@@ -34,6 +34,12 @@ class RetryBackoffTest {
         assertThat(backoff.maxAttempts()).isEqualTo(10);
     }
 
+    @Test
+    void theMaxGiveUpHorizonSumsTheWorstCaseJitteredDelayOfEveryRetry() {
+        // attempts 1..9: sum of 30s * 2^(k-1) * 1.5 = 45s * (2^9 - 1) = 45s * 511 = 22995s.
+        assertThat(backoff.maxGiveUpHorizon()).isEqualTo(Duration.ofMillis(22_995_000L));
+    }
+
     private void assertDelayWithin(int attempt, long lowMillis, long highMillis) {
         for (int i = 0; i < 50; i++) {
             assertThat(backoff.nextDelayMillis(attempt)).isBetween(lowMillis, highMillis);
