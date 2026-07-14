@@ -224,6 +224,28 @@ public class RoleServiceImpl implements RoleService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public Set<UUID> childRoleIds(UUID parentRoleId) {
+        return roleClosure.childrenOf(parentRoleId);
+    }
+
+    @Override
+    @Transactional
+    public void setInheritsFrom(UUID parentRoleId, Set<UUID> newChildIds) {
+        Role role = roles.findById(parentRoleId).orElseThrow(() -> new NotFoundException("role not found"));
+        UUID org = role.getOrgId();
+        Set<UUID> current = roleClosure.childrenOf(parentRoleId);
+        newChildIds.stream().filter(child -> !current.contains(child))
+                .forEach(child -> roleHierarchyWriter.link(parentRoleId, child, org)); // cycle-guarded, RLS-scoped
+        current.stream().filter(child -> !newChildIds.contains(child))
+                .forEach(child -> roleHierarchyWriter.unlink(parentRoleId, child));
+        // Editing this role's CHILDREN changes its (and its ancestors') effective permissions but not its
+        // membership nor its ancestor set, so the affected holders are the same before and after — end the
+        // sessions of this role's holders AND its same-tier ancestors' holders so none keeps stale authorities.
+        accessChanges.forUserIds(holdersAffectedByChange(parentRoleId));
+    }
+
+    @Override
     @Transactional
     public void deleteRole(UUID roleId) {
         Role role = roles.findById(roleId).orElseThrow(() -> new NotFoundException("role not found"));

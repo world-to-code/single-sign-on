@@ -350,6 +350,134 @@ class RoleAdminServiceTest {
         return role;
     }
 
+    @Test
+    void roleDetailHidesARoleThatOutranksTheActor() {
+        // A non-super must not READ a role above them (mirrors listRoles' hide-above) — the detail would leak
+        // that level's permissions/inheritance. Same non-revealing 404 as an out-of-tier role.
+        UUID id = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.empty());
+        when(roleService.orgIdOf(id)).thenReturn(Optional.empty()); // in tier, so we reach the hide-above check
+        when(accessPolicy.isCurrentActorUnscoped()).thenReturn(false);
+        when(accessPolicy.currentRolesAboveActor()).thenReturn(Set.of(id));
+
+        assertThatThrownBy(() -> service.roleDetail(id)).isInstanceOf(NotFoundException.class);
+        verify(roleService, never()).effectivePermissionNames(any());
+    }
+
+    // --- setInheritance: the authorization gates on editing a role's inheritance ---
+
+    private RoleRef customRole(UUID id) {
+        RoleRef role = mock(RoleRef.class);
+        when(role.isSystem()).thenReturn(false);
+        return role;
+    }
+
+    @Test
+    void setInheritanceRejectsASystemRole() {
+        UUID id = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.empty());
+        when(roleService.orgIdOf(id)).thenReturn(Optional.empty()); // in the (global) tier
+        RoleRef role = mock(RoleRef.class);
+        when(role.isSystem()).thenReturn(true);
+        when(roleService.findById(id)).thenReturn(Optional.of(role));
+
+        assertThatThrownBy(() -> service.setInheritance(id, Set.of(UUID.randomUUID())))
+                .isInstanceOf(ForbiddenException.class);
+        verify(roleService, never()).setInheritsFrom(any(), any());
+    }
+
+    @Test
+    void setInheritanceRejectsARoleOutsideTheActorsTier() {
+        UUID id = UUID.randomUUID();
+        UUID tier = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(tier));
+        when(roleService.orgIdOf(id)).thenReturn(Optional.empty()); // a global role — not in the tenant's tier
+
+        assertThatThrownBy(() -> service.setInheritance(id, Set.of())).isInstanceOf(NotFoundException.class);
+        verify(roleService, never()).setInheritsFrom(any(), any());
+    }
+
+    @Test
+    void setInheritanceRejectsANonSuperWhoDoesNotDominateTheRole() {
+        UUID id = UUID.randomUUID();
+        UUID tier = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(tier));
+        when(roleService.orgIdOf(id)).thenReturn(Optional.of(tier));
+        RoleRef role = customRole(id);
+        when(roleService.findById(id)).thenReturn(Optional.of(role));
+        when(accessPolicy.currentIsSuperAdmin()).thenReturn(false);
+        when(accessPolicy.currentActorMayManageRole(id)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.setInheritance(id, Set.of())).isInstanceOf(ForbiddenException.class);
+        verify(roleService, never()).setInheritsFrom(any(), any());
+    }
+
+    @Test
+    void setInheritanceRejectsAChildOutsideTheTier() {
+        UUID id = UUID.randomUUID();
+        UUID child = UUID.randomUUID();
+        UUID tier = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(tier));
+        when(roleService.orgIdOf(id)).thenReturn(Optional.of(tier));
+        RoleRef role = customRole(id);
+        when(roleService.findById(id)).thenReturn(Optional.of(role));
+        when(accessPolicy.currentIsSuperAdmin()).thenReturn(false);
+        when(accessPolicy.currentActorMayManageRole(id)).thenReturn(true);
+        when(roleService.orgIdOf(child)).thenReturn(Optional.empty()); // child not in the tenant's tier
+
+        assertThatThrownBy(() -> service.setInheritance(id, Set.of(child))).isInstanceOf(NotFoundException.class);
+        verify(roleService, never()).setInheritsFrom(any(), any());
+    }
+
+    @Test
+    void setInheritanceRejectsAddingAChildWhosePermissionsTheActorLacks() {
+        UUID id = UUID.randomUUID();
+        UUID child = UUID.randomUUID();
+        UUID tier = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(tier));
+        when(roleService.orgIdOf(id)).thenReturn(Optional.of(tier));
+        when(roleService.orgIdOf(child)).thenReturn(Optional.of(tier));
+        RoleRef role = customRole(id);
+        when(roleService.findById(id)).thenReturn(Optional.of(role));
+        when(accessPolicy.currentIsSuperAdmin()).thenReturn(false);
+        when(accessPolicy.currentActorMayManageRole(id)).thenReturn(true);
+        when(roleService.childRoleIds(id)).thenReturn(Set.of());
+        when(roleService.effectivePermissionNames(Set.of(child))).thenReturn(Set.of("user:delete"));
+        when(accessPolicy.mayGrantPermissions(Set.of("user:delete"))).thenReturn(false);
+
+        assertThatThrownBy(() -> service.setInheritance(id, Set.of(child))).isInstanceOf(ForbiddenException.class);
+        verify(roleService, never()).setInheritsFrom(any(), any());
+    }
+
+    @Test
+    void setInheritanceAppliesWhenTheActorMayManageTheRoleAndHoldsTheChildsPermissions() {
+        UUID id = UUID.randomUUID();
+        UUID child = UUID.randomUUID();
+        UUID tier = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(tier));
+        when(roleService.orgIdOf(id)).thenReturn(Optional.of(tier));
+        when(roleService.orgIdOf(child)).thenReturn(Optional.of(tier));
+        RoleRef role = customRole(id);
+        when(role.getId()).thenReturn(id);
+        when(role.getName()).thenReturn("SUPPORT");
+        when(role.getPermissionNames()).thenReturn(Set.of("ticket:read"));
+        when(roleService.findById(id)).thenReturn(Optional.of(role));
+        when(accessPolicy.currentIsSuperAdmin()).thenReturn(false);
+        when(accessPolicy.currentActorMayManageRole(id)).thenReturn(true);
+        when(roleService.childRoleIds(id)).thenReturn(Set.of());
+        when(roleService.effectivePermissionNames(Set.of(child))).thenReturn(Set.of("user:delete"));
+        when(accessPolicy.mayGrantPermissions(Set.of("user:delete"))).thenReturn(true);
+        when(roleService.effectivePermissionNames(Set.of(id))).thenReturn(Set.of("ticket:read", "user:delete"));
+        when(roleService.idNames(any())).thenReturn(List.of());
+
+        RoleDetailView view = service.setInheritance(id, Set.of(child));
+
+        verify(roleService).setInheritsFrom(id, Set.of(child));
+        verify(auditLogger).log(eq(AuditType.ROLE_UPDATED), any());
+        // The A-holder now effectively carries the inherited permission (e.g. user:delete via the child).
+        assertThat(view.effectivePermissions()).contains("user:delete");
+    }
+
     private UserAccount user(UUID id) {
         UserAccount account = mock(UserAccount.class);
         when(account.getId()).thenReturn(id);

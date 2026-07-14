@@ -17,6 +17,23 @@ public interface RoleHierarchyEdgeRepository extends JpaRepository<RoleHierarchy
     void deleteByRoleId(@Param("roleId") UUID roleId);
 
     /**
+     * The DIRECT children of a role (the roles it inherits directly), NOT the transitive closure — the ids
+     * only, never the entity. RLS-confined like every read here (a tenant sees its own + global edges).
+     */
+    @Query("select e.id.childRoleId from RoleHierarchyEdge e where e.id.parentRoleId = :parentRoleId")
+    List<UUID> findChildRoleIdsByParentRoleId(@Param("parentRoleId") UUID parentRoleId);
+
+    /**
+     * Removes a single {@code parent → child} edge (bulk delete, runs in-scope so RLS gates the write). No
+     * {@code clearAutomatically} is needed because every read after a delete in the same tx is a scalar/native
+     * projection (child-id lists, the recursive CTEs) — never an entity re-fetch that could see a stale cached
+     * edge; add it if an entity-returning finder on {@code role_hierarchy} is ever read post-delete in one tx.
+     */
+    @Modifying
+    @Query("delete from RoleHierarchyEdge e where e.id.parentRoleId = :parentRoleId and e.id.childRoleId = :childRoleId")
+    void deleteEdge(@Param("parentRoleId") UUID parentRoleId, @Param("childRoleId") UUID childRoleId);
+
+    /**
      * The transitive descendant closure of the given root roles (strict — the roots themselves are NOT
      * included). One recursive CTE, {@code UNION}-deduped so DAG diamonds terminate and any corrupt cycle
      * cannot loop. Native so RLS on {@code role_hierarchy} applies: a tenant context sees only its own +

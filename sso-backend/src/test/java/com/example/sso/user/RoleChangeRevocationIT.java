@@ -62,6 +62,26 @@ class RoleChangeRevocationIT extends AbstractIntegrationTest {
         assertThat(revoked).doesNotContain(platformAdmin);
     }
 
+    @Test
+    void editingATenantRolesInheritanceRevokesItsHoldersAndSameTierAncestorHoldersButNotThePlatformAdmin() {
+        UUID org = organizations.create(new NewOrganization("rev-inh-" + suffix(), "revinh")).id();
+        UUID groupAdminRole = orgRoleId(org, Roles.GROUP_ADMIN);
+        UUID child = orgContext.callInOrg(org,
+                () -> roleService.create("ROLE_REV_CHILD_" + suffix(), Set.of(Permissions.USER_READ)).getId());
+
+        String groupAdminHolder = tenantUser(org, Roles.GROUP_ADMIN); // holder of the edited role
+        String orgAdminHolder = tenantUser(org, Roles.ORG_ADMIN);     // ancestor holder (inherits GROUP_ADMIN)
+        String platformAdmin = globalAdmin();                          // cross-tier ancestor — must NOT be revoked
+
+        // Making GROUP_ADMIN inherit a new child changes its (and ORG_ADMIN's) effective permissions.
+        orgContext.runInOrg(org, () -> roleService.setInheritsFrom(groupAdminRole, Set.of(child)));
+
+        List<String> revoked = events.stream(UserAccessChangedEvent.class)
+                .map(UserAccessChangedEvent::username).toList();
+        assertThat(revoked).contains(groupAdminHolder, orgAdminHolder);
+        assertThat(revoked).doesNotContain(platformAdmin);
+    }
+
     private UUID orgRoleId(UUID org, String name) {
         return orgContext.callInOrg(org, () -> roleService.findAll()).stream()
                 .filter(role -> org.equals(role.getOrgId()) && name.equals(role.getName()))

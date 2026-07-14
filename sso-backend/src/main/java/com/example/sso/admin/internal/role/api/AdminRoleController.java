@@ -2,6 +2,7 @@ package com.example.sso.admin.internal.role.api;
 
 import com.example.sso.admin.internal.role.application.PermissionView;
 import com.example.sso.admin.internal.role.application.RoleAdminService;
+import com.example.sso.admin.internal.role.application.RoleDetailView;
 import com.example.sso.admin.internal.role.application.RoleMemberView;
 import com.example.sso.admin.internal.role.application.RoleView;
 import com.example.sso.admin.internal.shared.security.CanGrantRole;
@@ -36,6 +37,19 @@ public class AdminRoleController {
     @RequirePermission(Permissions.ROLE_READ)
     public List<RoleView> roles() {
         return roleAdminService.listRoles();
+    }
+
+    @GetMapping("/roles/{id}")
+    @RequirePermission(Permissions.ROLE_READ)
+    public RoleDetailView role(@PathVariable UUID id) {
+        return roleAdminService.roleDetail(id);
+    }
+
+    @PutMapping("/roles/{id}/inheritance")
+    @RequirePermission(Permissions.ROLE_UPDATE)
+    @RequireStepUp
+    public RoleDetailView setInheritance(@PathVariable UUID id, @Valid @RequestBody RoleInheritanceRequest request) {
+        return roleAdminService.setInheritance(id, request.inheritsFromRoleIds());
     }
 
     @PostMapping("/roles")

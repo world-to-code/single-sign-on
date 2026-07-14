@@ -75,6 +75,18 @@ public interface RoleService {
      */
     RoleRef updateRole(UUID roleId, String name, Set<String> permissionNames);
 
+    /** The ids of the roles a role inherits DIRECTLY (its direct children in the DAG), not the transitive set. */
+    Set<UUID> childRoleIds(UUID parentRoleId);
+
+    /**
+     * Reconciles the roles {@code parentRoleId} inherits to exactly {@code childRoleIds} — each becomes a
+     * child whose permissions flow up into this role. Adds route through the cycle guard; removals unlink the
+     * edge; the caller's privilege/tier checks are enforced upstream (admin service). Ends the sessions of
+     * every affected holder (this role's and its same-tier ancestors') so no one keeps stale inherited
+     * authorities.
+     */
+    void setInheritsFrom(UUID parentRoleId, Set<UUID> childRoleIds);
+
     /** Admin role builder: deletes a non-system role (409 for system roles). */
     void deleteRole(UUID roleId);
 

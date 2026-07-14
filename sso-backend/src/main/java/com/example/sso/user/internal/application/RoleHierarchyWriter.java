@@ -44,4 +44,13 @@ class RoleHierarchyWriter {
     void unlinkRole(UUID roleId) {
         edges.deleteByRoleId(roleId);
     }
+
+    /**
+     * Removes a single {@code parent → child} edge — the counterpart to {@link #link} for editing a role's
+     * inheritance. Idempotent (a no-op if the edge is absent). The delete runs in-scope, so RLS lets the
+     * caller remove only an edge in its own tier (or a global edge from platform context).
+     */
+    void unlink(UUID parentRoleId, UUID childRoleId) {
+        edges.deleteEdge(parentRoleId, childRoleId);
+    }
 }

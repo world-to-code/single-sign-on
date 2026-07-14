@@ -5,12 +5,15 @@ import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.shared.application.LastAdminGuard;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
+import com.example.sso.shared.IdName;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.rbac.RbacService;
+import com.example.sso.user.role.RoleRef;
 import com.example.sso.user.role.RoleService;
 import com.example.sso.user.role.Roles;
 import com.example.sso.user.account.UserAccount;
@@ -18,6 +21,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -86,6 +90,57 @@ public class RoleAdminService {
         if (!roleService.effectivePermissionNames(apex).containsAll(permissions)) {
             throw new ForbiddenException("a created role may not carry a permission its parent role lacks");
         }
+    }
+
+    /** A role with its inheritance surfaced: the roles it inherits + its effective (direct ∪ inherited) perms. */
+    @Transactional(readOnly = true)
+    public RoleDetailView roleDetail(UUID id) {
+        requireRoleInTier(id);
+        // Hide-above (mirrors listRoles): a non-super must never READ a role that outranks them, or the detail
+        // would leak the permissions/inheritance of the level above them (e.g. a sub-admin viewing ORG_ADMIN).
+        // Non-revealing 404, identical to a role that is out of tier.
+        if (!accessPolicy.isCurrentActorUnscoped() && accessPolicy.currentRolesAboveActor().contains(id)) {
+            throw new NotFoundException("role not found");
+        }
+        RoleRef role = roleService.findById(id).orElseThrow(() -> new NotFoundException("role not found"));
+        List<IdName> inheritsFrom = roleService.idNames(roleService.childRoleIds(id));
+        return RoleDetailView.of(role, inheritsFrom, roleService.effectivePermissionNames(Set.of(id)));
+    }
+
+    /**
+     * Sets the roles this role inherits (its direct children in the DAG). Authorization-critical — a bad edit
+     * is a privilege-escalation vector, so it re-asserts every create-time invariant: (1) the role is in the
+     * actor's tier and (2) not a system role (system inheritance is locked); (3) a non-super must dominate the
+     * role; (4) each chosen child is in the tier; and (5) the actor must hold every permission the ADDED
+     * children contribute (grant-only-what-you-hold) — otherwise inheriting them would bleed a permission the
+     * actor lacks up into this role's (and its ancestors') holders. The cycle guard and session revocation
+     * live in {@code RoleService.setInheritsFrom}.
+     */
+    @Transactional
+    public RoleDetailView setInheritance(UUID id, Set<UUID> childRoleIds) {
+        requireRoleInTier(id);
+        RoleRef role = roleService.findById(id).orElseThrow(() -> new NotFoundException("role not found"));
+        if (role.isSystem()) {
+            throw new ForbiddenException("a system role's inheritance cannot be edited");
+        }
+        if (!accessPolicy.currentIsSuperAdmin() && !accessPolicy.currentActorMayManageRole(id)) {
+            throw new ForbiddenException("not permitted to modify this role");
+        }
+        childRoleIds.forEach(this::requireRoleInTier); // each child must be in the actor's tier (no cross-tier/global)
+        Set<UUID> current = roleService.childRoleIds(id);
+        Set<UUID> added = childRoleIds.stream().filter(child -> !current.contains(child)).collect(Collectors.toSet());
+        if (!added.isEmpty()) {
+            requireMayGrantPermissions(roleService.effectivePermissionNames(added));
+        }
+        try {
+            roleService.setInheritsFrom(id, childRoleIds);
+        } catch (IllegalStateException cycle) {
+            // The DAG cycle guard (the sole multi-hop guard, in RoleHierarchyWriter.link) is a user-triggerable
+            // 4xx, not a 500 — a caller chose a child that (transitively, or itself) already inherits this role.
+            throw new BadRequestException("a role cannot inherit a role that would create a cycle");
+        }
+        auditLogger.log(AuditType.ROLE_UPDATED, "role=" + id + " inheritsFrom=" + childRoleIds);
+        return roleDetail(id);
     }
 
     @Transactional
