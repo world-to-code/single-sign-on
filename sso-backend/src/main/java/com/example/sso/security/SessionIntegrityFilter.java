@@ -6,7 +6,6 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditService;
 import com.example.sso.session.lifecycle.SessionMetadataStore;
 import com.example.sso.session.policy.EffectiveSessionPolicy;
-import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.session.lifecycle.StepUpInterceptor;
 import jakarta.servlet.FilterChain;
@@ -67,9 +66,8 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
             String username = authentication.getName();
             // One resolution yields: the FLOOR-composed idle/absolute lifetimes (a narrow lax policy cannot extend
             // a broad org-wide lifetime), the org-authoritative re-auth cadence/factors (broadest-scope), and the
-            // specificity winner for the client binding below.
+            // winner's client-binding preference.
             EffectiveSessionPolicy effective = userSessionPolicy.effectiveForUsername(username);
-            SessionPolicyDetails policy = effective.winner();
             long now = System.currentTimeMillis();
 
             // (Per-policy network/IP access is enforced separately by PolicyIpAccessFilter, which runs on
@@ -124,7 +122,7 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
             session.setAttribute(LAST_ACTIVITY, now);
             sessionMetadata.touch(session.getId()); // refresh "last seen" for the My Profile sessions list
 
-            if (policy.isBindClient()) {
+            if (effective.bindClient()) {
                 String current = clientBinding(request);
                 Object bound = session.getAttribute(CLIENT_BINDING);
                 if (bound == null) {

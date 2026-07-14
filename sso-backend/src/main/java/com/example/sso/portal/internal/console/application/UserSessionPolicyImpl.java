@@ -93,17 +93,19 @@ class UserSessionPolicyImpl implements UserSessionPolicy {
             SessionPolicyDetails winner = governing.get(0);
             SessionPolicyDetails reauthSource = bindings
                     .resolveBroadestSessionPolicy(user, AppType.PORTAL, PortalApps.USER).orElse(winner);
-            return new EffectiveSessionPolicy(winner,
+            return new EffectiveSessionPolicy(
                     floor(governing, SessionPolicyDetails::getIdleTimeoutMinutes),
                     floor(governing, SessionPolicyDetails::getAbsoluteTimeoutMinutes),
-                    reauthSource.getReauthIntervalMinutes(), reauthSource.getReauthFactors());
+                    reauthSource.getReauthIntervalMinutes(), reauthSource.getReauthFactors(),
+                    winner.isBindClient(), winner.isRotateOnReauth());
         });
     }
 
     /** The effective policy when a single policy governs everything (the Default fallback): every field is its own. */
     private EffectiveSessionPolicy singlePolicy(SessionPolicyDetails policy) {
-        return new EffectiveSessionPolicy(policy, policy.getIdleTimeoutMinutes(), policy.getAbsoluteTimeoutMinutes(),
-                policy.getReauthIntervalMinutes(), policy.getReauthFactors());
+        return new EffectiveSessionPolicy(policy.getIdleTimeoutMinutes(), policy.getAbsoluteTimeoutMinutes(),
+                policy.getReauthIntervalMinutes(), policy.getReauthFactors(),
+                policy.isBindClient(), policy.isRotateOnReauth());
     }
 
     /** The smallest value of {@code field} across the governing policies (never empty — Default is the fallback). */

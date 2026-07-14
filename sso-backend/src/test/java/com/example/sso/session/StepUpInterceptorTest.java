@@ -70,7 +70,7 @@ class StepUpInterceptorTest {
         lenient().when(userSessionPolicy.resolveForUsername(anyString())).thenReturn(policy);
         // The general mutation branch reads the EFFECTIVE (org-authoritative) re-auth cadence/factors: 5m / TOTP,FIDO2.
         lenient().when(userSessionPolicy.effectiveForUsername(anyString()))
-                .thenReturn(new EffectiveSessionPolicy(policy, 30, 480, 5, "TOTP,FIDO2"));
+                .thenReturn(new EffectiveSessionPolicy(30, 480, 5, "TOTP,FIDO2", false, false));
         lenient().when(policyService.defaultPolicy()).thenReturn(policy);
         // By default the console policy == the user's own, so the sensitive-action cases below read the same
         // window/factors; a dedicated test overrides it to prove the console policy is what actually governs.
@@ -245,7 +245,7 @@ class StepUpInterceptorTest {
         lenient().when(winner.getReauthFactors()).thenReturn("PASSWORD");
         lenient().when(userSessionPolicy.resolveForUsername("alice")).thenReturn(winner);
         when(userSessionPolicy.effectiveForUsername("alice"))
-                .thenReturn(new EffectiveSessionPolicy(winner, 30, 480, 15, "FIDO2"));
+                .thenReturn(new EffectiveSessionPolicy(30, 480, 15, "FIDO2", false, false));
 
         MockHttpServletRequest request = request("DELETE");
         activityAge(request, 20 * 60_000); // idle 20m > effective 15m (but < the winner's 480m) → must challenge

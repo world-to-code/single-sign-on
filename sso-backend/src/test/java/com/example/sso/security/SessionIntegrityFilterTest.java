@@ -4,7 +4,6 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
 import com.example.sso.session.lifecycle.SessionMetadataStore;
 import com.example.sso.session.policy.EffectiveSessionPolicy;
-import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.session.lifecycle.StepUpInterceptor;
 import jakarta.servlet.FilterChain;
@@ -57,18 +56,16 @@ class SessionIntegrityFilterTest {
     @Mock private UserSessionPolicy policyService;
     @Mock private SessionRegistry sessionRegistry;
     @Mock private SessionMetadataStore sessionMetadata;
-    @Mock private SessionPolicyDetails policy;
 
     private SessionIntegrityFilter filter;
 
     @BeforeEach
     void setUp() {
         filter = new SessionIntegrityFilter(audit, policyService, sessionRegistry, sessionMetadata);
-        // One resolution: floored idle/absolute (30m/8h), org-authoritative re-auth (15m, TOTP/PASSWORD); the
-        // winner supplies only the client binding.
+        // One resolution: floored idle/absolute (30m/8h), org-authoritative re-auth (15m, TOTP/PASSWORD), client
+        // binding off (a dedicated test turns it on).
         lenient().when(policyService.effectiveForUsername("alice"))
-                .thenReturn(new EffectiveSessionPolicy(policy, 30, 480, 15, "TOTP,PASSWORD"));
-        lenient().when(policy.isBindClient()).thenReturn(false);
+                .thenReturn(new EffectiveSessionPolicy(30, 480, 15, "TOTP,PASSWORD", false, false));
     }
 
     @AfterEach
@@ -156,7 +153,8 @@ class SessionIntegrityFilterTest {
     @Test
     void aChangedClientBindingIsRejectedWhenBindingIsEnabled() throws Exception {
         authenticate();
-        when(policy.isBindClient()).thenReturn(true);
+        when(policyService.effectiveForUsername("alice"))
+                .thenReturn(new EffectiveSessionPolicy(30, 480, 15, "TOTP,PASSWORD", true, false)); // bindClient on
         HttpSession s = session(MIN, MIN, "Mozilla/OLD"); // bound to a different UA
         MockHttpServletRequest request = request(s, "Mozilla/NEW");
         MockHttpServletResponse response = new MockHttpServletResponse();

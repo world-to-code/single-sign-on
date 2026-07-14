@@ -60,7 +60,7 @@ public class ReauthService {
 
         // Per-policy defence in depth: rotate the session id on a successful re-auth BEFORE the response
         // (and the step-up stamp) are written, keeping the SessionRegistry consistent.
-        if (effective.winner().isRotateOnReauth()) {
+        if (effective.rotateOnReauth()) {
             sessions.rotateSessionId(request, user.getUsername());
         }
 

@@ -8,7 +8,6 @@ import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.application.ApplicationService;
 import com.example.sso.portal.application.ApplicationView;
 import com.example.sso.session.policy.EffectiveSessionPolicy;
-import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.shared.error.UnauthorizedException;
 import com.example.sso.user.account.UserAccount;
@@ -67,9 +66,8 @@ class PortalServiceTest {
     void sessionConfigParsesAndTrimsTheReauthFactorCsv() {
         // The SPA timers follow the EFFECTIVE policy the filters enforce (floored idle, org-authoritative re-auth);
         // that resolution is covered by UserSessionPolicyImplTest. Only the record's scalars are read here.
-        SessionPolicyDetails winner = mock(SessionPolicyDetails.class);
         when(userSessionPolicy.effectiveForUsername(USERNAME))
-                .thenReturn(new EffectiveSessionPolicy(winner, 15, 480, 5, " TOTP , FIDO2 ,"));
+                .thenReturn(new EffectiveSessionPolicy(15, 480, 5, " TOTP , FIDO2 ,", false, false));
 
         SessionConfigView view = service.sessionConfig(USERNAME);
 

@@ -185,6 +185,8 @@ class UserSessionPolicyImplTest {
     @Test
     void effectiveFloorsLifetimesButTakesReauthFromTheBroadestScopePolicy() {
         SessionPolicyDetails winner = policyWithLifetimes(60, 90);              // most-specific (user) — element 0
+        when(winner.isBindClient()).thenReturn(true);                          // preference fields come from the winner —
+        when(winner.isRotateOnReauth()).thenReturn(false);                     // DISTINCT values so a field swap is caught
         SessionPolicyDetails broad = policyWithReauth(30, 120, 15, "TOTP,FIDO2"); // org-wide — the re-auth source
         when(users.findByUsername(USER)).thenReturn(Optional.of(user));
         scopeToActingOrg();
@@ -194,7 +196,8 @@ class UserSessionPolicyImplTest {
                 .thenReturn(Optional.of(broad));                              // org-wide governs re-auth
 
         EffectiveSessionPolicy effective = resolver().effectiveForUsername(USER);
-        assertThat(effective.winner()).isSameAs(winner);
+        assertThat(effective.bindClient()).isTrue();                         // from the winner (get(0))
+        assertThat(effective.rotateOnReauth()).isFalse();                    // from the winner (get(0)), distinct value
         assertThat(effective.idleTimeoutMinutes()).isEqualTo(30);            // min(60, 30) — floor
         assertThat(effective.absoluteTimeoutMinutes()).isEqualTo(90);        // min(90, 120) — floor
         assertThat(effective.reauthIntervalMinutes()).isEqualTo(15);         // from the broadest (org), not the winner
@@ -217,17 +220,20 @@ class UserSessionPolicyImplTest {
     @Test
     void effectiveUsesTheDefaultWhenNoBindingMatches() {
         SessionPolicyDetails orgDefault = policyWithReauth(15, 240, 10, "TOTP");
+        when(orgDefault.isBindClient()).thenReturn(true);   // DISTINCT booleans so the single-policy mapping is pinned
+        when(orgDefault.isRotateOnReauth()).thenReturn(false);
         when(users.findByUsername(USER)).thenReturn(Optional.of(user));
         scopeToActingOrg();
         when(bindings.resolveSessionPolicies(user, AppType.PORTAL, PortalApps.USER)).thenReturn(List.of());
         when(sessionPolicies.resolveDefault()).thenReturn(orgDefault);
 
         EffectiveSessionPolicy effective = resolver().effectiveForUsername(USER);
-        assertThat(effective.winner()).isSameAs(orgDefault);
         assertThat(effective.idleTimeoutMinutes()).isEqualTo(15);
         assertThat(effective.absoluteTimeoutMinutes()).isEqualTo(240);
         assertThat(effective.reauthIntervalMinutes()).isEqualTo(10);
         assertThat(effective.reauthFactors()).isEqualTo("TOTP");
+        assertThat(effective.bindClient()).isTrue();
+        assertThat(effective.rotateOnReauth()).isFalse();
     }
 
     @Test
@@ -237,7 +243,6 @@ class UserSessionPolicyImplTest {
         when(sessionPolicies.defaultPolicy()).thenReturn(globalDefault);
 
         EffectiveSessionPolicy effective = resolver().effectiveForUsername(USER);
-        assertThat(effective.winner()).isSameAs(globalDefault);
         assertThat(effective.idleTimeoutMinutes()).isEqualTo(10);
         assertThat(effective.absoluteTimeoutMinutes()).isEqualTo(60);
         assertThat(effective.reauthIntervalMinutes()).isEqualTo(5);

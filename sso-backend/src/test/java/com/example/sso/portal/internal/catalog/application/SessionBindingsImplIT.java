@@ -232,10 +232,8 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
         });
 
         EffectiveSessionPolicy effective = orgContext.callInOrg(org, () -> userSessionPolicy.effectiveForUsername(username));
-        // The user-specific lax policy is the specificity WINNER, but idle/absolute are FLOORS (shortest wins) and
-        // the re-auth cadence/factors come from the BROADEST (org-wide) policy — a narrower policy cannot lengthen
-        // the lifetimes NOR weaken the org's re-auth requirement.
-        assertThat(effective.winner().getId()).isEqualTo(lax);
+        // idle/absolute are FLOORS (shortest wins) and the re-auth cadence/factors come from the BROADEST (org-wide)
+        // policy — a narrower policy cannot lengthen the lifetimes NOR weaken the org's re-auth requirement.
         assertThat(effective.idleTimeoutMinutes()).isEqualTo(15);
         assertThat(effective.absoluteTimeoutMinutes()).isEqualTo(120);
         assertThat(effective.reauthIntervalMinutes()).isEqualTo(20);        // org's, not the user's 5

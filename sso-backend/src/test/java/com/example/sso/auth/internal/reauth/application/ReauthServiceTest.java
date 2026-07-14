@@ -12,7 +12,6 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.session.lifecycle.SessionLifecycle;
 import com.example.sso.session.policy.EffectiveSessionPolicy;
-import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.session.lifecycle.StepUpInterceptor;
 import com.example.sso.mfa.FactorAuthorizationService;
@@ -65,7 +64,6 @@ class ReauthServiceTest {
     @Mock private FactorAuthorizationService factorAuth;
     @Mock private AuditService audit;
     @Mock private FactorHandler handler;
-    @Mock private SessionPolicyDetails policy;
 
     @InjectMocks private ReauthService service;
 
@@ -76,14 +74,13 @@ class ReauthServiceTest {
         user = mock(UserAccount.class);
         lenient().when(user.getUsername()).thenReturn("alice");
         lenient().when(currentUser.require()).thenReturn(user);
-        // The effective policy: the winner (policy mock) supplies isRotateOnReauth; the re-auth factors are the
-        // org-authoritative (broadest-scope) value carried on the record, not read off the winner.
-        lenient().when(sessionPolicy.effectiveForUser(user)).thenReturn(effectiveWithFactors("TOTP,FIDO2"));
-        lenient().when(policy.isRotateOnReauth()).thenReturn(false);
+        // The effective policy carries the org-authoritative re-auth factors and the rotate-on-reauth preference
+        // directly (no raw winner policy is exposed).
+        lenient().when(sessionPolicy.effectiveForUser(user)).thenReturn(effectiveWith("TOTP,FIDO2", false));
     }
 
-    private EffectiveSessionPolicy effectiveWithFactors(String reauthFactors) {
-        return new EffectiveSessionPolicy(policy, 30, 480, 15, reauthFactors);
+    private EffectiveSessionPolicy effectiveWith(String reauthFactors, boolean rotateOnReauth) {
+        return new EffectiveSessionPolicy(30, 480, 15, reauthFactors, false, rotateOnReauth);
     }
 
     /** A request whose session already carries a pending challenge for {@code pendingFactors} (or none if null). */
@@ -173,7 +170,7 @@ class ReauthServiceTest {
 
     @Test
     void verifyRejectsAFactorOutsideThePolicyReauthFactorsWhenNoChallengeIsPending() {
-        when(sessionPolicy.effectiveForUser(user)).thenReturn(effectiveWithFactors("FIDO2"));
+        when(sessionPolicy.effectiveForUser(user)).thenReturn(effectiveWith("FIDO2", false));
         MockHttpServletRequest request = requestWithPending(null);
 
         assertThatThrownBy(() -> service.verify(AuthFactor.TOTP, response("123456"), request, new MockHttpServletResponse()))
@@ -183,7 +180,7 @@ class ReauthServiceTest {
 
     @Test
     void verifyRotatesTheSessionIdWhenThePolicyDemandsIt() {
-        when(policy.isRotateOnReauth()).thenReturn(true);
+        when(sessionPolicy.effectiveForUser(user)).thenReturn(effectiveWith("TOTP,FIDO2", true));
         MockHttpServletRequest request = requestWithPending("FIDO2");
         when(factorHandlers.get(AuthFactor.FIDO2)).thenReturn(handler);
         when(handler.verify(eq(user), any(), eq(request))).thenReturn(true);
