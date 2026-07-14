@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
 import { apiGet, type Page } from "../api";
 import { PageHeader } from "@/components/PageHeader";
+import { TagList } from "@/components/TagList";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -123,8 +124,8 @@ export default function AuthPolicies() {
                       ))}
                     </div>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{p.assignedRoleIds.map(roleName).join(", ") || "—"}</TableCell>
-                  <TableCell className="text-muted-foreground">{p.assignedUserIds.map(userName).join(", ") || "—"}</TableCell>
+                  <TableCell><TagList items={p.assignedRoleIds.map(roleName)} variant="secondary" /></TableCell>
+                  <TableCell><TagList items={p.assignedUserIds.map(userName)} variant="secondary" /></TableCell>
                   <TableCell className="text-right">
                     {p.name !== "Default" ? (
                       <div className="flex justify-end gap-1">

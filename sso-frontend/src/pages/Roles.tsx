@@ -8,7 +8,7 @@ import {
 } from "@/roles";
 import { PageHeader } from "@/components/PageHeader";
 import { PermissionPicker } from "@/components/PermissionPicker";
-import { PermissionSummary } from "@/components/PermissionSummary";
+import { TagList } from "@/components/TagList";
 import { useEditorForm } from "@/hooks/useEditorForm";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 import { Field } from "@/components/form/fields";
@@ -110,7 +110,7 @@ export default function Roles() {
                     {role.name === ADMIN_ROLE ? (
                       <span className="text-muted-foreground">{t("rolesAllPermissions")}</span>
                     ) : (
-                      <PermissionSummary permissions={role.permissions} />
+                      <TagList items={role.permissions} mono />
                     )}
                   </TableCell>
                   <TableCell>

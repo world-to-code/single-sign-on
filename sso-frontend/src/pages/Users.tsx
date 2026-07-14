@@ -5,6 +5,7 @@ import { type AdminUser } from "@/users";
 import { usePaginated } from "@/usePaginated";
 import { Pagination } from "@/components/Pagination";
 import { PageHeader } from "@/components/PageHeader";
+import { TagList } from "@/components/TagList";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -48,11 +49,7 @@ export default function Users() {
                   <TableCell className="text-muted-foreground">{u.email}</TableCell>
                   <TableCell>{u.displayName ?? <span className="text-muted-foreground">—</span>}</TableCell>
                   <TableCell><Badge variant={u.enabled ? "success" : "muted"}>{u.enabled ? t("usersStatusEnabled") : t("usersStatusDisabled")}</Badge></TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      {u.roles.length ? u.roles.map((r) => <Badge key={r} variant="secondary">{r}</Badge>) : <span className="text-muted-foreground">—</span>}
-                    </div>
-                  </TableCell>
+                  <TableCell><TagList items={u.roles} variant="secondary" /></TableCell>
                 </TableRow>
               ))}
             </TableBody>

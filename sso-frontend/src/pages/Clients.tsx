@@ -5,6 +5,7 @@ import { type ClientRow } from "@/clients";
 import { usePaginated } from "@/usePaginated";
 import { Pagination } from "@/components/Pagination";
 import { PageHeader } from "@/components/PageHeader";
+import { TagList } from "@/components/TagList";
 import { DataList, EmptyState } from "@/components/states";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 import { tokens } from "@/lib/utils";
@@ -82,16 +83,8 @@ export default function Clients() {
                       </span>
                     </TableCell>
                     <TableCell>{c.clientName}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {tokens(c.scopes).map((s) => <Badge key={s} variant="secondary">{s}</Badge>)}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {tokens(c.grantTypes).map((g) => <Badge key={g} variant="muted">{g}</Badge>)}
-                      </div>
-                    </TableCell>
+                    <TableCell><TagList items={tokens(c.scopes)} variant="secondary" /></TableCell>
+                    <TableCell><TagList items={tokens(c.grantTypes)} variant="muted" /></TableCell>
                     <TableCell className="text-right">
                       {c.clientId === "admin-console" ? (
                         <Badge variant="secondary" title={t("clientsProtectedTitle")}>
