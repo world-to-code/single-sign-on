@@ -470,15 +470,21 @@ function ChipList({ items, onRemove }: { items: { key: string; label: string }[]
   const { t } = useTranslation("console");
   if (!items.length) return <p className="text-xs text-muted-foreground">{t("none")}</p>;
   return (
-    <div className="flex flex-wrap gap-2">
-      {items.map((i) => (
-        <Badge key={i.key} variant="muted" className="gap-1 font-mono text-xs">
-          {i.label}
-          <button onClick={() => onRemove(i.key)} className="ml-1 text-muted-foreground hover:text-destructive">
-            <Trash2 className="size-3" />
-          </button>
-        </Badge>
-      ))}
+    <div className="space-y-1">
+      {items.length > 8 && (
+        <p className="text-xs text-muted-foreground">{t("resourcesMemberCount", { count: items.length })}</p>
+      )}
+      {/* Cap the height and scroll — a resource can hold dozens of members without pushing the dialog off-screen. */}
+      <div className="flex max-h-52 flex-wrap gap-2 overflow-y-auto pr-1">
+        {items.map((i) => (
+          <Badge key={i.key} variant="muted" className="gap-1 font-mono text-xs">
+            {i.label}
+            <button onClick={() => onRemove(i.key)} className="ml-1 text-muted-foreground hover:text-destructive">
+              <Trash2 className="size-3" />
+            </button>
+          </Badge>
+        ))}
+      </div>
     </div>
   );
 }

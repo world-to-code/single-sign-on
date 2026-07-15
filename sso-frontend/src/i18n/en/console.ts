@@ -332,6 +332,8 @@ export const console = {
   resourcesSectionParents: "Parents",
   resourcesSectionChildren: "Child resources",
   resourcesSectionMembers: "Members",
+  resourcesMemberCount_one: "{{count}} member",
+  resourcesMemberCount_other: "{{count}} members",
   resourcesSectionAdmins: "Delegated administrators",
   resourcesParentsEmpty: "None (a root resource).",
   resourcesAttachChild: "Attach a child…",

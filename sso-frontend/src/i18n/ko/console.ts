@@ -332,6 +332,8 @@ export const console: Record<keyof typeof enConsole, string> = {
   resourcesSectionParents: "부모",
   resourcesSectionChildren: "하위 리소스",
   resourcesSectionMembers: "구성원",
+  resourcesMemberCount_one: "구성원 {{count}}명",
+  resourcesMemberCount_other: "구성원 {{count}}명",
   resourcesSectionAdmins: "위임 관리자",
   resourcesParentsEmpty: "없음 (루트 리소스).",
   resourcesAttachChild: "하위 연결…",
