@@ -4,9 +4,13 @@ import com.example.sso.admin.internal.portalsettings.application.AdminConsoleSet
 import com.example.sso.portal.binding.AdminConsoleConfigService;
 import com.example.sso.portal.binding.PortalApps;
 import com.example.sso.portal.binding.PortalSessionBinding;
+import com.example.sso.session.policy.SessionPolicyDetails;
+import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.user.rbac.Permissions;
 import jakarta.validation.Valid;
+import java.util.Optional;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -28,11 +32,12 @@ public class AdminPortalSettingsController {
     private final PortalSessionBinding portalBinding;
     private final AdminConsoleConfigService consoleConfig;
     private final AdminConsoleSettingsService consoleSettings;
+    private final SessionPolicyService sessionPolicies;
 
     @GetMapping
     @RequirePermission(Permissions.PORTAL_SETTINGS_READ)
     public AdminConsoleSettingsView portalSettings() {
-        return AdminConsoleSettingsView.of(portalBinding.sessionPolicyId(PortalApps.ADMIN), consoleConfig.current());
+        return consoleView(portalBinding.sessionPolicyId(PortalApps.ADMIN));
     }
 
     @PutMapping
@@ -41,19 +46,30 @@ public class AdminPortalSettingsController {
         // One transaction for both writes: a malformed CIDR must not leave a new session policy applied with a
         // stale allowlist (a half-applied, fail-open network control).
         consoleSettings.update(request.toPolicyId(), request.elevationTokenTtlMinutes(), request.adminAllowedCidrs());
-        return AdminConsoleSettingsView.of(portalBinding.sessionPolicyId(PortalApps.ADMIN), consoleConfig.current());
+        return consoleView(portalBinding.sessionPolicyId(PortalApps.ADMIN));
     }
 
     @GetMapping("/user")
     @RequirePermission(Permissions.PORTAL_SETTINGS_READ)
     public AdminPortalSettingsView userPortalSettings() {
-        return AdminPortalSettingsView.of(portalBinding.sessionPolicyId(PortalApps.USER));
+        Optional<UUID> id = portalBinding.sessionPolicyId(PortalApps.USER);
+        return AdminPortalSettingsView.of(id, policyName(id));
     }
 
     @PutMapping("/user")
     @RequirePermission(Permissions.PORTAL_SETTINGS_UPDATE)
     public AdminPortalSettingsView updateUserPortalSettings(@Valid @RequestBody AdminPortalSettingsRequest request) {
         portalBinding.setSessionPolicy(PortalApps.USER, request.toPolicyId());
-        return AdminPortalSettingsView.of(portalBinding.sessionPolicyId(PortalApps.USER));
+        Optional<UUID> id = portalBinding.sessionPolicyId(PortalApps.USER);
+        return AdminPortalSettingsView.of(id, policyName(id));
+    }
+
+    private AdminConsoleSettingsView consoleView(Optional<UUID> policyId) {
+        return AdminConsoleSettingsView.of(policyId, policyName(policyId), consoleConfig.current());
+    }
+
+    /** The bound policy's display name — resolved here (own-else-global visible) since it may be a global default. */
+    private String policyName(Optional<UUID> policyId) {
+        return policyId.flatMap(sessionPolicies::findById).map(SessionPolicyDetails::getName).orElse(null);
     }
 }
