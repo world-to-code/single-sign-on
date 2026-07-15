@@ -3,6 +3,7 @@ package com.example.sso.admin.internal.user.application;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.shared.application.LastAdminGuard;
+import com.example.sso.organization.OrganizationService;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
@@ -48,6 +49,7 @@ class UserAdminServiceTest {
     private AdminAuditLogger auditLogger;
     private LastAdminGuard lastAdminGuard;
     private OrgContext orgContext;
+    private OrganizationService organizations;
     private UserAdminService service;
 
     @BeforeEach
@@ -59,8 +61,9 @@ class UserAdminServiceTest {
         auditLogger = mock(AdminAuditLogger.class);
         lastAdminGuard = mock(LastAdminGuard.class);
         orgContext = mock(OrgContext.class);
+        organizations = mock(OrganizationService.class);
         service = new UserAdminService(userService, mfaService, userGroups, accessPolicy, auditLogger,
-                lastAdminGuard, orgContext);
+                lastAdminGuard, orgContext, organizations);
     }
 
     @Test
@@ -99,6 +102,34 @@ class UserAdminServiceTest {
         assertThatThrownBy(() -> service.deleteUser(targetId)).isInstanceOf(ConflictException.class);
         verify(userService, never()).delete(any());
         verify(auditLogger, never()).log(any(), any(), any(), any());
+    }
+
+    @Test
+    void createUserInATenantRecordsTheOrgMembership() {
+        // A tenant admin's new user must be an explicit org member (not only carry a home org_id), so the
+        // membership-table checks (e.g. delegating resource admin) recognise it.
+        UUID org = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "pw", Set.of(Roles.USER));
+        UserAccount created = user(userId);
+        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
+        when(userService.createUser(eq(newUser), eq(org))).thenReturn(created);
+
+        service.createUser(newUser);
+
+        verify(organizations).addMember(org, userId);
+    }
+
+    @Test
+    void createUserAsAnUnDrilledPlatformAdminAddsNoMembership() {
+        // A global user (no home org) has no org to join; the platform-admin path must not touch memberships.
+        NewUser newUser = new NewUser("root2", "root2@example.com", "Root", "pw", Set.of(Roles.USER));
+        UserAccount created = user(UUID.randomUUID());
+        when(userService.createUser(eq(newUser), any())).thenReturn(created);
+
+        service.createUser(newUser);
+
+        verify(organizations, never()).addMember(any(), any());
     }
 
     @Test

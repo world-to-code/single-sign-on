@@ -3,6 +3,7 @@ package com.example.sso.admin.internal.user.application;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.shared.application.LastAdminGuard;
+import com.example.sso.organization.OrganizationService;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
@@ -53,6 +54,7 @@ public class UserAdminService {
     private final AdminAuditLogger auditLogger;
     private final LastAdminGuard lastAdminGuard;
     private final OrgContext orgContext;
+    private final OrganizationService organizations;
 
     /** The organization (the tenant) a user created by the acting admin belongs to: the org the admin is
      *  drilled into, else null (a platform super-admin's global user). */
@@ -112,7 +114,13 @@ public class UserAdminService {
     @Transactional
     public AdminUserView createUser(NewUser newUser) {
         try {
-            UserAccount user = userService.createUser(newUser, actingOrg());
+            UUID org = actingOrg();
+            UserAccount user = userService.createUser(newUser, org);
+            // Record the org membership too (SCIM and self-signup already do): a user carries a home org_id AND is
+            // a member of that org, so every isMember-based check (e.g. resource-admin delegation) sees it.
+            if (org != null) {
+                organizations.addMember(org, user.getId());
+            }
             // An admin-console user is created with a TEMPORARY password the admin chose; require the user to
             // set their own on first login (login completion refuses to finalize until they do).
             if (newUser.rawPassword() != null) {
