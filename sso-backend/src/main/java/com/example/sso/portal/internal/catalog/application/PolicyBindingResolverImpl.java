@@ -2,6 +2,10 @@ package com.example.sso.portal.internal.catalog.application;
 
 import com.example.sso.authpolicy.policy.AuthPolicyResolver;
 import com.example.sso.authpolicy.policy.AuthPolicyView;
+import com.example.sso.metadata.Attribute;
+import com.example.sso.metadata.AttributePredicate;
+import com.example.sso.metadata.AttributeService;
+import com.example.sso.metadata.EntityKind;
 import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.binding.PolicyBindingResolver;
 import com.example.sso.portal.internal.catalog.domain.PolicyBinding;
@@ -27,9 +31,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Reads the {@code policy_binding} matrix and returns the most specific matching, still-enabled binding per
- * field (see {@link PolicyBindingResolver}). Walks candidates most-specific first (USER &gt; GROUP/ROLE &gt;
- * all-subjects, then priority, then a stable id tie-break) and returns the first whose referenced policy is
- * enabled, so a disabled higher-specificity binding never masks an enabled lower-specificity one.
+ * field (see {@link PolicyBindingResolver}). Walks candidates most-specific first (USER &gt; ATTRIBUTE &gt;
+ * GROUP/ROLE &gt; all-subjects, then priority, then a stable id tie-break) and returns the first whose referenced
+ * policy is enabled, so a disabled higher-specificity binding never masks an enabled lower-specificity one. An
+ * ATTRIBUTE binding matches when the user carries its metadata predicate (its effective per-tenant attributes).
  */
 @Service
 @RequiredArgsConstructor
@@ -39,6 +44,7 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
     private final UserGroupService userGroups;
     private final AuthPolicyResolver authPolicies;
     private final SessionPolicyService sessionPolicies;
+    private final AttributeService attributes;
 
     @Override
     @Transactional(readOnly = true)
@@ -79,9 +85,9 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
     }
 
     /**
-     * Most-specific-first ordering: USER &gt; GROUP/ROLE &gt; all-subjects, then a tenant's OWN binding over the
-     * GLOBAL one, then the FIELD's own priority (auth vs session — a co-located row carries an independently
-     * assigned auth policy and session policy, each with its own weight), then a stable id tie-break.
+     * Most-specific-first ordering: USER &gt; ATTRIBUTE &gt; GROUP/ROLE &gt; all-subjects, then a tenant's OWN
+     * binding over the GLOBAL one, then the FIELD's own priority (auth vs session — a co-located row carries an
+     * independently assigned auth policy and session policy, each with its own weight), then a stable id tie-break.
      */
     private Comparator<PolicyBinding> mostSpecificFirst(ToIntFunction<PolicyBinding> priority) {
         return Comparator.comparingInt(this::specificity)
@@ -97,17 +103,27 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
         UUID userId = user.getId();
         Set<UUID> roleIds = user.getRoles().stream().map(RoleRef::getId).collect(Collectors.toSet());
         Set<UUID> groupIds = new HashSet<>(userGroups.groupIdsOf(userId));
-        return bindings.findByAppTypeAndAppId(appType, appId).stream()
+        List<PolicyBinding> candidates = bindings.findByAppTypeAndAppId(appType, appId).stream()
                 .filter(b -> field.apply(b) != null)
-                .filter(b -> subjectMatches(b, userId, roleIds, groupIds));
+                .toList();
+        // Load the user's effective attributes ONCE, and only when a predicate binding is actually present
+        // (each attributesOf is a query, and own-shadows-global precedence must be applied per-tenant).
+        List<Attribute> userAttributes = candidates.stream().anyMatch(this::isAttributeBinding)
+                ? attributes.attributesOf(EntityKind.USER, userId.toString())
+                : List.of();
+        return candidates.stream().filter(b -> subjectMatches(b, userId, roleIds, groupIds, userAttributes));
     }
 
-    /** USER is the most specific, then a role/group membership, then the app-wide (all-subjects) default. */
+    /** USER &gt; ATTRIBUTE predicate &gt; role/group membership &gt; app-wide (all-subjects) default. */
     private int specificity(PolicyBinding b) {
         if (b.getSubjectType() == null) {
             return 1;
         }
-        return b.getSubjectType() == PolicyBinding.SubjectType.USER ? 3 : 2;
+        return switch (b.getSubjectType()) {
+            case USER -> 4;
+            case ATTRIBUTE -> 3;
+            case ROLE, GROUP -> 2;
+        };
     }
 
     /** A tenant's OWN binding beats the GLOBAL one it inherits at the same subject specificity. */
@@ -115,7 +131,8 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
         return b.getOrgId() != null ? 1 : 0;
     }
 
-    private boolean subjectMatches(PolicyBinding b, UUID userId, Set<UUID> roleIds, Set<UUID> groupIds) {
+    private boolean subjectMatches(PolicyBinding b, UUID userId, Set<UUID> roleIds, Set<UUID> groupIds,
+            List<Attribute> userAttributes) {
         if (b.getSubjectType() == null) {
             return true;
         }
@@ -123,6 +140,12 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
             case USER -> b.getSubjectId().equals(userId);
             case ROLE -> roleIds.contains(b.getSubjectId());
             case GROUP -> groupIds.contains(b.getSubjectId());
+            case ATTRIBUTE -> new AttributePredicate(b.getSubjectAttrKey(), b.getSubjectAttrValue())
+                    .matches(userAttributes);
         };
+    }
+
+    private boolean isAttributeBinding(PolicyBinding b) {
+        return b.getSubjectType() == PolicyBinding.SubjectType.ATTRIBUTE;
     }
 }

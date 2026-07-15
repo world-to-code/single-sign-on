@@ -76,7 +76,9 @@ class AppCatalogTest {
     }
 
     private PolicyBinding appWideAuth(AppType appType, String appId, UUID authPolicyId) {
-        return PolicyBinding.builder().appType(appType).appId(appId).authPolicyId(authPolicyId).build();
+        PolicyBinding binding = PolicyBinding.forAllSubjects(appType, appId, null);
+        binding.assignAuthPolicy(authPolicyId);
+        return binding;
     }
 
     private IdName idName(UUID id, String name) {

@@ -50,8 +50,7 @@ class PortalSessionBindingImpl implements PortalSessionBinding {
             existing.ifPresent(bindings::delete); // clearing restores the inherited/own resolved policy
             return;
         }
-        PolicyBinding row = existing.orElseGet(() -> PolicyBinding.builder()
-                .appType(AppType.PORTAL).appId(appId).sessionPolicyId(sessionPolicyId).orgId(org).build());
+        PolicyBinding row = existing.orElseGet(() -> PolicyBinding.forAllSubjects(AppType.PORTAL, appId, org));
         row.assignSessionPolicy(sessionPolicyId);
         bindings.saveAndFlush(row); // flush in the acting org scope so RLS WITH CHECK sees the right tenant
     }

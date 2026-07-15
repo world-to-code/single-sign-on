@@ -60,7 +60,10 @@ class AppAuthBinding {
         }
         // Atomic upsert (race-safe) in the acting tier so RLS WITH CHECK sees the right org; a co-located session
         // binding on the same row is preserved.
-        slot.upsert(PolicyBinding.builder().appType(appType).appId(appId).subjectType(subjectType)
-                .subjectId(subjectId).authPolicyId(authPolicyId).orgId(org).build(), PolicyAxis.AUTH);
+        PolicyBinding binding = subjectType == null
+                ? PolicyBinding.forAllSubjects(appType, appId, org)
+                : PolicyBinding.forSubject(appType, appId, subjectType, subjectId, org);
+        binding.assignAuthPolicy(authPolicyId);
+        slot.upsert(binding, PolicyAxis.AUTH);
     }
 }

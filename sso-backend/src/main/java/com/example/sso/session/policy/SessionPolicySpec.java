@@ -1,5 +1,6 @@
 package com.example.sso.session.policy;
 
+import com.example.sso.metadata.AttributePredicate;
 import com.example.sso.session.networkzone.IpRuleSpec;
 
 import java.util.List;
@@ -8,12 +9,25 @@ import java.util.UUID;
 
 /**
  * Immutable parameter object for {@link SessionPolicyService#create(SessionPolicySpec)}: the full set
- * of attributes for a new session policy, including its name, assignment sets and ordered IP rules.
+ * of attributes for a new session policy, including its name, assignment sets (users, roles, metadata
+ * predicates) and ordered IP rules.
  */
 public record SessionPolicySpec(String name, int priority, boolean enabled, int absoluteTimeoutMinutes,
                                 int idleTimeoutMinutes, int reauthIntervalMinutes, String reauthFactors,
                                 int sensitiveReauthWindowMinutes, String stepUpFactors,
                                 boolean bindClient, int maxConcurrentSessions, boolean rotateOnReauth,
                                 String cookieSameSite,
-                                Set<UUID> userIds, Set<UUID> roleIds, List<IpRuleSpec> ipRules) {
+                                Set<UUID> userIds, Set<UUID> roleIds, List<IpRuleSpec> ipRules,
+                                Set<AttributePredicate> attributePredicates) {
+
+    /** Create with user/role assignments only (no metadata predicate targets). */
+    public SessionPolicySpec(String name, int priority, boolean enabled, int absoluteTimeoutMinutes,
+                             int idleTimeoutMinutes, int reauthIntervalMinutes, String reauthFactors,
+                             int sensitiveReauthWindowMinutes, String stepUpFactors, boolean bindClient,
+                             int maxConcurrentSessions, boolean rotateOnReauth, String cookieSameSite,
+                             Set<UUID> userIds, Set<UUID> roleIds, List<IpRuleSpec> ipRules) {
+        this(name, priority, enabled, absoluteTimeoutMinutes, idleTimeoutMinutes, reauthIntervalMinutes,
+                reauthFactors, sensitiveReauthWindowMinutes, stepUpFactors, bindClient, maxConcurrentSessions,
+                rotateOnReauth, cookieSameSite, userIds, roleIds, ipRules, Set.of());
+    }
 }

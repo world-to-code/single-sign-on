@@ -30,8 +30,9 @@ class AppPolicyBindingsImplTest {
     @InjectMocks private AppPolicyBindingsImpl appBindings;
 
     private PolicyBinding binding(AppType appType, String appId) {
-        return PolicyBinding.builder().appType(appType).appId(appId)
-                .subjectType(SubjectType.USER).subjectId(UUID.randomUUID()).authPolicyId(POLICY).build();
+        PolicyBinding binding = PolicyBinding.forSubject(appType, appId, SubjectType.USER, UUID.randomUUID(), null);
+        binding.assignAuthPolicy(POLICY);
+        return binding;
     }
 
     @Test

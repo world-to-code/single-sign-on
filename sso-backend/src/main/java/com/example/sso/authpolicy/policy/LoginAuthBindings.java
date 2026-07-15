@@ -1,5 +1,6 @@
 package com.example.sso.authpolicy.policy;
 
+import com.example.sso.metadata.AttributePredicate;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
@@ -25,7 +26,14 @@ public interface LoginAuthBindings {
      * {@code priority} is the policy's tie-break weight, stamped on each binding so two same-specificity login
      * bindings (e.g. a user in two roles) resolve to the higher-priority policy, as the pre-matrix engine did.
      */
-    void replaceForPolicy(UUID policyId, int priority, boolean appliesToLogin, Set<UUID> userIds, Set<UUID> roleIds);
+    void replaceForPolicy(UUID policyId, int priority, boolean appliesToLogin, Set<UUID> userIds, Set<UUID> roleIds,
+            Set<AttributePredicate> attributes);
+
+    /** Assign login with users/roles only (no metadata predicate targets). */
+    default void replaceForPolicy(UUID policyId, int priority, boolean appliesToLogin, Set<UUID> userIds,
+            Set<UUID> roleIds) {
+        replaceForPolicy(policyId, priority, appliesToLogin, userIds, roleIds, Set.of());
+    }
 
     /** Remove every login binding referencing {@code policyId} in the acting tier (before the policy is deleted). */
     void clearForPolicy(UUID policyId);

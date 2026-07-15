@@ -14,6 +14,7 @@ import com.example.sso.authpolicy.internal.domain.AuthPolicyStep;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyStepFactor;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyStepFactorRepository;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyStepRepository;
+import com.example.sso.metadata.AttributePredicate;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
@@ -126,7 +127,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
 
         AuthPolicy saved = repository.save(policy);
         replaceSteps(saved, spec.steps());
-        applyLoginScope(saved, spec.appliesToLogin(), spec.userIds(), spec.roleIds());
+        applyLoginScope(saved, spec.appliesToLogin(), spec.userIds(), spec.roleIds(), spec.attributePredicates());
 
         return AuthPolicyProjection.of(saved, spec.steps());
     }
@@ -150,7 +151,8 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         policy.updateStepUpFreshnessMinutes(update.stepUpFreshnessMinutes());
 
         replaceSteps(policy, update.steps());
-        applyLoginScope(policy, update.appliesToLogin(), update.userIds(), update.roleIds());
+        applyLoginScope(policy, update.appliesToLogin(), update.userIds(), update.roleIds(),
+                update.attributePredicates());
 
         AuthPolicy saved = repository.save(policy);
         return AuthPolicyProjection.of(saved, update.steps());
@@ -238,9 +240,12 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
      * is actually bound (a non-login policy binds nothing, so its stray ids reference no principal).
      */
     private void applyLoginScope(AuthPolicy policy, boolean appliesToLogin, Set<UUID> requestedUsers,
-                                 Set<UUID> requestedRoles) {
+                                 Set<UUID> requestedRoles, Set<AttributePredicate> requestedPredicates) {
         Set<UUID> userIds = requestedUsers == null ? Set.of() : requestedUsers;
         Set<UUID> roleIds = requestedRoles == null ? Set.of() : requestedRoles;
+        // A predicate is stamped and resolved in the acting tier (RLS), so it only ever matches the tenant's
+        // own users — there is no cross-org subject to validate, unlike a user/role id.
+        Set<AttributePredicate> predicates = requestedPredicates == null ? Set.of() : requestedPredicates;
         if (appliesToLogin) {
             for (UUID userId : userIds) {
                 requireAssignable(policy, users.orgIdOf(userId), "user");
@@ -249,7 +254,8 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
                 requireAssignable(policy, roles.orgIdOf(roleId), "role");
             }
         }
-        loginBindings.replaceForPolicy(policy.getId(), policy.getPriority(), appliesToLogin, userIds, roleIds);
+        loginBindings.replaceForPolicy(policy.getId(), policy.getPriority(), appliesToLogin, userIds, roleIds,
+                predicates);
     }
 
     /**

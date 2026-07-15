@@ -3,6 +3,7 @@ package com.example.sso.portal.internal.catalog.application;
 import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.authpolicy.policy.AuthPolicyAdminService;
 import com.example.sso.authpolicy.policy.AuthPolicySpec;
+import com.example.sso.metadata.AttributePredicate;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.portal.application.AppType;
@@ -106,6 +107,26 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
         assertThat(subjectRows(org)).isEqualTo(1);
         assertThat(orgContext.callInOrg(org, () -> sessionBindings.describe(List.of(policy))).get(policy).userIds())
                 .containsExactly(userA);
+    }
+
+    @Test
+    void writesAndReconcilesAttributePredicateBindings() {
+        UUID org = org();
+        UUID policy = policyIn(org, "attr");
+        AttributePredicate eng = new AttributePredicate("dept", "eng");
+        AttributePredicate sales = new AttributePredicate("dept", "sales");
+
+        orgContext.runInOrg(org, () ->
+                sessionBindings.replaceForPolicy(policy, 10, Set.of(), Set.of(), Set.of(eng, sales)));
+        SessionAssignment written = orgContext.callInOrg(org, () -> sessionBindings.describe(List.of(policy))).get(policy);
+        assertThat(written.attributes()).containsExactlyInAnyOrder(eng, sales);
+        assertThat(written.userIds()).isEmpty(); // predicate-only scope is NOT an all-subjects binding
+        assertThat(written.roleIds()).isEmpty();
+
+        // Reconcile: dropping the sales predicate clears its row, leaving only eng.
+        orgContext.runInOrg(org, () -> sessionBindings.replaceForPolicy(policy, 10, Set.of(), Set.of(), Set.of(eng)));
+        assertThat(orgContext.callInOrg(org, () -> sessionBindings.describe(List.of(policy))).get(policy).attributes())
+                .containsExactly(eng);
     }
 
     @Test

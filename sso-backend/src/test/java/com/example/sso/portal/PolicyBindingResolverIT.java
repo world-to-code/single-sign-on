@@ -1,6 +1,8 @@
 package com.example.sso.portal;
 
 import com.example.sso.authpolicy.factor.AuthFactor;
+import com.example.sso.metadata.AttributeService;
+import com.example.sso.metadata.EntityKind;
 import com.example.sso.authpolicy.policy.AuthPolicyAdminService;
 import com.example.sso.authpolicy.policy.AuthPolicySpec;
 import com.example.sso.authpolicy.policy.AuthPolicyView;
@@ -50,6 +52,7 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
     @Autowired AuthPolicyAdminService authPolicies;
     @Autowired SessionPolicyService sessionPolicies;
     @Autowired OrganizationService organizations;
+    @Autowired AttributeService attributes;
     @Autowired OrgContext orgContext;
 
     private static final AppType APP = AppType.OIDC;
@@ -65,6 +68,7 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
     private UserAccount lee;   // only ROLE_USER — matches no targeted binding
     private UUID authStrong, authBasic, authRoleB, authDisabled;
     private UUID sess5, sess15, sessAll, sessDisabled;
+    private UUID financeRoleId;   // kim holds it; used by the attribute-specificity fixtures
     // A role NO test user holds — session policies are assigned to it so they never apply via the global
     // fallback resolution (an unassigned global policy would be "everyone's" policy and mask the Default).
     private UUID holderRole;
@@ -86,6 +90,7 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
         orgContext.runAsPlatform(() -> {
             String s = suffix();
             UUID finance = roles.getOrCreate("ROLE_FIN_" + s).getId();
+            financeRoleId = finance;
             UUID roleB = roles.getOrCreate("ROLE_B_" + s).getId();
 
             UUID kimId = users.createUser(new NewUser("kim-" + s, "kim-" + s + "@example.com", "Kim",
@@ -135,6 +140,7 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
     void cleanup() {
         orgContext.runAsPlatform(() -> {
             ownerJdbc().update("delete from policy_binding where app_id like 'pbt-%'");
+            createdUsers.forEach(id -> ownerJdbc().update("delete from entity_attribute where entity_id = ?", id.toString()));
             createdSessionPolicies.forEach(id -> ownerJdbc().update("delete from session_policy where id = ?", id));
             createdAuthPolicies.forEach(id -> ownerJdbc().update("delete from auth_policy where id = ?", id));
             createdGroups.forEach(groups::delete);
@@ -203,11 +209,10 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
         UUID org = orgContext.callAsPlatform(
                 () -> organizations.create(new NewOrganization("pbt-spec-" + suffix(), "PBT")).id());
         createdOrgs.add(org);
-        orgContext.runAsPlatform(() -> bindings.saveAndFlush(PolicyBinding.builder()
-                .appType(APP).appId(app).subjectType(SubjectType.USER).subjectId(kim.getId())
-                .sessionPolicyId(sess5).priority(1).build()));                 // global USER
-        orgContext.runInOrg(org, () -> bindings.saveAndFlush(PolicyBinding.builder()
-                .appType(APP).appId(app).sessionPolicyId(sess15).priority(50).orgId(org).build())); // tenant all-subjects
+        orgContext.runAsPlatform(() -> bindings.saveAndFlush(
+                sessionBinding(app, SubjectType.USER, kim.getId(), sess5, 1, null)));       // global USER
+        orgContext.runInOrg(org, () -> bindings.saveAndFlush(
+                sessionBinding(app, null, null, sess15, 50, org)));                         // tenant all-subjects
 
         assertThat(orgContext.callInOrg(org, () -> resolver.resolveSessionPolicy(kim, APP, app)))
                 .map(SessionPolicyDetails::getId).contains(sess5);
@@ -222,10 +227,10 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
         UUID org = orgContext.callAsPlatform(
                 () -> organizations.create(new NewOrganization("pbt-org-" + suffix(), "PBT")).id());
         createdOrgs.add(org);
-        orgContext.runAsPlatform(() -> bindings.saveAndFlush(PolicyBinding.builder()
-                .appType(APP).appId(app).sessionPolicyId(sessAll).priority(10).build())); // global default
-        orgContext.runInOrg(org, () -> bindings.saveAndFlush(PolicyBinding.builder()
-                .appType(APP).appId(app).sessionPolicyId(sess5).priority(1).orgId(org).build())); // tenant's own
+        orgContext.runAsPlatform(() -> bindings.saveAndFlush(
+                sessionBinding(app, null, null, sessAll, 10, null)));      // global default
+        orgContext.runInOrg(org, () -> bindings.saveAndFlush(
+                sessionBinding(app, null, null, sess5, 1, org)));          // tenant's own
 
         Optional<SessionPolicyDetails> resolved =
                 orgContext.callInOrg(org, () -> resolver.resolveSessionPolicy(kim, APP, app));
@@ -251,11 +256,8 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
         UUID subjectPolicy = authPolicy("pbt-auth-subject");
         UUID appWidePolicy = authPolicy("pbt-auth-appwide");
         orgContext.runAsPlatform(() -> {
-            bindings.saveAndFlush(PolicyBinding.builder().appType(APP).appId(app)
-                    .authPolicyId(appWidePolicy).priority(99).build());            // app-wide, HIGH priority
-            bindings.saveAndFlush(PolicyBinding.builder().appType(APP).appId(app)
-                    .subjectType(SubjectType.USER).subjectId(kim.getId())
-                    .authPolicyId(subjectPolicy).priority(1).build());             // per-subject, LOW priority
+            bindings.saveAndFlush(authBinding(app, null, null, appWidePolicy, 99));       // app-wide, HIGH priority
+            bindings.saveAndFlush(authBinding(app, SubjectType.USER, kim.getId(), subjectPolicy, 1)); // per-subject, LOW
         });
 
         assertThat(resolveAuth(kim, app)).map(AuthPolicyView::getId).contains(subjectPolicy);
@@ -277,6 +279,110 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
         assertThat(resolveSessions(kim, SHADOW)).extracting(SessionPolicyDetails::getId).containsExactly(sess15);
     }
 
+    @Test
+    void anAttributePredicateBindingMatchesAUserCarryingItAndIsMoreSpecificThanARole() {
+        // kim carries dept=eng and holds the finance role. The ATTRIBUTE binding (sess5) must win over the ROLE
+        // binding (sess15) — a predicate is a deliberate cohort target, more specific than a coarse role. lee has
+        // neither, so nothing matches for lee.
+        String app = "pbt-attr";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "eng");
+            bindings.saveAndFlush(attrSession(app, "dept", "eng", sess5, 10));
+            bindings.saveAndFlush(sessionBinding(app, SubjectType.ROLE, financeRoleId, sess15, 20, null));
+        });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+        assertThat(resolveSession(lee, app)).isEmpty();
+    }
+
+    @Test
+    void aUserBindingBeatsAnAttributePredicateBinding() {
+        // Specificity order USER > ATTRIBUTE: kim's own USER binding (sess5) wins over the predicate one (sess15)
+        // even though the predicate binding carries the higher priority — specificity dominates priority.
+        String app = "pbt-attr-user";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "eng");
+            bindings.saveAndFlush(attrSession(app, "dept", "eng", sess15, 50));
+            bindings.saveAndFlush(sessionBinding(app, SubjectType.USER, kim.getId(), sess5, 1, null));
+        });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+    }
+
+    @Test
+    void anAttributePredicateBindingDoesNotMatchAUserWithADifferentValue() {
+        // The match is exact: kim's dept=sales does not satisfy a dept=eng predicate, so it falls through.
+        String app = "pbt-attr-miss";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "sales");
+            bindings.saveAndFlush(attrSession(app, "dept", "eng", sess5, 10));
+        });
+        assertThat(resolveSession(kim, app)).isEmpty();
+    }
+
+    @Test
+    void anAttributePredicateBindingDoesNotMatchAUserMissingTheKeyEntirely() {
+        // kim carries NO dept attribute at all — a distinct branch from a different value: the empty attribute
+        // list must not satisfy the predicate.
+        String app = "pbt-attr-nokey";
+        orgContext.runAsPlatform(() -> bindings.saveAndFlush(attrSession(app, "dept", "eng", sess5, 10)));
+        assertThat(resolveSession(kim, app)).isEmpty();
+    }
+
+    @Test
+    void anAttributePredicateBindingBeatsTheAllSubjectsBinding() {
+        // Specificity ATTRIBUTE(3) > all-subjects(1): the predicate wins even carrying the LOWER priority.
+        String app = "pbt-attr-all";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "eng");
+            bindings.saveAndFlush(attrSession(app, "dept", "eng", sess5, 1));           // attribute, low prio
+            bindings.saveAndFlush(sessionBinding(app, null, null, sessAll, 99, null));  // all-subjects, high prio
+        });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+    }
+
+    @Test
+    void aDisabledAttributeBoundPolicyIsTransparentToAnEnabledLessSpecificOne() {
+        // The headline invariant, for the ATTRIBUTE tier: kim's predicate binding points at a DISABLED policy,
+        // so the enabled all-subjects binding below it must still apply — never a silent weakening to Default.
+        String app = "pbt-attr-disabled";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "eng");
+            bindings.saveAndFlush(attrSession(app, "dept", "eng", sessDisabled, 20)); // higher specificity, disabled
+            bindings.saveAndFlush(sessionBinding(app, null, null, sessAll, 10, null)); // all-subjects, enabled
+        });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sessAll);
+    }
+
+    @Test
+    void anAttributePredicateBindingResolvesTheAuthPolicyToo() {
+        // The AUTH axis: a predicate binding drives login (auth) resolution exactly like the session axis.
+        String app = "pbt-attr-auth";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "eng");
+            bindings.saveAndFlush(attrAuth(app, "dept", "eng", authStrong, 10));
+        });
+        assertThat(resolveAuth(kim, app)).map(AuthPolicyView::getId).contains(authStrong);
+    }
+
+    @Test
+    void anAttributePredicateMatchesOnlyWhereTheUserCarriesTheAttribute() {
+        // Cross-tenant isolation at the resolver: a GLOBAL predicate binding matches against the user's
+        // per-tenant EFFECTIVE attributes. kim carries dept=eng only in org A, so the SAME binding matches in A
+        // but not in B — a tenant's predicate can never fire off another tenant's attribute values.
+        String app = "pbt-attr-tenant";
+        UUID orgA = orgContext.callAsPlatform(
+                () -> organizations.create(new NewOrganization("pbt-attr-a-" + suffix(), "A")).id());
+        UUID orgB = orgContext.callAsPlatform(
+                () -> organizations.create(new NewOrganization("pbt-attr-b-" + suffix(), "B")).id());
+        createdOrgs.add(orgA);
+        createdOrgs.add(orgB);
+        orgContext.runAsPlatform(() -> bindings.saveAndFlush(attrSession(app, "dept", "eng", sess5, 10)));
+        orgContext.runInOrg(orgA, () -> attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "eng"));
+
+        assertThat(orgContext.callInOrg(orgA, () -> resolver.resolveSessionPolicy(kim, APP, app)))
+                .map(SessionPolicyDetails::getId).contains(sess5);
+        assertThat(orgContext.callInOrg(orgB, () -> resolver.resolveSessionPolicy(kim, APP, app))).isEmpty();
+    }
+
     // --- helpers ---
 
     private java.util.Optional<AuthPolicyView> resolveAuth(UserAccount user, String appId) {
@@ -292,9 +398,50 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
     }
 
     private void bind(String appId, SubjectType st, UUID subjectId, UUID auth, UUID sess, int prio) {
-        bindings.saveAndFlush(PolicyBinding.builder()
-                .appType(APP).appId(appId).subjectType(st).subjectId(subjectId)
-                .authPolicyId(auth).sessionPolicyId(sess).priority(prio).sessionPriority(prio).orgId(null).build());
+        PolicyBinding binding = st == null
+                ? PolicyBinding.forAllSubjects(APP, appId, null)
+                : PolicyBinding.forSubject(APP, appId, st, subjectId, null);
+        binding.assignAuthPolicy(auth);
+        binding.reprioritize(prio);
+        binding.assignSessionPolicy(sess);
+        binding.reprioritizeSession(prio);
+        bindings.saveAndFlush(binding);
+    }
+
+    /** A session-only binding at the given tier (auth axis untouched), for the specificity/org-rank fixtures. */
+    private PolicyBinding sessionBinding(String appId, SubjectType st, UUID subjectId, UUID sess, int prio, UUID org) {
+        PolicyBinding binding = st == null
+                ? PolicyBinding.forAllSubjects(APP, appId, org)
+                : PolicyBinding.forSubject(APP, appId, st, subjectId, org);
+        binding.assignSessionPolicy(sess);
+        binding.reprioritizeSession(prio);
+        return binding;
+    }
+
+    /** A GLOBAL attribute-predicate session binding, for the predicate resolution fixtures. */
+    private PolicyBinding attrSession(String appId, String key, String value, UUID sess, int prio) {
+        PolicyBinding binding = PolicyBinding.forAttribute(APP, appId, key, value, null);
+        binding.assignSessionPolicy(sess);
+        binding.reprioritizeSession(prio);
+        return binding;
+    }
+
+    /** A GLOBAL attribute-predicate auth binding, for the auth-axis predicate fixture. */
+    private PolicyBinding attrAuth(String appId, String key, String value, UUID auth, int prio) {
+        PolicyBinding binding = PolicyBinding.forAttribute(APP, appId, key, value, null);
+        binding.assignAuthPolicy(auth);
+        binding.reprioritize(prio);
+        return binding;
+    }
+
+    /** A GLOBAL auth-only binding (auth axis), for the auth specificity fixtures. */
+    private PolicyBinding authBinding(String appId, SubjectType st, UUID subjectId, UUID auth, int prio) {
+        PolicyBinding binding = st == null
+                ? PolicyBinding.forAllSubjects(APP, appId, null)
+                : PolicyBinding.forSubject(APP, appId, st, subjectId, null);
+        binding.assignAuthPolicy(auth);
+        binding.reprioritize(prio);
+        return binding;
     }
 
     private UUID authPolicy(String name) {

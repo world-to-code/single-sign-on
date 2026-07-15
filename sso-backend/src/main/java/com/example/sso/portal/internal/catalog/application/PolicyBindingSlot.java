@@ -29,6 +29,10 @@ class PolicyBindingSlot {
 
     /** The single binding at this (app, subject, tier) slot, or empty. RLS-scoped by the caller's context. */
     Optional<PolicyBinding> find(AppType appType, String appId, SubjectType subjectType, UUID subjectId, UUID org) {
+        if (subjectType == SubjectType.ATTRIBUTE) {
+            // Predicate bindings have no subject_id to key on; they are reconciled via upsert(), never find-then-save.
+            throw new IllegalArgumentException("attribute-predicate bindings are not addressable by find()");
+        }
         if (subjectType == null) {
             return org == null
                     ? bindings.findByAppTypeAndAppIdAndSubjectTypeIsNullAndOrgIdIsNull(appType, appId)
@@ -64,27 +68,33 @@ class PolicyBindingSlot {
         String set = axis == PolicyAxis.AUTH
                 ? "auth_policy_id = excluded.auth_policy_id, priority = excluded.priority"
                 : "session_policy_id = excluded.session_policy_id, session_priority = excluded.session_priority";
-        jdbc.update("insert into policy_binding (id, app_type, app_id, subject_type, subject_id, auth_policy_id, "
-                + "session_policy_id, priority, session_priority, org_id, created_at) "
-                + "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now()) "
-                + "on conflict " + conflictTarget(binding.getOrgId() == null, binding.getSubjectType() == null)
-                + " do update set " + set,
+        jdbc.update("insert into policy_binding (id, app_type, app_id, subject_type, subject_id, subject_attr_key, "
+                + "subject_attr_value, auth_policy_id, session_policy_id, priority, session_priority, org_id, created_at) "
+                + "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now()) "
+                + "on conflict " + conflictTarget(binding) + " do update set " + set,
                 UUID.randomUUID(), binding.getAppType().name(), binding.getAppId(),
                 binding.getSubjectType() == null ? null : binding.getSubjectType().name(), binding.getSubjectId(),
+                binding.getSubjectAttrKey(), binding.getSubjectAttrValue(),
                 binding.getAuthPolicyId(), binding.getSessionPolicyId(),
                 binding.getPriority(), binding.getSessionPriority(), binding.getOrgId());
     }
 
-    /** The partial unique index (columns + predicate) covering this (org-or-global, all-subjects-or-subject) slot. */
-    private String conflictTarget(boolean global, boolean allSubjects) {
-        if (allSubjects) {
-            return global
+    /** The partial unique index (columns + predicate) covering this slot's shape (all-subjects / attribute / id-subject).
+     *  Exhaustive over {@link SubjectType} with no {@code default}, so a new subject kind fails compilation here until
+     *  its own conflict target (and index) is chosen — never silently colliding on the id-subject index. */
+    private String conflictTarget(PolicyBinding binding) {
+        boolean global = binding.getOrgId() == null;
+        return switch (binding.getSubjectType()) {
+            case null -> global
                     ? "(app_type, app_id) where org_id is null and subject_type is null"
                     : "(org_id, app_type, app_id) where org_id is not null and subject_type is null";
-        }
-        return global
-                ? "(app_type, app_id, subject_type, subject_id) where org_id is null and subject_type is not null"
-                : "(org_id, app_type, app_id, subject_type, subject_id) where org_id is not null and subject_type is not null";
+            case ATTRIBUTE -> global
+                    ? "(app_type, app_id, subject_attr_key, subject_attr_value) where org_id is null and subject_type = 'ATTRIBUTE'"
+                    : "(org_id, app_type, app_id, subject_attr_key, subject_attr_value) where org_id is not null and subject_type = 'ATTRIBUTE'";
+            case USER, GROUP, ROLE -> global
+                    ? "(app_type, app_id, subject_type, subject_id) where org_id is null and subject_type is not null"
+                    : "(org_id, app_type, app_id, subject_type, subject_id) where org_id is not null and subject_type is not null";
+        };
     }
 
     /**

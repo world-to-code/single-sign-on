@@ -25,7 +25,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PolicyBinding extends AuditedEntity implements OrgOwned {
 
-    public enum SubjectType { USER, GROUP, ROLE }
+    public enum SubjectType { USER, GROUP, ROLE, ATTRIBUTE }
 
     @Enumerated(EnumType.STRING)
     @Column(name = "app_type", nullable = false, length = 8)
@@ -36,11 +36,20 @@ public class PolicyBinding extends AuditedEntity implements OrgOwned {
 
     /** {@code null} = the binding applies to every subject of the app (app-wide default). */
     @Enumerated(EnumType.STRING)
-    @Column(name = "subject_type", length = 8)
+    @Column(name = "subject_type", length = 16)
     private SubjectType subjectType;
 
+    /** The id subject, set for USER/GROUP/ROLE; {@code null} for all-subjects and ATTRIBUTE bindings. */
     @Column(name = "subject_id")
     private UUID subjectId;
+
+    /** The metadata predicate key, set exactly for an {@link SubjectType#ATTRIBUTE} binding (else {@code null}). */
+    @Column(name = "subject_attr_key", length = 64)
+    private String subjectAttrKey;
+
+    /** The metadata predicate value, set exactly for an {@link SubjectType#ATTRIBUTE} binding (else {@code null}). */
+    @Column(name = "subject_attr_value", length = 255)
+    private String subjectAttrValue;
 
     @Column(name = "auth_policy_id")
     private UUID authPolicyId;
@@ -61,18 +70,41 @@ public class PolicyBinding extends AuditedEntity implements OrgOwned {
     @Column(name = "org_id")
     private UUID orgId;
 
-    @Builder
-    public PolicyBinding(AppType appType, String appId, SubjectType subjectType, UUID subjectId,
-            UUID authPolicyId, UUID sessionPolicyId, int priority, int sessionPriority, UUID orgId) {
+    // Private, name-based builder: the ONLY assembly path, reached solely through the named factories below so
+    // business logic never touches raw field order (adding/reordering a column stays contained to this class).
+    @Builder(access = AccessLevel.PRIVATE)
+    private PolicyBinding(AppType appType, String appId, SubjectType subjectType, UUID subjectId,
+            String subjectAttrKey, String subjectAttrValue, UUID authPolicyId, UUID sessionPolicyId,
+            int priority, int sessionPriority, UUID orgId) {
         this.appType = appType;
         this.appId = appId;
         this.subjectType = subjectType;
         this.subjectId = subjectId;
+        this.subjectAttrKey = subjectAttrKey;
+        this.subjectAttrValue = subjectAttrValue;
         this.authPolicyId = authPolicyId;
         this.sessionPolicyId = sessionPolicyId;
         this.priority = priority;
         this.sessionPriority = sessionPriority;
         this.orgId = orgId;
+    }
+
+    /** A policy-less binding targeting every subject of the app in the given tier (the caller assigns an axis policy). */
+    public static PolicyBinding forAllSubjects(AppType appType, String appId, UUID org) {
+        return builder().appType(appType).appId(appId).orgId(org).build();
+    }
+
+    /** A policy-less binding targeting one id subject (USER/GROUP/ROLE) in the given tier. */
+    public static PolicyBinding forSubject(AppType appType, String appId, SubjectType subjectType, UUID subjectId,
+            UUID org) {
+        return builder().appType(appType).appId(appId).subjectType(subjectType).subjectId(subjectId).orgId(org).build();
+    }
+
+    /** A policy-less binding targeting the users carrying a metadata predicate ({@code key = value}) in the tier. */
+    public static PolicyBinding forAttribute(AppType appType, String appId, String attrKey, String attrValue,
+            UUID org) {
+        return builder().appType(appType).appId(appId).subjectType(SubjectType.ATTRIBUTE)
+                .subjectAttrKey(attrKey).subjectAttrValue(attrValue).orgId(org).build();
     }
 
     /** Point this binding at a different session policy (intent-revealing mutation, not a JavaBean setter). */

@@ -1,7 +1,9 @@
 package com.example.sso.session.policy;
 
+import com.example.sso.metadata.AttributePredicate;
 import com.example.sso.session.networkzone.IpRuleSpec;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -13,6 +15,7 @@ public record SessionPolicyView(String id, String name, int priority, boolean en
                                 int maxConcurrentSessions, boolean rotateOnReauth,
                                 String cookieSameSite,
                                 List<String> assignedUserIds, List<String> assignedRoleIds,
+                                List<AttributePredicate> assignedAttributes,
                                 List<IpRuleSpec> ipRules) {
 
     /** Projects a policy plus its assignment scope (from the policy_binding matrix) to the admin view. */
@@ -24,6 +27,9 @@ public record SessionPolicyView(String id, String name, int priority, boolean en
                 p.getCookieSameSite(),
                 assignment.userIds().stream().map(UUID::toString).sorted().toList(),
                 assignment.roleIds().stream().map(UUID::toString).sorted().toList(),
+                assignment.attributes().stream()
+                        .sorted(Comparator.comparing(AttributePredicate::key).thenComparing(AttributePredicate::value))
+                        .toList(),
                 p.getIpRules());
     }
 }

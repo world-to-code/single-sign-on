@@ -28,6 +28,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
+import com.example.sso.metadata.AttributePredicate;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -224,7 +225,24 @@ class SessionPolicyServiceImplTest {
 
         service.create(spec);
 
-        verify(sessionBindings).replaceForPolicy(any(), anyInt(), eq(Set.of(userId)), eq(Set.of(roleId)));
+        verify(sessionBindings).replaceForPolicy(any(), anyInt(), eq(Set.of(userId)), eq(Set.of(roleId)), eq(Set.of()));
+    }
+
+    @Test
+    void createPassesAttributePredicatesThroughToTheBindingScope() {
+        UUID orgA = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgA));
+        when(repository.findByNameAndOrgId("Attr", orgA)).thenReturn(Optional.empty());
+        when(repository.save(any(SessionPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
+        AttributePredicate eng = new AttributePredicate("dept", "eng");
+        SessionPolicySpec spec = new SessionPolicySpec("Attr", 5, true, 480, 30, 15, "TOTP", 2, "TOTP",
+                false, 0, false, "Lax", Set.of(), Set.of(), List.of(), Set.of(eng));
+
+        service.create(spec);
+
+        // A predicate carries no cross-org subject, so it must NOT be routed through requireAssignable, and it
+        // must reach the binding writer as the attribute set (not silently dropped or turned into all-subjects).
+        verify(sessionBindings).replaceForPolicy(any(), anyInt(), eq(Set.of()), eq(Set.of()), eq(Set.of(eng)));
     }
 
     @Test
@@ -237,7 +255,7 @@ class SessionPolicyServiceImplTest {
                 false, 0, false, "Lax", Set.of(userB), Set.of(), List.of());
 
         assertThatThrownBy(() -> service.create(spec)).isInstanceOf(BadRequestException.class);
-        verify(sessionBindings, never()).replaceForPolicy(any(), anyInt(), any(), any());
+        verify(sessionBindings, never()).replaceForPolicy(any(), anyInt(), any(), any(), any());
     }
 
     @Test
@@ -331,7 +349,7 @@ class SessionPolicyServiceImplTest {
         assertThat(saved.getPriority()).isEqualTo(0);
         assertThat(saved.isEnabled()).isTrue();
         assertThat(saved.getReauthFactors()).isEqualTo("TOTP");
-        verify(sessionBindings).replaceForPolicy(eq(def.getId()), anyInt(), eq(Set.of()), eq(Set.of()));
+        verify(sessionBindings).replaceForPolicy(eq(def.getId()), anyInt(), eq(Set.of()), eq(Set.of()), eq(Set.of()));
     }
 
     // --- delete ---

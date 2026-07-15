@@ -1,6 +1,7 @@
 package com.example.sso.session.internal.policy.application;
 
 import com.example.sso.authpolicy.factor.AuthFactor;
+import com.example.sso.metadata.AttributePredicate;
 import com.example.sso.session.networkzone.IpRuleSpec;
 import com.example.sso.session.networkzone.NetworkZoneService;
 import com.example.sso.session.policy.SessionBindings;
@@ -249,6 +250,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         String stepUpFactors = validateReauthFactors(spec.stepUpFactors());
         Set<UUID> userIds = spec.userIds() == null ? Set.of() : Set.copyOf(spec.userIds());
         Set<UUID> roleIds = spec.roleIds() == null ? Set.of() : Set.copyOf(spec.roleIds());
+        Set<AttributePredicate> predicates = predicatesOf(spec.attributePredicates());
         List<IpRuleEntry> ipRules = toIpRules(spec.ipRules()); // validates zone references before any write
         String cookieSameSite = effectiveCookieSameSite(spec.cookieSameSite(),
                 creationOrg == null && DEFAULT_NAME.equals(spec.name()));
@@ -262,7 +264,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
                 spec.bindClient(), spec.maxConcurrentSessions(), spec.rotateOnReauth(), cookieSameSite));
         SessionPolicy saved = repository.save(policy);
 
-        applyAssignmentScope(saved, userIds, roleIds);
+        applyAssignmentScope(saved, userIds, roleIds, predicates);
         replaceIpRules(saved.getId(), ipRules);
         events.publishEvent(new SessionPolicyCacheChanged());
 
@@ -286,7 +288,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
             // matched by a higher-priority policy — an admin can never strand users by targeting it at a
             // specific (or empty) set. Only its knobs (timeouts, factors, cookie/IP settings) are editable.
             policy.update(rulesOf(update, reauthFactors, stepUpFactors, cookieSameSite));
-            applyAssignmentScope(policy, Set.of(), Set.of());
+            applyAssignmentScope(policy, Set.of(), Set.of(), Set.of());
         } else {
             requirePriorityAvailable(update.priority(), policy.getOrgId(), policy.getId());
             policy.updatePriority(update.priority());
@@ -298,7 +300,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
             policy.update(rulesOf(update, reauthFactors, stepUpFactors, cookieSameSite));
             Set<UUID> userIds = update.userIds() == null ? Set.of() : Set.copyOf(update.userIds());
             Set<UUID> roleIds = update.roleIds() == null ? Set.of() : Set.copyOf(update.roleIds());
-            applyAssignmentScope(policy, userIds, roleIds);
+            applyAssignmentScope(policy, userIds, roleIds, predicatesOf(update.attributePredicates()));
         }
         // IP rules are policy config (not an assignment) — the Default may carry them too (global restriction).
         replaceIpRules(id, ipRules);
@@ -367,14 +369,21 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
      * subject is assignable (same-org or global), then hand the whole scope to {@link SessionBindings}, which
      * reconciles the all-subjects/per-subject bindings.
      */
-    private void applyAssignmentScope(SessionPolicy policy, Set<UUID> userIds, Set<UUID> roleIds) {
+    private void applyAssignmentScope(SessionPolicy policy, Set<UUID> userIds, Set<UUID> roleIds,
+            Set<AttributePredicate> attributes) {
         for (UUID userId : userIds) {
             requireAssignable(policy, users.orgIdOf(userId), "user");
         }
         for (UUID roleId : roleIds) {
             requireAssignable(policy, roles.orgIdOf(roleId), "role");
         }
-        sessionBindings.replaceForPolicy(policy.getId(), policy.getPriority(), userIds, roleIds);
+        // A predicate carries no cross-org subject to validate: it is stamped and resolved in the acting tier
+        // (RLS), so it only ever matches the tenant's own users.
+        sessionBindings.replaceForPolicy(policy.getId(), policy.getPriority(), userIds, roleIds, attributes);
+    }
+
+    private Set<AttributePredicate> predicatesOf(Set<AttributePredicate> predicates) {
+        return predicates == null ? Set.of() : Set.copyOf(predicates);
     }
 
     /**

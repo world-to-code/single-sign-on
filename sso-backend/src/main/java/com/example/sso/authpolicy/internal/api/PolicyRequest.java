@@ -3,6 +3,8 @@ package com.example.sso.authpolicy.internal.api;
 import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.authpolicy.policy.AuthPolicySpec;
 import com.example.sso.authpolicy.policy.AuthPolicyUpdate;
+import com.example.sso.metadata.AttributePredicate;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -21,6 +23,7 @@ public record PolicyRequest(@NotBlank String name, int priority, boolean enabled
                             Boolean allowEnrollmentAtLogin,
                             @NotEmpty List<List<String>> steps,
                             List<String> assignedUserIds, List<String> assignedRoleIds,
+                            List<@Valid AttributeTargetRequest> assignedAttributes,
                             @Min(1) @Max(1440) Integer stepUpFreshnessMinutes) {
 
     /** Step-up freshness (minutes) applied when the request omits it. */
@@ -29,13 +32,13 @@ public record PolicyRequest(@NotBlank String name, int priority, boolean enabled
     /** The create command (parses factor names/ids and defaults the optional flags). */
     public AuthPolicySpec toSpec() {
         return new AuthPolicySpec(name, priority, enabled, loginApplies(), enrollmentAllowed(),
-                factorSteps(), uuids(assignedUserIds), uuids(assignedRoleIds), freshness());
+                factorSteps(), uuids(assignedUserIds), uuids(assignedRoleIds), freshness(), predicates());
     }
 
     /** The update command (no name). */
     public AuthPolicyUpdate toUpdate() {
         return new AuthPolicyUpdate(priority, enabled, loginApplies(), enrollmentAllowed(),
-                factorSteps(), uuids(assignedUserIds), uuids(assignedRoleIds), freshness());
+                factorSteps(), uuids(assignedUserIds), uuids(assignedRoleIds), freshness(), predicates());
     }
 
     private boolean loginApplies() {
@@ -58,5 +61,10 @@ public record PolicyRequest(@NotBlank String name, int priority, boolean enabled
 
     private Set<UUID> uuids(List<String> values) {
         return values == null ? Set.of() : values.stream().map(UUID::fromString).collect(Collectors.toSet());
+    }
+
+    private Set<AttributePredicate> predicates() {
+        return assignedAttributes == null ? Set.of() : assignedAttributes.stream()
+                .map(AttributeTargetRequest::toPredicate).collect(Collectors.toSet());
     }
 }

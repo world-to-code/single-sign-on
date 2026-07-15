@@ -5,6 +5,7 @@ import com.example.sso.authpolicy.policy.AuthPolicyAdminService;
 import com.example.sso.authpolicy.policy.AuthPolicySpec;
 import com.example.sso.authpolicy.policy.AuthPolicyView;
 import com.example.sso.authpolicy.policy.LoginAssignment;
+import com.example.sso.metadata.AttributePredicate;
 import com.example.sso.authpolicy.policy.LoginAuthBindings;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
@@ -94,6 +95,32 @@ class LoginAuthBindingsImplIT extends AbstractIntegrationTest {
         assertThat(subjectRows(org)).isEqualTo(1);
         assertThat(orgContext.callInOrg(org, () -> loginBindings.describe(List.of(policy))).get(policy).userIds())
                 .containsExactly(userA);
+    }
+
+    @Test
+    void writesAndReconcilesAttributePredicateLoginBindings() {
+        UUID org = org();
+        UUID policy = policyIn(org, "attr");
+        AttributePredicate eng = new AttributePredicate("dept", "eng");
+        AttributePredicate sales = new AttributePredicate("dept", "sales");
+
+        orgContext.runInOrg(org, () ->
+                loginBindings.replaceForPolicy(policy, 10, true, Set.of(), Set.of(), Set.of(eng, sales)));
+        LoginAssignment written = orgContext.callInOrg(org, () -> loginBindings.describe(List.of(policy))).get(policy);
+        assertThat(written.appliesToLogin()).isTrue();
+        assertThat(written.attributes()).containsExactlyInAnyOrder(eng, sales);
+        assertThat(written.userIds()).isEmpty(); // predicate-only scope is NOT an all-subjects binding
+        assertThat(written.roleIds()).isEmpty();
+
+        // Reconcile: dropping sales clears its row, leaving only eng.
+        orgContext.runInOrg(org, () -> loginBindings.replaceForPolicy(policy, 10, true, Set.of(), Set.of(), Set.of(eng)));
+        assertThat(orgContext.callInOrg(org, () -> loginBindings.describe(List.of(policy))).get(policy).attributes())
+                .containsExactly(eng);
+
+        // appliesToLogin=false must clear predicate bindings too (not just users/roles).
+        orgContext.runInOrg(org, () -> loginBindings.replaceForPolicy(policy, 10, false, Set.of(), Set.of(), Set.of(eng)));
+        assertThat(orgContext.callInOrg(org, () -> loginBindings.describe(List.of(policy))).get(policy))
+                .isEqualTo(LoginAssignment.none());
     }
 
     @Test

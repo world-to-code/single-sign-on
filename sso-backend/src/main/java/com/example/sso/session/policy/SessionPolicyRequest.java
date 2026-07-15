@@ -1,5 +1,6 @@
 package com.example.sso.session.policy;
 
+import com.example.sso.metadata.AttributePredicate;
 import com.example.sso.session.networkzone.IpRuleSpec;
 
 import jakarta.validation.Valid;
@@ -34,6 +35,7 @@ public record SessionPolicyRequest(
         @Pattern(regexp = "Lax|Strict|None") String cookieSameSite,
         List<String> assignedUserIds,
         List<String> assignedRoleIds,
+        List<@Valid AttributeTargetRequest> assignedAttributes,
         List<@Valid IpRuleSpec> ipRules) {
 
     /**
@@ -44,7 +46,7 @@ public record SessionPolicyRequest(
                 reauthIntervalMinutes, reauthFactors, sensitiveReauthWindowMinutes, stepUpFactors,
                 bindClient, maxConcurrentSessions, rotateOnReauth,
                 cookieSameSite,
-                uuids(assignedUserIds), uuids(assignedRoleIds), ipRules());
+                uuids(assignedUserIds), uuids(assignedRoleIds), ipRules(), predicates());
     }
 
     /**
@@ -55,12 +57,18 @@ public record SessionPolicyRequest(
                 reauthIntervalMinutes, reauthFactors, sensitiveReauthWindowMinutes, stepUpFactors,
                 bindClient, maxConcurrentSessions, rotateOnReauth,
                 cookieSameSite,
-                uuids(assignedUserIds), uuids(assignedRoleIds), ipRules());
+                uuids(assignedUserIds), uuids(assignedRoleIds), ipRules(), predicates());
     }
 
     private Set<UUID> uuids(List<String> values) {
         return values == null ? Set.of() : values.stream()
                 .map(UUID::fromString)
+                .collect(Collectors.toSet());
+    }
+
+    private Set<AttributePredicate> predicates() {
+        return assignedAttributes == null ? Set.of() : assignedAttributes.stream()
+                .map(AttributeTargetRequest::toPredicate)
                 .collect(Collectors.toSet());
     }
 }

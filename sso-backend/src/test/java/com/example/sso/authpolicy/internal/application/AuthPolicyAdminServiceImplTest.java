@@ -31,6 +31,7 @@ import org.mockito.quality.Strictness;
 
 import java.util.List;
 import java.util.Optional;
+import com.example.sso.metadata.AttributePredicate;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -263,7 +264,25 @@ class AuthPolicyAdminServiceImplTest {
 
         service.create(spec);
 
-        verify(loginBindings).replaceForPolicy(any(), anyInt(), eq(true), eq(Set.of(userId)), eq(Set.of(roleId)));
+        verify(loginBindings).replaceForPolicy(any(), anyInt(), eq(true), eq(Set.of(userId)), eq(Set.of(roleId)),
+                eq(Set.of()));
+    }
+
+    @Test
+    void createPassesAttributePredicatesThroughToTheLoginScope() {
+        UUID orgA = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgA));
+        when(repository.findByNameAndOrgId("Attr", orgA)).thenReturn(Optional.empty());
+        when(repository.save(any(AuthPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(stepRepository.save(any(AuthPolicyStep.class))).thenAnswer(inv -> inv.getArgument(0));
+        AttributePredicate eng = new AttributePredicate("dept", "eng");
+        AuthPolicySpec spec = new AuthPolicySpec("Attr", 10, true, true, true,
+                List.of(Set.of(AuthFactor.PASSWORD)), Set.of(), Set.of(), 15, Set.of(eng));
+
+        service.create(spec);
+
+        // A predicate carries no cross-org subject (no requireAssignable) but must reach the login binding writer.
+        verify(loginBindings).replaceForPolicy(any(), anyInt(), eq(true), eq(Set.of()), eq(Set.of()), eq(Set.of(eng)));
     }
 
     @Test
@@ -388,7 +407,7 @@ class AuthPolicyAdminServiceImplTest {
                 List.of(Set.of(AuthFactor.PASSWORD)), Set.of(userB), Set.of(), 15);
 
         assertThatThrownBy(() -> service.create(spec)).isInstanceOf(BadRequestException.class);
-        verify(loginBindings, never()).replaceForPolicy(any(), anyInt(), anyBoolean(), any(), any());
+        verify(loginBindings, never()).replaceForPolicy(any(), anyInt(), anyBoolean(), any(), any(), any());
     }
 
     @Test
@@ -403,7 +422,7 @@ class AuthPolicyAdminServiceImplTest {
                 List.of(Set.of(AuthFactor.PASSWORD)), Set.of(), Set.of(roleB), 15);
 
         assertThatThrownBy(() -> service.create(spec)).isInstanceOf(BadRequestException.class);
-        verify(loginBindings, never()).replaceForPolicy(any(), anyInt(), anyBoolean(), any(), any());
+        verify(loginBindings, never()).replaceForPolicy(any(), anyInt(), anyBoolean(), any(), any(), any());
     }
 
     @Test
@@ -419,7 +438,8 @@ class AuthPolicyAdminServiceImplTest {
 
         service.create(spec);
 
-        verify(loginBindings).replaceForPolicy(any(), anyInt(), eq(true), eq(Set.of()), eq(Set.of(globalRole)));
+        verify(loginBindings).replaceForPolicy(any(), anyInt(), eq(true), eq(Set.of()), eq(Set.of(globalRole)),
+                eq(Set.of()));
     }
 
     @Test
@@ -434,7 +454,7 @@ class AuthPolicyAdminServiceImplTest {
                 List.of(Set.of(AuthFactor.PASSWORD)), Set.of(userB), Set.of(), 30);
 
         assertThatThrownBy(() -> service.update(id, upd)).isInstanceOf(BadRequestException.class);
-        verify(loginBindings, never()).replaceForPolicy(any(), anyInt(), anyBoolean(), any(), any());
+        verify(loginBindings, never()).replaceForPolicy(any(), anyInt(), anyBoolean(), any(), any(), any());
     }
 
     private AuthPolicy orgScoped(String name, UUID orgId) {

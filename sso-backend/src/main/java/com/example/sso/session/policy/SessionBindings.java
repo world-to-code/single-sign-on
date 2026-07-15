@@ -1,5 +1,6 @@
 package com.example.sso.session.policy;
 
+import com.example.sso.metadata.AttributePredicate;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
@@ -19,12 +20,19 @@ import java.util.UUID;
 public interface SessionBindings {
 
     /**
-     * Make {@code policyId} govern the given scope, in the acting tier: bind every user when both id sets are
-     * empty, otherwise bind each user and role. Slots this policy no longer targets are cleared; a slot held by
-     * another policy is taken over. {@code priority} is the policy's tie-break weight, stamped on each binding so
-     * two same-specificity bindings (e.g. a user in two roles) resolve to the higher-priority policy.
+     * Make {@code policyId} govern the given scope, in the acting tier: bind every user when users, roles and
+     * predicates are all empty, otherwise bind each user, role and metadata predicate. Slots this policy no
+     * longer targets are cleared; a slot held by another policy is taken over. {@code priority} is the policy's
+     * tie-break weight, stamped on each binding so two same-specificity bindings (e.g. a user in two roles)
+     * resolve to the higher-priority policy.
      */
-    void replaceForPolicy(UUID policyId, int priority, Set<UUID> userIds, Set<UUID> roleIds);
+    void replaceForPolicy(UUID policyId, int priority, Set<UUID> userIds, Set<UUID> roleIds,
+            Set<AttributePredicate> attributes);
+
+    /** Assign with users/roles only (no metadata predicate targets). */
+    default void replaceForPolicy(UUID policyId, int priority, Set<UUID> userIds, Set<UUID> roleIds) {
+        replaceForPolicy(policyId, priority, userIds, roleIds, Set.of());
+    }
 
     /** Remove every session binding referencing {@code policyId} in the acting tier (before the policy is deleted). */
     void clearForPolicy(UUID policyId);
