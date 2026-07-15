@@ -16,6 +16,8 @@ export const states = {
   sessionPoliciesEmptyHint: "Create a session policy to target a role or user.",
   networkZonesEmptyTitle: "No zones yet",
   networkZonesEmptyHint: "Create a named IP zone to reference in policies.",
+  mappingRulesEmptyTitle: "No mapping rules yet",
+  mappingRulesEmptyHint: "Create a rule to auto-assign users to a group by a metadata attribute.",
   relyingPartiesEmptyTitle: "No relying parties",
   relyingPartiesEmptyHint: "Register a SAML service provider to issue assertions to it.",
   clientsEmptyTitle: "No clients registered",

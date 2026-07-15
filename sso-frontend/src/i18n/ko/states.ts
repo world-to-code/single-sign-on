@@ -16,6 +16,8 @@ export const states: Record<keyof typeof enStates, string> = {
   sessionPoliciesEmptyTitle: "아직 정책이 없습니다",
   sessionPoliciesEmptyHint: "역할이나 사용자를 대상으로 하는 세션 정책을 만드세요.",
   networkZonesEmptyTitle: "아직 영역이 없습니다",
+  mappingRulesEmptyTitle: "아직 매핑 규칙이 없습니다",
+  mappingRulesEmptyHint: "메타데이터 속성으로 사용자를 그룹에 자동 배정하는 규칙을 만드세요.",
   networkZonesEmptyHint: "정책에서 참조할 IP 영역을 만드세요.",
   relyingPartiesEmptyTitle: "SAML 공급자가 없습니다",
   relyingPartiesEmptyHint: "어설션을 발급할 SAML 서비스 공급자를 등록하세요.",

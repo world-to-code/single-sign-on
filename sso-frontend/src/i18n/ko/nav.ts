@@ -27,6 +27,7 @@ export const nav: Record<keyof typeof enNav, string> = {
   sessionPolicy: "세션 정책",
   bindings: "정책 바인딩",
   networkZones: "네트워크 영역",
+  mappingRules: "매핑 규칙",
   scimTokens: "SCIM 토큰",
   auditLog: "감사 로그",
   // Shell chrome

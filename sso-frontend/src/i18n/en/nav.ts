@@ -25,6 +25,7 @@ export const nav = {
   sessionPolicy: "Session Policy",
   bindings: "Policy Bindings",
   networkZones: "Network Zones",
+  mappingRules: "Mapping Rules",
   scimTokens: "SCIM Tokens",
   auditLog: "Audit Log",
   // Shell chrome
