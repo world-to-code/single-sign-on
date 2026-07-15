@@ -1,22 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-import { ArrowUpRight } from "lucide-react";
 import { errorMessage } from "@/api";
-import { loadPolicyBindings, type BindingSubjectKind, type PolicyBindingRow } from "@/bindings";
+import { loadPolicyBindings, type BindingAxis, type BindingSubjectKind, type PolicyBindingRow } from "@/bindings";
 import { PageHeader } from "@/components/PageHeader";
 import { DataList, EmptyState } from "@/components/states";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 /**
  * A single read-only overview of every policy binding — app × subject → auth and/or session policy —
  * aggregated from the surfaces that each own a slice (applications, auth policies, session policies, portal
- * settings). Bindings are otherwise scattered and invisible as a whole; each row deep-links to the surface
- * that edits it, so this stays a truthful mirror without duplicating those (security-critical) write paths.
+ * settings) and MERGED so each app × subject appears once with both policies. Each policy name links to the
+ * surface that edits it, so this stays a truthful mirror without duplicating those (security-critical) writes.
  */
 export default function Bindings() {
   const { t } = useTranslation(["console", "states"]);
@@ -56,9 +54,14 @@ export default function Bindings() {
     !needle
     || appLabel(r).toLowerCase().includes(needle)
     || r.subjectLabel.toLowerCase().includes(needle)
-    || (r.authPolicyName ?? "").toLowerCase().includes(needle)
-    || (r.sessionPolicyName ?? "").toLowerCase().includes(needle),
+    || (r.auth?.policyName ?? "").toLowerCase().includes(needle)
+    || (r.session?.policyName ?? "").toLowerCase().includes(needle),
   );
+
+  const policyCell = (axis: BindingAxis | null) =>
+    axis
+      ? <Link to={axis.editTo} className="text-primary hover:underline">{axis.policyName}</Link>
+      : <span className="text-muted-foreground">—</span>;
 
   return (
     <div className="space-y-5">
@@ -98,7 +101,6 @@ export default function Bindings() {
                 <TableHead>{t("bindingsColSubject")}</TableHead>
                 <TableHead>{t("bindingsColAuthPolicy")}</TableHead>
                 <TableHead>{t("bindingsColSessionPolicy")}</TableHead>
-                <TableHead className="w-0" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -120,13 +122,8 @@ export default function Bindings() {
                       </div>
                     )}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{r.authPolicyName ?? "—"}</TableCell>
-                  <TableCell className="text-muted-foreground">{r.sessionPolicyName ?? "—"}</TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" asChild>
-                      <Link to={r.editTo} aria-label={t("bindingsEdit")}><ArrowUpRight /></Link>
-                    </Button>
-                  </TableCell>
+                  <TableCell>{policyCell(r.auth)}</TableCell>
+                  <TableCell>{policyCell(r.session)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

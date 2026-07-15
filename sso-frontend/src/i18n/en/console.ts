@@ -180,7 +180,6 @@ export const console = {
   bindingsAppPortal: "Portal",
   bindingsPortalAdmin: "Admin console",
   bindingsPortalUser: "User portal",
-  bindingsEdit: "Edit at source",
   bindingsPartial: "Some policy sources couldn't be read (a missing permission or a temporary error), so this list may be incomplete.",
 
   // AuthPolicies list -------------------------------------------------------
