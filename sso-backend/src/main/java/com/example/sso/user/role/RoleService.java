@@ -82,6 +82,12 @@ public interface RoleService {
     Set<UUID> parentRoleIds(UUID childRoleId);
 
     /**
+     * The owning org id of each given role (a null value = a global/system role), for batch tier-scoping without
+     * loading the permission graph. RLS-confined: a role the caller may not see is simply absent from the map.
+     */
+    Map<UUID, UUID> orgIdsByIds(Collection<UUID> roleIds);
+
+    /**
      * Reconciles the roles {@code parentRoleId} inherits to exactly {@code childRoleIds} — each becomes a
      * child whose permissions flow up into this role. Adds route through the cycle guard; removals unlink the
      * edge; the caller's privilege/tier checks are enforced upstream (admin service). Ends the sessions of

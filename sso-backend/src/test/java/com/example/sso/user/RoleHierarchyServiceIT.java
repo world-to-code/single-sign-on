@@ -127,16 +127,22 @@ class RoleHierarchyServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void childAndParentRoleIdsReflectTheActualEdgesInBothDirections() {
-        // The role detail's "inherits" (children) and "inherited by" (parents) both read the real DAG edges —
-        // an edge parent→child must surface as a child of the parent AND a parent of the child, never reversed.
+    void childAndParentRoleIdsReflectTheActualEdgesInBothDirectionsAndAreDirectOnly() {
+        // grandparent → parent → child. The role detail's "inherits" (children) and "inherited by" (parents)
+        // read the real DAG edges; both must return DIRECT neighbours only, never the transitive set, and never
+        // reversed.
+        UUID grandparent = seedGlobalRole("ROLE_P4_BIDIR_GRANDPARENT");
         UUID parent = seedGlobalRole("ROLE_P4_BIDIR_PARENT");
         UUID child = seedGlobalRole("ROLE_P4_BIDIR_CHILD");
+        seedEdge(grandparent, parent);
         seedEdge(parent, child);
 
+        assertThat(roleService.childRoleIds(grandparent)).containsExactly(parent);
         assertThat(roleService.childRoleIds(parent)).containsExactly(child);
+        // child's DIRECT parent is `parent` only — `grandparent` is a transitive ancestor and must be excluded.
         assertThat(roleService.parentRoleIds(child)).containsExactly(parent);
-        assertThat(roleService.parentRoleIds(parent)).isEmpty();
+        assertThat(roleService.parentRoleIds(parent)).containsExactly(grandparent);
+        assertThat(roleService.parentRoleIds(grandparent)).isEmpty();
         assertThat(roleService.childRoleIds(child)).isEmpty();
     }
 

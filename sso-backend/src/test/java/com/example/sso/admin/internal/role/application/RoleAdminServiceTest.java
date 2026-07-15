@@ -20,7 +20,9 @@ import com.example.sso.user.account.UserAccount;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -366,23 +368,23 @@ class RoleAdminServiceTest {
     }
 
     @Test
-    void roleDetailSurfacesTheVisibleRolesThatInheritIt() {
-        // "Who inherits this role" = its direct parents, but FILTERED to roles the actor may see: a parent that
-        // outranks the actor (currentRolesAboveActor) must not leak, mirroring the hide-above rule on listRoles.
+    void roleDetailHidesAParentThatOutranksTheActorButKeepsAnInTierParent() {
+        // "Who inherits this role" = its direct parents, FILTERED to roles the actor may see. BOTH parents are
+        // stubbed IN-TIER (orgIdsByIds), so the tier filter never excludes them — the hide-above filter is the
+        // ONLY reason parentAbove is dropped, so deleting `!aboveActor.contains(...)` would surface it and fail.
         UUID org = UUID.randomUUID();
         UUID id = UUID.randomUUID();
         UUID visibleParent = UUID.randomUUID();
         UUID parentAbove = UUID.randomUUID();
         RoleRef theRole = roleRef(id, "SUPPORT", org);
-        RoleRef visibleParentRole = roleRef(visibleParent, "APP_MANAGER", org);
         when(orgContext.currentOrg()).thenReturn(Optional.of(org));
-        when(roleService.orgIdOf(id)).thenReturn(Optional.of(org));                 // the role is in the actor's tier
+        when(roleService.orgIdOf(id)).thenReturn(Optional.of(org));
         when(accessPolicy.isCurrentActorUnscoped()).thenReturn(false);
-        when(accessPolicy.currentRolesAboveActor()).thenReturn(Set.of(parentAbove)); // above the actor, must hide
+        when(accessPolicy.currentRolesAboveActor()).thenReturn(Set.of(parentAbove)); // parentAbove outranks the actor
         when(roleService.findById(id)).thenReturn(Optional.of(theRole));
         when(roleService.childRoleIds(id)).thenReturn(Set.of());
         when(roleService.parentRoleIds(id)).thenReturn(Set.of(visibleParent, parentAbove));
-        when(roleService.findById(visibleParent)).thenReturn(Optional.of(visibleParentRole));
+        when(roleService.orgIdsByIds(any())).thenReturn(Map.of(visibleParent, org, parentAbove, org)); // both in-tier
         IdName visibleParentName = mock(IdName.class);
         when(visibleParentName.getName()).thenReturn("APP_MANAGER");
         when(roleService.idNames(Set.of(visibleParent))).thenReturn(List.of(visibleParentName));
@@ -390,20 +392,96 @@ class RoleAdminServiceTest {
 
         RoleDetailView view = service.roleDetail(id);
 
-        // Only the in-tier parent surfaces; the above-actor parent is filtered out before name resolution.
         assertThat(view.inheritedBy()).extracting(IdName::getName).containsExactly("APP_MANAGER");
     }
 
     @Test
+    void roleDetailSurfacesAnInTierParentWhenNothingOutranksTheActor() {
+        // The positive companion to the test above: with an empty hide-above set the SAME in-tier parent surfaces,
+        // proving it is hide-above — not the tier filter — that removes parentAbove there.
+        UUID org = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        UUID parent = UUID.randomUUID();
+        RoleRef theRole = roleRef(id, "SUPPORT", org);
+        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
+        when(roleService.orgIdOf(id)).thenReturn(Optional.of(org));
+        when(accessPolicy.isCurrentActorUnscoped()).thenReturn(false);
+        when(accessPolicy.currentRolesAboveActor()).thenReturn(Set.of()); // nothing above the actor
+        when(roleService.findById(id)).thenReturn(Optional.of(theRole));
+        when(roleService.childRoleIds(id)).thenReturn(Set.of());
+        when(roleService.parentRoleIds(id)).thenReturn(Set.of(parent));
+        when(roleService.orgIdsByIds(any())).thenReturn(Map.of(parent, org));
+        IdName parentName = mock(IdName.class);
+        when(parentName.getName()).thenReturn("OPS");
+        when(roleService.idNames(Set.of(parent))).thenReturn(List.of(parentName));
+        when(roleService.effectivePermissionNames(Set.of(id))).thenReturn(Set.of("ticket:read"));
+
+        RoleDetailView view = service.roleDetail(id);
+
+        assertThat(view.inheritedBy()).extracting(IdName::getName).containsExactly("OPS");
+    }
+
+    @Test
+    void roleDetailDropsAParentInADifferentTier() {
+        // A parent owned by a DIFFERENT org (and not above the actor) is excluded by the tier filter — pins that
+        // the org comparison, independent of hide-above, does the work.
+        UUID org = UUID.randomUUID();
+        UUID otherOrg = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        UUID foreignParent = UUID.randomUUID();
+        RoleRef theRole = roleRef(id, "SUPPORT", org);
+        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
+        when(roleService.orgIdOf(id)).thenReturn(Optional.of(org));
+        when(accessPolicy.isCurrentActorUnscoped()).thenReturn(false);
+        when(accessPolicy.currentRolesAboveActor()).thenReturn(Set.of());
+        when(roleService.findById(id)).thenReturn(Optional.of(theRole));
+        when(roleService.childRoleIds(id)).thenReturn(Set.of());
+        when(roleService.parentRoleIds(id)).thenReturn(Set.of(foreignParent));
+        when(roleService.orgIdsByIds(any())).thenReturn(Map.of(foreignParent, otherOrg)); // a different tier
+        when(roleService.effectivePermissionNames(Set.of(id))).thenReturn(Set.of("ticket:read"));
+
+        RoleDetailView view = service.roleDetail(id);
+
+        assertThat(view.inheritedBy()).isEmpty();
+    }
+
+    @Test
+    void roleDetailForASuperAdminShowsGlobalParentsWithoutConsultingHideAbove() {
+        // A platform super-admin (unscoped, tier = null) sees parents in the global tier, and the hide-above set
+        // is never consulted — pins the unscoped branch of the visibility filter.
+        UUID id = UUID.randomUUID();
+        UUID globalParent = UUID.randomUUID();
+        RoleRef theRole = roleRef(id, "ROLE_GROUP_ADMIN", null);
+        Map<UUID, UUID> globalTier = new HashMap<>();
+        globalTier.put(globalParent, null); // a global parent (orgId null); Map.of rejects null values
+        when(orgContext.currentOrg()).thenReturn(Optional.empty()); // platform → tier null
+        when(roleService.orgIdOf(id)).thenReturn(Optional.empty()); // global role, in the global tier
+        when(accessPolicy.isCurrentActorUnscoped()).thenReturn(true);
+        when(roleService.findById(id)).thenReturn(Optional.of(theRole));
+        when(roleService.childRoleIds(id)).thenReturn(Set.of());
+        when(roleService.parentRoleIds(id)).thenReturn(Set.of(globalParent));
+        when(roleService.orgIdsByIds(any())).thenReturn(globalTier);
+        IdName parentName = mock(IdName.class);
+        when(parentName.getName()).thenReturn("ROLE_ORG_ADMIN");
+        when(roleService.idNames(Set.of(globalParent))).thenReturn(List.of(parentName));
+        when(roleService.effectivePermissionNames(Set.of(id))).thenReturn(Set.of("x"));
+
+        RoleDetailView view = service.roleDetail(id);
+
+        verify(accessPolicy, never()).currentRolesAboveActor();
+        assertThat(view.inheritedBy()).extracting(IdName::getName).containsExactly("ROLE_ORG_ADMIN");
+    }
+
+    @Test
     void roleDetailOmitsTheActorsApexFromTheInheritedByList() {
-        // Every role a delegated admin creates is wired below their apex (e.g. ORG_ADMIN), so the apex inherits
-        // nearly every role — surfacing it on each is structural noise. Only deliberate parents should show.
+        // Every role a delegated admin creates is wired below their apex, so the apex inherits nearly every role.
+        // BOTH parents are stubbed IN-TIER and nothing is above the actor, so meaningfulParents (apex subtraction)
+        // is the ONLY reason apex is dropped — removing it would surface apex and fail this assertion.
         UUID org = UUID.randomUUID();
         UUID id = UUID.randomUUID();
         UUID apex = UUID.randomUUID();
         UUID otherParent = UUID.randomUUID();
         RoleRef theRole = roleRef(id, "SUPPORT", org);
-        RoleRef otherParentRole = roleRef(otherParent, "PLATFORM_OPS", org);
         when(orgContext.currentOrg()).thenReturn(Optional.of(org));
         when(roleService.orgIdOf(id)).thenReturn(Optional.of(org));
         when(accessPolicy.isCurrentActorUnscoped()).thenReturn(false);
@@ -412,7 +490,7 @@ class RoleAdminServiceTest {
         when(roleService.findById(id)).thenReturn(Optional.of(theRole));
         when(roleService.childRoleIds(id)).thenReturn(Set.of());
         when(roleService.parentRoleIds(id)).thenReturn(Set.of(apex, otherParent));
-        when(roleService.findById(otherParent)).thenReturn(Optional.of(otherParentRole));
+        when(roleService.orgIdsByIds(any())).thenReturn(Map.of(apex, org, otherParent, org)); // both in-tier
         IdName otherParentName = mock(IdName.class);
         when(otherParentName.getName()).thenReturn("PLATFORM_OPS");
         when(roleService.idNames(Set.of(otherParent))).thenReturn(List.of(otherParentName));
@@ -420,7 +498,6 @@ class RoleAdminServiceTest {
 
         RoleDetailView view = service.roleDetail(id);
 
-        // The apex parent is dropped as noise; the deliberate custom parent remains.
         assertThat(view.inheritedBy()).extracting(IdName::getName).containsExactly("PLATFORM_OPS");
     }
 

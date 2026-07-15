@@ -32,6 +32,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -233,6 +234,19 @@ public class RoleServiceImpl implements RoleService {
     @Transactional(readOnly = true)
     public Set<UUID> parentRoleIds(UUID childRoleId) {
         return roleClosure.parentsOf(childRoleId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<UUID, UUID> orgIdsByIds(Collection<UUID> roleIds) {
+        if (roleIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, UUID> orgIds = new HashMap<>();
+        for (Object[] row : roles.findOrgIdsByIds(roleIds)) {
+            orgIds.put((UUID) row[0], (UUID) row[1]); // orgId (row[1]) is null for a global role — HashMap allows it
+        }
+        return orgIds;
     }
 
     @Override

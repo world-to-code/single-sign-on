@@ -18,6 +18,7 @@ import com.example.sso.user.role.RoleService;
 import com.example.sso.user.role.Roles;
 import com.example.sso.user.account.UserAccount;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -54,8 +55,7 @@ public class RoleAdminService {
         // Hide-above: a non-super also never sees roles that strictly OUTRANK them within their tier (e.g. a
         // GROUP_ADMIN must not see — nor, via the assignment gates, target — their tenant's ORG_ADMIN). Super
         // sees everything in the global tier.
-        Set<UUID> aboveActor = accessPolicy.isCurrentActorUnscoped()
-                ? Set.of() : accessPolicy.currentRolesAboveActor();
+        Set<UUID> aboveActor = rolesToHideAbove();
         return roleService.findAll().stream()
                 .filter(role -> Objects.equals(role.getOrgId(), tier))
                 .filter(role -> !aboveActor.contains(role.getId()))
@@ -133,13 +133,19 @@ public class RoleAdminService {
             return Set.of();
         }
         UUID tier = tierGuard.currentTier();
-        Set<UUID> aboveActor = accessPolicy.isCurrentActorUnscoped()
-                ? Set.of() : accessPolicy.currentRolesAboveActor();
+        Set<UUID> aboveActor = rolesToHideAbove();
+        // One batched (id, orgId) read instead of a per-parent findById that would hydrate each role's whole
+        // permission graph just to read its org. A role absent from the map is one RLS did not surface (excluded).
+        Map<UUID, UUID> orgIdById = roleService.orgIdsByIds(roleIds);
         return roleIds.stream()
                 .filter(roleId -> !aboveActor.contains(roleId))
-                .filter(roleId -> roleService.findById(roleId)
-                        .map(candidate -> Objects.equals(candidate.getOrgId(), tier)).orElse(false))
+                .filter(roleId -> orgIdById.containsKey(roleId) && Objects.equals(orgIdById.get(roleId), tier))
                 .collect(Collectors.toSet());
+    }
+
+    /** The roles strictly above the actor, hidden from every listing (empty for a super-admin, who sees their tier). */
+    private Set<UUID> rolesToHideAbove() {
+        return accessPolicy.isCurrentActorUnscoped() ? Set.of() : accessPolicy.currentRolesAboveActor();
     }
 
     /**

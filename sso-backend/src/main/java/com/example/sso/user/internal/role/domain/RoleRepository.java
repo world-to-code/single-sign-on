@@ -24,4 +24,12 @@ public interface RoleRepository extends JpaRepository<Role, UUID> {
     /** (id, name) for the given roles — batch name lookup without loading the EAGER permission graph. */
     @Query("select r.id as id, r.name as name from Role r where r.id in :ids")
     List<IdName> findIdNames(Collection<UUID> ids);
+
+    /**
+     * (id, orgId) for the given roles — a batch tier lookup that loads neither the permission graph nor the
+     * whole entity. RLS-confined like every read here, so a tenant sees only its own + global rows; a row absent
+     * from the result is one the caller may not see. {@code orgId} is null for a global/system role.
+     */
+    @Query("select r.id, r.orgId from Role r where r.id in :ids")
+    List<Object[]> findOrgIdsByIds(Collection<UUID> ids);
 }
