@@ -68,6 +68,12 @@ mocking). Never report "this technically violates X" without that consequence.
 6. **Composition over inheritance.** New `extends` of a concrete class: is it reusing
    implementation rather than modeling "is-a"? Protected-field coupling, template methods where a
    strategy is simpler, hierarchies >2 deep.
+7. **Creation responsibility stays in the object.** An entity/value with many fields is assembled
+   through intention-revealing static factories on the type itself; its constructor and any Lombok
+   `@Builder` are **private**. A `X.builder()` or `new X(...)` for such a type appearing in a
+   service/writer/test is a finding — construction (and its field-order fragility + which-fields-
+   go-together invariants) has leaked out of the type. See
+   `.claude/rules/backend/constructors-factories.md`.
 
 ## Operating rules
 
@@ -87,7 +93,8 @@ mocking). Never report "this technically violates X" without that consequence.
    module layering and DIP.
 3. `rg` sweeps scoped to the change: `switch`/`instanceof` on domain types, `extends` of concrete
    classes, `new <Service|Client|Repository>` inside services, interfaces with a single impl,
-   setter methods, non-record DTOs.
+   setter methods, non-record DTOs, and `<Entity>.builder()`/`new <Entity>(` outside the entity
+   (creation-responsibility leak).
 4. For each abstraction touched, enumerate its clients and check ISP/LSP from their side.
 
 ## Output (exactly this shape)
