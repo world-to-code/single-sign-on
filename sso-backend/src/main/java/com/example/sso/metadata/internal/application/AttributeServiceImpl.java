@@ -40,7 +40,8 @@ class AttributeServiceImpl implements AttributeService {
                 .forEach(row -> byKey.put(row.getAttrKey(), row.getAttrValue()));       // global first
         rows.stream().filter(row -> Objects.equals(row.getOrgId(), tier))
                 .forEach(row -> byKey.put(row.getAttrKey(), row.getAttrValue()));       // own shadows global
-        return byKey.entrySet().stream().map(e -> new Attribute(e.getKey(), e.getValue())).toList();
+        return byKey.entrySet().stream().sorted(Map.Entry.comparingByKey()) // the merge can disturb key order
+                .map(e -> new Attribute(e.getKey(), e.getValue())).toList();
     }
 
     @Override

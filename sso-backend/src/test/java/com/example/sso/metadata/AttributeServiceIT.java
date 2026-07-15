@@ -65,6 +65,33 @@ class AttributeServiceIT extends AbstractIntegrationTest {
         assertThat(orgContext.callInOrg(orgB, () -> attributes.entityIdsWith(EntityKind.USER, "dept", "eng"))).hasSize(1);
     }
 
+    @Test
+    void aTenantsOwnAttributeShadowsAGlobalOneOfTheSameKey() {
+        UUID orgA = newOrg("attr-shadow-a");
+        UUID orgB = newOrg("attr-shadow-b");
+        String userId = UUID.randomUUID().toString();
+        orgContext.callAsPlatform(() -> { // a platform-set GLOBAL attribute (org_id null)
+            attributes.set(EntityKind.USER, userId, "tier", "global-default");
+            return null;
+        });
+        orgContext.runInOrg(orgA, () -> attributes.set(EntityKind.USER, userId, "tier", "gold")); // A overrides it
+
+        // In A's context the OWN value wins; a tenant with no own attribute sees the global default.
+        assertThat(orgContext.callInOrg(orgA, () -> attributes.attributesOf(EntityKind.USER, userId)))
+                .extracting(Attribute::value).containsExactly("gold");
+        assertThat(orgContext.callInOrg(orgB, () -> attributes.attributesOf(EntityKind.USER, userId)))
+                .extracting(Attribute::value).containsExactly("global-default");
+    }
+
+    @Test
+    void removingAnAbsentAttributeIsANoOp() {
+        UUID orgA = newOrg("attr-rm");
+        String userId = UUID.randomUUID().toString();
+
+        orgContext.runInOrg(orgA, () -> attributes.remove(EntityKind.USER, userId, "missing")); // must not throw
+        assertThat(orgContext.callInOrg(orgA, () -> attributes.attributesOf(EntityKind.USER, userId))).isEmpty();
+    }
+
     private UUID newOrg(String prefix) {
         String s = UUID.randomUUID().toString().substring(0, 8);
         return organizations.create(new NewOrganization(prefix + "-" + s, prefix + " " + s)).id();

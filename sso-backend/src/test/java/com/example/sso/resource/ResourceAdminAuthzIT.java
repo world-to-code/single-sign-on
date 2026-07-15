@@ -5,6 +5,7 @@ import com.example.sso.resource.internal.api.ChildRequest;
 import com.example.sso.resource.internal.api.CreateResourceTypeRequest;
 import com.example.sso.resource.internal.api.MemberRequest;
 import com.example.sso.resource.internal.api.ResourceAdminController;
+import com.example.sso.resource.internal.api.ResourceAttributeRequest;
 import com.example.sso.resource.internal.api.ResourceRequest;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.support.AbstractIntegrationTest;
@@ -60,6 +61,9 @@ class ResourceAdminAuthzIT extends AbstractIntegrationTest {
         assertDenied(() -> controller.detachMember(UUID.randomUUID(), "GROUP", UUID.randomUUID().toString()));
         assertDenied(() -> controller.assignAdmin(UUID.randomUUID(), new AdminGrantRequest(UUID.randomUUID())));
         assertDenied(() -> controller.revokeAdmin(UUID.randomUUID(), UUID.randomUUID()));
+        assertDenied(() -> controller.metadata(UUID.randomUUID()));
+        assertDenied(() -> controller.setMetadata(UUID.randomUUID(), new ResourceAttributeRequest("k", "v")));
+        assertDenied(() -> controller.removeMetadata(UUID.randomUUID(), "k"));
     }
 
     @Test
@@ -72,6 +76,7 @@ class ResourceAdminAuthzIT extends AbstractIntegrationTest {
         assertDenied(() -> controller.delete(UUID.randomUUID()));
         assertDenied(() -> controller.attachMember(UUID.randomUUID(), new MemberRequest("GROUP", UUID.randomUUID().toString())));
         assertDenied(() -> controller.assignAdmin(UUID.randomUUID(), new AdminGrantRequest(UUID.randomUUID())));
+        assertDenied(() -> controller.setMetadata(UUID.randomUUID(), new ResourceAttributeRequest("k", "v")));
     }
 
     @Test

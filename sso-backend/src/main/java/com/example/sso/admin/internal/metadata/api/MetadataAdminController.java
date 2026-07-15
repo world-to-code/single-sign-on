@@ -1,6 +1,5 @@
 package com.example.sso.admin.internal.metadata.api;
 
-import com.example.sso.admin.internal.shared.security.CanUpdateUser;
 import com.example.sso.admin.internal.shared.security.CanViewUser;
 import com.example.sso.metadata.Attribute;
 import com.example.sso.metadata.AttributeService;
@@ -41,14 +40,14 @@ public class MetadataAdminController {
     }
 
     @PutMapping("/users/{id}")
-    @CanUpdateUser
+    @PreAuthorize("hasAuthority('" + Permissions.USER_UPDATE + "') and @adminAccessPolicy.canAccessUser(#id)")
     public List<Attribute> setUserAttribute(@PathVariable UUID id, @Valid @RequestBody AttributeRequest request) {
         attributes.set(EntityKind.USER, id.toString(), request.key(), request.value());
         return attributes.attributesOf(EntityKind.USER, id.toString());
     }
 
     @DeleteMapping("/users/{id}/{key}")
-    @CanUpdateUser
+    @PreAuthorize("hasAuthority('" + Permissions.USER_UPDATE + "') and @adminAccessPolicy.canAccessUser(#id)")
     public List<Attribute> removeUserAttribute(@PathVariable UUID id, @PathVariable String key) {
         attributes.remove(EntityKind.USER, id.toString(), key);
         return attributes.attributesOf(EntityKind.USER, id.toString());

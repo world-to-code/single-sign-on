@@ -15,6 +15,9 @@ import com.example.sso.user.account.UserService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import com.example.sso.admin.internal.metadata.api.AttributeRequest;
+import com.example.sso.admin.internal.metadata.api.MetadataAdminController;
+import com.example.sso.metadata.Attribute;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -47,6 +50,8 @@ class AbacAuthorizationIT extends AbstractIntegrationTest {
     UserGroupService userGroups;
     @Autowired
     AdminGroupController groupController;
+    @Autowired
+    MetadataAdminController metadataController;
 
     private final List<UUID> created = new ArrayList<>();
 
@@ -173,6 +178,45 @@ class AbacAuthorizationIT extends AbstractIntegrationTest {
         assertThatThrownBy(() ->
                 groupController.setGroupRoles(groupId, new SetGroupRolesRequest(Set.of("ROLE_ADMIN"))))
                 .isInstanceOf(AccessDeniedException.class);
+
+        actAsWithAuthorities("admin", Permissions.GROUP_UPDATE);
+        userGroups.delete(groupId);
+    }
+
+    @Test
+    void userMetadataEndpointsApplyBothThePermissionAndTheInstanceScope() {
+        UUID target = create("metatarget", Set.of("ROLE_USER"));
+
+        // Positive: a super admin holding user:update can tag any user. This is the discriminator — the write
+        // endpoint's @PreAuthorize must reference only #id; a composite that dereferenced a non-existent request
+        // field would throw during evaluation and deny even this call.
+        actAsWithAuthorities("admin", Permissions.USER_UPDATE);
+        assertThat(metadataController.setUserAttribute(target, new AttributeRequest("dept", "eng")))
+                .extracting(Attribute::key).contains("dept");
+        assertThat(metadataController.removeUserAttribute(target, "dept")).isEmpty();
+
+        // Negative: a scoped (non-super) admin with user:update but no scope over `target` is denied — the
+        // canAccessUser(#id) conjunct fires, not just the permission.
+        create("metascoped", Set.of("ROLE_GROUP_ADMIN", "ROLE_USER"));
+        actAsWithAuthorities("metascoped", Permissions.USER_UPDATE);
+        assertThatThrownBy(() -> metadataController.setUserAttribute(target, new AttributeRequest("dept", "eng")))
+                .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> metadataController.userAttributes(target)).isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void groupMetadataWriteRequiresGroupUpdateNotJustRead() {
+        UUID groupId = UUID.fromString(userGroups.create(new GroupSpec("MetaGroup", null, null, Set.of())).id());
+
+        // group:read alone cannot WRITE metadata.
+        actAsWithAuthorities("admin", Permissions.GROUP_READ);
+        assertThatThrownBy(() -> metadataController.setGroupAttribute(groupId, new AttributeRequest("region", "eu")))
+                .isInstanceOf(AccessDeniedException.class);
+
+        // With group:update (and super scope) it succeeds.
+        actAsWithAuthorities("admin", Permissions.GROUP_UPDATE);
+        assertThat(metadataController.setGroupAttribute(groupId, new AttributeRequest("region", "eu")))
+                .extracting(Attribute::key).contains("region");
 
         actAsWithAuthorities("admin", Permissions.GROUP_UPDATE);
         userGroups.delete(groupId);

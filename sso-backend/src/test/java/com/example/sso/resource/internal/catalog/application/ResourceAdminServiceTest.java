@@ -1,6 +1,7 @@
 package com.example.sso.resource.internal.catalog.application;
 
 import com.example.sso.metadata.AttributeService;
+import com.example.sso.metadata.EntityKind;
 import com.example.sso.resource.internal.authorization.application.ResourceAccessPolicy;
 import com.example.sso.resource.internal.graph.application.ResourceGraphService;
 
@@ -157,6 +158,42 @@ class ResourceAdminServiceTest {
         verify(access).requireManage(parentId);
         verify(access).requireManage(childId);
         verify(graph).attachChild(parentId, childId);
+    }
+
+    @Test
+    void setAttributeRequiresManagingTheResourceThenDelegatesToTheMetadataStore() {
+        UUID id = UUID.randomUUID();
+        when(resources.findById(id)).thenReturn(Optional.of(mock(Resource.class))); // in the (global) tier
+        when(attributes.attributesOf(EntityKind.RESOURCE, id.toString())).thenReturn(List.of());
+
+        service.setAttribute(id, "dept", "eng");
+
+        verify(access).requireManage(id); // scope-gated before the write
+        verify(attributes).set(EntityKind.RESOURCE, id.toString(), "dept", "eng");
+    }
+
+    @Test
+    void setAttributeRejectsAForeignTierResourceBeforeWriting() {
+        UUID id = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(UUID.randomUUID())); // acting in some tenant
+        Resource foreign = mock(Resource.class);
+        when(foreign.getOrgId()).thenReturn(UUID.randomUUID()); // a resource in a DIFFERENT org
+        when(resources.findById(id)).thenReturn(Optional.of(foreign));
+
+        assertThatThrownBy(() -> service.setAttribute(id, "dept", "eng")).isInstanceOf(NotFoundException.class);
+        verify(attributes, never()).set(any(), any(), any(), any());
+    }
+
+    @Test
+    void removeAttributeRejectsAForeignTierResourceBeforeDeleting() {
+        UUID id = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(UUID.randomUUID()));
+        Resource foreign = mock(Resource.class);
+        when(foreign.getOrgId()).thenReturn(UUID.randomUUID());
+        when(resources.findById(id)).thenReturn(Optional.of(foreign));
+
+        assertThatThrownBy(() -> service.removeAttribute(id, "dept")).isInstanceOf(NotFoundException.class);
+        verify(attributes, never()).remove(any(), any(), any());
     }
 
     @Test
