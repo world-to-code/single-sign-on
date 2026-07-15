@@ -854,4 +854,12 @@ export const console = {
   spDetailNoRoles: "No roles",
   spDetailUsers: "Users",
   spDetailUsersPlaceholder: "Search users to target…",
+  attrTargetLabel: "Attribute predicates",
+  attrTargetHint: "Target users carrying a metadata attribute (key = value). Evaluated per login against the user's own attributes.",
+  attrTargetNone: "No attribute predicates",
+  attrTargetKey: "key",
+  attrTargetValue: "value",
+  attrTargetAdd: "Add",
+  attrTargetRemove: "Remove {{key}} = {{value}}",
+  attrTargetDiff: "Attribute predicates",
 } as const;

@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { apiGet, apiPost, apiPut, errorMessage, type Page } from "../api";
 import { listZones, searchZones } from "@/zones";
+import { AttributeTargetEditor, type AttributeTarget } from "@/components/AttributeTargetEditor";
 import { EditorPage } from "@/components/EditorPage";
 import { InfoHint } from "@/components/InfoHint";
 import { SearchSelect } from "@/components/SearchSelect";
@@ -38,6 +39,7 @@ interface SessionPolicy {
   cookieSameSite: string;
   assignedUserIds: string[];
   assignedRoleIds: string[];
+  assignedAttributes: AttributeTarget[];
   ipRules: IpRuleWire[];
 }
 interface Role { id: string; name: string }
@@ -60,6 +62,7 @@ interface Editor {
   cookieSameSite: string;
   roleIds: string[];
   userIds: string[];
+  attributes: AttributeTarget[];
   ipRules: ZoneRule[];
 }
 
@@ -71,7 +74,7 @@ const blankEditor: Editor = {
   absoluteTimeoutMinutes: "480", idleTimeoutMinutes: "30", reauthIntervalMinutes: "5",
   reauthFactors: "TOTP,FIDO2", sensitiveReauthWindowMinutes: "2", stepUpFactors: "TOTP,FIDO2",
   bindClient: true, maxConcurrentSessions: "0", rotateOnReauth: true,
-  cookieSameSite: "Lax", roleIds: [], userIds: [], ipRules: [],
+  cookieSameSite: "Lax", roleIds: [], userIds: [], attributes: [], ipRules: [],
 };
 
 function toEditor(p: SessionPolicy): Editor {
@@ -86,6 +89,7 @@ function toEditor(p: SessionPolicy): Editor {
     maxConcurrentSessions: String(p.maxConcurrentSessions), rotateOnReauth: p.rotateOnReauth,
     cookieSameSite: p.cookieSameSite,
     roleIds: [...p.assignedRoleIds], userIds: [...p.assignedUserIds],
+    attributes: [...(p.assignedAttributes ?? [])],
     ipRules: [...p.ipRules].sort((a, b) => a.priority - b.priority).map((r) => ({ zoneId: r.zoneId, action: r.action })),
   };
 }
@@ -168,6 +172,7 @@ export default function SessionPolicyDetail() {
       cookieSameSite: editor.cookieSameSite,
       assignedRoleIds: editor.roleIds,
       assignedUserIds: editor.userIds,
+      assignedAttributes: editor.attributes,
       ipRules: editor.ipRules.map((r, i) => ({ zoneId: r.zoneId, action: r.action, priority: i })),
     };
     try {
@@ -393,6 +398,11 @@ function AssignTab({ editor, set, roles, isDefault }:
       <div className="space-y-2">
         <Label>{t("spDetailUsers")}</Label>
         <UserMultiSelect selected={editor.userIds} onChange={(ids) => set({ userIds: ids })} placeholder={t("spDetailUsersPlaceholder")} />
+      </div>
+      <div className="space-y-2">
+        <Label>{t("attrTargetLabel")}</Label>
+        <p className="text-xs text-muted-foreground">{t("attrTargetHint")}</p>
+        <AttributeTargetEditor value={editor.attributes} onChange={(attributes) => set({ attributes })} />
       </div>
     </SettingsSection>
   );

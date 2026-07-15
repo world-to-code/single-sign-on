@@ -854,4 +854,12 @@ export const console: Record<keyof typeof enConsole, string> = {
   spDetailNoRoles: "역할 없음",
   spDetailUsers: "사용자",
   spDetailUsersPlaceholder: "대상 사용자 검색…",
+  attrTargetLabel: "속성 조건",
+  attrTargetHint: "메타데이터 속성(키 = 값)을 가진 사용자를 대상으로 지정합니다. 로그인마다 사용자의 속성으로 평가됩니다.",
+  attrTargetNone: "속성 조건 없음",
+  attrTargetKey: "키",
+  attrTargetValue: "값",
+  attrTargetAdd: "추가",
+  attrTargetRemove: "{{key}} = {{value}} 제거",
+  attrTargetDiff: "속성 조건",
 };

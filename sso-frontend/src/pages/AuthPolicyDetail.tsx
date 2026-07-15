@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiGet, apiPost, apiPut, errorMessage, type Page } from "../api";
+import { AttributeTargetEditor, type AttributeTarget } from "@/components/AttributeTargetEditor";
 import { EditorPage } from "@/components/EditorPage";
 import type { DiffEntry } from "@/components/EditorPage";
 import { SettingsSection } from "@/components/SettingsSection";
@@ -25,6 +26,7 @@ interface Policy {
   steps: string[][];
   assignedUserIds: string[];
   assignedRoleIds: string[];
+  assignedAttributes: AttributeTarget[];
   stepUpFreshnessMinutes: number;
 }
 interface Role { id: string; name: string }
@@ -39,12 +41,13 @@ interface Editor {
   steps: string[][];
   roleIds: string[];
   userIds: string[];
+  attributes: AttributeTarget[];
   stepUpFreshnessMinutes: string;
 }
 
 const blankEditor: Editor = {
   id: null, name: "", priority: "10", enabled: true, appliesToLogin: true, allowEnrollmentAtLogin: true,
-  steps: [["PASSWORD"], ["TOTP", "EMAIL"]], roleIds: [], userIds: [], stepUpFreshnessMinutes: "15",
+  steps: [["PASSWORD"], ["TOTP", "EMAIL"]], roleIds: [], userIds: [], attributes: [], stepUpFreshnessMinutes: "15",
 };
 
 function toEditor(p: Policy): Editor {
@@ -52,6 +55,7 @@ function toEditor(p: Policy): Editor {
     id: p.id, name: p.name, priority: String(p.priority), enabled: p.enabled, appliesToLogin: p.appliesToLogin,
     allowEnrollmentAtLogin: p.allowEnrollmentAtLogin, steps: p.steps.map((s) => [...s]),
     roleIds: [...p.assignedRoleIds], userIds: [...p.assignedUserIds],
+    attributes: [...(p.assignedAttributes ?? [])],
     stepUpFreshnessMinutes: String(p.stepUpFreshnessMinutes ?? 15),
   };
 }
@@ -70,6 +74,7 @@ function diffEntries(base: Editor, cur: Editor, t: TFunction<"console">): DiffEn
   if (JSON.stringify(base.steps) !== JSON.stringify(cur.steps)) out.push({ label: t("authPolicyDetailDiffChain"), from: factorCount(base.steps), to: factorCount(cur.steps) });
   if (JSON.stringify(base.roleIds) !== JSON.stringify(cur.roleIds)) out.push({ label: t("authPolicyDetailDiffRoles"), from: base.roleIds.length, to: cur.roleIds.length });
   if (JSON.stringify(base.userIds) !== JSON.stringify(cur.userIds)) out.push({ label: t("authPolicyDetailDiffUsers"), from: base.userIds.length, to: cur.userIds.length });
+  if (JSON.stringify(base.attributes) !== JSON.stringify(cur.attributes)) out.push({ label: t("attrTargetDiff"), from: base.attributes.length, to: cur.attributes.length });
   return out;
 }
 
@@ -118,6 +123,7 @@ export default function AuthPolicyDetail() {
       steps: editor.steps.map((s) => [...s]).filter((s) => s.length > 0),
       assignedRoleIds: editor.roleIds,
       assignedUserIds: editor.userIds,
+      assignedAttributes: editor.attributes,
       stepUpFreshnessMinutes: Number(editor.stepUpFreshnessMinutes) || 15,
     };
     try {
@@ -193,6 +199,11 @@ export default function AuthPolicyDetail() {
               <Label>{t("authPolicyDetailUsers")}</Label>
               <UserMultiSelect selected={editor.userIds} onChange={(ids) => set({ userIds: ids })}
                                placeholder={t("authPolicyDetailUsersPlaceholder")} />
+            </div>
+            <div className="space-y-2">
+              <Label>{t("attrTargetLabel")}</Label>
+              <p className="text-xs text-muted-foreground">{t("attrTargetHint")}</p>
+              <AttributeTargetEditor value={editor.attributes} onChange={(attributes) => set({ attributes })} />
             </div>
           </SettingsSection>
         </>
