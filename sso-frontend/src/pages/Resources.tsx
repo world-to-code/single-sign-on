@@ -11,6 +11,7 @@ import { searchGroups, searchUsers } from "@/groups";
 import { errorMessage } from "@/api";
 import { PageHeader } from "@/components/PageHeader";
 import { SearchSelect, type Suggestion } from "@/components/SearchSelect";
+import { MetadataEditor } from "@/components/MetadataEditor";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 import { Field } from "@/components/form/fields";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -421,6 +422,8 @@ function ResourceDetailDialog(
             onSelect={(s) => { if (s) void run(() => assignResourceAdmin(resourceId, s.id))
               .then((ok) => { if (ok) setAdminAddKey((k) => k + 1); }); }} />
         </Section>
+
+        <MetadataEditor kind="resources" entityId={resourceId} />
         </>
         )}
 

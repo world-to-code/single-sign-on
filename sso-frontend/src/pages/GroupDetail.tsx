@@ -10,6 +10,7 @@ import { errorMessage } from "@/api";
 import { listRoles, type Role } from "@/roles";
 import { Pagination } from "@/components/Pagination";
 import { PageHeader } from "@/components/PageHeader";
+import { MetadataEditor } from "@/components/MetadataEditor";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -126,6 +127,7 @@ export default function GroupDetail() {
               {group.roleNames.map((r) => <Badge key={r} variant="secondary">{r}</Badge>)}
             </div>
           )}
+          <div className="border-t pt-4"><MetadataEditor kind="groups" entityId={id} /></div>
         </div>
       )}
 

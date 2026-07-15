@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/PageHeader";
 import { PermissionPicker } from "@/components/PermissionPicker";
+import { MetadataEditor } from "@/components/MetadataEditor";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -374,12 +375,8 @@ export default function UserDetail({ session }: { session: SessionView }) {
                 {user.externalId && <p className="font-mono text-xs text-muted-foreground">{t("userDetailExternalIdPrefix", { id: user.externalId })}</p>}
               </CardContent>
             </Card>
-            <Card className="opacity-60">
-              <CardHeader>
-                <CardTitle className="text-base">{t("userDetailCustomAttrs")}</CardTitle>
-                <CardDescription>{t("userDetailCustomAttrsDesc")}</CardDescription>
-              </CardHeader>
-              <CardContent><Badge variant="muted">{t("userDetailComingSoon")}</Badge></CardContent>
+            <Card>
+              <CardContent className="pt-6"><MetadataEditor kind="users" entityId={id} /></CardContent>
             </Card>
           </div>
         </div>
