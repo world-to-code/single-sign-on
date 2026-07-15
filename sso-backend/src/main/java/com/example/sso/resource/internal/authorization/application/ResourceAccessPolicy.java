@@ -95,7 +95,12 @@ public class ResourceAccessPolicy {
         if (isUnscoped() || orgId == null) {
             return;
         }
-        if (!organizations.isMember(orgId, userId)) {
+        // The grantee belongs to the org either as an explicit member (Auth0-Organizations model) OR because it
+        // is their HOME org — an admin-created user carries an org_id but not always a membership row. This mirrors
+        // the home-org check attachMember uses, so a user attachable as a member is also delegable as an admin.
+        boolean inOrg = organizations.isMember(orgId, userId)
+                || users.findById(userId).map(user -> orgId.equals(user.getOrgId())).orElse(false);
+        if (!inOrg) {
             throw BadRequestException.of("resource.member.notInOrg");
         }
     }

@@ -176,6 +176,21 @@ class ResourceAccessPolicyTest {
     }
 
     @Test
+    void requireGranteeInOrgAllowsAUserWhoseHomeOrgIsTheResourcesOrg() {
+        // An admin-created user carries an org_id but not always a membership row; its home org counts as being
+        // in the org, so it is delegable as a resource admin (mirrors the home-org check attachMember uses).
+        authenticateAs("orgadmin", Roles.ORG_ADMIN);
+        UUID orgId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(organizations.isMember(orgId, userId)).thenReturn(false);
+        UserAccount grantee = mock(UserAccount.class);
+        when(grantee.getOrgId()).thenReturn(orgId);
+        when(users.findById(userId)).thenReturn(Optional.of(grantee));
+
+        assertThatCode(() -> policy.requireGranteeInOrg(orgId, userId)).doesNotThrowAnyException();
+    }
+
+    @Test
     void requireGranteeInOrgRejectsANonMember() {
         authenticateAs("orgadmin", Roles.ORG_ADMIN);
         UUID orgId = UUID.randomUUID();
