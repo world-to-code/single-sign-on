@@ -53,12 +53,12 @@ public class AdminMappingRuleService {
     }
 
     private boolean mayAccess(MappingRuleView view) {
-        return accessPolicy.canAccessGroup(UUID.fromString(view.groupId()));
+        return accessPolicy.mayAssignTarget(view.thenKind(), UUID.fromString(view.targetId()));
     }
 
     private void requireAccess(MappingRuleView view) {
         if (!mayAccess(view)) {
-            throw new ForbiddenException("Outside your managed groups.");
+            throw new ForbiddenException("Outside your managed targets.");
         }
     }
 }

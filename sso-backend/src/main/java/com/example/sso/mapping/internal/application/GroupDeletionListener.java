@@ -26,6 +26,6 @@ public class GroupDeletionListener {
     @TransactionalEventListener
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onGroupDeleted(GroupDeletedEvent event) {
-        orgContext.runAsPlatform(() -> rules.deleteAll(rules.findByGroupId(event.groupId())));
+        orgContext.runAsPlatform(() -> rules.deleteAll(rules.findByTargetId(event.groupId())));
     }
 }

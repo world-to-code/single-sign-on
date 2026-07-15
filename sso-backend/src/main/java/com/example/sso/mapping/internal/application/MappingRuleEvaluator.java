@@ -13,7 +13,6 @@ import com.example.sso.metadata.AttributePredicate;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.tenancy.OrgTierGuard;
-import com.example.sso.user.group.UserGroupService;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -44,7 +43,7 @@ class MappingRuleEvaluator {
     private final MappingRuleRepository rules;
     private final MappingRuleMembershipRepository memberships;
     private final AttributeService attributes;
-    private final UserGroupService groups;
+    private final List<MappingTargetApplier> appliers;
     private final AuditService audit;
     private final OrgTierGuard tierGuard;
 
@@ -101,31 +100,36 @@ class MappingRuleEvaluator {
     }
 
     private void materialize(MappingRule rule, UUID userId) {
-        groups.addMember(rule.getGroupId(), userId);
-        memberships.save(MappingRuleMembership.of(rule.getId(), userId, rule.getGroupId(), tierGuard.currentTier()));
+        applierFor(rule).assign(rule.getTargetId(), userId);
+        memberships.save(MappingRuleMembership.of(rule.getId(), userId, rule.getTargetId(), tierGuard.currentTier()));
         record(AuditType.MAPPING_RULE_APPLIED, rule, userId);
     }
 
-    /** Materialize a whole cohort at once: one batched group-membership write, then provenance + audit per user. */
+    /** Materialize a whole cohort at once: one batched target assignment, then provenance + audit per user. */
     private void materializeAll(MappingRule rule, Set<UUID> userIds) {
         if (userIds.isEmpty()) {
             return;
         }
-        groups.addMembers(rule.getGroupId(), userIds);
+        applierFor(rule).assignAll(rule.getTargetId(), userIds);
         UUID tier = tierGuard.currentTier();
         memberships.saveAll(userIds.stream()
-                .map(userId -> MappingRuleMembership.of(rule.getId(), userId, rule.getGroupId(), tier)).toList());
+                .map(userId -> MappingRuleMembership.of(rule.getId(), userId, rule.getTargetId(), tier)).toList());
         userIds.forEach(userId -> record(AuditType.MAPPING_RULE_APPLIED, rule, userId));
     }
 
     private void retract(MappingRule rule, UUID userId) {
-        List<MappingRuleMembership> claims = memberships.findByUserIdAndGroupId(userId, rule.getGroupId());
+        List<MappingRuleMembership> claims = memberships.findByUserIdAndTargetId(userId, rule.getTargetId());
         memberships.findByRuleIdAndUserId(rule.getId(), userId).ifPresent(memberships::delete);
         boolean otherRuleClaims = claims.stream().anyMatch(claim -> !claim.getRuleId().equals(rule.getId()));
         if (!otherRuleClaims) {
-            groups.removeMember(rule.getGroupId(), userId); // no rule still keeps them in the group
+            applierFor(rule).unassign(rule.getTargetId(), userId); // no rule still keeps them on the target
         }
         record(AuditType.MAPPING_RULE_RETRACTED, rule, userId);
+    }
+
+    private MappingTargetApplier applierFor(MappingRule rule) {
+        return appliers.stream().filter(a -> a.kind() == rule.getThenKind()).findFirst()
+                .orElseThrow(() -> new IllegalStateException("no applier for mapping kind " + rule.getThenKind()));
     }
 
     private Set<UUID> toUserIds(Set<String> ids) {
@@ -133,7 +137,8 @@ class MappingRuleEvaluator {
     }
 
     private void record(AuditType type, MappingRule rule, UUID userId) {
-        String detail = "rule %s: user %s / group %s".formatted(rule.getId(), userId, rule.getGroupId());
+        String detail = "rule %s (%s): user %s / target %s"
+                .formatted(rule.getId(), rule.getThenKind(), userId, rule.getTargetId());
         audit.record(new AuditRecord(type, SYSTEM_PRINCIPAL, true, detail, null,
                 AuditSubjectType.USER, userId.toString(), rule.getOrgId()));
     }

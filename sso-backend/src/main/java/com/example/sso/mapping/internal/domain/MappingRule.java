@@ -15,9 +15,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * An auto-mapping rule: users carrying {@code attrKey = attrValue} are assigned to {@link #groupId} (kind
- * {@link MappingTargetKind#GROUP}). Org-scoped ({@code orgId} null = global). Assembled through the named
- * factory over a private builder so field order stays contained to this class.
+ * An auto-mapping rule: users carrying {@code attrKey = attrValue} are assigned to {@link #targetId} — a group
+ * or a role, per {@link #thenKind}. Org-scoped ({@code orgId} null = global). Assembled through the named factory
+ * over a private builder so field order stays contained to this class.
  */
 @Entity
 @Table(name = "mapping_rule")
@@ -35,31 +35,32 @@ public class MappingRule extends AuditedEntity implements OrgOwned {
     @Column(name = "then_kind", nullable = false, length = 16)
     private MappingTargetKind thenKind;
 
-    @Column(name = "group_id", nullable = false)
-    private UUID groupId;
+    @Column(name = "target_id", nullable = false)
+    private UUID targetId;
 
     @Column(name = "org_id")
     private UUID orgId;
 
     @Builder(access = AccessLevel.PRIVATE)
-    private MappingRule(String attrKey, String attrValue, MappingTargetKind thenKind, UUID groupId, UUID orgId) {
+    private MappingRule(String attrKey, String attrValue, MappingTargetKind thenKind, UUID targetId, UUID orgId) {
         this.attrKey = attrKey;
         this.attrValue = attrValue;
         this.thenKind = thenKind;
-        this.groupId = groupId;
+        this.targetId = targetId;
         this.orgId = orgId;
     }
 
-    /** A rule assigning the users carrying {@code attrKey = attrValue} to a group, in the given tier. */
-    public static MappingRule forGroup(String attrKey, String attrValue, UUID groupId, UUID orgId) {
-        return builder().attrKey(attrKey).attrValue(attrValue).thenKind(MappingTargetKind.GROUP)
-                .groupId(groupId).orgId(orgId).build();
+    /** A rule assigning the users carrying {@code attrKey = attrValue} to a target ({@code thenKind}), in the tier. */
+    public static MappingRule of(String attrKey, String attrValue, MappingTargetKind thenKind, UUID targetId,
+            UUID orgId) {
+        return builder().attrKey(attrKey).attrValue(attrValue).thenKind(thenKind).targetId(targetId).orgId(orgId).build();
     }
 
-    /** Repoint the rule's predicate and target group (intent-revealing; the tier and author are fixed). */
-    public void redefine(String attrKey, String attrValue, UUID groupId) {
+    /** Repoint the rule's predicate, kind and target (intent-revealing; the tier is fixed). */
+    public void redefine(String attrKey, String attrValue, MappingTargetKind thenKind, UUID targetId) {
         this.attrKey = attrKey;
         this.attrValue = attrValue;
-        this.groupId = groupId;
+        this.thenKind = thenKind;
+        this.targetId = targetId;
     }
 }

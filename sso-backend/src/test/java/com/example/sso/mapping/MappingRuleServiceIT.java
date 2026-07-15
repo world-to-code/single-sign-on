@@ -11,6 +11,7 @@ import com.example.sso.user.account.NewUser;
 import com.example.sso.user.account.UserService;
 import com.example.sso.user.group.GroupSpec;
 import com.example.sso.user.group.UserGroupService;
+import com.example.sso.user.role.RoleService;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -36,11 +37,13 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
     @Autowired AttributeService attributes;
     @Autowired UserGroupService groups;
     @Autowired UserService users;
+    @Autowired RoleService roles;
     @Autowired OrganizationService organizations;
     @Autowired OrgContext orgContext;
 
     private final List<UUID> createdUsers = new ArrayList<>();
     private final List<UUID> createdGroups = new ArrayList<>();
+    private final List<UUID> createdRoles = new ArrayList<>();
     private final List<UUID> createdOrgs = new ArrayList<>();
 
     @AfterEach
@@ -51,10 +54,12 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
             createdUsers.forEach(id -> ownerJdbc().update("delete from entity_attribute where entity_id = ?", id.toString()));
             createdUsers.forEach(users::delete);
             createdGroups.forEach(groups::delete);
+            createdRoles.forEach(roles::delete);
             createdOrgs.forEach(id -> ownerJdbc().update("delete from organization where id = ?", id));
         });
         createdUsers.clear();
         createdGroups.clear();
+        createdRoles.clear();
         createdOrgs.clear();
     }
 
@@ -260,6 +265,20 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void aRoleKindRuleGrantsThenRevokesTheRole() {
+        UUID org = newOrg("map-role");
+        UUID role = orgContext.callInOrg(org, () -> role());
+        UUID member = orgContext.callInOrg(org, () -> user("dept", "eng", org));
+
+        MappingRuleView rule = orgContext.callInOrg(org, () ->
+                mappingRules.create(new MappingRuleSpec("dept", "eng", MappingTargetKind.ROLE, role)));
+        assertThat(hasRole(org, member, role)).isTrue();
+
+        orgContext.runInOrg(org, () -> mappingRules.delete(UUID.fromString(rule.id())));
+        assertThat(hasRole(org, member, role)).isFalse();
+    }
+
+    @Test
     void previewIsScopedToTheActingTenant() {
         UUID orgA = newOrg("prev-a");
         UUID orgB = newOrg("prev-b");
@@ -274,11 +293,11 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
     // --- helpers ---
 
     private int rulesForGroup(UUID groupId) {
-        return count("select count(*) from mapping_rule where group_id = ?", groupId);
+        return count("select count(*) from mapping_rule where target_id = ?", groupId);
     }
 
     private int provenanceForGroup(UUID groupId) {
-        return count("select count(*) from mapping_rule_membership where group_id = ?", groupId);
+        return count("select count(*) from mapping_rule_membership where target_id = ?", groupId);
     }
 
     private int count(String sql, UUID arg) {
@@ -287,7 +306,7 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
     }
 
     private MappingRuleSpec spec(String key, String value, UUID groupId) {
-        return new MappingRuleSpec(key, value, groupId);
+        return new MappingRuleSpec(key, value, MappingTargetKind.GROUP, groupId);
     }
 
     private boolean inGroup(UUID userId, UUID groupId) {
@@ -320,6 +339,18 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
         createdUsers.add(id);
         attributes.set(EntityKind.USER, id.toString(), key, value); // stamped in the current context tier
         return id;
+    }
+
+    /** Creates a role in the CURRENT context tier. */
+    private UUID role() {
+        UUID id = roles.create("ROLE_MR_" + suffix().toUpperCase()).getId();
+        createdRoles.add(id);
+        return id;
+    }
+
+    private boolean hasRole(UUID org, UUID userId, UUID roleId) {
+        return orgContext.callInOrg(org, () -> users.findById(userId)
+                .map(u -> u.getRoles().stream().anyMatch(r -> r.getId().equals(roleId))).orElse(false));
     }
 
     private UUID newOrg(String prefix) {

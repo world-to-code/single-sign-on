@@ -19,6 +19,6 @@ public interface MappingRuleMembershipRepository extends JpaRepository<MappingRu
     /** This rule's claim on a user, if it materialized one. */
     Optional<MappingRuleMembership> findByRuleIdAndUserId(UUID ruleId, UUID userId);
 
-    /** Every rule's claim on a (user, group) — whether the user may be removed from the group after a retract. */
-    List<MappingRuleMembership> findByUserIdAndGroupId(UUID userId, UUID groupId);
+    /** Every rule's claim on a (user, target) — whether the user may be removed from the target after a retract. */
+    List<MappingRuleMembership> findByUserIdAndTargetId(UUID userId, UUID targetId);
 }

@@ -25,12 +25,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Admin API for metadata-driven mapping rules (predicate → group membership). Every operation requires that the
- * actor may manage the rule's TARGET group ({@code canAccessGroup}) — the same authority the manual group-member
- * editor demands: create/update/preview via a method-security expression on the request's group, and
- * read/list/delete via {@link AdminMappingRuleService} on the stored rule's group — so a rule can never grant (or
- * be stripped from) a group the actor could not manage by hand. Reads also carry {@code mapping-rule:read};
- * mutations their own mutating permission plus step-up.
+ * Admin API for metadata-driven mapping rules (predicate → group or role). Every operation requires that the
+ * actor may grant the rule's TARGET by hand ({@code mayAssignTarget} — {@code canAccessGroup} for a group, the
+ * role dominance / grant-only-what-you-hold check for a role): create/update/preview via a method-security
+ * expression on the request's target, and read/list/delete via {@link AdminMappingRuleService} on the stored
+ * rule's target — so a rule can never grant (or be stripped from) a target the actor could not manage by hand.
+ * Reads also carry {@code mapping-rule:read}; mutations their own mutating permission plus step-up.
  */
 @RestController
 @RequestMapping("/api/admin/mapping-rules")
@@ -57,7 +57,7 @@ public class AdminMappingRuleController {
 
     @PostMapping
     @PreAuthorize("hasAuthority('" + Permissions.MAPPING_RULE_CREATE
-            + "') and @adminAccessPolicy.canAccessGroup(#request.groupId())")
+            + "') and @adminAccessPolicy.mayAssignTarget(#request.thenKind(), #request.targetId())")
     @RequireStepUp
     public ResponseEntity<MappingRuleView> create(@Valid @RequestBody MappingRuleRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(mappingRules.create(request.toSpec()));
@@ -65,7 +65,7 @@ public class AdminMappingRuleController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('" + Permissions.MAPPING_RULE_UPDATE
-            + "') and @adminAccessPolicy.canAccessGroup(#request.groupId())")
+            + "') and @adminAccessPolicy.mayAssignTarget(#request.thenKind(), #request.targetId())")
     @RequireStepUp
     public MappingRuleView update(@PathVariable UUID id, @Valid @RequestBody MappingRuleRequest request) {
         return mappingRules.update(id, request.toSpec());
@@ -81,7 +81,7 @@ public class AdminMappingRuleController {
 
     @PostMapping("/preview")
     @PreAuthorize("hasAuthority('" + Permissions.MAPPING_RULE_CREATE
-            + "') and @adminAccessPolicy.canAccessGroup(#request.groupId())")
+            + "') and @adminAccessPolicy.mayAssignTarget(#request.thenKind(), #request.targetId())")
     public MappingPreviewView preview(@Valid @RequestBody MappingRuleRequest request) {
         Set<UUID> matched = mappingRules.preview(request.toSpec());
         List<UUID> sampleIds = matched.stream().limit(PREVIEW_SAMPLE_CAP).toList();

@@ -6,6 +6,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface MappingRuleRepository extends JpaRepository<MappingRule, UUID> {
 
-    /** Rules targeting a group (RLS-scoped) — for cleanup when the group is deleted. */
-    List<MappingRule> findByGroupId(UUID groupId);
+    /** Rules pointing at a target id (RLS-scoped) — for cleanup when the target group/role is deleted. */
+    List<MappingRule> findByTargetId(UUID targetId);
 }

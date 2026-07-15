@@ -4,6 +4,7 @@ import com.example.sso.admin.internal.audit.application.AuditScope;
 import com.example.sso.resource.authorization.ApplicationAuthorization;
 import com.example.sso.resource.authorization.GroupAuthorization;
 import com.example.sso.resource.authorization.ResourceAuthorization;
+import com.example.sso.mapping.MappingTargetKind;
 import com.example.sso.organization.OrganizationAuthorization;
 import com.example.sso.portal.application.ApplicationService;
 import com.example.sso.portal.application.ApplicationView;
@@ -114,6 +115,19 @@ public class AdminAccessPolicy {
      * bundles one) to a group they belong to and escalate. A set with no privileged/platform-bearing role is
      * allowed for anyone.
      */
+    /**
+     * Whether the current actor may make a mapping rule assign the given target — the same authority the manual
+     * path demands: {@code canAccessGroup} for a GROUP, the role grant-only-what-you-hold / dominance check for a
+     * ROLE. Fails closed on an unresolved role.
+     */
+    public boolean mayAssignTarget(MappingTargetKind kind, UUID targetId) {
+        return switch (kind) {
+            case GROUP -> canAccessGroup(targetId);
+            case ROLE -> roleService.findById(targetId)
+                    .map(role -> mayAssignRoles(Set.of(role.getName()))).orElse(false);
+        };
+    }
+
     public boolean mayAssignRoles(Collection<String> roleNames) {
         if (currentIsSuperAdmin()) {
             return true;

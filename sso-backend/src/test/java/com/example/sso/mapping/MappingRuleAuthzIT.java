@@ -72,7 +72,7 @@ class MappingRuleAuthzIT extends AbstractIntegrationTest {
     }
 
     private MappingRuleRequest request() {
-        return new MappingRuleRequest("dept", "eng", UUID.randomUUID());
+        return new MappingRuleRequest("dept", "eng", MappingTargetKind.GROUP, UUID.randomUUID());
     }
 
     private void assertDenied(ThrowingCallable call) {
