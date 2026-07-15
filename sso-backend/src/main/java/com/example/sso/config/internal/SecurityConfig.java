@@ -168,7 +168,7 @@ public class SecurityConfig {
                         // caller's own session (SameSite=Lax blocks cross-site POST logout-CSRF).
                         .requestMatchers("/saml2/idp/metadata", "/saml2/idp/slo", "/saml2/idp/slo/**").permitAll()
                         // SPA shell + static assets (the SPA itself gates content via /api/auth/session).
-                        .requestMatchers(HttpMethod.GET, "/", "/index.html", "/favicon.ico", "/assets/**",
+                        .requestMatchers(HttpMethod.GET, "/", "/index.html", "/favicon.ico", "/assets/**", "/fonts/**",
                                 "/login", "/signup", "/activate", "/set-password", "/product", "/integrations", "/security", "/how-it-works",
                                 "/stepup", "/apps", "/passkeys", "/applications", "/users", "/groups", "/auth-policies", "/clients",
                                 "/relying-parties", "/scim-tokens", "/session-policy",
