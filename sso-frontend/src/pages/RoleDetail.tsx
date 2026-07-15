@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, GitBranch, Lock, Trash2, UserPlus, Users, X } from "lucide-react";
+import { ArrowLeft, Check, GitBranch, Lock, Pencil, Trash2, UserPlus, Users, X } from "lucide-react";
 import {
-  getRoleDetail, listRoleMembers, listRoles, setRoleInheritance, addRoleMember, removeRoleMember,
-  type Role, type RoleDetail, type RoleMember,
+  getRoleDetail, listPermissions, listRoleMembers, listRoles, setRoleInheritance, togglePermission,
+  updateRole, addRoleMember, removeRoleMember,
+  type Permission, type Role, type RoleDetail, type RoleMember,
 } from "@/roles";
 import { searchUsers } from "@/groups";
 import { errorMessage } from "@/api";
 import { PageHeader } from "@/components/PageHeader";
+import { PermissionPicker } from "@/components/PermissionPicker";
 import { SearchSelect } from "@/components/SearchSelect";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 export default function RoleDetail() {
@@ -22,13 +23,22 @@ export default function RoleDetail() {
   const [role, setRole] = useState<RoleDetail | null>(null);
   const [members, setMembers] = useState<RoleMember[] | null>(null);
   const [allRoles, setAllRoles] = useState<Role[]>([]);
+  const [catalog, setCatalog] = useState<Permission[]>([]);
   const [addKey, setAddKey] = useState(0);
+  const [inheritKey, setInheritKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  // Edit mode: permissions + inheritance are staged as drafts and committed together on Save.
+  const [editing, setEditing] = useState(false);
+  const [draftPerms, setDraftPerms] = useState<string[]>([]);
+  const [draftInherits, setDraftInherits] = useState<{ id: string; name: string }[]>([]);
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(() => {
     getRoleDetail(id).then(setRole).catch((e) => setError(errorMessage(e)));
     listRoleMembers(id).then(setMembers).catch((e) => setError(errorMessage(e)));
     listRoles().then(setAllRoles).catch(() => undefined);
+    listPermissions().then(setCatalog).catch(() => undefined);
   }, [id]);
   useEffect(load, [load]);
 
@@ -45,21 +55,56 @@ export default function RoleDetail() {
     }
   }
 
-  // Inheritance edits return the fresh detail (server-computed effective permissions), so update from that.
-  async function saveInheritance(nextIds: string[]) {
+  function startEdit() {
+    if (!role) return;
+    setDraftPerms(role.permissions);
+    setDraftInherits(role.inheritsFrom);
+    setError(null);
+    setEditing(true);
+  }
+
+  function toggleDraftPerm(perm: Permission) {
+    setDraftPerms((prev) => togglePermission(prev, perm, catalog));
+  }
+
+  async function saveEdits() {
+    if (!role) return;
+    setSaving(true);
     try {
-      setRole(await setRoleInheritance(id, nextIds));
+      await updateRole(id, { name: role.name, permissions: draftPerms });
+      const fresh = await setRoleInheritance(id, draftInherits.map((r) => r.id));
+      setRole(fresh);
+      setEditing(false);
       setError(null);
     } catch (e) {
       setError(errorMessage(e));
+    } finally {
+      setSaving(false);
     }
   }
 
-  const inheritedIds = new Set(role?.inheritsFrom.map((r) => r.id));
   const directPermissions = new Set(role?.permissions);
-  // Candidate children: in-tier roles this role does not already inherit and is not itself.
-  const candidates = allRoles.filter((r) => r.id !== id && !inheritedIds.has(r.id));
+  const draftInheritedIds = new Set(draftInherits.map((r) => r.id));
+  // In-tier roles this role could inherit: not itself and not already staged. Search is client-side over the
+  // already-loaded list, reusing the same typeahead as user search.
+  const inheritFetcher = (q: string) =>
+    Promise.resolve(
+      allRoles
+        .filter((r) => r.id !== id && !draftInheritedIds.has(r.id) && r.name.toLowerCase().includes(q.trim().toLowerCase()))
+        .map((r) => ({ id: r.id, label: r.name })),
+    );
   const editable = role !== null && !role.system;
+
+  const headerActions = role?.system ? (
+    <Badge variant="secondary"><Lock className="size-3" /> {t("roleDetailSystemRole")}</Badge>
+  ) : editing ? (
+    <div className="flex items-center gap-2">
+      <Button variant="outline" onClick={() => setEditing(false)} disabled={saving}>{t("cancel")}</Button>
+      <Button onClick={() => void saveEdits()} disabled={saving}><Check /> {t("save")}</Button>
+    </div>
+  ) : editable ? (
+    <Button variant="outline" onClick={startEdit}><Pencil /> {t("roleDetailEdit")}</Button>
+  ) : undefined;
 
   return (
     <>
@@ -69,7 +114,7 @@ export default function RoleDetail() {
       <PageHeader
         title={role ? role.name : t("roleDetailFallbackTitle")}
         description={t("roleDetailDescription")}
-        actions={role?.system ? <Badge variant="secondary"><Lock className="size-3" /> {t("roleDetailSystemRole")}</Badge> : undefined}
+        actions={headerActions}
       />
 
       {error && <Alert variant="destructive" className="mb-4"><AlertDescription>{error}</AlertDescription></Alert>}
@@ -77,7 +122,9 @@ export default function RoleDetail() {
       {role && (
         <div className="mb-6">
           <p className="mb-2 text-sm font-medium text-muted-foreground">{t("roleDetailPermissions")}</p>
-          {role.permissions.length === 0 ? (
+          {editing ? (
+            <PermissionPicker catalog={catalog} selected={draftPerms} onToggle={toggleDraftPerm} />
+          ) : role.permissions.length === 0 ? (
             <p className="text-sm text-muted-foreground">{t("roleDetailNoPermissions")}</p>
           ) : (
             <div className="flex flex-wrap gap-1">
@@ -94,19 +141,19 @@ export default function RoleDetail() {
           </div>
           <p className="mb-2 text-xs text-muted-foreground">{t("roleDetailInheritanceHint")}</p>
 
-          {role.inheritsFrom.length === 0 ? (
+          {(editing ? draftInherits : role.inheritsFrom).length === 0 ? (
             <p className="text-sm text-muted-foreground">{t("roleDetailInheritsNone")}</p>
           ) : (
             <div className="flex flex-wrap gap-1.5">
-              {role.inheritsFrom.map((r) => (
+              {(editing ? draftInherits : role.inheritsFrom).map((r) => (
                 <span key={r.id} className="inline-flex items-center gap-1 rounded-full bg-primary/10 py-0.5 pl-2.5 pr-1 text-xs">
                   {r.name}
-                  {editable && (
+                  {editing && (
                     <button
                       type="button"
                       aria-label={t("roleDetailInheritRemove", { name: r.name })}
                       className="rounded-full p-0.5 text-muted-foreground hover:text-destructive"
-                      onClick={() => void saveInheritance(role.inheritsFrom.filter((x) => x.id !== r.id).map((x) => x.id))}
+                      onClick={() => setDraftInherits((prev) => prev.filter((x) => x.id !== r.id))}
                     >
                       <X className="size-3" />
                     </button>
@@ -116,22 +163,23 @@ export default function RoleDetail() {
             </div>
           )}
 
-          {editable && candidates.length > 0 && (
-            <div className="mt-2 max-w-xs">
-              <Select
-                value=""
-                aria-label={t("roleDetailInheritAdd")}
-                onChange={(e) => {
-                  if (e.target.value) void saveInheritance([...role.inheritsFrom.map((r) => r.id), e.target.value]);
+          {editing && (
+            <div className="mt-2 flex max-w-xs items-center gap-2">
+              <SearchSelect
+                resetKey={inheritKey}
+                placeholder={t("roleDetailInheritAdd")}
+                fetcher={inheritFetcher}
+                onSelect={(s) => {
+                  if (s) {
+                    setDraftInherits((prev) => [...prev, { id: s.id, name: s.label }]);
+                    setInheritKey((k) => k + 1);
+                  }
                 }}
-              >
-                <option value="">{t("roleDetailInheritAdd")}</option>
-                {candidates.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-              </Select>
+              />
             </div>
           )}
 
-          {role.effectivePermissions.length > role.permissions.length && (
+          {!editing && role.effectivePermissions.length > role.permissions.length && (
             <div className="mt-3">
               <p className="mb-1 text-xs font-medium text-muted-foreground">{t("roleDetailEffectivePermissions")}</p>
               <div className="flex flex-wrap gap-1">

@@ -1,15 +1,11 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ShieldCheck, Lock, Pencil, Plus, Trash2 } from "lucide-react";
-import {
-  ADMIN_ROLE, createRole, deleteRole, listPermissions, listRoles, togglePermission, updateRole,
-  type Permission, type Role,
-} from "@/roles";
+import { ADMIN_ROLE, createRole, deleteRole, listRoles, type Role } from "@/roles";
+import { errorMessage } from "@/api";
 import { PageHeader } from "@/components/PageHeader";
-import { PermissionPicker } from "@/components/PermissionPicker";
 import { TagList } from "@/components/TagList";
-import { useEditorForm } from "@/hooks/useEditorForm";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 import { Field } from "@/components/form/fields";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -22,45 +18,42 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DataList, EmptyState } from "@/components/states";
 
-interface RoleEditor {
-  id: string | null;
-  name: string;
-  permissions: string[];
-  system: boolean;
-}
-
-const BLANK: RoleEditor = { id: null, name: "", permissions: [], system: false };
-
 export default function Roles() {
   const { t } = useTranslation(["console", "states"]);
+  const navigate = useNavigate();
   const confirmDelete = useDeleteConfirm();
   const [roles, setRoles] = useState<Role[] | null>(null);
-  const [catalog, setCatalog] = useState<Permission[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   function reload() {
     listRoles().then(setRoles).catch((e) => setError(String(e)));
   }
-  useEffect(() => {
-    reload();
-    listPermissions().then(setCatalog).catch(() => undefined);
-  }, []);
+  useEffect(reload, []);
 
-  const form = useEditorForm<RoleEditor>({
-    blank: BLANK,
-    toRequest: (e) => ({ name: e.name, permissions: e.permissions }),
-    create: (body) => createRole(body as { name: string; permissions: string[] }),
-    update: (id, body) => updateRole(id, body as { name: string; permissions: string[] }),
-    onSaved: reload,
-  });
+  // Name-first: create an empty role, then land on its detail to assign permissions and inheritance.
+  async function submitCreate(e: React.FormEvent) {
+    e.preventDefault();
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const role = await createRole({ name: name.trim(), permissions: [] });
+      setCreateOpen(false);
+      navigate(`/admin/roles/${role.id}`);
+    } catch (err) {
+      setCreateError(errorMessage(err));
+    } finally {
+      setCreating(false);
+    }
+  }
 
-  const editing = form.editor.id !== null;
-  const isAdmin = form.editor.name === ADMIN_ROLE;
-  const nameLocked = editing && form.editor.system;
-  const permsLocked = isAdmin;
-
-  function toggle(perm: Permission) {
-    form.set({ permissions: togglePermission(form.editor.permissions, perm, catalog) });
+  function openCreate() {
+    setName("");
+    setCreateError(null);
+    setCreateOpen(true);
   }
 
   function remove(role: Role) {
@@ -72,14 +65,12 @@ export default function Roles() {
     });
   }
 
-  const newButton = <Button onClick={form.openCreate}><Plus /> {t("rolesNew")}</Button>;
-
   return (
     <>
       <PageHeader
         title={t("rolesTitle")}
         description={roles ? t("rolesCount", { count: roles.length }) : t("rolesDescription")}
-        actions={newButton}
+        actions={<Button onClick={openCreate}><Plus /> {t("rolesNew")}</Button>}
       />
 
       <DataList
@@ -119,7 +110,7 @@ export default function Roles() {
                         variant="ghost" size="icon"
                         title={role.name === ADMIN_ROLE ? t("rolesManagedAuto") : t("rolesEditRole")}
                         disabled={role.name === ADMIN_ROLE}
-                        onClick={() => form.openEdit({ id: role.id, name: role.name, permissions: role.permissions, system: role.system })}
+                        onClick={() => navigate(`/admin/roles/${role.id}`)}
                       >
                         <Pencil />
                       </Button>
@@ -141,29 +132,20 @@ export default function Roles() {
         )}
       </DataList>
 
-      <Dialog open={form.open} onOpenChange={form.setOpen}>
-        <DialogContent className="sm:max-w-2xl">
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editing ? t("rolesDialogEdit") : t("rolesDialogCreate")}</DialogTitle>
-            <DialogDescription>
-              {isAdmin ? t("rolesAdminManaged") : t("rolesChoosePermissions")}
-            </DialogDescription>
+            <DialogTitle>{t("rolesDialogCreate")}</DialogTitle>
+            <DialogDescription>{t("rolesCreateHint")}</DialogDescription>
           </DialogHeader>
-          {form.error && <Alert variant="destructive"><AlertDescription>{form.error}</AlertDescription></Alert>}
-          <form onSubmit={form.save} className="space-y-4">
-            <Field label={t("rolesNameLabel")} hint={nameLocked ? t("rolesNameLockedHint") : undefined}>
-              <Input
-                value={form.editor.name}
-                onChange={(e) => form.set({ name: e.target.value })}
-                placeholder={t("rolesNamePlaceholder")}
-                disabled={nameLocked || isAdmin}
-                required
-              />
+          {createError && <Alert variant="destructive"><AlertDescription>{createError}</AlertDescription></Alert>}
+          <form onSubmit={submitCreate} className="space-y-4">
+            <Field label={t("rolesNameLabel")}>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("rolesNamePlaceholder")} required autoFocus />
             </Field>
-            <PermissionPicker catalog={catalog} selected={form.editor.permissions} onToggle={toggle} disabled={permsLocked} />
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => form.setOpen(false)}>{t("cancel")}</Button>
-              <Button type="submit" disabled={isAdmin}>{editing ? t("rolesSaveRole") : t("rolesCreateRole")}</Button>
+              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>{t("cancel")}</Button>
+              <Button type="submit" disabled={creating || name.trim() === ""}>{t("rolesCreateRole")}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
