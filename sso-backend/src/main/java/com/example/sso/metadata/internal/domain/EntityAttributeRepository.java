@@ -1,0 +1,26 @@
+package com.example.sso.metadata.internal.domain;
+
+import com.example.sso.metadata.EntityKind;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+/** RLS-confined access to {@code entity_attribute} (a tenant sees its own + global rows). */
+public interface EntityAttributeRepository extends JpaRepository<EntityAttribute, UUID> {
+
+    List<EntityAttribute> findByEntityKindAndEntityIdOrderByAttrKey(EntityKind entityKind, String entityId);
+
+    Optional<EntityAttribute> findByEntityKindAndEntityIdAndAttrKeyAndOrgId(
+            EntityKind entityKind, String entityId, String attrKey, UUID orgId);
+
+    Optional<EntityAttribute> findByEntityKindAndEntityIdAndAttrKeyAndOrgIdIsNull(
+            EntityKind entityKind, String entityId, String attrKey);
+
+    /** Entity ids (as text) of the given kind carrying {@code key = value} — the Phase-2 predicate lookup. */
+    @Query("select a.entityId from EntityAttribute a "
+            + "where a.entityKind = :kind and a.attrKey = :key and a.attrValue = :value")
+    List<String> findEntityIds(@Param("kind") EntityKind kind, @Param("key") String key, @Param("value") String value);
+}
