@@ -22,9 +22,11 @@ export function StepsBuilder({ steps, onChange }: { steps: string[][]; onChange:
     [next[i], next[j]] = [next[j], next[i]];
     onChange(next);
   };
+  // A factor is meaningful in at most ONE step: once verified it is granted, so repeating it in a later step
+  // would be auto-satisfied. Offer only factors not already used in ANY step.
+  const usedFactors = steps.flat();
   const addStep = () => {
-    const used = steps.flat();
-    onChange([...steps, [FACTORS.find((f) => !used.includes(f)) ?? FACTORS[1]]]);
+    onChange([...steps, [FACTORS.find((f) => !usedFactors.includes(f)) ?? FACTORS[1]]]);
   };
 
   return (
@@ -32,7 +34,7 @@ export function StepsBuilder({ steps, onChange }: { steps: string[][]; onChange:
       <Label>{t("stepsLabel")} <span className="text-muted-foreground">{t("stepsLabelHint")}</span></Label>
       <div className="space-y-1">
         {steps.map((step, i) => {
-          const remaining = FACTORS.filter((f) => !step.includes(f));
+          const remaining = FACTORS.filter((f) => !usedFactors.includes(f));
           return (
             <div key={i}>
               {i > 0 && (
