@@ -19,7 +19,7 @@ public interface EntityAttributeRepository extends JpaRepository<EntityAttribute
     Optional<EntityAttribute> findByEntityKindAndEntityIdAndAttrKeyAndOrgIdIsNull(
             EntityKind entityKind, String entityId, String attrKey);
 
-    /** Entity ids (as text) of the given kind carrying {@code key = value} — the Phase-2 predicate lookup. */
+    /** Entity ids (as text) of the given kind carrying {@code key = value}. */
     @Query("select a.entityId from EntityAttribute a "
             + "where a.entityKind = :kind and a.attrKey = :key and a.attrValue = :value")
     List<String> findEntityIds(@Param("kind") EntityKind kind, @Param("key") String key, @Param("value") String value);

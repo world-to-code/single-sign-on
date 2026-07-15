@@ -1,5 +1,8 @@
 package com.example.sso.resource.internal.catalog.application;
 
+import com.example.sso.metadata.Attribute;
+import com.example.sso.metadata.AttributeService;
+import com.example.sso.metadata.EntityKind;
 import com.example.sso.resource.internal.authorization.application.MemberIds;
 import com.example.sso.resource.internal.authorization.application.ResourceAccessPolicy;
 import com.example.sso.resource.internal.graph.application.ResourceGraphService;
@@ -68,6 +71,7 @@ public class ResourceAdminService {
     private final ResourceGrantRowRepository grantRows;
     private final ResourceGraphService graph;
     private final ResourceAccessPolicy access;
+    private final AttributeService attributes;
     private final UserService users;
     private final UserGroupService groups;
     private final ApplicationService applications;
@@ -386,6 +390,31 @@ public class ResourceAdminService {
         requireInTier(id);
         grantRows.deleteByResourceIdAndUserIdAndTier(id, userId, ResourceRoleTier.ADMIN);
         return viewOf(id);
+    }
+
+    // --- Metadata (key/value attributes) ---
+
+    @Transactional(readOnly = true)
+    public List<Attribute> attributesOf(UUID id) {
+        access.requireManage(id);
+        requireInTier(id); // reject a global/foreign resource — a tenant tags only its own tree
+        return attributes.attributesOf(EntityKind.RESOURCE, id.toString());
+    }
+
+    @Transactional
+    public List<Attribute> setAttribute(UUID id, String key, String value) {
+        access.requireManage(id);
+        requireInTier(id);
+        attributes.set(EntityKind.RESOURCE, id.toString(), key, value);
+        return attributes.attributesOf(EntityKind.RESOURCE, id.toString());
+    }
+
+    @Transactional
+    public List<Attribute> removeAttribute(UUID id, String key) {
+        access.requireManage(id);
+        requireInTier(id);
+        attributes.remove(EntityKind.RESOURCE, id.toString(), key);
+        return attributes.attributesOf(EntityKind.RESOURCE, id.toString());
     }
 
     /**

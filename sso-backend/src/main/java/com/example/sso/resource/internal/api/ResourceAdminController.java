@@ -1,5 +1,6 @@
 package com.example.sso.resource.internal.api;
 
+import com.example.sso.metadata.Attribute;
 import com.example.sso.resource.internal.catalog.application.ResourceAdminService;
 import com.example.sso.resource.internal.catalog.application.ResourceDetailView;
 import com.example.sso.resource.internal.catalog.application.ResourceTypeView;
@@ -157,5 +158,25 @@ public class ResourceAdminController {
     @RequireStepUp
     public ResourceView revokeAdmin(@PathVariable UUID id, @PathVariable UUID userId) {
         return service.revokeAdmin(id, userId);
+    }
+
+    // --- Metadata (key/value attributes); scope-gated by the service's requireManage ---
+
+    @GetMapping("/{id}/metadata")
+    @RequirePermission(Permissions.RESOURCE_READ)
+    public List<Attribute> metadata(@PathVariable UUID id) {
+        return service.attributesOf(id);
+    }
+
+    @PutMapping("/{id}/metadata")
+    @RequirePermission(Permissions.RESOURCE_UPDATE)
+    public List<Attribute> setMetadata(@PathVariable UUID id, @Valid @RequestBody ResourceAttributeRequest request) {
+        return service.setAttribute(id, request.key(), request.value());
+    }
+
+    @DeleteMapping("/{id}/metadata/{key}")
+    @RequirePermission(Permissions.RESOURCE_UPDATE)
+    public List<Attribute> removeMetadata(@PathVariable UUID id, @PathVariable String key) {
+        return service.removeAttribute(id, key);
     }
 }

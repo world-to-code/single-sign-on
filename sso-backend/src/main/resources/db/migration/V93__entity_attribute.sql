@@ -1,5 +1,5 @@
--- Metadata/tag store (ABAC foundation, Phase 1 of docs/abac-metadata-plan.md). A key/value attribute attached
--- to an entity — USER, GROUP, APPLICATION or RESOURCE — org-scoped so a tenant tags only its own entities. The
+-- Metadata/tag store: a key/value attribute attached to an entity — USER, GROUP, APPLICATION or RESOURCE —
+-- org-scoped so a tenant tags only its own entities. The
 -- entity is referenced by (kind, id-as-text): user/group/resource ids are uuids stringified, an application id
 -- is its client_id / SAML entityId (already a string). Org recipe mirrors V82 (resource_type): tier-aware
 -- partial uniqueness (one value per key per tier) + tightened WITH CHECK (a global row only from the platform /

@@ -20,6 +20,11 @@ public interface AttributeService {
     /** Removes an attribute from the entity in the acting tier; a no-op if absent. */
     void remove(EntityKind kind, String entityId, String key);
 
-    /** The ids of the entities of this kind that carry {@code key = value} — the Phase-2 predicate lookup. */
+    /**
+     * The ids of the entities of this kind that carry {@code key = value}. CAVEAT: this is a flat match over
+     * the RLS-visible rows and does NOT apply the own-shadows-global precedence that {@link #attributesOf} does,
+     * so a global value can still match after a tenant overrode it. A caller that drives access decisions off
+     * this must first resolve the effective per-tenant value (or decide whether global values participate).
+     */
     Set<String> entityIdsWith(EntityKind kind, String key, String value);
 }

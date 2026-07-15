@@ -1,5 +1,6 @@
 package com.example.sso.resource.internal.catalog.application;
 
+import com.example.sso.metadata.AttributeService;
 import com.example.sso.resource.internal.authorization.application.ResourceAccessPolicy;
 import com.example.sso.resource.internal.graph.application.ResourceGraphService;
 
@@ -71,6 +72,8 @@ class ResourceAdminServiceTest {
     @Mock
     private ResourceAccessPolicy access;
     @Mock
+    private AttributeService attributes;
+    @Mock
     private UserService users;
     @Mock
     private UserGroupService groups;
@@ -91,7 +94,7 @@ class ResourceAdminServiceTest {
         lenient().when(orgContext.callAsPlatform(any()))
                 .thenAnswer(invocation -> invocation.getArgument(0, Supplier.class).get());
         service = new ResourceAdminService(resources, types, allowedMembers, edges, memberRows, grantRows,
-                graph, access, users, groups, applications, new OrgTierGuard(orgContext), orgContext);
+                graph, access, attributes, users, groups, applications, new OrgTierGuard(orgContext), orgContext);
     }
 
     @Test
