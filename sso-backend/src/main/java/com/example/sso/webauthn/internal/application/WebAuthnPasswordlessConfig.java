@@ -16,6 +16,7 @@ import org.springframework.security.web.webauthn.management.WebAuthnRelyingParty
 import org.springframework.security.web.webauthn.management.Webauthn4JRelyingPartyOperations;
 import org.springframework.security.web.webauthn.registration.PublicKeyCredentialCreationOptionsRepository;
 
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -43,11 +44,17 @@ public class WebAuthnPasswordlessConfig {
             UserCredentialRepository userCredentials,
             @Value("${sso.webauthn.rp-id:localhost}") String rpId,
             @Value("${sso.webauthn.rp-name:Mini SSO}") String rpName,
+            @Value("${sso.tenant.base-domains}") List<String> baseDomains,
             @Qualifier("webAuthnAllowedOrigins") Set<String> allowedOrigins) {
-        PublicKeyCredentialRpEntity rp = PublicKeyCredentialRpEntity.builder().id(rpId).name(rpName).build();
-        // allowedOrigins is the TENANT-AWARE set (admits the current request's tenant-subdomain origin), so the
-        // single RP-operations bean validates passkey ceremonies at every tenant host, not only the platform.
-        return new Webauthn4JRelyingPartyOperations(userEntities, userCredentials, rp, allowedOrigins);
+        // The RP ID is derived from the ceremony host per request (WebAuthnRpIdResolver): a subdomain of a
+        // single-label base like *.localhost must use the full host, since the browser refuses the base itself as
+        // its RP ID. allowedOrigins is likewise the TENANT-AWARE set, so the single bean validates passkey
+        // ceremonies at every tenant host, not only the platform, for BOTH registration and assertion.
+        WebAuthnRpIdResolver rpIds = new WebAuthnRpIdResolver(baseDomains, rpId);
+        return new TenantAwareRelyingPartyOperations(rpIds, id -> {
+            PublicKeyCredentialRpEntity rp = PublicKeyCredentialRpEntity.builder().id(id).name(rpName).build();
+            return new Webauthn4JRelyingPartyOperations(userEntities, userCredentials, rp, allowedOrigins);
+        });
     }
 
     @Bean
