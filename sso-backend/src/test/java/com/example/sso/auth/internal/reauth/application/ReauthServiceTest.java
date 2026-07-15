@@ -27,6 +27,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -72,6 +73,7 @@ class ReauthServiceTest {
     @BeforeEach
     void setUp() {
         user = mock(UserAccount.class);
+        ReflectionTestUtils.setField(service, "challengeValidityMinutes", 15L); // @Value not injected by @InjectMocks
         lenient().when(user.getUsername()).thenReturn("alice");
         lenient().when(currentUser.require()).thenReturn(user);
         // The effective policy carries the winner's re-auth factors and the rotate-on-reauth preference directly
@@ -89,6 +91,7 @@ class ReauthServiceTest {
         MockHttpSession session = new MockHttpSession();
         if (pendingFactors != null) {
             session.setAttribute(StepUpInterceptor.STEPUP_FACTORS, pendingFactors);
+            session.setAttribute(StepUpInterceptor.STEPUP_FACTORS_TIME, System.currentTimeMillis()); // a FRESH challenge
         }
         request.setSession(session);
         return request;
@@ -166,6 +169,25 @@ class ReauthServiceTest {
         service.verify(AuthFactor.TOTP, response("123456"), request, new MockHttpServletResponse());
 
         assertThat(((MockHttpSession) request.getSession()).getAttribute(StepUpInterceptor.STEPUP_FACTOR)).isEqualTo("TOTP");
+    }
+
+    @Test
+    void verifyIgnoresAStalePendingChallengeAndFallsBackToThePolicyReauthFactors() {
+        // An abandoned sensitive-action challenge left a stronger STEPUP_FACTORS behind; past the validity window
+        // it must NOT reject a legitimate proactive re-auth. Policy reauthFactors = TOTP,FIDO2; stale = FIDO2 only.
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/auth/reauth/verify");
+        MockHttpSession session = new MockHttpSession();
+        session.setAttribute(StepUpInterceptor.STEPUP_FACTORS, "FIDO2");
+        session.setAttribute(StepUpInterceptor.STEPUP_FACTORS_TIME, System.currentTimeMillis() - 60L * 60_000L); // 1h old
+        request.setSession(session);
+        when(factorHandlers.get(AuthFactor.TOTP)).thenReturn(handler);
+        when(handler.verify(eq(user), any(), eq(request))).thenReturn(true);
+
+        // TOTP is a policy re-auth factor but NOT in the stale FIDO2-only pending — the stale attr is ignored.
+        service.verify(AuthFactor.TOTP, response("123456"), request, new MockHttpServletResponse());
+
+        assertThat(session.getAttribute(StepUpInterceptor.STEPUP_FACTOR)).isEqualTo("TOTP");
+        assertThat(session.getAttribute(StepUpInterceptor.STEPUP_FACTORS)).isNull(); // stale attribute cleared
     }
 
     @Test

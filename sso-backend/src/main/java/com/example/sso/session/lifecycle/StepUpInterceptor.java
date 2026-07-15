@@ -49,6 +49,8 @@ public class StepUpInterceptor implements HandlerInterceptor {
     public static final String STEPUP_FACTOR = "SSO_STEPUP_FACTOR";
     /** The factor set a pending step-up must be satisfied with (set on challenge; enforced by ReauthService). */
     public static final String STEPUP_FACTORS = "SSO_STEPUP_FACTORS";
+    /** Epoch-millis the pending {@link #STEPUP_FACTORS} was set — lets ReauthService ignore a stale, abandoned one. */
+    public static final String STEPUP_FACTORS_TIME = "SSO_STEPUP_FACTORS_TIME";
 
     private static final Set<String> MUTATING = Set.of(
             HttpMethod.POST.name(), HttpMethod.PUT.name(), HttpMethod.DELETE.name(), HttpMethod.PATCH.name());
@@ -161,6 +163,7 @@ public class StepUpInterceptor implements HandlerInterceptor {
             throws IOException {
         if (session != null) {
             session.setAttribute(STEPUP_FACTORS, factorsCsv); // ReauthService verifies against exactly this set
+            session.setAttribute(STEPUP_FACTORS_TIME, System.currentTimeMillis()); // ...only while still fresh
         }
         String factors = Arrays.stream(factorsCsv.split(","))
                 .map(String::trim).filter(s -> !s.isEmpty())

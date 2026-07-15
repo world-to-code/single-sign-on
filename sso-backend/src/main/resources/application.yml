@@ -120,6 +120,7 @@ sso:
   zerotrust:
     bind-client: true                       # bind a session to the client it was established on
     session-absolute-lifetime-minutes: 480  # force full re-authentication after 8h regardless of activity
+    stepup-challenge-validity-minutes: 15   # after this, an abandoned step-up challenge is ignored as stale
   logout:
     # Dedicated bounded pool for OIDC back-channel + SAML SLO fan-out, kept OFF the shared @Async pool so a
     # slow relying party can never starve tenant onboarding/provisioning (and vice versa). A full queue
