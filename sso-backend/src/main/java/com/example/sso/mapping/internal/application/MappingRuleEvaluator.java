@@ -55,9 +55,9 @@ class MappingRuleEvaluator {
         Set<UUID> claimed = new HashSet<>();
         memberships.findByRuleId(rule.getId()).forEach(m -> claimed.add(m.getUserId()));
 
-        Set<UUID> touched = new HashSet<>(matching);
-        touched.addAll(claimed);
-        touched.forEach(userId -> reconcile(rule, userId, matching.contains(userId), claimed.contains(userId)));
+        Set<UUID> toAdd = matching.stream().filter(userId -> !claimed.contains(userId)).collect(Collectors.toSet());
+        materializeAll(rule, toAdd); // one batched membership write + fan-out for the whole cohort
+        claimed.stream().filter(userId -> !matching.contains(userId)).forEach(userId -> retract(rule, userId));
     }
 
     /** Reconcile every rule in the tier for ONE user whose attributes just changed. */
@@ -68,13 +68,14 @@ class MappingRuleEvaluator {
         // the sync create/preview cohort (entityIdsWithInTier) — a platform-set global attribute never drives a
         // tenant rule.
         List<Attribute> userAttributes = attributes.attributesOfInTier(EntityKind.USER, userId.toString());
+        Set<UUID> claimedRuleIds = memberships.findByUserId(userId).stream()
+                .map(MappingRuleMembership::getRuleId).collect(Collectors.toSet()); // the user's claims in one query
         for (MappingRule rule : rules.findAll()) {
             if (!Objects.equals(rule.getOrgId(), tier)) {
                 continue; // a user is governed only by rules in its OWN tier — a same-tier group is its only target
             }
             boolean matches = new AttributePredicate(rule.getAttrKey(), rule.getAttrValue()).matches(userAttributes);
-            boolean claimed = memberships.findByRuleIdAndUserId(rule.getId(), userId).isPresent();
-            reconcile(rule, userId, matches, claimed);
+            reconcile(rule, userId, matches, claimedRuleIds.contains(rule.getId()));
         }
     }
 
@@ -103,6 +104,18 @@ class MappingRuleEvaluator {
         groups.addMember(rule.getGroupId(), userId);
         memberships.save(MappingRuleMembership.of(rule.getId(), userId, rule.getGroupId(), tierGuard.currentTier()));
         record(AuditType.MAPPING_RULE_APPLIED, rule, userId);
+    }
+
+    /** Materialize a whole cohort at once: one batched group-membership write, then provenance + audit per user. */
+    private void materializeAll(MappingRule rule, Set<UUID> userIds) {
+        if (userIds.isEmpty()) {
+            return;
+        }
+        groups.addMembers(rule.getGroupId(), userIds);
+        UUID tier = tierGuard.currentTier();
+        memberships.saveAll(userIds.stream()
+                .map(userId -> MappingRuleMembership.of(rule.getId(), userId, rule.getGroupId(), tier)).toList());
+        userIds.forEach(userId -> record(AuditType.MAPPING_RULE_APPLIED, rule, userId));
     }
 
     private void retract(MappingRule rule, UUID userId) {

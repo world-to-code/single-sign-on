@@ -10,6 +10,9 @@ public interface MappingRuleMembershipRepository extends JpaRepository<MappingRu
     /** Every membership a rule materialized (RLS-scoped) — retract them all when the rule is deleted. */
     List<MappingRuleMembership> findByRuleId(UUID ruleId);
 
+    /** Every rule's claim on a user (RLS-scoped) — the rules a user is already assigned by, in one query. */
+    List<MappingRuleMembership> findByUserId(UUID userId);
+
     /** How many users a rule currently has assigned — the view's count without hydrating the rows. */
     long countByRuleId(UUID ruleId);
 

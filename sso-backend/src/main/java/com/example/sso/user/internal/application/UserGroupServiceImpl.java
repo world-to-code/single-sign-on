@@ -151,7 +151,7 @@ public class UserGroupServiceImpl implements UserGroupService {
         }
 
         UserGroup group = repository.save(new UserGroup(spec.name(), spec.description(), spec.externalId(), org));
-        addMembers(group.getId(), existingUserIds(group, spec.memberIds()));
+        insertMembers(group.getId(), existingUserIds(group, spec.memberIds()));
 
         return toView(group);
     }
@@ -230,6 +230,21 @@ public class UserGroupServiceImpl implements UserGroupService {
 
     @Override
     @Transactional
+    public void addMembers(UUID groupId, Set<UUID> userIds) {
+        if (userIds.isEmpty()) {
+            return;
+        }
+        UserGroup group = require(groupId);
+        if (group.isSystem()) {
+            throw ConflictException.of("user.group.systemMembershipAuto", group.getName());
+        }
+        Set<UUID> valid = existingUserIds(group, userIds); // one same-org validation for the whole cohort
+        insertMembers(groupId, valid);
+        accessChanges.forUserIds(valid); // single fan-out, not one event per user
+    }
+
+    @Override
+    @Transactional
     public void removeMember(UUID groupId, UUID userId) {
         UserGroup group = require(groupId);
         if (group.isSystem()) {
@@ -304,7 +319,7 @@ public class UserGroupServiceImpl implements UserGroupService {
     }
 
     /** Adds an explicit membership row per user (idempotent via the composite PK). */
-    private void addMembers(UUID groupId, Set<UUID> userIds) {
+    private void insertMembers(UUID groupId, Set<UUID> userIds) {
         userIds.forEach(userId -> members.save(new UserGroupMember(groupId, userId)));
     }
 

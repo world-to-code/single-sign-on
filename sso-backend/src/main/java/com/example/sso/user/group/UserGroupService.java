@@ -58,6 +58,13 @@ public interface UserGroupService {
     /** Removes ONE user from a group without disturbing the rest of the membership. Idempotent. */
     void removeMember(UUID groupId, UUID userId);
 
+    /**
+     * Adds MANY users to a group in one pass (the group and same-org checks resolved once, a single access-changed
+     * fan-out) — for bulk programmatic membership like a mapping rule materializing a cohort. Same-org and
+     * system-group rules apply; unknown users are dropped. Idempotent.
+     */
+    void addMembers(UUID groupId, Set<UUID> userIds);
+
     /** Replaces the roles delegated to the group; every member inherits them. Unknown role → 400. */
     GroupView setRoles(UUID id, Set<String> roleNames);
 
