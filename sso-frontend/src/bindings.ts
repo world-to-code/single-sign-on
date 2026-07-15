@@ -51,9 +51,7 @@ interface Application {
 interface Assignment { id: string; subjectType: string; subjectName: string; requiredPolicyId: string | null; }
 interface AuthPolicy { id: string; name: string; appliesToLogin: boolean; assignedUserIds: string[]; assignedRoleIds: string[]; }
 interface SessionPolicy { id: string; name: string; assignedUserIds: string[]; assignedRoleIds: string[]; }
-interface PortalSettings { sessionPolicyId: string | null; }
-
-const APPLICATIONS = "/admin/applications";
+interface PortalSettings { sessionPolicyId: string | null; sessionPolicyName: string | null; }
 
 const value = <T,>(r: PromiseSettledResult<T>): T | null => (r.status === "fulfilled" ? r.value : null);
 
@@ -123,7 +121,8 @@ export async function loadPolicyBindings(): Promise<BindingsResult> {
   // 1. App-wide (all-subjects) AUTH binding on each OIDC/SAML app.
   for (const app of apps) {
     if (app.requiredPolicyId && app.requiredPolicyName) {
-      upsert(app.type, app.id, app.name, "ALL", "", "", "auth", { policyName: app.requiredPolicyName, editTo: APPLICATIONS });
+      upsert(app.type, app.id, app.name, "ALL", "", "", "auth",
+        { policyName: app.requiredPolicyName, editTo: `/admin/auth-policies/${app.requiredPolicyId}` });
     }
   }
 
@@ -134,7 +133,8 @@ export async function loadPolicyBindings(): Promise<BindingsResult> {
     for (const a of list) {
       if (!a.requiredPolicyId) continue; // an assignment without a per-subject policy is not a policy binding
       upsert(app.type, app.id, app.name, subjectKind(a.subjectType), a.subjectName, a.subjectName, "auth",
-        { policyName: authPolicyName.get(a.requiredPolicyId) ?? a.requiredPolicyId, editTo: APPLICATIONS });
+        { policyName: authPolicyName.get(a.requiredPolicyId) ?? a.requiredPolicyId,
+          editTo: `/admin/auth-policies/${a.requiredPolicyId}` });
     }
   }
 
@@ -156,14 +156,19 @@ export async function loadPolicyBindings(): Promise<BindingsResult> {
     for (const id of p.assignedRoleIds) upsert("PORTAL", "user", "user", "ROLE", id, roleName.get(id) ?? id, "session", axis);
   }
 
-  // 5. Portal-wide SESSION bindings (the admin console and the user portal), edited from Applications.
+  // 5. Portal-wide SESSION bindings (the admin console and the user portal). The name comes resolved from the
+  //    server (the policy may be an inherited global not in the tier list); the link opens that policy.
   if (portalAdmin?.sessionPolicyId) {
-    upsert("PORTAL", "admin", "admin", "ALL", "", "", "session",
-      { policyName: sessionPolicyName.get(portalAdmin.sessionPolicyId) ?? portalAdmin.sessionPolicyId, editTo: APPLICATIONS });
+    upsert("PORTAL", "admin", "admin", "ALL", "", "", "session", {
+      policyName: portalAdmin.sessionPolicyName ?? sessionPolicyName.get(portalAdmin.sessionPolicyId) ?? portalAdmin.sessionPolicyId,
+      editTo: `/admin/session-policy/${portalAdmin.sessionPolicyId}`,
+    });
   }
   if (portalUser?.sessionPolicyId) {
-    upsert("PORTAL", "user", "user", "ALL", "", "", "session",
-      { policyName: sessionPolicyName.get(portalUser.sessionPolicyId) ?? portalUser.sessionPolicyId, editTo: APPLICATIONS });
+    upsert("PORTAL", "user", "user", "ALL", "", "", "session", {
+      policyName: portalUser.sessionPolicyName ?? sessionPolicyName.get(portalUser.sessionPolicyId) ?? portalUser.sessionPolicyId,
+      editTo: `/admin/session-policy/${portalUser.sessionPolicyId}`,
+    });
   }
 
   const partial =
