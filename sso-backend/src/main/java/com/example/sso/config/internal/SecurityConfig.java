@@ -124,8 +124,13 @@ public class SecurityConfig {
             @Value("${sso.issuer}") String issuer,
             @Value("${sso.webauthn.rp-id:localhost}") String rpId,
             @Value("${sso.webauthn.rp-name:Mini SSO}") String rpName,
-            @Qualifier("webAuthnAllowedOrigins") Set<String> allowedOrigins)
+            @Qualifier("webAuthnAllowedOrigins") Set<String> allowedOrigins,
+            @Value("${sso.plane:all}") String plane)
             throws Exception {
+        if (!Set.of("all", "auth", "admin").contains(plane)) {
+            // Fail fast: a typo must never silently fall through to "all" and serve the admin API on a public plane.
+            throw new IllegalStateException("sso.plane must be one of all|auth|admin, was: " + plane);
+        }
         CsrfTokenRequestAttributeHandler csrfRequestHandler = new CsrfTokenRequestAttributeHandler();
 
         http
@@ -151,7 +156,17 @@ public class SecurityConfig {
                                 return filter;
                             }
                         }))
-                .authorizeHttpRequests(auth -> auth
+                .authorizeHttpRequests(auth -> {
+                        // Deployment-plane split: on a public AUTH-plane deployment (sso.plane=auth) the whole
+                        // management surface — the admin API and the console shell — is denied here, so it is
+                        // served only on a separate admin-plane deployment (blast-radius + scale isolation). Added
+                        // FIRST so it wins over the rules below; the default (sso.plane=all) omits it entirely, so
+                        // the single all-in-one server is byte-for-byte unchanged. It never touches the auth/login/
+                        // OIDC/SAML flow the admin plane itself still needs to authenticate its admins.
+                        if ("auth".equals(plane)) {
+                            auth.requestMatchers("/api/admin/**", "/admin", "/admin/**").denyAll();
+                        }
+                        auth
                         // Passkey REGISTRATION (self-service "My Passkeys") requires a completed login —
                         // otherwise an identified-but-unauthenticated session could plant a passkey on the
                         // account. Enroll-at-login registers via the gated /api/auth/factors/FIDO2 path instead.
@@ -191,7 +206,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/me", "/api/portal/**")
                         .access(AuthorityAuthorizationManager.hasAuthority(Factors.MFA_COMPLETE))
                         // Fail-secure: anything not explicitly public requires authentication.
-                        .anyRequest().authenticated())
+                        .anyRequest().authenticated();
+                })
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(csrfRequestHandler)

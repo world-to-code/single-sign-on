@@ -83,6 +83,10 @@ server:
 
 sso:
   issuer: http://localhost:9000  # OIDC issuer + SAML IdP entityID base (bare/platform host)
+  # Deployment plane. all = the single all-in-one server (default). auth = a public auth-runtime
+  # deployment that does NOT serve the management surface (/api/admin/**, /admin console) — for
+  # blast-radius + scale isolation of the login/OIDC/SAML plane. admin = reserved (currently == all).
+  plane: all
   tenancy:
     # Fail startup if the runtime DB role is a superuser (which silently bypasses RLS). The runtime
     # datasource above is the non-superuser `sso_app`, so this holds in dev/test and must hold in prod.
