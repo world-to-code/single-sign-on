@@ -117,14 +117,18 @@ public class AdminAccessPolicy {
      */
     /**
      * Whether the current actor may make a mapping rule assign the given target — the same authority the manual
-     * path demands: {@code canAccessGroup} for a GROUP, the role grant-only-what-you-hold / dominance check for a
-     * ROLE. Fails closed on an unresolved role.
+     * path demands. GROUP: {@code canAccessGroup}. ROLE: the grant-only-what-you-hold / dominance check resolved
+     * BY ID (mirroring {@code canManageRoleMembership}), NOT by name — a by-name detour would let a tenant grant
+     * a privileged GLOBAL role by minting a same-named benign org role, since the name resolves org-first while
+     * the grant targets the stored id. Fails closed on an unresolved id.
      */
     public boolean mayAssignTarget(MappingTargetKind kind, UUID targetId) {
         return switch (kind) {
             case GROUP -> canAccessGroup(targetId);
-            case ROLE -> roleService.findById(targetId)
-                    .map(role -> mayAssignRoles(Set.of(role.getName()))).orElse(false);
+            case ROLE -> currentIsSuperAdmin()
+                    || (currentActorMayManageRole(targetId)
+                            && !roleCarriesPlatformPermission(targetId)
+                            && actorHoldsAllPermissionsOf(targetId));
         };
     }
 
