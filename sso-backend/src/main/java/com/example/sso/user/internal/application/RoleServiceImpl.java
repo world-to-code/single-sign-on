@@ -230,6 +230,12 @@ public class RoleServiceImpl implements RoleService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public Set<UUID> parentRoleIds(UUID childRoleId) {
+        return roleClosure.parentsOf(childRoleId);
+    }
+
+    @Override
     @Transactional
     public void setInheritsFrom(UUID parentRoleId, Set<UUID> newChildIds) {
         Role role = roles.findById(parentRoleId).orElseThrow(() -> new NotFoundException("role not found"));

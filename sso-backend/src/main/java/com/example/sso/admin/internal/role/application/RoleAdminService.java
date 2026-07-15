@@ -104,7 +104,42 @@ public class RoleAdminService {
         }
         RoleRef role = roleService.findById(id).orElseThrow(() -> new NotFoundException("role not found"));
         List<IdName> inheritsFrom = roleService.idNames(roleService.childRoleIds(id));
-        return RoleDetailView.of(role, inheritsFrom, roleService.effectivePermissionNames(Set.of(id)));
+        List<IdName> inheritedBy = roleService.idNames(visibleRoleIds(meaningfulParents(id)));
+        return RoleDetailView.of(role, inheritsFrom, inheritedBy, roleService.effectivePermissionNames(Set.of(id)));
+    }
+
+    /**
+     * The parents worth showing as "inherited by": the role's direct parents MINUS the actor's own apex roles.
+     * Every role a delegated admin creates is wired below their apex (so the apex dominates and inherits it —
+     * see {@code createRole}), so the apex is a parent of virtually every role the actor can see; surfacing it on
+     * each one is structural noise, not a meaningful relationship. Dropping it leaves only the deliberate edges
+     * (e.g. another custom role that inherits this one).
+     */
+    private Set<UUID> meaningfulParents(UUID id) {
+        Set<UUID> apex = accessPolicy.currentActorApexRoleIds();
+        return roleService.parentRoleIds(id).stream()
+                .filter(parent -> !apex.contains(parent))
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * Narrows a set of role ids to those the actor may see (same tier, not strictly above them) — mirrors
+     * {@link #listRoles}. Applied to the parents shown as {@code inheritedBy} so surfacing "who inherits this
+     * role" can never leak a role above the actor (e.g. a tenant admin viewing a role their {@code ORG_ADMIN}
+     * inherits must not learn the {@code ORG_ADMIN} name). A super-admin sees every parent in the global tier.
+     */
+    private Set<UUID> visibleRoleIds(Set<UUID> roleIds) {
+        if (roleIds.isEmpty()) {
+            return Set.of();
+        }
+        UUID tier = tierGuard.currentTier();
+        Set<UUID> aboveActor = accessPolicy.isCurrentActorUnscoped()
+                ? Set.of() : accessPolicy.currentRolesAboveActor();
+        return roleIds.stream()
+                .filter(roleId -> !aboveActor.contains(roleId))
+                .filter(roleId -> roleService.findById(roleId)
+                        .map(candidate -> Objects.equals(candidate.getOrgId(), tier)).orElse(false))
+                .collect(Collectors.toSet());
     }
 
     /**

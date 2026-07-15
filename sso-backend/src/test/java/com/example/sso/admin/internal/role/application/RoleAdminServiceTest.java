@@ -5,6 +5,7 @@ import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.shared.application.LastAdminGuard;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
+import com.example.sso.shared.IdName;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
@@ -362,6 +363,65 @@ class RoleAdminServiceTest {
 
         assertThatThrownBy(() -> service.roleDetail(id)).isInstanceOf(NotFoundException.class);
         verify(roleService, never()).effectivePermissionNames(any());
+    }
+
+    @Test
+    void roleDetailSurfacesTheVisibleRolesThatInheritIt() {
+        // "Who inherits this role" = its direct parents, but FILTERED to roles the actor may see: a parent that
+        // outranks the actor (currentRolesAboveActor) must not leak, mirroring the hide-above rule on listRoles.
+        UUID org = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        UUID visibleParent = UUID.randomUUID();
+        UUID parentAbove = UUID.randomUUID();
+        RoleRef theRole = roleRef(id, "SUPPORT", org);
+        RoleRef visibleParentRole = roleRef(visibleParent, "APP_MANAGER", org);
+        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
+        when(roleService.orgIdOf(id)).thenReturn(Optional.of(org));                 // the role is in the actor's tier
+        when(accessPolicy.isCurrentActorUnscoped()).thenReturn(false);
+        when(accessPolicy.currentRolesAboveActor()).thenReturn(Set.of(parentAbove)); // above the actor, must hide
+        when(roleService.findById(id)).thenReturn(Optional.of(theRole));
+        when(roleService.childRoleIds(id)).thenReturn(Set.of());
+        when(roleService.parentRoleIds(id)).thenReturn(Set.of(visibleParent, parentAbove));
+        when(roleService.findById(visibleParent)).thenReturn(Optional.of(visibleParentRole));
+        IdName visibleParentName = mock(IdName.class);
+        when(visibleParentName.getName()).thenReturn("APP_MANAGER");
+        when(roleService.idNames(Set.of(visibleParent))).thenReturn(List.of(visibleParentName));
+        when(roleService.effectivePermissionNames(Set.of(id))).thenReturn(Set.of("ticket:read"));
+
+        RoleDetailView view = service.roleDetail(id);
+
+        // Only the in-tier parent surfaces; the above-actor parent is filtered out before name resolution.
+        assertThat(view.inheritedBy()).extracting(IdName::getName).containsExactly("APP_MANAGER");
+    }
+
+    @Test
+    void roleDetailOmitsTheActorsApexFromTheInheritedByList() {
+        // Every role a delegated admin creates is wired below their apex (e.g. ORG_ADMIN), so the apex inherits
+        // nearly every role — surfacing it on each is structural noise. Only deliberate parents should show.
+        UUID org = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        UUID apex = UUID.randomUUID();
+        UUID otherParent = UUID.randomUUID();
+        RoleRef theRole = roleRef(id, "SUPPORT", org);
+        RoleRef otherParentRole = roleRef(otherParent, "PLATFORM_OPS", org);
+        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
+        when(roleService.orgIdOf(id)).thenReturn(Optional.of(org));
+        when(accessPolicy.isCurrentActorUnscoped()).thenReturn(false);
+        when(accessPolicy.currentRolesAboveActor()).thenReturn(Set.of());
+        when(accessPolicy.currentActorApexRoleIds()).thenReturn(Set.of(apex));
+        when(roleService.findById(id)).thenReturn(Optional.of(theRole));
+        when(roleService.childRoleIds(id)).thenReturn(Set.of());
+        when(roleService.parentRoleIds(id)).thenReturn(Set.of(apex, otherParent));
+        when(roleService.findById(otherParent)).thenReturn(Optional.of(otherParentRole));
+        IdName otherParentName = mock(IdName.class);
+        when(otherParentName.getName()).thenReturn("PLATFORM_OPS");
+        when(roleService.idNames(Set.of(otherParent))).thenReturn(List.of(otherParentName));
+        when(roleService.effectivePermissionNames(Set.of(id))).thenReturn(Set.of("ticket:read"));
+
+        RoleDetailView view = service.roleDetail(id);
+
+        // The apex parent is dropped as noise; the deliberate custom parent remains.
+        assertThat(view.inheritedBy()).extracting(IdName::getName).containsExactly("PLATFORM_OPS");
     }
 
     // --- setInheritance: the authorization gates on editing a role's inheritance ---

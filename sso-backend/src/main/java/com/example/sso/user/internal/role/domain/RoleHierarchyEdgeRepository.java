@@ -24,6 +24,13 @@ public interface RoleHierarchyEdgeRepository extends JpaRepository<RoleHierarchy
     List<UUID> findChildRoleIdsByParentRoleId(@Param("parentRoleId") UUID parentRoleId);
 
     /**
+     * The DIRECT parents of a role (the roles that inherit it directly), NOT the transitive ancestors — the
+     * ids only, never the entity. RLS-confined like every read here (a tenant sees its own + global edges).
+     */
+    @Query("select e.id.parentRoleId from RoleHierarchyEdge e where e.id.childRoleId = :childRoleId")
+    List<UUID> findParentRoleIdsByChildRoleId(@Param("childRoleId") UUID childRoleId);
+
+    /**
      * Removes a single {@code parent → child} edge (bulk delete, runs in-scope so RLS gates the write). No
      * {@code clearAutomatically} is needed because every read after a delete in the same tx is a scalar/native
      * projection (child-id lists, the recursive CTEs) — never an entity re-fetch that could see a stale cached

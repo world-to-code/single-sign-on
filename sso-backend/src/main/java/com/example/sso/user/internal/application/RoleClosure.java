@@ -44,4 +44,9 @@ class RoleClosure {
     Set<UUID> childrenOf(UUID parentRoleId) {
         return new HashSet<>(edges.findChildRoleIdsByParentRoleId(parentRoleId));
     }
+
+    /** The DIRECT parents of a role (the roles that inherit it directly), not the transitive ancestors. */
+    Set<UUID> parentsOf(UUID childRoleId) {
+        return new HashSet<>(edges.findParentRoleIdsByChildRoleId(childRoleId));
+    }
 }

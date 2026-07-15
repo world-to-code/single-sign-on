@@ -4,6 +4,7 @@ import com.example.sso.user.account.NewUser;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
 import com.example.sso.user.role.RoleHierarchyService;
+import com.example.sso.user.role.RoleService;
 
 import com.example.sso.support.AbstractIntegrationTest;
 import java.util.List;
@@ -27,6 +28,8 @@ class RoleHierarchyServiceIT extends AbstractIntegrationTest {
 
     @Autowired
     RoleHierarchyService hierarchy;
+    @Autowired
+    RoleService roleService;
     @Autowired
     UserService userService;
 
@@ -121,6 +124,20 @@ class RoleHierarchyServiceIT extends AbstractIntegrationTest {
 
         assertThat(hierarchy.actorMayManageRole(actor, loneRole)).isTrue(); // their own level, nothing above
         assertThat(hierarchy.rolesAboveActor(actor)).isEmpty();
+    }
+
+    @Test
+    void childAndParentRoleIdsReflectTheActualEdgesInBothDirections() {
+        // The role detail's "inherits" (children) and "inherited by" (parents) both read the real DAG edges —
+        // an edge parent→child must surface as a child of the parent AND a parent of the child, never reversed.
+        UUID parent = seedGlobalRole("ROLE_P4_BIDIR_PARENT");
+        UUID child = seedGlobalRole("ROLE_P4_BIDIR_CHILD");
+        seedEdge(parent, child);
+
+        assertThat(roleService.childRoleIds(parent)).containsExactly(child);
+        assertThat(roleService.parentRoleIds(child)).containsExactly(parent);
+        assertThat(roleService.parentRoleIds(parent)).isEmpty();
+        assertThat(roleService.childRoleIds(child)).isEmpty();
     }
 
     private UUID userHolding(UUID roleId) {

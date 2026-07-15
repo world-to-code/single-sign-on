@@ -78,6 +78,9 @@ public interface RoleService {
     /** The ids of the roles a role inherits DIRECTLY (its direct children in the DAG), not the transitive set. */
     Set<UUID> childRoleIds(UUID parentRoleId);
 
+    /** The ids of the roles that inherit a role DIRECTLY (its direct parents in the DAG), not the transitive set. */
+    Set<UUID> parentRoleIds(UUID childRoleId);
+
     /**
      * Reconciles the roles {@code parentRoleId} inherits to exactly {@code childRoleIds} — each becomes a
      * child whose permissions flow up into this role. Adds route through the cycle guard; removals unlink the
