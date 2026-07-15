@@ -150,7 +150,10 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
       setAllowed(null); setResolvingFactors(true);
       getSessionConfig()
         .then((cfg) => { policyFactors.current = cfg.reauthFactors; setAllowed(cfg.reauthFactors); })
-        .catch(() => undefined) // config unreachable: fall back to offering all (the server still rejects)
+        // Config unreachable: offer NOTHING (empty), never leave `allowed` null — a null set makes the chooser
+        // offer every factor, so it would present one the server then rejects (e.g. password on an MFA-only
+        // elevation), which is exactly the "not allowed" dead-end. The modal can be closed and retried.
+        .catch(() => setAllowed([]))
         .finally(() => setResolvingFactors(false));
     }
     return pending.current;
