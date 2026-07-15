@@ -48,6 +48,16 @@ public interface UserGroupService {
 
     GroupView setMembers(UUID id, Set<UUID> memberIds);
 
+    /**
+     * Adds ONE user to a group without disturbing the rest of the membership (unlike {@link #setMembers}); for
+     * programmatic membership (e.g. metadata-driven auto-mapping). Same-org and system-group rules still apply;
+     * an unknown user is a no-op. Idempotent.
+     */
+    void addMember(UUID groupId, UUID userId);
+
+    /** Removes ONE user from a group without disturbing the rest of the membership. Idempotent. */
+    void removeMember(UUID groupId, UUID userId);
+
     /** Replaces the roles delegated to the group; every member inherits them. Unknown role → 400. */
     GroupView setRoles(UUID id, Set<String> roleNames);
 

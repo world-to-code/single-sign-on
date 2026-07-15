@@ -23,4 +23,16 @@ public interface EntityAttributeRepository extends JpaRepository<EntityAttribute
     @Query("select a.entityId from EntityAttribute a "
             + "where a.entityKind = :kind and a.attrKey = :key and a.attrValue = :value")
     List<String> findEntityIds(@Param("kind") EntityKind kind, @Param("key") String key, @Param("value") String value);
+
+    /** Entity ids carrying {@code key = value} OWNED by one org (excludes global rows) — a tier-scoped cohort. */
+    @Query("select a.entityId from EntityAttribute a where a.entityKind = :kind and a.attrKey = :key "
+            + "and a.attrValue = :value and a.orgId = :org")
+    List<String> findEntityIdsInOrg(@Param("kind") EntityKind kind, @Param("key") String key,
+            @Param("value") String value, @Param("org") UUID org);
+
+    /** Entity ids carrying {@code key = value} among the GLOBAL rows (org_id null) — the platform tier's cohort. */
+    @Query("select a.entityId from EntityAttribute a where a.entityKind = :kind and a.attrKey = :key "
+            + "and a.attrValue = :value and a.orgId is null")
+    List<String> findEntityIdsGlobal(@Param("kind") EntityKind kind, @Param("key") String key,
+            @Param("value") String value);
 }

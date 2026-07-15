@@ -216,6 +216,31 @@ public class UserGroupServiceImpl implements UserGroupService {
 
     @Override
     @Transactional
+    public void addMember(UUID groupId, UUID userId) {
+        UserGroup group = require(groupId);
+        if (group.isSystem()) {
+            throw ConflictException.of("user.group.systemMembershipAuto", group.getName());
+        }
+        if (existingUserIds(group, Set.of(userId)).isEmpty()) {
+            return; // unknown user (or dropped) — no-op; a cross-org user throws inside existingUserIds
+        }
+        members.save(new UserGroupMember(groupId, userId)); // idempotent via the composite PK
+        accessChanges.forUserIds(Set.of(userId));
+    }
+
+    @Override
+    @Transactional
+    public void removeMember(UUID groupId, UUID userId) {
+        UserGroup group = require(groupId);
+        if (group.isSystem()) {
+            throw ConflictException.of("user.group.systemMembershipAuto", group.getName());
+        }
+        members.deleteByGroupIdAndUserId(groupId, userId);
+        accessChanges.forUserIds(Set.of(userId));
+    }
+
+    @Override
+    @Transactional
     public GroupView setRoles(UUID id, Set<String> roleNames) {
         UserGroup group = require(id);
         if (group.isSystem()) {

@@ -52,6 +52,11 @@ public final class Permissions {
     public static final String SESSION_POLICY_CREATE = "session-policy:create";
     public static final String SESSION_POLICY_UPDATE = "session-policy:update";
     public static final String SESSION_POLICY_DELETE = "session-policy:delete";
+    // Metadata-driven auto-mapping rules (predicate -> group membership)
+    public static final String MAPPING_RULE_READ = "mapping-rule:read";
+    public static final String MAPPING_RULE_CREATE = "mapping-rule:create";
+    public static final String MAPPING_RULE_UPDATE = "mapping-rule:update";
+    public static final String MAPPING_RULE_DELETE = "mapping-rule:delete";
     // Network zones (reusable named IP ranges, referenced by session policies)
     public static final String NETWORK_ZONE_READ = "network-zone:read";
     public static final String NETWORK_ZONE_CREATE = "network-zone:create";
@@ -94,6 +99,7 @@ public final class Permissions {
             SAML_READ, SAML_CREATE, SAML_UPDATE, SAML_DELETE,
             POLICY_READ, POLICY_CREATE, POLICY_UPDATE, POLICY_DELETE,
             SESSION_POLICY_READ, SESSION_POLICY_CREATE, SESSION_POLICY_UPDATE, SESSION_POLICY_DELETE,
+            MAPPING_RULE_READ, MAPPING_RULE_CREATE, MAPPING_RULE_UPDATE, MAPPING_RULE_DELETE,
             NETWORK_ZONE_READ, NETWORK_ZONE_CREATE, NETWORK_ZONE_UPDATE, NETWORK_ZONE_DELETE,
             PORTAL_SETTINGS_READ, PORTAL_SETTINGS_UPDATE,
             APP_ASSIGNMENT_READ, APP_ASSIGNMENT_ASSIGN, APP_ASSIGNMENT_UNASSIGN,

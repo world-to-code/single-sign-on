@@ -2,6 +2,7 @@ package com.example.sso.metadata.internal.application;
 
 import com.example.sso.metadata.Attribute;
 import com.example.sso.metadata.AttributeService;
+import com.example.sso.metadata.EntityAttributeChangedEvent;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.metadata.internal.domain.EntityAttribute;
 import com.example.sso.metadata.internal.domain.EntityAttributeRepository;
@@ -15,6 +16,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +31,7 @@ class AttributeServiceImpl implements AttributeService {
 
     private final EntityAttributeRepository attributes;
     private final OrgTierGuard tierGuard;
+    private final ApplicationEventPublisher events;
 
     @Override
     @Transactional(readOnly = true)
@@ -45,25 +48,47 @@ class AttributeServiceImpl implements AttributeService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<Attribute> attributesOfInTier(EntityKind kind, String entityId) {
+        UUID tier = tierGuard.currentTier();
+        return attributes.findByEntityKindAndEntityIdOrderByAttrKey(kind, entityId).stream()
+                .filter(row -> Objects.equals(row.getOrgId(), tier)) // own-tier rows only, no inherited globals
+                .map(row -> new Attribute(row.getAttrKey(), row.getAttrValue())).toList();
+    }
+
+    @Override
     @Transactional
     public void set(EntityKind kind, String entityId, String key, String value) {
         UUID tier = tierGuard.currentTier();
         ownAttribute(kind, entityId, key, tier).ifPresentOrElse(
                 row -> row.changeValue(value), // dirty-checked update of the tier's own row
                 () -> attributes.save(new EntityAttribute(kind, entityId, key, value, tier)));
+        events.publishEvent(new EntityAttributeChangedEvent(kind, entityId, tier));
     }
 
     @Override
     @Transactional
     public void remove(EntityKind kind, String entityId, String key) {
         UUID tier = tierGuard.currentTier();
-        ownAttribute(kind, entityId, key, tier).ifPresent(attributes::delete);
+        ownAttribute(kind, entityId, key, tier).ifPresent(row -> {
+            attributes.delete(row);
+            events.publishEvent(new EntityAttributeChangedEvent(kind, entityId, tier)); // only when a row changed
+        });
     }
 
     @Override
     @Transactional(readOnly = true)
     public Set<String> entityIdsWith(EntityKind kind, String key, String value) {
         return new HashSet<>(attributes.findEntityIds(kind, key, value));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Set<String> entityIdsWithInTier(EntityKind kind, String key, String value) {
+        UUID tier = tierGuard.currentTier();
+        return new HashSet<>(tier == null
+                ? attributes.findEntityIdsGlobal(kind, key, value)
+                : attributes.findEntityIdsInOrg(kind, key, value, tier));
     }
 
     /** The acting tier's OWN row for this key (never a shadowed global), so an upsert/remove touches only it. */

@@ -11,8 +11,16 @@ import java.util.Set;
  */
 public interface AttributeService {
 
-    /** The attributes on the entity, in key order. */
+    /** The attributes on the entity, in key order. On read a tenant's own attribute shadows a global one. */
     List<Attribute> attributesOf(EntityKind kind, String entityId);
+
+    /**
+     * The entity's attributes OWNED by the acting tier only (a tenant's own rows, or the global rows at the
+     * platform tier) — never the global rows a tenant merely inherits. The read-side counterpart of
+     * {@link #entityIdsWithInTier}: a tier-scoped decision (e.g. auto-mapping) evaluates against this so a
+     * platform-set global attribute never silently drives a tenant's rule.
+     */
+    List<Attribute> attributesOfInTier(EntityKind kind, String entityId);
 
     /** Sets (upserts) a single attribute value on the entity in the acting tier. */
     void set(EntityKind kind, String entityId, String key, String value);
@@ -27,4 +35,12 @@ public interface AttributeService {
      * this must first resolve the effective per-tenant value (or decide whether global values participate).
      */
     Set<String> entityIdsWith(EntityKind kind, String key, String value);
+
+    /**
+     * The ids of the entities of this kind carrying {@code key = value} in the ACTING TIER only — a tenant's own
+     * rows (or, at the platform tier, the global rows), never the global rows a tenant merely inherits. This is
+     * the org-isolated, precedence-correct cohort a tier-scoped decision (e.g. auto-mapping) needs, unlike the
+     * flat {@link #entityIdsWith}.
+     */
+    Set<String> entityIdsWithInTier(EntityKind kind, String key, String value);
 }
