@@ -55,6 +55,15 @@ class WebAuthnRpIdResolverTest {
     }
 
     @Test
+    void aSuffixLookalikeThatIsNotASubdomainDoesNotMatchABase() {
+        // The leading dot in `endsWith("." + base)` is load-bearing: a host that merely ENDS WITH a base string
+        // but is not a subdomain of it (no dot boundary) must NOT borrow the base's RP ID, or an attacker host
+        // could claim the shared/base scope. Both must fall back, not resolve to "localhost"/"idp.example.com".
+        assertThat(resolver.rpIdForHost("evillocalhost")).isEqualTo("localhost");
+        assertThat(resolver.rpIdForHost("evilidp.example.com")).isEqualTo("localhost");
+    }
+
+    @Test
     void blankHostFallsBackToTheConfiguredRpId() {
         assertThat(resolver.rpIdForHost(null)).isEqualTo("localhost");
         assertThat(resolver.rpIdForHost("")).isEqualTo("localhost");
