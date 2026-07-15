@@ -101,11 +101,16 @@ public class ResourceAccessPolicy {
     }
 
     /**
-     * Pull-in guard: to attach a leaf member the caller must ALREADY manage it (else a scoped admin
-     * could absorb an unmanaged group/app/user into their resource to gain visibility over it).
+     * Pull-in guard: to attach a leaf member the caller must ALREADY manage it (else a SCOPED subtree admin
+     * could absorb an unmanaged group/app/user into their resource to gain visibility over it). A TIER admin
+     * (platform super OR tenant {@code ROLE_ORG_ADMIN}) is exempt: they already manage their entire org tree
+     * (RLS-bounded), so there is nothing to gain by "absorbing" a member they already see. The tenant boundary
+     * is preserved elsewhere by {@code requireMemberInResourceOrg}: user/group members must share the resource's
+     * org, a SYSTEM/platform app (admin console, user portal) is refused on any resource, and a peer tenant's app
+     * is absent from the org-scoped catalog — so a tenant admin may attach only its OWN org's members.
      */
     public void requireManagesMember(MemberType memberType, String memberId) {
-        if (isUnscoped()) {
+        if (isTierAdmin()) {
             return;
         }
         UUID actor = actorId().orElseThrow(() -> new ForbiddenException("Outside your managed resources."));

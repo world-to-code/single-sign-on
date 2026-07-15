@@ -189,13 +189,14 @@ public class ResourceAdminService {
         List<ResourceMemberRow> members = memberRows.findByResourceId(id);
         List<ResourceGrantRow> grants = grantRows.findByResourceId(id);
 
-        // Parents are ANCESTORS — above the actor's grant. A scoped delegate must not learn about
-        // ancestors outside their subtree, so filter to the ones they manage (a super admin sees all).
-        boolean unscoped = access.isUnscoped();
-        Set<UUID> managed = unscoped ? Set.of() : access.managedResourceIds();
+        // Parents are ANCESTORS — above a scoped delegate's grant, so they must not learn about ancestors outside
+        // their subtree (filter to the ones they manage). A TIER admin (platform super OR tenant ORG_ADMIN) sees
+        // every ancestor in their own org tree — RLS already bounds the read to their org.
+        boolean seesWholeTree = access.isTierAdmin();
+        Set<UUID> managed = seesWholeTree ? Set.of() : access.managedResourceIds();
         List<UUID> parentIds = edges.findByChildId(id).stream()
                 .map(ResourceEdge::getParentId)
-                .filter(parentId -> unscoped || managed.contains(parentId))
+                .filter(parentId -> seesWholeTree || managed.contains(parentId))
                 .toList();
         List<ResourceNodeView> parents = nodes(parentIds);
         List<ResourceNodeView> children = nodes(edges.findByParentId(id).stream()
@@ -456,6 +457,19 @@ public class ResourceAdminService {
      * shared catalog (already org-scoped by the existence lookup's RLS), so they carry no org to match.
      */
     private void requireMemberInResourceOrg(Resource resource, MemberType memberType, String memberId) {
+        if (memberType == MemberType.APPLICATION) {
+            // A SYSTEM app (the first-party admin console / user portal) is a platform app, not a tenant one: it is
+            // republished into every tenant's catalog but belongs to no org, and there is no legitimate reason to
+            // make it a resource member. Refuse it on ANY resource — otherwise a delegated sub-admin under that
+            // resource would gain management reach over a platform app. A peer tenant's org app is already absent
+            // from the org-scoped catalog (existence 404s), so what remains is the caller's own org apps.
+            boolean systemApp = applications.listApplications().stream()
+                    .anyMatch(app -> app.id().equals(memberId) && app.system());
+            if (systemApp) {
+                throw BadRequestException.of("resource.member.systemApp");
+            }
+            return;
+        }
         if (memberType != MemberType.USER && memberType != MemberType.GROUP) {
             return;
         }

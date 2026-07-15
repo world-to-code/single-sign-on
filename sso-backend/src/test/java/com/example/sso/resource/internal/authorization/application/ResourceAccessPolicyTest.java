@@ -137,6 +137,17 @@ class ResourceAccessPolicyTest {
     }
 
     @Test
+    void requireManagesMemberSkipsThePortForATenantOrgAdmin() {
+        // A tenant tier-admin (ROLE_ORG_ADMIN, not the platform super) manages its whole org tree, so it attaches
+        // any of its own org's members without the subtree pull-in check — the same-org guards bound it to its org.
+        authenticateAs("orgadmin", Roles.ORG_ADMIN);
+
+        assertThatCode(() -> policy.requireManagesMember(MemberType.GROUP, UUID.randomUUID().toString()))
+                .doesNotThrowAnyException();
+        verify(groupAuth, never()).canManage(any(), any());
+    }
+
+    @Test
     void requireManagesMemberForbidsAGroupTheScopedCallerDoesNotManage() {
         UUID actorId = authenticateAsResolvedUser("alice", Roles.USER);
         UUID groupId = UUID.randomUUID();

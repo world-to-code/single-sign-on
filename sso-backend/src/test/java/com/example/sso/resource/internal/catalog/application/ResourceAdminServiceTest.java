@@ -176,7 +176,7 @@ class ResourceAdminServiceTest {
     void detailDoesNotQueryTheAppRegistryWhenThereAreNoApplicationMembers() {
         UUID id = UUID.randomUUID();
         viewable(id); // build (and stub) the mock BEFORE the outer when(...)
-        when(access.isUnscoped()).thenReturn(true);
+        when(access.isTierAdmin()).thenReturn(true);
         when(edges.findByChildId(id)).thenReturn(List.of());
         when(groups.idNames(anySet())).thenReturn(List.of());
         when(users.idNames(anySet())).thenReturn(List.of());
@@ -292,5 +292,26 @@ class ResourceAdminServiceTest {
         verify(memberRows).save(any());
         verify(users, never()).findById(any());
         verify(groups, never()).orgIdOf(any());
+    }
+
+    @Test
+    void attachMemberRejectsASystemAppOnATenantResource() {
+        // The global admin-console / user-portal app is republished into every tenant's catalog but is org-less:
+        // a tenant admin must not pull it into an org-scoped resource, or a delegated sub-admin under that
+        // resource would gain management reach over a platform app.
+        UUID orgA = UUID.randomUUID();
+        UUID resourceId = UUID.randomUUID();
+        String appId = "oidc:admin-console";
+        when(orgContext.currentOrg()).thenReturn(Optional.of(orgA));
+        Resource resource = viewable(resourceId);
+        when(resource.getOrgId()).thenReturn(orgA); // a tenant (org-scoped) resource
+        ApplicationView app = mock(ApplicationView.class);
+        when(app.id()).thenReturn(appId);
+        when(app.system()).thenReturn(true); // a platform-managed global app
+        when(applications.listApplications()).thenReturn(List.of(app));
+
+        assertThatThrownBy(() -> service.attachMember(resourceId, MemberType.APPLICATION, appId))
+                .isInstanceOf(BadRequestException.class);
+        verify(memberRows, never()).save(any());
     }
 }
