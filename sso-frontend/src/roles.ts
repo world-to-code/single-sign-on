@@ -19,13 +19,14 @@ export interface Permission {
   action: string;
 }
 
-/** A role with its inheritance surfaced: the roles it inherits and the resulting effective permissions. */
+/** A role with its inheritance surfaced: the roles it inherits, the roles that inherit it, and the effective perms. */
 export interface RoleDetail {
   id: string;
   name: string;
   permissions: string[];
   system: boolean;
   inheritsFrom: { id: string; name: string }[];
+  inheritedBy: { id: string; name: string }[];
   effectivePermissions: string[];
 }
 

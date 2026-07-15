@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Check, GitBranch, Lock, Pencil, Trash2, UserPlus, Users, X } from "lucide-react";
+import { ArrowLeft, Check, GitBranch, GitMerge, Lock, Pencil, Trash2, UserPlus, Users, X } from "lucide-react";
 import {
   getRoleDetail, listPermissions, listRoleMembers, listRoles, setRoleInheritance, togglePermission,
   updateRole, addRoleMember, removeRoleMember,
@@ -194,6 +194,30 @@ export default function RoleDetail() {
                   </Badge>
                 ))}
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {role && (
+        <div className="mb-6">
+          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <GitMerge className="size-4" /> {t("roleDetailInheritedBy")}
+          </div>
+          <p className="mb-2 text-xs text-muted-foreground">{t("roleDetailInheritedByHint")}</p>
+          {role.inheritedBy.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t("roleDetailInheritedByNone")}</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {role.inheritedBy.map((r) => (
+                <Link
+                  key={r.id}
+                  to={`/admin/roles/${r.id}`}
+                  className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs hover:bg-accent"
+                >
+                  {r.name}
+                </Link>
+              ))}
             </div>
           )}
         </div>
