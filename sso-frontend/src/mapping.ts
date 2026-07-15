@@ -1,13 +1,15 @@
 import { apiGet, apiPost, apiPut } from "./api";
 
-/** An auto-mapping rule: users carrying attrKey=attrValue are added to the target group. */
+export type MappingTargetKind = "GROUP" | "ROLE";
+
+/** An auto-mapping rule: users carrying attrKey=attrValue are assigned to the target (group or role). */
 export interface MappingRule {
   id: string;
   attrKey: string;
   attrValue: string;
-  thenKind: string;
-  groupId: string;
-  groupName: string | null;
+  thenKind: MappingTargetKind;
+  targetId: string;
+  targetName: string | null;
   assignedCount: number;
 }
 
@@ -20,7 +22,8 @@ export interface MappingPreview {
 export interface MappingRuleRequest {
   attrKey: string;
   attrValue: string;
-  groupId: string;
+  thenKind: MappingTargetKind;
+  targetId: string;
 }
 
 export const listMappingRules = (): Promise<MappingRule[]> => apiGet<MappingRule[]>("/api/admin/mapping-rules");

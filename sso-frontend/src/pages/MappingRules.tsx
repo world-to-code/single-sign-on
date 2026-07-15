@@ -2,12 +2,15 @@ import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Pencil, Plus, Save, Trash2, Users } from "lucide-react";
 import {
-  createMappingRule, previewMappingRule, updateMappingRule, type MappingPreview, type MappingRule,
+  createMappingRule, previewMappingRule, updateMappingRule,
+  type MappingPreview, type MappingRule, type MappingTargetKind,
 } from "@/mapping";
 import { searchGroups } from "@/groups";
+import { listRoles } from "@/roles";
 import { errorMessage } from "@/api";
 import { PageHeader } from "@/components/PageHeader";
-import { SearchSelect } from "@/components/SearchSelect";
+import { SearchSelect, type Suggestion } from "@/components/SearchSelect";
+import { Select } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,10 +29,16 @@ interface Editor {
   id: string | null;
   attrKey: string;
   attrValue: string;
-  groupId: string;
-  groupName: string;
+  thenKind: MappingTargetKind;
+  targetId: string;
+  targetName: string;
 }
-const blank: Editor = { id: null, attrKey: "", attrValue: "", groupId: "", groupName: "" };
+const blank: Editor = { id: null, attrKey: "", attrValue: "", thenKind: "GROUP", targetId: "", targetName: "" };
+
+const roleFetcher = (q: string): Promise<Suggestion[]> =>
+  listRoles().then((rs) => rs
+    .filter((r) => r.name.toLowerCase().includes(q.toLowerCase()))
+    .map((r) => ({ id: r.id, label: r.name })));
 
 /** Auto-mapping rules: users carrying a metadata attribute (key = value) are kept in a target group. */
 export default function MappingRules() {
@@ -42,7 +51,7 @@ export default function MappingRules() {
 
   const { editor, set, open, setOpen, error: formError, openCreate, openEdit, save } = useEditorForm<Editor>({
     blank,
-    toRequest: (e) => ({ attrKey: e.attrKey.trim(), attrValue: e.attrValue.trim(), groupId: e.groupId }),
+    toRequest: (e) => ({ attrKey: e.attrKey.trim(), attrValue: e.attrValue.trim(), thenKind: e.thenKind, targetId: e.targetId }),
     create: (body) => createMappingRule(body as never),
     update: (id, body) => updateMappingRule(id, body as never),
     onSaved: reload,
@@ -50,19 +59,20 @@ export default function MappingRules() {
 
   const editRule = (r: MappingRule) => {
     setPreview(null);
-    openEdit({ id: r.id, attrKey: r.attrKey, attrValue: r.attrValue, groupId: r.groupId, groupName: r.groupName ?? "" });
+    openEdit({ id: r.id, attrKey: r.attrKey, attrValue: r.attrValue, thenKind: r.thenKind, targetId: r.targetId, targetName: r.targetName ?? "" });
   };
   const startCreate = () => { setPreview(null); openCreate(); };
+  const pickKind = (k: MappingTargetKind) => { setPreview(null); set({ thenKind: k, targetId: "", targetName: "" }); };
 
-  const canSave = editor.attrKey.trim() && editor.attrValue.trim() && editor.groupId;
+  const canSave = editor.attrKey.trim() && editor.attrValue.trim() && editor.targetId;
 
   async function runPreview() {
-    if (!editor.attrKey.trim() || !editor.attrValue.trim() || !editor.groupId) return;
+    if (!canSave) return;
     setPreviewing(true);
     setPreview(null);
     try {
       setPreview(await previewMappingRule({
-        attrKey: editor.attrKey.trim(), attrValue: editor.attrValue.trim(), groupId: editor.groupId,
+        attrKey: editor.attrKey.trim(), attrValue: editor.attrValue.trim(), thenKind: editor.thenKind, targetId: editor.targetId,
       }));
     } catch (e) {
       setActionError(errorMessage(e));
@@ -75,7 +85,7 @@ export default function MappingRules() {
     setActionError(null);
     return confirmDelete({
       title: t("mappingRulesDeleteTitle"),
-      description: t("mappingRulesDeleteDescription", { key: r.attrKey, value: r.attrValue, group: r.groupName ?? "" }),
+      description: t("mappingRulesDeleteDescription", { key: r.attrKey, value: r.attrValue, target: r.targetName ?? "" }),
       path: `/api/admin/mapping-rules/${r.id}`,
       onDeleted: reload,
       onError: setActionError,
@@ -110,7 +120,7 @@ export default function MappingRules() {
             <TableHeader>
               <TableRow>
                 <TableHead>{t("mappingRulesColPredicate")}</TableHead>
-                <TableHead>{t("mappingRulesColGroup")}</TableHead>
+                <TableHead>{t("mappingRulesColTarget")}</TableHead>
                 <TableHead>{t("mappingRulesColAssigned")}</TableHead>
                 <TableHead className="w-0" />
               </TableRow>
@@ -123,7 +133,10 @@ export default function MappingRules() {
                     <span className="text-muted-foreground"> = </span>
                     <span className="font-mono">{r.attrValue}</span>
                   </TableCell>
-                  <TableCell className="font-medium">{r.groupName ?? "—"}</TableCell>
+                  <TableCell>
+                    <Badge variant="muted" className="mr-2">{t(`mappingRulesKind_${r.thenKind}`)}</Badge>
+                    <span className="font-medium">{r.targetName ?? "—"}</span>
+                  </TableCell>
                   <TableCell><Badge variant="muted">{r.assignedCount}</Badge></TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
@@ -162,18 +175,28 @@ export default function MappingRules() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>{t("mappingRulesGroupLabel")}</Label>
-              {editor.groupId && (
-                <p className="text-sm">{t("mappingRulesGroupSelected")} <Badge variant="muted">{editor.groupName}</Badge></p>
-              )}
-              <SearchSelect
-                placeholder={t("mappingRulesGroupPlaceholder")}
-                fetcher={searchGroups}
-                onSelect={(s) => set({ groupId: s?.id ?? "", groupName: s?.label ?? "" })}
-                resetKey={open}
-              />
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2">
+                <Label htmlFor="mr-kind">{t("mappingRulesKindLabel")}</Label>
+                <Select id="mr-kind" value={editor.thenKind} onChange={(e) => pickKind(e.target.value as MappingTargetKind)}>
+                  <option value="GROUP">{t("mappingRulesKind_GROUP")}</option>
+                  <option value="ROLE">{t("mappingRulesKind_ROLE")}</option>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>{t("mappingRulesTargetLabel")}</Label>
+                <SearchSelect
+                  key={editor.thenKind}
+                  placeholder={t(editor.thenKind === "ROLE" ? "mappingRulesRolePlaceholder" : "mappingRulesGroupPlaceholder")}
+                  fetcher={editor.thenKind === "ROLE" ? roleFetcher : searchGroups}
+                  onSelect={(s) => set({ targetId: s?.id ?? "", targetName: s?.label ?? "" })}
+                  resetKey={open}
+                />
+              </div>
             </div>
+            {editor.targetId && (
+              <p className="text-sm">{t("mappingRulesGroupSelected")} <Badge variant="muted">{editor.targetName}</Badge></p>
+            )}
 
             <div className="space-y-2">
               <Button type="button" variant="outline" size="sm" disabled={!canSave || previewing} onClick={runPreview}>
