@@ -4,6 +4,7 @@ import com.example.sso.admin.internal.audit.application.AuditScope;
 import com.example.sso.resource.authorization.ApplicationAuthorization;
 import com.example.sso.resource.authorization.GroupAuthorization;
 import com.example.sso.resource.authorization.ResourceAuthorization;
+import com.example.sso.mapping.MappingTargetKind;
 import com.example.sso.organization.OrganizationAuthorization;
 import com.example.sso.portal.application.ApplicationService;
 import com.example.sso.portal.application.ApplicationView;
@@ -175,6 +176,44 @@ class AdminAccessPolicyTest {
         when(groupAuth.canManage(ACTOR_ID, groupId)).thenReturn(true);
         assertThat(policy.canAccessGroup(groupId)).isTrue();
         assertThat(policy.canAccessGroup(UUID.randomUUID())).isFalse();
+    }
+
+    // --- mayAssignTarget: a mapping rule's target authority (GROUP=canAccessGroup, ROLE=grant-by-id) ---
+
+    @Test
+    void mayAssignTargetForAGroupDelegatesToCanAccessGroup() {
+        UUID groupId = UUID.randomUUID();
+        when(groupAuth.canManage(ACTOR_ID, groupId)).thenReturn(true);
+        assertThat(policy.mayAssignTarget(MappingTargetKind.GROUP, groupId)).isTrue();
+        assertThat(policy.mayAssignTarget(MappingTargetKind.GROUP, UUID.randomUUID())).isFalse();
+    }
+
+    @Test
+    void mayAssignTargetChecksAPrivilegedRoleBY_ITS_ID_NotByName() {
+        // Regression for the escalation fix: the ROLE authority reads the ACTUAL target role's permissions by
+        // its id — so a non-super cannot grant a role carrying a platform permission, and (crucially) cannot
+        // bypass the check by minting a same-named benign org role, since no name is ever resolved.
+        UUID privilegedRoleId = UUID.randomUUID();
+        when(roleHierarchy.actorMayManageRole(ACTOR_ID, privilegedRoleId)).thenReturn(true); // even if manageable
+        when(roleService.permissionNames(privilegedRoleId)).thenReturn(Set.of(Permissions.ORG_CREATE)); // platform-only
+
+        assertThat(policy.mayAssignTarget(MappingTargetKind.ROLE, privilegedRoleId)).isFalse();
+    }
+
+    @Test
+    void mayAssignTargetAllowsAManageableBenignRoleTheActorFullyHolds() {
+        UUID benignRoleId = UUID.randomUUID();
+        when(roleHierarchy.actorMayManageRole(ACTOR_ID, benignRoleId)).thenReturn(true);
+        when(roleService.permissionNames(benignRoleId)).thenReturn(Set.of()); // no platform perm; actor holds all (none)
+
+        assertThat(policy.mayAssignTarget(MappingTargetKind.ROLE, benignRoleId)).isTrue();
+    }
+
+    @Test
+    void mayAssignTargetDeniesARoleTheActorMayNotManage() {
+        UUID aboveRoleId = UUID.randomUUID();
+        when(roleHierarchy.actorMayManageRole(ACTOR_ID, aboveRoleId)).thenReturn(false); // strictly above the actor
+        assertThat(policy.mayAssignTarget(MappingTargetKind.ROLE, aboveRoleId)).isFalse();
     }
 
     @Test
