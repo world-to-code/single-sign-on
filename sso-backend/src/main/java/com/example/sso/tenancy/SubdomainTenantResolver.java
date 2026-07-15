@@ -1,5 +1,6 @@
 package com.example.sso.tenancy;
 
+import com.example.sso.shared.HostName;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,7 +36,7 @@ public class SubdomainTenantResolver {
         if (host == null || host.isBlank()) {
             return Optional.empty();
         }
-        String hostname = stripPort(host).toLowerCase().strip();
+        String hostname = HostName.stripPort(host).toLowerCase().strip();
         for (String base : baseDomains) {
             if (hostname.equals(base)) {
                 return Optional.empty(); // the bare platform host
@@ -59,13 +60,6 @@ public class SubdomainTenantResolver {
         if (host == null || host.isBlank()) {
             return false;
         }
-        return baseDomains.contains(stripPort(host).toLowerCase().strip());
-    }
-
-    private String stripPort(String host) {
-        int colon = host.lastIndexOf(':');
-        // Guard IPv6 literals ("[::1]:9000") — only strip a trailing :port after the last ']' or when no ']'.
-        int bracket = host.lastIndexOf(']');
-        return (colon > bracket) ? host.substring(0, colon) : host;
+        return baseDomains.contains(HostName.stripPort(host).toLowerCase().strip());
     }
 }

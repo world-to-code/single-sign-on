@@ -1,5 +1,6 @@
 package com.example.sso.webauthn.internal.application;
 
+import com.example.sso.shared.HostName;
 import java.util.List;
 import java.util.Locale;
 
@@ -32,7 +33,7 @@ class WebAuthnRpIdResolver {
         if (host == null || host.isBlank()) {
             return fallbackRpId;
         }
-        String hostname = stripPort(host).toLowerCase(Locale.ROOT).strip();
+        String hostname = HostName.stripPort(host).toLowerCase(Locale.ROOT).strip();
         for (String base : baseDomains) {
             if (hostname.equals(base)) {
                 return base;
@@ -45,11 +46,5 @@ class WebAuthnRpIdResolver {
             }
         }
         return fallbackRpId;
-    }
-
-    private String stripPort(String host) {
-        int colon = host.lastIndexOf(':');
-        int bracket = host.lastIndexOf(']'); // keep IPv6 literals intact ("[::1]:9000")
-        return colon > bracket ? host.substring(0, colon) : host;
     }
 }
