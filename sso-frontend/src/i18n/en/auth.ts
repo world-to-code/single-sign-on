@@ -232,6 +232,7 @@ export const auth = {
   reauthNoMethods: "No allowed re-authentication factor is available. Set up an authenticator or passkey in your profile first.",
   reauthInvalidCode: "Invalid code — try again.",
   reauthIncorrectPassword: "Incorrect password — try again.",
+  reauthFactorNotAllowed: "That method isn't allowed for this step-up. Choose another.",
   reauthFailed: "Re-authentication failed.",
   reauthPasskeyFailed: "Passkey re-authentication failed.",
   reauthPasskeyCancelled: "Passkey ceremony was cancelled.",

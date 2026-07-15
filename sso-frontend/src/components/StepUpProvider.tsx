@@ -20,7 +20,19 @@ type Method = "choose" | "totp" | "password";
 /** Failures are held as an i18n KEY, not a resolved string, so a locale switch re-renders them. */
 type ErrorKey =
   | "reauthInvalidCode" | "reauthIncorrectPassword" | "reauthFailed"
-  | "reauthPasskeyFailed" | "reauthPasskeyCancelled";
+  | "reauthPasskeyFailed" | "reauthPasskeyCancelled" | "reauthFactorNotAllowed";
+
+/**
+ * The i18n key for a failed re-auth verify: the server rejecting the factor as not-allowed for this step-up
+ * ({@code auth.reauth.factorNotAllowed}) is a DIFFERENT message from a wrong secret — showing "incorrect
+ * password" when the method simply isn't permitted (e.g. password on an MFA-only elevation) misleads the user.
+ */
+function reauthErrorKey(e: unknown, wrongSecret: ErrorKey, nonApi: ErrorKey): ErrorKey {
+  if (e instanceof ApiError) {
+    return e.code === "auth.reauth.factorNotAllowed" ? "reauthFactorNotAllowed" : wrongSecret;
+  }
+  return nonApi;
+}
 
 /**
  * Step-up / re-authentication modal. Lets the user PICK a factor allowed by the policy (passkey /
@@ -166,7 +178,7 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
       await reauthVerify("TOTP", { code });
       finish(true);
     } catch (e) {
-      setErrorKey(e instanceof ApiError ? "reauthInvalidCode" : "reauthFailed");
+      setErrorKey(reauthErrorKey(e, "reauthInvalidCode", "reauthFailed"));
       setBusy(false);
     }
   }
@@ -178,7 +190,7 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
       await reauthVerify("PASSWORD", { password });
       finish(true);
     } catch (e) {
-      setErrorKey(e instanceof ApiError ? "reauthIncorrectPassword" : "reauthFailed");
+      setErrorKey(reauthErrorKey(e, "reauthIncorrectPassword", "reauthFailed"));
       setBusy(false);
     }
   }
@@ -190,7 +202,7 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
       await reauthVerify("FIDO2", { credential: await assertFactorCredential(prepared) });
       finish(true);
     } catch (e) {
-      setErrorKey(e instanceof ApiError ? "reauthPasskeyFailed" : "reauthPasskeyCancelled");
+      setErrorKey(reauthErrorKey(e, "reauthPasskeyFailed", "reauthPasskeyCancelled"));
       setBusy(false);
     }
   }

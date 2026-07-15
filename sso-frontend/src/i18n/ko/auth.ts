@@ -234,6 +234,7 @@ export const auth: Record<keyof typeof enAuth, string> = {
   reauthNoMethods: "사용할 수 있는 재인증 수단이 없습니다. 먼저 프로필에서 인증 앱이나 패스키를 설정하세요.",
   reauthInvalidCode: "코드가 올바르지 않습니다. 다시 시도하세요.",
   reauthIncorrectPassword: "비밀번호가 올바르지 않습니다. 다시 시도하세요.",
+  reauthFactorNotAllowed: "이 단계 인증에 허용되지 않는 방법입니다. 다른 방법을 선택하세요.",
   reauthFailed: "재인증에 실패했습니다.",
   reauthPasskeyFailed: "패스키 재인증에 실패했습니다.",
   reauthPasskeyCancelled: "패스키 인증이 취소되었습니다.",
