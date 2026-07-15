@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronLeft, Fingerprint, KeyRound, Loader2, Lock, ShieldAlert, Smartphone } from "lucide-react";
+import { ChevronLeft, Fingerprint, KeyRound, Loader2, Lock, Mail, ShieldAlert, Smartphone } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { ApiError, registerStepUpHandler } from "@/api";
 import type { StepUpReason } from "@/api";
@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { OtpInput } from "@/components/auth/OtpInput";
 import { useReturnFocus } from "@/hooks/useReturnFocus";
 
-type Method = "choose" | "totp" | "password";
+type Method = "choose" | "totp" | "password" | "email";
 
 /** Failures are held as an i18n KEY, not a resolved string, so a locale switch re-renders them. */
 type ErrorKey =
@@ -77,7 +77,8 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
   const passkeyAvailable = allow("FIDO2") && session.fido2Enrolled && webAuthnSupported();
   const totpAvailable = allow("TOTP") && session.totpEnrolled;
   const passwordAvailable = allow("PASSWORD"); // the user always "has" their password
-  const noMethods = !passkeyAvailable && !totpAvailable && !passwordAvailable;
+  const emailAvailable = allow("EMAIL"); // a signed-in user has a verified email (a code can always be sent)
+  const noMethods = !passkeyAvailable && !totpAvailable && !passwordAvailable && !emailAvailable;
   const mandatory = reason === "session";
 
   // A row per policy-allowed factor. An allowed-but-unenrolled factor stays VISIBLE but disabled
@@ -98,6 +99,8 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
       Icon: Smartphone, enrolled: session.totpEnrolled, onSelect: () => { setErrorKey(null); setMethod("totp"); } },
     { key: "PASSWORD", label: t("factorPassword"), explain: t("reauthPasswordExplain"), keycap: "3",
       Icon: KeyRound, enrolled: true, onSelect: () => { setErrorKey(null); setMethod("password"); } },
+    { key: "EMAIL", label: t("factorEmail"), explain: t("reauthEmailExplain"), keycap: "4",
+      Icon: Mail, enrolled: true, onSelect: () => void startEmail() },
   ].filter((r) => allow(r.key)); // allow() folds policy allow + the held-factor exclusion (not enrollment)
   const rowsRef = useRef<FactorRow[]>([]);
   rowsRef.current = factorRows;
@@ -198,6 +201,31 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
     }
   }
 
+  // Email is a two-step factor: prepare() sends a fresh code, then the user enters it (like the login flow).
+  async function startEmail() {
+    setErrorKey(null); setBusy(true);
+    try {
+      await reauthPrepare("EMAIL");
+      setCode(""); setMethod("email");
+    } catch (e) {
+      setErrorKey(reauthErrorKey(e, "reauthFailed", "reauthFailed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verifyEmail(event: React.FormEvent) {
+    event.preventDefault();
+    setErrorKey(null); setBusy(true);
+    try {
+      await reauthVerify("EMAIL", { code });
+      finish(true);
+    } catch (e) {
+      setErrorKey(reauthErrorKey(e, "reauthInvalidCode", "reauthFailed"));
+      setBusy(false);
+    }
+  }
+
   async function verifyPasskey() {
     setErrorKey(null); setBusy(true);
     try {
@@ -284,7 +312,7 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
                 return (
                   <Button key={row.key} type="button" variant="outline"
                           className="h-auto w-full justify-start gap-3 px-4 py-3" onClick={row.onSelect} disabled={busy}>
-                    {busy && row.key === "FIDO2" ? <Loader2 className="animate-spin" /> : <Icon className="text-primary" />}
+                    {busy && (row.key === "FIDO2" || row.key === "EMAIL") ? <Loader2 className="animate-spin" /> : <Icon className="text-primary" />}
                     <span className="flex flex-1 flex-col items-start">
                       <span className="font-medium">{row.label}</span>
                       <span className="text-xs text-muted-foreground">{row.explain}</span>
@@ -323,6 +351,24 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
             </form>
           )}
 
+          {/* Step 2c: email code entry (a code was sent when the method was picked) */}
+          {method === "email" && (
+            <form onSubmit={verifyEmail} className="space-y-3">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Mail className="size-4" /> {t("reauthEnterEmail")}
+              </div>
+              <OtpInput value={code} onChange={(e) => setCode(e.target.value)} />
+              <div className="flex items-center gap-2">
+                <Button type="submit" className="flex-1" disabled={busy}>
+                  {busy ? <Loader2 className="animate-spin" /> : <Lock />} {t("verify")}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => void startEmail()} disabled={busy}>
+                  {t("reauthResendCode")}
+                </Button>
+              </div>
+            </form>
+          )}
+
           {noMethods && (
             <p className="text-sm text-muted-foreground">
               {needsNewFactor ? t("reauthNoMethodsElevation") : t("reauthNoMethods")}
@@ -330,7 +376,7 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
           )}
 
           {/* Back to the method chooser (only when more than one method exists) */}
-          {method !== "choose" && [passkeyAvailable, totpAvailable, passwordAvailable].filter(Boolean).length > 1 && (
+          {method !== "choose" && [passkeyAvailable, totpAvailable, passwordAvailable, emailAvailable].filter(Boolean).length > 1 && (
             <Button type="button" variant="ghost" className="w-full"
                     onClick={() => { setErrorKey(null); setCode(""); setPassword(""); setMethod("choose"); }} disabled={busy}>
               <ChevronLeft /> {t("reauthDifferentMethod")}
