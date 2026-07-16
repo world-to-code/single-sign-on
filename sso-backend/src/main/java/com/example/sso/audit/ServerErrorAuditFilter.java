@@ -1,5 +1,6 @@
 package com.example.sso.audit;
 
+import com.example.sso.shared.web.RequestTrace;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -14,7 +15,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.UUID;
 
 /**
  * Outermost filter that turns an otherwise-opaque server error into something operable:
@@ -46,7 +46,9 @@ public class ServerErrorAuditFilter extends OncePerRequestFilter {
         try {
             chain.doFilter(request, response);
         } catch (Exception ex) {
-            String ref = UUID.randomUUID().toString().substring(0, 8);
+            // The request's trace id (bound at request start) — the SAME id the access log and the client's error
+            // response carry, so the 500's log line, its audit row and the user's reference are ONE identifier.
+            String ref = RequestTrace.of(request);
             log.error("Unhandled server error ref={} {} {}", ref, request.getMethod(), request.getRequestURI(), ex);
 
             recordSafely(ref, request, ex);

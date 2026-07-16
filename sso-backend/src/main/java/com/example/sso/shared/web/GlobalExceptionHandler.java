@@ -17,7 +17,6 @@ import org.springframework.web.context.request.WebRequest;
 
 import java.net.URI;
 import java.sql.SQLException;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 /**
@@ -111,20 +110,16 @@ public class GlobalExceptionHandler {
     private ProblemDetail problem(ErrorCode code, String detail, WebRequest request) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(code.getStatus(), detail);
         problem.setProperty("code", code.name());
-        String traceId = newTraceId();
+        // The SAME trace id the request's log lines (access log) carry, so a user quoting it lets an operator
+        // pull the whole request from the logs — no longer a throwaway per-response random value.
+        String traceId = RequestTrace.of(request instanceof ServletWebRequest s ? s.getRequest() : null);
         problem.setProperty("traceId", traceId);
         if (request instanceof ServletWebRequest servletRequest) {
             problem.setInstance(URI.create(servletRequest.getRequest().getRequestURI()));
         }
-        // These are client (4xx) errors, so log at DEBUG to stay out of normal logs while still letting
-        // an operator correlate a traceId a user reports. The detail is omitted deliberately: it can echo
-        // user-supplied input (potential PII).
+        // Client (4xx) errors: the access-log line already records this request (with its status and traceId), so
+        // keep the handler quiet at DEBUG. Detail is omitted — it can echo user-supplied input (potential PII).
         log.debug("API error traceId={} code={} status={}", traceId, code.name(), code.getStatus().value());
         return problem;
-    }
-
-    /** 12 hex chars (48 bits) — enough to disambiguate concurrent failures without a tracing dependency. */
-    private static String newTraceId() {
-        return String.format("%012x", ThreadLocalRandom.current().nextLong() & 0xFFFFFFFFFFFFL);
     }
 }

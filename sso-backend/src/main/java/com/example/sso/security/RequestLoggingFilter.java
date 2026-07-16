@@ -1,6 +1,7 @@
 package com.example.sso.security;
 
 import com.example.sso.shared.web.ClientIp;
+import com.example.sso.shared.web.RequestTrace;
 import com.example.sso.tenancy.OrgContext;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -50,6 +51,7 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         long startNanos = System.nanoTime();
+        RequestTrace.bind(request); // capture the trace id so an outer error filter reads the SAME id as the logs
         MDC.put(MDC_CLIENT_IP, ClientIp.of(request));
         MDC.put(MDC_USER, currentUser());
         MDC.put(MDC_ORG, currentOrg());
