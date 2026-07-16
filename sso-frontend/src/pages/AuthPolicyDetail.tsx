@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiGet, apiPost, apiPut, errorMessage, type Page } from "../api";
-import { AttributeTargetEditor, type AttributeTarget } from "@/components/AttributeTargetEditor";
+import { AttributeTargetEditor, attrOperatorNeedsValue, type AttributeTarget } from "@/components/AttributeTargetEditor";
 import { EditorPage } from "@/components/EditorPage";
 import type { DiffEntry } from "@/components/EditorPage";
 import { SettingsSection } from "@/components/SettingsSection";
@@ -55,7 +55,8 @@ function toEditor(p: Policy): Editor {
     id: p.id, name: p.name, priority: String(p.priority), enabled: p.enabled, appliesToLogin: p.appliesToLogin,
     allowEnrollmentAtLogin: p.allowEnrollmentAtLogin, steps: p.steps.map((s) => [...s]),
     roleIds: [...p.assignedRoleIds], userIds: [...p.assignedUserIds],
-    attributes: [...(p.assignedAttributes ?? [])],
+    // Legacy predicates carry no operator — default to EQUALS on load.
+    attributes: (p.assignedAttributes ?? []).map((a) => ({ key: a.key, operator: a.operator ?? "EQUALS", value: a.value ?? "" })),
     stepUpFreshnessMinutes: String(p.stepUpFreshnessMinutes ?? 15),
   };
 }
@@ -123,7 +124,11 @@ export default function AuthPolicyDetail() {
       steps: editor.steps.map((s) => [...s]).filter((s) => s.length > 0),
       assignedRoleIds: editor.roleIds,
       assignedUserIds: editor.userIds,
-      assignedAttributes: editor.attributes,
+      // Key operators (EXISTS / NOT_EXISTS) carry no value.
+      assignedAttributes: editor.attributes.map((a) =>
+        attrOperatorNeedsValue(a.operator)
+          ? { key: a.key, operator: a.operator, value: a.value }
+          : { key: a.key, operator: a.operator }),
       stepUpFreshnessMinutes: Number(editor.stepUpFreshnessMinutes) || 15,
     };
     try {

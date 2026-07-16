@@ -2,11 +2,15 @@ import { apiGet, apiPost, apiPut } from "./api";
 
 export type MappingTargetKind = "GROUP" | "ROLE" | "RESOURCE_MEMBER";
 
-/** An auto-mapping rule: users carrying attrKey=attrValue are assigned to the target (group, role or resource). */
+/** Predicate operator for a mapping rule. Mapping forbids the NOT_* operators the policy targeting allows. */
+export type MappingAttrOp = "EQUALS" | "EXISTS";
+
+/** An auto-mapping rule: users whose attribute satisfies the predicate are assigned to the target. */
 export interface MappingRule {
   id: string;
   attrKey: string;
-  attrValue: string;
+  attrOp: MappingAttrOp;
+  attrValue: string | null;
   thenKind: MappingTargetKind;
   targetId: string;
   targetName: string | null;
@@ -21,7 +25,8 @@ export interface MappingPreview {
 
 export interface MappingRuleRequest {
   attrKey: string;
-  attrValue: string;
+  attrOp: MappingAttrOp;
+  attrValue?: string; // omitted for the EXISTS operator
   thenKind: MappingTargetKind;
   targetId: string;
 }

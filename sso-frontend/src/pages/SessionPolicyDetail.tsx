@@ -5,7 +5,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { apiGet, apiPost, apiPut, errorMessage, type Page } from "../api";
 import { listZones, searchZones } from "@/zones";
-import { AttributeTargetEditor, type AttributeTarget } from "@/components/AttributeTargetEditor";
+import { AttributeTargetEditor, attrOperatorNeedsValue, type AttributeTarget } from "@/components/AttributeTargetEditor";
 import { EditorPage } from "@/components/EditorPage";
 import { InfoHint } from "@/components/InfoHint";
 import { SearchSelect } from "@/components/SearchSelect";
@@ -89,7 +89,8 @@ function toEditor(p: SessionPolicy): Editor {
     maxConcurrentSessions: String(p.maxConcurrentSessions), rotateOnReauth: p.rotateOnReauth,
     cookieSameSite: p.cookieSameSite,
     roleIds: [...p.assignedRoleIds], userIds: [...p.assignedUserIds],
-    attributes: [...(p.assignedAttributes ?? [])],
+    // Legacy predicates carry no operator — default to EQUALS on load.
+    attributes: (p.assignedAttributes ?? []).map((a) => ({ key: a.key, operator: a.operator ?? "EQUALS", value: a.value ?? "" })),
     ipRules: [...p.ipRules].sort((a, b) => a.priority - b.priority).map((r) => ({ zoneId: r.zoneId, action: r.action })),
   };
 }
@@ -172,7 +173,11 @@ export default function SessionPolicyDetail() {
       cookieSameSite: editor.cookieSameSite,
       assignedRoleIds: editor.roleIds,
       assignedUserIds: editor.userIds,
-      assignedAttributes: editor.attributes,
+      // Key operators (EXISTS / NOT_EXISTS) carry no value.
+      assignedAttributes: editor.attributes.map((a) =>
+        attrOperatorNeedsValue(a.operator)
+          ? { key: a.key, operator: a.operator, value: a.value }
+          : { key: a.key, operator: a.operator }),
       ipRules: editor.ipRules.map((r, i) => ({ zoneId: r.zoneId, action: r.action, priority: i })),
     };
     try {

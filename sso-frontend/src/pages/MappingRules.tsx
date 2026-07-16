@@ -3,7 +3,7 @@ import { Trans, useTranslation } from "react-i18next";
 import { Pencil, Plus, Save, Trash2, Users } from "lucide-react";
 import {
   createMappingRule, previewMappingRule, updateMappingRule,
-  type MappingPreview, type MappingRule, type MappingTargetKind,
+  type MappingAttrOp, type MappingPreview, type MappingRule, type MappingRuleRequest, type MappingTargetKind,
 } from "@/mapping";
 import { searchGroups } from "@/groups";
 import { listRoles } from "@/roles";
@@ -29,12 +29,21 @@ import { useEditorForm } from "@/hooks/useEditorForm";
 interface Editor {
   id: string | null;
   attrKey: string;
+  attrOp: MappingAttrOp;
   attrValue: string;
   thenKind: MappingTargetKind;
   targetId: string;
   targetName: string;
 }
-const blank: Editor = { id: null, attrKey: "", attrValue: "", thenKind: "GROUP", targetId: "", targetName: "" };
+const blank: Editor = { id: null, attrKey: "", attrOp: "EQUALS", attrValue: "", thenKind: "GROUP", targetId: "", targetName: "" };
+
+const MAPPING_OPERATORS: MappingAttrOp[] = ["EQUALS", "EXISTS"];
+
+/** Build the request body — the EXISTS operator drops the value the backend rejects. */
+function toRuleRequest(e: Editor): MappingRuleRequest {
+  const base = { attrKey: e.attrKey.trim(), attrOp: e.attrOp, thenKind: e.thenKind, targetId: e.targetId };
+  return e.attrOp === "EXISTS" ? base : { ...base, attrValue: e.attrValue.trim() };
+}
 
 const roleFetcher = (q: string): Promise<Suggestion[]> =>
   listRoles().then((rs) => rs
@@ -69,29 +78,30 @@ export default function MappingRules() {
 
   const { editor, set, open, setOpen, error: formError, openCreate, openEdit, save } = useEditorForm<Editor>({
     blank,
-    toRequest: (e) => ({ attrKey: e.attrKey.trim(), attrValue: e.attrValue.trim(), thenKind: e.thenKind, targetId: e.targetId }),
-    create: (body) => createMappingRule(body as never),
-    update: (id, body) => updateMappingRule(id, body as never),
+    toRequest: toRuleRequest,
+    create: (body) => createMappingRule(body as MappingRuleRequest),
+    update: (id, body) => updateMappingRule(id, body as MappingRuleRequest),
     onSaved: reload,
   });
 
   const editRule = (r: MappingRule) => {
     setPreview(null);
-    openEdit({ id: r.id, attrKey: r.attrKey, attrValue: r.attrValue, thenKind: r.thenKind, targetId: r.targetId, targetName: r.targetName ?? "" });
+    // A rule stored before operators existed loads as EQUALS.
+    openEdit({ id: r.id, attrKey: r.attrKey, attrOp: r.attrOp ?? "EQUALS", attrValue: r.attrValue ?? "",
+               thenKind: r.thenKind, targetId: r.targetId, targetName: r.targetName ?? "" });
   };
   const startCreate = () => { setPreview(null); openCreate(); };
   const pickKind = (k: MappingTargetKind) => { setPreview(null); set({ thenKind: k, targetId: "", targetName: "" }); };
 
-  const canSave = editor.attrKey.trim() && editor.attrValue.trim() && editor.targetId;
+  const needsValue = editor.attrOp === "EQUALS";
+  const canSave = editor.attrKey.trim() && (!needsValue || editor.attrValue.trim()) && editor.targetId;
 
   async function runPreview() {
     if (!canSave) return;
     setPreviewing(true);
     setPreview(null);
     try {
-      setPreview(await previewMappingRule({
-        attrKey: editor.attrKey.trim(), attrValue: editor.attrValue.trim(), thenKind: editor.thenKind, targetId: editor.targetId,
-      }));
+      setPreview(await previewMappingRule(toRuleRequest(editor)));
     } catch (e) {
       setActionError(errorMessage(e));
     } finally {
@@ -103,7 +113,9 @@ export default function MappingRules() {
     setActionError(null);
     return confirmDelete({
       title: t("mappingRulesDeleteTitle"),
-      description: t("mappingRulesDeleteDescription", { key: r.attrKey, value: r.attrValue, target: r.targetName ?? "" }),
+      description: r.attrOp === "EXISTS"
+        ? t("mappingRulesDeleteDescriptionExists", { key: r.attrKey, target: r.targetName ?? "" })
+        : t("mappingRulesDeleteDescription", { key: r.attrKey, value: r.attrValue ?? "", target: r.targetName ?? "" }),
       path: `/api/admin/mapping-rules/${r.id}`,
       onDeleted: reload,
       onError: setActionError,
@@ -148,8 +160,14 @@ export default function MappingRules() {
                 <TableRow key={r.id}>
                   <TableCell>
                     <span className="font-mono">{r.attrKey}</span>
-                    <span className="text-muted-foreground"> = </span>
-                    <span className="font-mono">{r.attrValue}</span>
+                    {r.attrOp === "EXISTS" ? (
+                      <span className="text-muted-foreground"> {t("mappingRulesExists")}</span>
+                    ) : (
+                      <>
+                        <span className="text-muted-foreground"> = </span>
+                        <span className="font-mono">{r.attrValue}</span>
+                      </>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Badge variant="muted" className="mr-2">{t(`mappingRulesKind_${r.thenKind}`)}</Badge>
@@ -187,11 +205,21 @@ export default function MappingRules() {
                        onChange={(e) => set({ attrKey: e.target.value })} placeholder="department" required />
               </div>
               <div className="space-y-2">
+                <Label htmlFor="mr-op">{t("mappingRulesOpLabel")}</Label>
+                <Select id="mr-op" value={editor.attrOp} onChange={(e) => set({ attrOp: e.target.value as MappingAttrOp })}>
+                  {MAPPING_OPERATORS.map((o) => (
+                    <option key={o} value={o}>{t(`mappingRulesOp_${o}`)}</option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+            {needsValue && (
+              <div className="space-y-2">
                 <Label htmlFor="mr-value">{t("mappingRulesValueLabel")}</Label>
                 <Input id="mr-value" className="font-mono" value={editor.attrValue}
                        onChange={(e) => set({ attrValue: e.target.value })} placeholder="engineering" required />
               </div>
-            </div>
+            )}
 
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-2">
