@@ -10,8 +10,8 @@ import java.util.List;
 
 /**
  * One condition of a mapping-rule request: {@code attrKey <attrOp> attrValue/attrValues}. A rule supports only
- * the positive operators — EQUALS (a value), EXISTS (neither), IN (a non-empty {@code attrValues} list); a
- * missing operator defaults to EQUALS. Key/value bounds mirror the metadata store.
+ * the positive operators — EQUALS / CONTAINS (a scalar value), EXISTS (neither), IN (a non-empty
+ * {@code attrValues} list); a missing operator defaults to EQUALS. Key/value bounds mirror the metadata store.
  */
 public record MappingConditionRequest(
         @NotBlank @Size(max = 64) @Pattern(regexp = "[A-Za-z0-9][A-Za-z0-9._:-]*") String attrKey,
@@ -26,17 +26,18 @@ public record MappingConditionRequest(
 
     public MappingCondition toCondition() {
         AttributeOperator op = AttributeOperator.orDefault(attrOp);
+        // a scalar value for the value operators (EQUALS/CONTAINS), none for EXISTS
         return op == AttributeOperator.IN
                 ? new MappingCondition(attrKey, op, null, attrValues)
-                : new MappingCondition(attrKey, op, op == AttributeOperator.EQUALS ? attrValue : null);
+                : new MappingCondition(attrKey, op, op.requiresValue() ? attrValue : null);
     }
 
-    @AssertTrue(message = "a mapping rule supports only EQUALS, EXISTS or IN")
+    @AssertTrue(message = "a mapping rule supports only EQUALS, EXISTS, IN or CONTAINS")
     boolean isMappableOperator() {
         return AttributeOperator.mappable(attrOp);
     }
 
-    @AssertTrue(message = "value is required for EQUALS and must be empty for EXISTS/IN")
+    @AssertTrue(message = "a value is required for EQUALS/CONTAINS and must be empty for EXISTS/IN")
     boolean isValueConsistentWithOperator() {
         return AttributeOperator.valueConsistent(attrOp, attrValue);
     }

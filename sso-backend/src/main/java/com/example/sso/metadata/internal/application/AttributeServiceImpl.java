@@ -136,6 +136,21 @@ class AttributeServiceImpl implements AttributeService {
                 : attributes.findEntityIdsWithValueInOrg(kind, key, values, tier));
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Set<String> entityIdsWithValueContainingInTier(EntityKind kind, String key, String substring) {
+        UUID tier = tierGuard.currentTier();
+        String pattern = "%" + likeEscape(substring) + "%";
+        return new HashSet<>(tier == null
+                ? attributes.findEntityIdsWithValueLikeGlobal(kind.name(), key, pattern)
+                : attributes.findEntityIdsWithValueLikeInOrg(kind.name(), key, pattern, tier));
+    }
+
+    /** Escape LIKE wildcards so a caller's substring matches literally (backslash first, then % and _). */
+    private String likeEscape(String value) {
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
     /** The acting tier's OWN row for this key (never a shadowed global), so an upsert/remove touches only it. */
     private Optional<EntityAttribute> ownAttribute(EntityKind kind, String entityId, String key, UUID tier) {
         return tier == null

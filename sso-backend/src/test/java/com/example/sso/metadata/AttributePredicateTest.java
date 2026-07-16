@@ -69,6 +69,15 @@ class AttributePredicateTest {
     }
 
     @Test
+    void containsMatchesACaseInsensitiveSubstringAndNothingElse() {
+        AttributePredicate deptContainsEng = new AttributePredicate("department", AttributeOperator.CONTAINS, "eng");
+        assertThat(deptContainsEng.matches(HAS_ENG)).isTrue();                         // "engineering"
+        assertThat(deptContainsEng.matches(List.of(new Attribute("department", "ENG-TEAM")))).isTrue(); // ci
+        assertThat(deptContainsEng.matches(HAS_SALES)).isFalse();                      // "sales" has no "eng"
+        assertThat(deptContainsEng.matches(NO_DEPARTMENT)).isFalse();
+    }
+
+    @Test
     void emptyAttributesSatisfyOnlyTheNegativeOperators() {
         List<Attribute> none = List.of();
         assertThat(AttributePredicate.equals("department", "engineering").matches(none)).isFalse();
@@ -84,6 +93,8 @@ class AttributePredicateTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new AttributePredicate("department", AttributeOperator.EXISTS, "engineering"))
                 .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new AttributePredicate("department", AttributeOperator.CONTAINS, null))
+                .isInstanceOf(IllegalArgumentException.class); // CONTAINS is a value operator
     }
 
     @Test

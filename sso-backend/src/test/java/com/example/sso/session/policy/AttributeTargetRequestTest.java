@@ -55,6 +55,15 @@ class AttributeTargetRequestTest {
     }
 
     @Test
+    void aMappingOnlyOperatorIsRejectedForAPolicyTarget() {
+        // IN and CONTAINS are mapping-only; a policy target must reject them at the edge (400), not 500 on the
+        // policy_binding CHECK.
+        assertThat(validator.validate(new AttributeTargetRequest("dept", AttributeOperator.IN, "eng"))).isNotEmpty();
+        assertThat(validator.validate(new AttributeTargetRequest("dept", AttributeOperator.CONTAINS, "eng")))
+                .isNotEmpty();
+    }
+
+    @Test
     void toPredicateCarriesTheOperatorAndDropsAKeyOperatorsValue() {
         assertThat(new AttributeTargetRequest("dept", AttributeOperator.NOT_EQUALS, "sales").toPredicate())
                 .isEqualTo(new AttributePredicate("dept", AttributeOperator.NOT_EQUALS, "sales"));

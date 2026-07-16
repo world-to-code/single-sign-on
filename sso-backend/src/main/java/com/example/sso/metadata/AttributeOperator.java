@@ -18,11 +18,13 @@ public enum AttributeOperator {
     /** The entity carries no attribute for the key. */
     NOT_EXISTS,
     /** The entity carries the key with a value in a given list (an OR over values). */
-    IN;
+    IN,
+    /** The entity carries the key with a value that CONTAINS the given substring (case-insensitive). */
+    CONTAINS;
 
     /** Whether this operator compares against a single value (so a predicate/row must carry one). */
     public boolean requiresValue() {
-        return this == EQUALS || this == NOT_EQUALS;
+        return this == EQUALS || this == NOT_EQUALS || this == CONTAINS;
     }
 
     /** Whether this operator compares against a list of values (so a predicate/row must carry a non-empty one). */
@@ -36,11 +38,19 @@ public enum AttributeOperator {
     }
 
     /** Whether a (possibly null) operator may drive an auto-mapping rule: the POSITIVE, index-able operators only
-     *  (EQUALS, EXISTS, IN — each a union/lookup over entity_attribute; a NOT_* cohort is "everyone without X",
-     *  unbounded and un-indexable). One home for the whitelist. */
+     *  (EQUALS, EXISTS, IN, CONTAINS — each an indexed lookup/union/trigram scan over entity_attribute; a NOT_*
+     *  cohort is "everyone without X", unbounded and un-indexable). One home for the whitelist. */
     public static boolean mappable(AttributeOperator operator) {
         AttributeOperator op = orDefault(operator);
-        return op == EQUALS || op == EXISTS || op == IN;
+        return op == EQUALS || op == EXISTS || op == IN || op == CONTAINS;
+    }
+
+    /** Whether a (possibly null) operator may TARGET a policy binding — the scalar/key operators the resolver
+     *  matches in memory (EQUALS, NOT_EQUALS, EXISTS, NOT_EXISTS); the value-list/substring operators (IN,
+     *  CONTAINS) are mapping-only. One home for the policy-target whitelist (mirrors the V99 CHECK). */
+    public static boolean targetable(AttributeOperator operator) {
+        AttributeOperator op = orDefault(operator);
+        return op == EQUALS || op == NOT_EQUALS || op == EXISTS || op == NOT_EXISTS;
     }
 
     /**

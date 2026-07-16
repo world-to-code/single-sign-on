@@ -123,7 +123,7 @@ class MappingRuleServiceImpl implements MappingRuleService {
             throw new BadRequestException("a mapping rule needs at least one condition");
         }
         if (!ruleConditions.stream().allMatch(c -> AttributeOperator.mappable(c.attrOp()))) {
-            throw new BadRequestException("a mapping rule supports only EQUALS, EXISTS or IN");
+            throw new BadRequestException("a mapping rule supports only EQUALS, EXISTS, IN or CONTAINS");
         }
     }
 

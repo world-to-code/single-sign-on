@@ -508,6 +508,116 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void aContainsConditionAssignsUsersWhoseValueIncludesTheSubstringCaseInsensitively() {
+        orgContext.runAsPlatform(() -> {
+            UUID group = group("has-eng");
+            UUID eng = user("dept", "engineering");    // contains "eng"
+            UUID upper = user("dept", "ENG-TEAM");      // contains "eng" case-insensitively
+            UUID sales = user("dept", "sales");         // no "eng"
+
+            MappingRuleView rule = mappingRules.create(new MappingRuleSpec(List.of(
+                    new MappingCondition("dept", AttributeOperator.CONTAINS, "eng")),
+                    MappingTargetKind.GROUP, group));
+
+            assertThat(inGroup(eng, group)).isTrue();
+            assertThat(inGroup(upper, group)).isTrue();
+            assertThat(inGroup(sales, group)).isFalse();
+            assertThat(rule.conditions()).singleElement()
+                    .satisfies(c -> assertThat(c.attrOp()).isEqualTo(AttributeOperator.CONTAINS))
+                    .satisfies(c -> assertThat(c.attrValue()).isEqualTo("eng"));
+        });
+    }
+
+    @Test
+    void aContainsSubstringWithLikeWildcardsMatchesLiterally() {
+        // Security: the substring's % / _ / \ are escaped, so they match literally rather than as LIKE wildcards.
+        orgContext.runAsPlatform(() -> {
+            UUID pct = group("literal-pct");
+            UUID pctLiteral = user("discount", "50%off");        // literally contains "50%"
+            UUID pctVictim = user("discount", "50pctoff");       // matches only if % were an unescaped wildcard
+            mappingRules.create(new MappingRuleSpec(List.of(
+                    new MappingCondition("discount", AttributeOperator.CONTAINS, "50%")),
+                    MappingTargetKind.GROUP, pct));
+            assertThat(inGroup(pctLiteral, pct)).isTrue();
+            assertThat(inGroup(pctVictim, pct)).isFalse();       // % is a literal, not a wildcard
+
+            UUID under = group("literal-underscore");
+            UUID underLiteral = user("code", "a_c");             // literally contains "a_c"
+            UUID underVictim = user("code", "axc");              // matches only if _ were a single-char wildcard
+            mappingRules.create(new MappingRuleSpec(List.of(
+                    new MappingCondition("code", AttributeOperator.CONTAINS, "a_c")),
+                    MappingTargetKind.GROUP, under));
+            assertThat(inGroup(underLiteral, under)).isTrue();
+            assertThat(inGroup(underVictim, under)).isFalse();   // _ is a literal, not a wildcard
+
+            UUID slash = group("literal-backslash");
+            UUID slashLiteral = user("path", "a\\b");            // value "a\b" — the escape char, matched literally
+            mappingRules.create(new MappingRuleSpec(List.of(
+                    new MappingCondition("path", AttributeOperator.CONTAINS, "a\\b")),
+                    MappingTargetKind.GROUP, slash));
+            assertThat(inGroup(slashLiteral, slash)).isTrue();   // \ is escaped, the pattern is not corrupted
+        });
+    }
+
+    @Test
+    void aContainsRuleInATenantMatchesOnlyThatTenantsUsers() {
+        // Exercises the ORG-scoped native ILIKE query (org_id = :org) + its tenant isolation: orgB's identically
+        // valued user must NOT be pulled into orgA's rule.
+        UUID orgA = newOrg("cont-a");
+        UUID orgB = newOrg("cont-b");
+        UUID groupA = orgContext.callInOrg(orgA, () -> group("eng-a"));
+        UUID userA = orgContext.callInOrg(orgA, () -> user("dept", "engineering", orgA));
+        UUID userB = orgContext.callInOrg(orgB, () -> user("dept", "engineering", orgB)); // same value, other tenant
+
+        orgContext.runInOrg(orgA, () -> mappingRules.create(new MappingRuleSpec(List.of(
+                new MappingCondition("dept", AttributeOperator.CONTAINS, "eng")),
+                MappingTargetKind.GROUP, groupA)));
+
+        assertThat(orgContext.callInOrg(orgA, () -> groups.groupIdsOf(userA))).contains(groupA);
+        assertThat(orgContext.callInOrg(orgB, () -> groups.groupIdsOf(userB))).doesNotContain(groupA);
+    }
+
+    @Test
+    void aCompoundRuleCombinesContainsWithEquals() {
+        orgContext.runAsPlatform(() -> {
+            UUID group = group("eng-substring-senior");
+            UUID match = user("dept", "engineering");                                   // dept CONTAINS eng ...
+            attributes.set(EntityKind.USER, match.toString(), "level", "senior");        // ... AND level=senior
+            UUID wrongDept = user("dept", "sales");
+            attributes.set(EntityKind.USER, wrongDept.toString(), "level", "senior");    // no "eng"
+            UUID wrongLevel = user("dept", "engineering");
+            attributes.set(EntityKind.USER, wrongLevel.toString(), "level", "junior");   // level mismatch
+
+            mappingRules.create(new MappingRuleSpec(List.of(
+                    new MappingCondition("dept", AttributeOperator.CONTAINS, "eng"),
+                    new MappingCondition("level", AttributeOperator.EQUALS, "senior")),
+                    MappingTargetKind.GROUP, group));
+
+            assertThat(inGroup(match, group)).isTrue();
+            assertThat(inGroup(wrongDept, group)).isFalse();
+            assertThat(inGroup(wrongLevel, group)).isFalse();
+        });
+    }
+
+    @Test
+    void aContainsCohortIsReconciledAsynchronouslyOnAnAttributeChange() {
+        // The per-user (matches) and per-rule (ILIKE) CONTAINS paths must agree: gaining a value that includes the
+        // substring adds the user, changing to one that does not retracts them.
+        UUID group = orgContext.callAsPlatform(() -> group("has-eng"));
+        UUID target = orgContext.callAsPlatform(() -> user("dept", "sales")); // no "eng"
+        orgContext.runAsPlatform(() -> mappingRules.create(new MappingRuleSpec(List.of(
+                new MappingCondition("dept", AttributeOperator.CONTAINS, "eng")),
+                MappingTargetKind.GROUP, group)));
+        assertThat(inGroup(target, group)).isFalse();
+
+        orgContext.runAsPlatform(() -> attributes.set(EntityKind.USER, target.toString(), "dept", "engineering"));
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(inGroup(target, group)).isTrue());
+
+        orgContext.runAsPlatform(() -> attributes.set(EntityKind.USER, target.toString(), "dept", "finance"));
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(inGroup(target, group)).isFalse());
+    }
+
+    @Test
     void aRuleNeedsAtLeastOneCondition() {
         orgContext.runAsPlatform(() -> {
             UUID group = group("empty");

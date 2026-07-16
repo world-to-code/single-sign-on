@@ -1,6 +1,7 @@
 package com.example.sso.metadata;
 
 import java.util.List;
+import java.util.Locale;
 
 /**
  * A predicate over an entity's metadata: the entity's attributes are tested against {@code key} with an
@@ -49,7 +50,21 @@ public record AttributePredicate(String key, AttributeOperator operator, String 
             case EXISTS -> hasKey(attributes);
             case NOT_EXISTS -> !hasKey(attributes);
             case IN -> hasKeyValueIn(attributes);
+            case CONTAINS -> hasKeyValueContaining(attributes);
         };
+    }
+
+    // Case-insensitive substring. This in-memory fold (Locale.ROOT) agrees with the cohort's SQL ILIKE for ASCII
+    // attribute values (the norm); a locale-sensitive char could diverge, but the cohort sweep is authoritative
+    // and re-reconciles, so at worst a membership briefly flaps rather than sticking wrong.
+    private boolean hasKeyValueContaining(Iterable<Attribute> attributes) {
+        String needle = value.toLowerCase(Locale.ROOT);
+        for (Attribute attribute : attributes) {
+            if (attribute.key().equals(key) && attribute.value().toLowerCase(Locale.ROOT).contains(needle)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean hasKeyValue(Iterable<Attribute> attributes) {

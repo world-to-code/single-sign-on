@@ -84,6 +84,17 @@ class MappingConditionRequestTest {
     }
 
     @Test
+    void aContainsConditionRequiresAScalarValueAndMapsToACondition() {
+        assertThat(validator.validate(new MappingConditionRequest("dept", AttributeOperator.CONTAINS, "eng")))
+                .isEmpty();
+        assertThat(validator.validate(new MappingConditionRequest("dept", AttributeOperator.CONTAINS, null)))
+                .isNotEmpty();
+        assertThat(new MappingConditionRequest("dept", AttributeOperator.CONTAINS, "eng").toCondition())
+                .satisfies(c -> assertThat(c.attrOp()).isEqualTo(AttributeOperator.CONTAINS))
+                .satisfies(c -> assertThat(c.attrValue()).isEqualTo("eng")); // scalar carried through, not dropped
+    }
+
+    @Test
     void aMissingOperatorDefaultsToEqualsAndAnExistsDropsTheValue() {
         assertThat(new MappingConditionRequest("dept", null, "eng").toCondition())
                 .satisfies(c -> assertThat(c.attrOp()).isEqualTo(AttributeOperator.EQUALS))

@@ -65,4 +65,10 @@ public interface AttributeService {
      * TIER only — the IN cohort (a union over the values) resolved in ONE query rather than per value.
      */
     Set<String> entityIdsWithAnyValueInTier(EntityKind kind, String key, Collection<String> values);
+
+    /**
+     * The ids of the entities of this kind whose {@code key} value CONTAINS {@code substring} (case-insensitive),
+     * in the ACTING TIER only — the CONTAINS cohort, a trigram-indexed substring scan.
+     */
+    Set<String> entityIdsWithValueContainingInTier(EntityKind kind, String key, String substring);
 }

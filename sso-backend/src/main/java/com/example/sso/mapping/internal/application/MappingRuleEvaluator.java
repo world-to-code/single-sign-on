@@ -138,6 +138,8 @@ class MappingRuleEvaluator {
             case EQUALS -> toUserIds(attributes.entityIdsWithInTier(EntityKind.USER, key, condition.attrValue()));
             case EXISTS -> toUserIds(attributes.entityIdsWithKeyInTier(EntityKind.USER, key));
             case IN -> toUserIds(attributes.entityIdsWithAnyValueInTier(EntityKind.USER, key, condition.attrValues()));
+            case CONTAINS -> toUserIds(
+                    attributes.entityIdsWithValueContainingInTier(EntityKind.USER, key, condition.attrValue()));
             case NOT_EQUALS, NOT_EXISTS ->
                     throw new IllegalStateException("un-mappable operator reached a cohort: " + condition.attrOp());
         };

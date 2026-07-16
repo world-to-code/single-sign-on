@@ -62,4 +62,19 @@ public interface EntityAttributeRepository extends JpaRepository<EntityAttribute
             + "and a.attrValue in :values and a.orgId is null")
     List<String> findEntityIdsWithValueInGlobal(@Param("kind") EntityKind kind, @Param("key") String key,
             @Param("values") Collection<String> values);
+
+    // The CONTAINS cohort uses a native ILIKE (case-insensitive substring), accelerated by the pg_trgm GIN index
+    // on attr_value (V103); {@code pattern} is the caller-escaped {@code %substring%}. entity_kind is the enum
+    // NAME (varchar column), so the caller passes it as a String to keep native enum binding unambiguous.
+    /** Entity ids of the kind whose value CONTAINS the pattern, owned by one org — the tier-scoped CONTAINS cohort. */
+    @Query(value = "select entity_id from entity_attribute where entity_kind = :kind and attr_key = :key "
+            + "and attr_value ilike :pattern and org_id = :org", nativeQuery = true)
+    List<String> findEntityIdsWithValueLikeInOrg(@Param("kind") String kind, @Param("key") String key,
+            @Param("pattern") String pattern, @Param("org") UUID org);
+
+    /** Entity ids of the kind whose value CONTAINS the pattern among the GLOBAL rows — the platform CONTAINS cohort. */
+    @Query(value = "select entity_id from entity_attribute where entity_kind = :kind and attr_key = :key "
+            + "and attr_value ilike :pattern and org_id is null", nativeQuery = true)
+    List<String> findEntityIdsWithValueLikeGlobal(@Param("kind") String kind, @Param("key") String key,
+            @Param("pattern") String pattern);
 }
