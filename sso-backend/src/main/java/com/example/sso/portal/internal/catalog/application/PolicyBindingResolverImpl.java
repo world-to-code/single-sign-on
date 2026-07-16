@@ -3,7 +3,6 @@ package com.example.sso.portal.internal.catalog.application;
 import com.example.sso.authpolicy.policy.AuthPolicyResolver;
 import com.example.sso.authpolicy.policy.AuthPolicyView;
 import com.example.sso.metadata.Attribute;
-import com.example.sso.metadata.AttributePredicate;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.portal.application.AppType;
@@ -114,14 +113,15 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
         return candidates.stream().filter(b -> subjectMatches(b, userId, roleIds, groupIds, userAttributes));
     }
 
-    /** USER &gt; ATTRIBUTE predicate &gt; role/group membership &gt; app-wide (all-subjects) default. */
+    /** USER &gt; ATTRIBUTE(value op) &gt; ATTRIBUTE(key op) &gt; role/group membership &gt; app-wide default. A value
+     *  predicate (department = X) is a more deliberate target than a key-presence one (department EXISTS). */
     private int specificity(PolicyBinding b) {
         if (b.getSubjectType() == null) {
             return 1;
         }
         return switch (b.getSubjectType()) {
-            case USER -> 4;
-            case ATTRIBUTE -> 3;
+            case USER -> 5;
+            case ATTRIBUTE -> b.getSubjectAttrOp().requiresValue() ? 4 : 3;
             case ROLE, GROUP -> 2;
         };
     }
@@ -140,8 +140,7 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
             case USER -> b.getSubjectId().equals(userId);
             case ROLE -> roleIds.contains(b.getSubjectId());
             case GROUP -> groupIds.contains(b.getSubjectId());
-            case ATTRIBUTE -> new AttributePredicate(b.getSubjectAttrKey(), b.getSubjectAttrValue())
-                    .matches(userAttributes);
+            case ATTRIBUTE -> b.subjectPredicate().matches(userAttributes);
         };
     }
 

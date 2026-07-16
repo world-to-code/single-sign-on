@@ -11,6 +11,8 @@ import com.example.sso.mapping.MappingTargetKind;
 import com.example.sso.mapping.internal.domain.MappingRule;
 import com.example.sso.mapping.internal.domain.MappingRuleMembershipRepository;
 import com.example.sso.mapping.internal.domain.MappingRuleRepository;
+import com.example.sso.metadata.AttributeOperator;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.account.UserAccount;
@@ -47,9 +49,10 @@ class MappingRuleServiceImpl implements MappingRuleService {
     @Override
     @Transactional
     public MappingRuleView create(MappingRuleSpec spec) {
+        requireMappableOperator(spec.attrOp());
         String targetName = applier(spec.thenKind()).validateInTier(spec.targetId());
-        MappingRule rule = MappingRule.of(spec.attrKey(), spec.attrValue(), spec.thenKind(), spec.targetId(),
-                tierGuard.currentTier(), resolveAuthor());
+        MappingRule rule = MappingRule.of(spec.attrKey(), spec.attrOp(), spec.attrValue(), spec.thenKind(),
+                spec.targetId(), tierGuard.currentTier(), resolveAuthor());
         rules.saveAndFlush(rule); // flush in-scope so RLS WITH CHECK stamps the acting tier
         evaluator.reevaluateRule(rule);
         audit(AuditType.MAPPING_RULE_CREATED, rule);
@@ -59,12 +62,13 @@ class MappingRuleServiceImpl implements MappingRuleService {
     @Override
     @Transactional
     public MappingRuleView update(UUID id, MappingRuleSpec spec) {
+        requireMappableOperator(spec.attrOp());
         MappingRule rule = requireInTierForUpdate(id); // lock before retract/repoint — serialize against async materialize
         String targetName = applier(spec.thenKind()).validateInTier(spec.targetId());
         if (!rule.getTargetId().equals(spec.targetId()) || rule.getThenKind() != spec.thenKind()) {
             evaluator.retractAll(rule); // clear the OLD target's assignments before repointing
         }
-        rule.redefine(spec.attrKey(), spec.attrValue(), spec.thenKind(), spec.targetId());
+        rule.redefine(spec.attrKey(), spec.attrOp(), spec.attrValue(), spec.thenKind(), spec.targetId());
         rule.restampAuthor(resolveAuthor()); // the updater re-authorizes the target, so they become the vouching author
         rules.saveAndFlush(rule);
         evaluator.reevaluateRule(rule);
@@ -97,7 +101,16 @@ class MappingRuleServiceImpl implements MappingRuleService {
     @Override
     @Transactional(readOnly = true)
     public Set<UUID> preview(MappingRuleSpec spec) {
-        return evaluator.matchingUsers(spec.attrKey(), spec.attrValue());
+        requireMappableOperator(spec.attrOp());
+        return evaluator.matchingUsers(spec.attrKey(), spec.attrOp(), spec.attrValue());
+    }
+
+    /** A mapping rule targets a POSITIVE, index-able cohort only: EQUALS or EXISTS (a NOT_* cohort is
+     *  "everyone without X" — unbounded and un-indexable). Enforced here too, not only in the request DTO. */
+    private void requireMappableOperator(AttributeOperator operator) {
+        if (operator != AttributeOperator.EQUALS && operator != AttributeOperator.EXISTS) {
+            throw new BadRequestException("a mapping rule supports only EQUALS or EXISTS");
+        }
     }
 
     private MappingRule requireInTier(UUID id) {
@@ -120,7 +133,7 @@ class MappingRuleServiceImpl implements MappingRuleService {
 
     private MappingRuleView view(MappingRule rule, String targetName) {
         int assigned = (int) memberships.countByRuleId(rule.getId());
-        return new MappingRuleView(rule.getId().toString(), rule.getAttrKey(), rule.getAttrValue(),
+        return new MappingRuleView(rule.getId().toString(), rule.getAttrKey(), rule.getAttrOp(), rule.getAttrValue(),
                 rule.getThenKind(), rule.getTargetId().toString(), targetName, assigned);
     }
 
@@ -147,8 +160,10 @@ class MappingRuleServiceImpl implements MappingRuleService {
     private void audit(AuditType type, MappingRule rule) {
         String principal = SecurityContextHolder.getContext().getAuthentication() != null
                 ? SecurityContextHolder.getContext().getAuthentication().getName() : "system";
-        String detail = "%s %s=%s -> %s".formatted(rule.getThenKind(), rule.getAttrKey(), rule.getAttrValue(),
-                rule.getTargetId());
+        String predicate = rule.getAttrValue() == null
+                ? "%s %s".formatted(rule.getAttrKey(), rule.getAttrOp())
+                : "%s %s %s".formatted(rule.getAttrKey(), rule.getAttrOp(), rule.getAttrValue());
+        String detail = "%s %s -> %s".formatted(rule.getThenKind(), predicate, rule.getTargetId());
         audit.record(new AuditRecord(type, principal, true, detail, null,
                 AuditSubjectType.NONE, rule.getTargetId().toString(), rule.getOrgId()));
     }

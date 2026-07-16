@@ -1,4 +1,4 @@
-package com.example.sso.session.policy;
+package com.example.sso.authpolicy.internal.api;
 
 import com.example.sso.metadata.AttributeOperator;
 import com.example.sso.metadata.AttributePredicate;
@@ -10,10 +10,10 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The attribute-predicate targeting request: a bounded key (identifier charset), an operator, and a value that
- * is required for the value operators and forbidden for the key operators. Mirrors the metadata store's own
- * validation, plus the {@code SessionPolicyRequest} mapping that carries predicates into the create/update
- * command. Guards against the constraints being loosened or the mapping silently dropping predicates.
+ * The auth-policy attribute-predicate targeting request — the twin of the session-policy request. A bounded key,
+ * an operator, and a value required for value operators and forbidden for key operators, plus the
+ * {@code PolicyRequest} mapping that carries predicates into the create/update command. Kept in lockstep with the
+ * session twin so an operator regression on the login-policy side cannot slip through untested.
  */
 class AttributeTargetRequestTest {
 
@@ -33,10 +33,10 @@ class AttributeTargetRequestTest {
     }
 
     @Test
-    void aBlankOrOversizedOrIllegalKeyIsRejected() {
-        assertThat(validator.validate(new AttributeTargetRequest(" ", null, "eng"))).isNotEmpty();     // blank
-        assertThat(validator.validate(new AttributeTargetRequest("a".repeat(65), null, "eng"))).isNotEmpty(); // > 64
-        assertThat(validator.validate(new AttributeTargetRequest("has space", null, "eng"))).isNotEmpty(); // pattern
+    void aBlankOrIllegalOrOversizedKeyIsRejected() {
+        assertThat(validator.validate(new AttributeTargetRequest(" ", null, "eng"))).isNotEmpty();
+        assertThat(validator.validate(new AttributeTargetRequest("a".repeat(65), null, "eng"))).isNotEmpty();
+        assertThat(validator.validate(new AttributeTargetRequest("has space", null, "eng"))).isNotEmpty();
     }
 
     @Test
@@ -51,7 +51,7 @@ class AttributeTargetRequestTest {
         assertThat(validator.validate(new AttributeTargetRequest("dept", AttributeOperator.EXISTS, null))).isEmpty();
         assertThat(validator.validate(new AttributeTargetRequest("dept", AttributeOperator.NOT_EXISTS, null))).isEmpty();
         assertThat(validator.validate(new AttributeTargetRequest("dept", AttributeOperator.EXISTS, "eng")))
-                .isNotEmpty(); // a value on a key operator is inconsistent
+                .isNotEmpty();
     }
 
     @Test
@@ -63,20 +63,13 @@ class AttributeTargetRequestTest {
     }
 
     @Test
-    void sessionPolicyRequestMapsAssignedAttributesIntoTheSpecAndUpdate() {
-        SessionPolicyRequest request = new SessionPolicyRequest("P", 5, true, 480, 30, 15, "TOTP", 2, "TOTP",
-                false, 0, false, "Lax", List.of(), List.of(),
-                List.of(new AttributeTargetRequest("dept", AttributeOperator.EQUALS, "eng")), List.of());
+    void policyRequestMapsAssignedAttributesIntoTheSpecAndUpdate() {
+        PolicyRequest request = new PolicyRequest("P", 5, true, true, true, List.of(List.of("PASSWORD")),
+                List.of(), List.of(),
+                List.of(new AttributeTargetRequest("dept", AttributeOperator.EXISTS, null)), 15);
 
-        assertThat(request.toSpec().attributePredicates()).containsExactly(AttributePredicate.equals("dept", "eng"));
-        assertThat(request.toUpdate().attributePredicates()).containsExactly(AttributePredicate.equals("dept", "eng"));
-    }
-
-    @Test
-    void aMissingAttributeListMapsToNoPredicates() {
-        SessionPolicyRequest request = new SessionPolicyRequest("P", 5, true, 480, 30, 15, "TOTP", 2, "TOTP",
-                false, 0, false, "Lax", List.of(), List.of(), null, List.of());
-
-        assertThat(request.toSpec().attributePredicates()).isEmpty();
+        AttributePredicate expected = new AttributePredicate("dept", AttributeOperator.EXISTS, null);
+        assertThat(request.toSpec().attributePredicates()).containsExactly(expected);
+        assertThat(request.toUpdate().attributePredicates()).containsExactly(expected);
     }
 }

@@ -1,5 +1,6 @@
 package com.example.sso.mapping;
 
+import com.example.sso.metadata.AttributeOperator;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.organization.NewOrganization;
@@ -215,7 +216,7 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
         UUID org = newOrg("map-role-del");
         UUID role = orgContext.callInOrg(org, () -> role());
         UUID member = orgContext.callInOrg(org, () -> user("dept", "eng", org));
-        orgContext.runInOrg(org, () -> mappingRules.create(new MappingRuleSpec("dept", "eng", MappingTargetKind.ROLE, role)));
+        orgContext.runInOrg(org, () -> mappingRules.create(new MappingRuleSpec("dept", AttributeOperator.EQUALS, "eng", MappingTargetKind.ROLE, role)));
         assertThat(hasRole(org, member, role)).isTrue();
 
         orgContext.runInOrg(org, () -> roles.deleteRole(role));
@@ -285,7 +286,7 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
         UUID member = orgContext.callInOrg(org, () -> user("dept", "eng", org));
 
         MappingRuleView rule = orgContext.callInOrg(org, () ->
-                mappingRules.create(new MappingRuleSpec("dept", "eng", MappingTargetKind.ROLE, role)));
+                mappingRules.create(new MappingRuleSpec("dept", AttributeOperator.EQUALS, "eng", MappingTargetKind.ROLE, role)));
         assertThat(hasRole(org, member, role)).isTrue();
 
         orgContext.runInOrg(org, () -> mappingRules.delete(UUID.fromString(rule.id())));
@@ -304,6 +305,57 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
                 .containsExactly(userA); // never enumerates org B's matching user
     }
 
+    @Test
+    void anExistsRuleAddsEveryUserCarryingTheKeyRegardlessOfValue() {
+        orgContext.runAsPlatform(() -> {
+            UUID group = group("has-dept");
+            UUID eng = user("dept", "eng");
+            UUID sales = user("dept", "sales");
+            UUID noDept = user("team", "core");
+
+            MappingRuleView rule = mappingRules.create(existsSpec("dept", group));
+
+            assertThat(groups.groupIdsOf(eng)).contains(group);
+            assertThat(groups.groupIdsOf(sales)).contains(group);      // any value of the key matches
+            assertThat(groups.groupIdsOf(noDept)).doesNotContain(group); // the key is absent
+            assertThat(rule.assignedCount()).isEqualTo(2);
+            assertThat(rule.attrOp()).isEqualTo(AttributeOperator.EXISTS);
+            assertThat(rule.attrValue()).isNull();
+        });
+    }
+
+    @Test
+    void anExistsRulePreviewAndAsyncPathAgreeOnTheKeyCohort() {
+        // The per-rule cohort (create/preview) and the per-user path (async attribute change) must agree for
+        // EXISTS: adding the key materializes, removing it retracts.
+        UUID group = orgContext.callAsPlatform(() -> group("has-dept"));
+        UUID target = orgContext.callAsPlatform(() -> user("team", "core")); // no dept yet
+        assertThat(orgContext.callAsPlatform(() -> mappingRules.preview(existsSpec("dept", group)))).isEmpty();
+        orgContext.runAsPlatform(() -> mappingRules.create(existsSpec("dept", group)));
+        assertThat(inGroup(target, group)).isFalse();
+
+        orgContext.runAsPlatform(() -> attributes.set(EntityKind.USER, target.toString(), "dept", "anything"));
+        // per-rule path (preview) now reports the user carrying the key — agreeing with the per-user materialize below.
+        assertThat(orgContext.callAsPlatform(() -> mappingRules.preview(existsSpec("dept", group)))).contains(target);
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(inGroup(target, group)).isTrue());
+
+        orgContext.runAsPlatform(() -> attributes.remove(EntityKind.USER, target.toString(), "dept"));
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(inGroup(target, group)).isFalse());
+    }
+
+    @Test
+    void aNegativeOperatorMappingRuleIsRejected() {
+        // A mapping rule allows only the positive, index-able operators; NOT_* is refused (defense in depth: the
+        // service throws even if the request DTO's whitelist were bypassed).
+        orgContext.runAsPlatform(() -> {
+            UUID group = group("neg");
+            assertThatThrownBy(() -> mappingRules.create(new MappingRuleSpec("dept", AttributeOperator.NOT_EQUALS,
+                    "sales", MappingTargetKind.GROUP, group))).isInstanceOf(BadRequestException.class);
+            assertThatThrownBy(() -> mappingRules.create(new MappingRuleSpec("dept", AttributeOperator.NOT_EXISTS,
+                    null, MappingTargetKind.GROUP, group))).isInstanceOf(BadRequestException.class);
+        });
+    }
+
     // --- helpers ---
 
     private int rulesForTarget(UUID targetId) {
@@ -320,7 +372,11 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
     }
 
     private MappingRuleSpec spec(String key, String value, UUID groupId) {
-        return new MappingRuleSpec(key, value, MappingTargetKind.GROUP, groupId);
+        return new MappingRuleSpec(key, AttributeOperator.EQUALS, value, MappingTargetKind.GROUP, groupId);
+    }
+
+    private MappingRuleSpec existsSpec(String key, UUID groupId) {
+        return new MappingRuleSpec(key, AttributeOperator.EXISTS, null, MappingTargetKind.GROUP, groupId);
     }
 
     private boolean inGroup(UUID userId, UUID groupId) {

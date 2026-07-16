@@ -43,4 +43,11 @@ public interface AttributeService {
      * flat {@link #entityIdsWith}.
      */
     Set<String> entityIdsWithInTier(EntityKind kind, String key, String value);
+
+    /**
+     * The ids of the entities of this kind carrying the key with ANY value, in the ACTING TIER only — the
+     * value-less (EXISTS) counterpart of {@link #entityIdsWithInTier}, for a predicate that tests key presence
+     * rather than a specific value.
+     */
+    Set<String> entityIdsWithKeyInTier(EntityKind kind, String key);
 }

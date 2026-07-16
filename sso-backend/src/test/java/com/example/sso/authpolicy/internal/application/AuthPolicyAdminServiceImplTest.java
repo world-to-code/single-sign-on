@@ -275,7 +275,7 @@ class AuthPolicyAdminServiceImplTest {
         when(repository.findByNameAndOrgId("Attr", orgA)).thenReturn(Optional.empty());
         when(repository.save(any(AuthPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
         when(stepRepository.save(any(AuthPolicyStep.class))).thenAnswer(inv -> inv.getArgument(0));
-        AttributePredicate eng = new AttributePredicate("dept", "eng");
+        AttributePredicate eng = AttributePredicate.equals("dept", "eng");
         AuthPolicySpec spec = new AuthPolicySpec("Attr", 10, true, true, true,
                 List.of(Set.of(AuthFactor.PASSWORD)), Set.of(), Set.of(), 15, Set.of(eng));
 

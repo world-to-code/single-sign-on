@@ -4,6 +4,7 @@ import com.example.sso.mapping.MappingRuleService;
 import com.example.sso.mapping.MappingRuleSpec;
 import com.example.sso.mapping.MappingRuleView;
 import com.example.sso.mapping.MappingTargetKind;
+import com.example.sso.metadata.AttributeOperator;
 import com.example.sso.mapping.internal.domain.MappingRuleMembershipRepository;
 import com.example.sso.mapping.internal.domain.MappingRuleRepository;
 import com.example.sso.support.AbstractIntegrationTest;
@@ -213,7 +214,7 @@ class MappingReconcileConcurrencyIT extends AbstractIntegrationTest {
     }
 
     private MappingRuleSpec specGroup(String key, String value, UUID group) {
-        return new MappingRuleSpec(key, value, MappingTargetKind.GROUP, group);
+        return new MappingRuleSpec(key, AttributeOperator.EQUALS, value, MappingTargetKind.GROUP, group);
     }
 
     private UUID group(String prefix) {

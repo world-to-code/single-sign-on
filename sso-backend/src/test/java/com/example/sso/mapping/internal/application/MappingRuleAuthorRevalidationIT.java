@@ -4,6 +4,7 @@ import com.example.sso.mapping.MappingRuleService;
 import com.example.sso.mapping.MappingRuleSpec;
 import com.example.sso.mapping.MappingRuleView;
 import com.example.sso.mapping.MappingTargetKind;
+import com.example.sso.metadata.AttributeOperator;
 import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.Resource;
 import com.example.sso.resource.internal.domain.ResourceMemberRow;
@@ -156,7 +157,8 @@ class MappingRuleAuthorRevalidationIT extends AbstractIntegrationTest {
         setAuth(second.username());
         try {
             orgContext.runAsPlatform(() ->
-                    mappingRules.update(ruleId, new MappingRuleSpec("dept", "eng", MappingTargetKind.ROLE, role)));
+                    mappingRules.update(ruleId,
+                            new MappingRuleSpec("dept", AttributeOperator.EQUALS, "eng", MappingTargetKind.ROLE, role)));
         } finally {
             SecurityContextHolder.clearContext();
         }
@@ -285,7 +287,8 @@ class MappingRuleAuthorRevalidationIT extends AbstractIntegrationTest {
     private MappingRuleView createRuleAs(String username, String key, String value, MappingTargetKind kind, UUID target) {
         setAuth(username);
         try {
-            return orgContext.callAsPlatform(() -> mappingRules.create(new MappingRuleSpec(key, value, kind, target)));
+            return orgContext.callAsPlatform(
+                    () -> mappingRules.create(new MappingRuleSpec(key, AttributeOperator.EQUALS, value, kind, target)));
         } finally {
             SecurityContextHolder.clearContext();
         }
@@ -344,9 +347,11 @@ class MappingRuleAuthorRevalidationIT extends AbstractIntegrationTest {
     }
 
     private void insertLegacyRule(String key, String value, UUID targetRole) {
+        // A pre-V97 row has no author; after V100 it also carries attr_op = 'EQUALS' (the backfill default), so a
+        // faithful legacy fixture stamps EQUALS explicitly — the column is NOT NULL with no server default.
         ownerJdbc().update(
-                "insert into mapping_rule (attr_key, attr_value, then_kind, target_id, org_id, created_by) "
-                        + "values (?,?, 'ROLE', ?, null, null)",
+                "insert into mapping_rule (attr_key, attr_op, attr_value, then_kind, target_id, org_id, created_by) "
+                        + "values (?, 'EQUALS', ?, 'ROLE', ?, null, null)",
                 key, value, targetRole);
     }
 

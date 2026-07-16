@@ -69,13 +69,15 @@ class PolicyBindingSlot {
                 ? "auth_policy_id = excluded.auth_policy_id, priority = excluded.priority"
                 : "session_policy_id = excluded.session_policy_id, session_priority = excluded.session_priority";
         jdbc.update("insert into policy_binding (id, app_type, app_id, subject_type, subject_id, subject_attr_key, "
-                + "subject_attr_value, auth_policy_id, session_policy_id, priority, session_priority, org_id, created_at) "
-                + "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now()) "
+                + "subject_attr_op, subject_attr_value, auth_policy_id, session_policy_id, priority, "
+                + "session_priority, org_id, created_at) "
+                + "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now()) "
                 + "on conflict " + conflictTarget(binding) + " do update set " + set,
                 UUID.randomUUID(), binding.getAppType().name(), binding.getAppId(),
                 binding.getSubjectType() == null ? null : binding.getSubjectType().name(), binding.getSubjectId(),
-                binding.getSubjectAttrKey(), binding.getSubjectAttrValue(),
-                binding.getAuthPolicyId(), binding.getSessionPolicyId(),
+                binding.getSubjectAttrKey(),
+                binding.getSubjectAttrOp() == null ? null : binding.getSubjectAttrOp().name(),
+                binding.getSubjectAttrValue(), binding.getAuthPolicyId(), binding.getSessionPolicyId(),
                 binding.getPriority(), binding.getSessionPriority(), binding.getOrgId());
     }
 
@@ -89,8 +91,10 @@ class PolicyBindingSlot {
                     ? "(app_type, app_id) where org_id is null and subject_type is null"
                     : "(org_id, app_type, app_id) where org_id is not null and subject_type is null";
             case ATTRIBUTE -> global
-                    ? "(app_type, app_id, subject_attr_key, subject_attr_value) where org_id is null and subject_type = 'ATTRIBUTE'"
-                    : "(org_id, app_type, app_id, subject_attr_key, subject_attr_value) where org_id is not null and subject_type = 'ATTRIBUTE'";
+                    ? "(app_type, app_id, subject_attr_key, subject_attr_op, coalesce(subject_attr_value, '')) "
+                            + "where org_id is null and subject_type = 'ATTRIBUTE'"
+                    : "(org_id, app_type, app_id, subject_attr_key, subject_attr_op, coalesce(subject_attr_value, '')) "
+                            + "where org_id is not null and subject_type = 'ATTRIBUTE'";
             case USER, GROUP, ROLE -> global
                     ? "(app_type, app_id, subject_type, subject_id) where org_id is null and subject_type is not null"
                     : "(org_id, app_type, app_id, subject_type, subject_id) where org_id is not null and subject_type is not null";

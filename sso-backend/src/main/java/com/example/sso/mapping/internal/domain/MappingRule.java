@@ -1,6 +1,7 @@
 package com.example.sso.mapping.internal.domain;
 
 import com.example.sso.mapping.MappingTargetKind;
+import com.example.sso.metadata.AttributeOperator;
 import com.example.sso.shared.domain.AuditedEntity;
 import com.example.sso.tenancy.OrgOwned;
 import jakarta.persistence.Column;
@@ -28,8 +29,14 @@ public class MappingRule extends AuditedEntity implements OrgOwned {
     @Column(name = "attr_key", nullable = false, length = 64)
     private String attrKey;
 
-    @Column(name = "attr_value", nullable = false, length = 255)
+    /** The predicate value, present for an {@link AttributeOperator#EQUALS} rule and {@code null} for EXISTS. */
+    @Column(name = "attr_value", length = 255)
     private String attrValue;
+
+    /** How the predicate tests the key. A mapping rule allows only the positive operators EQUALS and EXISTS. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "attr_op", nullable = false, length = 16)
+    private AttributeOperator attrOp;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "then_kind", nullable = false, length = 16)
@@ -45,9 +52,10 @@ public class MappingRule extends AuditedEntity implements OrgOwned {
     private UUID createdBy;
 
     @Builder(access = AccessLevel.PRIVATE)
-    private MappingRule(String attrKey, String attrValue, MappingTargetKind thenKind, UUID targetId, UUID orgId,
-            UUID createdBy) {
+    private MappingRule(String attrKey, AttributeOperator attrOp, String attrValue, MappingTargetKind thenKind,
+            UUID targetId, UUID orgId, UUID createdBy) {
         this.attrKey = attrKey;
+        this.attrOp = attrOp;
         this.attrValue = attrValue;
         this.thenKind = thenKind;
         this.targetId = targetId;
@@ -56,19 +64,22 @@ public class MappingRule extends AuditedEntity implements OrgOwned {
     }
 
     /**
-     * A rule assigning the users carrying {@code attrKey = attrValue} to a target ({@code thenKind}), in the tier,
-     * authored by {@code createdBy} (null for a system/legacy rule). The author is re-checked at each async
-     * materialize so a since-demoted author's rule stops handing out grants they could no longer make by hand.
+     * A rule assigning the users a predicate ({@code attrKey <attrOp> attrValue}) matches to a target
+     * ({@code thenKind}), in the tier, authored by {@code createdBy} (null for a system/legacy rule). The author
+     * is re-checked at each async materialize so a since-demoted author's rule stops handing out grants they
+     * could no longer make by hand.
      */
-    public static MappingRule of(String attrKey, String attrValue, MappingTargetKind thenKind, UUID targetId,
-            UUID orgId, UUID createdBy) {
-        return builder().attrKey(attrKey).attrValue(attrValue).thenKind(thenKind).targetId(targetId)
+    public static MappingRule of(String attrKey, AttributeOperator attrOp, String attrValue,
+            MappingTargetKind thenKind, UUID targetId, UUID orgId, UUID createdBy) {
+        return builder().attrKey(attrKey).attrOp(attrOp).attrValue(attrValue).thenKind(thenKind).targetId(targetId)
                 .orgId(orgId).createdBy(createdBy).build();
     }
 
     /** Repoint the rule's predicate, kind and target (intent-revealing; the tier is fixed). */
-    public void redefine(String attrKey, String attrValue, MappingTargetKind thenKind, UUID targetId) {
+    public void redefine(String attrKey, AttributeOperator attrOp, String attrValue, MappingTargetKind thenKind,
+            UUID targetId) {
         this.attrKey = attrKey;
+        this.attrOp = attrOp;
         this.attrValue = attrValue;
         this.thenKind = thenKind;
         this.targetId = targetId;

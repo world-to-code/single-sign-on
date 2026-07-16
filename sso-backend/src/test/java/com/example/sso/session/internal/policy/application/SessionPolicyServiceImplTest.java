@@ -234,7 +234,7 @@ class SessionPolicyServiceImplTest {
         when(orgContext.currentOrg()).thenReturn(Optional.of(orgA));
         when(repository.findByNameAndOrgId("Attr", orgA)).thenReturn(Optional.empty());
         when(repository.save(any(SessionPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
-        AttributePredicate eng = new AttributePredicate("dept", "eng");
+        AttributePredicate eng = AttributePredicate.equals("dept", "eng");
         SessionPolicySpec spec = new SessionPolicySpec("Attr", 5, true, 480, 30, 15, "TOTP", 2, "TOTP",
                 false, 0, false, "Lax", Set.of(), Set.of(), List.of(), Set.of(eng));
 

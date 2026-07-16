@@ -10,6 +10,7 @@ import com.example.sso.mapping.internal.domain.MappingRuleMembership;
 import com.example.sso.mapping.internal.domain.MappingRuleMembershipRepository;
 import com.example.sso.mapping.internal.domain.MappingRuleRepository;
 import com.example.sso.metadata.Attribute;
+import com.example.sso.metadata.AttributeOperator;
 import com.example.sso.metadata.AttributePredicate;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityKind;
@@ -54,7 +55,7 @@ class MappingRuleEvaluator {
     /** Reconcile ONE rule across the tier: add every matching user not yet claimed, retract every claim no longer matching. */
     @Transactional
     public void reevaluateRule(MappingRule rule) {
-        Set<UUID> matching = matchingUsers(rule.getAttrKey(), rule.getAttrValue());
+        Set<UUID> matching = matchingUsers(rule.getAttrKey(), rule.getAttrOp(), rule.getAttrValue());
         Set<UUID> claimed = new HashSet<>();
         memberships.findByRuleId(rule.getId()).forEach(m -> claimed.add(m.getUserId()));
 
@@ -79,7 +80,8 @@ class MappingRuleEvaluator {
             if (!Objects.equals(rule.getOrgId(), tier)) {
                 continue; // a user is governed only by rules in its OWN tier — a same-tier group is its only target
             }
-            boolean matches = new AttributePredicate(rule.getAttrKey(), rule.getAttrValue()).matches(userAttributes);
+            boolean matches = new AttributePredicate(rule.getAttrKey(), rule.getAttrOp(), rule.getAttrValue())
+                    .matches(userAttributes);
             reconcile(rule, userId, matches, claimedRuleIds.contains(rule.getId()));
         }
     }
@@ -101,8 +103,11 @@ class MappingRuleEvaluator {
 
     /** The users the predicate matches in the acting tier ONLY (own users, never inherited global ones — a rule
      *  adds to a same-tier group, so a cross-tier user could never be a member). Dry run + reconcile source. */
-    Set<UUID> matchingUsers(String attrKey, String attrValue) {
-        return toUserIds(attributes.entityIdsWithInTier(EntityKind.USER, attrKey, attrValue));
+    Set<UUID> matchingUsers(String attrKey, AttributeOperator attrOp, String attrValue) {
+        Set<String> ids = attrOp == AttributeOperator.EXISTS
+                ? attributes.entityIdsWithKeyInTier(EntityKind.USER, attrKey)
+                : attributes.entityIdsWithInTier(EntityKind.USER, attrKey, attrValue);
+        return toUserIds(ids);
     }
 
     private void materialize(MappingRule rule, UUID userId) {

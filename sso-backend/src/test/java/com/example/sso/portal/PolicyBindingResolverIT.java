@@ -1,6 +1,7 @@
 package com.example.sso.portal;
 
 import com.example.sso.authpolicy.factor.AuthFactor;
+import com.example.sso.metadata.AttributeOperator;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.authpolicy.policy.AuthPolicyAdminService;
@@ -383,6 +384,41 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
         assertThat(orgContext.callInOrg(orgB, () -> resolver.resolveSessionPolicy(kim, APP, app))).isEmpty();
     }
 
+    @Test
+    void aNotEqualsPredicateMatchesAUserLackingTheKey() {
+        // Exclusion targeting: a NOT_EQUALS binding is the strict negation of EQUALS, so kim — who carries no
+        // dept attribute at all — satisfies "dept != sales" and gets the bound policy.
+        String app = "pbt-attr-neq";
+        orgContext.runAsPlatform(() ->
+                bindings.saveAndFlush(attrSessionOp(app, "dept", AttributeOperator.NOT_EQUALS, "sales", sess5, 10)));
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+    }
+
+    @Test
+    void anExistsPredicateMatchesAnyValueButNotTheAbsentKey() {
+        // A key-presence predicate: kim carrying dept=anything matches EXISTS; lee, with no dept, does not.
+        String app = "pbt-attr-exists";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "whatever");
+            bindings.saveAndFlush(attrSessionOp(app, "dept", AttributeOperator.EXISTS, null, sess5, 10));
+        });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+        assertThat(resolveSession(lee, app)).isEmpty();
+    }
+
+    @Test
+    void aValueOperatorBindingBeatsAKeyOperatorBinding() {
+        // Specificity within ATTRIBUTE: an EQUALS predicate (a deliberate value target) outranks an EXISTS one
+        // (mere key presence) even when EXISTS carries the higher priority — kim resolves to the EQUALS policy.
+        String app = "pbt-attr-op-spec";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "eng");
+            bindings.saveAndFlush(attrSessionOp(app, "dept", AttributeOperator.EQUALS, "eng", sess5, 1));   // value op, low prio
+            bindings.saveAndFlush(attrSessionOp(app, "dept", AttributeOperator.EXISTS, null, sess15, 99));  // key op, high prio
+        });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+    }
+
     // --- helpers ---
 
     private java.util.Optional<AuthPolicyView> resolveAuth(UserAccount user, String appId) {
@@ -420,7 +456,16 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
 
     /** A GLOBAL attribute-predicate session binding, for the predicate resolution fixtures. */
     private PolicyBinding attrSession(String appId, String key, String value, UUID sess, int prio) {
-        PolicyBinding binding = PolicyBinding.forAttribute(APP, appId, key, value, null);
+        PolicyBinding binding = PolicyBinding.forAttribute(APP, appId, key, AttributeOperator.EQUALS, value, null);
+        binding.assignSessionPolicy(sess);
+        binding.reprioritizeSession(prio);
+        return binding;
+    }
+
+    /** A GLOBAL attribute-predicate session binding with an explicit operator (value null for key operators). */
+    private PolicyBinding attrSessionOp(String appId, String key, AttributeOperator op, String value, UUID sess,
+            int prio) {
+        PolicyBinding binding = PolicyBinding.forAttribute(APP, appId, key, op, value, null);
         binding.assignSessionPolicy(sess);
         binding.reprioritizeSession(prio);
         return binding;
@@ -428,7 +473,7 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
 
     /** A GLOBAL attribute-predicate auth binding, for the auth-axis predicate fixture. */
     private PolicyBinding attrAuth(String appId, String key, String value, UUID auth, int prio) {
-        PolicyBinding binding = PolicyBinding.forAttribute(APP, appId, key, value, null);
+        PolicyBinding binding = PolicyBinding.forAttribute(APP, appId, key, AttributeOperator.EQUALS, value, null);
         binding.assignAuthPolicy(auth);
         binding.reprioritize(prio);
         return binding;

@@ -2,6 +2,7 @@ package com.example.sso.admin.internal.mapping.api;
 
 import com.example.sso.admin.internal.mapping.application.AdminMappingRuleService;
 import com.example.sso.mapping.MappingRuleView;
+import com.example.sso.metadata.AttributeOperator;
 import com.example.sso.mapping.MappingTargetKind;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.account.UserService;
@@ -57,7 +58,8 @@ class AdminMappingRuleControllerValidationTest {
     @Test
     void aValidBodyPassesValidationAndIsCreated() throws Exception {
         when(service.create(any())).thenReturn(new MappingRuleView(
-                "id", "dept", "eng", MappingTargetKind.GROUP, UUID.randomUUID().toString(), "Engineering", 0));
+                "id", "dept", AttributeOperator.EQUALS, "eng", MappingTargetKind.GROUP, UUID.randomUUID().toString(),
+                "Engineering", 0));
 
         expectStatus(body("dept", "eng", "GROUP", UUID.randomUUID().toString()), 201);
     }

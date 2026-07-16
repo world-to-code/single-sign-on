@@ -91,6 +91,15 @@ class AttributeServiceImpl implements AttributeService {
                 : attributes.findEntityIdsInOrg(kind, key, value, tier));
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Set<String> entityIdsWithKeyInTier(EntityKind kind, String key) {
+        UUID tier = tierGuard.currentTier();
+        return new HashSet<>(tier == null
+                ? attributes.findEntityIdsWithKeyGlobal(kind, key)
+                : attributes.findEntityIdsWithKeyInOrg(kind, key, tier));
+    }
+
     /** The acting tier's OWN row for this key (never a shadowed global), so an upsert/remove touches only it. */
     private Optional<EntityAttribute> ownAttribute(EntityKind kind, String entityId, String key, UUID tier) {
         return tier == null

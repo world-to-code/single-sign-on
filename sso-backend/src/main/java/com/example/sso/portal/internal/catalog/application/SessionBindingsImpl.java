@@ -83,7 +83,8 @@ class SessionBindingsImpl implements SessionBindings {
             switch (binding.getSubjectType()) {
                 case USER -> users.computeIfAbsent(policyId, k -> new HashSet<>()).add(binding.getSubjectId());
                 case ROLE -> roles.computeIfAbsent(policyId, k -> new HashSet<>()).add(binding.getSubjectId());
-                case ATTRIBUTE -> predicates.computeIfAbsent(policyId, k -> new HashSet<>()).add(predicateOf(binding));
+                case ATTRIBUTE -> predicates.computeIfAbsent(policyId, k -> new HashSet<>())
+                        .add(binding.subjectPredicate());
                 case GROUP -> { } // session scope never uses GROUP
                 case null -> { }  // an all-subjects row carries no per-subject scope entry
             }
@@ -102,14 +103,11 @@ class SessionBindingsImpl implements SessionBindings {
             case null -> allSubjects;
             case USER -> users.contains(binding.getSubjectId());
             case ROLE -> roles.contains(binding.getSubjectId());
-            case ATTRIBUTE -> attributes.contains(predicateOf(binding));
+            case ATTRIBUTE -> attributes.contains(binding.subjectPredicate());
             case GROUP -> false; // session scope never uses GROUP; treat any stray row as unwanted
         };
     }
 
-    private AttributePredicate predicateOf(PolicyBinding binding) {
-        return new AttributePredicate(binding.getSubjectAttrKey(), binding.getSubjectAttrValue());
-    }
 
     /** Take over (or create) the given subject slot for this policy — last write wins over another policy; the
      *  atomic upsert carries the session tie-break weight (independent of a co-located auth binding) and is
@@ -122,8 +120,8 @@ class SessionBindingsImpl implements SessionBindings {
     }
 
     private void upsertAttribute(AttributePredicate predicate, UUID org, UUID policyId, int priority) {
-        applySession(PolicyBinding.forAttribute(APP_TYPE, APP_ID, predicate.key(), predicate.value(), org),
-                policyId, priority);
+        applySession(PolicyBinding.forAttribute(APP_TYPE, APP_ID, predicate.key(), predicate.operator(),
+                predicate.value(), org), policyId, priority);
     }
 
     private void applySession(PolicyBinding binding, UUID policyId, int priority) {

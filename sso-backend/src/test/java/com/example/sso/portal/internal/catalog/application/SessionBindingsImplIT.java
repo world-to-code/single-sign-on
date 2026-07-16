@@ -113,8 +113,8 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
     void writesAndReconcilesAttributePredicateBindings() {
         UUID org = org();
         UUID policy = policyIn(org, "attr");
-        AttributePredicate eng = new AttributePredicate("dept", "eng");
-        AttributePredicate sales = new AttributePredicate("dept", "sales");
+        AttributePredicate eng = AttributePredicate.equals("dept", "eng");
+        AttributePredicate sales = AttributePredicate.equals("dept", "sales");
 
         orgContext.runInOrg(org, () ->
                 sessionBindings.replaceForPolicy(policy, 10, Set.of(), Set.of(), Set.of(eng, sales)));

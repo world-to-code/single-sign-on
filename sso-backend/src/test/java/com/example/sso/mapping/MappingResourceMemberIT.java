@@ -1,5 +1,6 @@
 package com.example.sso.mapping;
 
+import com.example.sso.metadata.AttributeOperator;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.resource.internal.catalog.application.ResourceAdminService;
@@ -72,7 +73,7 @@ class MappingResourceMemberIT extends AbstractIntegrationTest {
         UUID matching = globalUser("dept", "eng");
 
         MappingRuleView rule = orgContext.callAsPlatform(() ->
-                mappingRules.create(new MappingRuleSpec("dept", "eng", MappingTargetKind.RESOURCE_MEMBER, resource)));
+                mappingRules.create(new MappingRuleSpec("dept", AttributeOperator.EQUALS, "eng", MappingTargetKind.RESOURCE_MEMBER, resource)));
         assertThat(isMember(resource, matching)).isTrue();
 
         orgContext.runAsPlatform(() -> mappingRules.delete(UUID.fromString(rule.id())));
@@ -84,7 +85,7 @@ class MappingResourceMemberIT extends AbstractIntegrationTest {
         UUID resource = globalResource("doomed", MemberType.USER);
         globalUser("dept", "eng");
         MappingRuleView rule = orgContext.callAsPlatform(() ->
-                mappingRules.create(new MappingRuleSpec("dept", "eng", MappingTargetKind.RESOURCE_MEMBER, resource)));
+                mappingRules.create(new MappingRuleSpec("dept", AttributeOperator.EQUALS, "eng", MappingTargetKind.RESOURCE_MEMBER, resource)));
         assertThat(rulesForTarget(resource)).isEqualTo(1);
 
         // delete needs the admin authz (super); the AFTER_COMMIT listener then drops the dangling rules.
@@ -106,7 +107,7 @@ class MappingResourceMemberIT extends AbstractIntegrationTest {
 
         orgContext.runAsPlatform(() ->
                 assertThatThrownBy(() -> mappingRules.create(
-                        new MappingRuleSpec("dept", "eng", MappingTargetKind.RESOURCE_MEMBER, resource)))
+                        new MappingRuleSpec("dept", AttributeOperator.EQUALS, "eng", MappingTargetKind.RESOURCE_MEMBER, resource)))
                         .isInstanceOf(BadRequestException.class));
     }
 

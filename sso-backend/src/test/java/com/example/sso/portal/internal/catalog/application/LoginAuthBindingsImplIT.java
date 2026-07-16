@@ -101,8 +101,8 @@ class LoginAuthBindingsImplIT extends AbstractIntegrationTest {
     void writesAndReconcilesAttributePredicateLoginBindings() {
         UUID org = org();
         UUID policy = policyIn(org, "attr");
-        AttributePredicate eng = new AttributePredicate("dept", "eng");
-        AttributePredicate sales = new AttributePredicate("dept", "sales");
+        AttributePredicate eng = AttributePredicate.equals("dept", "eng");
+        AttributePredicate sales = AttributePredicate.equals("dept", "sales");
 
         orgContext.runInOrg(org, () ->
                 loginBindings.replaceForPolicy(policy, 10, true, Set.of(), Set.of(), Set.of(eng, sales)));

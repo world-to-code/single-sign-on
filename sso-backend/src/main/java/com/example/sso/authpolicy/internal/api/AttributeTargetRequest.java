@@ -1,19 +1,29 @@
 package com.example.sso.authpolicy.internal.api;
 
+import com.example.sso.metadata.AttributeOperator;
 import com.example.sso.metadata.AttributePredicate;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
- * Targets a policy at the users carrying a metadata attribute ({@code key = value}). Key is a bounded
- * identifier and value bounded free text, mirroring the metadata store's own validation.
+ * Targets a policy at the users a metadata predicate matches ({@code key <operator> value}). Key is a bounded
+ * identifier; value is bounded free text required for the value operators (EQUALS/NOT_EQUALS) and omitted for
+ * the key operators (EXISTS/NOT_EXISTS). A missing operator defaults to EQUALS (backward compatibility).
  */
 public record AttributeTargetRequest(
         @NotBlank @Size(max = 64) @Pattern(regexp = "[A-Za-z0-9][A-Za-z0-9._:-]*") String key,
-        @NotBlank @Size(max = 255) String value) {
+        AttributeOperator operator,
+        @Size(max = 255) String value) {
 
     public AttributePredicate toPredicate() {
-        return new AttributePredicate(key, value);
+        AttributeOperator op = AttributeOperator.orDefault(operator);
+        return new AttributePredicate(key, op, op.requiresValue() ? value : null);
+    }
+
+    @AssertTrue(message = "value is required for EQUALS/NOT_EQUALS and must be empty for EXISTS/NOT_EXISTS")
+    boolean isValueConsistentWithOperator() {
+        return AttributeOperator.valueConsistent(operator, value);
     }
 }

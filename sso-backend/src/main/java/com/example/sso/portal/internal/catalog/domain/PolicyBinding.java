@@ -1,5 +1,7 @@
 package com.example.sso.portal.internal.catalog.domain;
 
+import com.example.sso.metadata.AttributeOperator;
+import com.example.sso.metadata.AttributePredicate;
 import com.example.sso.portal.application.AppType;
 import com.example.sso.shared.domain.AuditedEntity;
 import com.example.sso.tenancy.OrgOwned;
@@ -47,9 +49,14 @@ public class PolicyBinding extends AuditedEntity implements OrgOwned {
     @Column(name = "subject_attr_key", length = 64)
     private String subjectAttrKey;
 
-    /** The metadata predicate value, set exactly for an {@link SubjectType#ATTRIBUTE} binding (else {@code null}). */
+    /** The metadata predicate value, set for a value-operator {@link SubjectType#ATTRIBUTE} binding (else null). */
     @Column(name = "subject_attr_value", length = 255)
     private String subjectAttrValue;
+
+    /** How the predicate tests the key, set exactly for an {@link SubjectType#ATTRIBUTE} binding (else null). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "subject_attr_op", length = 16)
+    private AttributeOperator subjectAttrOp;
 
     @Column(name = "auth_policy_id")
     private UUID authPolicyId;
@@ -74,14 +81,15 @@ public class PolicyBinding extends AuditedEntity implements OrgOwned {
     // business logic never touches raw field order (adding/reordering a column stays contained to this class).
     @Builder(access = AccessLevel.PRIVATE)
     private PolicyBinding(AppType appType, String appId, SubjectType subjectType, UUID subjectId,
-            String subjectAttrKey, String subjectAttrValue, UUID authPolicyId, UUID sessionPolicyId,
-            int priority, int sessionPriority, UUID orgId) {
+            String subjectAttrKey, String subjectAttrValue, AttributeOperator subjectAttrOp, UUID authPolicyId,
+            UUID sessionPolicyId, int priority, int sessionPriority, UUID orgId) {
         this.appType = appType;
         this.appId = appId;
         this.subjectType = subjectType;
         this.subjectId = subjectId;
         this.subjectAttrKey = subjectAttrKey;
         this.subjectAttrValue = subjectAttrValue;
+        this.subjectAttrOp = subjectAttrOp;
         this.authPolicyId = authPolicyId;
         this.sessionPolicyId = sessionPolicyId;
         this.priority = priority;
@@ -100,11 +108,17 @@ public class PolicyBinding extends AuditedEntity implements OrgOwned {
         return builder().appType(appType).appId(appId).subjectType(subjectType).subjectId(subjectId).orgId(org).build();
     }
 
-    /** A policy-less binding targeting the users carrying a metadata predicate ({@code key = value}) in the tier. */
-    public static PolicyBinding forAttribute(AppType appType, String appId, String attrKey, String attrValue,
-            UUID org) {
+    /** A policy-less binding targeting the users a metadata predicate ({@code key <op> value}) matches, in the tier. */
+    public static PolicyBinding forAttribute(AppType appType, String appId, String attrKey, AttributeOperator op,
+            String attrValue, UUID org) {
         return builder().appType(appType).appId(appId).subjectType(SubjectType.ATTRIBUTE)
-                .subjectAttrKey(attrKey).subjectAttrValue(attrValue).orgId(org).build();
+                .subjectAttrKey(attrKey).subjectAttrOp(op).subjectAttrValue(attrValue).orgId(org).build();
+    }
+
+    /** The metadata predicate this ATTRIBUTE binding targets — its key/operator/value as one value object.
+     *  The columns that compose a predicate are owned here, so their assembly lives here too (not in each reader). */
+    public AttributePredicate subjectPredicate() {
+        return new AttributePredicate(subjectAttrKey, subjectAttrOp, subjectAttrValue);
     }
 
     /** Point this binding at a different session policy (intent-revealing mutation, not a JavaBean setter). */

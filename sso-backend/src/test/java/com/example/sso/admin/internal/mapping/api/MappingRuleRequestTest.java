@@ -1,6 +1,7 @@
 package com.example.sso.admin.internal.mapping.api;
 
 import com.example.sso.mapping.MappingTargetKind;
+import com.example.sso.metadata.AttributeOperator;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import java.util.UUID;
@@ -18,7 +19,7 @@ class MappingRuleRequestTest {
     private final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
 
     private MappingRuleRequest request(String key, String value, MappingTargetKind kind, UUID target) {
-        return new MappingRuleRequest(key, value, kind, target);
+        return new MappingRuleRequest(key, AttributeOperator.EQUALS, value, kind, target);
     }
 
     @Test
@@ -46,6 +47,40 @@ class MappingRuleRequestTest {
     void aMissingKindOrTargetIsRejected() {
         assertThat(validator.validate(request("dept", "eng", null, UUID.randomUUID()))).isNotEmpty();
         assertThat(validator.validate(request("dept", "eng", MappingTargetKind.GROUP, null))).isNotEmpty();
+    }
+
+    @Test
+    void aNegativeOperatorIsRejected() {
+        UUID g = UUID.randomUUID();
+        assertThat(validator.validate(new MappingRuleRequest("dept", AttributeOperator.NOT_EQUALS, "sales",
+                MappingTargetKind.GROUP, g))).isNotEmpty();
+        assertThat(validator.validate(new MappingRuleRequest("dept", AttributeOperator.NOT_EXISTS, null,
+                MappingTargetKind.GROUP, g))).isNotEmpty();
+    }
+
+    @Test
+    void anExistsRequestOmitsTheValueAndAnExistsWithAValueIsRejected() {
+        UUID g = UUID.randomUUID();
+        assertThat(validator.validate(new MappingRuleRequest("dept", AttributeOperator.EXISTS, null,
+                MappingTargetKind.GROUP, g))).isEmpty();
+        assertThat(validator.validate(new MappingRuleRequest("dept", AttributeOperator.EXISTS, "eng",
+                MappingTargetKind.GROUP, g))).isNotEmpty(); // a value on EXISTS is inconsistent
+    }
+
+    @Test
+    void aMissingOperatorDefaultsToEquals() {
+        assertThat(new MappingRuleRequest("dept", null, "eng", MappingTargetKind.GROUP, UUID.randomUUID()).toSpec())
+                .satisfies(s -> assertThat(s.attrOp()).isEqualTo(AttributeOperator.EQUALS));
+    }
+
+    @Test
+    void anExistsRequestMapsToASpecWithNoValue() {
+        assertThat(new MappingRuleRequest("dept", AttributeOperator.EXISTS, null, MappingTargetKind.ROLE,
+                UUID.randomUUID()).toSpec())
+                .satisfies(s -> {
+                    assertThat(s.attrOp()).isEqualTo(AttributeOperator.EXISTS);
+                    assertThat(s.attrValue()).isNull();
+                });
     }
 
     @Test
