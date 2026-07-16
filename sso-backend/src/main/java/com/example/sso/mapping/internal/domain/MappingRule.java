@@ -41,19 +41,29 @@ public class MappingRule extends AuditedEntity implements OrgOwned {
     @Column(name = "org_id")
     private UUID orgId;
 
+    @Column(name = "created_by")
+    private UUID createdBy;
+
     @Builder(access = AccessLevel.PRIVATE)
-    private MappingRule(String attrKey, String attrValue, MappingTargetKind thenKind, UUID targetId, UUID orgId) {
+    private MappingRule(String attrKey, String attrValue, MappingTargetKind thenKind, UUID targetId, UUID orgId,
+            UUID createdBy) {
         this.attrKey = attrKey;
         this.attrValue = attrValue;
         this.thenKind = thenKind;
         this.targetId = targetId;
         this.orgId = orgId;
+        this.createdBy = createdBy;
     }
 
-    /** A rule assigning the users carrying {@code attrKey = attrValue} to a target ({@code thenKind}), in the tier. */
+    /**
+     * A rule assigning the users carrying {@code attrKey = attrValue} to a target ({@code thenKind}), in the tier,
+     * authored by {@code createdBy} (null for a system/legacy rule). The author is re-checked at each async
+     * materialize so a since-demoted author's rule stops handing out grants they could no longer make by hand.
+     */
     public static MappingRule of(String attrKey, String attrValue, MappingTargetKind thenKind, UUID targetId,
-            UUID orgId) {
-        return builder().attrKey(attrKey).attrValue(attrValue).thenKind(thenKind).targetId(targetId).orgId(orgId).build();
+            UUID orgId, UUID createdBy) {
+        return builder().attrKey(attrKey).attrValue(attrValue).thenKind(thenKind).targetId(targetId)
+                .orgId(orgId).createdBy(createdBy).build();
     }
 
     /** Repoint the rule's predicate, kind and target (intent-revealing; the tier is fixed). */
@@ -62,5 +72,10 @@ public class MappingRule extends AuditedEntity implements OrgOwned {
         this.attrValue = attrValue;
         this.thenKind = thenKind;
         this.targetId = targetId;
+    }
+
+    /** Re-stamp the vouching author — an update re-authorizes the target, so the updater becomes the author. */
+    public void restampAuthor(UUID createdBy) {
+        this.createdBy = createdBy;
     }
 }

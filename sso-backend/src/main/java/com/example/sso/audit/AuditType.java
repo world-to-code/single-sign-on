@@ -63,6 +63,8 @@ public enum AuditType {
     MAPPING_RULE_DELETED(AuditCategory.AUTHORIZATION),
     MAPPING_RULE_APPLIED(AuditCategory.AUTHORIZATION),
     MAPPING_RULE_RETRACTED(AuditCategory.AUTHORIZATION),
+    MAPPING_RULE_AUTHOR_UNAUTHORIZED(AuditCategory.AUTHORIZATION), // rule outlived its author's grant authority — grant skipped
+    MAPPING_RULE_LEGACY_AUTHOR(AuditCategory.AUTHORIZATION),       // a grant by a rule with no recorded author (pre-V97/system)
 
     // Administrative operations on users
     USER_CREATED(AuditCategory.ADMIN),

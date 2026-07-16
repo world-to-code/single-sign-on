@@ -77,6 +77,14 @@ public interface UserService {
     /** Whether the user has the named role assigned DIRECTLY (not inherited via a group). */
     boolean hasRole(UUID userId, String roleName);
 
+    /**
+     * The user's full effective authority set — role names (ROLE_*) and permission names, with role-hierarchy
+     * inheritance and mutating⇒read implications folded in, exactly as the login principal is assembled. Keyed
+     * by id for an OFF-request re-check (e.g. re-validating a mapping rule's author on the async path). Resolved
+     * in the caller's RLS scope; EMPTY for an unknown/deleted user (fail-closed).
+     */
+    Set<String> effectiveAuthorities(UUID userId);
+
     /** Typeahead (id, username) suggestions for assignment pickers. */
     List<Suggestion> searchUsers(String q, int limit);
 

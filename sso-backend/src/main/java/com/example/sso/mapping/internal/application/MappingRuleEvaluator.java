@@ -4,6 +4,7 @@ import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
+import com.example.sso.mapping.MappingTargetAuthority;
 import com.example.sso.mapping.internal.domain.MappingRule;
 import com.example.sso.mapping.internal.domain.MappingRuleMembership;
 import com.example.sso.mapping.internal.domain.MappingRuleMembershipRepository;
@@ -48,6 +49,7 @@ class MappingRuleEvaluator {
     private final List<MappingTargetApplier> appliers;
     private final AuditService audit;
     private final OrgTierGuard tierGuard;
+    private final MappingTargetAuthority targetAuthority;
 
     /** Reconcile ONE rule across the tier: add every matching user not yet claimed, retract every claim no longer matching. */
     @Transactional
@@ -107,6 +109,9 @@ class MappingRuleEvaluator {
         if (rules.findByIdForUpdate(rule.getId()).isEmpty()) {
             return; // deleted concurrently — hold the row lock to serialize against a racing delete/retract
         }
+        if (!authorStillAuthorized(rule)) {
+            return; // the author lost the authority this grant would need — skip (audited)
+        }
         // Claim FIRST (ON CONFLICT DO NOTHING): only the tx that actually inserts the provenance row grants and
         // audits, so a concurrent twin neither re-grants, double-audits, nor aborts on the unique constraint.
         if (memberships.insertClaimIfAbsent(rule.getId(), userId, rule.getTargetId(), tierGuard.currentTier()) == 0) {
@@ -114,12 +119,16 @@ class MappingRuleEvaluator {
         }
         applierFor(rule).assign(rule.getTargetId(), userId);
         record(AuditType.MAPPING_RULE_APPLIED, rule, userId);
+        noteLegacyAuthor(rule);
     }
 
     /** Materialize a whole cohort at once: claim each provenance row, then one batched grant for the newly-claimed. */
     private void materializeAll(MappingRule rule, Set<UUID> userIds) {
         if (userIds.isEmpty() || rules.findByIdForUpdate(rule.getId()).isEmpty()) {
             return;
+        }
+        if (!authorStillAuthorized(rule)) {
+            return; // author lost authority for the whole cohort — skip (audited once)
         }
         UUID tier = tierGuard.currentTier();
         Set<UUID> newlyClaimed = userIds.stream()
@@ -130,6 +139,30 @@ class MappingRuleEvaluator {
         }
         applierFor(rule).assignAll(rule.getTargetId(), newlyClaimed);
         newlyClaimed.forEach(userId -> record(AuditType.MAPPING_RULE_APPLIED, rule, userId));
+        noteLegacyAuthor(rule);
+    }
+
+    /**
+     * Zero-trust re-check at grant time: the author must STILL hold the authority the create/update gate demanded
+     * — a since-demoted or deleted author's rule must stop handing out grants they could no longer make by hand.
+     * A rule with no recorded author (legacy/system) is allowed (audited on the grant). A lost-authority author
+     * is denied and audited. Fails CLOSED (an unresolvable author yields no authority → false in the port).
+     */
+    private boolean authorStillAuthorized(MappingRule rule) {
+        if (rule.getCreatedBy() == null) {
+            return true; // legacy/system rule — allowed; noteLegacyAuthor marks the grant for backfill visibility
+        }
+        if (targetAuthority.authorMayAssign(rule.getCreatedBy(), rule.getThenKind(), rule.getTargetId())) {
+            return true;
+        }
+        recordAuthor(AuditType.MAPPING_RULE_AUTHOR_UNAUTHORIZED, rule);
+        return false;
+    }
+
+    private void noteLegacyAuthor(MappingRule rule) {
+        if (rule.getCreatedBy() == null) {
+            recordAuthor(AuditType.MAPPING_RULE_LEGACY_AUTHOR, rule);
+        }
     }
 
     private void retract(MappingRule rule, UUID userId) {
@@ -156,5 +189,13 @@ class MappingRuleEvaluator {
                 .formatted(rule.getId(), rule.getThenKind(), userId, rule.getTargetId());
         audit.record(new AuditRecord(type, SYSTEM_PRINCIPAL, true, detail, null,
                 AuditSubjectType.USER, userId.toString(), rule.getOrgId()));
+    }
+
+    /** A rule-level audit (no per-user subject): the author re-validation outcome for the whole grant. */
+    private void recordAuthor(AuditType type, MappingRule rule) {
+        String detail = "rule %s (%s): target %s / author %s"
+                .formatted(rule.getId(), rule.getThenKind(), rule.getTargetId(), rule.getCreatedBy());
+        audit.record(new AuditRecord(type, SYSTEM_PRINCIPAL, true, detail, null,
+                AuditSubjectType.NONE, rule.getTargetId().toString(), rule.getOrgId()));
     }
 }

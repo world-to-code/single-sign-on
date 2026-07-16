@@ -123,12 +123,24 @@ public class AdminAccessPolicy {
      * the grant targets the stored id. Fails closed on an unresolved id.
      */
     public boolean mayAssignTarget(MappingTargetKind kind, UUID targetId) {
+        return currentUserId()
+                .map(actorId -> mayAssignTarget(actorId, currentAuthorities(), kind, targetId))
+                .orElse(false);
+    }
+
+    /**
+     * The same decision as {@link #mayAssignTarget(MappingTargetKind, UUID)} but for an EXPLICIT actor and their
+     * effective authority set, rather than the current {@code SecurityContext} — so it can be evaluated off the
+     * request thread (the async mapping re-validation of a rule's author). The two share this one implementation,
+     * so the manual create/update gate and the continuous re-check can never drift.
+     */
+    public boolean mayAssignTarget(UUID actorId, Set<String> actorAuthorities, MappingTargetKind kind, UUID targetId) {
         return switch (kind) {
-            case GROUP -> canAccessGroup(targetId);
-            case ROLE -> currentIsSuperAdmin()
-                    || (currentActorMayManageRole(targetId)
+            case GROUP -> canAccessGroup(actorId, targetId);
+            case ROLE -> isSuper(actorId)
+                    || (roleHierarchy.actorMayManageRole(actorId, targetId)
                             && !roleCarriesPlatformPermission(targetId)
-                            && actorHoldsAllPermissionsOf(targetId));
+                            && actorAuthorities.containsAll(roleService.permissionNames(targetId)));
         };
     }
 
@@ -210,9 +222,13 @@ public class AdminAccessPolicy {
      * is denied — which is what keeps them from mutating a platform-wide group even though RLS lets them read it.
      */
     public boolean canAccessGroup(UUID groupId) {
-        return currentUserId().map(actorId -> groupAuth.canManage(actorId, groupId)
-                || userGroups.orgIdOf(groupId).map(orgId -> orgAuth.canManage(actorId, orgId)).orElse(false)
-        ).orElse(false);
+        return currentUserId().map(actorId -> canAccessGroup(actorId, groupId)).orElse(false);
+    }
+
+    /** As {@link #canAccessGroup(UUID)} for an EXPLICIT actor (off the request thread — author re-validation). */
+    private boolean canAccessGroup(UUID actorId, UUID groupId) {
+        return groupAuth.canManage(actorId, groupId)
+                || userGroups.orgIdOf(groupId).map(orgId -> orgAuth.canManage(actorId, orgId)).orElse(false);
     }
 
     /**

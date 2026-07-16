@@ -1,23 +1,11 @@
 package com.example.sso.user.internal.application;
 
-import com.example.sso.user.role.Roles;
-
 import com.example.sso.user.account.LoginResolutionScope;
-import com.example.sso.user.rbac.Permissions;
-import com.example.sso.user.internal.group.domain.UserGroupRepository;
 import com.example.sso.user.internal.account.domain.AppUser;
 import com.example.sso.user.internal.account.domain.AppUserRepository;
-import com.example.sso.user.internal.role.domain.Role;
-import com.example.sso.user.internal.role.domain.RoleRepository;
 import java.time.Instant;
-import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.User;
@@ -40,10 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class SsoUserDetailsService implements UserDetailsService {
 
     private final AppUserRepository users;
-    private final UserGroupRepository groups;
-    private final RoleRepository roles;
-    private final RbacHydrator hydrator;
-    private final RoleInheritanceResolver inheritanceResolver;
+    private final EffectiveAuthorityResolver authorityResolver;
     private final LoginResolutionScope loginScope;
 
     @Override
@@ -52,27 +37,7 @@ public class SsoUserDetailsService implements UserDetailsService {
         AppUser user = resolve(username)
                 .orElseThrow(() -> new UsernameNotFoundException("Unknown user: " + username));
 
-        // RBAC: role names (ROLE_*) from roles assigned directly AND delegated via the user's groups.
-        // PBAC: permissions carried by those roles AND granted directly to the user, PLUS the permissions
-        // of every role those roles INHERIT down the role-hierarchy DAG (inheritanceResolver — permission
-        // names ONLY, never an inherited role's name). Finally, each mutating resource:action implies
-        // resource:read (see Permissions.expandImplied). Every read is an EXPLICIT join query.
-        hydrator.hydrateUser(user); // direct roles (+ their permission names) and direct permission names
-        List<Role> groupRoles = groupDelegatedRoles(user.getId());
-
-        Set<UUID> heldRoleIds = Stream.concat(user.getRoles().stream(), groupRoles.stream())
-                .map(Role::getId).collect(Collectors.toSet());
-
-        Stream<String> directRoleAuthorities = roleAuthorities(user.getRoles());
-        Stream<String> groupRoleAuthorities = roleAuthorities(groupRoles);
-        Stream<String> directPermissions = user.getDirectPermissionNames().stream();
-        Stream<String> inheritedPermissions = inheritanceResolver.effectivePermissionNames(heldRoleIds).stream();
-
-        Set<String> granted = Stream.of(directRoleAuthorities, groupRoleAuthorities,
-                        directPermissions, inheritedPermissions)
-                .flatMap(s -> s)
-                .collect(Collectors.toSet());
-        List<SimpleGrantedAuthority> authorities = Permissions.expandImplied(granted).stream()
+        List<SimpleGrantedAuthority> authorities = authorityResolver.authoritiesOf(user).stream()
                 .map(SimpleGrantedAuthority::new)
                 .toList();
 
@@ -92,27 +57,6 @@ public class SsoUserDetailsService implements UserDetailsService {
         return loginScope.current()
                 .map(scope -> users.findByUsernameInOrg(username, scope.orgId()))
                 .orElseGet(() -> users.findByUsernameInOrg(username, null));
-    }
-
-    /** Roles delegated to the user via any (RLS-visible) group they belong to, with permission names hydrated. */
-    private List<Role> groupDelegatedRoles(UUID userId) {
-        List<UUID> roleIds = groups.findDelegatedRoleIdsForMember(userId);
-        return roleIds.isEmpty() ? List.of() : hydrator.hydrateRoles(roles.findAllById(new HashSet<>(roleIds)));
-    }
-
-    /**
-     * A role's authorities: its permission names always, plus its name (ROLE_*) for a GLOBAL role or an
-     * org's provisioned SYSTEM role (the org's own ROLE_USER/ROLE_GROUP_ADMIN/ROLE_ORG_ADMIN — the
-     * well-known name is what authorization checks and the console-entry assignment key on). A tenant's
-     * CUSTOM role contributes only its permissions: a tenant can neither create nor rename a system role,
-     * so an org role named e.g. {@code ROLE_ADMIN} can't escalate, and custom org role names stay
-     * unrestricted. (Org-scoped roles resolve here only when this runs in that org's context — see the
-     * completion service, which loads authorities bound to the login org.)
-     */
-    private Stream<String> roleAuthorities(Collection<Role> roles) {
-        return roles.stream().flatMap(role -> Stream.concat(
-                role.getOrgId() == null || role.isSystem() ? Stream.of(role.getName()) : Stream.empty(),
-                role.getPermissionNames().stream()));
     }
 
     private UserDetails principal(AppUser user, List<SimpleGrantedAuthority> authorities) {

@@ -71,6 +71,7 @@ public class UserServiceImpl implements UserService {
     private final ApplicationEventPublisher events;
     private final PermissionGrantPolicy grantPolicy;
     private final RbacHydrator hydrator;
+    private final EffectiveAuthorityResolver authorityResolver;
     private final RoleTierResolver tierResolver;
     private final OrgContext orgContext;
     private final LoginResolutionScope loginScope;
@@ -200,6 +201,14 @@ public class UserServiceImpl implements UserService {
     @Transactional(readOnly = true)
     public boolean hasRole(UUID userId, String roleName) {
         return userRoles.existsByUserIdAndRoleName(userId, roleName);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Set<String> effectiveAuthorities(UUID userId) {
+        // Same assembly as the login principal (EffectiveAuthorityResolver), so login and any by-id re-check
+        // never drift. Empty for an unknown/deleted user — the async author re-validation then fails closed.
+        return users.findById(userId).map(authorityResolver::authoritiesOf).orElse(Set.of());
     }
 
     @Override

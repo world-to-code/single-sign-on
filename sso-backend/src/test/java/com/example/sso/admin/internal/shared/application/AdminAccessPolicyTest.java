@@ -216,6 +216,61 @@ class AdminAccessPolicyTest {
         assertThat(policy.mayAssignTarget(MappingTargetKind.ROLE, aboveRoleId)).isFalse();
     }
 
+    // --- parameterized mayAssignTarget: the SecurityContext-FREE variant used by the async author re-validation ---
+
+    @Test
+    void parameterizedMayAssignTargetRoleEnforcesGrantOnlyWhatYouHoldWithoutASecurityContext() {
+        SecurityContextHolder.clearContext(); // off the request thread — the whole reason this overload exists
+        UUID author = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        when(userService.hasRole(author, Roles.ADMIN)).thenReturn(false); // not a super
+        when(roleHierarchy.actorMayManageRole(author, roleId)).thenReturn(true);
+        when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.USER_READ)); // benign, non-platform
+
+        // Author still holds the permission → allowed; author lost it → denied (the demoted-author case).
+        assertThat(policy.mayAssignTarget(author, Set.of(Permissions.USER_READ), MappingTargetKind.ROLE, roleId)).isTrue();
+        assertThat(policy.mayAssignTarget(author, Set.of(), MappingTargetKind.ROLE, roleId)).isFalse();
+    }
+
+    @Test
+    void parameterizedMayAssignTargetRoleStillBlocksAPlatformPermissionForANonSuper() {
+        SecurityContextHolder.clearContext();
+        UUID author = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        when(userService.hasRole(author, Roles.ADMIN)).thenReturn(false);
+        when(roleHierarchy.actorMayManageRole(author, roleId)).thenReturn(true);
+        when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.ORG_CREATE)); // platform-only
+
+        // Even if the author's authority set literally contains it, a non-super may not vouch a platform-permission role.
+        assertThat(policy.mayAssignTarget(author, Set.of(Permissions.ORG_CREATE), MappingTargetKind.ROLE, roleId)).isFalse();
+    }
+
+    @Test
+    void parameterizedMayAssignTargetGroupIsSecurityContextFree() {
+        SecurityContextHolder.clearContext();
+        UUID author = UUID.randomUUID();
+        UUID groupId = UUID.randomUUID();
+        when(groupAuth.canManage(author, groupId)).thenReturn(true);
+
+        assertThat(policy.mayAssignTarget(author, Set.of(), MappingTargetKind.GROUP, groupId)).isTrue();
+        assertThat(policy.mayAssignTarget(author, Set.of(), MappingTargetKind.GROUP, UUID.randomUUID())).isFalse();
+    }
+
+    @Test
+    void theSecurityContextVariantAgreesWithTheParameterizedOne() {
+        // The request-thread wrapper must resolve to exactly the parameterized decision (no drift): same actor,
+        // same authorities, same target → same answer. Here the signed-in super is denied a platform-perm role.
+        UUID roleId = UUID.randomUUID();
+        signInWith(Permissions.ORG_CREATE); // authorities WITHOUT ROLE_ADMIN → non-super
+        when(userService.hasRole(ACTOR_ID, Roles.ADMIN)).thenReturn(false);
+        when(roleHierarchy.actorMayManageRole(ACTOR_ID, roleId)).thenReturn(true);
+        when(roleService.permissionNames(roleId)).thenReturn(Set.of(Permissions.ORG_CREATE));
+
+        assertThat(policy.mayAssignTarget(MappingTargetKind.ROLE, roleId))
+                .isEqualTo(policy.mayAssignTarget(ACTOR_ID, Set.of(Permissions.ORG_CREATE), MappingTargetKind.ROLE, roleId))
+                .isFalse();
+    }
+
     @Test
     void canAccessGroupAllowsATenantAdminOfTheGroupsOwningOrg() {
         // No resource-subtree delegation, but the actor administers the org that owns the group → allowed.
