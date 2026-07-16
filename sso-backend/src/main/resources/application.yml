@@ -1,6 +1,11 @@
 spring:
   application:
     name: mini-sso-system
+  lifecycle:
+    # Graceful shutdown drain window (see server.shutdown below). On SIGTERM the readiness probe flips to
+    # REFUSING_TRAFFIC so Kubernetes stops routing, while in-flight requests finish within this window. Kept
+    # UNDER the pod's terminationGracePeriodSeconds (k8s default 30s) so the drain completes before SIGKILL.
+    timeout-per-shutdown-phase: 25s
   jackson:
     deserialization:
       # Jackson 3 (Boot 4) rejects null/absent -> primitive by default; allow omitted
@@ -61,6 +66,10 @@ spring:
 
 server:
   port: 9000                    # conventional auth-server port
+  # Zero-downtime rolling deploys: on SIGTERM stop accepting new connections and let in-flight requests
+  # (login/OIDC/SAML flows) finish rather than cutting them mid-flight. Paired with the readiness probe, which
+  # Boot flips to REFUSING_TRAFFIC on shutdown so k8s drains the pod from its endpoints first.
+  shutdown: graceful
   # DEV runs without a proxy, so DO NOT trust X-Forwarded-* — the security decisions (per-IP rate
   # limiter, IP access list) must use the real peer address, not a client-spoofable header.
   # In prod (application-prod.yml) this is 'native' with a pinned trusted-proxy CIDR.
