@@ -1,0 +1,8 @@
+# Build context = sso-backend/ (API-only image; no frontend involved).
+.gradle
+build
+data
+# A generated SPA bundle must never leak into the API-only image (the edge serves the SPA now).
+src/main/resources/static
+# Secrets / local keystores
+*.p12

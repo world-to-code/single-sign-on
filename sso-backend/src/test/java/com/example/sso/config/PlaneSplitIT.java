@@ -4,7 +4,6 @@ import com.example.sso.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -12,10 +11,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * The deployment-plane split ({@code sso.plane=auth}): a public auth-runtime deployment still serves the
- * login/auth surface but NOT the management surface (the admin console shell and {@code /api/admin/**}) — so the
- * admin plane is reachable only on a separate deployment. The default (all) is byte-for-byte the current server
- * and is covered by every other IT; here we pin the auth-plane denial.
+ * The deployment-plane split ({@code sso.plane=auth}): a public auth-runtime deployment DENIES the management
+ * surface (the admin API), so it is reachable only on a separate admin-plane deployment. The SPA shells are
+ * served by the nginx edge (not this backend), so the split is enforced here at the API level — each deployment
+ * simply serves the matching SPA bundle at its own edge. The default (all) plane is byte-for-byte the current
+ * server and is covered by every other IT; here we pin the auth-plane denial.
  */
 @AutoConfigureMockMvc
 @TestPropertySource(properties = "sso.plane=auth")
@@ -25,15 +25,11 @@ class PlaneSplitIT extends AbstractIntegrationTest {
     MockMvc mvc;
 
     @Test
-    void theAuthPlaneServesLoginButNotTheAdminConsoleShell() throws Exception {
-        // The login page is part of the auth plane and is still served (would be 200 on any plane).
-        mvc.perform(get("/login").accept(MediaType.TEXT_HTML)).andExpect(status().isOk());
-        // The admin console SPA shell — permitAll (200) on the default plane — is denied here.
-        mvc.perform(get("/admin").accept(MediaType.TEXT_HTML)).andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    void theAuthPlaneDoesNotServeTheAdminApi() throws Exception {
+    void theAuthPlaneDeniesTheAdminApiButRemainsAFunctioningRuntime() throws Exception {
+        // The management surface (admin API) is denied on the auth plane — served only on a separate admin plane.
         mvc.perform(get("/api/admin/mapping-rules")).andExpect(status().isUnauthorized());
+        // The rest of the runtime still serves: the liveness probe is reachable and UP (it reflects the app
+        // itself, not external stores, so it does not flake on a missing mail/db dependency in the test env).
+        mvc.perform(get("/actuator/health/liveness")).andExpect(status().isOk());
     }
 }

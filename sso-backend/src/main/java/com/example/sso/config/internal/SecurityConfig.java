@@ -182,14 +182,9 @@ public class SecurityConfig {
                         // Logout is public — the SP signature is the real check, and it only ends the
                         // caller's own session (SameSite=Lax blocks cross-site POST logout-CSRF).
                         .requestMatchers("/saml2/idp/metadata", "/saml2/idp/slo", "/saml2/idp/slo/**").permitAll()
-                        // SPA shell + static assets (the SPA itself gates content via /api/auth/session).
-                        .requestMatchers(HttpMethod.GET, "/", "/index.html", "/favicon.ico", "/assets/**", "/fonts/**",
-                                "/login", "/signup", "/activate", "/set-password", "/product", "/integrations", "/security", "/how-it-works",
-                                "/stepup", "/apps", "/passkeys", "/applications", "/users", "/groups", "/auth-policies", "/clients",
-                                "/relying-parties", "/scim-tokens", "/session-policy",
-                                "/audit", "/profile",
-                                // Admin console SPA shell (the OIDC flow + admin API still enforce auth).
-                                "/admin", "/admin/**").permitAll()
+                        // The SPA is served by the nginx edge, not this backend (API-only): the browser only ever
+                        // reaches the backend through the edge's reverse proxy, so there are no SPA-shell/static
+                        // matchers here. A direct hit to the backend root falls through to authenticated() below.
                         .requestMatchers("/saml2/idp/sso", "/saml2/idp/sso/init")
                         .access(AuthorityAuthorizationManager.hasAuthority(Factors.MFA_COMPLETE))
                         // The custom OIDC consent page renders account data (the user's prior consent) mid-flow,
