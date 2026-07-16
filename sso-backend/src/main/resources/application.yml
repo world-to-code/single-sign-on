@@ -147,6 +147,23 @@ sso:
         max-attempts: 10             # give-up cap; ~8-12h horizon, well under the P8D index TTL
         registry-ttl: P8D            # retry ZSET/meta TTL — aligned with the session-index TTLs
         sweep-batch-size: 100        # max due sids re-driven per queue per tick
+  mapping:
+    # Metadata-driven auto-mapping re-evaluation runs off the request thread on a dedicated bounded pool, with a
+    # short in-thread retry for transient lock contention and a scheduled full-reconcile sweep as the durability
+    # net (an AFTER_COMMIT @Async event is fire-and-forget, so a crash between commit and reconcile would else lose it).
+    reconcile:
+      executor:
+        core-pool-size: 4
+        max-pool-size: 8
+        queue-capacity: 500
+      retry:                          # in-thread retry for TRANSIENT lock contention only (deadlock/lock-timeout)
+        initial-backoff: PT0.05S      # 50ms — lock contention clears in millis; keep the pool thread free fast
+        multiplier: 2.0               # exponential growth per attempt
+        randomization-factor: 0.5     # jitter band (±50%) so re-driving nodes don't thundering-herd a hot rule
+        max-attempts: 4               # small cap; the sweep is the durable net for anything that outlives this
+      sweep:
+        interval: PT10M               # @Scheduled fixedDelay — durability backstop that re-drives lost reconciles, not the primary path
+        lock-ttl: PT8M                # SET NX PX single-driver lock; < interval so a crashed driver's next tick re-acquires
   crypto:
     master-password: dev-master-password-change-me  # dev only — override in prod
     salt: 5c0744940b5c369b

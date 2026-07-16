@@ -45,4 +45,25 @@ public class AsyncConfig implements AsyncConfigurer {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * Dedicated bounded pool for metadata-driven auto-mapping re-evaluation, kept OFF the shared
+     * {@code applicationTaskExecutor} so a burst of attribute changes cannot grow the default (unbounded) queue
+     * without limit or starve onboarding/provisioning. The queue is bounded — an overflow degrades to running the
+     * reconcile on the caller (the AFTER_COMMIT publisher thread) rather than dropping it or exhausting memory.
+     */
+    @Bean
+    TaskExecutor mappingReconcileExecutor(
+            @Value("${sso.mapping.reconcile.executor.core-pool-size}") int corePoolSize,
+            @Value("${sso.mapping.reconcile.executor.max-pool-size}") int maxPoolSize,
+            @Value("${sso.mapping.reconcile.executor.queue-capacity}") int queueCapacity) {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(corePoolSize);
+        executor.setMaxPoolSize(maxPoolSize);
+        executor.setQueueCapacity(queueCapacity);
+        executor.setThreadNamePrefix("mapping-reconcile-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.initialize();
+        return executor;
+    }
 }

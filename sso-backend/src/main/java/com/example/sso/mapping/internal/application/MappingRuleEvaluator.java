@@ -13,7 +13,9 @@ import com.example.sso.metadata.AttributePredicate;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.tenancy.OrgTierGuard;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -69,7 +71,9 @@ class MappingRuleEvaluator {
         List<Attribute> userAttributes = attributes.attributesOfInTier(EntityKind.USER, userId.toString());
         Set<UUID> claimedRuleIds = memberships.findByUserId(userId).stream()
                 .map(MappingRuleMembership::getRuleId).collect(Collectors.toSet()); // the user's claims in one query
-        for (MappingRule rule : rules.findAll()) {
+        // Stable id order so concurrent re-evaluations acquire the per-rule locks (in materialize) in the same
+        // sequence — a lock-order cycle can't form, only a clean wait the loser's retry/sweep re-drives.
+        for (MappingRule rule : rules.findAll().stream().sorted(Comparator.comparing(MappingRule::getId)).toList()) {
             if (!Objects.equals(rule.getOrgId(), tier)) {
                 continue; // a user is governed only by rules in its OWN tier — a same-tier group is its only target
             }
@@ -100,21 +104,32 @@ class MappingRuleEvaluator {
     }
 
     private void materialize(MappingRule rule, UUID userId) {
+        if (rules.findByIdForUpdate(rule.getId()).isEmpty()) {
+            return; // deleted concurrently — hold the row lock to serialize against a racing delete/retract
+        }
+        // Claim FIRST (ON CONFLICT DO NOTHING): only the tx that actually inserts the provenance row grants and
+        // audits, so a concurrent twin neither re-grants, double-audits, nor aborts on the unique constraint.
+        if (memberships.insertClaimIfAbsent(rule.getId(), userId, rule.getTargetId(), tierGuard.currentTier()) == 0) {
+            return;
+        }
         applierFor(rule).assign(rule.getTargetId(), userId);
-        memberships.save(MappingRuleMembership.of(rule.getId(), userId, rule.getTargetId(), tierGuard.currentTier()));
         record(AuditType.MAPPING_RULE_APPLIED, rule, userId);
     }
 
-    /** Materialize a whole cohort at once: one batched target assignment, then provenance + audit per user. */
+    /** Materialize a whole cohort at once: claim each provenance row, then one batched grant for the newly-claimed. */
     private void materializeAll(MappingRule rule, Set<UUID> userIds) {
-        if (userIds.isEmpty()) {
+        if (userIds.isEmpty() || rules.findByIdForUpdate(rule.getId()).isEmpty()) {
             return;
         }
-        applierFor(rule).assignAll(rule.getTargetId(), userIds);
         UUID tier = tierGuard.currentTier();
-        memberships.saveAll(userIds.stream()
-                .map(userId -> MappingRuleMembership.of(rule.getId(), userId, rule.getTargetId(), tier)).toList());
-        userIds.forEach(userId -> record(AuditType.MAPPING_RULE_APPLIED, rule, userId));
+        Set<UUID> newlyClaimed = userIds.stream()
+                .filter(userId -> memberships.insertClaimIfAbsent(rule.getId(), userId, rule.getTargetId(), tier) == 1)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (newlyClaimed.isEmpty()) {
+            return;
+        }
+        applierFor(rule).assignAll(rule.getTargetId(), newlyClaimed);
+        newlyClaimed.forEach(userId -> record(AuditType.MAPPING_RULE_APPLIED, rule, userId));
     }
 
     private void retract(MappingRule rule, UUID userId) {

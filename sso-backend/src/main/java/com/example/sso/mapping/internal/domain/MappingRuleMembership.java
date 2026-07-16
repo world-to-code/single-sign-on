@@ -7,14 +7,14 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import java.util.UUID;
 import lombok.AccessLevel;
-import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
  * Provenance of one assignment a {@link MappingRule} materialized: the exact (rule, user, target) it added.
  * Lets a retract (rule deleted, or the user stops matching) remove only rule-managed assignments, never a
- * manually-made one. Immutable.
+ * manually-made one. Immutable and read-only in the domain: rows are written by the evaluator's idempotent
+ * {@code ON CONFLICT DO NOTHING} upsert (race-proof provenance claim), and only ever hydrated by JPA here.
  */
 @Entity
 @Table(name = "mapping_rule_membership")
@@ -33,17 +33,4 @@ public class MappingRuleMembership extends AuditedEntity implements OrgOwned {
 
     @Column(name = "org_id")
     private UUID orgId;
-
-    @Builder(access = AccessLevel.PRIVATE)
-    private MappingRuleMembership(UUID ruleId, UUID userId, UUID targetId, UUID orgId) {
-        this.ruleId = ruleId;
-        this.userId = userId;
-        this.targetId = targetId;
-        this.orgId = orgId;
-    }
-
-    /** A record that {@code ruleId} added {@code userId} to {@code targetId} in the given tier. */
-    public static MappingRuleMembership of(UUID ruleId, UUID userId, UUID targetId, UUID orgId) {
-        return builder().ruleId(ruleId).userId(userId).targetId(targetId).orgId(orgId).build();
-    }
 }

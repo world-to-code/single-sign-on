@@ -53,7 +53,7 @@ class MappingRuleServiceImpl implements MappingRuleService {
     @Override
     @Transactional
     public MappingRuleView update(UUID id, MappingRuleSpec spec) {
-        MappingRule rule = requireInTier(id);
+        MappingRule rule = requireInTierForUpdate(id); // lock before retract/repoint — serialize against async materialize
         String targetName = applier(spec.thenKind()).validateInTier(spec.targetId());
         if (!rule.getTargetId().equals(spec.targetId()) || rule.getThenKind() != spec.thenKind()) {
             evaluator.retractAll(rule); // clear the OLD target's assignments before repointing
@@ -68,7 +68,7 @@ class MappingRuleServiceImpl implements MappingRuleService {
     @Override
     @Transactional
     public void delete(UUID id) {
-        MappingRule rule = requireInTier(id);
+        MappingRule rule = requireInTierForUpdate(id); // lock before retract — a racing materialize then skips (rule gone)
         evaluator.retractAll(rule); // remove every assignment it materialized before dropping the rule
         rules.delete(rule);
         audit(AuditType.MAPPING_RULE_DELETED, rule);
@@ -95,6 +95,11 @@ class MappingRuleServiceImpl implements MappingRuleService {
 
     private MappingRule requireInTier(UUID id) {
         return tierGuard.requireInTier(rules.findById(id), () -> new NotFoundException("mapping rule not found"));
+    }
+
+    /** As {@link #requireInTier} but under a row write-lock, so a mutation serializes against the async materialize. */
+    private MappingRule requireInTierForUpdate(UUID id) {
+        return tierGuard.requireInTier(rules.findByIdForUpdate(id), () -> new NotFoundException("mapping rule not found"));
     }
 
     private MappingTargetApplier applier(MappingTargetKind kind) {
