@@ -132,11 +132,17 @@ async function parse<T>(res: Response): Promise<T> {
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
+export async function apiGet<T>(path: string, retried = false): Promise<T> {
+  lastActivityAt = Date.now(); // a read IS activity — resets the inactivity clocks the timers watch
   const res = await fetch(path, {
     credentials: "include",
     headers: { "Accept-Language": i18n.language, ...adminAuthHeader(path), ...orgContextHeader(path) },
   });
+  // The mandatory session re-auth gates READS too, so a GET can be answered with a step-up challenge — prompt
+  // the modal and retry, rather than surfacing it as a bare "unauthorized" (checked BEFORE the elevation bounce).
+  if (await resolveStepUp(res, retried)) {
+    return apiGet<T>(path, true); // retry once after re-authentication
+  }
   if (handleElevationChallenge(path, res)) {
     return new Promise<T>(() => {}); // navigating away; never resolves
   }
@@ -199,6 +205,28 @@ export function triggerStepUp(reason: StepUpReason = "session", factors?: string
   });
 }
 
+/**
+ * If {@code res} is a step-up challenge (401 + {@code X-Step-Up-Required}) and a handler is registered, run the
+ * re-auth modal. Returns true when the caller should RETRY the request once (re-auth succeeded); throws
+ * {@link StepUpCancelledError} when the user declined a cancelable (action) step-up. Returns false to fall
+ * through to normal handling — and in that case the response body is left UNREAD, so the caller can still parse
+ * it. Shared by every verb, so a step-up challenge on a GET (the mandatory session re-auth gates reads too)
+ * prompts the modal exactly as it does on a mutation, instead of surfacing a bare 401.
+ */
+async function resolveStepUp(res: Response, retried: boolean): Promise<boolean> {
+  if (res.status !== 401 || retried || !stepUpHandler || res.headers.get("X-Step-Up-Required") !== "true") {
+    return false;
+  }
+  const challenge = await res.json().catch(() => ({} as { factors?: string[]; mandatory?: boolean }));
+  const factors = Array.isArray(challenge.factors) ? challenge.factors : undefined;
+  // `mandatory` = the session's periodic re-auth is overdue (server-enforced, non-cancelable); otherwise a
+  // sensitive action the user may still decline.
+  if (await stepUpHandler(challenge.mandatory ? "session" : "action", factors)) {
+    return true;
+  }
+  throw new StepUpCancelledError();
+}
+
 /** Wall-clock of the last API request — the client re-auth/idle timers measure inactivity from here. */
 let lastActivityAt = Date.now();
 export function lastActivityMillis(): number {
@@ -220,17 +248,8 @@ async function send<T>(method: string, path: string, body?: unknown, retried = f
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  if (res.status === 401 && res.headers.get("X-Step-Up-Required") === "true" && !retried && stepUpHandler) {
-    const challenge = await res.json().catch(() => ({} as { factors?: string[]; mandatory?: boolean }));
-    const factors = Array.isArray(challenge.factors) ? challenge.factors : undefined;
-    // `mandatory` = the session's periodic re-auth is overdue (server-enforced, non-cancelable);
-    // otherwise a sensitive action triggered a step-up the user may still decline.
-    const ok = await stepUpHandler(challenge.mandatory ? "session" : "action", factors);
-    if (ok) {
-      return send<T>(method, path, body, true); // retry once after re-authentication
-    }
-    // A declined action: abandon it with no side effects — NOT a logout, NOT a surfaced error.
-    throw new StepUpCancelledError();
+  if (await resolveStepUp(res, retried)) {
+    return send<T>(method, path, body, true); // retry once after re-authentication
   }
   if (handleElevationChallenge(path, res)) {
     return new Promise<T>(() => {}); // navigating away; never resolves
