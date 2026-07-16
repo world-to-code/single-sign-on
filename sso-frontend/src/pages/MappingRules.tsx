@@ -46,15 +46,17 @@ const resourceFetcher = (q: string): Promise<Suggestion[]> =>
     .filter((r) => r.name.toLowerCase().includes(q.toLowerCase()))
     .map((r) => ({ id: r.id, label: r.name })));
 
-const targetFetcher = (kind: MappingTargetKind) =>
-  kind === "ROLE" ? roleFetcher : kind === "RESOURCE_MEMBER" ? resourceFetcher : searchGroups;
-
-const targetPlaceholderKey = (kind: MappingTargetKind) =>
-  kind === "ROLE"
-    ? "mappingRulesRolePlaceholder"
-    : kind === "RESOURCE_MEMBER"
-      ? "mappingRulesResourcePlaceholder"
-      : "mappingRulesGroupPlaceholder";
+/** Per-kind target config. `satisfies` forces every MappingTargetKind to be wired (adding a kind is a compile
+ *  error) while keeping the key strings as literals so the typed `t(...)` accepts them. */
+const targetConfig = {
+  GROUP: { fetcher: searchGroups, placeholderKey: "mappingRulesGroupPlaceholder", optionKey: "mappingRulesKind_GROUP" },
+  ROLE: { fetcher: roleFetcher, placeholderKey: "mappingRulesRolePlaceholder", optionKey: "mappingRulesKind_ROLE" },
+  RESOURCE_MEMBER: {
+    fetcher: resourceFetcher,
+    placeholderKey: "mappingRulesResourcePlaceholder",
+    optionKey: "mappingRulesKind_RESOURCE_MEMBER",
+  },
+} as const satisfies Record<MappingTargetKind, { fetcher: (q: string) => Promise<Suggestion[]>; placeholderKey: string; optionKey: string }>;
 
 /** Auto-mapping rules: users carrying a metadata attribute (key = value) are kept in a target group. */
 export default function MappingRules() {
@@ -195,17 +197,17 @@ export default function MappingRules() {
               <div className="space-y-2">
                 <Label htmlFor="mr-kind">{t("mappingRulesKindLabel")}</Label>
                 <Select id="mr-kind" value={editor.thenKind} onChange={(e) => pickKind(e.target.value as MappingTargetKind)}>
-                  <option value="GROUP">{t("mappingRulesKind_GROUP")}</option>
-                  <option value="ROLE">{t("mappingRulesKind_ROLE")}</option>
-                  <option value="RESOURCE_MEMBER">{t("mappingRulesKind_RESOURCE_MEMBER")}</option>
+                  {(Object.keys(targetConfig) as MappingTargetKind[]).map((k) => (
+                    <option key={k} value={k}>{t(targetConfig[k].optionKey)}</option>
+                  ))}
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label>{t("mappingRulesTargetLabel")}</Label>
                 <SearchSelect
                   key={editor.thenKind}
-                  placeholder={t(targetPlaceholderKey(editor.thenKind))}
-                  fetcher={targetFetcher(editor.thenKind)}
+                  placeholder={t(targetConfig[editor.thenKind].placeholderKey)}
+                  fetcher={targetConfig[editor.thenKind].fetcher}
                   onSelect={(s) => set({ targetId: s?.id ?? "", targetName: s?.label ?? "" })}
                   resetKey={open}
                 />

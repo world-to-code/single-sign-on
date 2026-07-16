@@ -4,6 +4,15 @@ import com.example.sso.mapping.MappingRuleService;
 import com.example.sso.mapping.MappingRuleSpec;
 import com.example.sso.mapping.MappingRuleView;
 import com.example.sso.mapping.MappingTargetKind;
+import com.example.sso.resource.internal.domain.MemberType;
+import com.example.sso.resource.internal.domain.Resource;
+import com.example.sso.resource.internal.domain.ResourceMemberRow;
+import com.example.sso.resource.internal.domain.ResourceMemberRowRepository;
+import com.example.sso.resource.internal.domain.ResourceRepository;
+import com.example.sso.resource.internal.domain.ResourceType;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMember;
+import com.example.sso.resource.internal.domain.ResourceTypeAllowedMemberRepository;
+import com.example.sso.resource.internal.domain.ResourceTypeRepository;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.NewUser;
@@ -47,6 +56,10 @@ class MappingRuleAuthorRevalidationIT extends AbstractIntegrationTest {
     @Autowired UserService users;
     @Autowired OrgContext orgContext;
     @Autowired ApplicationEvents events;
+    @Autowired ResourceRepository resources;
+    @Autowired ResourceTypeRepository types;
+    @Autowired ResourceTypeAllowedMemberRepository allowedMembers;
+    @Autowired ResourceMemberRowRepository resourceMembers;
 
     private final List<UUID> createdUsers = new ArrayList<>();
     private final List<UUID> createdRoles = new ArrayList<>();
@@ -58,6 +71,9 @@ class MappingRuleAuthorRevalidationIT extends AbstractIntegrationTest {
         orgContext.runAsPlatform(() -> {
             ownerJdbc().update("delete from mapping_rule_membership");
             ownerJdbc().update("delete from mapping_rule");
+            resourceMembers.deleteAll();
+            resources.deleteAll();
+            types.deleteAll();
             createdUsers.forEach(id -> ownerJdbc().update("delete from entity_attribute where entity_id = ?", id.toString()));
             createdUsers.forEach(users::delete);
             createdGroups.forEach(groups::delete);
@@ -192,6 +208,47 @@ class MappingRuleAuthorRevalidationIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void aDemotedAuthorAddsNoResourceMembershipAndIsAudited() {
+        // RESOURCE_MEMBER re-validation (canManage off the request thread): a super manages any resource; once
+        // demoted (no ADMIN grants) they manage none, so the resource rule stops materializing.
+        Author author = platform(this::superAuthor);
+        UUID resource = platform(this::targetResource);
+        createRuleAs(author.username(), "dept", "eng", MappingTargetKind.RESOURCE_MEMBER, resource);
+        platform(() -> roles.removeMember(adminRoleId(), author.id())); // demote → no longer unscoped
+
+        UUID user = platform(this::plainUser);
+        platform(() -> tagUser(user, "dept", "eng"));
+        long before = auditCount("MAPPING_RULE_AUTHOR_UNAUTHORIZED", resource);
+
+        platform(() -> evaluator.reevaluateUser(user));
+
+        assertThat(isResourceMember(resource, user)).isFalse();
+        assertThat(auditCount("MAPPING_RULE_AUTHOR_UNAUTHORIZED", resource)).isGreaterThan(before);
+    }
+
+    @Test
+    void aDemotedAuthorAddsNoResourceCohortViaTheSweep() {
+        Author author = platform(this::superAuthor);
+        UUID resource = platform(this::targetResource);
+        createRuleAs(author.username(), "dept", "eng", MappingTargetKind.RESOURCE_MEMBER, resource);
+        platform(() -> roles.removeMember(adminRoleId(), author.id())); // demote
+
+        UUID u1 = platform(this::plainUser);
+        UUID u2 = platform(this::plainUser);
+        platform(() -> {
+            tagUser(u1, "dept", "eng");
+            tagUser(u2, "dept", "eng");
+        });
+        long before = auditCount("MAPPING_RULE_AUTHOR_UNAUTHORIZED", resource);
+
+        platform(() -> sweeper.reconcileAllTiers()); // cohort path: reevaluateRule -> materializeAll
+
+        assertThat(isResourceMember(resource, u1)).isFalse();
+        assertThat(isResourceMember(resource, u2)).isFalse();
+        assertThat(auditCount("MAPPING_RULE_AUTHOR_UNAUTHORIZED", resource)).isGreaterThan(before);
+    }
+
+    @Test
     void aMaterializedGrantAndItsRetractEachFireTheSessionRevocationFanout() {
         // The reorder grants only when insertClaimIfAbsent inserts; assert the access-change fan-out (which drives
         // session termination / token revocation) still fires exactly on the real grant AND on the retract, not
@@ -307,6 +364,18 @@ class MappingRuleAuthorRevalidationIT extends AbstractIntegrationTest {
 
     private boolean inGroup(UUID userId, UUID groupId) {
         return orgContext.callAsPlatform(() -> groups.groupIdsOf(userId)).contains(groupId);
+    }
+
+    /** A global resource whose type allows USER members, a rule can target. */
+    private UUID targetResource() {
+        ResourceType type = types.save(new ResourceType("T-" + suffix(), null));
+        allowedMembers.save(new ResourceTypeAllowedMember(type.getId(), MemberType.USER, null));
+        return resources.save(new Resource("R-" + suffix(), type, null)).getId();
+    }
+
+    private boolean isResourceMember(UUID resourceId, UUID userId) {
+        return orgContext.callAsPlatform(() -> resourceMembers.findByResourceId(resourceId).stream()
+                .anyMatch(row -> row.getMemberId().equals(userId.toString())));
     }
 
     private String usernameOf(UUID userId) {

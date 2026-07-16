@@ -71,6 +71,16 @@ class MappingRuleAuthzIT extends AbstractIntegrationTest {
         assertDenied(() -> controller.update(UUID.randomUUID(), request()));
     }
 
+    @Test
+    void theCreatePermissionAloneIsNotEnoughForAResourceMemberTarget() {
+        // Same instance-level gate for the RESOURCE_MEMBER kind: the permission does not let a scoped actor
+        // auto-populate a resource it cannot manage (mayAssignTarget -> resourceAuth.canManage, by id).
+        actAs(Permissions.MAPPING_RULE_CREATE);
+
+        assertDenied(() -> controller.create(
+                new MappingRuleRequest("dept", "eng", MappingTargetKind.RESOURCE_MEMBER, UUID.randomUUID())));
+    }
+
     private MappingRuleRequest request() {
         return new MappingRuleRequest("dept", "eng", MappingTargetKind.GROUP, UUID.randomUUID());
     }

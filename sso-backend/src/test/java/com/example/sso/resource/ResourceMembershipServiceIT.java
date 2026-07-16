@@ -76,9 +76,12 @@ class ResourceMembershipServiceIT extends AbstractIntegrationTest {
 
     @Test
     void addsAUserWithNoActorAuthorization() {
-        // No SecurityContext at all — the admin path's requireManage would 403 here; the port does not.
+        // No SecurityContext at all — the admin path's requireManage rejects, the port does not (that IS its point).
         UUID resource = globalResource("res", MemberType.USER);
         UUID user = globalUser();
+
+        assertThatThrownBy(() -> adminService.attachMember(resource, MemberType.USER, user.toString()))
+                .isInstanceOf(RuntimeException.class); // admin path needs an acting admin; the port below does not
 
         membership.addUser(resource, user);
 
@@ -101,14 +104,16 @@ class ResourceMembershipServiceIT extends AbstractIntegrationTest {
         UUID user = globalUser();
 
         assertThatThrownBy(() -> membership.addUser(resource, user)).isInstanceOf(BadRequestException.class);
+        assertThat(memberIds(resource)).isEmpty(); // rejected BEFORE any row was written
     }
 
     @Test
     void rejectsANonexistentUser() {
         UUID resource = globalResource("res", MemberType.USER);
+        UUID ghost = UUID.randomUUID();
 
-        assertThatThrownBy(() -> membership.addUser(resource, UUID.randomUUID()))
-                .isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> membership.addUser(resource, ghost)).isInstanceOf(NotFoundException.class);
+        assertThat(memberIds(resource)).isEmpty();
     }
 
     @Test
