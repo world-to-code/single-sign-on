@@ -446,6 +446,68 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void anInConditionAssignsUsersCarryingAnyValueInTheList() {
+        orgContext.runAsPlatform(() -> {
+            UUID group = group("eng-or-infra");
+            UUID eng = user("dept", "eng");
+            UUID infra = user("dept", "infra");
+            UUID sales = user("dept", "sales");
+
+            MappingRuleView rule = mappingRules.create(new MappingRuleSpec(List.of(
+                    new MappingCondition("dept", AttributeOperator.IN, null, List.of("eng", "infra"))),
+                    MappingTargetKind.GROUP, group));
+
+            assertThat(inGroup(eng, group)).isTrue();
+            assertThat(inGroup(infra, group)).isTrue();
+            assertThat(inGroup(sales, group)).isFalse();          // outside the list
+            assertThat(rule.assignedCount()).isEqualTo(2);
+            assertThat(rule.conditions()).singleElement()
+                    .satisfies(c -> assertThat(c.attrOp()).isEqualTo(AttributeOperator.IN))
+                    .satisfies(c -> assertThat(c.attrValues()).containsExactly("eng", "infra"));
+        });
+    }
+
+    @Test
+    void anInCohortIsReconciledAsynchronouslyWhenAnAttributeEntersOrLeavesTheList() {
+        // The per-user (async) path must agree with the union cohort for IN too: gaining a listed value adds the
+        // user, changing to an unlisted value retracts them.
+        UUID group = orgContext.callAsPlatform(() -> group("eng-or-infra"));
+        UUID target = orgContext.callAsPlatform(() -> user("dept", "sales")); // outside the list
+        orgContext.runAsPlatform(() -> mappingRules.create(new MappingRuleSpec(List.of(
+                new MappingCondition("dept", AttributeOperator.IN, null, List.of("eng", "infra"))),
+                MappingTargetKind.GROUP, group)));
+        assertThat(inGroup(target, group)).isFalse();
+
+        orgContext.runAsPlatform(() -> attributes.set(EntityKind.USER, target.toString(), "dept", "infra"));
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(inGroup(target, group)).isTrue());
+
+        orgContext.runAsPlatform(() -> attributes.set(EntityKind.USER, target.toString(), "dept", "legal"));
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(inGroup(target, group)).isFalse());
+    }
+
+    @Test
+    void aCompoundRuleCombinesAnInConditionWithAnEquals() {
+        orgContext.runAsPlatform(() -> {
+            UUID group = group("senior-eng-or-infra");
+            UUID match = user("dept", "infra");                                         // dept IN (eng,infra) ...
+            attributes.set(EntityKind.USER, match.toString(), "level", "senior");       // ... AND level=senior
+            UUID wrongDept = user("dept", "sales");
+            attributes.set(EntityKind.USER, wrongDept.toString(), "level", "senior");   // dept outside the list
+            UUID wrongLevel = user("dept", "eng");
+            attributes.set(EntityKind.USER, wrongLevel.toString(), "level", "junior");  // level mismatch
+
+            mappingRules.create(new MappingRuleSpec(List.of(
+                    new MappingCondition("dept", AttributeOperator.IN, null, List.of("eng", "infra")),
+                    new MappingCondition("level", AttributeOperator.EQUALS, "senior")),
+                    MappingTargetKind.GROUP, group));
+
+            assertThat(inGroup(match, group)).isTrue();
+            assertThat(inGroup(wrongDept, group)).isFalse();
+            assertThat(inGroup(wrongLevel, group)).isFalse();
+        });
+    }
+
+    @Test
     void aRuleNeedsAtLeastOneCondition() {
         orgContext.runAsPlatform(() -> {
             UUID group = group("empty");

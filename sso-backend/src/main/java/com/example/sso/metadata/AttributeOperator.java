@@ -1,5 +1,7 @@
 package com.example.sso.metadata;
 
+import java.util.Collection;
+
 /**
  * How an {@link AttributePredicate} compares a stored attribute. Value operators ({@link #EQUALS},
  * {@link #NOT_EQUALS}) test the key against a specific value; key operators ({@link #EXISTS},
@@ -14,11 +16,18 @@ public enum AttributeOperator {
     /** The entity carries the key with any value. */
     EXISTS,
     /** The entity carries no attribute for the key. */
-    NOT_EXISTS;
+    NOT_EXISTS,
+    /** The entity carries the key with a value in a given list (an OR over values). */
+    IN;
 
-    /** Whether this operator compares against a value (so a predicate/row must carry one). */
+    /** Whether this operator compares against a single value (so a predicate/row must carry one). */
     public boolean requiresValue() {
         return this == EQUALS || this == NOT_EQUALS;
+    }
+
+    /** Whether this operator compares against a list of values (so a predicate/row must carry a non-empty one). */
+    public boolean requiresValueList() {
+        return this == IN;
     }
 
     /** A null operator (a request that omits it) means EQUALS — the backward-compatible default. */
@@ -27,10 +36,11 @@ public enum AttributeOperator {
     }
 
     /** Whether a (possibly null) operator may drive an auto-mapping rule: the POSITIVE, index-able operators only
-     *  (a NOT_* mapping cohort is "everyone without X" — unbounded and un-indexable). One home for the whitelist. */
+     *  (EQUALS, EXISTS, IN — each a union/lookup over entity_attribute; a NOT_* cohort is "everyone without X",
+     *  unbounded and un-indexable). One home for the whitelist. */
     public static boolean mappable(AttributeOperator operator) {
         AttributeOperator op = orDefault(operator);
-        return op == EQUALS || op == EXISTS;
+        return op == EQUALS || op == EXISTS || op == IN;
     }
 
     /**
@@ -39,5 +49,11 @@ public enum AttributeOperator {
      */
     public static boolean valueConsistent(AttributeOperator operator, String value) {
         return (value != null && !value.isBlank()) == orDefault(operator).requiresValue();
+    }
+
+    /** Whether a request's (possibly null) operator and value LIST are shape-consistent: a non-empty list is
+     *  present exactly for a value-list operator (IN). Shared so the DTOs can't drift. */
+    public static boolean valueListConsistent(AttributeOperator operator, Collection<String> values) {
+        return (values != null && !values.isEmpty()) == orDefault(operator).requiresValueList();
     }
 }

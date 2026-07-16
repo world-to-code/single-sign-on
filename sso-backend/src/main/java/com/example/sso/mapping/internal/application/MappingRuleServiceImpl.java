@@ -123,13 +123,12 @@ class MappingRuleServiceImpl implements MappingRuleService {
             throw new BadRequestException("a mapping rule needs at least one condition");
         }
         if (!ruleConditions.stream().allMatch(c -> AttributeOperator.mappable(c.attrOp()))) {
-            throw new BadRequestException("a mapping rule supports only EQUALS or EXISTS");
+            throw new BadRequestException("a mapping rule supports only EQUALS, EXISTS or IN");
         }
     }
 
     private void writeConditions(UUID ruleId, List<MappingCondition> ruleConditions, UUID tier) {
-        ruleConditions.forEach(c -> conditions.save(
-                MappingRuleCondition.of(ruleId, c.attrKey(), c.attrOp(), c.attrValue(), tier)));
+        ruleConditions.forEach(c -> conditions.save(MappingRuleCondition.of(ruleId, c, tier)));
         conditions.flush(); // flush in-scope so RLS WITH CHECK stamps the acting tier on each condition row
     }
 
@@ -163,10 +162,16 @@ class MappingRuleServiceImpl implements MappingRuleService {
 
     /** A human-readable "k op v AND …" rendering of a rule's conditions for the audit trail. */
     private String describe(List<MappingCondition> ruleConditions) {
-        return ruleConditions.stream().map(c -> c.attrValue() == null
-                        ? "%s %s".formatted(c.attrKey(), c.attrOp())
-                        : "%s %s %s".formatted(c.attrKey(), c.attrOp(), c.attrValue()))
-                .collect(Collectors.joining(" AND "));
+        return ruleConditions.stream().map(this::describeCondition).collect(Collectors.joining(" AND "));
+    }
+
+    private String describeCondition(MappingCondition c) {
+        if (c.attrOp() == AttributeOperator.IN) {
+            return "%s IN (%s)".formatted(c.attrKey(), String.join(", ", c.attrValues()));
+        }
+        return c.attrValue() == null
+                ? "%s %s".formatted(c.attrKey(), c.attrOp())
+                : "%s %s %s".formatted(c.attrKey(), c.attrOp(), c.attrValue());
     }
 
     /**

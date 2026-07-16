@@ -13,8 +13,6 @@ import com.example.sso.mapping.internal.domain.MappingRuleMembership;
 import com.example.sso.mapping.internal.domain.MappingRuleMembershipRepository;
 import com.example.sso.mapping.internal.domain.MappingRuleRepository;
 import com.example.sso.metadata.Attribute;
-import com.example.sso.metadata.AttributeOperator;
-import com.example.sso.metadata.AttributePredicate;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.tenancy.OrgTierGuard;
@@ -98,7 +96,7 @@ class MappingRuleEvaluator {
      *  has ≥1; this guards the vacuous all-match). */
     private boolean matchesAll(List<MappingCondition> ruleConditions, List<Attribute> userAttributes) {
         return !ruleConditions.isEmpty()
-                && ruleConditions.stream().allMatch(condition -> predicate(condition).matches(userAttributes));
+                && ruleConditions.stream().allMatch(condition -> condition.toPredicate().matches(userAttributes));
     }
 
     /** The single add/retract decision, shared by both re-evaluation entry points so it can never drift. */
@@ -131,12 +129,18 @@ class MappingRuleEvaluator {
         return cohort == null ? Set.of() : cohort;
     }
 
-    /** The users one condition matches in the acting tier: a value cohort (EQUALS) or a key cohort (EXISTS). */
+    /** The users one condition matches in the acting tier: a value cohort (EQUALS), a key cohort (EXISTS), or the
+     *  UNION of the listed values' cohorts (IN, one query). Exhaustive over the operator — a new one is a compile
+     *  error here, and the un-mappable NOT_* operators (rejected upstream) are a can't-happen invariant. */
     private Set<UUID> cohortOf(MappingCondition condition) {
-        Set<String> ids = condition.attrOp() == AttributeOperator.EXISTS
-                ? attributes.entityIdsWithKeyInTier(EntityKind.USER, condition.attrKey())
-                : attributes.entityIdsWithInTier(EntityKind.USER, condition.attrKey(), condition.attrValue());
-        return toUserIds(ids);
+        String key = condition.attrKey();
+        return switch (condition.attrOp()) {
+            case EQUALS -> toUserIds(attributes.entityIdsWithInTier(EntityKind.USER, key, condition.attrValue()));
+            case EXISTS -> toUserIds(attributes.entityIdsWithKeyInTier(EntityKind.USER, key));
+            case IN -> toUserIds(attributes.entityIdsWithAnyValueInTier(EntityKind.USER, key, condition.attrValues()));
+            case NOT_EQUALS, NOT_EXISTS ->
+                    throw new IllegalStateException("un-mappable operator reached a cohort: " + condition.attrOp());
+        };
     }
 
     private Set<UUID> intersect(Set<UUID> a, Set<UUID> b) {
@@ -145,10 +149,6 @@ class MappingRuleEvaluator {
 
     private List<MappingCondition> conditionsOf(UUID ruleId) {
         return conditions.findByRuleId(ruleId).stream().map(MappingRuleCondition::toValue).toList();
-    }
-
-    private AttributePredicate predicate(MappingCondition condition) {
-        return new AttributePredicate(condition.attrKey(), condition.attrOp(), condition.attrValue());
     }
 
     private void materialize(MappingRule rule, UUID userId) {

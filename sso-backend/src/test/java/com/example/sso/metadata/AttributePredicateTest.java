@@ -50,6 +50,25 @@ class AttributePredicateTest {
     }
 
     @Test
+    void inMatchesAnyValueInTheListAndNothingOutsideIt() {
+        AttributePredicate deptInEngOrSales = AttributePredicate.in("department", List.of("engineering", "sales"));
+        assertThat(deptInEngOrSales.matches(HAS_ENG)).isTrue();
+        assertThat(deptInEngOrSales.matches(HAS_SALES)).isTrue();
+        assertThat(deptInEngOrSales.matches(List.of(new Attribute("department", "legal")))).isFalse();
+        assertThat(deptInEngOrSales.matches(NO_DEPARTMENT)).isFalse();
+    }
+
+    @Test
+    void inRequiresANonEmptyListAndNoScalarValue() {
+        assertThatThrownBy(() -> new AttributePredicate("department", AttributeOperator.IN, null, List.of()))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new AttributePredicate("department", AttributeOperator.IN, "eng", List.of("eng")))
+                .isInstanceOf(IllegalArgumentException.class); // IN carries the list, not a scalar value
+        assertThatThrownBy(() -> new AttributePredicate("department", AttributeOperator.EQUALS, "eng",
+                List.of("eng"))).isInstanceOf(IllegalArgumentException.class); // a scalar op must not carry a list
+    }
+
+    @Test
     void emptyAttributesSatisfyOnlyTheNegativeOperators() {
         List<Attribute> none = List.of();
         assertThat(AttributePredicate.equals("department", "engineering").matches(none)).isFalse();

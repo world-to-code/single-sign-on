@@ -3,13 +3,15 @@ package com.example.sso.admin.internal.mapping.api;
 import com.example.sso.metadata.AttributeOperator;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * One mapping-rule condition's bean-validation: a bounded identifier key, a positive operator (EQUALS/EXISTS),
- * and a value present exactly for EQUALS. Guards against a malformed condition reaching the service.
+ * One mapping-rule condition's bean-validation: a bounded identifier key, a positive operator (EQUALS/EXISTS/IN),
+ * a scalar value present exactly for EQUALS, and a bounded non-empty value list exactly for IN. Guards against a
+ * malformed condition reaching the service.
  */
 class MappingConditionRequestTest {
 
@@ -46,6 +48,39 @@ class MappingConditionRequestTest {
         assertThat(validator.validate(new MappingConditionRequest("dept", AttributeOperator.EXISTS, null))).isEmpty();
         assertThat(validator.validate(new MappingConditionRequest("dept", AttributeOperator.EXISTS, "eng")))
                 .isNotEmpty(); // a value on EXISTS is inconsistent
+    }
+
+    @Test
+    void anInConditionRequiresANonEmptyValueListAndNoScalarValue() {
+        assertThat(validator.validate(new MappingConditionRequest("dept", AttributeOperator.IN, null,
+                List.of("eng", "infra")))).isEmpty();
+        assertThat(validator.validate(new MappingConditionRequest("dept", AttributeOperator.IN, null, List.of())))
+                .isNotEmpty(); // empty list
+        assertThat(validator.validate(new MappingConditionRequest("dept", AttributeOperator.IN, "eng",
+                List.of("eng")))).isNotEmpty(); // a scalar value alongside IN is inconsistent
+    }
+
+    @Test
+    void aBlankOrOversizedValueInTheListIsRejected() {
+        assertThat(validator.validate(new MappingConditionRequest("dept", AttributeOperator.IN, null,
+                List.of("eng", " ")))).isNotEmpty();                                   // blank element
+        assertThat(validator.validate(new MappingConditionRequest("dept", AttributeOperator.IN, null,
+                List.of("v".repeat(256))))).isNotEmpty();                              // element > 255
+    }
+
+    @Test
+    void aNonInConditionMustNotCarryAValueList() {
+        assertThat(validator.validate(new MappingConditionRequest("dept", AttributeOperator.EQUALS, "eng",
+                List.of("infra")))).isNotEmpty();
+    }
+
+    @Test
+    void anInRequestMapsToAConditionCarryingTheList() {
+        assertThat(new MappingConditionRequest("dept", AttributeOperator.IN, null, List.of("eng", "infra"))
+                .toCondition())
+                .satisfies(c -> assertThat(c.attrOp()).isEqualTo(AttributeOperator.IN))
+                .satisfies(c -> assertThat(c.attrValues()).containsExactly("eng", "infra"))
+                .satisfies(c -> assertThat(c.attrValue()).isNull());
     }
 
     @Test

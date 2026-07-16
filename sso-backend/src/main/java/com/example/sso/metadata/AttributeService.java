@@ -59,4 +59,10 @@ public interface AttributeService {
      * rather than a specific value.
      */
     Set<String> entityIdsWithKeyInTier(EntityKind kind, String key);
+
+    /**
+     * The ids of the entities of this kind carrying {@code key} with a value in {@code values}, in the ACTING
+     * TIER only — the IN cohort (a union over the values) resolved in ONE query rather than per value.
+     */
+    Set<String> entityIdsWithAnyValueInTier(EntityKind kind, String key, Collection<String> values);
 }
