@@ -52,6 +52,13 @@ public interface UserService {
      */
     Optional<UUID> orgIdOf(UUID userId);
 
+    /**
+     * A user's username, resolved authoritatively regardless of the caller's RLS context — for a browser-less
+     * path (e.g. a scheduled session-termination re-drive) that has no tenant/security context bound. Empty for
+     * an unknown id.
+     */
+    Optional<String> usernameOf(UUID userId);
+
     List<UserAccount> findAll();
 
     /** A DB-paged slice of the users whose id is in {@code ids} — for a scoped admin's directory. */

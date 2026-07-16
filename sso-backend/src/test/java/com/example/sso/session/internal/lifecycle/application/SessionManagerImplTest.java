@@ -1,23 +1,15 @@
 package com.example.sso.session.internal.lifecycle.application;
 
-import com.example.sso.audit.AuditRecord;
-import com.example.sso.audit.AuditService;
-import com.example.sso.audit.AuditType;
 import com.example.sso.authpolicy.factor.Factors;
-import com.example.sso.organization.OrganizationAccessRevokedEvent;
 import com.example.sso.session.lifecycle.SessionMetadata;
 import com.example.sso.session.lifecycle.SessionMetadataStore;
 import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.shared.error.NotFoundException;
-import com.example.sso.user.account.UserAccessChangedEvent;
-import com.example.sso.user.account.UserAccount;
-import com.example.sso.user.account.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -30,7 +22,6 @@ import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.session.MapSession;
 import org.springframework.session.Session;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
@@ -41,7 +32,6 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -55,8 +45,9 @@ import static org.mockito.Mockito.when;
  * Unit test for {@link SessionManagerImpl#registerAndEnforceLimit} — the concurrent-session cap that
  * our custom JSON login must enforce by hand (Spring's strategy does not run). The unit's job IS an
  * interaction (register the session, evict the overflow), so these tests {@code verify()}: over-limit
- * evicts the OLDEST sessions via {@code expireNow()}, at/under-limit evicts nothing, and 0 means
- * unlimited. {@code revoke} is covered for its not-found path.
+ * evicts the OLDEST sessions via hard delete, at/under-limit evicts nothing, and 0 means unlimited.
+ * {@code terminateForUser} org-scoping and {@code revoke} are covered too. The access-change listeners
+ * that used to live here now sit in {@link AccessChangeSessionTerminator} and are tested there.
  */
 @ExtendWith(MockitoExtension.class)
 class SessionManagerImplTest {
@@ -71,20 +62,12 @@ class SessionManagerImplTest {
     private UserSessionPolicy sessionPolicy;
     @Mock
     private FindByIndexNameSessionRepository<Session> sessionRepository;
-    @Mock
-    private UserService users;
-    @Mock
-    private AuditService audit;
 
     private SessionManagerImpl manager;
 
     @BeforeEach
     void setUp() {
-        // A real termination wrapper with max-attempts=1 (no retry), so a store failure surfaces as an audit at once.
-        ResilientSessionTermination termination =
-                new ResilientSessionTermination(audit, Duration.ofMillis(1), 2.0, 0.5, 1);
-        manager = new SessionManagerImpl(sessionRegistry, sessionMetadata, sessionPolicy, sessionRepository, users,
-                termination);
+        manager = new SessionManagerImpl(sessionRegistry, sessionMetadata, sessionPolicy, sessionRepository);
     }
 
     private MockHttpServletRequest requestWithSession() {
@@ -206,6 +189,21 @@ class SessionManagerImplTest {
     }
 
     @Test
+    void terminateForUserForANonNullOrgLeavesAMarkerlessGlobalSessionAlone() {
+        // The inverse of the null-org case: a TENANT access-change (non-null org) must never delete a user's
+        // markerless global/platform session — only the org-marked one goes.
+        UUID org = UUID.randomUUID();
+        when(sessionRepository.findByPrincipalName(USER))
+                .thenReturn(Map.of("sid-global", new MapSession(), "sid-org", sessionBoundTo(org)));
+
+        int count = manager.terminateForUser(USER, org);
+
+        verify(sessionRepository).deleteById("sid-org");
+        verify(sessionRepository, never()).deleteById("sid-global"); // markerless global session survives
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
     void terminateForUserWithNoOrgDeletesOnlyTheMarkerlessGlobalSessions() {
         // A global/platform account (orgId null) matches only sessions carrying NO org marker — never a tenant
         // user's org-bound session that happens to share the username.
@@ -218,77 +216,6 @@ class SessionManagerImplTest {
         verify(sessionRepository).deleteById("sid-global");
         verify(sessionRepository, never()).deleteById("sid-org");
         assertThat(count).isEqualTo(1);
-    }
-
-    @Test
-    void userAccessChangedEventDeletesOnlyTheUsersOwnOrgSessions() {
-        UUID org = UUID.randomUUID();
-        UUID other = UUID.randomUUID();
-        when(sessionRepository.findByPrincipalName(USER))
-                .thenReturn(Map.of("sid-a", sessionBoundTo(org), "sid-other", sessionBoundTo(other)));
-
-        manager.onUserAccessChanged(new UserAccessChangedEvent(USER, org));
-
-        verify(sessionRepository).deleteById("sid-a");
-        verify(sessionRepository, never()).deleteById("sid-other"); // a same-named user in another tenant survives
-    }
-
-    @Test
-    void aFailedTerminationOnAccessChangeIsAuditedNotSwallowed() {
-        // A store failure in the AFTER_COMMIT termination must not vanish: after retries it is audited so a
-        // session that outlived the access change (until its TTL) is observable rather than silent.
-        when(sessionRepository.findByPrincipalName(USER)).thenThrow(new RedisConnectionFailureException("down"));
-
-        manager.onUserAccessChanged(new UserAccessChangedEvent(USER, null)); // does not throw out of AFTER_COMMIT
-
-        verify(audit).record(argThat((AuditRecord r) ->
-                r.type() == AuditType.SESSION_TERMINATION_FAILED && !r.success() && USER.equals(r.principal())));
-    }
-
-    @Test
-    void membershipRevokeDeletesOnlyThatOrgsSessions() {
-        // The user is a member of two orgs and has a live session in each. Revoking membership in org A must
-        // kill only the org-A session; the org-B session (still a valid membership) survives.
-        UUID orgA = UUID.randomUUID();
-        UUID orgB = UUID.randomUUID();
-        UUID userId = UUID.randomUUID();
-        UserAccount account = mock(UserAccount.class);
-        when(account.getUsername()).thenReturn(USER);
-        when(users.findById(userId)).thenReturn(Optional.of(account));
-        when(sessionRepository.findByPrincipalName(USER))
-                .thenReturn(Map.of("sid-a", sessionBoundTo(orgA), "sid-b", sessionBoundTo(orgB)));
-
-        manager.onOrganizationAccessRevoked(new OrganizationAccessRevokedEvent(orgA, userId));
-
-        verify(sessionRepository).deleteById("sid-a");
-        verify(sessionRepository, never()).deleteById("sid-b");
-    }
-
-    @Test
-    void membershipRevokeForAnUnresolvableUserIsANoOp() {
-        UUID userId = UUID.randomUUID();
-        when(users.findById(userId)).thenReturn(Optional.empty());
-
-        manager.onOrganizationAccessRevoked(new OrganizationAccessRevokedEvent(UUID.randomUUID(), userId));
-
-        verify(sessionRepository, never()).deleteById(anyString());
-        verify(sessionRepository, never()).findByPrincipalName(anyString());
-    }
-
-    @Test
-    void aSessionWithoutTheOrgMarkerIsNeverTerminated() {
-        // A session whose SecurityContext carries no ORG_ marker (or none at all) must be left alone.
-        UUID orgA = UUID.randomUUID();
-        UUID userId = UUID.randomUUID();
-        UserAccount account = mock(UserAccount.class);
-        when(account.getUsername()).thenReturn(USER);
-        when(users.findById(userId)).thenReturn(Optional.of(account));
-        when(sessionRepository.findByPrincipalName(USER))
-                .thenReturn(Map.of("sid-none", new MapSession())); // no security context attribute
-
-        manager.onOrganizationAccessRevoked(new OrganizationAccessRevokedEvent(orgA, userId));
-
-        verify(sessionRepository, never()).deleteById(anyString());
     }
 
     /** A session whose stored SecurityContext carries the {@code ORG_<orgId>} authority (the login-org marker). */

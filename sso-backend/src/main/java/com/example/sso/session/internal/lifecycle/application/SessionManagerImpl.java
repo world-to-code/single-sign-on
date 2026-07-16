@@ -1,7 +1,6 @@
 package com.example.sso.session.internal.lifecycle.application;
 
 import com.example.sso.authpolicy.factor.Factors;
-import com.example.sso.organization.OrganizationAccessRevokedEvent;
 import com.example.sso.session.lifecycle.SessionLifecycle;
 import com.example.sso.session.lifecycle.UserSessions;
 import com.example.sso.session.lifecycle.SessionMetadata;
@@ -9,9 +8,6 @@ import com.example.sso.session.lifecycle.SessionMetadataStore;
 import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.shared.web.ClientIp;
-import com.example.sso.user.account.UserAccessChangedEvent;
-import com.example.sso.user.account.UserAccount;
-import com.example.sso.user.account.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.util.ArrayList;
@@ -31,8 +27,6 @@ import org.springframework.security.web.context.HttpSessionSecurityContextReposi
 import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.session.Session;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * Implements both session roles ({@link SessionLifecycle} + {@link UserSessions}): bridges the servlet
@@ -49,8 +43,6 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
     private final SessionMetadataStore sessionMetadata;
     private final UserSessionPolicy userSessionPolicy;
     private final FindByIndexNameSessionRepository<? extends Session> sessionRepository;
-    private final UserService users;
-    private final ResilientSessionTermination resilientTermination;
 
     @Override
     public void registerAndEnforceLimit(HttpServletRequest request, String username) {
@@ -171,30 +163,6 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
      */
     private void hardDelete(SessionInformation info) {
         sessionRepository.deleteById(info.getSessionId());
-    }
-
-    /** When a user is disabled/deleted/re-roled, end their live sessions so a frozen SecurityContext can't
-     *  keep acting on stale authorities until idle/absolute expiry. Runs AFTER_COMMIT so a rolled-back
-     *  mutation never terminates sessions (fallbackExecution covers publishers outside a transaction). */
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
-    public void onUserAccessChanged(UserAccessChangedEvent event) {
-        // Resilient: retry a transient store blip, audit a hard failure — never let this AFTER_COMMIT cleanup fail
-        // silently (a swallowed exception would leave the session alive on stale authority until its TTL).
-        resilientTermination.terminate(event.username(), event.orgId(),
-                () -> terminateForUser(event.username(), event.orgId())); // scoped to the user's own org
-    }
-
-    /**
-     * A user's membership in an org was revoked (or the org was suspended, which fans this out per member).
-     * End that user's live sessions bound to THAT org only — a session logged into another org they still
-     * belong to must survive. AFTER_COMMIT so a rolled-back membership change never terminates sessions.
-     */
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
-    public void onOrganizationAccessRevoked(OrganizationAccessRevokedEvent event) {
-        users.findById(event.userId())
-                .map(UserAccount::getUsername)
-                .ifPresent(username -> resilientTermination.terminate(username, event.orgId(),
-                        () -> terminateForUser(username, event.orgId())));
     }
 
     /** True when the session's stored SecurityContext carries the given org marker as an authority. */

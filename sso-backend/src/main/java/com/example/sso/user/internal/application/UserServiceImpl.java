@@ -127,6 +127,14 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
+    public Optional<String> usernameOf(UUID userId) {
+        // RLS-bypassing so a context-free thread (the durable session-termination sweep) resolves it correctly
+        // even if app_user later gains RLS — the same authoritative-lookup posture as orgIdOf above.
+        return orgContext.callAsPlatform(() -> users.findById(userId).map(AppUser::getUsername));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<UserAccount> findAll() {
         return hydrator.hydrateUsers(users.findAll()).stream().map(UserAccount.class::cast).toList();
     }

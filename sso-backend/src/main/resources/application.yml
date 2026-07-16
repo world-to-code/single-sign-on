@@ -126,13 +126,27 @@ sso:
     session-absolute-lifetime-minutes: 480  # force full re-authentication after 8h regardless of activity
     stepup-challenge-validity-minutes: 15   # after this, an abandoned step-up challenge is ignored as stale
     # Revocation propagation must not fail SILENTLY: when an access change (disable/lock/role-revoke) terminates a
-    # user's sessions, a transient session-store blip is retried; a hard failure is audited (SESSION_TERMINATION_FAILED)
-    # so a session that outlived the change until its TTL is observable rather than invisible.
+    # user's sessions, a fast in-thread retry clears a momentary store blip; if that is exhausted (or a crash
+    # interrupts it), the termination is handed to the DURABLE sweep below — persisted in Redis and re-driven
+    # across restarts until delivered or the give-up cap — so a session is re-driven, not merely observed.
     termination-retry:
       initial-backoff: PT0.05S              # 50ms — a transient store blip clears fast
       multiplier: 2.0                       # exponential growth per attempt
       randomization-factor: 0.5             # jitter band (±50%)
-      max-attempts: 4                       # then audit + log; the session's absolute TTL remains the backstop
+      max-attempts: 4                       # then hand off to the durable sweep (audited SESSION_TERMINATION_DEFERRED)
+      # Durable backstop: a termination the in-thread retry could not complete is kept in Redis and re-driven by a
+      # scheduled sweep until it succeeds or the give-up cap, surviving long store outages and process restarts so
+      # a revocation is never silently lost. Give-up is audited SESSION_TERMINATION_FAILED (bounded + observable).
+      durable:
+        initial-backoff: PT10S              # first durable re-drive ~10s after hand-off
+        multiplier: 2.0                     # exponential growth per attempt
+        randomization-factor: 0.5           # jitter band (±50%) so a fleet does not thundering-herd a store recovery
+        max-attempts: 8                     # ~30min total, then audit SESSION_TERMINATION_FAILED and abandon
+        registry-ttl: PT2H                  # must exceed the give-up horizon (a startup guard enforces this)
+        sweep-interval: PT30S               # @Scheduled fixedDelay — how often a node tries to drive the sweep
+        lock-ttl: PT25S                     # SET NX PX single-driver lock; < sweep-interval, > worst-case batch
+        processing-lease: PT2M              # visibility timeout: a claimed entry re-surfaces if the driver dies
+        sweep-batch-size: 200               # max entries re-driven per tick (bounds lock-hold time)
   logout:
     # Dedicated bounded pool for OIDC back-channel + SAML SLO fan-out, kept OFF the shared @Async pool so a
     # slow relying party can never starve tenant onboarding/provisioning (and vice versa). A full queue
