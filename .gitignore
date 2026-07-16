@@ -27,6 +27,13 @@ bin/
 *.pem
 .env
 .env.*
+# SOPS age PRIVATE keys — never commit (the PUBLIC key goes in .sops.yaml). Encrypted secrets/*.sops.yaml are safe.
+age.key
+*.agekey
+keys.txt
+# A decrypted secrets file must never be committed (encrypt in place, or use `sops exec-env`).
+secrets/*.dec.yaml
+secrets/prod.yaml
 
 # ---- Runtime data (SAML keystore, etc.) ----
 data/

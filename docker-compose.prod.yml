@@ -1,0 +1,105 @@
+# Local full-stack, prod-topology run of the SPLIT deployment: an nginx edge (frontend) serves the SPA and
+# reverse-proxies the API-only backend, so the browser sees ONE origin (http://localhost). This mirrors
+# how it deploys to Kubernetes (edge/Ingress + backend Service), letting you verify the split locally.
+#
+#   sops exec-env secrets/prod.sops.yaml 'docker compose -f docker-compose.prod.yml up --build'   # → http://localhost
+#
+# Secrets are REQUIRED from the environment (${VAR:?…}) — this prod-topology file deliberately refuses to boot
+# with a weak baked-in default (no fail-open with a known admin password or a fixed crypto key). Supply them by
+# decrypting the SOPS secrets file into the environment:
+#   sops exec-env secrets/prod.sops.yaml 'docker compose -f docker-compose.prod.yml up --build'
+# See .sops.yaml. (The committed secrets/prod.sops.yaml holds local-dev throwaways; `sops` it to set real values.)
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: sso
+      POSTGRES_USER: sso
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set via sops exec-env secrets/prod.sops.yaml}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Provisions the non-superuser runtime role `sso_app` on first init, so RLS is enforced (the app
+      # connects as it; Flyway migrates as the owner `sso`).
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:5432:5432"   # loopback only (debug); not LAN-exposed
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sso -d sso"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+    # Password-protected (the backend prod profile refuses a passwordless Redis — it holds SecurityContexts);
+    # keyspace notifications drive idle-expiry logout propagation.
+    command: ["redis-server", "--notify-keyspace-events", "Egx", "--requirepass", "${REDIS_PASSWORD:?set via sops exec-env secrets/prod.sops.yaml}"]
+    ports:
+      - "127.0.0.1:6379:6379"   # loopback only (debug)
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"${REDIS_PASSWORD:?set via sops exec-env secrets/prod.sops.yaml}\" ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "127.0.0.1:8025:8025"   # MailHog UI, loopback only
+
+  backend:
+    build:
+      context: ./sso-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      # --- datastores ---
+      DB_URL: jdbc:postgresql://postgres:5432/sso
+      DB_USERNAME: sso            # schema owner (Flyway migrates as this)
+      DB_PASSWORD: ${DB_PASSWORD:?set via sops exec-env secrets/prod.sops.yaml}
+      DB_APP_USERNAME: sso_app    # non-superuser runtime role (RLS enforced)
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:?set via sops exec-env secrets/prod.sops.yaml}
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set via sops exec-env secrets/prod.sops.yaml}
+      MAIL_HOST: mailhog
+      MAIL_PORT: "1025"
+      # --- the PUBLIC edge origin: issuer, redirects, SAML locations must all be what the browser sees ---
+      SSO_ISSUER: http://localhost
+      SSO_CORS_ORIGINS: http://localhost
+      SSO_ADMIN_CONSOLE_REDIRECT_URIS: http://localhost/admin/callback
+      SSO_SAML_ENTITY_ID: http://localhost/saml2/idp/metadata
+      SSO_SAML_SSO_LOCATION: http://localhost/saml2/idp/sso
+      SSO_SAML_SLO_LOCATION: http://localhost/saml2/idp/slo
+      # Trust X-Forwarded-* from the nginx edge (docker private ranges + loopback). In real prod pin the LB CIDR.
+      SSO_TRUSTED_PROXIES: "127\\.0\\.0\\.1|10\\..*|192\\.168\\..*|172\\.(1[6-9]|2[0-9]|3[01])\\..*"
+      # --- secrets: REQUIRED — supplied by decrypting secrets/prod.sops.yaml (sops exec-env …); no default ---
+      SSO_ADMIN_PASSWORD: ${SSO_ADMIN_PASSWORD:?set via sops exec-env secrets/prod.sops.yaml}
+      SSO_SAML_KEYSTORE_PASSWORD: ${SSO_SAML_KEYSTORE_PASSWORD:?set via sops exec-env secrets/prod.sops.yaml}
+      SSO_CRYPTO_MASTER_PASSWORD: ${SSO_CRYPTO_MASTER_PASSWORD:?set via sops exec-env secrets/prod.sops.yaml}
+      SSO_CRYPTO_SALT: ${SSO_CRYPTO_SALT:?set via sops exec-env secrets/prod.sops.yaml}   # HEX (Encryptors.delux hex-decodes it)
+      # Demo OIDC client (known secret) — OFF by default (never in prod). For local scripts/oidc_authcode_flow.py
+      # set SSO_DEMO_CLIENT_ENABLED=true via your env/secrets.
+      SSO_DEMO_CLIENT_ENABLED: ${SSO_DEMO_CLIENT_ENABLED:-false}
+    volumes:
+      - saml-data:/data   # persist the generated SAML keystore across restarts
+    # The backend (Spring Boot on :9000, this project's auth-server port) is NOT published: it is reached only
+    # through the edge, exactly as in production. Uncomment to hit the API directly for local debugging.
+    # ports:
+    #   - "9000:9000"
+
+  frontend:
+    build:
+      context: ./sso-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "80:80"   # the single public origin (change the host side if :80 is taken)
+
+volumes:
+  pgdata:
+  saml-data:

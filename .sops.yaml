@@ -1,0 +1,22 @@
+# SOPS (github.com/getsops/sops) rules for this repo's secrets.
+#
+# Secrets live ENCRYPTED at secrets/*.sops.yaml — only the age recipient(s) below can decrypt them, so the
+# ciphertext is safe to commit. CI (.github/workflows/ci.yml, the `secrets` job) FAILS the build if any
+# secrets/*.sops.yaml is committed unencrypted.
+#
+# One-time setup:
+#   age-keygen -o age.key            # your PRIVATE key — keep it OUT of git (already .gitignored)
+#   age-keygen -y age.key            # prints your PUBLIC key (age1...) — paste it into `age:` below
+# Create / encrypt:
+#   cp secrets/prod.example.yaml secrets/prod.sops.yaml   # then fill in REAL values
+#   sops --encrypt --in-place secrets/prod.sops.yaml
+#   sops secrets/prod.sops.yaml       # edit later (decrypts into $EDITOR, re-encrypts on save)
+# Run the stack with the decrypted secrets in the environment (never written to disk):
+#   sops exec-env secrets/prod.sops.yaml 'docker compose -f docker-compose.prod.yml up'
+# For CI/CD decryption, expose the private key as the SOPS_AGE_KEY secret (or use a KMS/PGP master key).
+creation_rules:
+  - path_regex: secrets/.*\.sops\.ya?ml$
+    # Encrypt only the VALUES of secret-looking keys; keys + structure stay readable in the git diff.
+    encrypted_regex: "^(.*_PASSWORD|.*_SECRET|.*_SALT|.*_TOKEN|.*_KEYSTORE_.*)$"
+    age: >-
+      age1REPLACE_WITH_YOUR_PUBLIC_KEY_FROM_age-keygen_-y

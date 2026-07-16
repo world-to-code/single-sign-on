@@ -9,7 +9,7 @@ do not duplicate them here.
 
 ```
 sso-backend/    Spring Boot modular monolith (the deployable) — see sso-backend/CLAUDE.md
-sso-frontend/   React + Vite SPA; `npm run build` emits into sso-backend/src/main/resources/static
+sso-frontend/   React + Vite SPA; `npm run build` emits a standalone `dist/` bundle, served by the nginx edge
 scripts/        Python live-flow verifiers (OIDC / SAML / SCIM / admin)
 test-client/    Standalone OIDC RP for manual testing
 docs/           Project docs (e.g. commit-convention.md)
@@ -17,7 +17,11 @@ docker-compose.yml   Postgres :5432, MailHog :8025 (dev infra)
 ```
 
 Dev topology: backend on `:9000`; frontend dev server on `:5173` (Vite proxies API/OIDC/SAML/
-webauthn to `:9000`). Prod: the SPA is bundled into the backend jar (single origin, single deploy).
+webauthn to `:9000`). Prod: **split** — the SPA is a standalone static bundle served by an **nginx
+edge** that reverse-proxies those same paths to the **API-only backend**, so the browser still sees
+ONE origin (same-origin session cookie + CSRF + host-derived per-tenant issuer preserved). Per-service
+Dockerfiles (`sso-backend/Dockerfile`, `sso-frontend/Dockerfile`); `docker-compose.prod.yml` runs the
+full split stack locally (edge on `:80`). `SSO_ISSUER` must be the public edge origin.
 
 ## Git & commits (STRICT)
 

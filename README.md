@@ -62,9 +62,10 @@ A single deployable, structured internally as a **Spring Modulith modular monoli
 domain (`user`, `organization`, `authpolicy`, `session`, `oidc`, `saml`, `scim`, `admin`,
 `onboarding`, `resource`, …) is an enforced module exposing only a root API (interfaces + record
 DTOs); entities and repositories never cross a module boundary, and `ModularityTests` keeps the
-boundaries honest. The React SPA is built **into the backend's static resources** and served from
-the IdP origin, so it shares the IdP's **session cookie** (no cross-origin token juggling for the
-first-party UI). Isolated `SecurityFilterChain`s separate concerns: the OAuth2 Authorization
+boundaries honest. The React SPA is a **standalone static bundle** served by an **nginx edge** that
+reverse-proxies the API/OIDC/SAML paths to the **API-only backend**, so the browser sees ONE origin
+and the SPA shares the IdP's **session cookie** (no cross-origin token juggling for the first-party
+UI). Isolated `SecurityFilterChain`s separate concerns: the OAuth2 Authorization
 Server (protocol endpoints, with a **per-tenant host filter**), the SCIM chain (stateless bearer),
 and the app/SPA chain (session + CSRF + tenant-context + RLS).
 
@@ -108,10 +109,10 @@ column and are isolated at the **application layer** instead (every read is expl
 
 ### 2. Tenant resolution — subdomain, host-derived issuer
 
-Each tenant lives at `{slug}.base` (e.g. `acme.localhost:9000`, `acme.idp.example.com`). The host
+Each tenant lives at `{slug}.base` (e.g. `acme.localhost`, `acme.idp.example.com`). The host
 resolves the org before authentication, so:
 
-- the **OIDC issuer is per-tenant** (`http://acme.localhost:9000` → its own discovery + JWKS),
+- the **OIDC issuer is per-tenant** (`http://acme.localhost` → its own discovery + JWKS),
   backed by that tenant's signing key (with a global fallback);
 - sessions are **host-bound** — a session established on one tenant's subdomain is rejected on
   another's (`TenantSessionHostGuard`), and an unknown subdomain 404s (`TenantUnknownSubdomainGuard`);
@@ -317,15 +318,15 @@ admin gate can reason about strength and freshness:
 
 ```
 mini-sso-system/
-├── sso-backend/        Spring Boot IdP (Gradle project). Serves the built SPA from
-│   ├── src/            its static resources; owns all auth/crypto/protocol logic.
+├── sso-backend/        Spring Boot IdP (Gradle project). API-only; owns all auth/crypto/
+│   ├── src/            protocol logic. Dockerfile = the API image (no SPA bundled).
 │   ├── data/           runtime SAML keystore (gitignored)
 │   └── build.gradle, settings.gradle, gradlew, gradle/
-├── sso-frontend/       React admin + login SPA (Vite). Builds INTO sso-backend's
-│   └── src/            static resources (single-origin deployable).
-├── docker-compose.yml  dev infra: PostgreSQL + MailHog
-├── Dockerfile          self-contained multi-stage build (context = repo root):
-│                       stage 1 builds the SPA, stage 2 bundles it into the jar.
+├── sso-frontend/       React admin + login SPA (Vite). Builds a standalone dist/ bundle;
+│   ├── src/            Dockerfile = the nginx EDGE (serves dist/ + reverse-proxies the API).
+│   └── nginx/          edge config (SPA fallback + backend proxy; mirrors the vite dev proxy)
+├── docker-compose.yml       dev infra: PostgreSQL + Redis + MailHog
+├── docker-compose.prod.yml  full split stack (edge + API backend + datastores) for local prod-topology
 ├── scripts/            Python end-to-end flow checks (OIDC/SAML/admin)
 └── test-client/        sample OIDC RP for manual testing
 ```
@@ -337,26 +338,28 @@ mini-sso-system/
 Prerequisites: JDK 21, Docker, Node 22.
 
 ```bash
-docker compose up -d                                       # PostgreSQL + MailHog (onboarding/OTT emails)
-cd sso-frontend && npm install && npm run build && cd ..   # build SPA into sso-backend static
-cd sso-backend && ./gradlew bootRun                        # IdP + SPA at http://localhost:9000
+docker compose up -d                              # dev infra: PostgreSQL + Redis + MailHog
+cd sso-backend && ./gradlew bootRun               # API-only backend at http://localhost:9000
+# in another shell — the SPA dev server (Vite proxies API/auth/OIDC/SAML to :9000):
+cd sso-frontend && npm install && npm run dev     # http://localhost:5173
 ```
 
-Open http://localhost:9000 and sign in as `admin` / `admin123!` (the **platform super-admin**).
+Open http://localhost:5173 and sign in as `admin` / `admin123!` (the **platform super-admin**).
 First login (for any new user) prompts for the email code (view it in MailHog at
-http://localhost:8025) then a strong factor (TOTP via QR or a passkey). For SPA hot-reload during
-development: `cd sso-frontend && npm run dev` (Vite on :5173 proxies API/auth to :9000).
+http://localhost:8025) then a strong factor (TOTP via QR or a passkey).
 
-**Tenants live on subdomains.** `*.localhost` resolves to `127.0.0.1` on most systems, so a tenant
-created with slug `acme` is reachable at `http://acme.localhost:9000`. Create one from the admin
-console (Organizations) or via public self-service signup; the activation link lands on the platform
-host and, once redeemed, sends the new admin to their own subdomain.
-
-Build the production image (frontend + backend in one shot):
+Run the **split deployment locally** (nginx edge + API-only backend, the production topology):
 
 ```bash
-docker build -t mini-sso .        # multi-stage; context is the repo root
+docker compose -f docker-compose.prod.yml up --build    # single public origin at http://localhost
 ```
+
+**Tenants live on subdomains.** `*.localhost` resolves to `127.0.0.1` on most systems, so with the
+split stack a tenant created with slug `acme` is reachable at `http://acme.localhost` — the edge
+forwards the full `Host` so the backend derives the tenant and its per-tenant issuer. (The Vite dev
+server rewrites the host to the platform origin, so exercise subdomain tenancy against the edge.)
+Create a tenant from the admin console (Organizations) or via public self-service signup; the
+activation link lands on the platform host and, once redeemed, sends the new admin to their subdomain.
 
 ### Seeded dev data
 
@@ -422,12 +425,49 @@ python3 scripts/scim_provision_flow.py  # SCIM: provision a user into an org, th
 ## Production
 
 Run with `SPRING_PROFILES_ACTIVE=prod`; secrets come from the environment (see
-`application-prod.yml`). Required: `DB_PASSWORD`, `SSO_ISSUER`, `SSO_ADMIN_PASSWORD`,
-`SSO_SAML_ENTITY_ID`, `SSO_SAML_SSO_LOCATION`, `SSO_SAML_KEYSTORE_PASSWORD`,
+`application-prod.yml`). Required: `DB_PASSWORD`, `REDIS_PASSWORD`, `SSO_ISSUER`,
+`SSO_ADMIN_PASSWORD`, `SSO_SAML_ENTITY_ID`, `SSO_SAML_SSO_LOCATION`, `SSO_SAML_KEYSTORE_PASSWORD`,
 `SSO_CRYPTO_MASTER_PASSWORD`, `SSO_CRYPTO_SALT`, `SSO_ADMIN_CONSOLE_REDIRECT_URIS`. Set
-`SSO_TRUSTED_PROXIES` to your load-balancer CIDR so client-IP-based controls are spoof-safe.
-Build the image with `docker build -t mini-sso .` (single node; sessions are in-memory — front
-with sticky sessions or externalize the session store before scaling out).
+`SSO_TRUSTED_PROXIES` to the edge/load-balancer CIDR so client-IP-based controls are spoof-safe, and
+`SSO_ISSUER` to the **public edge origin** (the host the browser uses).
+
+**Split deployment.** Build the two images from their per-service Dockerfiles — the API backend
+(`docker build -t mini-sso-backend sso-backend/`) and the nginx edge that serves the SPA and
+reverse-proxies the backend (`docker build -t mini-sso-frontend sso-frontend/`); `docker-compose.prod.yml`
+wires the full stack. Both runtime images are **Alpine + non-root**. Sessions live in **Redis**, so the
+backend scales horizontally behind the edge (no sticky sessions needed); revocation propagates across
+nodes via Redis keyspace events.
+
+**Secrets (SOPS).** `docker-compose.prod.yml` takes every secret as a **required** env var (`${VAR:?…}`) — it
+refuses to boot on a weak baked-in default (no `admin123!` fail-open). Supply them from a
+[SOPS](https://github.com/getsops/sops) + [age](https://github.com/FiloSottile/age)-encrypted file whose
+**ciphertext is safe to commit** (only the secret *values* are encrypted; the private key is never committed).
+One-time setup:
+
+```bash
+age-keygen -o age.key                                   # your PRIVATE key — gitignored, never commit
+age-keygen -y age.key                                   # paste the age1… public key into .sops.yaml
+cp secrets/prod.example.yaml secrets/prod.sops.yaml     # fill in real values
+sops --encrypt --in-place secrets/prod.sops.yaml        # now safe to commit
+```
+
+Then run the stack with the secrets decrypted into the process environment (never written to disk), and
+decrypt per context — the private key lives outside git in all three:
+
+- **Local / compose** — `SOPS_AGE_KEY_FILE=age.key sops exec-env secrets/prod.sops.yaml 'docker compose -f docker-compose.prod.yml up --build'`.
+- **Kubernetes** — store the age key as a cluster secret and let a controller decrypt at apply time: Flux's
+  built-in SOPS (`spec.decryption.provider: sops` + a `sops-age` secret), the sops-secrets-operator, or a
+  `sops -d … | kubectl apply -f -` step in CD with the key as a pipeline secret.
+- **CI** — needs no key: the `secrets` job fails if any committed `secrets/*.yaml` (bar the example) is *not*
+  SOPS-encrypted, and proves the repo's `.sops.yaml` rules encrypt correctly via an ephemeral-key round-trip.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every push/PR — independent checks in parallel, and the container images
+built **only after** their code passes (a container is never produced from unverified code): `backend-test`
+(Gradle + Testcontainers — the Docker daemon the tests need is why they run in CI, not in the image build),
+`frontend-build` (tsc + vite), `config-validate` (compose + `nginx -t`), `secrets` (SOPS), `hygiene`
+(no inline FQNs), then `backend-image` / `frontend-image` (build only, no registry push — this is CI, not CD).
 
 **Tenant isolation requires a non-superuser DB role.** PostgreSQL Row-Level Security — the hard
 boundary between tenants — is *bypassed by a superuser*, so the application must connect as a

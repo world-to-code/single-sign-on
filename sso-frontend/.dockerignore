@@ -1,0 +1,3 @@
+# Build context = sso-frontend/ (rebuilt in-image).
+node_modules
+dist
