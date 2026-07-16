@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.springframework.context.ApplicationEventPublisher;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
@@ -63,6 +64,7 @@ class RoleServiceImplTest {
     @Mock private RoleHierarchyWriter roleHierarchyWriter;
     @Mock private RoleInheritanceResolver inheritanceResolver;
     @Mock private RoleClosure roleClosure;
+    @Mock private ApplicationEventPublisher events;
 
     @InjectMocks private RoleServiceImpl service;
 

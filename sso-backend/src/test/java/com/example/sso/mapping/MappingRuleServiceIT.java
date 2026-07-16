@@ -203,11 +203,25 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
         orgContext.runAsPlatform(() -> groups.delete(group));
         createdGroups.remove(group); // already deleted; keep teardown from double-deleting
 
-        // GroupDeletionListener (AFTER_COMMIT) drops the now-dangling rules; provenance cascades via the FK.
+        // MappingTargetDeletionListener (AFTER_COMMIT) drops the now-dangling rules; provenance cascades via the FK.
         await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
-            assertThat(rulesForGroup(group)).isZero();
-            assertThat(provenanceForGroup(group)).isZero();
+            assertThat(rulesForTarget(group)).isZero();
+            assertThat(provenanceForTarget(group)).isZero();
         });
+    }
+
+    @Test
+    void deletingATargetRoleRemovesItsRules() {
+        UUID org = newOrg("map-role-del");
+        UUID role = orgContext.callInOrg(org, () -> role());
+        UUID member = orgContext.callInOrg(org, () -> user("dept", "eng", org));
+        orgContext.runInOrg(org, () -> mappingRules.create(new MappingRuleSpec("dept", "eng", MappingTargetKind.ROLE, role)));
+        assertThat(hasRole(org, member, role)).isTrue();
+
+        orgContext.runInOrg(org, () -> roles.deleteRole(role));
+        createdRoles.remove(role); // already deleted; keep teardown from double-deleting
+
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(rulesForTarget(role)).isZero());
     }
 
     @Test
@@ -292,12 +306,12 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
 
     // --- helpers ---
 
-    private int rulesForGroup(UUID groupId) {
-        return count("select count(*) from mapping_rule where target_id = ?", groupId);
+    private int rulesForTarget(UUID targetId) {
+        return count("select count(*) from mapping_rule where target_id = ?", targetId);
     }
 
-    private int provenanceForGroup(UUID groupId) {
-        return count("select count(*) from mapping_rule_membership where target_id = ?", groupId);
+    private int provenanceForTarget(UUID targetId) {
+        return count("select count(*) from mapping_rule_membership where target_id = ?", targetId);
     }
 
     private int count(String sql, UUID arg) {

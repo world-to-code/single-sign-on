@@ -24,10 +24,12 @@ import com.example.sso.user.internal.group.domain.UserGroupRoleRepository;
 import com.example.sso.user.internal.role.domain.UserRole;
 import com.example.sso.user.internal.role.domain.UserRoleRepository;
 import com.example.sso.user.rbac.Permissions;
+import com.example.sso.user.role.RoleDeletedEvent;
 import com.example.sso.user.role.RoleService;
 import com.example.sso.user.account.UserAccount;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -80,6 +82,7 @@ public class RoleServiceImpl implements RoleService {
     private final PermissionGrantPolicy grantPolicy;
     private final OrgContext orgContext;
     private final RbacHydrator hydrator;
+    private final ApplicationEventPublisher events;
     private final RoleClosure roleClosure;
     private final RoleTierResolver tierResolver;
 
@@ -276,6 +279,7 @@ public class RoleServiceImpl implements RoleService {
         Set<UUID> affected = holdersAffectedByChange(roleId); // resolve before the delete removes the edges
         deleteJoinRows(roleId);
         roles.delete(role);
+        events.publishEvent(new RoleDeletedEvent(roleId));
         accessChanges.forUserIds(affected);
     }
 
@@ -286,6 +290,7 @@ public class RoleServiceImpl implements RoleService {
             Set<UUID> affected = holdersAffectedByChange(roleId);
             deleteJoinRows(roleId);
             roles.delete(role);
+            events.publishEvent(new RoleDeletedEvent(roleId));
             accessChanges.forUserIds(affected);
         });
     }
