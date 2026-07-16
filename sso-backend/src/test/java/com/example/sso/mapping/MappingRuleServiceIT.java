@@ -216,7 +216,7 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
         UUID org = newOrg("map-role-del");
         UUID role = orgContext.callInOrg(org, () -> role());
         UUID member = orgContext.callInOrg(org, () -> user("dept", "eng", org));
-        orgContext.runInOrg(org, () -> mappingRules.create(new MappingRuleSpec("dept", AttributeOperator.EQUALS, "eng", MappingTargetKind.ROLE, role)));
+        orgContext.runInOrg(org, () -> mappingRules.create(MappingRuleSpec.single("dept", AttributeOperator.EQUALS, "eng", MappingTargetKind.ROLE, role)));
         assertThat(hasRole(org, member, role)).isTrue();
 
         orgContext.runInOrg(org, () -> roles.deleteRole(role));
@@ -286,7 +286,7 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
         UUID member = orgContext.callInOrg(org, () -> user("dept", "eng", org));
 
         MappingRuleView rule = orgContext.callInOrg(org, () ->
-                mappingRules.create(new MappingRuleSpec("dept", AttributeOperator.EQUALS, "eng", MappingTargetKind.ROLE, role)));
+                mappingRules.create(MappingRuleSpec.single("dept", AttributeOperator.EQUALS, "eng", MappingTargetKind.ROLE, role)));
         assertThat(hasRole(org, member, role)).isTrue();
 
         orgContext.runInOrg(org, () -> mappingRules.delete(UUID.fromString(rule.id())));
@@ -319,8 +319,9 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
             assertThat(groups.groupIdsOf(sales)).contains(group);      // any value of the key matches
             assertThat(groups.groupIdsOf(noDept)).doesNotContain(group); // the key is absent
             assertThat(rule.assignedCount()).isEqualTo(2);
-            assertThat(rule.attrOp()).isEqualTo(AttributeOperator.EXISTS);
-            assertThat(rule.attrValue()).isNull();
+            assertThat(rule.conditions()).singleElement()
+                    .satisfies(c -> assertThat(c.attrOp()).isEqualTo(AttributeOperator.EXISTS))
+                    .satisfies(c -> assertThat(c.attrValue()).isNull());
         });
     }
 
@@ -349,10 +350,108 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
         // service throws even if the request DTO's whitelist were bypassed).
         orgContext.runAsPlatform(() -> {
             UUID group = group("neg");
-            assertThatThrownBy(() -> mappingRules.create(new MappingRuleSpec("dept", AttributeOperator.NOT_EQUALS,
+            assertThatThrownBy(() -> mappingRules.create(MappingRuleSpec.single("dept", AttributeOperator.NOT_EQUALS,
                     "sales", MappingTargetKind.GROUP, group))).isInstanceOf(BadRequestException.class);
-            assertThatThrownBy(() -> mappingRules.create(new MappingRuleSpec("dept", AttributeOperator.NOT_EXISTS,
+            assertThatThrownBy(() -> mappingRules.create(MappingRuleSpec.single("dept", AttributeOperator.NOT_EXISTS,
                     null, MappingTargetKind.GROUP, group))).isInstanceOf(BadRequestException.class);
+        });
+    }
+
+    @Test
+    void aCompoundRuleAssignsOnlyUsersSatisfyingEveryCondition() {
+        orgContext.runAsPlatform(() -> {
+            UUID group = group("senior-eng");
+            UUID both = user("dept", "eng");                                            // dept=eng ...
+            attributes.set(EntityKind.USER, both.toString(), "level", "senior");        // ... AND level=senior
+            UUID onlyDept = user("dept", "eng");
+            attributes.set(EntityKind.USER, onlyDept.toString(), "level", "junior");    // level mismatch
+            UUID onlyLevel = user("dept", "sales");
+            attributes.set(EntityKind.USER, onlyLevel.toString(), "level", "senior");   // dept mismatch
+
+            MappingRuleView rule = mappingRules.create(new MappingRuleSpec(List.of(
+                    new MappingCondition("dept", AttributeOperator.EQUALS, "eng"),
+                    new MappingCondition("level", AttributeOperator.EQUALS, "senior")),
+                    MappingTargetKind.GROUP, group));
+
+            assertThat(inGroup(both, group)).isTrue();                 // satisfies every condition
+            assertThat(inGroup(onlyDept, group)).isFalse();            // fails the level condition
+            assertThat(inGroup(onlyLevel, group)).isFalse();          // fails the dept condition
+            assertThat(rule.assignedCount()).isEqualTo(1);
+            assertThat(rule.conditions()).hasSize(2);
+        });
+    }
+
+    @Test
+    void aCompoundRuleMixesExistsAndEqualsConditions() {
+        orgContext.runAsPlatform(() -> {
+            UUID group = group("has-dept-senior");
+            UUID match = user("dept", "anything");                                      // dept EXISTS ...
+            attributes.set(EntityKind.USER, match.toString(), "level", "senior");       // ... AND level=senior
+            UUID noDept = user("level", "senior");                                      // senior but no dept
+
+            mappingRules.create(new MappingRuleSpec(List.of(
+                    new MappingCondition("dept", AttributeOperator.EXISTS, null),
+                    new MappingCondition("level", AttributeOperator.EQUALS, "senior")),
+                    MappingTargetKind.GROUP, group));
+
+            assertThat(inGroup(match, group)).isTrue();
+            assertThat(inGroup(noDept, group)).isFalse();             // EXISTS dept fails
+        });
+    }
+
+    @Test
+    void aCompoundRuleAsyncPathMaterializesOnlyOnceEveryConditionIsSatisfied() {
+        // The per-user (async) path must agree with the intersection cohort: a user matching only SOME conditions
+        // is not materialized until the LAST one is satisfied, and is retracted when it is lost again.
+        UUID group = orgContext.callAsPlatform(() -> group("senior-eng"));
+        UUID target = orgContext.callAsPlatform(() -> user("dept", "eng")); // dept=eng, not yet level=senior
+        orgContext.runAsPlatform(() -> mappingRules.create(new MappingRuleSpec(List.of(
+                new MappingCondition("dept", AttributeOperator.EQUALS, "eng"),
+                new MappingCondition("level", AttributeOperator.EQUALS, "senior")),
+                MappingTargetKind.GROUP, group)));
+        assertThat(inGroup(target, group)).isFalse(); // only one condition holds
+
+        orgContext.runAsPlatform(() -> attributes.set(EntityKind.USER, target.toString(), "level", "senior"));
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(inGroup(target, group)).isTrue());
+
+        orgContext.runAsPlatform(() -> attributes.set(EntityKind.USER, target.toString(), "level", "junior"));
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(inGroup(target, group)).isFalse());
+    }
+
+    @Test
+    void updatingRuleConditionsReplacesTheSetAndReconcilesTheCohort() {
+        orgContext.runAsPlatform(() -> {
+            UUID group = group("eng");
+            UUID engJunior = user("dept", "eng");
+            attributes.set(EntityKind.USER, engJunior.toString(), "level", "junior");
+            UUID engSenior = user("dept", "eng");
+            attributes.set(EntityKind.USER, engSenior.toString(), "level", "senior");
+
+            // Start with one condition (dept=eng) → both users match.
+            MappingRuleView rule = mappingRules.create(spec("dept", "eng", group));
+            assertThat(inGroup(engJunior, group)).isTrue();
+            assertThat(inGroup(engSenior, group)).isTrue();
+
+            // Tighten to dept=eng AND level=senior → the condition set is REPLACED (not appended); the junior user
+            // no longer matches and is retracted, the senior stays.
+            mappingRules.update(UUID.fromString(rule.id()), new MappingRuleSpec(List.of(
+                    new MappingCondition("dept", AttributeOperator.EQUALS, "eng"),
+                    new MappingCondition("level", AttributeOperator.EQUALS, "senior")),
+                    MappingTargetKind.GROUP, group));
+
+            assertThat(inGroup(engJunior, group)).isFalse();
+            assertThat(inGroup(engSenior, group)).isTrue();
+            assertThat(mappingRules.get(UUID.fromString(rule.id())).conditions()).hasSize(2); // replaced, not appended
+        });
+    }
+
+    @Test
+    void aRuleNeedsAtLeastOneCondition() {
+        orgContext.runAsPlatform(() -> {
+            UUID group = group("empty");
+            assertThatThrownBy(() -> mappingRules.create(
+                    new MappingRuleSpec(List.of(), MappingTargetKind.GROUP, group)))
+                    .isInstanceOf(BadRequestException.class);
         });
     }
 
@@ -372,11 +471,11 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
     }
 
     private MappingRuleSpec spec(String key, String value, UUID groupId) {
-        return new MappingRuleSpec(key, AttributeOperator.EQUALS, value, MappingTargetKind.GROUP, groupId);
+        return MappingRuleSpec.single(key, AttributeOperator.EQUALS, value, MappingTargetKind.GROUP, groupId);
     }
 
     private MappingRuleSpec existsSpec(String key, UUID groupId) {
-        return new MappingRuleSpec(key, AttributeOperator.EXISTS, null, MappingTargetKind.GROUP, groupId);
+        return MappingRuleSpec.single(key, AttributeOperator.EXISTS, null, MappingTargetKind.GROUP, groupId);
     }
 
     private boolean inGroup(UUID userId, UUID groupId) {

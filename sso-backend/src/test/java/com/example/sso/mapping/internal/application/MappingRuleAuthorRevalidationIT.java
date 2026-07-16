@@ -158,7 +158,7 @@ class MappingRuleAuthorRevalidationIT extends AbstractIntegrationTest {
         try {
             orgContext.runAsPlatform(() ->
                     mappingRules.update(ruleId,
-                            new MappingRuleSpec("dept", AttributeOperator.EQUALS, "eng", MappingTargetKind.ROLE, role)));
+                            MappingRuleSpec.single("dept", AttributeOperator.EQUALS, "eng", MappingTargetKind.ROLE, role)));
         } finally {
             SecurityContextHolder.clearContext();
         }
@@ -288,7 +288,7 @@ class MappingRuleAuthorRevalidationIT extends AbstractIntegrationTest {
         setAuth(username);
         try {
             return orgContext.callAsPlatform(
-                    () -> mappingRules.create(new MappingRuleSpec(key, AttributeOperator.EQUALS, value, kind, target)));
+                    () -> mappingRules.create(MappingRuleSpec.single(key, AttributeOperator.EQUALS, value, kind, target)));
         } finally {
             SecurityContextHolder.clearContext();
         }
@@ -347,12 +347,16 @@ class MappingRuleAuthorRevalidationIT extends AbstractIntegrationTest {
     }
 
     private void insertLegacyRule(String key, String value, UUID targetRole) {
-        // A pre-V97 row has no author; after V100 it also carries attr_op = 'EQUALS' (the backfill default), so a
-        // faithful legacy fixture stamps EQUALS explicitly — the column is NOT NULL with no server default.
+        // A pre-authorship rule has no author (created_by NULL). As V101's migration produces, its predicate lives
+        // in a mapping_rule_condition row (one EQUALS condition), not on the rule itself.
+        UUID ruleId = ownerJdbc().queryForObject(
+                "insert into mapping_rule (then_kind, target_id, org_id, created_by) "
+                        + "values ('ROLE', ?, null, null) returning id",
+                UUID.class, targetRole);
         ownerJdbc().update(
-                "insert into mapping_rule (attr_key, attr_op, attr_value, then_kind, target_id, org_id, created_by) "
-                        + "values (?, 'EQUALS', ?, 'ROLE', ?, null, null)",
-                key, value, targetRole);
+                "insert into mapping_rule_condition (rule_id, attr_key, attr_op, attr_value, org_id) "
+                        + "values (?, ?, 'EQUALS', ?, null)",
+                ruleId, key, value);
     }
 
     private boolean hasRole(UUID userId, UUID roleId) {

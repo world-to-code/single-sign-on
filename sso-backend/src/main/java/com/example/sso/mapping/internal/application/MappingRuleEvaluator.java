@@ -4,8 +4,11 @@ import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
+import com.example.sso.mapping.MappingCondition;
 import com.example.sso.mapping.MappingTargetAuthority;
 import com.example.sso.mapping.internal.domain.MappingRule;
+import com.example.sso.mapping.internal.domain.MappingRuleCondition;
+import com.example.sso.mapping.internal.domain.MappingRuleConditionRepository;
 import com.example.sso.mapping.internal.domain.MappingRuleMembership;
 import com.example.sso.mapping.internal.domain.MappingRuleMembershipRepository;
 import com.example.sso.mapping.internal.domain.MappingRuleRepository;
@@ -19,6 +22,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -45,6 +49,7 @@ class MappingRuleEvaluator {
     private static final String SYSTEM_PRINCIPAL = "system:mapping-rule";
 
     private final MappingRuleRepository rules;
+    private final MappingRuleConditionRepository conditions;
     private final MappingRuleMembershipRepository memberships;
     private final AttributeService attributes;
     private final List<MappingTargetApplier> appliers;
@@ -55,7 +60,7 @@ class MappingRuleEvaluator {
     /** Reconcile ONE rule across the tier: add every matching user not yet claimed, retract every claim no longer matching. */
     @Transactional
     public void reevaluateRule(MappingRule rule) {
-        Set<UUID> matching = matchingUsers(rule.getAttrKey(), rule.getAttrOp(), rule.getAttrValue());
+        Set<UUID> matching = matchingUsers(conditionsOf(rule.getId()));
         Set<UUID> claimed = new HashSet<>();
         memberships.findByRuleId(rule.getId()).forEach(m -> claimed.add(m.getUserId()));
 
@@ -74,16 +79,26 @@ class MappingRuleEvaluator {
         List<Attribute> userAttributes = attributes.attributesOfInTier(EntityKind.USER, userId.toString());
         Set<UUID> claimedRuleIds = memberships.findByUserId(userId).stream()
                 .map(MappingRuleMembership::getRuleId).collect(Collectors.toSet()); // the user's claims in one query
+        // Every tier rule's conditions in ONE query, grouped by rule — avoids a per-rule fetch in the loop below.
+        Map<UUID, List<MappingCondition>> conditionsByRule = conditions.findAll().stream().collect(
+                Collectors.groupingBy(MappingRuleCondition::getRuleId,
+                        Collectors.mapping(MappingRuleCondition::toValue, Collectors.toList())));
         // Stable id order so concurrent re-evaluations acquire the per-rule locks (in materialize) in the same
         // sequence — a lock-order cycle can't form, only a clean wait the loser's retry/sweep re-drives.
         for (MappingRule rule : rules.findAll().stream().sorted(Comparator.comparing(MappingRule::getId)).toList()) {
             if (!Objects.equals(rule.getOrgId(), tier)) {
                 continue; // a user is governed only by rules in its OWN tier — a same-tier group is its only target
             }
-            boolean matches = new AttributePredicate(rule.getAttrKey(), rule.getAttrOp(), rule.getAttrValue())
-                    .matches(userAttributes);
+            boolean matches = matchesAll(conditionsByRule.getOrDefault(rule.getId(), List.of()), userAttributes);
             reconcile(rule, userId, matches, claimedRuleIds.contains(rule.getId()));
         }
+    }
+
+    /** AND semantics: the user satisfies EVERY condition. An empty condition list never matches (a rule always
+     *  has ≥1; this guards the vacuous all-match). */
+    private boolean matchesAll(List<MappingCondition> ruleConditions, List<Attribute> userAttributes) {
+        return !ruleConditions.isEmpty()
+                && ruleConditions.stream().allMatch(condition -> predicate(condition).matches(userAttributes));
     }
 
     /** The single add/retract decision, shared by both re-evaluation entry points so it can never drift. */
@@ -101,13 +116,39 @@ class MappingRuleEvaluator {
         memberships.findByRuleId(rule.getId()).forEach(m -> retract(rule, m.getUserId()));
     }
 
-    /** The users the predicate matches in the acting tier ONLY (own users, never inherited global ones — a rule
-     *  adds to a same-tier group, so a cross-tier user could never be a member). Dry run + reconcile source. */
-    Set<UUID> matchingUsers(String attrKey, AttributeOperator attrOp, String attrValue) {
-        Set<String> ids = attrOp == AttributeOperator.EXISTS
-                ? attributes.entityIdsWithKeyInTier(EntityKind.USER, attrKey)
-                : attributes.entityIdsWithInTier(EntityKind.USER, attrKey, attrValue);
+    /** The users satisfying ALL conditions in the acting tier ONLY (own users, never inherited global ones — a
+     *  rule adds to a same-tier group, so a cross-tier user could never be a member): the INTERSECTION of each
+     *  condition's cohort. Dry run (preview) + reconcile source. An empty condition list matches nobody. */
+    Set<UUID> matchingUsers(List<MappingCondition> ruleConditions) {
+        Set<UUID> cohort = null;
+        for (MappingCondition condition : ruleConditions) {
+            Set<UUID> conditionCohort = cohortOf(condition);
+            cohort = cohort == null ? conditionCohort : intersect(cohort, conditionCohort);
+            if (cohort.isEmpty()) {
+                break; // AND: once a condition contributes nobody, the whole rule matches nobody
+            }
+        }
+        return cohort == null ? Set.of() : cohort;
+    }
+
+    /** The users one condition matches in the acting tier: a value cohort (EQUALS) or a key cohort (EXISTS). */
+    private Set<UUID> cohortOf(MappingCondition condition) {
+        Set<String> ids = condition.attrOp() == AttributeOperator.EXISTS
+                ? attributes.entityIdsWithKeyInTier(EntityKind.USER, condition.attrKey())
+                : attributes.entityIdsWithInTier(EntityKind.USER, condition.attrKey(), condition.attrValue());
         return toUserIds(ids);
+    }
+
+    private Set<UUID> intersect(Set<UUID> a, Set<UUID> b) {
+        return a.stream().filter(b::contains).collect(Collectors.toSet());
+    }
+
+    private List<MappingCondition> conditionsOf(UUID ruleId) {
+        return conditions.findByRuleId(ruleId).stream().map(MappingRuleCondition::toValue).toList();
+    }
+
+    private AttributePredicate predicate(MappingCondition condition) {
+        return new AttributePredicate(condition.attrKey(), condition.attrOp(), condition.attrValue());
     }
 
     private void materialize(MappingRule rule, UUID userId) {

@@ -1,6 +1,7 @@
 package com.example.sso.mapping;
 
 import com.example.sso.admin.internal.mapping.api.AdminMappingRuleController;
+import com.example.sso.admin.internal.mapping.api.MappingConditionRequest;
 import com.example.sso.admin.internal.mapping.api.MappingRuleRequest;
 import com.example.sso.metadata.AttributeOperator;
 import com.example.sso.support.AbstractIntegrationTest;
@@ -79,13 +80,13 @@ class MappingRuleAuthzIT extends AbstractIntegrationTest {
         actAs(Permissions.MAPPING_RULE_CREATE);
 
         assertDenied(() -> controller.create(
-                new MappingRuleRequest("dept", AttributeOperator.EQUALS, "eng", MappingTargetKind.RESOURCE_MEMBER,
-                        UUID.randomUUID())));
+                new MappingRuleRequest(List.of(new MappingConditionRequest("dept", AttributeOperator.EQUALS, "eng")),
+                        MappingTargetKind.RESOURCE_MEMBER, UUID.randomUUID())));
     }
 
     private MappingRuleRequest request() {
-        return new MappingRuleRequest("dept", AttributeOperator.EQUALS, "eng", MappingTargetKind.GROUP,
-                UUID.randomUUID());
+        return new MappingRuleRequest(List.of(new MappingConditionRequest("dept", AttributeOperator.EQUALS, "eng")),
+                MappingTargetKind.GROUP, UUID.randomUUID());
     }
 
     private void assertDenied(ThrowingCallable call) {

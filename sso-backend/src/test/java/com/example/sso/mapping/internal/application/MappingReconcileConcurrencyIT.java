@@ -214,7 +214,7 @@ class MappingReconcileConcurrencyIT extends AbstractIntegrationTest {
     }
 
     private MappingRuleSpec specGroup(String key, String value, UUID group) {
-        return new MappingRuleSpec(key, AttributeOperator.EQUALS, value, MappingTargetKind.GROUP, group);
+        return MappingRuleSpec.single(key, AttributeOperator.EQUALS, value, MappingTargetKind.GROUP, group);
     }
 
     private UUID group(String prefix) {

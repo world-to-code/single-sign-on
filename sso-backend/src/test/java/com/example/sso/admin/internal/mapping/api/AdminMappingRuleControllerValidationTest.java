@@ -1,9 +1,11 @@
 package com.example.sso.admin.internal.mapping.api;
 
 import com.example.sso.admin.internal.mapping.application.AdminMappingRuleService;
+import com.example.sso.mapping.MappingCondition;
 import com.example.sso.mapping.MappingRuleView;
 import com.example.sso.metadata.AttributeOperator;
 import com.example.sso.mapping.MappingTargetKind;
+import java.util.List;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.account.UserService;
 import java.util.UUID;
@@ -47,7 +49,7 @@ class AdminMappingRuleControllerValidationTest {
 
     private String body(String attrKey, String attrValue, String thenKind, String targetId) {
         return """
-                {"attrKey":%s,"attrValue":%s,"thenKind":%s,"targetId":%s}"""
+                {"conditions":[{"attrKey":%s,"attrValue":%s}],"thenKind":%s,"targetId":%s}"""
                 .formatted(quote(attrKey), quote(attrValue), quote(thenKind), quote(targetId));
     }
 
@@ -58,10 +60,17 @@ class AdminMappingRuleControllerValidationTest {
     @Test
     void aValidBodyPassesValidationAndIsCreated() throws Exception {
         when(service.create(any())).thenReturn(new MappingRuleView(
-                "id", "dept", AttributeOperator.EQUALS, "eng", MappingTargetKind.GROUP, UUID.randomUUID().toString(),
-                "Engineering", 0));
+                "id", List.of(new MappingCondition("dept", AttributeOperator.EQUALS, "eng")),
+                MappingTargetKind.GROUP, UUID.randomUUID().toString(), "Engineering", 0));
 
         expectStatus(body("dept", "eng", "GROUP", UUID.randomUUID().toString()), 201);
+    }
+
+    @Test
+    void anEmptyConditionListIsRejected() throws Exception {
+        String target = UUID.randomUUID().toString();
+        expectStatus("""
+                {"conditions":[],"thenKind":"GROUP","targetId":"%s"}""".formatted(target), 400);
     }
 
     @Test

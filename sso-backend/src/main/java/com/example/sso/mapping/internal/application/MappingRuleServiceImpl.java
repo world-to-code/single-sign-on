@@ -4,11 +4,14 @@ import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
+import com.example.sso.mapping.MappingCondition;
 import com.example.sso.mapping.MappingRuleService;
 import com.example.sso.mapping.MappingRuleSpec;
 import com.example.sso.mapping.MappingRuleView;
 import com.example.sso.mapping.MappingTargetKind;
 import com.example.sso.mapping.internal.domain.MappingRule;
+import com.example.sso.mapping.internal.domain.MappingRuleCondition;
+import com.example.sso.mapping.internal.domain.MappingRuleConditionRepository;
 import com.example.sso.mapping.internal.domain.MappingRuleMembershipRepository;
 import com.example.sso.mapping.internal.domain.MappingRuleRepository;
 import com.example.sso.metadata.AttributeOperator;
@@ -21,6 +24,7 @@ import com.example.sso.user.role.Roles;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -29,16 +33,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Default {@link MappingRuleService}. CRUD over {@code mapping_rule} in the acting tier, delegating the
- * materialize/retract of assignments to {@link MappingRuleEvaluator} and the per-kind target validation/labelling
- * to a {@link MappingTargetApplier}. Validates the target exists in the acting tier; the admin controller has
- * already enforced that the actor may grant it.
+ * Default {@link MappingRuleService}. CRUD over {@code mapping_rule} (+ its {@code mapping_rule_condition} rows)
+ * in the acting tier, delegating the materialize/retract of assignments to {@link MappingRuleEvaluator} and the
+ * per-kind target validation/labelling to a {@link MappingTargetApplier}. Validates the target exists in the
+ * acting tier; the admin controller has already enforced that the actor may grant it.
  */
 @Service
 @RequiredArgsConstructor
 class MappingRuleServiceImpl implements MappingRuleService {
 
     private final MappingRuleRepository rules;
+    private final MappingRuleConditionRepository conditions;
     private final MappingRuleMembershipRepository memberships;
     private final MappingRuleEvaluator evaluator;
     private final List<MappingTargetApplier> appliers;
@@ -49,30 +54,34 @@ class MappingRuleServiceImpl implements MappingRuleService {
     @Override
     @Transactional
     public MappingRuleView create(MappingRuleSpec spec) {
-        requireMappableOperator(spec.attrOp());
+        requireMappableConditions(spec.conditions());
         String targetName = applier(spec.thenKind()).validateInTier(spec.targetId());
-        MappingRule rule = MappingRule.of(spec.attrKey(), spec.attrOp(), spec.attrValue(), spec.thenKind(),
-                spec.targetId(), tierGuard.currentTier(), resolveAuthor());
+        UUID tier = tierGuard.currentTier();
+        MappingRule rule = MappingRule.of(spec.thenKind(), spec.targetId(), tier, resolveAuthor());
         rules.saveAndFlush(rule); // flush in-scope so RLS WITH CHECK stamps the acting tier
+        writeConditions(rule.getId(), spec.conditions(), tier);
         evaluator.reevaluateRule(rule);
-        audit(AuditType.MAPPING_RULE_CREATED, rule);
+        audit(AuditType.MAPPING_RULE_CREATED, rule, describe(spec.conditions()));
         return view(rule, targetName);
     }
 
     @Override
     @Transactional
     public MappingRuleView update(UUID id, MappingRuleSpec spec) {
-        requireMappableOperator(spec.attrOp());
+        requireMappableConditions(spec.conditions());
         MappingRule rule = requireInTierForUpdate(id); // lock before retract/repoint — serialize against async materialize
         String targetName = applier(spec.thenKind()).validateInTier(spec.targetId());
         if (!rule.getTargetId().equals(spec.targetId()) || rule.getThenKind() != spec.thenKind()) {
             evaluator.retractAll(rule); // clear the OLD target's assignments before repointing
         }
-        rule.redefine(spec.attrKey(), spec.attrOp(), spec.attrValue(), spec.thenKind(), spec.targetId());
+        rule.redefine(spec.thenKind(), spec.targetId());
         rule.restampAuthor(resolveAuthor()); // the updater re-authorizes the target, so they become the vouching author
         rules.saveAndFlush(rule);
+        conditions.deleteByRuleId(rule.getId());     // replace the condition set wholesale
+        conditions.flush();
+        writeConditions(rule.getId(), spec.conditions(), tierGuard.currentTier());
         evaluator.reevaluateRule(rule);
-        audit(AuditType.MAPPING_RULE_UPDATED, rule);
+        audit(AuditType.MAPPING_RULE_UPDATED, rule, describe(spec.conditions()));
         return view(rule, targetName);
     }
 
@@ -80,9 +89,10 @@ class MappingRuleServiceImpl implements MappingRuleService {
     @Transactional
     public void delete(UUID id) {
         MappingRule rule = requireInTierForUpdate(id); // lock before retract — a racing materialize then skips (rule gone)
+        String predicate = describe(conditionsOf(rule.getId())); // capture before the FK-cascade removes the conditions
         evaluator.retractAll(rule); // remove every assignment it materialized before dropping the rule
-        rules.delete(rule);
-        audit(AuditType.MAPPING_RULE_DELETED, rule);
+        rules.delete(rule);         // mapping_rule_condition rows cascade via the FK
+        audit(AuditType.MAPPING_RULE_DELETED, rule, predicate);
     }
 
     @Override
@@ -101,16 +111,30 @@ class MappingRuleServiceImpl implements MappingRuleService {
     @Override
     @Transactional(readOnly = true)
     public Set<UUID> preview(MappingRuleSpec spec) {
-        requireMappableOperator(spec.attrOp());
-        return evaluator.matchingUsers(spec.attrKey(), spec.attrOp(), spec.attrValue());
+        requireMappableConditions(spec.conditions());
+        return evaluator.matchingUsers(spec.conditions());
     }
 
-    /** A mapping rule targets a POSITIVE, index-able cohort only: EQUALS or EXISTS (a NOT_* cohort is
-     *  "everyone without X" — unbounded and un-indexable). Enforced here too, not only in the request DTO. */
-    private void requireMappableOperator(AttributeOperator operator) {
-        if (operator != AttributeOperator.EQUALS && operator != AttributeOperator.EXISTS) {
+    /** A rule needs at least one condition, and each targets a POSITIVE, index-able cohort only: EQUALS or EXISTS
+     *  (a NOT_* cohort is "everyone without X" — unbounded and un-indexable). Enforced here too, not only in the
+     *  request DTO. */
+    private void requireMappableConditions(List<MappingCondition> ruleConditions) {
+        if (ruleConditions.isEmpty()) {
+            throw new BadRequestException("a mapping rule needs at least one condition");
+        }
+        if (!ruleConditions.stream().allMatch(c -> AttributeOperator.mappable(c.attrOp()))) {
             throw new BadRequestException("a mapping rule supports only EQUALS or EXISTS");
         }
+    }
+
+    private void writeConditions(UUID ruleId, List<MappingCondition> ruleConditions, UUID tier) {
+        ruleConditions.forEach(c -> conditions.save(
+                MappingRuleCondition.of(ruleId, c.attrKey(), c.attrOp(), c.attrValue(), tier)));
+        conditions.flush(); // flush in-scope so RLS WITH CHECK stamps the acting tier on each condition row
+    }
+
+    private List<MappingCondition> conditionsOf(UUID ruleId) {
+        return conditions.findByRuleId(ruleId).stream().map(MappingRuleCondition::toValue).toList();
     }
 
     private MappingRule requireInTier(UUID id) {
@@ -133,8 +157,16 @@ class MappingRuleServiceImpl implements MappingRuleService {
 
     private MappingRuleView view(MappingRule rule, String targetName) {
         int assigned = (int) memberships.countByRuleId(rule.getId());
-        return new MappingRuleView(rule.getId().toString(), rule.getAttrKey(), rule.getAttrOp(), rule.getAttrValue(),
-                rule.getThenKind(), rule.getTargetId().toString(), targetName, assigned);
+        return new MappingRuleView(rule.getId().toString(), conditionsOf(rule.getId()), rule.getThenKind(),
+                rule.getTargetId().toString(), targetName, assigned);
+    }
+
+    /** A human-readable "k op v AND …" rendering of a rule's conditions for the audit trail. */
+    private String describe(List<MappingCondition> ruleConditions) {
+        return ruleConditions.stream().map(c -> c.attrValue() == null
+                        ? "%s %s".formatted(c.attrKey(), c.attrOp())
+                        : "%s %s %s".formatted(c.attrKey(), c.attrOp(), c.attrValue()))
+                .collect(Collectors.joining(" AND "));
     }
 
     /**
@@ -157,12 +189,9 @@ class MappingRuleServiceImpl implements MappingRuleService {
                 .map(UserAccount::getId).orElse(null);
     }
 
-    private void audit(AuditType type, MappingRule rule) {
+    private void audit(AuditType type, MappingRule rule, String predicate) {
         String principal = SecurityContextHolder.getContext().getAuthentication() != null
                 ? SecurityContextHolder.getContext().getAuthentication().getName() : "system";
-        String predicate = rule.getAttrValue() == null
-                ? "%s %s".formatted(rule.getAttrKey(), rule.getAttrOp())
-                : "%s %s %s".formatted(rule.getAttrKey(), rule.getAttrOp(), rule.getAttrValue());
         String detail = "%s %s -> %s".formatted(rule.getThenKind(), predicate, rule.getTargetId());
         audit.record(new AuditRecord(type, principal, true, detail, null,
                 AuditSubjectType.NONE, rule.getTargetId().toString(), rule.getOrgId()));

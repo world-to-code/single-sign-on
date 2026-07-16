@@ -26,6 +26,13 @@ public enum AttributeOperator {
         return operator == null ? EQUALS : operator;
     }
 
+    /** Whether a (possibly null) operator may drive an auto-mapping rule: the POSITIVE, index-able operators only
+     *  (a NOT_* mapping cohort is "everyone without X" — unbounded and un-indexable). One home for the whitelist. */
+    public static boolean mappable(AttributeOperator operator) {
+        AttributeOperator op = orDefault(operator);
+        return op == EQUALS || op == EXISTS;
+    }
+
     /**
      * Whether a request's (possibly null) operator and value are shape-consistent: a value is present exactly
      * for a value operator. Shared by the predicate-targeting request DTOs so the rule cannot drift between them.
