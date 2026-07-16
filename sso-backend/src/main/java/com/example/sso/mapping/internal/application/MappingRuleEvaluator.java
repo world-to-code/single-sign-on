@@ -16,6 +16,8 @@ import com.example.sso.metadata.Attribute;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.tenancy.OrgTierGuard;
+import com.example.sso.user.group.UserGroupService;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -54,6 +56,7 @@ class MappingRuleEvaluator {
     private final AuditService audit;
     private final OrgTierGuard tierGuard;
     private final MappingTargetAuthority targetAuthority;
+    private final UserGroupService userGroups;
 
     /** Reconcile ONE rule across the tier: add every matching user not yet claimed, retract every claim no longer matching. */
     @Transactional
@@ -71,10 +74,10 @@ class MappingRuleEvaluator {
     @Transactional
     public void reevaluateUser(UUID userId) {
         UUID tier = tierGuard.currentTier();
-        // Evaluate against the tier's OWN attributes only (not inherited globals), so this async path agrees with
-        // the sync create/preview cohort (entityIdsWithInTier) — a platform-set global attribute never drives a
-        // tenant rule.
-        List<Attribute> userAttributes = attributes.attributesOfInTier(EntityKind.USER, userId.toString());
+        // Evaluate against the user's OWN attributes UNIONED with those inherited from their groups, all own-tier
+        // only (never inherited globals) — so this async path agrees with the sync cohort below, and a
+        // platform-set global attribute never drives a tenant rule.
+        List<Attribute> userAttributes = effectiveAttributes(userId);
         Set<UUID> claimedRuleIds = memberships.findByUserId(userId).stream()
                 .map(MappingRuleMembership::getRuleId).collect(Collectors.toSet()); // the user's claims in one query
         // Every tier rule's conditions in ONE query, grouped by rule — avoids a per-rule fetch in the loop below.
@@ -129,20 +132,41 @@ class MappingRuleEvaluator {
         return cohort == null ? Set.of() : cohort;
     }
 
-    /** The users one condition matches in the acting tier: a value cohort (EQUALS), a key cohort (EXISTS), or the
-     *  UNION of the listed values' cohorts (IN, one query). Exhaustive over the operator — a new one is a compile
-     *  error here, and the un-mappable NOT_* operators (rejected upstream) are a can't-happen invariant. */
+    /** The users one condition matches in the acting tier: those carrying the attribute DIRECTLY (USER entities)
+     *  UNIONED with the members of any GROUP carrying it (inheritance). Both sides are the same tier-scoped
+     *  entity query, just on a different kind, so global tags never leak in and members stay same-org. */
     private Set<UUID> cohortOf(MappingCondition condition) {
+        Set<UUID> cohort = new HashSet<>(toUserIds(entityIdsFor(condition, EntityKind.USER)));
+        Set<String> matchingGroupIds = entityIdsFor(condition, EntityKind.GROUP);
+        if (!matchingGroupIds.isEmpty()) {
+            cohort.addAll(userGroups.memberIdsOf(matchingGroupIds.stream().map(UUID::fromString).toList()));
+        }
+        return cohort;
+    }
+
+    /** The ids of the entities of {@code kind} the condition matches in the acting tier. Exhaustive over the
+     *  operator — a new one is a compile error, and the un-mappable NOT_* operators are a can't-happen invariant. */
+    private Set<String> entityIdsFor(MappingCondition condition, EntityKind kind) {
         String key = condition.attrKey();
         return switch (condition.attrOp()) {
-            case EQUALS -> toUserIds(attributes.entityIdsWithInTier(EntityKind.USER, key, condition.attrValue()));
-            case EXISTS -> toUserIds(attributes.entityIdsWithKeyInTier(EntityKind.USER, key));
-            case IN -> toUserIds(attributes.entityIdsWithAnyValueInTier(EntityKind.USER, key, condition.attrValues()));
-            case CONTAINS -> toUserIds(
-                    attributes.entityIdsWithValueContainingInTier(EntityKind.USER, key, condition.attrValue()));
+            case EQUALS -> attributes.entityIdsWithInTier(kind, key, condition.attrValue());
+            case EXISTS -> attributes.entityIdsWithKeyInTier(kind, key);
+            case IN -> attributes.entityIdsWithAnyValueInTier(kind, key, condition.attrValues());
+            case CONTAINS -> attributes.entityIdsWithValueContainingInTier(kind, key, condition.attrValue());
             case NOT_EQUALS, NOT_EXISTS ->
                     throw new IllegalStateException("un-mappable operator reached a cohort: " + condition.attrOp());
         };
+    }
+
+    /** A user's OWN own-tier attributes unioned with those inherited from the groups they belong to. */
+    private List<Attribute> effectiveAttributes(UUID userId) {
+        List<Attribute> effective = new ArrayList<>(attributes.attributesOfInTier(EntityKind.USER, userId.toString()));
+        Set<UUID> groupIds = userGroups.groupIdsOf(userId);
+        if (!groupIds.isEmpty()) {
+            effective.addAll(attributes.unionAttributesOfInTier(EntityKind.GROUP,
+                    groupIds.stream().map(UUID::toString).toList()));
+        }
+        return effective;
     }
 
     private Set<UUID> intersect(Set<UUID> a, Set<UUID> b) {

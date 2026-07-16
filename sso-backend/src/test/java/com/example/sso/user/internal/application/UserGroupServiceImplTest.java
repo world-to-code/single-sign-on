@@ -120,7 +120,7 @@ class UserGroupServiceImplTest {
         verify(groupRoles).deleteByGroupId(id);
         verify(repository).delete(group);
         verify(events).publishEvent(new GroupDeletedEvent(id));
-        verify(accessChanges).forUserIds(Set.of(memberId)); // members lose the group's delegated roles
+        verify(accessChanges).membershipChanged(Set.of(memberId)); // ends sessions + announces the membership
     }
 
     @Test

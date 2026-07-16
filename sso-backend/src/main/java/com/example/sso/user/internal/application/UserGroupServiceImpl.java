@@ -176,7 +176,7 @@ public class UserGroupServiceImpl implements UserGroupService {
 
         affected.addAll(members.findUserIdsByGroupId(id)); // and current members — both sets' delegated roles shift
         GroupView view = toView(repository.save(group));
-        accessChanges.forUserIds(affected);
+        accessChanges.membershipChanged(affected);
         return view;
     }
 
@@ -194,7 +194,7 @@ public class UserGroupServiceImpl implements UserGroupService {
         groupRoles.deleteByGroupId(id);
         repository.delete(group);
         events.publishEvent(new GroupDeletedEvent(id));
-        accessChanges.forUserIds(affected);
+        accessChanges.membershipChanged(affected);
     }
 
     @Override
@@ -210,7 +210,7 @@ public class UserGroupServiceImpl implements UserGroupService {
 
         affected.addAll(members.findUserIdsByGroupId(id)); // gained-or-lost members refresh their delegated roles
         GroupView view = toView(group);
-        accessChanges.forUserIds(affected);
+        accessChanges.membershipChanged(affected);
         return view;
     }
 
@@ -225,7 +225,7 @@ public class UserGroupServiceImpl implements UserGroupService {
             return; // unknown user (or dropped) — no-op; a cross-org user throws inside existingUserIds
         }
         members.save(new UserGroupMember(groupId, userId)); // idempotent via the composite PK
-        accessChanges.forUserIds(Set.of(userId));
+        accessChanges.membershipChanged(Set.of(userId));
     }
 
     @Override
@@ -240,7 +240,7 @@ public class UserGroupServiceImpl implements UserGroupService {
         }
         Set<UUID> valid = existingUserIds(group, userIds); // one same-org validation for the whole cohort
         insertMembers(groupId, valid);
-        accessChanges.forUserIds(valid); // single fan-out, not one event per user
+        accessChanges.membershipChanged(valid); // single fan-out, not one event per user
     }
 
     @Override
@@ -251,7 +251,7 @@ public class UserGroupServiceImpl implements UserGroupService {
             throw ConflictException.of("user.group.systemMembershipAuto", group.getName());
         }
         members.deleteByGroupIdAndUserId(groupId, userId);
-        accessChanges.forUserIds(Set.of(userId));
+        accessChanges.membershipChanged(Set.of(userId));
     }
 
     @Override

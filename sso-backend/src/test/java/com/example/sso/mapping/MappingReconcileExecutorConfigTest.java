@@ -1,8 +1,10 @@
 package com.example.sso.mapping;
 
 import com.example.sso.mapping.internal.application.AttributeChangeListener;
+import com.example.sso.mapping.internal.application.MembershipChangeListener;
 import com.example.sso.metadata.EntityAttributeChangedEvent;
 import com.example.sso.support.AbstractIntegrationTest;
+import com.example.sso.user.group.GroupMembershipChangedEvent;
 import java.util.concurrent.ThreadPoolExecutor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,11 +36,18 @@ class MappingReconcileExecutorConfigTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void theListenerRunsOnTheDedicatedReconcileExecutor() throws NoSuchMethodException {
-        Async async = AttributeChangeListener.class
-                .getMethod("onAttributeChanged", EntityAttributeChangedEvent.class)
-                .getAnnotation(Async.class);
+    void theAttributeListenerRunsOnTheDedicatedReconcileExecutor() throws NoSuchMethodException {
+        assertRunsOnReconcileExecutor(AttributeChangeListener.class
+                .getMethod("onAttributeChanged", EntityAttributeChangedEvent.class).getAnnotation(Async.class));
+    }
 
+    @Test
+    void theMembershipListenerRunsOnTheDedicatedReconcileExecutor() throws NoSuchMethodException {
+        assertRunsOnReconcileExecutor(MembershipChangeListener.class
+                .getMethod("onMembershipChanged", GroupMembershipChangedEvent.class).getAnnotation(Async.class));
+    }
+
+    private void assertRunsOnReconcileExecutor(Async async) {
         assertThat(async).isNotNull();
         assertThat(async.value()).isEqualTo("mappingReconcileExecutor"); // not the shared default pool
     }

@@ -2,54 +2,42 @@ package com.example.sso.mapping.internal.application;
 
 import com.example.sso.metadata.EntityAttributeChangedEvent;
 import com.example.sso.metadata.EntityKind;
-import com.example.sso.tenancy.OrgContext;
+import com.example.sso.user.group.UserGroupService;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
- * Re-evaluates a user's mapping rules when their metadata attributes change. Runs AFTER the attribute write
- * commits and on the dedicated bounded {@code mappingReconcileExecutor} (decoupled from the editing request,
- * off the shared/unbounded default pool); it re-enters the change's tier ({@code orgId}) so the evaluator's
- * reads and membership writes are RLS-scoped to that tenant. Transient lock contention is retried in-thread
- * ({@link ReconcileRetry}); anything that still fails never touches the (committed) attribute edit — it is
- * logged with the user id (never attribute values — no PII) and re-driven by the scheduled reconcile sweep,
- * since a fire-and-forget {@code AFTER_COMMIT} event has no re-delivery of its own.
+ * Re-evaluates mapping rules when metadata attributes change. A USER attribute change re-evaluates that user; a
+ * GROUP attribute change re-evaluates the group's MEMBERS (they inherit the tag). Runs AFTER the write commits on
+ * the bounded {@code mappingReconcileExecutor} (decoupled from the editing request); the actual re-evaluation,
+ * tenant re-entry, retry, and sweep-fallback live in {@link MappingReconcileDispatcher} — the members are
+ * resolved inside that tier so the lookup is RLS-scoped.
  */
 @Component
 @RequiredArgsConstructor
 public class AttributeChangeListener {
 
-    private static final Logger log = LoggerFactory.getLogger(AttributeChangeListener.class);
-
-    private final MappingRuleEvaluator evaluator;
-    private final OrgContext orgContext;
-    private final ReconcileRetry retry;
+    private final UserGroupService userGroups;
+    private final MappingReconcileDispatcher dispatcher;
 
     @Async("mappingReconcileExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onAttributeChanged(EntityAttributeChangedEvent event) {
-        if (event.kind() != EntityKind.USER) {
-            return; // only user attributes drive auto-mapping today
-        }
-        UUID userId = UUID.fromString(event.entityId());
-        Runnable reevaluate = () -> {
-            if (event.orgId() == null) {
-                orgContext.runAsPlatform(() -> evaluator.reevaluateUser(userId));
-            } else {
-                orgContext.runInOrg(event.orgId(), () -> evaluator.reevaluateUser(userId));
-            }
+        dispatcher.reevaluate(() -> affectedUsers(event), event.orgId(), event.kind() + ":" + event.entityId());
+    }
+
+    /** Who carries/inherits the changed attribute: a USER themselves, a GROUP's members; other kinds drive nothing.
+     *  Resolved inside the tier (by the dispatcher) so a GROUP's member lookup is RLS-scoped. */
+    private Set<UUID> affectedUsers(EntityAttributeChangedEvent event) {
+        return switch (event.kind()) {
+            case USER -> Set.of(UUID.fromString(event.entityId()));
+            case GROUP -> userGroups.memberIdsOf(Set.of(UUID.fromString(event.entityId())));
+            case APPLICATION, RESOURCE -> Set.of(); // not subjects of auto-mapping
         };
-        try {
-            retry.run(reevaluate);
-        } catch (Exception e) {
-            log.error("Mapping-rule re-evaluation failed for user {} — the scheduled reconcile sweep will re-drive it",
-                    userId, e);
-        }
     }
 }

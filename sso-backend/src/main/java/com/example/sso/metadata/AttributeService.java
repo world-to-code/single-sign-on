@@ -24,6 +24,13 @@ public interface AttributeService {
     List<Attribute> unionAttributesOf(EntityKind kind, Collection<String> entityIds);
 
     /**
+     * The UNION of the attributes across several entities of one kind, in the ACTING TIER only (own rows, never
+     * inherited globals) — the tier-scoped counterpart of {@link #unionAttributesOf}. Auto-mapping folds in a
+     * user's groups' own-tier attributes with this, so a global tag never silently drives a tenant's rule.
+     */
+    List<Attribute> unionAttributesOfInTier(EntityKind kind, Collection<String> entityIds);
+
+    /**
      * The entity's attributes OWNED by the acting tier only (a tenant's own rows, or the global rows at the
      * platform tier) — never the global rows a tenant merely inherits. The read-side counterpart of
      * {@link #entityIdsWithInTier}: a tier-scoped decision (e.g. auto-mapping) evaluates against this so a

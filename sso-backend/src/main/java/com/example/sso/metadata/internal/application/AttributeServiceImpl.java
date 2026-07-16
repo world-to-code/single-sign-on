@@ -73,6 +73,20 @@ class AttributeServiceImpl implements AttributeService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<Attribute> unionAttributesOfInTier(EntityKind kind, Collection<String> entityIds) {
+        if (entityIds.isEmpty()) {
+            return List.of();
+        }
+        UUID tier = tierGuard.currentTier();
+        Set<Attribute> union = new LinkedHashSet<>();
+        attributes.findByEntityKindAndEntityIdIn(kind, entityIds).stream()
+                .filter(row -> Objects.equals(row.getOrgId(), tier)) // own-tier rows only, no inherited globals
+                .forEach(row -> union.add(new Attribute(row.getAttrKey(), row.getAttrValue())));
+        return List.copyOf(union);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<Attribute> attributesOfInTier(EntityKind kind, String entityId) {
         UUID tier = tierGuard.currentTier();
         return attributes.findByEntityKindAndEntityIdOrderByAttrKey(kind, entityId).stream()

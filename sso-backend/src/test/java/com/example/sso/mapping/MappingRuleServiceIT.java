@@ -53,6 +53,7 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
             ownerJdbc().update("delete from mapping_rule_membership");
             ownerJdbc().update("delete from mapping_rule");
             createdUsers.forEach(id -> ownerJdbc().update("delete from entity_attribute where entity_id = ?", id.toString()));
+            createdGroups.forEach(id -> ownerJdbc().update("delete from entity_attribute where entity_id = ?", id.toString()));
             createdUsers.forEach(users::delete);
             createdGroups.forEach(groups::delete);
             createdRoles.forEach(roles::delete);
@@ -249,20 +250,6 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
 
         orgContext.runAsPlatform(() -> attributes.remove(EntityKind.USER, target.toString(), "dept"));
         await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(inGroup(target, group)).isFalse());
-    }
-
-    @Test
-    void aNonUserAttributeChangeDoesNotDriveMapping() {
-        orgContext.runAsPlatform(() -> {
-            UUID group = group("eng");
-            UUID matching = user("dept", "eng");
-            mappingRules.create(spec("dept", "eng", group));
-            assertThat(inGroup(matching, group)).isTrue();
-
-            // A GROUP-kind attribute change must not touch user→group auto-mapping (only USER events do).
-            attributes.set(EntityKind.GROUP, group.toString(), "team", "core");
-        });
-        // nothing to await — the listener early-returns for non-USER kinds; membership is unchanged
     }
 
     @Test
@@ -618,6 +605,181 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void aRuleMatchesUsersWhoInheritTheAttributeFromAGroup() {
+        // Inheritance at create: a user with NO own dept but a member of a group tagged dept=eng matches a
+        // dept=eng rule; a non-member does not.
+        orgContext.runAsPlatform(() -> {
+            UUID target = group("target");
+            UUID engGroup = group("eng-dept");
+            attributes.set(EntityKind.GROUP, engGroup.toString(), "dept", "eng");
+            UUID member = plainUser();
+            groups.addMember(engGroup, member);
+            UUID nonMember = plainUser();
+
+            mappingRules.create(spec("dept", "eng", target));
+
+            assertThat(inGroup(member, target)).isTrue();     // inherited via engGroup
+            assertThat(inGroup(nonMember, target)).isFalse();
+        });
+    }
+
+    @Test
+    void taggingAGroupAsynchronouslyMaterializesItsMembers() {
+        // A GROUP attribute change re-evaluates the group's members (they inherit the new tag).
+        UUID target = orgContext.callAsPlatform(() -> group("target"));
+        UUID engGroup = orgContext.callAsPlatform(() -> group("eng-dept"));
+        UUID member = orgContext.callAsPlatform(this::plainUser);
+        orgContext.runAsPlatform(() -> {
+            groups.addMember(engGroup, member);
+            mappingRules.create(spec("dept", "eng", target));
+        });
+        assertThat(inGroup(member, target)).isFalse(); // engGroup not tagged yet
+
+        orgContext.runAsPlatform(() -> attributes.set(EntityKind.GROUP, engGroup.toString(), "dept", "eng"));
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(inGroup(member, target)).isTrue());
+    }
+
+    @Test
+    void addingOrRemovingAUserFromATaggedGroupAsynchronouslyReconcilesThem() {
+        // A membership change re-evaluates the user: joining a tagged group materializes them, leaving retracts.
+        UUID target = orgContext.callAsPlatform(() -> group("target"));
+        UUID engGroup = orgContext.callAsPlatform(() -> group("eng-dept"));
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.GROUP, engGroup.toString(), "dept", "eng");
+            mappingRules.create(spec("dept", "eng", target));
+        });
+        UUID user = orgContext.callAsPlatform(this::plainUser);
+        assertThat(inGroup(user, target)).isFalse();
+
+        orgContext.runAsPlatform(() -> groups.addMember(engGroup, user));
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(inGroup(user, target)).isTrue());
+
+        orgContext.runAsPlatform(() -> groups.removeMember(engGroup, user));
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(inGroup(user, target)).isFalse());
+    }
+
+    @Test
+    void aCompoundRuleCanSatisfyOneConditionViaOwnAttributeAndAnotherViaGroupInheritance() {
+        // Inheritance composes with AND (union of own + group attrs): dept=eng comes from the group, level=senior
+        // from the user's own attribute — together they satisfy the compound rule.
+        orgContext.runAsPlatform(() -> {
+            UUID target = group("target");
+            UUID engGroup = group("eng-dept");
+            attributes.set(EntityKind.GROUP, engGroup.toString(), "dept", "eng"); // inherited condition
+            UUID user = user("level", "senior");                                  // own condition
+            groups.addMember(engGroup, user);
+
+            mappingRules.create(new MappingRuleSpec(List.of(
+                    new MappingCondition("dept", AttributeOperator.EQUALS, "eng"),
+                    new MappingCondition("level", AttributeOperator.EQUALS, "senior")),
+                    MappingTargetKind.GROUP, target));
+
+            assertThat(inGroup(user, target)).isTrue();
+        });
+    }
+
+    @Test
+    void groupInheritanceForAMappingRuleIsConfinedToTheTenant() {
+        // A group tag drives only its own tenant's rule: orgB's member of an identically-tagged group is never
+        // pulled into orgA's rule.
+        UUID orgA = newOrg("inh-a");
+        UUID orgB = newOrg("inh-b");
+        UUID targetA = orgContext.callInOrg(orgA, () -> group("target-a"));
+        UUID engA = orgContext.callInOrg(orgA, () -> group("eng-a"));
+        UUID engB = orgContext.callInOrg(orgB, () -> group("eng-b"));
+        UUID memberA = orgContext.callInOrg(orgA, () -> plainUser(orgA));
+        UUID memberB = orgContext.callInOrg(orgB, () -> plainUser(orgB));
+        orgContext.runInOrg(orgA, () -> {
+            attributes.set(EntityKind.GROUP, engA.toString(), "dept", "eng");
+            groups.addMember(engA, memberA);
+        });
+        orgContext.runInOrg(orgB, () -> {
+            attributes.set(EntityKind.GROUP, engB.toString(), "dept", "eng");
+            groups.addMember(engB, memberB);
+        });
+
+        orgContext.runInOrg(orgA, () -> mappingRules.create(spec("dept", "eng", targetA)));
+
+        assertThat(orgContext.callInOrg(orgA, () -> groups.groupIdsOf(memberA))).contains(targetA);
+        assertThat(orgContext.callInOrg(orgB, () -> groups.groupIdsOf(memberB))).doesNotContain(targetA);
+    }
+
+    @Test
+    void groupInheritanceViaTheAsyncPathIsTenantIsolated() {
+        // The per-user ASYNC path (membership event → runInOrg → reevaluateUser → effectiveAttributes →
+        // unionAttributesOfInTier) must be tier-scoped: a membership change in org A materializes A's member, and
+        // org B's member of an identically-tagged group is never pulled into A's rule.
+        UUID orgA = newOrg("inh-async-a");
+        UUID orgB = newOrg("inh-async-b");
+        UUID targetA = orgContext.callInOrg(orgA, () -> group("target-a"));
+        UUID engA = orgContext.callInOrg(orgA, () -> group("eng-a"));
+        UUID engB = orgContext.callInOrg(orgB, () -> group("eng-b"));
+        UUID memberB = orgContext.callInOrg(orgB, () -> plainUser(orgB));
+        orgContext.runInOrg(orgA, () -> attributes.set(EntityKind.GROUP, engA.toString(), "dept", "eng"));
+        orgContext.runInOrg(orgB, () -> {
+            attributes.set(EntityKind.GROUP, engB.toString(), "dept", "eng");
+            groups.addMember(engB, memberB);
+        });
+        orgContext.runInOrg(orgA, () -> mappingRules.create(spec("dept", "eng", targetA)));
+
+        UUID memberA = orgContext.callInOrg(orgA, () -> plainUser(orgA));
+        orgContext.runInOrg(orgA, () -> groups.addMember(engA, memberA)); // async membership event, in org A's tier
+
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(
+                orgContext.callInOrg(orgA, () -> groups.groupIdsOf(memberA))).contains(targetA));
+        assertThat(orgContext.callInOrg(orgB, () -> groups.groupIdsOf(memberB))).doesNotContain(targetA);
+    }
+
+    @Test
+    void aGlobalGroupTagDoesNotDriveATenantRuleViaInheritance() {
+        // A platform-set GLOBAL tag on a group must not satisfy a TENANT rule via inheritance — the in-tier reads
+        // (unionAttributesOfInTier / entityIdsWithInTier on GROUP) never fold in a global tag.
+        UUID org = newOrg("inh-global");
+        UUID target = orgContext.callInOrg(org, () -> group("target"));
+        UUID engGroup = orgContext.callInOrg(org, () -> group("eng"));
+        UUID member = orgContext.callInOrg(org, () -> plainUser(org));
+        orgContext.runInOrg(org, () -> groups.addMember(engGroup, member));
+        orgContext.runAsPlatform(() -> attributes.set(EntityKind.GROUP, engGroup.toString(), "dept", "eng")); // GLOBAL
+
+        orgContext.runInOrg(org, () -> mappingRules.create(spec("dept", "eng", target)));
+
+        assertThat(orgContext.callInOrg(org, () -> groups.groupIdsOf(member))).doesNotContain(target);
+    }
+
+    @Test
+    void aGroupTagIsInheritedOnTheAsyncPathEvenWhenTheOwnValueDiffers() {
+        // effectiveAttributes UNIONs own + group (not shadow): a user whose own dept=sales joins a group tagged
+        // dept=eng and is materialized by a dept=eng rule via the async membership path.
+        UUID target = orgContext.callAsPlatform(() -> group("target"));
+        UUID engGroup = orgContext.callAsPlatform(() -> group("eng-dept"));
+        UUID user = orgContext.callAsPlatform(() -> user("dept", "sales")); // own dept=sales, NOT eng
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.GROUP, engGroup.toString(), "dept", "eng");
+            mappingRules.create(spec("dept", "eng", target));
+        });
+        assertThat(inGroup(user, target)).isFalse(); // own sales, not yet in engGroup
+
+        orgContext.runAsPlatform(() -> groups.addMember(engGroup, user)); // async → reevaluateUser
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(inGroup(user, target)).isTrue());
+    }
+
+    @Test
+    void anExistsConditionMatchesViaGroupInheritance() {
+        // The GROUP branch of the cohort works for the non-EQUALS operators too (here EXISTS).
+        orgContext.runAsPlatform(() -> {
+            UUID target = group("has-dept");
+            UUID engGroup = group("eng-dept");
+            attributes.set(EntityKind.GROUP, engGroup.toString(), "dept", "anything");
+            UUID member = plainUser();
+            groups.addMember(engGroup, member);
+
+            mappingRules.create(existsSpec("dept", target));
+
+            assertThat(inGroup(member, target)).isTrue(); // inherits the key from the group
+        });
+    }
+
+    @Test
     void aRuleNeedsAtLeastOneCondition() {
         orgContext.runAsPlatform(() -> {
             UUID group = group("empty");
@@ -679,6 +841,19 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
                 "S3cret!pw9", Set.of("ROLE_USER")), org).getId();
         createdUsers.add(id);
         attributes.set(EntityKind.USER, id.toString(), key, value); // stamped in the current context tier
+        return id;
+    }
+
+    /** A user with NO attributes of their own, in the current tier — for proving GROUP-inherited matching. */
+    private UUID plainUser() {
+        return plainUser(null);
+    }
+
+    private UUID plainUser(UUID org) {
+        String s = suffix();
+        UUID id = users.createUser(new NewUser("u-" + s, "u-" + s + "@example.com", "U " + s,
+                "S3cret!pw9", Set.of("ROLE_USER")), org).getId();
+        createdUsers.add(id);
         return id;
     }
 
