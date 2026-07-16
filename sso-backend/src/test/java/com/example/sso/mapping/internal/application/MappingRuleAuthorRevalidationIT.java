@@ -7,7 +7,11 @@ import com.example.sso.mapping.MappingTargetKind;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.NewUser;
+import com.example.sso.user.account.UserAccessChangedEvent;
+import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
+import com.example.sso.user.group.GroupSpec;
+import com.example.sso.user.group.UserGroupService;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.RoleService;
 import java.util.ArrayList;
@@ -21,6 +25,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -30,16 +36,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  * author is demoted or deleted (zero-trust — authority is not frozen at authoring). A rule with no recorded
  * author (legacy/system) is allowed but audited. White-box: drives the internal evaluator directly.
  */
+@RecordApplicationEvents
 class MappingRuleAuthorRevalidationIT extends AbstractIntegrationTest {
 
     @Autowired MappingRuleService mappingRules;
     @Autowired MappingRuleEvaluator evaluator;
+    @Autowired MappingReconcileSweeper sweeper;
     @Autowired RoleService roles;
+    @Autowired UserGroupService groups;
     @Autowired UserService users;
     @Autowired OrgContext orgContext;
+    @Autowired ApplicationEvents events;
 
     private final List<UUID> createdUsers = new ArrayList<>();
     private final List<UUID> createdRoles = new ArrayList<>();
+    private final List<UUID> createdGroups = new ArrayList<>();
 
     @AfterEach
     void cleanup() {
@@ -49,10 +60,12 @@ class MappingRuleAuthorRevalidationIT extends AbstractIntegrationTest {
             ownerJdbc().update("delete from mapping_rule");
             createdUsers.forEach(id -> ownerJdbc().update("delete from entity_attribute where entity_id = ?", id.toString()));
             createdUsers.forEach(users::delete);
+            createdGroups.forEach(groups::delete);
             createdRoles.forEach(roles::deleteRole);
         });
         createdUsers.clear();
         createdRoles.clear();
+        createdGroups.clear();
     }
 
     @Test
@@ -135,16 +148,87 @@ class MappingRuleAuthorRevalidationIT extends AbstractIntegrationTest {
         assertThat(createdByOf(ruleId)).isEqualTo(second.id()); // the updater vouches now, not the original author
     }
 
+    @Test
+    void aDemotedAuthorGrantsNoCohortViaTheSweepAndIsAudited() {
+        // The COHORT path (materializeAll, driven by the scheduled sweep's reevaluateRule) must apply the same
+        // author re-check as the single-user path — this is the higher-blast-radius, continuously-running path.
+        Author author = platform(this::superAuthor);
+        UUID role = targetRole(author);
+        createRoleRuleAs(author.username(), "dept", "eng", role); // no matching users yet
+        platform(() -> roles.removeMember(adminRoleId(), author.id())); // demote
+
+        UUID u1 = platform(this::plainUser);
+        UUID u2 = platform(this::plainUser);
+        platform(() -> {
+            tagUser(u1, "dept", "eng");
+            tagUser(u2, "dept", "eng");
+        });
+        long before = auditCount("MAPPING_RULE_AUTHOR_UNAUTHORIZED", role);
+
+        platform(() -> sweeper.reconcileAllTiers()); // cohort path: reevaluateRule -> materializeAll
+
+        assertThat(hasRole(u1, role)).isFalse();
+        assertThat(hasRole(u2, role)).isFalse();
+        assertThat(auditCount("MAPPING_RULE_AUTHOR_UNAUTHORIZED", role)).isGreaterThan(before);
+    }
+
+    @Test
+    void aDemotedAuthorGrantsNoGroupMembershipAndIsAudited() {
+        // GROUP-target re-validation end-to-end (canAccessGroup off the request thread): a super author manages
+        // any group (unscoped); once demoted they no longer do, so the group rule stops materializing.
+        Author author = platform(this::superAuthor);
+        UUID group = platform(this::targetGroup);
+        createRuleAs(author.username(), "dept", "eng", MappingTargetKind.GROUP, group); // no matching users yet
+        platform(() -> roles.removeMember(adminRoleId(), author.id())); // demote → no longer unscoped
+
+        UUID user = platform(this::plainUser);
+        platform(() -> tagUser(user, "dept", "eng"));
+        long before = auditCount("MAPPING_RULE_AUTHOR_UNAUTHORIZED", group);
+
+        platform(() -> evaluator.reevaluateUser(user));
+
+        assertThat(inGroup(user, group)).isFalse();
+        assertThat(auditCount("MAPPING_RULE_AUTHOR_UNAUTHORIZED", group)).isGreaterThan(before);
+    }
+
+    @Test
+    void aMaterializedGrantAndItsRetractEachFireTheSessionRevocationFanout() {
+        // The reorder grants only when insertClaimIfAbsent inserts; assert the access-change fan-out (which drives
+        // session termination / token revocation) still fires exactly on the real grant AND on the retract, not
+        // just that the terminal membership state is right.
+        Author author = platform(this::superAuthor);
+        UUID role = targetRole(author);
+        createRoleRuleAs(author.username(), "dept", "eng", role);
+        UUID user = platform(this::plainUser);
+        String username = usernameOf(user);
+        platform(() -> tagUser(user, "dept", "eng"));
+
+        long beforeGrant = accessEventsFor(username);
+        platform(() -> evaluator.reevaluateUser(user)); // GRANT
+        assertThat(hasRole(user, role)).isTrue();
+        assertThat(accessEventsFor(username)).isGreaterThan(beforeGrant);
+
+        platform(() -> ownerJdbc().update(
+                "delete from entity_attribute where entity_id = ? and attr_key = 'dept'", user.toString()));
+        long beforeRetract = accessEventsFor(username);
+        platform(() -> evaluator.reevaluateUser(user)); // RETRACT (never gated by the author check)
+        assertThat(hasRole(user, role)).isFalse();
+        assertThat(accessEventsFor(username)).isGreaterThan(beforeRetract);
+    }
+
     // --- helpers ---
 
     private record Author(UUID id, String username) {
     }
 
     private MappingRuleView createRoleRuleAs(String username, String key, String value, UUID targetRole) {
+        return createRuleAs(username, key, value, MappingTargetKind.ROLE, targetRole);
+    }
+
+    private MappingRuleView createRuleAs(String username, String key, String value, MappingTargetKind kind, UUID target) {
         setAuth(username);
         try {
-            return orgContext.callAsPlatform(() ->
-                    mappingRules.create(new MappingRuleSpec(key, value, MappingTargetKind.ROLE, targetRole)));
+            return orgContext.callAsPlatform(() -> mappingRules.create(new MappingRuleSpec(key, value, kind, target)));
         } finally {
             SecurityContextHolder.clearContext();
         }
@@ -212,6 +296,26 @@ class MappingRuleAuthorRevalidationIT extends AbstractIntegrationTest {
     private boolean hasRole(UUID userId, UUID roleId) {
         return orgContext.callAsPlatform(() -> users.findById(userId)
                 .map(u -> u.getRoles().stream().anyMatch(r -> r.getId().equals(roleId))).orElse(false));
+    }
+
+    /** A global group a rule can target. */
+    private UUID targetGroup() {
+        UUID id = UUID.fromString(groups.create(new GroupSpec("g-" + suffix(), null, null, Set.of())).id());
+        createdGroups.add(id);
+        return id;
+    }
+
+    private boolean inGroup(UUID userId, UUID groupId) {
+        return orgContext.callAsPlatform(() -> groups.groupIdsOf(userId)).contains(groupId);
+    }
+
+    private String usernameOf(UUID userId) {
+        return orgContext.callAsPlatform(() -> users.findById(userId).map(UserAccount::getUsername).orElseThrow());
+    }
+
+    /** How many access-change (session-revocation) events have fired for {@code username} so far this test. */
+    private long accessEventsFor(String username) {
+        return events.stream(UserAccessChangedEvent.class).filter(e -> username.equals(e.username())).count();
     }
 
     private UUID createdByOf(UUID ruleId) {

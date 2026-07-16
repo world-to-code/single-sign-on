@@ -18,9 +18,15 @@ import org.springframework.stereotype.Component;
  * Durability backstop for metadata-driven auto-mapping. The event-driven path ({@code AFTER_COMMIT @Async}) is
  * fire-and-forget, so a crash between the attribute commit and the reconcile silently loses the change. This
  * scheduled sweep re-drives a FULL reconcile of every rule in its own tier, converging any missed
- * materialize/retract. One node per tick wins a short Redis lock ({@code SET NX PX}) and does the work; the
- * others skip. Reconcile is idempotent (claim-first {@code ON CONFLICT} + per-rule lock), so an overlapping tick
- * is harmless.
+ * materialize/retract in the DATABASE (membership + provenance). One node per tick wins a short Redis lock
+ * ({@code SET NX PX}) and does the work; the others skip. Reconcile is idempotent (claim-first
+ * {@code ON CONFLICT} + per-rule lock), so an overlapping tick is harmless.
+ *
+ * <p>Scope note: this converges persisted membership state, not the session-termination SIDE EFFECT. If a
+ * retract commits but its {@code UserAccessChangedEvent} termination is lost (crash / Redis blip in the
+ * post-commit window), the sweep will NOT re-drive it — the claim row is already gone, so the retract does not
+ * recur. Re-driving a lost termination is a separate session-hygiene concern (durable termination retry), not
+ * this reconcile's job.
  */
 @Component
 class MappingReconcileSweeper {
