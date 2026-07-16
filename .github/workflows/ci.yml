@@ -1,13 +1,13 @@
 name: CI
 
-# Continuous INTEGRATION only (no deploy/push). Independent checks run in parallel; the container images are
-# built only AFTER their tests/build pass (a container is never produced from un-verified code).
+# Orchestrator: fans out to one reusable workflow per role (each in its own file). Continuous INTEGRATION
+# only — no registry push (CI, not CD). Within backend/frontend the image is built only after its tests pass.
 on:
   push:
     branches: [main]
   pull_request:
 
-# Least privilege: CI only reads the repo.
+# Least privilege for every called workflow (a reusable workflow can't exceed the caller's grants).
 permissions:
   contents: read
 
@@ -17,205 +17,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ---- Backend: the authoritative test gate (Testcontainers spins up real Postgres + Redis; the GitHub
-  #      ubuntu runner provides the Docker daemon they need — which is exactly why tests run HERE, in CI,
-  #      and not inside the image build). ModularityTests (module boundaries) run as part of this too. ----
-  backend-test:
-    name: Backend tests (Testcontainers)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: gradle
-      - name: ./gradlew test
-        working-directory: sso-backend
-        run: ./gradlew --no-daemon test
-      - name: Publish test report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: backend-test-results
-          path: sso-backend/build/reports/tests/test
-          if-no-files-found: ignore
-
-  # ---- Frontend: type-check + production bundle (tsc && vite build). ----
-  frontend-build:
-    name: Frontend build
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: sso-frontend/package-lock.json
-      - name: npm ci
-        working-directory: sso-frontend
-        run: npm ci
-      - name: Type-check + build
-        working-directory: sso-frontend
-        run: npm run build
-
-  # ---- Config validation: the compose file and the nginx edge config are parseable/valid. Independent of
-  #      the code, so it runs in parallel with the tests for fast feedback. ----
-  config-validate:
-    name: Compose + nginx config
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v5
-      - name: docker compose config
-        # The prod compose REQUIRES its secrets (${VAR:?}); pass dummy values just to let the parser resolve.
-        env:
-          DB_PASSWORD: x
-          DB_APP_PASSWORD: x
-          REDIS_PASSWORD: x
-          SSO_ADMIN_PASSWORD: x
-          SSO_SAML_KEYSTORE_PASSWORD: x
-          SSO_CRYPTO_MASTER_PASSWORD: x
-          SSO_CRYPTO_SALT: '00'
-        run: docker compose -f docker-compose.prod.yml config -q
-      - name: nginx -t (edge config)
-        run: |
-          # nginx -t resolves upstream names, so swap the compose service name for a resolvable stand-in.
-          sed 's|server backend:9000;|server 127.0.0.1:9000;|' sso-frontend/nginx/default.conf > /tmp/edge.conf
-          docker run --rm -v /tmp/edge.conf:/etc/nginx/conf.d/default.conf:ro nginx:1.27-alpine nginx -t
-
-  # ---- Secrets: no plaintext secret ever lands in git, and the repo's OWN SOPS rules actually encrypt. ----
-  secrets:
-    name: SOPS secrets verification
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    env:
-      SOPS_VERSION: v3.9.4
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install sops (checksum-verified) + age
-        run: |
-          base="https://github.com/getsops/sops/releases/download/${SOPS_VERSION}"
-          curl -fsSL -o sops "$base/sops-${SOPS_VERSION}.linux.amd64"
-          curl -fsSL -o sops.checksums "$base/sops-${SOPS_VERSION}.checksums.txt"
-          want=$(grep -E "sops-${SOPS_VERSION}\.linux\.amd64\$" sops.checksums | awk '{print $1}')
-          echo "${want}  sops" | sha256sum -c -
-          sudo install -m 0755 sops /usr/local/bin/sops
-          sudo apt-get update && sudo apt-get install -y age
-          sops --version && age --version
-      - name: No plaintext secret in git — every secrets/*.yaml (except *.example.yaml) must be SOPS-encrypted
-        run: |
-          shopt -s nullglob
-          fail=0; checked=0
-          for f in secrets/*.yaml secrets/*.yml; do
-            case "$f" in *.example.yaml|*.example.yml) continue;; esac
-            checked=$((checked+1))
-            grep -q '^sops:' "$f" || { echo "::error file=$f::committed UNencrypted — SOPS-encrypt it"; fail=1; }
-            grep -q 'ENC\[' "$f"  || { echo "::error file=$f::has no encrypted values"; fail=1; }
-          done
-          echo "verified $checked committed secret file(s) (0 = none yet; the round-trip below proves the rules)"
-          exit $fail
-      - name: The example template carries only placeholders (no real secret pasted in)
-        run: |
-          viol=$(grep -nP '^(DB_|REDIS_|SSO_)\w*(PASSWORD|SECRET|TOKEN|SALT)\b\s*:' secrets/prod.example.yaml \
-                 | grep -vP ':\s*"?(replace-me|0+)"?\s*(#.*)?$' || true)
-          if [ -n "$viol" ]; then
-            echo "$viol"
-            echo "::error::secrets/prod.example.yaml has a non-placeholder value — never put a real secret here"
-            exit 1
-          fi
-      - name: The repo's .sops.yaml rules actually encrypt secret-named keys (round-trip, ephemeral key)
-        run: |
-          work=$(mktemp -d); mkdir -p "$work/secrets"; key="$work/ci.key"
-          age-keygen -o "$key" 2>/dev/null; pub=$(age-keygen -y "$key")
-          # Use the REPO's creation_rules (path_regex + encrypted_regex), swapping ONLY the recipient to the
-          # ephemeral key. The class allows [A-Za-z0-9_-] so it matches BOTH the placeholder recipient
-          # (age1REPLACE_…, mixed case) and a real age key (lowercase base32).
-          sed -E "s|age1[A-Za-z0-9_-]+|$pub|g" .sops.yaml > "$work/.sops.yaml"
-          printf 'DB_PASSWORD: canary-secret\nPLAIN_NOTE: not-a-secret\n' > "$work/secrets/probe.sops.yaml"
-          ( cd "$work" && sops -e -i secrets/probe.sops.yaml )
-          grep -q 'DB_PASSWORD: ENC\[' "$work/secrets/probe.sops.yaml" || { echo "::error::encrypted_regex did not encrypt a _PASSWORD key"; exit 1; }
-          grep -q 'PLAIN_NOTE: not-a-secret' "$work/secrets/probe.sops.yaml" || { echo "::error::a non-secret key was encrypted (regex too broad)"; exit 1; }
-          grep -q 'canary-secret' "$work/secrets/probe.sops.yaml" && { echo "::error::plaintext secret leaked into ciphertext"; exit 1; }
-          SOPS_AGE_KEY_FILE="$key" sops -d "$work/secrets/probe.sops.yaml" | grep -q canary-secret || { echo "::error::decrypt round-trip failed"; exit 1; }
-
-  # ---- Committed-secret scan: fail if any private key / token / credential slipped into the tree (e.g. an age
-  #      PRIVATE key), complementing the `secrets` job (which only guards SOPS-encryption of secrets/*.yaml). ----
-  secret-scan:
-    name: Secret scan (Trivy)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      TRIVY_VERSION: '0.72.0'
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install Trivy (checksum-verified)
-        run: |
-          base="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"
-          curl -fsSL -o trivy.tgz "$base/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
-          curl -fsSL -o trivy.checksums "$base/trivy_${TRIVY_VERSION}_checksums.txt"
-          want=$(grep "trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" trivy.checksums | awk '{print $1}')
-          echo "${want}  trivy.tgz" | sha256sum -c -
-          tar xzf trivy.tgz trivy && sudo install -m 0755 trivy /usr/local/bin/trivy
-          trivy --version | head -1
-      - name: Scan for committed secrets / private keys (age, PEM, tokens, cloud creds)
-        run: trivy fs --scanners secret --exit-code 1 --no-progress --skip-dirs .git .
-
-  # ---- House rules from CLAUDE.md that a simple sweep can enforce (module boundaries are covered by
-  #      ModularityTests in backend-test). ----
+  backend:
+    name: Backend
+    uses: ./.github/workflows/backend.yml
+  frontend:
+    name: Frontend
+    uses: ./.github/workflows/frontend.yml
+  config:
+    name: Config
+    uses: ./.github/workflows/config.yml
+  security:
+    name: Security
+    uses: ./.github/workflows/security.yml
   hygiene:
-    name: Code hygiene (no inline FQNs)
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v5
-      - name: No inline fully-qualified com.example.sso names
-        run: |
-          # Match a FQN that references a TYPE (…​.Uppercase) so a lowercase string literal like
-          # "com.example.sso.trace.id" is not a false positive; skip import/package lines and javadoc refs.
-          hits=$(grep -rnP --include='*.java' \
-                   '^(?!\s*(import|package)\b).*\bcom\.example\.sso\.[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*\.[A-Z]' \
-                   sso-backend/src \
-                 | grep -vP '\{@(link|code)' || true)
-          if [ -n "$hits" ]; then
-            echo "$hits"
-            echo "::error::inline fully-qualified com.example.sso names (use an import — see .claude/rules/backend/imports.md)"
-            exit 1
-          fi
-
-  # ---- Images are built ONLY after their code is verified (build-after-green). No registry push (CI, not CD).
-  #      The GHA layer cache keeps the gradle-dependency layer warm across runs, so the in-Docker build (which
-  #      is self-contained by design) does not re-download the world every time. ----
-  backend-image:
-    name: Backend image build
-    needs: backend-test
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v5
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
-        with:
-          context: sso-backend
-          push: false
-          tags: mini-sso-backend:ci
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,mode=max,scope=backend
-
-  frontend-image:
-    name: Frontend (edge) image build
-    needs: frontend-build
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
-        with:
-          context: sso-frontend
-          push: false
-          tags: mini-sso-frontend:ci
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
+    name: Hygiene
+    uses: ./.github/workflows/hygiene.yml

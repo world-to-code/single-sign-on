@@ -1,0 +1,83 @@
+name: Security
+
+# Reusable: SOPS secrets verification + a Trivy scan for any committed private key / credential. Called by ci.yml.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  sops:
+    name: SOPS secrets verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SOPS_VERSION: v3.9.4
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install sops (checksum-verified) + age
+        run: |
+          base="https://github.com/getsops/sops/releases/download/${SOPS_VERSION}"
+          curl -fsSL -o sops "$base/sops-${SOPS_VERSION}.linux.amd64"
+          curl -fsSL -o sops.checksums "$base/sops-${SOPS_VERSION}.checksums.txt"
+          want=$(grep -E "sops-${SOPS_VERSION}\.linux\.amd64\$" sops.checksums | awk '{print $1}')
+          echo "${want}  sops" | sha256sum -c -
+          sudo install -m 0755 sops /usr/local/bin/sops
+          sudo apt-get update && sudo apt-get install -y age
+          sops --version && age --version
+      - name: No plaintext secret in git — every secrets/*.yaml (except *.example.yaml) must be SOPS-encrypted
+        run: |
+          shopt -s nullglob
+          fail=0; checked=0
+          for f in secrets/*.yaml secrets/*.yml; do
+            case "$f" in *.example.yaml|*.example.yml) continue;; esac
+            checked=$((checked+1))
+            grep -q '^sops:' "$f" || { echo "::error file=$f::committed UNencrypted — SOPS-encrypt it"; fail=1; }
+            grep -q 'ENC\[' "$f"  || { echo "::error file=$f::has no encrypted values"; fail=1; }
+          done
+          echo "verified $checked committed secret file(s) (0 = none yet; the round-trip below proves the rules)"
+          exit $fail
+      - name: The example template carries only placeholders (no real secret pasted in)
+        run: |
+          viol=$(grep -nP '^(DB_|REDIS_|SSO_)\w*(PASSWORD|SECRET|TOKEN|SALT)\b\s*:' secrets/prod.example.yaml \
+                 | grep -vP ':\s*"?(replace-me|0+)"?\s*(#.*)?$' || true)
+          if [ -n "$viol" ]; then
+            echo "$viol"
+            echo "::error::secrets/prod.example.yaml has a non-placeholder value — never put a real secret here"
+            exit 1
+          fi
+      - name: The repo's .sops.yaml rules actually encrypt secret-named keys (round-trip, ephemeral key)
+        run: |
+          work=$(mktemp -d); mkdir -p "$work/secrets"; key="$work/ci.key"
+          age-keygen -o "$key" 2>/dev/null; pub=$(age-keygen -y "$key")
+          # Use the REPO's creation_rules (path_regex + encrypted_regex), swapping ONLY the recipient to the
+          # ephemeral key. The class allows [A-Za-z0-9_-] so it matches BOTH the placeholder recipient
+          # (age1REPLACE_…, mixed case) and a real age key (lowercase base32).
+          sed -E "s|age1[A-Za-z0-9_-]+|$pub|g" .sops.yaml > "$work/.sops.yaml"
+          printf 'DB_PASSWORD: canary-secret\nPLAIN_NOTE: not-a-secret\n' > "$work/secrets/probe.sops.yaml"
+          ( cd "$work" && sops -e -i secrets/probe.sops.yaml )
+          grep -q 'DB_PASSWORD: ENC\[' "$work/secrets/probe.sops.yaml" || { echo "::error::encrypted_regex did not encrypt a _PASSWORD key"; exit 1; }
+          grep -q 'PLAIN_NOTE: not-a-secret' "$work/secrets/probe.sops.yaml" || { echo "::error::a non-secret key was encrypted (regex too broad)"; exit 1; }
+          grep -q 'canary-secret' "$work/secrets/probe.sops.yaml" && { echo "::error::plaintext secret leaked into ciphertext"; exit 1; }
+          SOPS_AGE_KEY_FILE="$key" sops -d "$work/secrets/probe.sops.yaml" | grep -q canary-secret || { echo "::error::decrypt round-trip failed"; exit 1; }
+
+  secret-scan:
+    name: Secret scan (Trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TRIVY_VERSION: '0.72.0'
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Trivy (checksum-verified)
+        run: |
+          base="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"
+          curl -fsSL -o trivy.tgz "$base/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -fsSL -o trivy.checksums "$base/trivy_${TRIVY_VERSION}_checksums.txt"
+          want=$(grep "trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" trivy.checksums | awk '{print $1}')
+          echo "${want}  trivy.tgz" | sha256sum -c -
+          tar xzf trivy.tgz trivy && sudo install -m 0755 trivy /usr/local/bin/trivy
+          trivy --version | head -1
+      - name: Scan for committed secrets / private keys (age, PEM, tokens, cloud creds)
+        run: trivy fs --scanners secret --exit-code 1 --no-progress --skip-dirs .git .

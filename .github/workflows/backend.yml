@@ -1,0 +1,50 @@
+name: Backend
+
+# Reusable: backend test gate + image build. The image is built only AFTER the tests pass (needs:) — a
+# container is never produced from unverified code. Called by ci.yml.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (Testcontainers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      # Testcontainers spins up real Postgres + Redis; the ubuntu runner provides the Docker daemon they need —
+      # which is exactly why tests run HERE, in CI, and not inside the image build. ModularityTests run too.
+      - name: ./gradlew test
+        working-directory: sso-backend
+        run: ./gradlew --no-daemon test
+      - name: Publish test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-test-results
+          path: sso-backend/build/reports/tests/test
+          if-no-files-found: ignore
+
+  image:
+    name: Image build
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: sso-backend
+          push: false
+          tags: mini-sso-backend:ci
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend

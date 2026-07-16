@@ -1,0 +1,30 @@
+name: Hygiene
+
+# Reusable: house rules from CLAUDE.md that a simple sweep can enforce (module boundaries are covered by
+# ModularityTests in the backend workflow). Called by ci.yml.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: No inline FQNs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: No inline fully-qualified com.example.sso names
+        run: |
+          # Match a FQN that references a TYPE (…​.Uppercase) so a lowercase string literal like
+          # "com.example.sso.trace.id" is not a false positive; skip import/package lines and javadoc refs.
+          hits=$(grep -rnP --include='*.java' \
+                   '^(?!\s*(import|package)\b).*\bcom\.example\.sso\.[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*\.[A-Z]' \
+                   sso-backend/src \
+                 | grep -vP '\{@(link|code)' || true)
+          if [ -n "$hits" ]; then
+            echo "$hits"
+            echo "::error::inline fully-qualified com.example.sso names (use an import — see .claude/rules/backend/imports.md)"
+            exit 1
+          fi

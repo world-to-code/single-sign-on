@@ -1,0 +1,44 @@
+name: Frontend
+
+# Reusable: frontend type-check + bundle, then the nginx-edge image (built only after the build passes).
+# Called by ci.yml.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Type-check + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: sso-frontend/package-lock.json
+      - name: npm ci
+        working-directory: sso-frontend
+        run: npm ci
+      - name: tsc + vite build
+        working-directory: sso-frontend
+        run: npm run build
+
+  image:
+    name: Edge image build
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: sso-frontend
+          push: false
+          tags: mini-sso-frontend:ci
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
