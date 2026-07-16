@@ -213,6 +213,8 @@ sso:
     trend-days: 30   # analytics window for the dashboards' sign-in trend + platform totals
 
 management:
+  # The PUBLIC port (:9000) exposes only health + info. Metrics/prometheus/loggers are exposed ONLY on the
+  # separate management port in prod (application-prod.yml), so internal telemetry never reaches the ingress.
   endpoints:
     web:
       exposure:
@@ -220,6 +222,13 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+      probes:
+        enabled: true            # /actuator/health/{liveness,readiness} — Kubernetes liveness/readiness probes
+  tracing:
+    sampling:
+      probability: 1.0           # trace EVERY request. No OTLP exporter is wired yet, so this only governs
+                                 # export once a collector is attached (management.otlp.tracing.endpoint) — the
+                                 # traceId/spanId reach the logs regardless. Lower it under heavy export load.
 
 logging:
   level:
@@ -227,3 +236,9 @@ logging:
     # OpenSAML probes every XML-security algorithm at startup and logs INFO for ones the JRE's
     # JCE doesn't provide (e.g. RIPEMD160, which we don't use). Quiet that benign noise.
     org.opensaml.xmlsec.algorithm.AlgorithmRegistry: WARN
+    # Per-request access log + error flow (see RequestLoggingFilter / GlobalExceptionHandler).
+    com.example.sso: INFO
+  # Micrometer Tracing auto-adds "[app,traceId,spanId]" to the console pattern; kept explicit so the dev
+  # console always shows the correlation id even if the auto-config default changes.
+  pattern:
+    correlation: "[${spring.application.name:},%X{traceId:-},%X{spanId:-}] "

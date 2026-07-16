@@ -81,11 +81,27 @@ sso:
     redirect-uris: ${SSO_ADMIN_CONSOLE_REDIRECT_URIS}   # the prod SPA origin + /admin/callback
 
 management:
+  # Actuator on a SEPARATE port, kept OFF the public app port so internal telemetry (metrics, prometheus,
+  # loggers) is never reachable through the ingress — only in-cluster scrapers/probes hit it. Override the port
+  # via MANAGEMENT_SERVER_PORT if the deployment needs it elsewhere.
+  server:
+    port: ${MANAGEMENT_SERVER_PORT:9001}
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus,metrics,loggers
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  # OTLP trace export: set MANAGEMENT_OTLP_TRACING_ENDPOINT (e.g. http://tempo:4318/v1/traces) once a
+  # collector exists; add opentelemetry-exporter-otlp to enable the exporter. Sampling is inherited (1.0).
 
 logging:
   level:
     org.springframework.security: INFO
+  # Structured stdout for log aggregation (Loki/ELK): ECS JSON, one object per line, MDC (traceId/spanId,
+  # userId, orgId, clientIp) as top-level fields. k8s collects stdout; no file appender.
+  structured:
+    format:
+      console: ecs

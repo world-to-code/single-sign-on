@@ -54,6 +54,15 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.boot:spring-boot-starter-mail'            // OTT (one-time-token) email delivery
 
+    // --- Observability (all versions BOM-managed) ---
+    // Distributed tracing via Micrometer Tracing + OpenTelemetry (W3C tracecontext). Every request gets a
+    // traceId/spanId auto-injected into the SLF4J MDC and the log pattern, so a request's log lines correlate.
+    // Export to a collector (Tempo/Jaeger/…) is one dependency away: add opentelemetry-exporter-otlp and set
+    // management.otlp.tracing.endpoint. Until then traces are used only for log correlation (no network I/O).
+    implementation 'io.micrometer:micrometer-tracing-bridge-otel'
+    // Prometheus scrape endpoint (/actuator/prometheus) for Kubernetes metrics.
+    implementation 'io.micrometer:micrometer-registry-prometheus'
+
     // --- Persistence ---
     // Boot 4 modularized auto-config: Flyway integration lives in its own module and is
     // NOT pulled transitively by the Flyway library, so add it explicitly.
