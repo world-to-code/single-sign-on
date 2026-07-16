@@ -7,6 +7,7 @@ import {
 } from "@/mapping";
 import { searchGroups } from "@/groups";
 import { listRoles } from "@/roles";
+import { listResources } from "@/resources";
 import { errorMessage } from "@/api";
 import { PageHeader } from "@/components/PageHeader";
 import { SearchSelect, type Suggestion } from "@/components/SearchSelect";
@@ -39,6 +40,21 @@ const roleFetcher = (q: string): Promise<Suggestion[]> =>
   listRoles().then((rs) => rs
     .filter((r) => r.name.toLowerCase().includes(q.toLowerCase()))
     .map((r) => ({ id: r.id, label: r.name })));
+
+const resourceFetcher = (q: string): Promise<Suggestion[]> =>
+  listResources().then((rs) => rs
+    .filter((r) => r.name.toLowerCase().includes(q.toLowerCase()))
+    .map((r) => ({ id: r.id, label: r.name })));
+
+const targetFetcher = (kind: MappingTargetKind) =>
+  kind === "ROLE" ? roleFetcher : kind === "RESOURCE_MEMBER" ? resourceFetcher : searchGroups;
+
+const targetPlaceholderKey = (kind: MappingTargetKind) =>
+  kind === "ROLE"
+    ? "mappingRulesRolePlaceholder"
+    : kind === "RESOURCE_MEMBER"
+      ? "mappingRulesResourcePlaceholder"
+      : "mappingRulesGroupPlaceholder";
 
 /** Auto-mapping rules: users carrying a metadata attribute (key = value) are kept in a target group. */
 export default function MappingRules() {
@@ -181,14 +197,15 @@ export default function MappingRules() {
                 <Select id="mr-kind" value={editor.thenKind} onChange={(e) => pickKind(e.target.value as MappingTargetKind)}>
                   <option value="GROUP">{t("mappingRulesKind_GROUP")}</option>
                   <option value="ROLE">{t("mappingRulesKind_ROLE")}</option>
+                  <option value="RESOURCE_MEMBER">{t("mappingRulesKind_RESOURCE_MEMBER")}</option>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label>{t("mappingRulesTargetLabel")}</Label>
                 <SearchSelect
                   key={editor.thenKind}
-                  placeholder={t(editor.thenKind === "ROLE" ? "mappingRulesRolePlaceholder" : "mappingRulesGroupPlaceholder")}
-                  fetcher={editor.thenKind === "ROLE" ? roleFetcher : searchGroups}
+                  placeholder={t(targetPlaceholderKey(editor.thenKind))}
+                  fetcher={targetFetcher(editor.thenKind)}
                   onSelect={(s) => set({ targetId: s?.id ?? "", targetName: s?.label ?? "" })}
                   resetKey={open}
                 />

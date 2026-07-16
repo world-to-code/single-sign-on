@@ -1,8 +1,8 @@
 import { apiGet, apiPost, apiPut } from "./api";
 
-export type MappingTargetKind = "GROUP" | "ROLE";
+export type MappingTargetKind = "GROUP" | "ROLE" | "RESOURCE_MEMBER";
 
-/** An auto-mapping rule: users carrying attrKey=attrValue are assigned to the target (group or role). */
+/** An auto-mapping rule: users carrying attrKey=attrValue are assigned to the target (group, role or resource). */
 export interface MappingRule {
   id: string;
   attrKey: string;
