@@ -1,6 +1,7 @@
 package com.example.sso.metadata.internal.domain;
 
 import com.example.sso.metadata.EntityKind;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -12,6 +13,9 @@ import org.springframework.data.repository.query.Param;
 public interface EntityAttributeRepository extends JpaRepository<EntityAttribute, UUID> {
 
     List<EntityAttribute> findByEntityKindAndEntityIdOrderByAttrKey(EntityKind entityKind, String entityId);
+
+    /** All rows for several entities of one kind in a single query — the fan-in for attribute inheritance. */
+    List<EntityAttribute> findByEntityKindAndEntityIdIn(EntityKind entityKind, Collection<String> entityIds);
 
     Optional<EntityAttribute> findByEntityKindAndEntityIdAndAttrKeyAndOrgId(
             EntityKind entityKind, String entityId, String attrKey, UUID orgId);

@@ -70,6 +70,7 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
     private UUID authStrong, authBasic, authRoleB, authDisabled;
     private UUID sess5, sess15, sessAll, sessDisabled;
     private UUID financeRoleId;   // kim holds it; used by the attribute-specificity fixtures
+    private UUID marketingGroupId; // kim is a member; used by the attribute-inheritance fixtures
     // A role NO test user holds — session policies are assigned to it so they never apply via the global
     // fallback resolution (an unassigned global policy would be "everyone's" policy and mask the Default).
     private UUID holderRole;
@@ -103,6 +104,7 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
 
             UUID marketing = UUID.fromString(groups.create(new GroupSpec("mkt-" + s, null, null, Set.of(kimId))).id());
             createdGroups.add(marketing);
+            marketingGroupId = marketing;
 
             holderRole = roles.getOrCreate("ROLE_PBT_HOLDER_" + s).getId();
             authStrong = authPolicy("strong-" + s);
@@ -142,6 +144,7 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
         orgContext.runAsPlatform(() -> {
             ownerJdbc().update("delete from policy_binding where app_id like 'pbt-%'");
             createdUsers.forEach(id -> ownerJdbc().update("delete from entity_attribute where entity_id = ?", id.toString()));
+            createdGroups.forEach(id -> ownerJdbc().update("delete from entity_attribute where entity_id = ?", id.toString()));
             createdSessionPolicies.forEach(id -> ownerJdbc().update("delete from session_policy where id = ?", id));
             createdAuthPolicies.forEach(id -> ownerJdbc().update("delete from auth_policy where id = ?", id));
             createdGroups.forEach(groups::delete);
@@ -416,6 +419,118 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
             bindings.saveAndFlush(attrSessionOp(app, "dept", AttributeOperator.EQUALS, "eng", sess5, 1));   // value op, low prio
             bindings.saveAndFlush(attrSessionOp(app, "dept", AttributeOperator.EXISTS, null, sess15, 99));  // key op, high prio
         });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+    }
+
+    @Test
+    void anAttributeBindingMatchesViaAGroupTheUserInherits() {
+        // Inheritance: kim carries NO dept of their own but belongs to the marketing group; tagging that group
+        // dept=eng makes kim match a dept=eng predicate. lee, in no such group, does not.
+        String app = "pbt-inherit";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.GROUP, marketingGroupId.toString(), "dept", "eng");
+            bindings.saveAndFlush(attrSession(app, "dept", "eng", sess5, 10));
+        });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+        assertThat(resolveSession(lee, app)).isEmpty();
+    }
+
+    @Test
+    void aNotEqualsBindingExcludesAUserWhoseGroupCarriesTheValue() {
+        // A group tag participates in the negation too: kim is in a group tagged dept=sales, so "dept != sales"
+        // excludes kim; lee (no dept anywhere) satisfies the negation and matches.
+        String app = "pbt-inherit-neq";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.GROUP, marketingGroupId.toString(), "dept", "sales");
+            bindings.saveAndFlush(attrSessionOp(app, "dept", AttributeOperator.NOT_EQUALS, "sales", sess5, 10));
+        });
+        assertThat(resolveSession(kim, app)).isEmpty();
+        assertThat(resolveSession(lee, app)).map(SessionPolicyDetails::getId).contains(sess5);
+    }
+
+    @Test
+    void anExistsBindingMatchesViaGroupInheritance() {
+        String app = "pbt-inherit-exists";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.GROUP, marketingGroupId.toString(), "dept", "whatever");
+            bindings.saveAndFlush(attrSessionOp(app, "dept", AttributeOperator.EXISTS, null, sess5, 10));
+        });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+        assertThat(resolveSession(lee, app)).isEmpty();
+    }
+
+    @Test
+    void anInheritedGroupTagIsConfinedToTheTenantThatSetIt() {
+        // kim belongs to the (global) marketing group in every tenant, but a GROUP tag set in org A is an org-A
+        // row: kim inherits dept=eng only in A, so the SAME global predicate binding matches in A and not in B.
+        String app = "pbt-inherit-tenant";
+        UUID orgA = orgContext.callAsPlatform(
+                () -> organizations.create(new NewOrganization("pbt-inh-a-" + suffix(), "A")).id());
+        UUID orgB = orgContext.callAsPlatform(
+                () -> organizations.create(new NewOrganization("pbt-inh-b-" + suffix(), "B")).id());
+        createdOrgs.add(orgA);
+        createdOrgs.add(orgB);
+        orgContext.runAsPlatform(() -> bindings.saveAndFlush(attrSession(app, "dept", "eng", sess5, 10)));
+        orgContext.runInOrg(orgA, () -> attributes.set(EntityKind.GROUP, marketingGroupId.toString(), "dept", "eng"));
+
+        assertThat(orgContext.callInOrg(orgA, () -> resolver.resolveSessionPolicy(kim, APP, app)))
+                .map(SessionPolicyDetails::getId).contains(sess5);
+        assertThat(orgContext.callInOrg(orgB, () -> resolver.resolveSessionPolicy(kim, APP, app))).isEmpty();
+    }
+
+    @Test
+    void anOwnAttributeAndAGroupTagUnionRatherThanShadow() {
+        // The defining property of the union: kim's OWN dept=sales does NOT shadow the group's dept=eng — kim
+        // carries both, so a dept=eng predicate still matches (a per-key own-shadows-group would wrongly miss).
+        String app = "pbt-union-match";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "sales");
+            attributes.set(EntityKind.GROUP, marketingGroupId.toString(), "dept", "eng");
+            bindings.saveAndFlush(attrSession(app, "dept", "eng", sess5, 10));
+        });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+    }
+
+    @Test
+    void aGroupTagParticipatesInNegationEvenWhenTheOwnValueWouldSatisfyIt() {
+        // The security-relevant direction: kim's OWN dept=eng would satisfy "dept != sales", but the group's
+        // dept=sales is in the union too, so kim is excluded — an own value must not mask a group's tag.
+        String app = "pbt-union-neg";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "eng");
+            attributes.set(EntityKind.GROUP, marketingGroupId.toString(), "dept", "sales");
+            bindings.saveAndFlush(attrSessionOp(app, "dept", AttributeOperator.NOT_EQUALS, "sales", sess5, 10));
+        });
+        assertThat(resolveSession(kim, app)).isEmpty();
+    }
+
+    @Test
+    void aNotExistsBindingExcludesAUserWhoseGroupCarriesTheKey() {
+        // NOT_EXISTS over the union: kim's group carries dept, so kim has the key (inherited) and is excluded;
+        // lee has no dept anywhere and satisfies "no dept".
+        String app = "pbt-inherit-notexists";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.GROUP, marketingGroupId.toString(), "dept", "x");
+            bindings.saveAndFlush(attrSessionOp(app, "dept", AttributeOperator.NOT_EXISTS, null, sess5, 10));
+        });
+        assertThat(resolveSession(kim, app)).isEmpty();
+        assertThat(resolveSession(lee, app)).map(SessionPolicyDetails::getId).contains(sess5);
+    }
+
+    @Test
+    void inheritanceUnionsAcrossAllOfAUsersGroups() {
+        // The batch fan-in must union EVERY group, not just the first: kim is in marketing (untagged) AND a
+        // second group tagged dept=eng — the tag on the non-first group must still make kim match.
+        String app = "pbt-multi-group";
+        UUID second = orgContext.callAsPlatform(() -> {
+            UUID id = UUID.fromString(groups.create(new GroupSpec("mkt2-" + suffix(), null, null,
+                    Set.of(kim.getId()))).id());
+            createdGroups.add(id);
+            attributes.set(EntityKind.GROUP, id.toString(), "dept", "eng");
+            bindings.saveAndFlush(attrSession(app, "dept", "eng", sess5, 10));
+            return id;
+        });
+        assertThat(second).isNotNull();
         assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
     }
 

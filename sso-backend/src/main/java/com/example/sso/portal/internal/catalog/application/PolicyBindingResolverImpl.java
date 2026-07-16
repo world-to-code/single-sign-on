@@ -14,6 +14,7 @@ import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.group.UserGroupService;
 import com.example.sso.user.role.RoleRef;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -105,12 +106,25 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
         List<PolicyBinding> candidates = bindings.findByAppTypeAndAppId(appType, appId).stream()
                 .filter(b -> field.apply(b) != null)
                 .toList();
-        // Load the user's effective attributes ONCE, and only when a predicate binding is actually present
-        // (each attributesOf is a query, and own-shadows-global precedence must be applied per-tenant).
+        // Load the user's effective attributes ONCE, and only when a predicate binding is actually present (each
+        // attributesOf is a query). A predicate matches on the user's OWN attributes OR any of their groups' — a
+        // group tag is inherited by its members (union; groupIds are already RLS-scoped, so no cross-tenant leak).
         List<Attribute> userAttributes = candidates.stream().anyMatch(this::isAttributeBinding)
-                ? attributes.attributesOf(EntityKind.USER, userId.toString())
+                ? effectiveAttributes(userId, groupIds)
                 : List.of();
         return candidates.stream().filter(b -> subjectMatches(b, userId, roleIds, groupIds, userAttributes));
+    }
+
+    /** The user's own attributes unioned with those inherited from the groups they belong to. Note the
+     *  specificity consequence: an inherited group tag matches at the ATTRIBUTE tier, which OUTRANKS the group's
+     *  own GROUP binding — tagging a group can raise or lower the policy its members resolve, by admin intent. */
+    private List<Attribute> effectiveAttributes(UUID userId, Set<UUID> groupIds) {
+        List<Attribute> effective = new ArrayList<>(attributes.attributesOf(EntityKind.USER, userId.toString()));
+        if (!groupIds.isEmpty()) {
+            effective.addAll(attributes.unionAttributesOf(EntityKind.GROUP,
+                    groupIds.stream().map(UUID::toString).toList()));
+        }
+        return effective;
     }
 
     /** USER &gt; ATTRIBUTE(value op) &gt; ATTRIBUTE(key op) &gt; role/group membership &gt; app-wide default. A value

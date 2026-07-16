@@ -1,5 +1,6 @@
 package com.example.sso.metadata;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
@@ -13,6 +14,14 @@ public interface AttributeService {
 
     /** The attributes on the entity, in key order. On read a tenant's own attribute shadows a global one. */
     List<Attribute> attributesOf(EntityKind kind, String entityId);
+
+    /**
+     * The UNION of the (effective) attributes across several entities of one kind — own-shadows-global applied
+     * per entity, then merged into one set (entity identity discarded; order not significant). The fan-in for
+     * attribute inheritance: a caller that has resolved a user's group ids folds in
+     * {@code unionAttributesOf(GROUP, groupIds)} so a predicate matches on a group's tag.
+     */
+    List<Attribute> unionAttributesOf(EntityKind kind, Collection<String> entityIds);
 
     /**
      * The entity's attributes OWNED by the acting tier only (a tenant's own rows, or the global rows at the
