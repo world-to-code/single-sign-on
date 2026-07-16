@@ -3,13 +3,17 @@ import { apiGet, apiPost, apiPut } from "./api";
 export type MappingTargetKind = "GROUP" | "ROLE" | "RESOURCE_MEMBER";
 
 /** Predicate operator for a mapping rule. Mapping forbids the NOT_* operators the policy targeting allows. */
-export type MappingAttrOp = "EQUALS" | "EXISTS";
+export type MappingAttrOp = "EQUALS" | "EXISTS" | "IN";
 
-/** A single attribute predicate; a rule's conditions are AND-combined. `attrValue` is null for EXISTS. */
+/**
+ * A single attribute predicate; a rule's conditions are AND-combined. For EQUALS `attrValue` is set and
+ * `attrValues` is empty; for IN `attrValue` is null and `attrValues` is non-empty; for EXISTS both are empty/null.
+ */
 export interface MappingCondition {
   attrKey: string;
   attrOp: MappingAttrOp;
   attrValue: string | null;
+  attrValues: string[];
 }
 
 /** An auto-mapping rule: users whose attributes satisfy every condition (AND) are assigned to the target. */
@@ -31,7 +35,8 @@ export interface MappingPreview {
 export interface MappingConditionRequest {
   attrKey: string;
   attrOp: MappingAttrOp;
-  attrValue?: string; // omitted for the EXISTS operator
+  attrValue?: string; // set for EQUALS; omitted for EXISTS and IN
+  attrValues?: string[]; // non-empty for IN; omitted otherwise
 }
 
 export interface MappingRuleRequest {

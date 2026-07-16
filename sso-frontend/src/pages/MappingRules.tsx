@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ValueListInput } from "@/components/ValueListInput";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DataList, EmptyState } from "@/components/states";
 import { useApiData } from "@/useApiData";
@@ -30,7 +31,8 @@ import { useEditorForm } from "@/hooks/useEditorForm";
 interface EditorCondition {
   attrKey: string;
   attrOp: MappingAttrOp;
-  attrValue: string;
+  attrValue: string; // used by EQUALS
+  attrValues: string[]; // used by IN
 }
 interface Editor {
   id: string | null;
@@ -39,20 +41,30 @@ interface Editor {
   targetId: string;
   targetName: string;
 }
-const blankCondition = (): EditorCondition => ({ attrKey: "", attrOp: "EQUALS", attrValue: "" });
+const blankCondition = (): EditorCondition => ({ attrKey: "", attrOp: "EQUALS", attrValue: "", attrValues: [] });
 const blank: Editor = { id: null, conditions: [blankCondition()], thenKind: "GROUP", targetId: "", targetName: "" };
 
-const MAPPING_OPERATORS: MappingAttrOp[] = ["EQUALS", "EXISTS"];
+const MAPPING_OPERATORS: MappingAttrOp[] = ["EQUALS", "EXISTS", "IN"];
 
-/** A single condition is complete when it has a key, plus a value unless the operator is EXISTS. */
-const conditionComplete = (c: EditorCondition) => Boolean(c.attrKey.trim() && (c.attrOp === "EXISTS" || c.attrValue.trim()));
+/** A condition's non-empty IN values, trimmed. */
+const trimmedValues = (c: EditorCondition) => c.attrValues.map((v) => v.trim()).filter(Boolean);
 
-/** Build the request body — every EXISTS condition drops the value the backend rejects. */
+/** Complete when it has a key, plus (EQUALS) a value or (IN) at least one value; EXISTS needs only the key. */
+const conditionComplete = (c: EditorCondition) => {
+  if (!c.attrKey.trim()) return false;
+  if (c.attrOp === "EXISTS") return true;
+  if (c.attrOp === "IN") return trimmedValues(c).length > 0;
+  return Boolean(c.attrValue.trim());
+};
+
+/** Build the request body — EQUALS sends a value, IN a non-empty value list, EXISTS neither (the backend rejects them). */
 function toRuleRequest(e: Editor): MappingRuleRequest {
   return {
     conditions: e.conditions.map((c) => {
       const base = { attrKey: c.attrKey.trim(), attrOp: c.attrOp };
-      return c.attrOp === "EXISTS" ? base : { ...base, attrValue: c.attrValue.trim() };
+      if (c.attrOp === "EXISTS") return base;
+      if (c.attrOp === "IN") return { ...base, attrValues: trimmedValues(c) };
+      return { ...base, attrValue: c.attrValue.trim() };
     }),
     thenKind: e.thenKind,
     targetId: e.targetId,
@@ -103,7 +115,9 @@ export default function MappingRules() {
     // A condition stored before operators existed loads as EQUALS.
     openEdit({
       id: r.id,
-      conditions: r.conditions.map((c) => ({ attrKey: c.attrKey, attrOp: c.attrOp ?? "EQUALS", attrValue: c.attrValue ?? "" })),
+      conditions: r.conditions.map((c) => ({
+        attrKey: c.attrKey, attrOp: c.attrOp ?? "EQUALS", attrValue: c.attrValue ?? "", attrValues: c.attrValues ?? [],
+      })),
       thenKind: r.thenKind, targetId: r.targetId, targetName: r.targetName ?? "",
     });
   };
@@ -118,10 +132,14 @@ export default function MappingRules() {
     setEditor((e) => ({ ...e, conditions: e.conditions.filter((_, idx) => idx !== i) }));
   };
 
-  /** Human-readable AND-joined predicate, e.g. "dept = eng AND clearance exists". */
+  /** Human-readable AND-joined predicate, e.g. "dept = eng AND team in (infra, sre) AND clearance exists". */
   const predicateText = (conditions: MappingCondition[]) =>
     conditions
-      .map((c) => (c.attrOp === "EXISTS" ? `${c.attrKey} ${t("mappingRulesExists")}` : `${c.attrKey} = ${c.attrValue ?? ""}`))
+      .map((c) => {
+        if (c.attrOp === "EXISTS") return `${c.attrKey} ${t("mappingRulesExists")}`;
+        if (c.attrOp === "IN") return `${c.attrKey} ${t("mappingRulesIn")} (${(c.attrValues ?? []).join(", ")})`;
+        return `${c.attrKey} = ${c.attrValue ?? ""}`;
+      })
       .join(` ${t("mappingRulesAnd")} `);
 
   const canSave = editor.conditions.length >= 1 && editor.conditions.every(conditionComplete) && editor.targetId;
@@ -191,9 +209,17 @@ export default function MappingRules() {
                       <span key={i}>
                         {i > 0 && <span className="text-muted-foreground"> {t("mappingRulesAnd")} </span>}
                         <span className="font-mono">{c.attrKey}</span>
-                        {c.attrOp === "EXISTS" ? (
+                        {c.attrOp === "EXISTS" && (
                           <span className="text-muted-foreground"> {t("mappingRulesExists")}</span>
-                        ) : (
+                        )}
+                        {c.attrOp === "IN" && (
+                          <>
+                            <span className="text-muted-foreground"> {t("mappingRulesIn")} (</span>
+                            <span className="font-mono">{(c.attrValues ?? []).join(", ")}</span>
+                            <span className="text-muted-foreground">)</span>
+                          </>
+                        )}
+                        {c.attrOp === "EQUALS" && (
                           <>
                             <span className="text-muted-foreground"> = </span>
                             <span className="font-mono">{c.attrValue}</span>
@@ -265,6 +291,14 @@ export default function MappingRules() {
                       <Label htmlFor={`mr-value-${i}`}>{t("mappingRulesValueLabel")}</Label>
                       <Input id={`mr-value-${i}`} className="font-mono" value={c.attrValue}
                              onChange={(e) => setCondition(i, { attrValue: e.target.value })} placeholder="engineering" required />
+                    </div>
+                  )}
+                  {c.attrOp === "IN" && (
+                    <div className="space-y-2">
+                      <Label htmlFor={`mr-values-${i}`}>{t("mappingRulesValuesLabel")}</Label>
+                      <ValueListInput inputId={`mr-values-${i}`} value={c.attrValues}
+                                      onChange={(vs) => setCondition(i, { attrValues: vs })}
+                                      placeholder={t("mappingRulesValuesPlaceholder")} />
                     </div>
                   )}
                 </div>
