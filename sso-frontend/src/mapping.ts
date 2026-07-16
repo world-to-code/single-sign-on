@@ -3,10 +3,10 @@ import { apiGet, apiPost, apiPut } from "./api";
 export type MappingTargetKind = "GROUP" | "ROLE" | "RESOURCE_MEMBER";
 
 /** Predicate operator for a mapping rule. Mapping forbids the NOT_* operators the policy targeting allows. */
-export type MappingAttrOp = "EQUALS" | "EXISTS" | "IN";
+export type MappingAttrOp = "EQUALS" | "EXISTS" | "IN" | "CONTAINS";
 
 /**
- * A single attribute predicate; a rule's conditions are AND-combined. For EQUALS `attrValue` is set and
+ * A single attribute predicate; a rule's conditions are AND-combined. For EQUALS/CONTAINS `attrValue` is set and
  * `attrValues` is empty; for IN `attrValue` is null and `attrValues` is non-empty; for EXISTS both are empty/null.
  */
 export interface MappingCondition {
@@ -35,7 +35,7 @@ export interface MappingPreview {
 export interface MappingConditionRequest {
   attrKey: string;
   attrOp: MappingAttrOp;
-  attrValue?: string; // set for EQUALS; omitted for EXISTS and IN
+  attrValue?: string; // set for EQUALS/CONTAINS; omitted for EXISTS and IN
   attrValues?: string[]; // non-empty for IN; omitted otherwise
 }
 

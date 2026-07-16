@@ -31,7 +31,7 @@ import { useEditorForm } from "@/hooks/useEditorForm";
 interface EditorCondition {
   attrKey: string;
   attrOp: MappingAttrOp;
-  attrValue: string; // used by EQUALS
+  attrValue: string; // used by EQUALS and CONTAINS
   attrValues: string[]; // used by IN
 }
 interface Editor {
@@ -44,12 +44,12 @@ interface Editor {
 const blankCondition = (): EditorCondition => ({ attrKey: "", attrOp: "EQUALS", attrValue: "", attrValues: [] });
 const blank: Editor = { id: null, conditions: [blankCondition()], thenKind: "GROUP", targetId: "", targetName: "" };
 
-const MAPPING_OPERATORS: MappingAttrOp[] = ["EQUALS", "EXISTS", "IN"];
+const MAPPING_OPERATORS: MappingAttrOp[] = ["EQUALS", "CONTAINS", "EXISTS", "IN"];
 
 /** A condition's non-empty IN values, trimmed. */
 const trimmedValues = (c: EditorCondition) => c.attrValues.map((v) => v.trim()).filter(Boolean);
 
-/** Complete when it has a key, plus (EQUALS) a value or (IN) at least one value; EXISTS needs only the key. */
+/** Complete when it has a key, plus (EQUALS/CONTAINS) a value or (IN) at least one value; EXISTS needs only the key. */
 const conditionComplete = (c: EditorCondition) => {
   if (!c.attrKey.trim()) return false;
   if (c.attrOp === "EXISTS") return true;
@@ -57,7 +57,7 @@ const conditionComplete = (c: EditorCondition) => {
   return Boolean(c.attrValue.trim());
 };
 
-/** Build the request body — EQUALS sends a value, IN a non-empty value list, EXISTS neither (the backend rejects them). */
+/** Build the request body — EQUALS/CONTAINS send a value, IN a non-empty value list, EXISTS neither (the backend rejects them). */
 function toRuleRequest(e: Editor): MappingRuleRequest {
   return {
     conditions: e.conditions.map((c) => {
@@ -138,6 +138,7 @@ export default function MappingRules() {
       .map((c) => {
         if (c.attrOp === "EXISTS") return `${c.attrKey} ${t("mappingRulesExists")}`;
         if (c.attrOp === "IN") return `${c.attrKey} ${t("mappingRulesIn")} (${(c.attrValues ?? []).join(", ")})`;
+        if (c.attrOp === "CONTAINS") return `${c.attrKey} ${t("mappingRulesContains")} ${c.attrValue ?? ""}`;
         return `${c.attrKey} = ${c.attrValue ?? ""}`;
       })
       .join(` ${t("mappingRulesAnd")} `);
@@ -219,6 +220,12 @@ export default function MappingRules() {
                             <span className="text-muted-foreground">)</span>
                           </>
                         )}
+                        {c.attrOp === "CONTAINS" && (
+                          <>
+                            <span className="text-muted-foreground"> {t("mappingRulesContains")} </span>
+                            <span className="font-mono">{c.attrValue}</span>
+                          </>
+                        )}
                         {c.attrOp === "EQUALS" && (
                           <>
                             <span className="text-muted-foreground"> = </span>
@@ -286,7 +293,7 @@ export default function MappingRules() {
                       <Trash2 />
                     </Button>
                   </div>
-                  {c.attrOp === "EQUALS" && (
+                  {(c.attrOp === "EQUALS" || c.attrOp === "CONTAINS") && (
                     <div className="space-y-2">
                       <Label htmlFor={`mr-value-${i}`}>{t("mappingRulesValueLabel")}</Label>
                       <Input id={`mr-value-${i}`} className="font-mono" value={c.attrValue}
