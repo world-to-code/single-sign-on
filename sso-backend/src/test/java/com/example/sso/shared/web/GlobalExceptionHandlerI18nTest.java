@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.http.ProblemDetail;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.web.context.request.ServletWebRequest;
 
 import java.sql.SQLException;
 import java.util.Locale;
@@ -93,6 +95,23 @@ class GlobalExceptionHandlerI18nTest {
                 new DataIntegrityViolationException("fk", new SQLException("fk violation", "23503"));
 
         assertThatThrownBy(() -> handler.handleDataIntegrityViolation(fk, null)).isSameAs(fk);
+    }
+
+    @Test
+    void theProblemTraceIdIsTheRequestsBoundTraceIdAndStableAcrossCalls() {
+        // The seam: the traceId in the error response must equal the id the access-log filter bound for this
+        // request (RequestTrace.ATTRIBUTE), so a client quoting it finds the request in the logs — and it must
+        // not change between two errors on the same request.
+        MockHttpServletRequest servletRequest = new MockHttpServletRequest("GET", "/api/x");
+        servletRequest.setAttribute(RequestTrace.ATTRIBUTE, "0af7651916cd43dd8448eb211c80319c");
+        ServletWebRequest request = new ServletWebRequest(servletRequest);
+
+        ProblemDetail forbidden = handler.handleAccessDenied(new AccessDeniedException("no"), request);
+        ProblemDetail badRequest =
+                handler.handleApiException(BadRequestException.of("resource.memberType.unknown", "x"), request);
+
+        assertThat(forbidden.getProperties()).containsEntry("traceId", "0af7651916cd43dd8448eb211c80319c");
+        assertThat(badRequest.getProperties()).containsEntry("traceId", "0af7651916cd43dd8448eb211c80319c");
     }
 
     @Test

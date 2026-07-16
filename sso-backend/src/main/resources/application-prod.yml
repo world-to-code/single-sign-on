@@ -81,15 +81,17 @@ sso:
     redirect-uris: ${SSO_ADMIN_CONSOLE_REDIRECT_URIS}   # the prod SPA origin + /admin/callback
 
 management:
-  # Actuator on a SEPARATE port, kept OFF the public app port so internal telemetry (metrics, prometheus,
-  # loggers) is never reachable through the ingress — only in-cluster scrapers/probes hit it. Override the port
-  # via MANAGEMENT_SERVER_PORT if the deployment needs it elsewhere.
+  # Actuator on a SEPARATE port with NO SecurityFilterChain of its own (the app's chains bind the primary
+  # context, not this one), so this port MUST be locked down by a Kubernetes NetworkPolicy that admits ONLY the
+  # Prometheus scraper and the kubelet probes — never the ingress. Read-only endpoints only: `loggers` (a POST
+  # that flips runtime log levels, which could enable secret/token DEBUG logging) is deliberately NOT exposed.
+  # Override the port via MANAGEMENT_SERVER_PORT if the deployment needs it elsewhere.
   server:
     port: ${MANAGEMENT_SERVER_PORT:9001}
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus,metrics,loggers
+        include: health,info,prometheus,metrics
   endpoint:
     health:
       probes:
