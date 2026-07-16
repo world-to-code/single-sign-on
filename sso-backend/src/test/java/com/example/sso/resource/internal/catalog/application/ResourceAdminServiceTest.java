@@ -18,6 +18,7 @@ import com.example.sso.resource.internal.domain.ResourceTypeAllowedMemberReposit
 import com.example.sso.resource.internal.domain.ResourceTypeRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
+import org.springframework.context.ApplicationEventPublisher;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.tenancy.OrgTierGuard;
@@ -95,7 +96,8 @@ class ResourceAdminServiceTest {
         lenient().when(orgContext.callAsPlatform(any()))
                 .thenAnswer(invocation -> invocation.getArgument(0, Supplier.class).get());
         service = new ResourceAdminService(resources, types, allowedMembers, edges, memberRows, grantRows,
-                graph, access, attributes, users, groups, applications, new OrgTierGuard(orgContext), orgContext);
+                graph, access, attributes, users, groups, applications, new OrgTierGuard(orgContext), orgContext,
+                mock(ApplicationEventPublisher.class));
     }
 
     @Test

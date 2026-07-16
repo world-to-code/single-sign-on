@@ -42,7 +42,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import com.example.sso.resource.catalog.ResourceDeletedEvent;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -77,6 +79,7 @@ public class ResourceAdminService {
     private final ApplicationService applications;
     private final OrgTierGuard tierGuard;
     private final OrgContext orgContext;
+    private final ApplicationEventPublisher events;
 
     // --- Types ---
 
@@ -319,6 +322,7 @@ public class ResourceAdminService {
         memberRows.deleteByResourceId(id);
         grantRows.deleteByResourceId(id);
         resources.delete(resource);
+        events.publishEvent(new ResourceDeletedEvent(id)); // let referrers (e.g. mapping rules) drop dangling refs
     }
 
     // --- Edges (cycle-checked + serialized in ResourceGraphService) ---
@@ -348,23 +352,39 @@ public class ResourceAdminService {
     public ResourceView attachMember(UUID id, MemberType memberType, String memberId) {
         access.requireManage(id);
         access.requireManagesMember(memberType, memberId); // pull-in guard
+        attachMemberChecked(id, memberType, memberId);
+        return viewOf(id);
+    }
+
+    /**
+     * Attach a member enforcing only the INTEGRITY invariants (type allows the member kind, member exists, same
+     * org) and the org-stamp — NO current-actor subtree authorization. The admin API calls this after its own
+     * {@code requireManage}/{@code requireManagesMember} scope check; a programmatic caller
+     * ({@link com.example.sso.resource.catalog.ResourceMembershipService}) calls it directly, having authorized
+     * the operation its own way. Always runs inside the caller's transaction.
+     */
+    void attachMemberChecked(UUID id, MemberType memberType, String memberId) {
         Resource resource = requireInTierFetchingType(id);
         resource.requireCanAttachMember(memberType, allowedMemberTypes(resource.getType().getId()));
         requireMemberExists(memberType, memberId);
         requireMemberInResourceOrg(resource, memberType, memberId);
         memberRows.save(ResourceMemberRow.of(id, new ResourceMember(memberType, memberId), resource.getOrgId()));
-        return viewOf(id);
     }
 
     @Transactional
     public ResourceView detachMember(UUID id, MemberType memberType, String memberId) {
         access.requireManage(id);
+        detachMemberChecked(id, memberType, memberId);
+        return viewOf(id);
+    }
+
+    /** Detach a member (idempotent) without the current-actor authorization — see {@link #attachMemberChecked}. */
+    void detachMemberChecked(UUID id, MemberType memberType, String memberId) {
         requireInTier(id);
         if (memberType == MemberType.GROUP || memberType == MemberType.USER) {
             MemberIds.requireUuid(memberId); // malformed id → 400, not a 500 on the delete
         }
         memberRows.deleteMember(id, memberType, memberId); // no-op when absent
-        return viewOf(id);
     }
 
     // --- Delegation grants ---
