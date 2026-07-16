@@ -216,6 +216,14 @@ class AdminAccessPolicyTest {
         assertThat(policy.mayAssignTarget(MappingTargetKind.ROLE, aboveRoleId)).isFalse();
     }
 
+    @Test
+    void mayAssignTargetForAResourceMemberDelegatesToResourceCanManage() {
+        UUID resourceId = UUID.randomUUID();
+        when(resourceAuth.canManage(ACTOR_ID, resourceId)).thenReturn(true);
+        assertThat(policy.mayAssignTarget(MappingTargetKind.RESOURCE_MEMBER, resourceId)).isTrue();
+        assertThat(policy.mayAssignTarget(MappingTargetKind.RESOURCE_MEMBER, UUID.randomUUID())).isFalse();
+    }
+
     // --- parameterized mayAssignTarget: the SecurityContext-FREE variant used by the async author re-validation ---
 
     @Test
@@ -243,6 +251,18 @@ class AdminAccessPolicyTest {
 
         // Even if the author's authority set literally contains it, a non-super may not vouch a platform-permission role.
         assertThat(policy.mayAssignTarget(author, Set.of(Permissions.ORG_CREATE), MappingTargetKind.ROLE, roleId)).isFalse();
+    }
+
+    @Test
+    void parameterizedMayAssignTargetResourceMemberIsSecurityContextFree() {
+        SecurityContextHolder.clearContext();
+        UUID author = UUID.randomUUID();
+        UUID resourceId = UUID.randomUUID();
+        when(resourceAuth.canManage(author, resourceId)).thenReturn(true);
+
+        assertThat(policy.mayAssignTarget(author, Set.of(), MappingTargetKind.RESOURCE_MEMBER, resourceId)).isTrue();
+        assertThat(policy.mayAssignTarget(author, Set.of(), MappingTargetKind.RESOURCE_MEMBER, UUID.randomUUID()))
+                .isFalse();
     }
 
     @Test

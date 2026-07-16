@@ -141,6 +141,7 @@ public class AdminAccessPolicy {
                     || (roleHierarchy.actorMayManageRole(actorId, targetId)
                             && !roleCarriesPlatformPermission(targetId)
                             && actorAuthorities.containsAll(roleService.permissionNames(targetId)));
+            case RESOURCE_MEMBER -> resourceAuth.canManage(actorId, targetId); // manages the resource (subtree), by id
         };
     }
 
