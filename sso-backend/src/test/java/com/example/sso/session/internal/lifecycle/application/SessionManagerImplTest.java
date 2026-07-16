@@ -1,5 +1,8 @@
 package com.example.sso.session.internal.lifecycle.application;
 
+import com.example.sso.audit.AuditRecord;
+import com.example.sso.audit.AuditService;
+import com.example.sso.audit.AuditType;
 import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.organization.OrganizationAccessRevokedEvent;
 import com.example.sso.session.lifecycle.SessionMetadata;
@@ -14,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -26,6 +30,7 @@ import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.session.MapSession;
 import org.springframework.session.Session;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
@@ -36,6 +41,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -67,12 +73,18 @@ class SessionManagerImplTest {
     private FindByIndexNameSessionRepository<Session> sessionRepository;
     @Mock
     private UserService users;
+    @Mock
+    private AuditService audit;
 
     private SessionManagerImpl manager;
 
     @BeforeEach
     void setUp() {
-        manager = new SessionManagerImpl(sessionRegistry, sessionMetadata, sessionPolicy, sessionRepository, users);
+        // A real termination wrapper with max-attempts=1 (no retry), so a store failure surfaces as an audit at once.
+        ResilientSessionTermination termination =
+                new ResilientSessionTermination(audit, Duration.ofMillis(1), 2.0, 0.5, 1);
+        manager = new SessionManagerImpl(sessionRegistry, sessionMetadata, sessionPolicy, sessionRepository, users,
+                termination);
     }
 
     private MockHttpServletRequest requestWithSession() {
@@ -219,6 +231,18 @@ class SessionManagerImplTest {
 
         verify(sessionRepository).deleteById("sid-a");
         verify(sessionRepository, never()).deleteById("sid-other"); // a same-named user in another tenant survives
+    }
+
+    @Test
+    void aFailedTerminationOnAccessChangeIsAuditedNotSwallowed() {
+        // A store failure in the AFTER_COMMIT termination must not vanish: after retries it is audited so a
+        // session that outlived the access change (until its TTL) is observable rather than silent.
+        when(sessionRepository.findByPrincipalName(USER)).thenThrow(new RedisConnectionFailureException("down"));
+
+        manager.onUserAccessChanged(new UserAccessChangedEvent(USER, null)); // does not throw out of AFTER_COMMIT
+
+        verify(audit).record(argThat((AuditRecord r) ->
+                r.type() == AuditType.SESSION_TERMINATION_FAILED && !r.success() && USER.equals(r.principal())));
     }
 
     @Test

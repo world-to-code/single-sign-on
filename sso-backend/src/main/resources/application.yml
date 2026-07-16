@@ -125,6 +125,14 @@ sso:
     bind-client: true                       # bind a session to the client it was established on
     session-absolute-lifetime-minutes: 480  # force full re-authentication after 8h regardless of activity
     stepup-challenge-validity-minutes: 15   # after this, an abandoned step-up challenge is ignored as stale
+    # Revocation propagation must not fail SILENTLY: when an access change (disable/lock/role-revoke) terminates a
+    # user's sessions, a transient session-store blip is retried; a hard failure is audited (SESSION_TERMINATION_FAILED)
+    # so a session that outlived the change until its TTL is observable rather than invisible.
+    termination-retry:
+      initial-backoff: PT0.05S              # 50ms — a transient store blip clears fast
+      multiplier: 2.0                       # exponential growth per attempt
+      randomization-factor: 0.5             # jitter band (±50%)
+      max-attempts: 4                       # then audit + log; the session's absolute TTL remains the backstop
   logout:
     # Dedicated bounded pool for OIDC back-channel + SAML SLO fan-out, kept OFF the shared @Async pool so a
     # slow relying party can never starve tenant onboarding/provisioning (and vice versa). A full queue

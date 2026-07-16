@@ -50,6 +50,7 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
     private final UserSessionPolicy userSessionPolicy;
     private final FindByIndexNameSessionRepository<? extends Session> sessionRepository;
     private final UserService users;
+    private final ResilientSessionTermination resilientTermination;
 
     @Override
     public void registerAndEnforceLimit(HttpServletRequest request, String username) {
@@ -177,7 +178,10 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
      *  mutation never terminates sessions (fallbackExecution covers publishers outside a transaction). */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onUserAccessChanged(UserAccessChangedEvent event) {
-        terminateForUser(event.username(), event.orgId()); // scoped to the user's own org — never a same-named
+        // Resilient: retry a transient store blip, audit a hard failure — never let this AFTER_COMMIT cleanup fail
+        // silently (a swallowed exception would leave the session alive on stale authority until its TTL).
+        resilientTermination.terminate(event.username(), event.orgId(),
+                () -> terminateForUser(event.username(), event.orgId())); // scoped to the user's own org
     }
 
     /**
@@ -189,7 +193,8 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
     public void onOrganizationAccessRevoked(OrganizationAccessRevokedEvent event) {
         users.findById(event.userId())
                 .map(UserAccount::getUsername)
-                .ifPresent(username -> terminateForUser(username, event.orgId()));
+                .ifPresent(username -> resilientTermination.terminate(username, event.orgId(),
+                        () -> terminateForUser(username, event.orgId())));
     }
 
     /** True when the session's stored SecurityContext carries the given org marker as an authority. */

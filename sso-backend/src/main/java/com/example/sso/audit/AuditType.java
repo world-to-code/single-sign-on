@@ -38,6 +38,7 @@ public enum AuditType {
     OIDC_BACKCHANNEL_LOGOUT(AuditCategory.SESSION),
     SAML_SLO(AuditCategory.SESSION),
     SESSION_ADMIN_REVOKED(AuditCategory.SESSION),
+    SESSION_TERMINATION_FAILED(AuditCategory.SESSION), // access changed but the session could not be terminated (may outlive it until TTL)
 
     // Network / rate access
     IP_BLOCKED(AuditCategory.ACCESS),
