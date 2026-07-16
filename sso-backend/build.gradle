@@ -127,4 +127,16 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // Run test classes in parallel across JVM forks. Each fork gets its OWN Spring context + its OWN singleton
+    // Postgres/Redis (Testcontainers on random host ports), so forks are fully isolated — no shared DB state,
+    // no port clashes. Each fork costs ~1GB (JVM + Spring context + 2 containers), so the fork count is capped
+    // to avoid thrashing/OOM; CI runners (fewer cores + the CI env var) get fewer. Override with -PtestForks=N.
+    int cores = Runtime.runtime.availableProcessors()
+    int defaultForks = System.getenv('CI') ? 2 : Math.max(1, cores.intdiv(3))
+    maxParallelForks = (project.findProperty('testForks') ?: defaultForks) as int
+    maxHeapSize = '1g'
+    // Fast startup for short-lived test forks: C1-only JIT (test code runs ~once, so C2's warmup rarely pays
+    // off) + a predictable parallel GC. Cuts each fork's JVM warmup — which matters when N forks each boot a
+    // Spring context.
+    jvmArgs '-XX:TieredStopAtLevel=1', '-XX:+UseParallelGC'
 }
