@@ -5,12 +5,17 @@ export type MappingTargetKind = "GROUP" | "ROLE" | "RESOURCE_MEMBER";
 /** Predicate operator for a mapping rule. Mapping forbids the NOT_* operators the policy targeting allows. */
 export type MappingAttrOp = "EQUALS" | "EXISTS";
 
-/** An auto-mapping rule: users whose attribute satisfies the predicate are assigned to the target. */
-export interface MappingRule {
-  id: string;
+/** A single attribute predicate; a rule's conditions are AND-combined. `attrValue` is null for EXISTS. */
+export interface MappingCondition {
   attrKey: string;
   attrOp: MappingAttrOp;
   attrValue: string | null;
+}
+
+/** An auto-mapping rule: users whose attributes satisfy every condition (AND) are assigned to the target. */
+export interface MappingRule {
+  id: string;
+  conditions: MappingCondition[];
   thenKind: MappingTargetKind;
   targetId: string;
   targetName: string | null;
@@ -23,10 +28,14 @@ export interface MappingPreview {
   sample: { id: string; username: string }[];
 }
 
-export interface MappingRuleRequest {
+export interface MappingConditionRequest {
   attrKey: string;
   attrOp: MappingAttrOp;
   attrValue?: string; // omitted for the EXISTS operator
+}
+
+export interface MappingRuleRequest {
+  conditions: MappingConditionRequest[]; // at least one; all must match (AND)
   thenKind: MappingTargetKind;
   targetId: string;
 }

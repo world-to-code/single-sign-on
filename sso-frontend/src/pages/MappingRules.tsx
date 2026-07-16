@@ -3,7 +3,8 @@ import { Trans, useTranslation } from "react-i18next";
 import { Pencil, Plus, Save, Trash2, Users } from "lucide-react";
 import {
   createMappingRule, previewMappingRule, updateMappingRule,
-  type MappingAttrOp, type MappingPreview, type MappingRule, type MappingRuleRequest, type MappingTargetKind,
+  type MappingAttrOp, type MappingCondition, type MappingPreview, type MappingRule,
+  type MappingRuleRequest, type MappingTargetKind,
 } from "@/mapping";
 import { searchGroups } from "@/groups";
 import { listRoles } from "@/roles";
@@ -26,23 +27,36 @@ import { useApiData } from "@/useApiData";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 import { useEditorForm } from "@/hooks/useEditorForm";
 
-interface Editor {
-  id: string | null;
+interface EditorCondition {
   attrKey: string;
   attrOp: MappingAttrOp;
   attrValue: string;
+}
+interface Editor {
+  id: string | null;
+  conditions: EditorCondition[]; // AND-combined; always at least one
   thenKind: MappingTargetKind;
   targetId: string;
   targetName: string;
 }
-const blank: Editor = { id: null, attrKey: "", attrOp: "EQUALS", attrValue: "", thenKind: "GROUP", targetId: "", targetName: "" };
+const blankCondition = (): EditorCondition => ({ attrKey: "", attrOp: "EQUALS", attrValue: "" });
+const blank: Editor = { id: null, conditions: [blankCondition()], thenKind: "GROUP", targetId: "", targetName: "" };
 
 const MAPPING_OPERATORS: MappingAttrOp[] = ["EQUALS", "EXISTS"];
 
-/** Build the request body — the EXISTS operator drops the value the backend rejects. */
+/** A single condition is complete when it has a key, plus a value unless the operator is EXISTS. */
+const conditionComplete = (c: EditorCondition) => Boolean(c.attrKey.trim() && (c.attrOp === "EXISTS" || c.attrValue.trim()));
+
+/** Build the request body — every EXISTS condition drops the value the backend rejects. */
 function toRuleRequest(e: Editor): MappingRuleRequest {
-  const base = { attrKey: e.attrKey.trim(), attrOp: e.attrOp, thenKind: e.thenKind, targetId: e.targetId };
-  return e.attrOp === "EXISTS" ? base : { ...base, attrValue: e.attrValue.trim() };
+  return {
+    conditions: e.conditions.map((c) => {
+      const base = { attrKey: c.attrKey.trim(), attrOp: c.attrOp };
+      return c.attrOp === "EXISTS" ? base : { ...base, attrValue: c.attrValue.trim() };
+    }),
+    thenKind: e.thenKind,
+    targetId: e.targetId,
+  };
 }
 
 const roleFetcher = (q: string): Promise<Suggestion[]> =>
@@ -76,7 +90,7 @@ export default function MappingRules() {
   const [preview, setPreview] = useState<MappingPreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
 
-  const { editor, set, open, setOpen, error: formError, openCreate, openEdit, save } = useEditorForm<Editor>({
+  const { editor, set, setEditor, open, setOpen, error: formError, openCreate, openEdit, save } = useEditorForm<Editor>({
     blank,
     toRequest: toRuleRequest,
     create: (body) => createMappingRule(body as MappingRuleRequest),
@@ -86,15 +100,31 @@ export default function MappingRules() {
 
   const editRule = (r: MappingRule) => {
     setPreview(null);
-    // A rule stored before operators existed loads as EQUALS.
-    openEdit({ id: r.id, attrKey: r.attrKey, attrOp: r.attrOp ?? "EQUALS", attrValue: r.attrValue ?? "",
-               thenKind: r.thenKind, targetId: r.targetId, targetName: r.targetName ?? "" });
+    // A condition stored before operators existed loads as EQUALS.
+    openEdit({
+      id: r.id,
+      conditions: r.conditions.map((c) => ({ attrKey: c.attrKey, attrOp: c.attrOp ?? "EQUALS", attrValue: c.attrValue ?? "" })),
+      thenKind: r.thenKind, targetId: r.targetId, targetName: r.targetName ?? "",
+    });
   };
   const startCreate = () => { setPreview(null); openCreate(); };
   const pickKind = (k: MappingTargetKind) => { setPreview(null); set({ thenKind: k, targetId: "", targetName: "" }); };
 
-  const needsValue = editor.attrOp === "EQUALS";
-  const canSave = editor.attrKey.trim() && (!needsValue || editor.attrValue.trim()) && editor.targetId;
+  const setCondition = (i: number, patch: Partial<EditorCondition>) =>
+    setEditor((e) => ({ ...e, conditions: e.conditions.map((c, idx) => (idx === i ? { ...c, ...patch } : c)) }));
+  const addCondition = () => { setPreview(null); setEditor((e) => ({ ...e, conditions: [...e.conditions, blankCondition()] })); };
+  const removeCondition = (i: number) => {
+    setPreview(null);
+    setEditor((e) => ({ ...e, conditions: e.conditions.filter((_, idx) => idx !== i) }));
+  };
+
+  /** Human-readable AND-joined predicate, e.g. "dept = eng AND clearance exists". */
+  const predicateText = (conditions: MappingCondition[]) =>
+    conditions
+      .map((c) => (c.attrOp === "EXISTS" ? `${c.attrKey} ${t("mappingRulesExists")}` : `${c.attrKey} = ${c.attrValue ?? ""}`))
+      .join(` ${t("mappingRulesAnd")} `);
+
+  const canSave = editor.conditions.length >= 1 && editor.conditions.every(conditionComplete) && editor.targetId;
 
   async function runPreview() {
     if (!canSave) return;
@@ -113,9 +143,7 @@ export default function MappingRules() {
     setActionError(null);
     return confirmDelete({
       title: t("mappingRulesDeleteTitle"),
-      description: r.attrOp === "EXISTS"
-        ? t("mappingRulesDeleteDescriptionExists", { key: r.attrKey, target: r.targetName ?? "" })
-        : t("mappingRulesDeleteDescription", { key: r.attrKey, value: r.attrValue ?? "", target: r.targetName ?? "" }),
+      description: t("mappingRulesDeleteDescription", { predicate: predicateText(r.conditions), target: r.targetName ?? "" }),
       path: `/api/admin/mapping-rules/${r.id}`,
       onDeleted: reload,
       onError: setActionError,
@@ -159,15 +187,20 @@ export default function MappingRules() {
               {rows.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell>
-                    <span className="font-mono">{r.attrKey}</span>
-                    {r.attrOp === "EXISTS" ? (
-                      <span className="text-muted-foreground"> {t("mappingRulesExists")}</span>
-                    ) : (
-                      <>
-                        <span className="text-muted-foreground"> = </span>
-                        <span className="font-mono">{r.attrValue}</span>
-                      </>
-                    )}
+                    {r.conditions.map((c, i) => (
+                      <span key={i}>
+                        {i > 0 && <span className="text-muted-foreground"> {t("mappingRulesAnd")} </span>}
+                        <span className="font-mono">{c.attrKey}</span>
+                        {c.attrOp === "EXISTS" ? (
+                          <span className="text-muted-foreground"> {t("mappingRulesExists")}</span>
+                        ) : (
+                          <>
+                            <span className="text-muted-foreground"> = </span>
+                            <span className="font-mono">{c.attrValue}</span>
+                          </>
+                        )}
+                      </span>
+                    ))}
                   </TableCell>
                   <TableCell>
                     <Badge variant="muted" className="mr-2">{t(`mappingRulesKind_${r.thenKind}`)}</Badge>
@@ -198,28 +231,48 @@ export default function MappingRules() {
           {formError && <Alert variant="destructive"><AlertDescription>{formError}</AlertDescription></Alert>}
 
           <form onSubmit={save} className="space-y-4">
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-2">
-                <Label htmlFor="mr-key">{t("mappingRulesKeyLabel")}</Label>
-                <Input id="mr-key" className="font-mono" value={editor.attrKey}
-                       onChange={(e) => set({ attrKey: e.target.value })} placeholder="department" required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="mr-op">{t("mappingRulesOpLabel")}</Label>
-                <Select id="mr-op" value={editor.attrOp} onChange={(e) => set({ attrOp: e.target.value as MappingAttrOp })}>
-                  {MAPPING_OPERATORS.map((o) => (
-                    <option key={o} value={o}>{t(`mappingRulesOp_${o}`)}</option>
-                  ))}
-                </Select>
-              </div>
+            <div className="space-y-2">
+              <Label>{t("mappingRulesConditionsLabel")}</Label>
+              {editor.conditions.map((c, i) => (
+                <div key={i} className="space-y-2 rounded-md border p-3">
+                  <div className="flex items-start gap-2">
+                    <div className="grid flex-1 grid-cols-2 gap-2">
+                      <div className="space-y-2">
+                        <Label htmlFor={`mr-key-${i}`}>{t("mappingRulesKeyLabel")}</Label>
+                        <Input id={`mr-key-${i}`} className="font-mono" value={c.attrKey}
+                               onChange={(e) => setCondition(i, { attrKey: e.target.value })} placeholder="department" required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor={`mr-op-${i}`}>{t("mappingRulesOpLabel")}</Label>
+                        <Select id={`mr-op-${i}`} value={c.attrOp}
+                                onChange={(e) => setCondition(i, { attrOp: e.target.value as MappingAttrOp })}>
+                          {MAPPING_OPERATORS.map((o) => (
+                            <option key={o} value={o}>{t(`mappingRulesOp_${o}`)}</option>
+                          ))}
+                        </Select>
+                      </div>
+                    </div>
+                    <Button type="button" variant="ghost" size="icon"
+                            className="mt-6 shrink-0 text-muted-foreground hover:text-destructive"
+                            disabled={editor.conditions.length === 1}
+                            aria-label={t("mappingRulesRemoveCondition")}
+                            onClick={() => removeCondition(i)}>
+                      <Trash2 />
+                    </Button>
+                  </div>
+                  {c.attrOp === "EQUALS" && (
+                    <div className="space-y-2">
+                      <Label htmlFor={`mr-value-${i}`}>{t("mappingRulesValueLabel")}</Label>
+                      <Input id={`mr-value-${i}`} className="font-mono" value={c.attrValue}
+                             onChange={(e) => setCondition(i, { attrValue: e.target.value })} placeholder="engineering" required />
+                    </div>
+                  )}
+                </div>
+              ))}
+              <Button type="button" variant="outline" size="sm" onClick={addCondition}>
+                <Plus /> {t("mappingRulesAddCondition")}
+              </Button>
             </div>
-            {needsValue && (
-              <div className="space-y-2">
-                <Label htmlFor="mr-value">{t("mappingRulesValueLabel")}</Label>
-                <Input id="mr-value" className="font-mono" value={editor.attrValue}
-                       onChange={(e) => set({ attrValue: e.target.value })} placeholder="engineering" required />
-              </div>
-            )}
 
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-2">
