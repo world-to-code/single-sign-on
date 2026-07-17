@@ -92,7 +92,7 @@ export default function Console({ session }: { session: SessionView }) {
                     <Route path="network-zones" element={<NetworkZones />} />
                     <Route path="mapping-rules" element={<MappingRules />} />
                     <Route path="scim-tokens" element={<ScimTokens />} />
-                    <Route path="audit" element={<Audit />} />
+                    <Route path="audit" element={<Audit session={session} />} />
                   </Route>
                   <Route path="*" element={<Navigate to="/admin" replace />} />
                 </Routes>

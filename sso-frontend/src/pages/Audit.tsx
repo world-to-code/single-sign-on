@@ -1,6 +1,7 @@
 import { Fragment, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ScrollText, ChevronRight, ChevronDown } from "lucide-react";
+import type { SessionView } from "@/auth";
 import { usePaginated } from "@/usePaginated";
 import { Pagination } from "@/components/Pagination";
 import { PageHeader } from "@/components/PageHeader";
@@ -37,6 +38,9 @@ const CATEGORIES = [
   "AUTHENTICATION", "AUTHORIZATION", "SESSION", "ACCESS", "APP_ACCESS", "USER_ACTION", "ADMIN", "SYSTEM",
 ] as const;
 
+// The read permission a category tab requires (audit:read:<category>, underscores → hyphens).
+const categoryPermission = (category: string) => `audit:read:${category.toLowerCase().replace(/_/g, "-")}`;
+
 const SEVERITY_VARIANT: Record<Severity, "muted" | "warn" | "destructive"> = {
   INFO: "muted",
   WARNING: "warn",
@@ -45,10 +49,12 @@ const SEVERITY_VARIANT: Record<Severity, "muted" | "warn" | "destructive"> = {
 
 const COLUMN_COUNT = 8;
 
-export default function Audit() {
+export default function Audit({ session }: { session: SessionView }) {
   const { t, i18n } = useTranslation(["console", "states"]);
   const [category, setCategory] = useState<string>("ALL");
   const [expanded, setExpanded] = useState<number | null>(null);
+  // Only the categories the admin is granted (the backend enforces the same; this hides tabs that would 403).
+  const permittedCategories = CATEGORIES.filter((c) => session.permissions.includes(categoryPermission(c)));
   const path = category === "ALL" ? "/api/admin/audit" : `/api/admin/audit?category=${category}`;
   const { items, total, page, setPage, size, error } = usePaginated<AuditEvent>(path);
 
@@ -67,7 +73,7 @@ export default function Audit() {
       <PageHeader title={t("auditTitle")} description={description} />
 
       <div className="mb-4 flex flex-wrap gap-1 border-b">
-        {(["ALL", ...CATEGORIES] as string[]).map((c) => (
+        {(["ALL", ...permittedCategories] as string[]).map((c) => (
           <button
             key={c}
             onClick={() => setCategory(c)}

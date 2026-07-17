@@ -41,7 +41,9 @@ export function togglePermission(selected: string[], perm: Permission, catalog: 
     return selected.filter((p) => p !== perm.name);
   }
   const next = [...selected, perm.name];
-  if (perm.action === "read") {
+  // A read, or a sub-scoped perm (e.g. audit:read:<category>, whose action is "read:<category>"), implies no
+  // resource:read — mirrors the backend guard so selecting one category does not silently add the audit:read macro.
+  if (perm.action === "read" || perm.action.includes(":")) {
     return next;
   }
   const read = `${perm.resource}:read`;
