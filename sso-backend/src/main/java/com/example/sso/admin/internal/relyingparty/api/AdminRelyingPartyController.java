@@ -1,5 +1,7 @@
 package com.example.sso.admin.internal.relyingparty.api;
 
+import com.example.sso.audit.Audited;
+import com.example.sso.audit.AuditType;
 import com.example.sso.saml.relyingparty.RelyingPartyRequest;
 import com.example.sso.saml.relyingparty.RelyingPartyView;
 import com.example.sso.saml.relyingparty.SamlRelyingPartyAdminService;
@@ -37,6 +39,7 @@ public class AdminRelyingPartyController {
         return samlRelyingParties.list(page, size);
     }
 
+    @Audited(value = AuditType.RELYING_PARTY_CREATED)
     @PostMapping
     @RequirePermission(Permissions.SAML_CREATE)
     @RequireStepUp
@@ -44,6 +47,7 @@ public class AdminRelyingPartyController {
         return ResponseEntity.status(HttpStatus.CREATED).body(samlRelyingParties.create(request));
     }
 
+    @Audited(value = AuditType.RELYING_PARTY_UPDATED)
     @PutMapping("/{id}")
     @RequirePermission(Permissions.SAML_UPDATE)
     @RequireStepUp
@@ -51,6 +55,7 @@ public class AdminRelyingPartyController {
         return samlRelyingParties.update(id, request);
     }
 
+    @Audited(value = AuditType.RELYING_PARTY_DELETED)
     @DeleteMapping("/{id}")
     @RequirePermission(Permissions.SAML_DELETE)
     @RequireStepUp

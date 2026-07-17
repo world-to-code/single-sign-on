@@ -1,5 +1,6 @@
 package com.example.sso.admin.internal.shared.application;
 
+import com.example.sso.audit.AuditActor;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditSubjectType;
@@ -7,8 +8,6 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.tenancy.OrgContext;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 /**
@@ -30,21 +29,16 @@ public class AdminAuditLogger {
 
     /** Logs an admin action with no scopeable subject (e.g. role catalog edits) — super-admin-visible only. */
     public void log(AuditType type, String detail) {
-        audit.record(new AuditRecord(type, actor(), true, withActingOrg(detail), null));
+        audit.record(new AuditRecord(type, AuditActor.of(), true, withActingOrg(detail), null));
     }
 
     /** Logs an admin action tagged with the subject it acts upon, so the scoped audit log can filter it. */
     public void log(AuditType type, AuditSubjectType subjectType, String subjectId, String detail) {
-        audit.record(new AuditRecord(type, actor(), true, withActingOrg(detail), null, subjectType, subjectId));
+        audit.record(new AuditRecord(type, AuditActor.of(), true, withActingOrg(detail), null, subjectType, subjectId));
     }
 
     /** Appends the acting org (the drilled-into tenant, or a tenant admin's own org) to the detail. */
     private String withActingOrg(String detail) {
         return orgContext.currentOrg().map(org -> detail + " actingOrg=" + org).orElse(detail);
-    }
-
-    private String actor() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return authentication == null ? "unknown" : authentication.getName();
     }
 }

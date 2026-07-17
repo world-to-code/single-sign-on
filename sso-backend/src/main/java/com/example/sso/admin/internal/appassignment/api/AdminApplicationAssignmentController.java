@@ -1,6 +1,8 @@
 package com.example.sso.admin.internal.appassignment.api;
 
 import com.example.sso.admin.internal.appassignment.application.AppAssignmentAdminService;
+import com.example.sso.audit.Audited;
+import com.example.sso.audit.AuditType;
 import com.example.sso.portal.access.AppAssignmentView;
 import com.example.sso.portal.access.AppPolicyRequest;
 import com.example.sso.portal.application.AppType;
@@ -47,6 +49,7 @@ public class AdminApplicationAssignmentController {
         return applications.assignmentsForApp(type, id);
     }
 
+    @Audited(value = AuditType.APP_ASSIGNMENT_CHANGED)
     @PostMapping("/assignments")
     @RequirePermission(Permissions.APP_ASSIGNMENT_ASSIGN)
     @RequireStepUp
@@ -54,6 +57,7 @@ public class AdminApplicationAssignmentController {
         return ResponseEntity.status(HttpStatus.CREATED).body(applications.assign(request));
     }
 
+    @Audited(value = AuditType.APP_ASSIGNMENT_CHANGED)
     @DeleteMapping("/assignments/{id}")
     @RequirePermission(Permissions.APP_ASSIGNMENT_UNASSIGN)
     @RequireStepUp
@@ -63,6 +67,7 @@ public class AdminApplicationAssignmentController {
     }
 
     /** Sets (or clears, when requiredPolicyId is blank) the app-level sign-on policy for an application. */
+    @Audited(value = AuditType.APP_ASSIGNMENT_CHANGED)
     @PutMapping("/{type}/{id}/policy")
     @RequirePermission(Permissions.APP_ASSIGNMENT_ASSIGN)
     @RequireStepUp

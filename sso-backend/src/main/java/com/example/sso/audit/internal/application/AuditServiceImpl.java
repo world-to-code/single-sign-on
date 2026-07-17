@@ -4,14 +4,16 @@ import com.example.sso.audit.AuditCategory;
 import com.example.sso.audit.AuditEntry;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
+import com.example.sso.audit.AuditSeverity;
 import com.example.sso.audit.AuditSignInDay;
 import com.example.sso.audit.AuditType;
+import com.example.sso.audit.internal.domain.AuditActorInfo;
+import com.example.sso.audit.internal.domain.AuditClientInfo;
 import com.example.sso.audit.internal.domain.AuditEvent;
 import com.example.sso.audit.internal.domain.AuditEventRepository;
 import com.example.sso.tenancy.OrgContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -30,20 +32,28 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AuditServiceImpl implements AuditService {
     private final AuditEventRepository repository;
+    private final AuditEventWriter writer;
     private final OrgContext orgContext;
+    private final AuditActorResolver actorResolver;
+    private final AuditClientResolver clientResolver;
+    private final AuditSeverityPolicy severityPolicy;
 
     @Override
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(AuditRecord record) {
         // Tag the tenant: the caller's explicit org (the login flow, which knows it before the context is
         // bound) wins; otherwise default to the request's bound tenant context (admin/post-login actions).
         UUID orgId = record.orgId() != null ? record.orgId() : orgContext.currentOrg().orElse(null);
-        repository.save(new AuditEvent(record.type(), record.principal(), record.success(),
-                record.detail(), record.remoteIp(), record.subjectType(), record.subjectId(), orgId));
+        // Enrich centrally so every caller's event carries the structured actor, client context, and triage
+        // severity without touching the ~30 call sites — and so a future sink swap happens in ONE place. This
+        // runs OUTSIDE the write transaction so a failing enrichment query can't poison the audit write; the
+        // writer opens its own REQUIRES_NEW transaction to keep the audit trail independent of the caller's tx.
+        AuditActorInfo actor = actorResolver.resolve(record.principal(), orgId);
+        AuditClientInfo client = clientResolver.capture();
+        AuditSeverity severity = severityPolicy.severityOf(record.type(), record.success());
+        writer.save(AuditEvent.of(record, actor, client, severity, orgId));
     }
 
     @Override
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(AuditType type, String principal, boolean success) {
         record(new AuditRecord(type, principal, success, null, null));
     }
@@ -101,6 +111,9 @@ public class AuditServiceImpl implements AuditService {
     private AuditEntry toEntry(AuditEvent event) {
         return new AuditEntry(event.getId(), event.getOccurredAt(), event.getPrincipal(),
                 event.getType(), event.getCategory(), event.isSuccess(), event.getDetail(),
-                event.getSubjectType(), event.getSubjectId());
+                event.getSubjectType(), event.getSubjectId(),
+                event.getActorType(), event.getActorId(), event.getActorEmail(), event.getActorDisplay(),
+                event.getRemoteIp(), event.getUserAgent(), event.getDevice(), event.getRequestId(),
+                event.getReason(), event.getSeverity());
     }
 }

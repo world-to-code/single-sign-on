@@ -1,6 +1,8 @@
 package com.example.sso.admin.internal.scim.api;
 
 import com.example.sso.admin.internal.shared.application.AdminService;
+import com.example.sso.audit.Audited;
+import com.example.sso.audit.AuditType;
 import com.example.sso.scim.IssueScimTokenRequest;
 import com.example.sso.scim.ScimTokenIssued;
 import com.example.sso.shared.security.RequirePermission;
@@ -21,6 +23,7 @@ public class AdminScimTokenController {
 
     private final AdminService adminService;
 
+    @Audited(value = AuditType.SCIM_TOKEN_CHANGED)
     @PostMapping
     @RequirePermission(Permissions.SCIM_MANAGE)
     @RequireStepUp

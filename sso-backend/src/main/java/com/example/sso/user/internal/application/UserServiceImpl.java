@@ -19,6 +19,7 @@ import com.example.sso.user.account.LockoutPolicy;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.account.Suggestion;
 import com.example.sso.user.account.UserAccount;
+import com.example.sso.user.account.UserActorView;
 import com.example.sso.user.account.UserAccessChangedEvent;
 import com.example.sso.user.account.UserDeletedEvent;
 import com.example.sso.user.account.UserUpdate;
@@ -109,6 +110,23 @@ public class UserServiceImpl implements UserService {
     @Transactional(readOnly = true)
     public Optional<UserAccount> findByUsernameInOrg(String username, UUID orgId) {
         return users.findByUsernameInOrg(username, orgId).map(hydrator::hydrateUser).map(u -> u);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<UserActorView> findActor(String username, UUID orgId) {
+        UUID resolved = orgId != null ? orgId : resolutionOrg();
+        Optional<AppUser> global = users.findByUsernameAndOrgIdIsNull(username);
+        Optional<AppUser> scoped = resolved == null ? Optional.empty()
+                : users.findByUsernameAndOrgId(username, resolved);
+        // A username can exist BOTH globally (a platform account) and as a tenant-local account (usernames are
+        // only per-org unique). When both match, the acting principal is ambiguous — attributing to either could
+        // frame the wrong account (a tenant-planted decoy shadowing a drilled-in super-admin's action), so decline
+        // to guess an identity and leave the event attributed by principal name only.
+        if (global.isPresent() && scoped.isPresent()) {
+            return Optional.empty();
+        }
+        return scoped.or(() -> global).map(u -> new UserActorView(u.getId(), u.getEmail(), u.getDisplayName()));
     }
 
     @Override

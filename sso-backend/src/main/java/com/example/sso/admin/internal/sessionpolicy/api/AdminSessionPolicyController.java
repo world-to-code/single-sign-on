@@ -1,6 +1,8 @@
 package com.example.sso.admin.internal.sessionpolicy.api;
 
 import com.example.sso.admin.internal.sessionpolicy.application.SessionPolicyAdminService;
+import com.example.sso.audit.Audited;
+import com.example.sso.audit.AuditType;
 import com.example.sso.session.policy.SessionPolicyRequest;
 import com.example.sso.session.policy.SessionPolicyView;
 import com.example.sso.shared.Page;
@@ -37,6 +39,7 @@ public class AdminSessionPolicyController {
         return sessionPolicies.list(page, size);
     }
 
+    @Audited(value = AuditType.SESSION_POLICY_CREATED)
     @PostMapping
     @RequirePermission(Permissions.SESSION_POLICY_CREATE)
     @RequireStepUp
@@ -44,6 +47,7 @@ public class AdminSessionPolicyController {
         return ResponseEntity.status(HttpStatus.CREATED).body(sessionPolicies.create(request));
     }
 
+    @Audited(value = AuditType.SESSION_POLICY_UPDATED)
     @PutMapping("/{id}")
     @RequirePermission(Permissions.SESSION_POLICY_UPDATE)
     @RequireStepUp
@@ -52,6 +56,7 @@ public class AdminSessionPolicyController {
         return sessionPolicies.update(id, request);
     }
 
+    @Audited(value = AuditType.SESSION_POLICY_DELETED)
     @DeleteMapping("/{id}")
     @RequirePermission(Permissions.SESSION_POLICY_DELETE)
     @RequireStepUp

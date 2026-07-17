@@ -1,6 +1,8 @@
 package com.example.sso.admin.internal.signingkey.api;
 
 import com.example.sso.admin.internal.shared.application.AdminService;
+import com.example.sso.audit.Audited;
+import com.example.sso.audit.AuditType;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.rbac.Permissions;
@@ -22,6 +24,7 @@ public class AdminSigningKeyController {
 
     private final AdminService adminService;
 
+    @Audited(value = AuditType.SIGNING_KEY_ROTATED)
     @PostMapping("/keys/rotate")
     @RequirePermission(Permissions.KEY_ROTATE)
     @RequireStepUp
@@ -36,6 +39,7 @@ public class AdminSigningKeyController {
         return ResponseEntity.ok(new SigningKeyRetentionResponse(adminService.signingKeyRetention()));
     }
 
+    @Audited(value = AuditType.SIGNING_KEY_ROTATED)
     @PutMapping("/keys/retention")
     @RequirePermission(Permissions.KEY_ROTATE)
     @RequireStepUp
@@ -45,6 +49,7 @@ public class AdminSigningKeyController {
                 adminService.updateSigningKeyRetention(request.retainedInactiveKeys())));
     }
 
+    @Audited(value = AuditType.SIGNING_KEY_ROTATED)
     @PostMapping("/saml/keys/rotate")
     @RequirePermission(Permissions.KEY_ROTATE)
     @RequireStepUp

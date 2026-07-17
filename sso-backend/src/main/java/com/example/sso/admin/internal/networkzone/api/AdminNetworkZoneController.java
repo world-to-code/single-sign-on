@@ -1,5 +1,7 @@
 package com.example.sso.admin.internal.networkzone.api;
 
+import com.example.sso.audit.Audited;
+import com.example.sso.audit.AuditType;
 import com.example.sso.session.networkzone.NetworkZoneService;
 import com.example.sso.session.networkzone.NetworkZoneView;
 import com.example.sso.shared.Page;
@@ -36,6 +38,7 @@ public class AdminNetworkZoneController {
         return Page.of(zones.list(), page, size);
     }
 
+    @Audited(value = AuditType.NETWORK_ZONE_CHANGED)
     @PostMapping
     @RequirePermission(Permissions.NETWORK_ZONE_CREATE)
     @RequireStepUp
@@ -43,6 +46,7 @@ public class AdminNetworkZoneController {
         return ResponseEntity.status(HttpStatus.CREATED).body(zones.create(request.toSpec()));
     }
 
+    @Audited(value = AuditType.NETWORK_ZONE_CHANGED)
     @PutMapping("/{id}")
     @RequirePermission(Permissions.NETWORK_ZONE_UPDATE)
     @RequireStepUp
@@ -50,6 +54,7 @@ public class AdminNetworkZoneController {
         return zones.update(id, request.toSpec());
     }
 
+    @Audited(value = AuditType.NETWORK_ZONE_CHANGED)
     @DeleteMapping("/{id}")
     @RequirePermission(Permissions.NETWORK_ZONE_DELETE)
     @RequireStepUp

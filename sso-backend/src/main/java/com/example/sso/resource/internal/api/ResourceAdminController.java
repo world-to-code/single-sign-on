@@ -1,5 +1,8 @@
 package com.example.sso.resource.internal.api;
 
+import com.example.sso.audit.Audited;
+import com.example.sso.audit.AuditSubjectType;
+import com.example.sso.audit.AuditType;
 import com.example.sso.metadata.Attribute;
 import com.example.sso.resource.internal.catalog.application.ResourceAdminService;
 import com.example.sso.resource.internal.catalog.application.ResourceDetailView;
@@ -44,6 +47,7 @@ public class ResourceAdminController {
         return service.listTypes();
     }
 
+    @Audited(value = AuditType.RESOURCE_CHANGED)
     @PostMapping("/types")
     @RequirePermission(Permissions.RESOURCE_CREATE_TYPE)
     public ResponseEntity<ResourceTypeView> createType(@Valid @RequestBody CreateResourceTypeRequest request) {
@@ -51,6 +55,7 @@ public class ResourceAdminController {
                 .body(service.createType(request.name(), request.toMemberTypes()));
     }
 
+    @Audited(value = AuditType.RESOURCE_CHANGED)
     @DeleteMapping("/types/{id}")
     @RequirePermission(Permissions.RESOURCE_DELETE_TYPE)
     @RequireStepUp
@@ -80,6 +85,7 @@ public class ResourceAdminController {
         return service.detail(id);
     }
 
+    @Audited(value = AuditType.RESOURCE_CHANGED)
     @PostMapping
     @RequirePermission(Permissions.RESOURCE_CREATE)
     public ResponseEntity<ResourceView> create(@Valid @RequestBody ResourceRequest request) {
@@ -87,6 +93,7 @@ public class ResourceAdminController {
     }
 
     /** Creates a sub-resource under a parent the caller manages (how a delegated admin grows their subtree). */
+    @Audited(value = AuditType.RESOURCE_CHANGED)
     @PostMapping("/{parentId}/sub-resources")
     @RequirePermission(Permissions.RESOURCE_CREATE)
     @RequireStepUp
@@ -96,12 +103,14 @@ public class ResourceAdminController {
                 .body(service.createSubResource(parentId, request.name(), request.typeName()));
     }
 
+    @Audited(value = AuditType.RESOURCE_CHANGED, subject = AuditSubjectType.RESOURCE, subjectParam = "id")
     @PutMapping("/{id}")
     @RequirePermission(Permissions.RESOURCE_UPDATE)
     public ResourceView rename(@PathVariable UUID id, @Valid @RequestBody ResourceRequest request) {
         return service.rename(id, request.name());
     }
 
+    @Audited(value = AuditType.RESOURCE_CHANGED, subject = AuditSubjectType.RESOURCE, subjectParam = "id")
     @DeleteMapping("/{id}")
     @RequirePermission(Permissions.RESOURCE_DELETE)
     @RequireStepUp
@@ -112,6 +121,7 @@ public class ResourceAdminController {
 
     // --- Edges ---
 
+    @Audited(value = AuditType.RESOURCE_CHANGED, subject = AuditSubjectType.RESOURCE, subjectParam = "id")
     @PostMapping("/{id}/children")
     @RequirePermission(Permissions.RESOURCE_UPDATE)
     @RequireStepUp
@@ -120,6 +130,7 @@ public class ResourceAdminController {
         return ResponseEntity.noContent().build();
     }
 
+    @Audited(value = AuditType.RESOURCE_CHANGED, subject = AuditSubjectType.RESOURCE, subjectParam = "id")
     @DeleteMapping("/{id}/children/{childId}")
     @RequirePermission(Permissions.RESOURCE_UPDATE)
     @RequireStepUp
@@ -130,6 +141,7 @@ public class ResourceAdminController {
 
     // --- Members ---
 
+    @Audited(value = AuditType.RESOURCE_CHANGED, subject = AuditSubjectType.RESOURCE, subjectParam = "id")
     @PostMapping("/{id}/members")
     @RequirePermission(Permissions.RESOURCE_UPDATE)
     @RequireStepUp
@@ -137,6 +149,7 @@ public class ResourceAdminController {
         return service.attachMember(id, request.toMemberType(), request.memberId());
     }
 
+    @Audited(value = AuditType.RESOURCE_CHANGED, subject = AuditSubjectType.RESOURCE, subjectParam = "id")
     @DeleteMapping("/{id}/members/{memberType}/{memberId}")
     @RequirePermission(Permissions.RESOURCE_UPDATE)
     @RequireStepUp
@@ -147,6 +160,7 @@ public class ResourceAdminController {
 
     // --- Delegation grants ---
 
+    @Audited(value = AuditType.RESOURCE_CHANGED, subject = AuditSubjectType.RESOURCE, subjectParam = "id")
     @PostMapping("/{id}/admins")
     @RequirePermission(Permissions.RESOURCE_ASSIGN_ADMIN)
     @RequireStepUp
@@ -154,6 +168,7 @@ public class ResourceAdminController {
         return service.assignAdmin(id, request.userId());
     }
 
+    @Audited(value = AuditType.RESOURCE_CHANGED, subject = AuditSubjectType.RESOURCE, subjectParam = "id")
     @DeleteMapping("/{id}/admins/{userId}")
     @RequirePermission(Permissions.RESOURCE_ASSIGN_ADMIN)
     @RequireStepUp
@@ -169,18 +184,21 @@ public class ResourceAdminController {
         return service.attributesOf(id);
     }
 
+    @Audited(value = AuditType.ATTRIBUTE_CHANGED, subject = AuditSubjectType.RESOURCE, subjectParam = "id")
     @PutMapping("/{id}/metadata")
     @RequirePermission(Permissions.RESOURCE_UPDATE)
     public List<Attribute> addMetadata(@PathVariable UUID id, @Valid @RequestBody ResourceAttributeRequest request) {
         return service.addAttribute(id, request.key(), request.value());
     }
 
+    @Audited(value = AuditType.ATTRIBUTE_CHANGED, subject = AuditSubjectType.RESOURCE, subjectParam = "id")
     @DeleteMapping("/{id}/metadata/{key}")
     @RequirePermission(Permissions.RESOURCE_UPDATE)
     public List<Attribute> removeMetadata(@PathVariable UUID id, @PathVariable String key) {
         return service.removeAttribute(id, key);
     }
 
+    @Audited(value = AuditType.ATTRIBUTE_CHANGED, subject = AuditSubjectType.RESOURCE, subjectParam = "id")
     @DeleteMapping(value = "/{id}/metadata/{key}", params = "value")
     @RequirePermission(Permissions.RESOURCE_UPDATE)
     public List<Attribute> removeMetadataValue(@PathVariable UUID id, @PathVariable String key,

@@ -1,6 +1,9 @@
 package com.example.sso.admin.internal.metadata.api;
 
 import com.example.sso.admin.internal.shared.security.CanViewUser;
+import com.example.sso.audit.AuditSubjectType;
+import com.example.sso.audit.AuditType;
+import com.example.sso.audit.Audited;
 import com.example.sso.metadata.Attribute;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityKind;
@@ -42,6 +45,7 @@ public class MetadataAdminController {
         return attributes.attributesOf(EntityKind.USER, id.toString());
     }
 
+    @Audited(value = AuditType.ATTRIBUTE_CHANGED, subject = AuditSubjectType.USER, subjectParam = "id")
     @PutMapping("/users/{id}")
     @PreAuthorize("hasAuthority('" + Permissions.USER_UPDATE + "') and @adminAccessPolicy.canAccessUser(#id)")
     public List<Attribute> addUserAttribute(@PathVariable UUID id, @Valid @RequestBody AttributeRequest request) {
@@ -49,6 +53,7 @@ public class MetadataAdminController {
         return attributes.attributesOf(EntityKind.USER, id.toString());
     }
 
+    @Audited(value = AuditType.ATTRIBUTE_CHANGED, subject = AuditSubjectType.USER, subjectParam = "id")
     @DeleteMapping("/users/{id}/{key}")
     @PreAuthorize("hasAuthority('" + Permissions.USER_UPDATE + "') and @adminAccessPolicy.canAccessUser(#id)")
     public List<Attribute> removeUserAttribute(@PathVariable UUID id, @PathVariable String key) {
@@ -56,6 +61,7 @@ public class MetadataAdminController {
         return attributes.attributesOf(EntityKind.USER, id.toString());
     }
 
+    @Audited(value = AuditType.ATTRIBUTE_CHANGED, subject = AuditSubjectType.USER, subjectParam = "id")
     @DeleteMapping(value = "/users/{id}/{key}", params = "value")
     @PreAuthorize("hasAuthority('" + Permissions.USER_UPDATE + "') and @adminAccessPolicy.canAccessUser(#id)")
     public List<Attribute> removeUserAttributeValue(@PathVariable UUID id, @PathVariable String key,
@@ -71,6 +77,7 @@ public class MetadataAdminController {
         return attributes.attributesOf(EntityKind.GROUP, id.toString());
     }
 
+    @Audited(value = AuditType.ATTRIBUTE_CHANGED, subject = AuditSubjectType.GROUP, subjectParam = "id")
     @PutMapping("/groups/{id}")
     @PreAuthorize("hasAuthority('" + Permissions.GROUP_UPDATE + "') and @adminAccessPolicy.canAccessGroup(#id)")
     public List<Attribute> addGroupAttribute(@PathVariable UUID id, @Valid @RequestBody AttributeRequest request) {
@@ -78,6 +85,7 @@ public class MetadataAdminController {
         return attributes.attributesOf(EntityKind.GROUP, id.toString());
     }
 
+    @Audited(value = AuditType.ATTRIBUTE_CHANGED, subject = AuditSubjectType.GROUP, subjectParam = "id")
     @DeleteMapping("/groups/{id}/{key}")
     @PreAuthorize("hasAuthority('" + Permissions.GROUP_UPDATE + "') and @adminAccessPolicy.canAccessGroup(#id)")
     public List<Attribute> removeGroupAttribute(@PathVariable UUID id, @PathVariable String key) {
@@ -85,6 +93,7 @@ public class MetadataAdminController {
         return attributes.attributesOf(EntityKind.GROUP, id.toString());
     }
 
+    @Audited(value = AuditType.ATTRIBUTE_CHANGED, subject = AuditSubjectType.GROUP, subjectParam = "id")
     @DeleteMapping(value = "/groups/{id}/{key}", params = "value")
     @PreAuthorize("hasAuthority('" + Permissions.GROUP_UPDATE + "') and @adminAccessPolicy.canAccessGroup(#id)")
     public List<Attribute> removeGroupAttributeValue(@PathVariable UUID id, @PathVariable String key,

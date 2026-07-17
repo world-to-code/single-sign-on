@@ -4,6 +4,8 @@ import com.example.sso.admin.internal.client.application.ClientAdminService;
 import com.example.sso.admin.internal.client.application.ClientCreated;
 import com.example.sso.admin.internal.client.application.ClientView;
 import com.example.sso.admin.internal.client.application.CreateClientRequest;
+import com.example.sso.audit.Audited;
+import com.example.sso.audit.AuditType;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
@@ -36,6 +38,7 @@ public class AdminClientController {
         return clientAdminService.listClients(page, size);
     }
 
+    @Audited(value = AuditType.OIDC_CLIENT_CREATED)
     @PostMapping
     @RequirePermission(Permissions.CLIENT_CREATE)
     @RequireStepUp
@@ -43,6 +46,7 @@ public class AdminClientController {
         return ResponseEntity.status(HttpStatus.CREATED).body(clientAdminService.createClient(request));
     }
 
+    @Audited(value = AuditType.OIDC_CLIENT_DELETED)
     @DeleteMapping("/{id}")
     @RequirePermission(Permissions.CLIENT_DELETE)
     @RequireStepUp

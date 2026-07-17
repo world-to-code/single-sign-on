@@ -1,5 +1,7 @@
 package com.example.sso.authpolicy.internal.api;
 
+import com.example.sso.audit.Audited;
+import com.example.sso.audit.AuditType;
 import com.example.sso.authpolicy.internal.application.PolicyAdminService;
 import com.example.sso.authpolicy.internal.application.PolicyView;
 import com.example.sso.shared.Page;
@@ -36,6 +38,7 @@ public class AuthPolicyAdminController {
         return policies.list(page, size);
     }
 
+    @Audited(value = AuditType.AUTH_POLICY_CREATED)
     @PostMapping
     @RequirePermission(Permissions.POLICY_CREATE)
     @RequireStepUp
@@ -43,6 +46,7 @@ public class AuthPolicyAdminController {
         return ResponseEntity.status(HttpStatus.CREATED).body(policies.create(request.toSpec()));
     }
 
+    @Audited(value = AuditType.AUTH_POLICY_UPDATED)
     @PutMapping("/{id}")
     @RequirePermission(Permissions.POLICY_UPDATE)
     @RequireStepUp
@@ -50,6 +54,7 @@ public class AuthPolicyAdminController {
         return policies.update(id, request.toUpdate());
     }
 
+    @Audited(value = AuditType.AUTH_POLICY_DELETED)
     @DeleteMapping("/{id}")
     @RequirePermission(Permissions.POLICY_DELETE)
     @RequireStepUp

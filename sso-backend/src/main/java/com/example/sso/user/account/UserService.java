@@ -31,6 +31,13 @@ public interface UserService {
      */
     Optional<UserAccount> findByUsernameInOrg(String username, UUID orgId);
 
+    /**
+     * Minimal identity lookup for audit attribution: resolves a username to id/email/display WITHOUT hydrating
+     * roles/permissions (a per-event hot path that never needs them). A {@code null} orgId uses the current
+     * identity scope, mirroring {@link #findByUsername}.
+     */
+    Optional<UserActorView> findActor(String username, UUID orgId);
+
     /** Resolves a login identifier (email preferred, falling back to username) within the current identity
      *  scope (the login's org, else the session's org, else global). */
     Optional<UserAccount> findByLogin(String identifier);

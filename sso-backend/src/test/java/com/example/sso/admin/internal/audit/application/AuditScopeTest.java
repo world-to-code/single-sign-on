@@ -2,6 +2,7 @@ package com.example.sso.admin.internal.audit.application;
 
 import com.example.sso.audit.AuditCategory;
 import com.example.sso.audit.AuditEntry;
+import com.example.sso.audit.AuditSeverity;
 import com.example.sso.audit.AuditSubjectType;
 import java.time.Instant;
 import java.util.Set;
@@ -29,7 +30,8 @@ class AuditScopeTest {
 
     private AuditEntry entry(AuditSubjectType type, String subjectId, String principal) {
         return new AuditEntry(1L, Instant.ofEpochSecond(0), principal, "USER_UPDATED",
-                AuditCategory.ADMIN, true, "detail", type, subjectId);
+                AuditCategory.ADMIN, true, "detail", type, subjectId,
+                null, null, null, null, null, null, null, null, null, AuditSeverity.INFO);
     }
 
     @Test

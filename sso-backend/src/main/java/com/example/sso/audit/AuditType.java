@@ -84,6 +84,27 @@ public enum AuditType {
     ORGANIZATION_MEMBER_REMOVED(AuditCategory.ADMIN),
     ORGANIZATION_CONTEXT_ENTERED(AuditCategory.ADMIN),
 
+    // Administrative configuration changes recorded by the @Audited interceptor (the request method+path
+    // distinguishes create vs delete for the coarse *_CHANGED kinds)
+    ATTRIBUTE_CHANGED(AuditCategory.ADMIN),
+    AUTH_POLICY_CREATED(AuditCategory.AUTHORIZATION),
+    AUTH_POLICY_UPDATED(AuditCategory.AUTHORIZATION),
+    AUTH_POLICY_DELETED(AuditCategory.AUTHORIZATION),
+    SESSION_POLICY_CREATED(AuditCategory.SESSION),
+    SESSION_POLICY_UPDATED(AuditCategory.SESSION),
+    SESSION_POLICY_DELETED(AuditCategory.SESSION),
+    RESOURCE_CHANGED(AuditCategory.ADMIN),
+    OIDC_CLIENT_CREATED(AuditCategory.ADMIN),
+    OIDC_CLIENT_UPDATED(AuditCategory.ADMIN),
+    OIDC_CLIENT_DELETED(AuditCategory.ADMIN),
+    RELYING_PARTY_CREATED(AuditCategory.ADMIN),
+    RELYING_PARTY_UPDATED(AuditCategory.ADMIN),
+    RELYING_PARTY_DELETED(AuditCategory.ADMIN),
+    SCIM_TOKEN_CHANGED(AuditCategory.ADMIN),
+    NETWORK_ZONE_CHANGED(AuditCategory.ADMIN),
+    APP_ASSIGNMENT_CHANGED(AuditCategory.AUTHORIZATION),
+    SIGNING_KEY_ROTATED(AuditCategory.ADMIN),
+
     // Platform / system
     SERVER_ERROR(AuditCategory.SYSTEM);
 
