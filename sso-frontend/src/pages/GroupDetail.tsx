@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
-import { AppWindow, ArrowLeft, Lock, ShieldCheck } from "lucide-react";
+import { AppWindow, ArrowLeft, Lock, LogOut, ShieldCheck } from "lucide-react";
 import {
-  getGroup, getGroupApplications, getGroupMembers, setGroupRoles,
+  getGroup, getGroupApplications, getGroupMembers, revokeGroupSessions, setGroupRoles,
   type Group, type GroupApp, type GroupMembersPage,
 } from "@/groups";
 import { errorMessage } from "@/api";
+import { useConfirm } from "@/components/ConfirmProvider";
+import { useToast } from "@/components/ToastProvider";
 import { listRoles, type Role } from "@/roles";
 import { Pagination } from "@/components/Pagination";
 import { PageHeader } from "@/components/PageHeader";
@@ -27,6 +29,8 @@ type Tab = "members" | "roles" | "apps";
 export default function GroupDetail() {
   const { t } = useTranslation("console");
   const { id = "" } = useParams();
+  const confirm = useConfirm();
+  const toast = useToast();
   const [group, setGroup] = useState<Group | null>(null);
   const [tab, setTab] = useState<Tab>("members");
   const [members, setMembers] = useState<GroupMembersPage | null>(null);
@@ -66,6 +70,22 @@ export default function GroupDetail() {
     }
   }
 
+  async function signOutMembers() {
+    if (!group) return;
+    if (await confirm({
+      title: t("groupDetailSignOutTitle"),
+      description: t("groupDetailSignOutDesc", { name: group.name }),
+      confirmText: t("groupDetailSignOut"),
+    })) {
+      try {
+        await revokeGroupSessions(id);
+        toast({ tone: "success", title: t("groupDetailSignOutDone", { name: group.name }) });
+      } catch (e) {
+        setError(errorMessage(e));
+      }
+    }
+  }
+
   return (
     <>
       <Link to="/admin/groups" className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
@@ -74,9 +94,18 @@ export default function GroupDetail() {
       <PageHeader
         title={group ? group.name : t("groupDetailFallbackName")}
         description={group?.description || t("groupDetailFallbackDescription")}
-        actions={group?.system
-          ? <Badge variant="secondary"><Lock className="size-3" /> {t("groupDetailSystemBadge")}</Badge>
-          : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            {group?.system && (
+              <Badge variant="secondary"><Lock className="size-3" /> {t("groupDetailSystemBadge")}</Badge>
+            )}
+            {group && (
+              <Button variant="outline" size="sm" onClick={signOutMembers}>
+                <LogOut className="size-4" /> {t("groupDetailSignOut")}
+              </Button>
+            )}
+          </div>
+        }
       />
 
       {error && <Alert variant="destructive" className="mb-4"><AlertDescription>{error}</AlertDescription></Alert>}

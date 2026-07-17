@@ -26,6 +26,9 @@ export const createGroup = (body: GroupRequest) => apiPost<Group>("/api/admin/gr
 export const updateGroup = (id: string, body: GroupRequest) => apiPut<Group>(`/api/admin/groups/${id}`, body);
 export const deleteGroup = (id: string) => apiDelete(`/api/admin/groups/${id}`);
 
+/** Admin force-expiry of ALL the group's members' sessions (also logs them out of their OIDC/SAML apps). */
+export const revokeGroupSessions = (id: string) => apiDelete(`/api/admin/groups/${id}/sessions`);
+
 export const getGroup = (id: string) => apiGet<Group>(`/api/admin/groups/${id}`);
 export const getGroupMembers = (id: string, page: number, size = 20) =>
   apiGet<GroupMembersPage>(`/api/admin/groups/${id}/members?page=${page}&size=${size}`);
