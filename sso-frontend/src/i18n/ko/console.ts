@@ -903,6 +903,7 @@ export const console: Record<keyof typeof enConsole, string> = {
   attrTargetOperator: "연산자",
   attrTargetOpEquals: "같음",
   attrTargetOpNotEquals: "같지 않음",
+  attrTargetOpContains: "포함",
   attrTargetOpExists: "존재",
   attrTargetOpNotExists: "존재하지 않음",
   attrTargetAdd: "추가",

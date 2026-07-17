@@ -903,6 +903,7 @@ export const console = {
   attrTargetOperator: "operator",
   attrTargetOpEquals: "equals",
   attrTargetOpNotEquals: "not equals",
+  attrTargetOpContains: "contains",
   attrTargetOpExists: "exists",
   attrTargetOpNotExists: "not exists",
   attrTargetAdd: "Add",
