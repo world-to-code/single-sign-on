@@ -191,7 +191,7 @@ class AbacAuthorizationIT extends AbstractIntegrationTest {
         // endpoint's @PreAuthorize must reference only #id; a composite that dereferenced a non-existent request
         // field would throw during evaluation and deny even this call.
         actAsWithAuthorities("admin", Permissions.USER_UPDATE);
-        assertThat(metadataController.setUserAttribute(target, new AttributeRequest("dept", "eng")))
+        assertThat(metadataController.addUserAttribute(target, new AttributeRequest("dept", "eng")))
                 .extracting(Attribute::key).contains("dept");
         assertThat(metadataController.removeUserAttribute(target, "dept")).isEmpty();
 
@@ -199,7 +199,7 @@ class AbacAuthorizationIT extends AbstractIntegrationTest {
         // canAccessUser(#id) conjunct fires, not just the permission.
         create("metascoped", Set.of("ROLE_GROUP_ADMIN", "ROLE_USER"));
         actAsWithAuthorities("metascoped", Permissions.USER_UPDATE);
-        assertThatThrownBy(() -> metadataController.setUserAttribute(target, new AttributeRequest("dept", "eng")))
+        assertThatThrownBy(() -> metadataController.addUserAttribute(target, new AttributeRequest("dept", "eng")))
                 .isInstanceOf(AccessDeniedException.class);
         assertThatThrownBy(() -> metadataController.userAttributes(target)).isInstanceOf(AccessDeniedException.class);
     }
@@ -208,18 +208,41 @@ class AbacAuthorizationIT extends AbstractIntegrationTest {
     void groupMetadataWriteRequiresGroupUpdateNotJustRead() {
         UUID groupId = UUID.fromString(userGroups.create(new GroupSpec("MetaGroup", null, null, Set.of())).id());
 
-        // group:read alone cannot WRITE metadata.
+        // group:read alone cannot WRITE metadata — neither add nor a value-granular delete.
         actAsWithAuthorities("admin", Permissions.GROUP_READ);
-        assertThatThrownBy(() -> metadataController.setGroupAttribute(groupId, new AttributeRequest("region", "eu")))
+        assertThatThrownBy(() -> metadataController.addGroupAttribute(groupId, new AttributeRequest("region", "eu")))
+                .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> metadataController.removeGroupAttributeValue(groupId, "region", "eu"))
                 .isInstanceOf(AccessDeniedException.class);
 
         // With group:update (and super scope) it succeeds.
         actAsWithAuthorities("admin", Permissions.GROUP_UPDATE);
-        assertThat(metadataController.setGroupAttribute(groupId, new AttributeRequest("region", "eu")))
+        assertThat(metadataController.addGroupAttribute(groupId, new AttributeRequest("region", "eu")))
                 .extracting(Attribute::key).contains("region");
+        assertThat(metadataController.removeGroupAttributeValue(groupId, "region", "eu")).isEmpty();
 
         actAsWithAuthorities("admin", Permissions.GROUP_UPDATE);
         userGroups.delete(groupId);
+    }
+
+    @Test
+    void userMetadataValueGranularDeleteRoutesByValueParamAndIsScopeGated() {
+        UUID target = create("metaval", Set.of("ROLE_USER"));
+
+        // A super admin adds two values under one key, then the ?value= delete drops ONLY that value (the
+        // params="value" mapping), leaving the other; the whole-key delete then drops the rest.
+        actAsWithAuthorities("admin", Permissions.USER_UPDATE);
+        metadataController.addUserAttribute(target, new AttributeRequest("team", "infra"));
+        metadataController.addUserAttribute(target, new AttributeRequest("team", "sre"));
+        assertThat(metadataController.removeUserAttributeValue(target, "team", "infra"))
+                .extracting(Attribute::value).containsExactly("sre");
+        assertThat(metadataController.removeUserAttribute(target, "team")).isEmpty();
+
+        // A scoped admin without scope over target is denied the value-granular delete (canAccessUser(#id) fires).
+        create("metavalscoped", Set.of("ROLE_GROUP_ADMIN", "ROLE_USER"));
+        actAsWithAuthorities("metavalscoped", Permissions.USER_UPDATE);
+        assertThatThrownBy(() -> metadataController.removeUserAttributeValue(target, "team", "sre"))
+                .isInstanceOf(AccessDeniedException.class);
     }
 
     private UUID create(String username, Set<String> roles) {

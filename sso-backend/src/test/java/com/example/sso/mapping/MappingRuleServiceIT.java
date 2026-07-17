@@ -82,6 +82,23 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void aRuleMatchesAUserOnAnyOfItsMultipleValuesForAKeyAndMaterializesOnce() {
+        orgContext.runAsPlatform(() -> {
+            UUID group = group("infra");
+            UUID member = user("team", "infra");
+            attributes.add(EntityKind.USER, member.toString(), "team", "sre"); // team is now multi-value {infra, sre}
+            UUID other = user("team", "ops");
+
+            // A rule keyed on the SECOND value still materializes the member (ANY-match), and exactly once (dedup).
+            MappingRuleView rule = mappingRules.create(spec("team", "sre", group));
+
+            assertThat(groups.groupIdsOf(member)).contains(group);
+            assertThat(groups.groupIdsOf(other)).doesNotContain(group);
+            assertThat(rule.assignedCount()).isEqualTo(1); // materialized once, not once per value
+        });
+    }
+
+    @Test
     void anAttributeChangeAsynchronouslyAddsThenRetractsTheUserWhileLeavingAManualMemberUntouched() {
         UUID group = orgContext.callAsPlatform(() -> group("eng"));
         UUID manual = orgContext.callAsPlatform(() -> user("dept", "sales")); // never matches

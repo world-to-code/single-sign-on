@@ -62,8 +62,9 @@ class ResourceAdminAuthzIT extends AbstractIntegrationTest {
         assertDenied(() -> controller.assignAdmin(UUID.randomUUID(), new AdminGrantRequest(UUID.randomUUID())));
         assertDenied(() -> controller.revokeAdmin(UUID.randomUUID(), UUID.randomUUID()));
         assertDenied(() -> controller.metadata(UUID.randomUUID()));
-        assertDenied(() -> controller.setMetadata(UUID.randomUUID(), new ResourceAttributeRequest("k", "v")));
+        assertDenied(() -> controller.addMetadata(UUID.randomUUID(), new ResourceAttributeRequest("k", "v")));
         assertDenied(() -> controller.removeMetadata(UUID.randomUUID(), "k"));
+        assertDenied(() -> controller.removeMetadataValue(UUID.randomUUID(), "k", "v"));
     }
 
     @Test
@@ -76,7 +77,8 @@ class ResourceAdminAuthzIT extends AbstractIntegrationTest {
         assertDenied(() -> controller.delete(UUID.randomUUID()));
         assertDenied(() -> controller.attachMember(UUID.randomUUID(), new MemberRequest("GROUP", UUID.randomUUID().toString())));
         assertDenied(() -> controller.assignAdmin(UUID.randomUUID(), new AdminGrantRequest(UUID.randomUUID())));
-        assertDenied(() -> controller.setMetadata(UUID.randomUUID(), new ResourceAttributeRequest("k", "v")));
+        assertDenied(() -> controller.addMetadata(UUID.randomUUID(), new ResourceAttributeRequest("k", "v")));
+        assertDenied(() -> controller.removeMetadataValue(UUID.randomUUID(), "k", "v"));
     }
 
     @Test

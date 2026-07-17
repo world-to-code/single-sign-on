@@ -16,14 +16,17 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Admin editing of USER and GROUP metadata attributes. Each handler carries the SAME instance-level scope check
- * as the entity's own endpoints ({@code canAccessUser}/{@code canAccessGroup}), not just the permission, so a
- * subtree-scoped delegated admin can only tag entities it can already see/manage. RESOURCE metadata lives on the
- * resource module's controller instead, whose tier-aware {@code requireManage} check is the right guard for it.
- * The service org-scopes every read/write.
+ * Admin editing of USER and GROUP metadata attributes. A key may carry SEVERAL values (multi-value): PUT ADDS a
+ * value (idempotent), DELETE {@code .../{key}} removes ALL of the key's values, and DELETE {@code .../{key}?value=}
+ * removes one value. Each handler carries the SAME instance-level scope check as the entity's own endpoints
+ * ({@code canAccessUser}/{@code canAccessGroup}), not just the permission, so a subtree-scoped delegated admin can
+ * only tag entities it can already see/manage. RESOURCE metadata lives on the resource module's controller
+ * instead, whose tier-aware {@code requireManage} check is the right guard for it. The service org-scopes every
+ * read/write.
  */
 @RestController
 @RequestMapping("/api/admin/metadata")
@@ -41,8 +44,8 @@ public class MetadataAdminController {
 
     @PutMapping("/users/{id}")
     @PreAuthorize("hasAuthority('" + Permissions.USER_UPDATE + "') and @adminAccessPolicy.canAccessUser(#id)")
-    public List<Attribute> setUserAttribute(@PathVariable UUID id, @Valid @RequestBody AttributeRequest request) {
-        attributes.set(EntityKind.USER, id.toString(), request.key(), request.value());
+    public List<Attribute> addUserAttribute(@PathVariable UUID id, @Valid @RequestBody AttributeRequest request) {
+        attributes.add(EntityKind.USER, id.toString(), request.key(), request.value());
         return attributes.attributesOf(EntityKind.USER, id.toString());
     }
 
@@ -50,6 +53,14 @@ public class MetadataAdminController {
     @PreAuthorize("hasAuthority('" + Permissions.USER_UPDATE + "') and @adminAccessPolicy.canAccessUser(#id)")
     public List<Attribute> removeUserAttribute(@PathVariable UUID id, @PathVariable String key) {
         attributes.remove(EntityKind.USER, id.toString(), key);
+        return attributes.attributesOf(EntityKind.USER, id.toString());
+    }
+
+    @DeleteMapping(value = "/users/{id}/{key}", params = "value")
+    @PreAuthorize("hasAuthority('" + Permissions.USER_UPDATE + "') and @adminAccessPolicy.canAccessUser(#id)")
+    public List<Attribute> removeUserAttributeValue(@PathVariable UUID id, @PathVariable String key,
+            @RequestParam String value) {
+        attributes.removeValue(EntityKind.USER, id.toString(), key, value);
         return attributes.attributesOf(EntityKind.USER, id.toString());
     }
 
@@ -62,8 +73,8 @@ public class MetadataAdminController {
 
     @PutMapping("/groups/{id}")
     @PreAuthorize("hasAuthority('" + Permissions.GROUP_UPDATE + "') and @adminAccessPolicy.canAccessGroup(#id)")
-    public List<Attribute> setGroupAttribute(@PathVariable UUID id, @Valid @RequestBody AttributeRequest request) {
-        attributes.set(EntityKind.GROUP, id.toString(), request.key(), request.value());
+    public List<Attribute> addGroupAttribute(@PathVariable UUID id, @Valid @RequestBody AttributeRequest request) {
+        attributes.add(EntityKind.GROUP, id.toString(), request.key(), request.value());
         return attributes.attributesOf(EntityKind.GROUP, id.toString());
     }
 
@@ -71,6 +82,14 @@ public class MetadataAdminController {
     @PreAuthorize("hasAuthority('" + Permissions.GROUP_UPDATE + "') and @adminAccessPolicy.canAccessGroup(#id)")
     public List<Attribute> removeGroupAttribute(@PathVariable UUID id, @PathVariable String key) {
         attributes.remove(EntityKind.GROUP, id.toString(), key);
+        return attributes.attributesOf(EntityKind.GROUP, id.toString());
+    }
+
+    @DeleteMapping(value = "/groups/{id}/{key}", params = "value")
+    @PreAuthorize("hasAuthority('" + Permissions.GROUP_UPDATE + "') and @adminAccessPolicy.canAccessGroup(#id)")
+    public List<Attribute> removeGroupAttributeValue(@PathVariable UUID id, @PathVariable String key,
+            @RequestParam String value) {
+        attributes.removeValue(EntityKind.GROUP, id.toString(), key, value);
         return attributes.attributesOf(EntityKind.GROUP, id.toString());
     }
 }

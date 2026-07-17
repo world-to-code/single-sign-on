@@ -89,6 +89,25 @@ class AttributePredicateTest {
     }
 
     @Test
+    void multiValueAttributesAnyMatchForPositiveOperatorsAndNoneMatchForNotEquals() {
+        // A subject carrying TWO values for one key (multi-value, e.g. inherited from two groups).
+        List<Attribute> teamInfraAndSre = List.of(new Attribute("team", "infra"), new Attribute("team", "sre"));
+        // EQUALS / IN / CONTAINS / EXISTS ANY-match over the entity's values.
+        assertThat(AttributePredicate.equals("team", "infra").matches(teamInfraAndSre)).isTrue();
+        assertThat(AttributePredicate.equals("team", "ops").matches(teamInfraAndSre)).isFalse();
+        assertThat(AttributePredicate.in("team", List.of("ops", "sre")).matches(teamInfraAndSre)).isTrue();
+        assertThat(new AttributePredicate("team", AttributeOperator.CONTAINS, "inf").matches(teamInfraAndSre)).isTrue();
+        assertThat(new AttributePredicate("team", AttributeOperator.EXISTS, null).matches(teamInfraAndSre)).isTrue();
+        // NOT_EQUALS = "NONE of the key's values equals X": true only when no value is X.
+        assertThat(new AttributePredicate("team", AttributeOperator.NOT_EQUALS, "ops").matches(teamInfraAndSre))
+                .isTrue();
+        assertThat(new AttributePredicate("team", AttributeOperator.NOT_EQUALS, "infra").matches(teamInfraAndSre))
+                .isFalse(); // one of the values IS infra, so it does not satisfy team != infra
+        assertThat(new AttributePredicate("team", AttributeOperator.NOT_EXISTS, null).matches(teamInfraAndSre))
+                .isFalse();
+    }
+
+    @Test
     void emptyAttributesSatisfyOnlyTheNegativeOperators() {
         List<Attribute> none = List.of();
         assertThat(AttributePredicate.equals("department", "engineering").matches(none)).isFalse();

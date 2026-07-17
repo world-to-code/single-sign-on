@@ -422,10 +422,10 @@ public class ResourceAdminService {
     }
 
     @Transactional
-    public List<Attribute> setAttribute(UUID id, String key, String value) {
+    public List<Attribute> addAttribute(UUID id, String key, String value) {
         access.requireManage(id);
         requireInTier(id);
-        attributes.set(EntityKind.RESOURCE, id.toString(), key, value);
+        attributes.add(EntityKind.RESOURCE, id.toString(), key, value); // accumulate — a key may hold several values
         return attributes.attributesOf(EntityKind.RESOURCE, id.toString());
     }
 
@@ -433,7 +433,15 @@ public class ResourceAdminService {
     public List<Attribute> removeAttribute(UUID id, String key) {
         access.requireManage(id);
         requireInTier(id);
-        attributes.remove(EntityKind.RESOURCE, id.toString(), key);
+        attributes.remove(EntityKind.RESOURCE, id.toString(), key); // all of the key's values
+        return attributes.attributesOf(EntityKind.RESOURCE, id.toString());
+    }
+
+    @Transactional
+    public List<Attribute> removeAttributeValue(UUID id, String key, String value) {
+        access.requireManage(id);
+        requireInTier(id);
+        attributes.removeValue(EntityKind.RESOURCE, id.toString(), key, value);
         return attributes.attributesOf(EntityKind.RESOURCE, id.toString());
     }
 

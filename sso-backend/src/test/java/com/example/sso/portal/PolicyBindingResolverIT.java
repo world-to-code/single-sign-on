@@ -716,6 +716,22 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
         assertThat(resolveSession(lee, app)).isEmpty();
     }
 
+    @Test
+    void aMultiValueUserMatchesABindingOnAnyOfItsValues() {
+        // kim carries TWO teams (multi-value). An EQUALS team=infra binding matches one value; an
+        // IN team IN (sre,x) binding matches the other — a user in several teams satisfies either target.
+        String app = "pbt-mv-eq";
+        String appIn = "pbt-mv-in";
+        orgContext.runAsPlatform(() -> {
+            attributes.add(EntityKind.USER, kim.getId().toString(), "team", "infra");
+            attributes.add(EntityKind.USER, kim.getId().toString(), "team", "sre");
+            attrSession(app, "team", "infra", sess5, 10);
+            attrSessionGroup(appIn, List.of(AttributePredicate.in("team", List.of("sre", "x"))), sess15, 10);
+        });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+        assertThat(resolveSession(kim, appIn)).map(SessionPolicyDetails::getId).contains(sess15);
+    }
+
     // --- helpers ---
 
     /** A GLOBAL multi-condition (AND) attribute session binding, for the compound resolution fixtures. */

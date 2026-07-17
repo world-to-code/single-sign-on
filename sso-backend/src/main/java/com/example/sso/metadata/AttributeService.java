@@ -12,7 +12,11 @@ import java.util.Set;
  */
 public interface AttributeService {
 
-    /** The attributes on the entity, in key order. On read a tenant's own attribute shadows a global one. */
+    /**
+     * The attributes on the entity, in key then value order. A key may carry SEVERAL values (multi-value); on read
+     * a tenant's own value SET for a key shadows the global one — if the tenant defines the key at all, only its
+     * values show, otherwise the global values do.
+     */
     List<Attribute> attributesOf(EntityKind kind, String entityId);
 
     /**
@@ -38,10 +42,18 @@ public interface AttributeService {
      */
     List<Attribute> attributesOfInTier(EntityKind kind, String entityId);
 
-    /** Sets (upserts) a single attribute value on the entity in the acting tier. */
+    /** Sets the key's value SET to exactly {@code value} in the acting tier (replaces any other values for the
+     *  key). The single-value convenience — use {@link #add} to accumulate several values under one key. */
     void set(EntityKind kind, String entityId, String key, String value);
 
-    /** Removes an attribute from the entity in the acting tier; a no-op if absent. */
+    /** Adds one value under {@code key} in the acting tier, keeping any existing values (idempotent — a no-op if
+     *  the entity already carries this exact key/value). */
+    void add(EntityKind kind, String entityId, String key, String value);
+
+    /** Removes one value from {@code key} in the acting tier, leaving the key's other values; a no-op if absent. */
+    void removeValue(EntityKind kind, String entityId, String key, String value);
+
+    /** Removes ALL of the key's values from the entity in the acting tier; a no-op if absent. */
     void remove(EntityKind kind, String entityId, String key);
 
     /**

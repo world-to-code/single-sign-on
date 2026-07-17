@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -170,13 +171,20 @@ public class ResourceAdminController {
 
     @PutMapping("/{id}/metadata")
     @RequirePermission(Permissions.RESOURCE_UPDATE)
-    public List<Attribute> setMetadata(@PathVariable UUID id, @Valid @RequestBody ResourceAttributeRequest request) {
-        return service.setAttribute(id, request.key(), request.value());
+    public List<Attribute> addMetadata(@PathVariable UUID id, @Valid @RequestBody ResourceAttributeRequest request) {
+        return service.addAttribute(id, request.key(), request.value());
     }
 
     @DeleteMapping("/{id}/metadata/{key}")
     @RequirePermission(Permissions.RESOURCE_UPDATE)
     public List<Attribute> removeMetadata(@PathVariable UUID id, @PathVariable String key) {
         return service.removeAttribute(id, key);
+    }
+
+    @DeleteMapping(value = "/{id}/metadata/{key}", params = "value")
+    @RequirePermission(Permissions.RESOURCE_UPDATE)
+    public List<Attribute> removeMetadataValue(@PathVariable UUID id, @PathVariable String key,
+            @RequestParam String value) {
+        return service.removeAttributeValue(id, key, value);
     }
 }

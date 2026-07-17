@@ -8,13 +8,12 @@ import com.example.sso.metadata.internal.domain.EntityAttribute;
 import com.example.sso.metadata.internal.domain.EntityAttributeRepository;
 import com.example.sso.tenancy.OrgTierGuard;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -40,9 +39,9 @@ class AttributeServiceImpl implements AttributeService {
     @Transactional(readOnly = true)
     public List<Attribute> attributesOf(EntityKind kind, String entityId) {
         UUID tier = tierGuard.currentTier();
-        return effectiveOf(attributes.findByEntityKindAndEntityIdOrderByAttrKey(kind, entityId), tier)
-                .entrySet().stream().sorted(Map.Entry.comparingByKey()) // the merge can disturb key order
-                .map(e -> new Attribute(e.getKey(), e.getValue())).toList();
+        return effectiveOf(attributes.findByEntityKindAndEntityIdOrderByAttrKey(kind, entityId), tier).stream()
+                .sorted(Comparator.comparing(Attribute::key).thenComparing(Attribute::value)) // key then value
+                .toList();
     }
 
     @Override
@@ -54,21 +53,29 @@ class AttributeServiceImpl implements AttributeService {
         UUID tier = tierGuard.currentTier();
         Map<String, List<EntityAttribute>> byEntity = attributes.findByEntityKindAndEntityIdIn(kind, entityIds)
                 .stream().collect(Collectors.groupingBy(EntityAttribute::getEntityId));
-        // Union across the entities: a (key,value) any of them carries, with own-shadows-global applied per entity.
+        // Union across the entities: every effective (key,value) any of them carries, own-shadows-global per entity.
         Set<Attribute> union = new LinkedHashSet<>();
-        byEntity.values().forEach(rows ->
-                effectiveOf(rows, tier).forEach((key, value) -> union.add(new Attribute(key, value))));
+        byEntity.values().forEach(rows -> union.addAll(effectiveOf(rows, tier)));
         return List.copyOf(union);
     }
 
-    /** One entity's EFFECTIVE key→value map: global rows first, then the acting tier's own rows shadow them. */
-    private Map<String, String> effectiveOf(List<EntityAttribute> rows, UUID tier) {
-        Map<String, String> byKey = new LinkedHashMap<>();
-        rows.stream().filter(row -> row.getOrgId() == null)
-                .forEach(row -> byKey.put(row.getAttrKey(), row.getAttrValue()));       // global first
-        rows.stream().filter(row -> Objects.equals(row.getOrgId(), tier))
-                .forEach(row -> byKey.put(row.getAttrKey(), row.getAttrValue()));       // own shadows global
-        return byKey;
+    /** One entity's EFFECTIVE (key,value) pairs, multi-value: for each key the acting tier's own values SHADOW the
+     *  global ones — if the entity carries any own-tier row for a key only its values show, otherwise the global
+     *  values do (a per-key value-set shadow, the multi-value generalization of the old single-value shadow). */
+    private Set<Attribute> effectiveOf(List<EntityAttribute> rows, UUID tier) {
+        Set<String> keysWithOwn = rows.stream()
+                .filter(row -> Objects.equals(row.getOrgId(), tier))
+                .map(EntityAttribute::getAttrKey)
+                .collect(Collectors.toSet());
+        Set<Attribute> effective = new LinkedHashSet<>();
+        for (EntityAttribute row : rows) {
+            boolean own = Objects.equals(row.getOrgId(), tier);
+            boolean inheritedGlobal = row.getOrgId() == null && !own && !keysWithOwn.contains(row.getAttrKey());
+            if (own || inheritedGlobal) {
+                effective.add(new Attribute(row.getAttrKey(), row.getAttrValue()));
+            }
+        }
+        return effective;
     }
 
     @Override
@@ -98,20 +105,51 @@ class AttributeServiceImpl implements AttributeService {
     @Transactional
     public void set(EntityKind kind, String entityId, String key, String value) {
         UUID tier = tierGuard.currentTier();
-        ownAttribute(kind, entityId, key, tier).ifPresentOrElse(
-                row -> row.changeValue(value), // dirty-checked update of the tier's own row
-                () -> attributes.save(new EntityAttribute(kind, entityId, key, value, tier)));
-        events.publishEvent(new EntityAttributeChangedEvent(kind, entityId, tier));
+        List<EntityAttribute> rows = ownRows(kind, entityId, key, tier);
+        List<EntityAttribute> stale = rows.stream().filter(row -> !row.getAttrValue().equals(value)).toList();
+        boolean present = rows.stream().anyMatch(row -> row.getAttrValue().equals(value));
+        if (!stale.isEmpty()) {
+            attributes.deleteAll(stale); // drop the key's other values so the set becomes exactly {value}
+        }
+        if (!present) {
+            attributes.save(new EntityAttribute(kind, entityId, key, value, tier));
+        }
+        if (!stale.isEmpty() || !present) {
+            events.publishEvent(new EntityAttributeChangedEvent(kind, entityId, tier)); // only when a row changed
+        }
+    }
+
+    @Override
+    @Transactional
+    public void add(EntityKind kind, String entityId, String key, String value) {
+        UUID tier = tierGuard.currentTier();
+        if (!ownValueExists(kind, entityId, key, value, tier)) { // idempotent — never a duplicate (key,value)
+            attributes.save(new EntityAttribute(kind, entityId, key, value, tier));
+            events.publishEvent(new EntityAttributeChangedEvent(kind, entityId, tier));
+        }
+    }
+
+    @Override
+    @Transactional
+    public void removeValue(EntityKind kind, String entityId, String key, String value) {
+        UUID tier = tierGuard.currentTier();
+        List<EntityAttribute> rows = ownRows(kind, entityId, key, tier).stream()
+                .filter(row -> row.getAttrValue().equals(value)).toList();
+        if (!rows.isEmpty()) {
+            attributes.deleteAll(rows);
+            events.publishEvent(new EntityAttributeChangedEvent(kind, entityId, tier));
+        }
     }
 
     @Override
     @Transactional
     public void remove(EntityKind kind, String entityId, String key) {
         UUID tier = tierGuard.currentTier();
-        ownAttribute(kind, entityId, key, tier).ifPresent(row -> {
-            attributes.delete(row);
+        List<EntityAttribute> rows = ownRows(kind, entityId, key, tier);
+        if (!rows.isEmpty()) {
+            attributes.deleteAll(rows); // all of the key's values in this tier
             events.publishEvent(new EntityAttributeChangedEvent(kind, entityId, tier)); // only when a row changed
-        });
+        }
     }
 
     @Override
@@ -165,10 +203,20 @@ class AttributeServiceImpl implements AttributeService {
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
-    /** The acting tier's OWN row for this key (never a shadowed global), so an upsert/remove touches only it. */
-    private Optional<EntityAttribute> ownAttribute(EntityKind kind, String entityId, String key, UUID tier) {
+    /** The acting tier's OWN rows for this key (never a shadowed global), so an edit touches only the tier's — a
+     *  key may now hold several values, so this is a list. */
+    private List<EntityAttribute> ownRows(EntityKind kind, String entityId, String key, UUID tier) {
         return tier == null
                 ? attributes.findByEntityKindAndEntityIdAndAttrKeyAndOrgIdIsNull(kind, entityId, key)
                 : attributes.findByEntityKindAndEntityIdAndAttrKeyAndOrgId(kind, entityId, key, tier);
+    }
+
+    /** Whether the acting tier already holds this exact (key, value) — the idempotency guard for {@link #add}. */
+    private boolean ownValueExists(EntityKind kind, String entityId, String key, String value, UUID tier) {
+        return tier == null
+                ? attributes.existsByEntityKindAndEntityIdAndAttrKeyAndAttrValueAndOrgIdIsNull(
+                        kind, entityId, key, value)
+                : attributes.existsByEntityKindAndEntityIdAndAttrKeyAndAttrValueAndOrgId(
+                        kind, entityId, key, value, tier);
     }
 }

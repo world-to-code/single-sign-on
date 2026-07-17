@@ -46,9 +46,4 @@ public class EntityAttribute extends AuditedEntity {
         this.attrValue = attrValue;
         this.orgId = orgId;
     }
-
-    /** Intention-revealing value change (no setter); the key/entity/tier are fixed at creation. */
-    public void changeValue(String value) {
-        this.attrValue = value;
-    }
 }
