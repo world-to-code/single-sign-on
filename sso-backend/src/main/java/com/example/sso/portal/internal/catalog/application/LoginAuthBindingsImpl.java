@@ -2,7 +2,7 @@ package com.example.sso.portal.internal.catalog.application;
 
 import com.example.sso.authpolicy.policy.LoginAssignment;
 import com.example.sso.authpolicy.policy.LoginAuthBindings;
-import com.example.sso.metadata.AttributePredicate;
+import com.example.sso.metadata.AttributePredicateGroup;
 import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.binding.PortalApps;
 import com.example.sso.portal.internal.catalog.domain.PolicyBinding;
@@ -35,17 +35,18 @@ class LoginAuthBindingsImpl implements LoginAuthBindings {
 
     private final PolicyBindingRepository bindings;
     private final PolicyBindingSlot slot;
+    private final PolicyBindingConditions conditionGroups;
     private final OrgTierGuard tierGuard;
 
     @Override
     @Transactional
     public void replaceForPolicy(UUID policyId, int priority, boolean appliesToLogin, Set<UUID> userIds,
-            Set<UUID> roleIds, Set<AttributePredicate> attributes) {
+            Set<UUID> roleIds, Set<AttributePredicateGroup> attributes) {
         UUID org = tierGuard.currentTier();
         boolean allSubjects = appliesToLogin && userIds.isEmpty() && roleIds.isEmpty() && attributes.isEmpty();
         Set<UUID> wantedUsers = appliesToLogin ? userIds : Set.of();
         Set<UUID> wantedRoles = appliesToLogin ? roleIds : Set.of();
-        Set<AttributePredicate> wantedAttributes = appliesToLogin ? attributes : Set.of();
+        Set<AttributePredicateGroup> wantedAttributes = appliesToLogin ? attributes : Set.of();
 
         if (allSubjects) {
             upsert(null, null, org, policyId, priority);
@@ -56,12 +57,14 @@ class LoginAuthBindingsImpl implements LoginAuthBindings {
         for (UUID roleId : wantedRoles) {
             upsert(SubjectType.ROLE, roleId, org, policyId, priority);
         }
-        for (AttributePredicate predicate : wantedAttributes) {
-            upsertAttribute(predicate, org, policyId, priority);
+        for (AttributePredicateGroup group : wantedAttributes) {
+            slot.reconcileAttribute(APP_TYPE, APP_ID, group, org, policyId, priority, PolicyAxis.AUTH);
         }
-        for (PolicyBinding owned : ownedBindings(policyId, org)) {
-            if (!isWanted(owned, allSubjects, wantedUsers, wantedRoles, wantedAttributes)) {
-                clear(owned);
+        List<PolicyBinding> owned = ownedBindings(policyId, org);
+        Map<UUID, AttributePredicateGroup> ownedGroups = conditionGroups.groupsOf(owned);
+        for (PolicyBinding binding : owned) {
+            if (!isWanted(binding, allSubjects, wantedUsers, wantedRoles, wantedAttributes, ownedGroups)) {
+                clear(binding);
             }
         }
     }
@@ -80,16 +83,22 @@ class LoginAuthBindingsImpl implements LoginAuthBindings {
         }
         Map<UUID, Set<UUID>> users = new HashMap<>();
         Map<UUID, Set<UUID>> roles = new HashMap<>();
-        Map<UUID, Set<AttributePredicate>> predicates = new HashMap<>();
+        Map<UUID, Set<AttributePredicateGroup>> predicates = new HashMap<>();
         Set<UUID> forLogin = new HashSet<>();
-        for (PolicyBinding binding : bindings.findByAppTypeAndAppIdAndAuthPolicyIdIn(APP_TYPE, APP_ID, policyIds)) {
+        List<PolicyBinding> found = bindings.findByAppTypeAndAppIdAndAuthPolicyIdIn(APP_TYPE, APP_ID, policyIds);
+        Map<UUID, AttributePredicateGroup> groups = conditionGroups.groupsOf(found);
+        for (PolicyBinding binding : found) {
             UUID policyId = binding.getAuthPolicyId();
             forLogin.add(policyId);
             switch (binding.getSubjectType()) {
                 case USER -> users.computeIfAbsent(policyId, k -> new HashSet<>()).add(binding.getSubjectId());
                 case ROLE -> roles.computeIfAbsent(policyId, k -> new HashSet<>()).add(binding.getSubjectId());
-                case ATTRIBUTE -> predicates.computeIfAbsent(policyId, k -> new HashSet<>())
-                        .add(binding.subjectPredicate());
+                case ATTRIBUTE -> {
+                    AttributePredicateGroup group = groups.get(binding.getId());
+                    if (group != null) { // a group-less ATTRIBUTE row targets nobody — omit it from the scope
+                        predicates.computeIfAbsent(policyId, k -> new HashSet<>()).add(group);
+                    }
+                }
                 case GROUP -> { } // login scope never uses GROUP
                 case null -> { }  // an all-subjects row carries no per-subject scope entry
             }
@@ -105,12 +114,15 @@ class LoginAuthBindingsImpl implements LoginAuthBindings {
     }
 
     private boolean isWanted(PolicyBinding binding, boolean allSubjects, Set<UUID> users, Set<UUID> roles,
-            Set<AttributePredicate> attributes) {
+            Set<AttributePredicateGroup> attributes, Map<UUID, AttributePredicateGroup> ownedGroups) {
         return switch (binding.getSubjectType()) {
             case null -> allSubjects;
             case USER -> users.contains(binding.getSubjectId());
             case ROLE -> roles.contains(binding.getSubjectId());
-            case ATTRIBUTE -> attributes.contains(binding.subjectPredicate());
+            case ATTRIBUTE -> {
+                AttributePredicateGroup group = ownedGroups.get(binding.getId());
+                yield group != null && attributes.contains(group); // a group-less row is never wanted → cleared
+            }
             case GROUP -> false; // login scope never uses GROUP; treat any stray row as unwanted
         };
     }
@@ -123,11 +135,6 @@ class LoginAuthBindingsImpl implements LoginAuthBindings {
                 ? PolicyBinding.forAllSubjects(APP_TYPE, APP_ID, org)
                 : PolicyBinding.forSubject(APP_TYPE, APP_ID, subjectType, subjectId, org);
         applyAuth(binding, policyId, priority);
-    }
-
-    private void upsertAttribute(AttributePredicate predicate, UUID org, UUID policyId, int priority) {
-        applyAuth(PolicyBinding.forAttribute(APP_TYPE, APP_ID, predicate.key(), predicate.operator(),
-                predicate.value(), org), policyId, priority);
     }
 
     private void applyAuth(PolicyBinding binding, UUID policyId, int priority) {

@@ -1,7 +1,5 @@
 package com.example.sso.portal.internal.catalog.domain;
 
-import com.example.sso.metadata.AttributeOperator;
-import com.example.sso.metadata.AttributePredicate;
 import com.example.sso.portal.application.AppType;
 import com.example.sso.shared.domain.AuditedEntity;
 import com.example.sso.tenancy.OrgOwned;
@@ -41,22 +39,10 @@ public class PolicyBinding extends AuditedEntity implements OrgOwned {
     @Column(name = "subject_type", length = 16)
     private SubjectType subjectType;
 
-    /** The id subject, set for USER/GROUP/ROLE; {@code null} for all-subjects and ATTRIBUTE bindings. */
+    /** The id subject, set for USER/GROUP/ROLE; {@code null} for all-subjects and ATTRIBUTE bindings (whose
+     *  predicate conditions live in {@code policy_binding_condition}). */
     @Column(name = "subject_id")
     private UUID subjectId;
-
-    /** The metadata predicate key, set exactly for an {@link SubjectType#ATTRIBUTE} binding (else {@code null}). */
-    @Column(name = "subject_attr_key", length = 64)
-    private String subjectAttrKey;
-
-    /** The metadata predicate value, set for a value-operator {@link SubjectType#ATTRIBUTE} binding (else null). */
-    @Column(name = "subject_attr_value", length = 255)
-    private String subjectAttrValue;
-
-    /** How the predicate tests the key, set exactly for an {@link SubjectType#ATTRIBUTE} binding (else null). */
-    @Enumerated(EnumType.STRING)
-    @Column(name = "subject_attr_op", length = 16)
-    private AttributeOperator subjectAttrOp;
 
     @Column(name = "auth_policy_id")
     private UUID authPolicyId;
@@ -80,16 +66,12 @@ public class PolicyBinding extends AuditedEntity implements OrgOwned {
     // Private, name-based builder: the ONLY assembly path, reached solely through the named factories below so
     // business logic never touches raw field order (adding/reordering a column stays contained to this class).
     @Builder(access = AccessLevel.PRIVATE)
-    private PolicyBinding(AppType appType, String appId, SubjectType subjectType, UUID subjectId,
-            String subjectAttrKey, String subjectAttrValue, AttributeOperator subjectAttrOp, UUID authPolicyId,
+    private PolicyBinding(AppType appType, String appId, SubjectType subjectType, UUID subjectId, UUID authPolicyId,
             UUID sessionPolicyId, int priority, int sessionPriority, UUID orgId) {
         this.appType = appType;
         this.appId = appId;
         this.subjectType = subjectType;
         this.subjectId = subjectId;
-        this.subjectAttrKey = subjectAttrKey;
-        this.subjectAttrValue = subjectAttrValue;
-        this.subjectAttrOp = subjectAttrOp;
         this.authPolicyId = authPolicyId;
         this.sessionPolicyId = sessionPolicyId;
         this.priority = priority;
@@ -108,17 +90,11 @@ public class PolicyBinding extends AuditedEntity implements OrgOwned {
         return builder().appType(appType).appId(appId).subjectType(subjectType).subjectId(subjectId).orgId(org).build();
     }
 
-    /** A policy-less binding targeting the users a metadata predicate ({@code key <op> value}) matches, in the tier. */
-    public static PolicyBinding forAttribute(AppType appType, String appId, String attrKey, AttributeOperator op,
-            String attrValue, UUID org) {
-        return builder().appType(appType).appId(appId).subjectType(SubjectType.ATTRIBUTE)
-                .subjectAttrKey(attrKey).subjectAttrOp(op).subjectAttrValue(attrValue).orgId(org).build();
-    }
-
-    /** The metadata predicate this ATTRIBUTE binding targets — its key/operator/value as one value object.
-     *  The columns that compose a predicate are owned here, so their assembly lives here too (not in each reader). */
-    public AttributePredicate subjectPredicate() {
-        return new AttributePredicate(subjectAttrKey, subjectAttrOp, subjectAttrValue);
+    /** A policy-less ATTRIBUTE binding in the given tier. Its AND-combined predicate conditions live in
+     *  {@code policy_binding_condition}, written separately by the reconciler — the binding row carries only the
+     *  subject SHAPE (ATTRIBUTE, no subject_id), so the same row can be shared by an auth and a session policy. */
+    public static PolicyBinding forAttributeGroup(AppType appType, String appId, UUID org) {
+        return builder().appType(appType).appId(appId).subjectType(SubjectType.ATTRIBUTE).orgId(org).build();
     }
 
     /** Point this binding at a different session policy (intent-revealing mutation, not a JavaBean setter). */

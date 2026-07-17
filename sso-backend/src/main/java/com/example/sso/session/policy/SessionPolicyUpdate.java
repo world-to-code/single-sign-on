@@ -1,6 +1,6 @@
 package com.example.sso.session.policy;
 
-import com.example.sso.metadata.AttributePredicate;
+import com.example.sso.metadata.AttributePredicateGroup;
 import com.example.sso.session.networkzone.IpRuleSpec;
 
 import java.util.List;
@@ -16,7 +16,7 @@ public record SessionPolicyUpdate(int priority, boolean enabled, int absoluteTim
                                   int sensitiveReauthWindowMinutes, String stepUpFactors,
                                   boolean bindClient, int maxConcurrentSessions, boolean rotateOnReauth,
                                   String cookieSameSite, Set<UUID> userIds, Set<UUID> roleIds,
-                                  List<IpRuleSpec> ipRules, Set<AttributePredicate> attributePredicates) {
+                                  List<IpRuleSpec> ipRules, Set<AttributePredicateGroup> attributePredicates) {
 
     /** Update with user/role assignments only (no metadata predicate targets). */
     public SessionPolicyUpdate(int priority, boolean enabled, int absoluteTimeoutMinutes, int idleTimeoutMinutes,

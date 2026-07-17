@@ -2,6 +2,7 @@ package com.example.sso.session.policy;
 
 import com.example.sso.metadata.AttributeOperator;
 import com.example.sso.metadata.AttributePredicate;
+import com.example.sso.metadata.AttributePredicateGroup;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import java.util.List;
@@ -10,81 +11,50 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The attribute-predicate targeting request: a bounded key (identifier charset), an operator, and a value that
- * is required for the value operators and forbidden for the key operators. Mirrors the metadata store's own
- * validation, plus the {@code SessionPolicyRequest} mapping that carries predicates into the create/update
- * command. Guards against the constraints being loosened or the mapping silently dropping predicates.
+ * A session-policy attribute target is an AND of conditions. Guards that a target needs at least one condition,
+ * that an invalid nested condition invalidates it, and that the {@code SessionPolicyRequest} mapping carries the
+ * conjunction as one {@link AttributePredicateGroup} (and a missing list maps to no groups).
  */
 class AttributeTargetRequestTest {
 
     private final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
 
     @Test
-    void aWellFormedPredicateIsAccepted() {
-        assertThat(validator.validate(new AttributeTargetRequest("dept", AttributeOperator.EQUALS, "engineering")))
-                .isEmpty();
+    void aTargetNeedsAtLeastOneCondition() {
+        assertThat(validator.validate(new AttributeTargetRequest(List.of()))).isNotEmpty();
     }
 
     @Test
-    void aMissingOperatorDefaultsToEquals() {
-        assertThat(validator.validate(new AttributeTargetRequest("dept", null, "engineering"))).isEmpty();
-        assertThat(new AttributeTargetRequest("dept", null, "engineering").toPredicate())
-                .isEqualTo(AttributePredicate.equals("dept", "engineering"));
+    void anInvalidConditionInvalidatesTheTarget() {
+        AttributeTargetRequest target =
+                new AttributeTargetRequest(List.of(new AttributeConditionRequest("has space", null, "eng")));
+        assertThat(validator.validate(target)).isNotEmpty();
     }
 
     @Test
-    void aBlankOrOversizedOrIllegalKeyIsRejected() {
-        assertThat(validator.validate(new AttributeTargetRequest(" ", null, "eng"))).isNotEmpty();     // blank
-        assertThat(validator.validate(new AttributeTargetRequest("a".repeat(65), null, "eng"))).isNotEmpty(); // > 64
-        assertThat(validator.validate(new AttributeTargetRequest("has space", null, "eng"))).isNotEmpty(); // pattern
+    void toGroupCarriesEveryConditionAsAConjunction() {
+        AttributeTargetRequest target = new AttributeTargetRequest(List.of(
+                new AttributeConditionRequest("dept", AttributeOperator.EQUALS, "eng"),
+                new AttributeConditionRequest("clearance", AttributeOperator.EXISTS, null)));
+        assertThat(target.toGroup()).isEqualTo(new AttributePredicateGroup(List.of(
+                AttributePredicate.equals("dept", "eng"),
+                new AttributePredicate("clearance", AttributeOperator.EXISTS, null))));
     }
 
     @Test
-    void aValueOperatorRequiresANonBlankValue() {
-        assertThat(validator.validate(new AttributeTargetRequest("dept", AttributeOperator.EQUALS, " "))).isNotEmpty();
-        assertThat(validator.validate(new AttributeTargetRequest("dept", AttributeOperator.NOT_EQUALS, null)))
-                .isNotEmpty();
-    }
-
-    @Test
-    void aKeyOperatorMustNotCarryAValue() {
-        assertThat(validator.validate(new AttributeTargetRequest("dept", AttributeOperator.EXISTS, null))).isEmpty();
-        assertThat(validator.validate(new AttributeTargetRequest("dept", AttributeOperator.NOT_EXISTS, null))).isEmpty();
-        assertThat(validator.validate(new AttributeTargetRequest("dept", AttributeOperator.EXISTS, "eng")))
-                .isNotEmpty(); // a value on a key operator is inconsistent
-    }
-
-    @Test
-    void inIsRejectedButContainsIsAcceptedForAPolicyTarget() {
-        // IN is mapping-only (it needs value-list storage the binding lacks) — rejected at the edge (400), not
-        // 500 on the CHECK. CONTAINS is a value operator the resolver matches in memory, so a policy may use it.
-        assertThat(validator.validate(new AttributeTargetRequest("dept", AttributeOperator.IN, "eng"))).isNotEmpty();
-        assertThat(validator.validate(new AttributeTargetRequest("dept", AttributeOperator.CONTAINS, "eng")))
-                .isEmpty();
-        assertThat(new AttributeTargetRequest("dept", AttributeOperator.CONTAINS, "eng").toPredicate())
-                .isEqualTo(new AttributePredicate("dept", AttributeOperator.CONTAINS, "eng"));
-    }
-
-    @Test
-    void toPredicateCarriesTheOperatorAndDropsAKeyOperatorsValue() {
-        assertThat(new AttributeTargetRequest("dept", AttributeOperator.NOT_EQUALS, "sales").toPredicate())
-                .isEqualTo(new AttributePredicate("dept", AttributeOperator.NOT_EQUALS, "sales"));
-        assertThat(new AttributeTargetRequest("dept", AttributeOperator.EXISTS, null).toPredicate())
-                .isEqualTo(new AttributePredicate("dept", AttributeOperator.EXISTS, null));
-    }
-
-    @Test
-    void sessionPolicyRequestMapsAssignedAttributesIntoTheSpecAndUpdate() {
+    void sessionPolicyRequestMapsAssignedAttributeGroupsIntoTheSpecAndUpdate() {
         SessionPolicyRequest request = new SessionPolicyRequest("P", 5, true, 480, 30, 15, "TOTP", 2, "TOTP",
                 false, 0, false, "Lax", List.of(), List.of(),
-                List.of(new AttributeTargetRequest("dept", AttributeOperator.EQUALS, "eng")), List.of());
+                List.of(new AttributeTargetRequest(List.of(
+                        new AttributeConditionRequest("dept", AttributeOperator.EQUALS, "eng")))), List.of());
 
-        assertThat(request.toSpec().attributePredicates()).containsExactly(AttributePredicate.equals("dept", "eng"));
-        assertThat(request.toUpdate().attributePredicates()).containsExactly(AttributePredicate.equals("dept", "eng"));
+        AttributePredicateGroup expected = AttributePredicateGroup.of(AttributePredicate.equals("dept", "eng"));
+        assertThat(request.toSpec().attributePredicates()).containsExactly(expected);
+        assertThat(request.toUpdate().attributePredicates()).containsExactly(expected);
     }
 
     @Test
-    void aMissingAttributeListMapsToNoPredicates() {
+    void aMissingAttributeListMapsToNoGroups() {
         SessionPolicyRequest request = new SessionPolicyRequest("P", 5, true, 480, 30, 15, "TOTP", 2, "TOTP",
                 false, 0, false, "Lax", List.of(), List.of(), null, List.of());
 

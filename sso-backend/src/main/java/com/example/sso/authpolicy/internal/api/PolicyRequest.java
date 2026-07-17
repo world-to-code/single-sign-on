@@ -3,7 +3,7 @@ package com.example.sso.authpolicy.internal.api;
 import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.authpolicy.policy.AuthPolicySpec;
 import com.example.sso.authpolicy.policy.AuthPolicyUpdate;
-import com.example.sso.metadata.AttributePredicate;
+import com.example.sso.metadata.AttributePredicateGroup;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -63,8 +63,8 @@ public record PolicyRequest(@NotBlank String name, int priority, boolean enabled
         return values == null ? Set.of() : values.stream().map(UUID::fromString).collect(Collectors.toSet());
     }
 
-    private Set<AttributePredicate> predicates() {
+    private Set<AttributePredicateGroup> predicates() {
         return assignedAttributes == null ? Set.of() : assignedAttributes.stream()
-                .map(AttributeTargetRequest::toPredicate).collect(Collectors.toSet());
+                .map(AttributeTargetRequest::toGroup).collect(Collectors.toSet());
     }
 }

@@ -14,7 +14,7 @@ import com.example.sso.authpolicy.internal.domain.AuthPolicyStep;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyStepFactor;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyStepFactorRepository;
 import com.example.sso.authpolicy.internal.domain.AuthPolicyStepRepository;
-import com.example.sso.metadata.AttributePredicate;
+import com.example.sso.metadata.AttributePredicateGroup;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
@@ -240,12 +240,13 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
      * is actually bound (a non-login policy binds nothing, so its stray ids reference no principal).
      */
     private void applyLoginScope(AuthPolicy policy, boolean appliesToLogin, Set<UUID> requestedUsers,
-                                 Set<UUID> requestedRoles, Set<AttributePredicate> requestedPredicates) {
+                                 Set<UUID> requestedRoles, Set<AttributePredicateGroup> requestedPredicates) {
         Set<UUID> userIds = requestedUsers == null ? Set.of() : requestedUsers;
         Set<UUID> roleIds = requestedRoles == null ? Set.of() : requestedRoles;
         // A predicate is stamped and resolved in the acting tier (RLS), so it only ever matches the tenant's
         // own users — there is no cross-org subject to validate, unlike a user/role id.
-        Set<AttributePredicate> predicates = requestedPredicates == null ? Set.of() : requestedPredicates;
+        Set<AttributePredicateGroup> predicates = requestedPredicates == null ? Set.of() : requestedPredicates;
+        predicates.forEach(this::requireTargetable);
         if (appliesToLogin) {
             for (UUID userId : userIds) {
                 requireAssignable(policy, users.orgIdOf(userId), "user");
@@ -256,6 +257,15 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
         }
         loginBindings.replaceForPolicy(policy.getId(), policy.getPriority(), appliesToLogin, userIds, roleIds,
                 predicates);
+    }
+
+    /** Defence in depth beyond the request DTO's {@code @AssertTrue}: a policy target may only use an operator
+     *  the resolver matches in memory (never the mapping-only IN), else a spec built outside the API would 500
+     *  on the child-table CHECK instead of a clean 400. */
+    private void requireTargetable(AttributePredicateGroup group) {
+        group.firstNonTargetableOperator().ifPresent(operator -> {
+            throw new BadRequestException("operator " + operator + " cannot target a policy");
+        });
     }
 
     /**

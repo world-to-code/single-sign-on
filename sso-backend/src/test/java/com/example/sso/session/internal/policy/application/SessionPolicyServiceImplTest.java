@@ -29,6 +29,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.util.List;
 import java.util.Optional;
 import com.example.sso.metadata.AttributePredicate;
+import com.example.sso.metadata.AttributePredicateGroup;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -234,7 +235,7 @@ class SessionPolicyServiceImplTest {
         when(orgContext.currentOrg()).thenReturn(Optional.of(orgA));
         when(repository.findByNameAndOrgId("Attr", orgA)).thenReturn(Optional.empty());
         when(repository.save(any(SessionPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
-        AttributePredicate eng = AttributePredicate.equals("dept", "eng");
+        AttributePredicateGroup eng = AttributePredicateGroup.of(AttributePredicate.equals("dept", "eng"));
         SessionPolicySpec spec = new SessionPolicySpec("Attr", 5, true, 480, 30, 15, "TOTP", 2, "TOTP",
                 false, 0, false, "Lax", Set.of(), Set.of(), List.of(), Set.of(eng));
 

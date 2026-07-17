@@ -1,7 +1,7 @@
 package com.example.sso.session.internal.policy.application;
 
 import com.example.sso.authpolicy.factor.AuthFactor;
-import com.example.sso.metadata.AttributePredicate;
+import com.example.sso.metadata.AttributePredicateGroup;
 import com.example.sso.session.networkzone.IpRuleSpec;
 import com.example.sso.session.networkzone.NetworkZoneService;
 import com.example.sso.session.policy.SessionBindings;
@@ -250,7 +250,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         String stepUpFactors = validateReauthFactors(spec.stepUpFactors());
         Set<UUID> userIds = spec.userIds() == null ? Set.of() : Set.copyOf(spec.userIds());
         Set<UUID> roleIds = spec.roleIds() == null ? Set.of() : Set.copyOf(spec.roleIds());
-        Set<AttributePredicate> predicates = predicatesOf(spec.attributePredicates());
+        Set<AttributePredicateGroup> predicates = predicatesOf(spec.attributePredicates());
         List<IpRuleEntry> ipRules = toIpRules(spec.ipRules()); // validates zone references before any write
         String cookieSameSite = effectiveCookieSameSite(spec.cookieSameSite(),
                 creationOrg == null && DEFAULT_NAME.equals(spec.name()));
@@ -370,7 +370,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
      * reconciles the all-subjects/per-subject bindings.
      */
     private void applyAssignmentScope(SessionPolicy policy, Set<UUID> userIds, Set<UUID> roleIds,
-            Set<AttributePredicate> attributes) {
+            Set<AttributePredicateGroup> attributes) {
         for (UUID userId : userIds) {
             requireAssignable(policy, users.orgIdOf(userId), "user");
         }
@@ -382,8 +382,19 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
         sessionBindings.replaceForPolicy(policy.getId(), policy.getPriority(), userIds, roleIds, attributes);
     }
 
-    private Set<AttributePredicate> predicatesOf(Set<AttributePredicate> predicates) {
-        return predicates == null ? Set.of() : Set.copyOf(predicates);
+    private Set<AttributePredicateGroup> predicatesOf(Set<AttributePredicateGroup> predicates) {
+        Set<AttributePredicateGroup> groups = predicates == null ? Set.of() : Set.copyOf(predicates);
+        groups.forEach(this::requireTargetable);
+        return groups;
+    }
+
+    /** Defence in depth beyond the request DTO's {@code @AssertTrue}: a policy target may only use an operator
+     *  the resolver matches in memory (never the mapping-only IN), else a spec built outside the API would 500
+     *  on the child-table CHECK instead of a clean 400. */
+    private void requireTargetable(AttributePredicateGroup group) {
+        group.firstNonTargetableOperator().ifPresent(operator -> {
+            throw new BadRequestException("operator " + operator + " cannot target a policy");
+        });
     }
 
     /**

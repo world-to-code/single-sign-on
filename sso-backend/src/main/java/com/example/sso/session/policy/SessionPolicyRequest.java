@@ -1,6 +1,6 @@
 package com.example.sso.session.policy;
 
-import com.example.sso.metadata.AttributePredicate;
+import com.example.sso.metadata.AttributePredicateGroup;
 import com.example.sso.session.networkzone.IpRuleSpec;
 
 import jakarta.validation.Valid;
@@ -66,9 +66,9 @@ public record SessionPolicyRequest(
                 .collect(Collectors.toSet());
     }
 
-    private Set<AttributePredicate> predicates() {
+    private Set<AttributePredicateGroup> predicates() {
         return assignedAttributes == null ? Set.of() : assignedAttributes.stream()
-                .map(AttributeTargetRequest::toPredicate)
+                .map(AttributeTargetRequest::toGroup)
                 .collect(Collectors.toSet());
     }
 }

@@ -1,6 +1,6 @@
 package com.example.sso.authpolicy.policy;
 
-import com.example.sso.metadata.AttributePredicate;
+import com.example.sso.metadata.AttributePredicateGroup;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
@@ -27,7 +27,7 @@ public interface LoginAuthBindings {
      * bindings (e.g. a user in two roles) resolve to the higher-priority policy, as the pre-matrix engine did.
      */
     void replaceForPolicy(UUID policyId, int priority, boolean appliesToLogin, Set<UUID> userIds, Set<UUID> roleIds,
-            Set<AttributePredicate> attributes);
+            Set<AttributePredicateGroup> attributes);
 
     /** Assign login with users/roles only (no metadata predicate targets). */
     default void replaceForPolicy(UUID policyId, int priority, boolean appliesToLogin, Set<UUID> userIds,

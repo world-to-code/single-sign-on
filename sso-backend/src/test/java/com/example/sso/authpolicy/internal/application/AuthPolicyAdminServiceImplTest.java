@@ -32,6 +32,7 @@ import org.mockito.quality.Strictness;
 import java.util.List;
 import java.util.Optional;
 import com.example.sso.metadata.AttributePredicate;
+import com.example.sso.metadata.AttributePredicateGroup;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -275,7 +276,7 @@ class AuthPolicyAdminServiceImplTest {
         when(repository.findByNameAndOrgId("Attr", orgA)).thenReturn(Optional.empty());
         when(repository.save(any(AuthPolicy.class))).thenAnswer(inv -> inv.getArgument(0));
         when(stepRepository.save(any(AuthPolicyStep.class))).thenAnswer(inv -> inv.getArgument(0));
-        AttributePredicate eng = AttributePredicate.equals("dept", "eng");
+        AttributePredicateGroup eng = AttributePredicateGroup.of(AttributePredicate.equals("dept", "eng"));
         AuthPolicySpec spec = new AuthPolicySpec("Attr", 10, true, true, true,
                 List.of(Set.of(AuthFactor.PASSWORD)), Set.of(), Set.of(), 15, Set.of(eng));
 

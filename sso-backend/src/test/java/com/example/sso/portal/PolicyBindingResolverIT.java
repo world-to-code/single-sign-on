@@ -2,6 +2,7 @@ package com.example.sso.portal;
 
 import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.metadata.AttributeOperator;
+import com.example.sso.metadata.AttributePredicate;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.authpolicy.policy.AuthPolicyAdminService;
@@ -11,6 +12,8 @@ import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.binding.PolicyBindingResolver;
 import com.example.sso.portal.internal.catalog.domain.PolicyBinding;
 import com.example.sso.portal.internal.catalog.domain.PolicyBinding.SubjectType;
+import com.example.sso.portal.internal.catalog.domain.PolicyBindingCondition;
+import com.example.sso.portal.internal.catalog.domain.PolicyBindingConditionRepository;
 import com.example.sso.portal.internal.catalog.domain.PolicyBindingRepository;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.organization.NewOrganization;
@@ -47,6 +50,7 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
 
     @Autowired PolicyBindingResolver resolver;
     @Autowired PolicyBindingRepository bindings;
+    @Autowired PolicyBindingConditionRepository conditions;
     @Autowired UserService users;
     @Autowired RoleService roles;
     @Autowired UserGroupService groups;
@@ -573,7 +577,122 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
         assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
     }
 
+    @Test
+    void aMultiConditionBindingMatchesOnlyUsersSatisfyingEveryCondition() {
+        // AND semantics: a "dept = eng AND level = senior" target applies to kim (both) but not lee (dept only).
+        String app = "pbt-and";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "eng");
+            attributes.set(EntityKind.USER, kim.getId().toString(), "level", "senior");
+            attributes.set(EntityKind.USER, lee.getId().toString(), "dept", "eng"); // lee lacks the level condition
+            attrSessionGroup(app, List.of(AttributePredicate.equals("dept", "eng"),
+                    AttributePredicate.equals("level", "senior")), sess5, 10);
+        });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+        assertThat(resolveSession(lee, app)).isEmpty();
+    }
+
+    @Test
+    void aNarrowerCompoundBindingOutranksASingleConditionOne() {
+        // Same value-op tier and tenancy: the 2-condition target is more specific than the 1-condition one, so kim
+        // resolves to it even though the single-condition binding carries the higher priority (count beats priority).
+        String app = "pbt-and-spec";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "eng");
+            attributes.set(EntityKind.USER, kim.getId().toString(), "level", "senior");
+            attrSession(app, "dept", "eng", sess15, 99);                                    // 1 condition, high prio
+            attrSessionGroup(app, List.of(AttributePredicate.equals("dept", "eng"),
+                    AttributePredicate.equals("level", "senior")), sess5, 1);               // 2 conditions, low prio
+        });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+    }
+
+    @Test
+    void aConditionlessAttributeBindingMatchesNobody() {
+        // A malformed ATTRIBUTE row with no conditions must fail closed — never grant its policy to every user.
+        String app = "pbt-empty";
+        orgContext.runAsPlatform(() -> {
+            PolicyBinding binding = PolicyBinding.forAttributeGroup(APP, app, null);
+            binding.assignSessionPolicy(sess5);
+            binding.reprioritizeSession(10);
+            bindings.saveAndFlush(binding); // no condition rows persisted
+        });
+        assertThat(resolveSession(kim, app)).isEmpty();
+        assertThat(resolveSession(lee, app)).isEmpty();
+    }
+
+    @Test
+    void aCompoundBindingWithAKeyOperatorConditionRequiresBothTheValueAndThePresence() {
+        // AND with a mix of a value op and a key op: "dept = eng AND clearance EXISTS". kim has both; lee has the
+        // dept but no clearance, so the key-operator condition fails and the AND does not match.
+        String app = "pbt-and-keyop";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "eng");
+            attributes.set(EntityKind.USER, kim.getId().toString(), "clearance", "ts");
+            attributes.set(EntityKind.USER, lee.getId().toString(), "dept", "eng"); // lee lacks the clearance key
+            attrSessionGroup(app, List.of(AttributePredicate.equals("dept", "eng"),
+                    new AttributePredicate("clearance", AttributeOperator.EXISTS, null)), sess5, 10);
+        });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+        assertThat(resolveSession(lee, app)).isEmpty();
+    }
+
+    @Test
+    void aCompoundWithAnyValueConditionSitsInTheValueOperatorTier() {
+        // specificity uses anyMatch(requiresValue): a [clearance EXISTS AND dept = eng] group is a value-op target
+        // (tier 4), outranking a [clearance EXISTS] key-only binding (tier 3) it also matches — so kim resolves to
+        // the mixed group even though the key-only binding carries the higher priority.
+        String app = "pbt-and-tier";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "eng");
+            attributes.set(EntityKind.USER, kim.getId().toString(), "clearance", "ts");
+            attrSessionGroup(app, List.of(new AttributePredicate("clearance", AttributeOperator.EXISTS, null),
+                    AttributePredicate.equals("dept", "eng")), sess5, 1);                     // value-op tier, low prio
+            attrSessionOp(app, "clearance", AttributeOperator.EXISTS, null, sess15, 99);      // key-op tier, high prio
+        });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+    }
+
+    @Test
+    void aTenantsOwnBindingBeatsAGlobalOneWithMoreConditions() {
+        // orgRank ranks ABOVE condition-count: a tenant's OWN single-condition binding beats a GLOBAL two-condition
+        // one both matching kim — a platform-global compound must never override a tenant's own assignment.
+        String app = "pbt-tenant-vs-count";
+        UUID org = orgContext.callAsPlatform(
+                () -> organizations.create(new NewOrganization("pbt-tvc-" + suffix(), "PBT")).id());
+        createdOrgs.add(org);
+        orgContext.runAsPlatform(() -> attrSessionGroupIn(app, List.of(AttributePredicate.equals("dept", "eng"),
+                AttributePredicate.equals("level", "senior")), sess15, 99, null));           // global, 2 conditions
+        orgContext.runInOrg(org, () -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "eng");
+            attributes.set(EntityKind.USER, kim.getId().toString(), "level", "senior");
+            attrSessionGroupIn(app, List.of(AttributePredicate.equals("dept", "eng")), sess5, 1, org); // tenant, 1
+        });
+        assertThat(orgContext.callInOrg(org, () -> resolver.resolveSessionPolicy(kim, APP, app)))
+                .map(SessionPolicyDetails::getId).contains(sess5);
+    }
+
     // --- helpers ---
+
+    /** A GLOBAL multi-condition (AND) attribute session binding, for the compound resolution fixtures. */
+    private PolicyBinding attrSessionGroup(String appId, List<AttributePredicate> predicates, UUID sess, int prio) {
+        return attrSessionGroupIn(appId, predicates, sess, prio, null);
+    }
+
+    /** A multi-condition (AND) attribute session binding in the given tier (org null = global): persists the
+     *  ATTRIBUTE binding row and one condition row per predicate, then returns the binding. */
+    private PolicyBinding attrSessionGroupIn(String appId, List<AttributePredicate> predicates, UUID sess, int prio,
+            UUID org) {
+        PolicyBinding binding = PolicyBinding.forAttributeGroup(APP, appId, org);
+        binding.assignSessionPolicy(sess);
+        binding.reprioritizeSession(prio);
+        bindings.saveAndFlush(binding);
+        for (AttributePredicate predicate : predicates) {
+            conditions.save(PolicyBindingCondition.of(binding.getId(), predicate, org));
+        }
+        conditions.flush();
+        return binding;
+    }
 
     private java.util.Optional<AuthPolicyView> resolveAuth(UserAccount user, String appId) {
         return orgContext.callAsPlatform(() -> resolver.resolveAuthPolicy(user, APP, appId));
@@ -608,28 +727,32 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
         return binding;
     }
 
-    /** A GLOBAL attribute-predicate session binding, for the predicate resolution fixtures. */
+    /** A GLOBAL single-condition (EQUALS) attribute session binding, for the predicate resolution fixtures. */
     private PolicyBinding attrSession(String appId, String key, String value, UUID sess, int prio) {
-        PolicyBinding binding = PolicyBinding.forAttribute(APP, appId, key, AttributeOperator.EQUALS, value, null);
-        binding.assignSessionPolicy(sess);
-        binding.reprioritizeSession(prio);
-        return binding;
+        return attrSessionOp(appId, key, AttributeOperator.EQUALS, value, sess, prio);
     }
 
-    /** A GLOBAL attribute-predicate session binding with an explicit operator (value null for key operators). */
+    /** A GLOBAL single-condition attribute session binding with an explicit operator (value null for key
+     *  operators): persists the ATTRIBUTE binding row AND its one condition row, then returns the binding. */
     private PolicyBinding attrSessionOp(String appId, String key, AttributeOperator op, String value, UUID sess,
             int prio) {
-        PolicyBinding binding = PolicyBinding.forAttribute(APP, appId, key, op, value, null);
+        PolicyBinding binding = PolicyBinding.forAttributeGroup(APP, appId, null);
         binding.assignSessionPolicy(sess);
         binding.reprioritizeSession(prio);
+        bindings.saveAndFlush(binding);
+        conditions.save(PolicyBindingCondition.of(binding.getId(), new AttributePredicate(key, op, value), null));
+        conditions.flush();
         return binding;
     }
 
-    /** A GLOBAL attribute-predicate auth binding, for the auth-axis predicate fixture. */
+    /** A GLOBAL single-condition (EQUALS) attribute AUTH binding, for the auth-axis predicate fixture. */
     private PolicyBinding attrAuth(String appId, String key, String value, UUID auth, int prio) {
-        PolicyBinding binding = PolicyBinding.forAttribute(APP, appId, key, AttributeOperator.EQUALS, value, null);
+        PolicyBinding binding = PolicyBinding.forAttributeGroup(APP, appId, null);
         binding.assignAuthPolicy(auth);
         binding.reprioritize(prio);
+        bindings.saveAndFlush(binding);
+        conditions.save(PolicyBindingCondition.of(binding.getId(), AttributePredicate.equals(key, value), null));
+        conditions.flush();
         return binding;
     }
 

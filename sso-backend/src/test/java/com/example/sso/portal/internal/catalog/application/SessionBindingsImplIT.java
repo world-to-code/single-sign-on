@@ -3,7 +3,9 @@ package com.example.sso.portal.internal.catalog.application;
 import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.authpolicy.policy.AuthPolicyAdminService;
 import com.example.sso.authpolicy.policy.AuthPolicySpec;
+import com.example.sso.authpolicy.policy.LoginAuthBindings;
 import com.example.sso.metadata.AttributePredicate;
+import com.example.sso.metadata.AttributePredicateGroup;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.portal.application.AppType;
@@ -49,6 +51,7 @@ import static org.awaitility.Awaitility.await;
 class SessionBindingsImplIT extends AbstractIntegrationTest {
 
     @Autowired SessionBindings sessionBindings;
+    @Autowired LoginAuthBindings loginBindings;
     @Autowired PolicyBindingResolver resolver;
     @Autowired UserSessionPolicy userSessionPolicy;
     @Autowired SessionPolicyService sessionPolicies;
@@ -113,17 +116,18 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
     void writesAndReconcilesAttributePredicateBindings() {
         UUID org = org();
         UUID policy = policyIn(org, "attr");
-        AttributePredicate eng = AttributePredicate.equals("dept", "eng");
-        AttributePredicate sales = AttributePredicate.equals("dept", "sales");
+        AttributePredicateGroup eng = AttributePredicateGroup.of(AttributePredicate.equals("dept", "eng"));
+        AttributePredicateGroup engSenior = new AttributePredicateGroup(List.of(
+                AttributePredicate.equals("dept", "eng"), AttributePredicate.equals("level", "senior")));
 
         orgContext.runInOrg(org, () ->
-                sessionBindings.replaceForPolicy(policy, 10, Set.of(), Set.of(), Set.of(eng, sales)));
+                sessionBindings.replaceForPolicy(policy, 10, Set.of(), Set.of(), Set.of(eng, engSenior)));
         SessionAssignment written = orgContext.callInOrg(org, () -> sessionBindings.describe(List.of(policy))).get(policy);
-        assertThat(written.attributes()).containsExactlyInAnyOrder(eng, sales);
+        assertThat(written.attributes()).containsExactlyInAnyOrder(eng, engSenior);
         assertThat(written.userIds()).isEmpty(); // predicate-only scope is NOT an all-subjects binding
         assertThat(written.roleIds()).isEmpty();
 
-        // Reconcile: dropping the sales predicate clears its row, leaving only eng.
+        // Reconcile: dropping the compound target clears its row (and cascades its conditions), leaving only eng.
         orgContext.runInOrg(org, () -> sessionBindings.replaceForPolicy(policy, 10, Set.of(), Set.of(), Set.of(eng)));
         assertThat(orgContext.callInOrg(org, () -> sessionBindings.describe(List.of(policy))).get(policy).attributes())
                 .containsExactly(eng);
@@ -240,6 +244,27 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
         Map<String, Object> afterClear = allSubjectsRow(org);
         assertThat(afterClear.get("auth_policy_id")).isEqualTo(authPolicy);
         assertThat(afterClear.get("session_policy_id")).isNull();
+    }
+
+    @Test
+    void aSessionAndLoginBindingForTheSameConditionGroupShareOneAttributeRow() {
+        UUID org = org();
+        UUID sessionPolicy = policyIn(org, "co-attr-session");
+        UUID authPolicy = authPolicyIn(org, "co-attr-auth");
+        AttributePredicateGroup group = new AttributePredicateGroup(List.of(
+                AttributePredicate.equals("dept", "eng"), AttributePredicate.equals("level", "senior")));
+
+        // The login writer creates the ATTRIBUTE binding + its conditions; the session writer finds THAT row by its
+        // condition set and co-locates onto it, rather than creating a duplicate.
+        orgContext.runInOrg(org, () ->
+                loginBindings.replaceForPolicy(authPolicy, 10, true, Set.of(), Set.of(), Set.of(group)));
+        orgContext.runInOrg(org, () ->
+                sessionBindings.replaceForPolicy(sessionPolicy, 10, Set.of(), Set.of(), Set.of(group)));
+
+        assertThat(attributeRows(org)).isEqualTo(1); // ONE row, not one per axis
+        Map<String, Object> row = attributeRow(org);
+        assertThat(row.get("auth_policy_id")).isEqualTo(authPolicy);
+        assertThat(row.get("session_policy_id")).isEqualTo(sessionPolicy);
     }
 
     @Test
@@ -384,6 +409,16 @@ class SessionBindingsImplIT extends AbstractIntegrationTest {
     private Map<String, Object> allSubjectsRow(UUID org) {
         return ownerJdbc().queryForMap("select auth_policy_id, session_policy_id from policy_binding "
                 + "where app_type = 'PORTAL' and app_id = 'user' and subject_type is null and org_id = ?", org);
+    }
+
+    private long attributeRows(UUID org) {
+        return ownerJdbc().queryForObject("select count(*) from policy_binding where app_type = 'PORTAL' "
+                + "and app_id = 'user' and subject_type = 'ATTRIBUTE' and org_id = ?", Long.class, org);
+    }
+
+    private Map<String, Object> attributeRow(UUID org) {
+        return ownerJdbc().queryForMap("select auth_policy_id, session_policy_id from policy_binding "
+                + "where app_type = 'PORTAL' and app_id = 'user' and subject_type = 'ATTRIBUTE' and org_id = ?", org);
     }
 
     private static String suffix() {
