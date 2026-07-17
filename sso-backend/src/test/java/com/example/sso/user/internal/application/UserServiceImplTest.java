@@ -319,4 +319,57 @@ class UserServiceImplTest {
         service.updateProfile(id, "Alice", "new@x");
         assertThat(alice.isEmailVerified()).isFalse();
     }
+
+    // --- findActor: audit-attribution identity, hardened against cross-tier disclosure ---
+
+    @Test
+    void findActorResolvesAnApexEventToTheGlobalAccount() {
+        UUID id = UUID.randomUUID();
+        AppUser root = mock(AppUser.class);
+        when(root.getId()).thenReturn(id);
+        when(root.getEmail()).thenReturn("root@platform");
+        when(root.getDisplayName()).thenReturn("Root");
+        when(users.findByUsernameAndOrgIdIsNull("root")).thenReturn(Optional.of(root));
+
+        var actor = service.findActor("root", null); // orgId null + no bound scope => apex
+
+        assertThat(actor).isPresent();
+        assertThat(actor.get().id()).isEqualTo(id);
+        assertThat(actor.get().email()).isEqualTo("root@platform");
+    }
+
+    @Test
+    void findActorResolvesATenantEventToTheOrgLocalAccount() {
+        UUID orgId = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        AppUser alice = mock(AppUser.class);
+        when(alice.getId()).thenReturn(id);
+        when(alice.getEmail()).thenReturn("alice@tenant");
+        when(alice.getDisplayName()).thenReturn("Alice");
+        when(users.existsByUsernameAndOrgIdIsNull("alice")).thenReturn(false);
+        when(users.findByUsernameAndOrgId("alice", orgId)).thenReturn(Optional.of(alice));
+
+        assertThat(service.findActor("alice", orgId).map(v -> v.email())).contains("alice@tenant");
+    }
+
+    @Test
+    void findActorNeverAttributesAGlobalPlatformAccountToATenantEvent() {
+        // The cross-tier guard: a failed login at a tenant with a GUESSED platform-super-admin username must NOT
+        // harvest that super-admin's identity into the tenant's audit log. A username that exists globally is
+        // declined outright for a tenant-scoped event — the org-local lookup is never even reached.
+        UUID orgId = UUID.randomUUID();
+        when(users.existsByUsernameAndOrgIdIsNull("superadmin")).thenReturn(true);
+
+        assertThat(service.findActor("superadmin", orgId)).isEmpty();
+        verify(users, never()).findByUsernameAndOrgId(any(), any());
+    }
+
+    @Test
+    void findActorIsEmptyWhenTheTenantUsernameMatchesNoAccount() {
+        UUID orgId = UUID.randomUUID();
+        when(users.existsByUsernameAndOrgIdIsNull("ghost")).thenReturn(false);
+        when(users.findByUsernameAndOrgId("ghost", orgId)).thenReturn(Optional.empty());
+
+        assertThat(service.findActor("ghost", orgId)).isEmpty();
+    }
 }

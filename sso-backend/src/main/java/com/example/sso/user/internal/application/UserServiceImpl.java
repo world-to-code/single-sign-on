@@ -38,6 +38,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
@@ -113,20 +114,27 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public Optional<UserActorView> findActor(String username, UUID orgId) {
         UUID resolved = orgId != null ? orgId : resolutionOrg();
-        Optional<AppUser> global = users.findByUsernameAndOrgIdIsNull(username);
-        Optional<AppUser> scoped = resolved == null ? Optional.empty()
-                : users.findByUsernameAndOrgId(username, resolved);
-        // A username can exist BOTH globally (a platform account) and as a tenant-local account (usernames are
-        // only per-org unique). When both match, the acting principal is ambiguous — attributing to either could
-        // frame the wrong account (a tenant-planted decoy shadowing a drilled-in super-admin's action), so decline
-        // to guess an identity and leave the event attributed by principal name only.
-        if (global.isPresent() && scoped.isPresent()) {
+        if (resolved == null) {
+            // Apex/platform event: only global (org-less) accounts are in scope.
+            return users.findByUsernameAndOrgIdIsNull(username).map(this::toActorView);
+        }
+        // Tenant-scoped event: attribute ONLY to an account of THIS org, and NEVER to a global (platform)
+        // account. The principal on a failed/pre-auth login is an unverified, caller-supplied string; without
+        // this a guessed platform-super-admin username on a tenant login would harvest that super-admin's real
+        // email/id into the tenant's own audit log (cross-tier disclosure). A username that ALSO exists globally
+        // is likewise ambiguous — a tenant-planted decoy could shadow the platform account — so decline to
+        // attribute either and leave the event named by principal only.
+        if (users.existsByUsernameAndOrgIdIsNull(username)) {
             return Optional.empty();
         }
-        return scoped.or(() -> global).map(u -> new UserActorView(u.getId(), u.getEmail(), u.getDisplayName()));
+        return users.findByUsernameAndOrgId(username, resolved).map(this::toActorView);
+    }
+
+    private UserActorView toActorView(AppUser user) {
+        return new UserActorView(user.getId(), user.getEmail(), user.getDisplayName());
     }
 
     @Override
