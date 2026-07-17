@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus, Tags, X } from "lucide-react";
-import { getAttributes, removeAttribute, setAttribute, type Attribute, type MetadataKind } from "@/metadata";
+import {
+  addAttribute,
+  getAttributes,
+  removeAttribute,
+  removeAttributeValue,
+  type Attribute,
+  type MetadataKind,
+} from "@/metadata";
 import { errorMessage } from "@/api";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -30,7 +37,7 @@ export function MetadataEditor({ kind, entityId }: { kind: MetadataKind; entityI
     if (!key.trim() || !value.trim()) return;
     setBusy(true);
     try {
-      setAttrs(await setAttribute(kind, entityId, key.trim(), value.trim()));
+      setAttrs(await addAttribute(kind, entityId, key.trim(), value.trim()));
       setKey("");
       setValue("");
       setError(null);
@@ -41,7 +48,17 @@ export function MetadataEditor({ kind, entityId }: { kind: MetadataKind; entityI
     }
   }
 
-  async function remove(attrKey: string) {
+  async function removeValue(attrKey: string, attrValue: string) {
+    try {
+      await removeAttributeValue(kind, entityId, attrKey, attrValue);
+      setError(null);
+      reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
+  async function removeKey(attrKey: string) {
     try {
       await removeAttribute(kind, entityId, attrKey);
       setError(null);
@@ -50,6 +67,9 @@ export function MetadataEditor({ kind, entityId }: { kind: MetadataKind; entityI
       setError(errorMessage(err));
     }
   }
+
+  // A key may repeat once per value; group values under their key so each renders as a set of pills.
+  const groups = attrs ? groupByKey(attrs) : [];
 
   return (
     <div className="space-y-2">
@@ -60,22 +80,36 @@ export function MetadataEditor({ kind, entityId }: { kind: MetadataKind; entityI
       {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
 
       {attrs && attrs.length === 0 && <p className="text-sm text-muted-foreground">{t("metadataNone")}</p>}
-      {attrs && attrs.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {attrs.map((a) => (
-            <span key={a.key} className="inline-flex items-center gap-1 rounded-full bg-muted py-0.5 pl-2.5 pr-1 text-xs">
-              <span className="font-mono">{a.key}</span>
-              <span className="text-muted-foreground">=</span>
-              {a.value}
+      {groups.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          {groups.map(({ key: k, values }) => (
+            <div key={k} className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
-                aria-label={t("metadataRemove", { key: a.key })}
-                className="rounded-full p-0.5 text-muted-foreground hover:text-destructive"
-                onClick={() => void remove(a.key)}
+                aria-label={t("metadataRemove", { key: k })}
+                className="font-mono text-xs text-muted-foreground hover:text-destructive"
+                onClick={() => void removeKey(k)}
               >
-                <X className="size-3" />
+                {k}
               </button>
-            </span>
+              <span className="text-xs text-muted-foreground">=</span>
+              {values.map((v) => (
+                <span
+                  key={`${k}:${v}`}
+                  className="inline-flex items-center gap-1 rounded-full bg-muted py-0.5 pl-2.5 pr-1 text-xs"
+                >
+                  {v}
+                  <button
+                    type="button"
+                    aria-label={t("metadataRemoveValue", { key: k, value: v })}
+                    className="rounded-full p-0.5 text-muted-foreground hover:text-destructive"
+                    onClick={() => void removeValue(k, v)}
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
           ))}
         </div>
       )}
@@ -89,4 +123,15 @@ export function MetadataEditor({ kind, entityId }: { kind: MetadataKind; entityI
       </form>
     </div>
   );
+}
+
+/** Collapse the flat attribute rows into one entry per key, preserving first-seen key order. */
+function groupByKey(attrs: Attribute[]): { key: string; values: string[] }[] {
+  const byKey = new Map<string, string[]>();
+  for (const a of attrs) {
+    const values = byKey.get(a.key);
+    if (values) values.push(a.value);
+    else byKey.set(a.key, [a.value]);
+  }
+  return [...byKey].map(([key, values]) => ({ key, values }));
 }

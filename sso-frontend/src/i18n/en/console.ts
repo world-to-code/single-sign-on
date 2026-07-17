@@ -379,6 +379,7 @@ export const console = {
   metadataValue: "value",
   metadataAdd: "Add",
   metadataRemove: "Remove {{key}}",
+  metadataRemoveValue: "Remove {{key}} = {{value}}",
   resourcesSectionMembers: "Members",
   resourcesMemberCount_one: "{{count}} member",
   resourcesMemberCount_other: "{{count}} members",

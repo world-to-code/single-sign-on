@@ -379,6 +379,7 @@ export const console: Record<keyof typeof enConsole, string> = {
   metadataValue: "값",
   metadataAdd: "추가",
   metadataRemove: "{{key}} 제거",
+  metadataRemoveValue: "{{key}} = {{value}} 제거",
   resourcesSectionMembers: "구성원",
   resourcesMemberCount_one: "구성원 {{count}}명",
   resourcesMemberCount_other: "구성원 {{count}}명",
