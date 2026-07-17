@@ -45,12 +45,13 @@ public enum AttributeOperator {
         return op == EQUALS || op == EXISTS || op == IN || op == CONTAINS;
     }
 
-    /** Whether a (possibly null) operator may TARGET a policy binding — the scalar/key operators the resolver
-     *  matches in memory (EQUALS, NOT_EQUALS, EXISTS, NOT_EXISTS); the value-list/substring operators (IN,
-     *  CONTAINS) are mapping-only. One home for the policy-target whitelist (mirrors the V99 CHECK). */
+    /** Whether a (possibly null) operator may TARGET a policy binding — the operators the resolver matches in
+     *  memory (EQUALS, NOT_EQUALS, EXISTS, NOT_EXISTS, CONTAINS). The value-LIST operator IN is mapping-only, as it
+     *  needs list storage the policy binding lacks. An explicit allow-list (like {@link #mappable}, mirroring the
+     *  V99/V104 CHECK) so a future operator is denied by default until deliberately admitted. */
     public static boolean targetable(AttributeOperator operator) {
         AttributeOperator op = orDefault(operator);
-        return op == EQUALS || op == NOT_EQUALS || op == EXISTS || op == NOT_EXISTS;
+        return op == EQUALS || op == NOT_EQUALS || op == EXISTS || op == NOT_EXISTS || op == CONTAINS;
     }
 
     /**

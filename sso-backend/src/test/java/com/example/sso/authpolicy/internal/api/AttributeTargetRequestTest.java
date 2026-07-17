@@ -55,12 +55,14 @@ class AttributeTargetRequestTest {
     }
 
     @Test
-    void aMappingOnlyOperatorIsRejectedForAPolicyTarget() {
-        // IN and CONTAINS are mapping-only; a policy target must reject them at the edge (400), not 500 on the
-        // policy_binding CHECK.
+    void inIsRejectedButContainsIsAcceptedForAPolicyTarget() {
+        // IN is mapping-only (it needs value-list storage the binding lacks) — rejected at the edge (400), not
+        // 500 on the CHECK. CONTAINS is a value operator the resolver matches in memory, so a policy may use it.
         assertThat(validator.validate(new AttributeTargetRequest("dept", AttributeOperator.IN, "eng"))).isNotEmpty();
         assertThat(validator.validate(new AttributeTargetRequest("dept", AttributeOperator.CONTAINS, "eng")))
-                .isNotEmpty();
+                .isEmpty();
+        assertThat(new AttributeTargetRequest("dept", AttributeOperator.CONTAINS, "eng").toPredicate())
+                .isEqualTo(new AttributePredicate("dept", AttributeOperator.CONTAINS, "eng"));
     }
 
     @Test

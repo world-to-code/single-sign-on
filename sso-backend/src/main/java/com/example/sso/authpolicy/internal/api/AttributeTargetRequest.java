@@ -27,7 +27,7 @@ public record AttributeTargetRequest(
         return AttributeOperator.valueConsistent(operator, value);
     }
 
-    @AssertTrue(message = "a policy target supports EQUALS, NOT_EQUALS, EXISTS or NOT_EXISTS")
+    @AssertTrue(message = "a policy target supports EQUALS, NOT_EQUALS, EXISTS, NOT_EXISTS or CONTAINS")
     boolean isTargetableOperator() {
         return AttributeOperator.targetable(operator);
     }

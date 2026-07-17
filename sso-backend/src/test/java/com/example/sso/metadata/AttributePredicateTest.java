@@ -78,6 +78,17 @@ class AttributePredicateTest {
     }
 
     @Test
+    void containsCoversTheSubstringBoundaries() {
+        // A value exactly equal to the needle is a substring (matches); a needle longer than the value is not —
+        // the off-by-one cells that separate CONTAINS from prefix/exact matching.
+        AttributePredicate deptContainsEng = new AttributePredicate("department", AttributeOperator.CONTAINS, "eng");
+        assertThat(deptContainsEng.matches(List.of(new Attribute("department", "eng")))).isTrue();
+        AttributePredicate needleLongerThanValue =
+                new AttributePredicate("department", AttributeOperator.CONTAINS, "engineering");
+        assertThat(needleLongerThanValue.matches(List.of(new Attribute("department", "eng")))).isFalse();
+    }
+
+    @Test
     void emptyAttributesSatisfyOnlyTheNegativeOperators() {
         List<Attribute> none = List.of();
         assertThat(AttributePredicate.equals("department", "engineering").matches(none)).isFalse();
@@ -95,6 +106,8 @@ class AttributePredicateTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new AttributePredicate("department", AttributeOperator.CONTAINS, null))
                 .isInstanceOf(IllegalArgumentException.class); // CONTAINS is a value operator
+        assertThatThrownBy(() -> new AttributePredicate("department", AttributeOperator.CONTAINS, "  "))
+                .isInstanceOf(IllegalArgumentException.class); // a blank needle would match everything
     }
 
     @Test

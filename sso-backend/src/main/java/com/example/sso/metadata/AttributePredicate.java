@@ -21,6 +21,11 @@ public record AttributePredicate(String key, AttributeOperator operator, String 
             throw new IllegalArgumentException("operator " + operator
                     + (operator.requiresValue() ? " requires a value" : " must not carry a value"));
         }
+        if (operator.requiresValue() && value.isBlank()) {
+            // A blank needle would match every value (CONTAINS "") or nothing meaningful — reject at the value
+            // object so the invariant does not rely on the DTO edge alone.
+            throw new IllegalArgumentException("operator " + operator + " requires a non-blank value");
+        }
         if (operator.requiresValueList() != hasValues) {
             throw new IllegalArgumentException("operator " + operator + (operator.requiresValueList()
                     ? " requires a non-empty value list" : " must not carry a value list"));

@@ -534,6 +534,45 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
         assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
     }
 
+    @Test
+    void aContainsPredicateBindingMatchesAUserWhoseValueIncludesTheSubstring() {
+        // A policy target may use CONTAINS: kim's dept "engineering" includes "eng", so the binding applies; lee,
+        // with no dept, does not. Resolution matches the substring in memory (no cohort query for a policy).
+        String app = "pbt-attr-contains";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "engineering");
+            bindings.saveAndFlush(attrSessionOp(app, "dept", AttributeOperator.CONTAINS, "eng", sess5, 10));
+        });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+        assertThat(resolveSession(lee, app)).isEmpty();
+    }
+
+    @Test
+    void aContainsPredicateBindingDoesNotMatchAUserWhoseValueLacksTheSubstring() {
+        // CONTAINS is not mere key-presence: kim carries dept=sales, which does not include "eng", so the binding
+        // is skipped. This is the cell that separates CONTAINS from EXISTS through the full persist+resolve path.
+        String app = "pbt-attr-contains-miss";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "sales");
+            bindings.saveAndFlush(attrSessionOp(app, "dept", AttributeOperator.CONTAINS, "eng", sess5, 10));
+        });
+        assertThat(resolveSession(kim, app)).isEmpty();
+    }
+
+    @Test
+    void aContainsPredicateBindingIsMoreSpecificThanARole() {
+        // CONTAINS sits in the value-operator tier (above ROLE): kim's substring-matched CONTAINS binding (sess5)
+        // wins over the finance ROLE binding (sess15) it also matches, even carrying the lower priority — pinning
+        // CONTAINS above the ROLE tier, not merely at key-operator level.
+        String app = "pbt-attr-contains-spec";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "engineering");
+            bindings.saveAndFlush(attrSessionOp(app, "dept", AttributeOperator.CONTAINS, "eng", sess5, 1));
+            bindings.saveAndFlush(sessionBinding(app, SubjectType.ROLE, financeRoleId, sess15, 99, null));
+        });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+    }
+
     // --- helpers ---
 
     private java.util.Optional<AuthPolicyView> resolveAuth(UserAccount user, String appId) {
