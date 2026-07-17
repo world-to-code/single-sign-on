@@ -1,10 +1,11 @@
-package com.example.sso.session.lifecycle;
+package com.example.sso.shared.web;
 
 import org.springframework.stereotype.Component;
 
 /**
- * Derives a short, display-only "Browser on OS" label from a User-Agent string for the self-service
- * sessions list. Best-effort and heuristic — never used for any security decision.
+ * Derives a short, display-only "Browser on OS" label from a User-Agent string. Best-effort and
+ * heuristic — never used for any security decision. Lives in the shared web module so both the
+ * self-service sessions list and the audit trail can label a client without a cross-module cycle.
  */
 @Component
 public class DeviceLabeler {

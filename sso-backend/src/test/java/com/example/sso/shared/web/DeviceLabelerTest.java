@@ -1,6 +1,4 @@
-package com.example.sso.session;
-
-import com.example.sso.session.lifecycle.DeviceLabeler;
+package com.example.sso.shared.web;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

@@ -5,7 +5,7 @@ import com.example.sso.auth.internal.login.application.CurrentUserProvider;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
-import com.example.sso.session.lifecycle.DeviceLabeler;
+import com.example.sso.shared.web.DeviceLabeler;
 import com.example.sso.session.lifecycle.UserSessions;
 import com.example.sso.user.account.UserAccount;
 import jakarta.servlet.http.HttpServletRequest;
