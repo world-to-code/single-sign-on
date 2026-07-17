@@ -90,7 +90,13 @@ rule). Key invariants:
    correctness, JWT/JWS alg confusion (`none`, HMAC-vs-RSA), audience/issuer/expiry validation.
 5. **Information disclosure** — user/account enumeration via differing responses or timing, stack traces
    or internal identifiers in error bodies, over-broad DTOs exposing hashes/internal fields, verbose
-   permission/role errors, PII in logs.
+   permission/role errors, PII in logs. **Enumeration via ENRICHMENT:** resolving an attacker-supplied
+   principal (a failed/pre-auth login name, an SMS/email target) into a real account — even if only
+   surfaced in an admin-read log — is an existence oracle AND an audit-framing vector; the "resolved to a
+   real identity vs not" distinction is itself the leak. **Redaction completeness:** a masking/gate added
+   for one reader must (a) cover EVERY sibling path returning the same DTO (grep all producers, not just
+   the one you changed), and (b) null the COMPLETE sensitive set — correlation ids and client fingerprints
+   (IP, User-Agent, device) are PII too, not just names.
 6. **Session / CSRF / transport** — CSRF token handling on state-changing routes, cookie `Secure`/
    `HttpOnly`/`SameSite`, session invalidation on logout/step-up/reauth, fixation, concurrent-session
    limits, elevation-token scope/lifetime/replay. (Full session-lifecycle and logout-propagation depth
@@ -116,6 +122,19 @@ rule). Key invariants:
     trusted blindly at use; privilege that stopped being time-boxed (elevation/step-up bypassed or
     made non-expiring); an access change (disable/lock/revoke) that no longer terminates live
     sessions; authorities trusted from a stale serialized session before a sensitive operation.
+11. **Cross-cutting completeness** (a control is only as strong as its LEAKIEST path) — when the change
+    adds a GATE, REDACTION, SUPPRESSION, or ENRICHMENT at one site, it must hold at EVERY equivalent path:
+    (a) **all emitters** of a shared recorder/sink — including Spring `@EventListener`s that produce the
+    same record via a *parallel* path (an `AuthenticationFailureEvent` listener bypassing a call-site
+    guard is the classic miss); (b) **every sibling reader** returning the same DTO (a redaction on one
+    endpoint, absent on `.../activity` or an export); (c) **every branch** of a value's resolution.
+    Partial application IS the finding — the one unguarded path is the exploit. Two more sub-checks:
+    **key consistency** — a value's WRITE key and its later RESOLUTION key must be the same (e.g. an
+    event's storage `orgId` vs the `orgId` used to resolve its actor; a null interpreted as "global" in
+    one place and "re-derive from thread-local scope" in another mis-files data across a tenant/tier
+    boundary); **map/set completeness** — a permission map, allow-list, or redaction set must be COMPLETE
+    against its domain enum (a missing entry silently drops access or exposes a category). To find these,
+    `rg` for ALL callers of the changed recorder/DTO/resolver, not just the diff's touched lines.
 
 ## Method
 
