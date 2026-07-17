@@ -417,6 +417,18 @@ export const console = {
   auditColDetail: "Detail",
   auditResultOk: "ok",
   auditResultFail: "fail",
+  auditColSeverity: "Severity",
+  auditColActor: "Actor",
+  auditColIp: "IP",
+  auditColDevice: "Device",
+  auditColReason: "Reason",
+  auditSevINFO: "Info",
+  auditSevWARNING: "Warning",
+  auditSevCRITICAL: "Critical",
+  auditFieldRequestId: "Correlation ID",
+  auditFieldUserAgent: "User agent",
+  auditFieldSubject: "Subject",
+  auditDetailNone: "No additional detail.",
 
   // Platform dashboard ------------------------------------------------------
   platformDashTitle: "Platform overview",

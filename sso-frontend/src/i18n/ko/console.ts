@@ -417,6 +417,18 @@ export const console: Record<keyof typeof enConsole, string> = {
   auditColDetail: "상세",
   auditResultOk: "성공",
   auditResultFail: "실패",
+  auditColSeverity: "심각도",
+  auditColActor: "행위자",
+  auditColIp: "IP",
+  auditColDevice: "디바이스",
+  auditColReason: "사유",
+  auditSevINFO: "정보",
+  auditSevWARNING: "경고",
+  auditSevCRITICAL: "위험",
+  auditFieldRequestId: "상관관계 ID",
+  auditFieldUserAgent: "User agent",
+  auditFieldSubject: "대상",
+  auditDetailNone: "추가 상세 없음.",
 
   // Platform dashboard
   platformDashTitle: "플랫폼 개요",
