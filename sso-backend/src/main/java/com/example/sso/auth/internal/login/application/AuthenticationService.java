@@ -110,7 +110,10 @@ public class AuthenticationService {
                 .filter(o -> o.getStatus() == OrganizationStatus.ACTIVE)
                 .orElseThrow(() -> new NotFoundException("No such organization."));
         preAuthOrg.stash(request, org.getId(), org.getSlug());
-        audit.record(AuditType.AUTH_ORGANIZATION, org.getSlug(), true);
+        // Tag the selected tenant so this pre-auth event files under it (not the platform-global feed); the
+        // principal is the org slug, not an account, so it never enriches.
+        audit.record(new AuditRecord(AuditType.AUTH_ORGANIZATION, org.getSlug(), true, null, null, org.getId())
+                .unverifiedActor());
         return authState.describe(currentUser.authentication(), org.getSlug(), org.getId());
     }
 
@@ -129,14 +132,15 @@ public class AuthenticationService {
         // Gate on the selected target — organization membership. Reject a non-member the SAME way as an unknown
         // account so an attacker can't discover which emails exist (or belong to another tenant) via the form.
         if (user == null || !authorizedForTarget(httpRequest, user.getId())) {
-            audit.record(new AuditRecord(AuditType.AUTH_IDENTIFY, email, false, "no active account for the target", null));
+            audit.record(new AuditRecord(AuditType.AUTH_IDENTIFY, email, false, "no active account for the target",
+                    null).unverifiedActor());
             throw new NotFoundException("No active account for that email. Contact your administrator.");
         }
 
         Authentication preAuth = UsernamePasswordAuthenticationToken.authenticated(
                 user.getUsername(), null, List.of()); // identified, no factors yet
         factorAuth.establish(httpRequest, httpResponse, preAuth);
-        audit.record(AuditType.AUTH_IDENTIFY, user.getUsername(), true);
+        audit.record(new AuditRecord(AuditType.AUTH_IDENTIFY, user.getUsername(), true, null, null).unverifiedActor());
         return completionService.completeIfSatisfied(httpRequest, httpResponse);
     }
 
@@ -162,17 +166,21 @@ public class AuthenticationService {
                     .map(UserAccount::getId).orElse(null);
             if (userId == null || !authorizedForTarget(httpRequest, userId)) {
                 loginAttempts.onFailure(username);
-                audit.record(new AuditRecord(AuditType.AUTH_FAILURE, username, false, "not authorized for the target", null, orgId));
+                audit.record(new AuditRecord(AuditType.AUTH_FAILURE, username, false, "not authorized for the target",
+                        null, orgId).unverifiedActor());
                 throw new UnauthorizedException();
             }
             factorAuth.establish(httpRequest, httpResponse, authentication);
 
             loginAttempts.onSuccess(username);
-            audit.record(AuditType.AUTH_SUCCESS, username, true);
+            // Tag the resolved tenant so a successful sign-in files under it (and enriches the actor in that
+            // org's scope), not the platform-global feed where the pre-MFA OrgContext would otherwise land it.
+            audit.record(new AuditRecord(AuditType.AUTH_SUCCESS, username, true, null, null, orgId));
             return completionService.completeIfSatisfied(httpRequest, httpResponse);
         } catch (AuthenticationException e) {
             loginAttempts.onFailure(username);
-            audit.record(new AuditRecord(AuditType.AUTH_FAILURE, username, false, e.getMessage(), null, orgId));
+            audit.record(new AuditRecord(AuditType.AUTH_FAILURE, username, false, e.getMessage(), null, orgId)
+                    .unverifiedActor());
             throw new UnauthorizedException();
         }
     }

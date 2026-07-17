@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 
@@ -47,7 +48,7 @@ public class AuditServiceImpl implements AuditService {
         // severity without touching the ~30 call sites — and so a future sink swap happens in ONE place. This
         // runs OUTSIDE the write transaction so a failing enrichment query can't poison the audit write; the
         // writer opens its own REQUIRES_NEW transaction to keep the audit trail independent of the caller's tx.
-        AuditActorInfo actor = actorResolver.resolve(record.principal(), orgId);
+        AuditActorInfo actor = actorResolver.resolve(record.principal(), orgId, record.verifiedActor());
         AuditClientInfo client = clientResolver.capture();
         AuditSeverity severity = severityPolicy.severityOf(record.type(), record.success());
         writer.save(AuditEvent.of(record, actor, client, severity, orgId));
@@ -82,6 +83,18 @@ public class AuditServiceImpl implements AuditService {
         List<AuditEvent> events = orgId == null
                 ? repository.findTop100ByOrgIdIsNullAndCategoryOrderByOccurredAtDesc(category)
                 : repository.findTop100ByOrgIdAndCategoryOrderByOccurredAtDesc(orgId, category);
+        return events.stream().map(this::toEntry).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AuditEntry> recentByCategories(UUID orgId, Set<AuditCategory> categories) {
+        if (categories.isEmpty()) {
+            return List.of(); // a reader permitted no categories sees nothing — never fall through to unfiltered
+        }
+        List<AuditEvent> events = orgId == null
+                ? repository.findTop100ByOrgIdIsNullAndCategoryInOrderByOccurredAtDesc(categories)
+                : repository.findTop100ByOrgIdAndCategoryInOrderByOccurredAtDesc(orgId, categories);
         return events.stream().map(this::toEntry).toList();
     }
 

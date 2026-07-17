@@ -9,6 +9,7 @@ import com.example.sso.auth.internal.login.application.LoginPolicyResolver;
 import com.example.sso.auth.internal.login.application.PreAuthOrgSession;
 
 import com.example.sso.audit.AuditRecord;
+import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.authpolicy.factor.Factors;
@@ -23,6 +24,7 @@ import com.example.sso.user.account.UserAccount;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -36,6 +38,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -87,6 +90,10 @@ class FactorStepServiceTest {
     void setUp() {
         when(currentUser.require()).thenReturn(user);
         lenient().when(user.getUsername()).thenReturn("alice");
+        // No factor proven yet (empty authorities) — the default pre-auth state; factor-step failures are then
+        // recorded with an unverified actor. Individual tests override this when they need a proven factor.
+        lenient().when(currentUser.authentication())
+                .thenReturn(new UsernamePasswordAuthenticationToken("alice", null));
     }
 
     @Test
@@ -107,6 +114,25 @@ class FactorStepServiceTest {
                 .isInstanceOf(LockedException.class);
         verify(audit).record(any(AuditRecord.class));
         verify(factorAuth, never()).grantFactor(any(), any(), any());
+    }
+
+    @Test
+    void aFirstFactorFailureRecordsAnUnverifiedActor() {
+        // No factor proven yet (setUp default) — a passwordless/identify-first failure. The principal is unproven,
+        // so the audit record must be unverified (no account resolution, no enumeration/PII of the guessed name).
+        expectTotpStep();
+        when(user.isTemporarilyLocked(any(Instant.class))).thenReturn(false);
+        when(user.isAccountNonLocked()).thenReturn(true);
+        when(factorHandlers.get(AuthFactor.TOTP)).thenReturn(handler);
+        when(handler.verify(eq(user), any(), eq(request))).thenReturn(false);
+
+        assertThatThrownBy(() -> service.verify(AuthFactor.TOTP, code("000000"), request, response))
+                .isInstanceOf(BadRequestException.class);
+
+        ArgumentCaptor<AuditRecord> captor = ArgumentCaptor.forClass(AuditRecord.class);
+        verify(audit).record(captor.capture());
+        assertThat(captor.getValue().type()).isEqualTo(AuditType.MFA_FAILURE);
+        assertThat(captor.getValue().verifiedActor()).isFalse();
     }
 
     @Test

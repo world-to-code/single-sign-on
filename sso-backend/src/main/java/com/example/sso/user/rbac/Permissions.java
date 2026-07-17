@@ -87,8 +87,26 @@ public final class Permissions {
     public static final String ORG_MEMBER_MANAGE = "organization:member-manage";
     // Single-action resources
     public static final String AUDIT_READ = "audit:read";
+    // Category-scoped audit reads: a delegated admin can be granted only the categories it needs. The broad
+    // audit:read above is a MACRO that implies all of these plus AUDIT_READ_PII (see expandImplied); a role
+    // granted only specific ones is NOT widened. 1:1 with AuditCategory.
+    public static final String AUDIT_READ_AUTHENTICATION = "audit:read:authentication";
+    public static final String AUDIT_READ_AUTHORIZATION = "audit:read:authorization";
+    public static final String AUDIT_READ_SESSION = "audit:read:session";
+    public static final String AUDIT_READ_ACCESS = "audit:read:access";
+    public static final String AUDIT_READ_APP_ACCESS = "audit:read:app-access";
+    public static final String AUDIT_READ_USER_ACTION = "audit:read:user-action";
+    public static final String AUDIT_READ_ADMIN = "audit:read:admin";
+    public static final String AUDIT_READ_SYSTEM = "audit:read:system";
+    /** Unlocks the actor PII (email/display name) on audit rows; withheld from a plain category grant. */
+    public static final String AUDIT_READ_PII = "audit:read:pii";
     public static final String SCIM_MANAGE = "scim:manage";
     public static final String KEY_ROTATE = "key:rotate";
+
+    /** The perms a holder of the broad {@link #AUDIT_READ} macro also gains: every category + actor PII. */
+    private static final Set<String> AUDIT_READ_MACRO = Set.of(
+            AUDIT_READ_AUTHENTICATION, AUDIT_READ_AUTHORIZATION, AUDIT_READ_SESSION, AUDIT_READ_ACCESS,
+            AUDIT_READ_APP_ACCESS, AUDIT_READ_USER_ACTION, AUDIT_READ_ADMIN, AUDIT_READ_SYSTEM, AUDIT_READ_PII);
 
     /** Full catalog, grouped by resource in a stable order. */
     public static final List<String> ALL = List.of(
@@ -106,7 +124,9 @@ public final class Permissions {
             RESOURCE_READ, RESOURCE_CREATE, RESOURCE_UPDATE, RESOURCE_DELETE, RESOURCE_ASSIGN_ADMIN,
             RESOURCE_CREATE_TYPE, RESOURCE_DELETE_TYPE,
             ORG_READ, ORG_CREATE, ORG_UPDATE, ORG_DELETE, ORG_MEMBER_MANAGE,
-            AUDIT_READ, SCIM_MANAGE, KEY_ROTATE);
+            AUDIT_READ, AUDIT_READ_AUTHENTICATION, AUDIT_READ_AUTHORIZATION, AUDIT_READ_SESSION,
+            AUDIT_READ_ACCESS, AUDIT_READ_APP_ACCESS, AUDIT_READ_USER_ACTION, AUDIT_READ_ADMIN,
+            AUDIT_READ_SYSTEM, AUDIT_READ_PII, SCIM_MANAGE, KEY_ROTATE);
 
     private static final Set<String> CATALOG = Set.copyOf(ALL);
 
@@ -147,14 +167,23 @@ public final class Permissions {
 
         for (String perm : granted) {
             int sep = perm.indexOf(':');
-            if (sep <= 0 || "read".equals(perm.substring(sep + 1))) {
-                continue; // no resource, or already a read permission
+            // Only a standard two-segment resource:action perm implies resource:read. A finer-grained perm like
+            // audit:read:<category> (a SECOND colon) is itself a scoped read — it must NOT imply the broad
+            // audit:read, which the macro below would then widen to every category and defeat category scoping.
+            if (sep <= 0 || perm.indexOf(':', sep + 1) != -1 || "read".equals(perm.substring(sep + 1))) {
+                continue; // no resource, a sub-scoped perm, or already a read permission
             }
 
             String read = perm.substring(0, sep) + ":read";
             if (CATALOG.contains(read)) {
                 result.add(read);
             }
+        }
+
+        // Macro: the broad audit:read grants every category read + actor PII (backward compatible). A role
+        // granted only specific audit:read:<category> perms is left untouched (not widened).
+        if (result.contains(AUDIT_READ)) {
+            result.addAll(AUDIT_READ_MACRO);
         }
 
         return result;

@@ -3,6 +3,7 @@ package com.example.sso.audit;
 import com.example.sso.audit.internal.domain.AuditEventRepository;
 import com.example.sso.support.AbstractIntegrationTest;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -114,6 +115,26 @@ class AuditTenantScopeIT extends AbstractIntegrationTest {
         assertThat(principalsOf(audit.recentByCategory(null, AuditCategory.AUTHENTICATION)))
                 .contains("shared")
                 .doesNotContain("tenant-only"); // global-only; the orgA rows are absent
+    }
+
+    @Test
+    void categorySetReadsReturnOnlyThoseCategoriesScopedToTheOrg() {
+        record(AuditType.AUTH_SUCCESS, "a-auth", orgA);             // AUTHENTICATION
+        record(AuditType.SESSION_ADMIN_REVOKED, "a-session", orgA); // SESSION
+        record(AuditType.AUTH_SUCCESS, "b-auth", orgB);             // AUTHENTICATION, other org
+
+        List<String> principals = principalsOf(
+                audit.recentByCategories(orgA, Set.of(AuditCategory.SESSION)));
+
+        assertThat(principals).contains("a-session");
+        assertThat(principals).doesNotContain("a-auth", "b-auth"); // category AND org predicates both real
+    }
+
+    @Test
+    void anEmptyCategorySetReturnsNoEvents() {
+        record(AuditType.AUTH_SUCCESS, "a", orgA);
+
+        assertThat(audit.recentByCategories(orgA, Set.of())).isEmpty(); // never falls through to unfiltered
     }
 
     private void record(AuditType type, String principal, UUID orgId) {

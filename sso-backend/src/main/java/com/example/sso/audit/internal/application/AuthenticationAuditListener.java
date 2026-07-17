@@ -25,7 +25,11 @@ public class AuthenticationAuditListener {
 
     @EventListener
     public void onFailure(AbstractAuthenticationFailureEvent event) {
+        // The failure principal is the caller-supplied login name and is NEVER proven (auth just failed). Mark it
+        // unverified so the audit service attributes it by name only — otherwise this listener fires while the
+        // tenant login scope is still bound and would resolve a guessed victim username to a real account,
+        // reopening the failed-login enumeration/framing oracle the AuthenticationService path already closes.
         audit.record(new AuditRecord(AuditType.AUTH_FAILURE, event.getAuthentication().getName(), false,
-                event.getException().getMessage(), null));
+                event.getException().getMessage(), null).unverifiedActor());
     }
 }

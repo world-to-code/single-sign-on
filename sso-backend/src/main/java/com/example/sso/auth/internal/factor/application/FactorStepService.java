@@ -86,7 +86,7 @@ public class FactorStepService {
 
         // Account lockout applies to every factor (password is verified here too, not just /login).
         if (user.isTemporarilyLocked(Instant.now()) || !user.isAccountNonLocked()) {
-            audit.record(new AuditRecord(AuditType.MFA_LOCKED, user.getUsername(), false, "factor=" + factor.name(), null));
+            audit.record(mfaRecord(AuditType.MFA_LOCKED, user.getUsername(), factor, loginOrgId));
             throw LockedException.of("auth.account.locked");
         }
 
@@ -94,12 +94,13 @@ public class FactorStepService {
             loginAttempts.onSuccess(user.getUsername());
             factorAuth.grantFactor(request, response, factor.authority());
             appStepUp.stampIfPending(request.getSession(false)); // refresh app step-up freshness if a launch is pending
-            audit.record(new AuditRecord(AuditType.MFA_SUCCESS, user.getUsername(), true, "factor=" + factor.name(), null));
+            audit.record(new AuditRecord(AuditType.MFA_SUCCESS, user.getUsername(), true, "factor=" + factor.name(),
+                    null, loginOrgId));
             return completionService.completeIfSatisfied(request, response);
         }
 
         loginAttempts.onFailure(user.getUsername());
-        audit.record(new AuditRecord(AuditType.MFA_FAILURE, user.getUsername(), false, "factor=" + factor.name(), null));
+        audit.record(mfaRecord(AuditType.MFA_FAILURE, user.getUsername(), factor, loginOrgId));
         throw BadRequestException.of("auth.code.incorrect");
     }
 
@@ -109,17 +110,29 @@ public class FactorStepService {
      * unaffected. Mirrors the {@code /login/webauthn} enforcement so the toggle governs every passkey-first path.
      */
     private void requirePasswordlessAllowedForPasskeyFirst(AuthFactor factor, UUID loginOrgId) {
-        if (factor != AuthFactor.FIDO2) {
-            return;
-        }
-        boolean firstFactor = currentUser.authentication().getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority).noneMatch(a -> a.startsWith(Factors.FACTOR_PREFIX));
-        if (!firstFactor) {
-            return;
+        if (factor != AuthFactor.FIDO2 || !noFactorProven()) {
+            return; // not a passkey, or not the first factor (a later step-up) — passwordless gate doesn't apply
         }
         if (!organizations.isPasswordlessLoginEnabled(loginOrgId)) {
             throw new ForbiddenException("Passwordless passkey sign-in is not enabled for this organization.");
         }
+    }
+
+    /**
+     * A factor-step failure/lockout audit record, tagged to the login org and marked UNVERIFIED when no factor
+     * has been proven yet (passwordless / identify-first). At that point the principal is only a caller-supplied
+     * name, so it must not be resolved to a real account (no id/email enrichment, no enumeration/framing). Once a
+     * factor is proven (password-first, or a second factor), the principal is verified and enriches normally.
+     */
+    private AuditRecord mfaRecord(AuditType type, String username, AuthFactor factor, UUID loginOrgId) {
+        AuditRecord record = new AuditRecord(type, username, false, "factor=" + factor.name(), null, loginOrgId);
+        return noFactorProven() ? record.unverifiedActor() : record;
+    }
+
+    /** Whether the pre-auth principal has proven NO factor yet — its identity is therefore unproven. */
+    private boolean noFactorProven() {
+        return currentUser.authentication().getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority).noneMatch(a -> a.startsWith(Factors.FACTOR_PREFIX));
     }
 
     /**

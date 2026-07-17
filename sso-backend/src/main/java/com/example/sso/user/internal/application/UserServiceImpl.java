@@ -116,8 +116,11 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public Optional<UserActorView> findActor(String username, UUID orgId) {
-        UUID resolved = orgId != null ? orgId : resolutionOrg();
-        if (resolved == null) {
+        // The org is AUTHORITATIVE — the audit service already resolved the event's storage org and passes it
+        // here. Never re-derive it from loginScope/OrgContext: during a tenant login the loginScope is still
+        // bound, so a platform-scoped (org-less) login-funnel event would otherwise be enriched with the tenant
+        // user's identity and mis-filed PII into the platform-global audit feed.
+        if (orgId == null) {
             // Apex/platform event: only global (org-less) accounts are in scope.
             return users.findByUsernameAndOrgIdIsNull(username).map(this::toActorView);
         }
@@ -130,7 +133,7 @@ public class UserServiceImpl implements UserService {
         if (users.existsByUsernameAndOrgIdIsNull(username)) {
             return Optional.empty();
         }
-        return users.findByUsernameAndOrgId(username, resolved).map(this::toActorView);
+        return users.findByUsernameAndOrgId(username, orgId).map(this::toActorView);
     }
 
     private UserActorView toActorView(AppUser user) {

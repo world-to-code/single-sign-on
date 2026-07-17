@@ -2,6 +2,7 @@ package com.example.sso.audit;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -26,6 +27,12 @@ public interface AuditService {
 
     /** The most recent events in a single category within one tenant (or the global scope), newest first. */
     List<AuditEntry> recentByCategory(UUID orgId, AuditCategory category);
+
+    /**
+     * The most recent events restricted to a SET of categories (the ALL view for a reader who may see only some
+     * categories) within one tenant (or the global scope), newest first. An empty set returns no events.
+     */
+    List<AuditEntry> recentByCategories(UUID orgId, Set<AuditCategory> categories);
 
     /** Platform-wide count of completed sign-ins since a moment (analytics). */
     long signInsSince(Instant since);

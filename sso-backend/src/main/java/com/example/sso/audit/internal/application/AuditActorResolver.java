@@ -27,7 +27,12 @@ public class AuditActorResolver {
 
     private final UserService users;
 
-    public AuditActorInfo resolve(String principal, UUID orgId) {
+    public AuditActorInfo resolve(String principal, UUID orgId, boolean verified) {
+        if (!verified) {
+            // A pre-auth / failed-login principal is caller-supplied and unproven: attribute by name only, never
+            // resolve it to a real account (no id/email enrichment, no username-enumeration oracle).
+            return AuditActorInfo.of(AuditActorType.ANONYMOUS, principal == null ? UNKNOWN : principal);
+        }
         if (principal == null || principal.isBlank() || UNKNOWN.equals(principal) || ANONYMOUS.equals(principal)) {
             return AuditActorInfo.of(AuditActorType.ANONYMOUS, principal == null ? UNKNOWN : principal);
         }

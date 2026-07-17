@@ -3,6 +3,10 @@ package com.example.sso.audit;
 import com.example.sso.audit.internal.domain.AuditEvent;
 import com.example.sso.audit.internal.domain.AuditEventRepository;
 import com.example.sso.support.AbstractIntegrationTest;
+import com.example.sso.user.account.NewUser;
+import com.example.sso.user.account.UserAccount;
+import com.example.sso.user.account.UserService;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +30,8 @@ class AuditEnrichmentIT extends AbstractIntegrationTest {
     AuditService audit;
     @Autowired
     AuditEventRepository repository;
+    @Autowired
+    UserService userService;
 
     private final UUID orgId = UUID.randomUUID();
 
@@ -96,6 +102,47 @@ class AuditEnrichmentIT extends AbstractIntegrationTest {
         assertThat(saved.getDevice()).isEqualTo("Chrome on Windows");
         assertThat(saved.getRequestId()).isNotBlank();
         assertThat(saved.getRemoteIp()).isEqualTo("203.0.113.42"); // fell back to the captured client IP
+    }
+
+    @Test
+    void anUnverifiedPrincipalIsNotEnrichedAndPersistsAsAnonymous() {
+        // A failed/pre-auth login carries a caller-supplied username; even if it matched an account it must
+        // persist name-only (no id/email), so a tenant can't harvest identities via failed logins.
+        audit.record(new AuditRecord(AuditType.AUTH_FAILURE, "someone", false, "bad password", "10.0.0.9", orgId)
+                .unverifiedActor());
+
+        AuditEvent saved = only();
+        assertThat(saved.getActorType()).isEqualTo(AuditActorType.ANONYMOUS);
+        assertThat(saved.getActorId()).isNull();
+        assertThat(saved.getActorEmail()).isNull();
+        assertThat(saved.getSeverity()).isEqualTo(AuditSeverity.WARNING); // failure floor still applied
+    }
+
+    @Test
+    void aVerifiedPrincipalEnrichesToTheAccountWhileTheSameNameUnverifiedStaysAnonymous() {
+        UserAccount actor = userService.createUser(new NewUser(
+                "audit-actor", "audit-actor@example.com", "Audit Actor", "S3cret!pw9", Set.of("ROLE_USER")));
+        UUID actorOrg = actor.getOrgId();
+        try {
+            // Verified (authenticated) principal → resolved to the real account.
+            audit.record(new AuditRecord(AuditType.AUTH_SUCCESS, "audit-actor", true, null, null, actorOrg));
+            AuditEvent verified = only();
+            assertThat(verified.getActorType()).isEqualTo(AuditActorType.USER);
+            assertThat(verified.getActorId()).isEqualTo(actor.getId());
+            assertThat(verified.getActorEmail()).isEqualTo("audit-actor@example.com");
+            assertThat(verified.getActorDisplay()).isEqualTo("Audit Actor");
+
+            // SAME username but UNVERIFIED (a failed/pre-auth login) → never resolved, name only.
+            repository.deleteAll();
+            audit.record(new AuditRecord(AuditType.AUTH_FAILURE, "audit-actor", false, null, null, actorOrg)
+                    .unverifiedActor());
+            AuditEvent unverified = only();
+            assertThat(unverified.getActorType()).isEqualTo(AuditActorType.ANONYMOUS);
+            assertThat(unverified.getActorId()).isNull();
+            assertThat(unverified.getActorEmail()).isNull();
+        } finally {
+            userService.delete(actor.getId());
+        }
     }
 
     private AuditEvent only() {

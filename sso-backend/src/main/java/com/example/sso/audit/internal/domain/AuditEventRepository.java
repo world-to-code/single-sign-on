@@ -2,6 +2,7 @@ package com.example.sso.audit.internal.domain;
 
 import com.example.sso.audit.AuditCategory;
 import java.time.Instant;
+import java.util.Collection;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -24,6 +25,11 @@ public interface AuditEventRepository extends JpaRepository<AuditEvent, Long> {
     List<AuditEvent> findTop100ByOrgIdAndCategoryOrderByOccurredAtDesc(UUID orgId, AuditCategory category);
 
     List<AuditEvent> findTop100ByOrgIdIsNullAndCategoryOrderByOccurredAtDesc(AuditCategory category);
+
+    /** Recent events in one tenant restricted to a set of categories — the ALL view for a category-scoped reader. */
+    List<AuditEvent> findTop100ByOrgIdAndCategoryInOrderByOccurredAtDesc(UUID orgId, Collection<AuditCategory> cats);
+
+    List<AuditEvent> findTop100ByOrgIdIsNullAndCategoryInOrderByOccurredAtDesc(Collection<AuditCategory> cats);
 
     /** Platform-wide count of events of a type since a moment (e.g. completed sign-ins in the last 30 days). */
     long countByTypeAndOccurredAtAfter(String type, Instant since);

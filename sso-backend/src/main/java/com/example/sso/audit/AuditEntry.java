@@ -17,4 +17,16 @@ public record AuditEntry(Long id, Instant occurredAt, String principal,
                          AuditActorType actorType, UUID actorId, String actorEmail, String actorDisplay,
                          String remoteIp, String userAgent, String device, String requestId,
                          String reason, AuditSeverity severity) {
+
+    /**
+     * A copy with the actor's and client's personal/tracking identifiers removed, for a reader without the
+     * {@code audit:read:pii} grant: the actor email + display name, the account id (a stable correlation
+     * identifier), and the client context (IP, User-Agent, device, request/correlation id) are all nulled. Only
+     * the coarse actor TYPE, the principal name (the event's inherent subject), and the outcome/context remain —
+     * so a redacted row reveals neither who exactly nor from where, and cannot be correlated across events by id.
+     */
+    public AuditEntry withoutPii() {
+        return new AuditEntry(id, occurredAt, principal, type, category, success, detail, subjectType, subjectId,
+                actorType, null, null, null, null, null, null, null, reason, severity);
+    }
 }

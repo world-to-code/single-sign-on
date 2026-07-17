@@ -25,6 +25,7 @@ import com.example.sso.user.account.NewUser;
 import com.example.sso.user.role.Roles;
 import com.example.sso.user.group.UserGroupService;
 import com.example.sso.user.account.UserService;
+import com.example.sso.user.rbac.Permissions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -142,13 +143,23 @@ class ScopedAuditIT extends AbstractIntegrationTest {
 
     private void asDelegate(UUID userId) {
         String username = userService.findById(userId).orElseThrow().getUsername();
-        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
-                username, null, List.of(new SimpleGrantedAuthority("audit:read"))));
+        // audit:read is a macro; production expands it to the per-category perms in the SecurityContext, so
+        // mirror that here — otherwise the category-scoped read path sees no permitted categories.
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(username, null, auditGrants()));
     }
 
     private void asRole(String role, String username) {
-        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
-                username, null, List.of(new SimpleGrantedAuthority(role))));
+        // A super-admin (ROLE_ADMIN) holds every permission, incl. audit read, plus its role marker.
+        List<SimpleGrantedAuthority> auths = new ArrayList<>(auditGrants());
+        auths.add(new SimpleGrantedAuthority(role));
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(username, null, auths));
+    }
+
+    private List<SimpleGrantedAuthority> auditGrants() {
+        return Permissions.expandImplied(Set.of(Permissions.AUDIT_READ)).stream()
+                .map(SimpleGrantedAuthority::new).toList();
     }
 
     private UUID user(String username) {

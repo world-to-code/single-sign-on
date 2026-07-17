@@ -1,5 +1,6 @@
 package com.example.sso.admin.internal.user.application;
 
+import com.example.sso.admin.internal.audit.application.AuditAccessPolicy;
 import com.example.sso.audit.AuditEntry;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
@@ -40,6 +41,7 @@ public class UserDetailAdminService {
     private final SessionMetadataStore sessionMetadata;
     private final UserSessions userSessions;
     private final AuditService audit;
+    private final AuditAccessPolicy auditAccessPolicy;
 
     @Transactional(readOnly = true)
     public List<ApplicationView> applications(UUID userId) {
@@ -68,6 +70,11 @@ public class UserDetailAdminService {
         // could surface a same-named principal's activity from another tenant.
         UserAccount user = require(userId);
         List<AuditEntry> recent = audit.recentForPrincipal(user.getOrgId(), user.getUsername());
+        // Gate the actor PII exactly as the main audit console does: a viewer with user:read but without
+        // audit:read:pii sees the activity without actor email/display/IP/device (the principal name remains).
+        if (!auditAccessPolicy.canReadPii()) {
+            recent = recent.stream().map(AuditEntry::withoutPii).toList();
+        }
         return Page.of(recent, page, size);
     }
 

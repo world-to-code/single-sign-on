@@ -28,6 +28,9 @@ class PermissionsTest {
     void everyMutatingActionAcrossResourcesGainsItsRead() {
         for (String granted : Permissions.ALL) {
             int sep = granted.indexOf(':');
+            if (granted.indexOf(':', sep + 1) != -1) {
+                continue; // a sub-scoped perm (e.g. audit:read:<category>) is a read, not a resource:action
+            }
             String read = granted.substring(0, sep) + ":read";
             if (Permissions.ALL.contains(read) && !granted.endsWith(":read")) {
                 assertThat(Permissions.expandImplied(Set.of(granted))).contains(read);
@@ -65,6 +68,36 @@ class PermissionsTest {
         assertThat(Permissions.isPlatform(Permissions.RESOURCE_DELETE_TYPE)).isFalse();
         assertThat(Permissions.tenantGrantable())
                 .contains(Permissions.RESOURCE_CREATE_TYPE, Permissions.RESOURCE_DELETE_TYPE);
+    }
+
+    @Test
+    void auditReadMacroExpandsToEveryCategoryAndPii() {
+        assertThat(Permissions.expandImplied(Set.of(Permissions.AUDIT_READ)))
+                .contains(Permissions.AUDIT_READ,
+                        Permissions.AUDIT_READ_AUTHENTICATION, Permissions.AUDIT_READ_AUTHORIZATION,
+                        Permissions.AUDIT_READ_SESSION, Permissions.AUDIT_READ_ACCESS,
+                        Permissions.AUDIT_READ_APP_ACCESS, Permissions.AUDIT_READ_USER_ACTION,
+                        Permissions.AUDIT_READ_ADMIN, Permissions.AUDIT_READ_SYSTEM, Permissions.AUDIT_READ_PII);
+    }
+
+    @Test
+    void aLoneCategoryGrantIsNotWidenedToOtherCategoriesTheMacroOrPii() {
+        // CRITICAL: audit:read:session must NOT imply the broad audit:read (which would explode via the macro
+        // into every category + PII). The two-colon shape is guarded out of the resource:read implication.
+        assertThat(Permissions.expandImplied(Set.of(Permissions.AUDIT_READ_SESSION)))
+                .containsExactly(Permissions.AUDIT_READ_SESSION)
+                .doesNotContain(Permissions.AUDIT_READ, Permissions.AUDIT_READ_ADMIN,
+                        Permissions.AUDIT_READ_AUTHENTICATION, Permissions.AUDIT_READ_PII);
+    }
+
+    @Test
+    void categoryAuditPermsAreCatalogedAndTenantGrantable() {
+        assertThat(Permissions.ALL).contains(Permissions.AUDIT_READ_SESSION, Permissions.AUDIT_READ_ADMIN,
+                Permissions.AUDIT_READ_PII);
+        assertThat(Permissions.isPlatform(Permissions.AUDIT_READ_SESSION)).isFalse();
+        assertThat(Permissions.isPlatform(Permissions.AUDIT_READ_PII)).isFalse();
+        assertThat(Permissions.tenantGrantable())
+                .contains(Permissions.AUDIT_READ_SESSION, Permissions.AUDIT_READ_PII);
     }
 
     @Test
