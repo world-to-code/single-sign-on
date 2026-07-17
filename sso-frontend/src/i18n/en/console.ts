@@ -906,7 +906,9 @@ export const console = {
   attrTargetOpContains: "contains",
   attrTargetOpExists: "exists",
   attrTargetOpNotExists: "not exists",
-  attrTargetAdd: "Add",
+  attrTargetAddCondition: "Add condition",
+  attrTargetAddTarget: "Add target",
+  attrTargetRemoveCondition: "Remove condition",
   attrTargetRemove: "Remove {{predicate}}",
   attrTargetDiff: "Attribute predicates",
 } as const;
