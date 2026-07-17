@@ -906,6 +906,7 @@ export const console: Record<keyof typeof enConsole, string> = {
   attrTargetOpContains: "포함",
   attrTargetOpExists: "존재",
   attrTargetOpNotExists: "존재하지 않음",
+  attrTargetOpIn: "목록에 포함",
   attrTargetAddCondition: "조건 추가",
   attrTargetAddTarget: "대상 추가",
   attrTargetRemoveCondition: "조건 제거",

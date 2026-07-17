@@ -906,6 +906,7 @@ export const console = {
   attrTargetOpContains: "contains",
   attrTargetOpExists: "exists",
   attrTargetOpNotExists: "not exists",
+  attrTargetOpIn: "in list",
   attrTargetAddCondition: "Add condition",
   attrTargetAddTarget: "Add target",
   attrTargetRemoveCondition: "Remove condition",

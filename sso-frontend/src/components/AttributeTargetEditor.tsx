@@ -5,22 +5,29 @@ import { Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { ValueListInput } from "@/components/ValueListInput";
 
-/** Predicate operator. Key operators (EXISTS / NOT_EXISTS) test presence and carry no value. */
-export type AttrOperator = "EQUALS" | "NOT_EQUALS" | "CONTAINS" | "EXISTS" | "NOT_EXISTS";
+/** Predicate operator. Key operators (EXISTS / NOT_EXISTS) test presence and carry no value; IN matches a value list. */
+export type AttrOperator = "EQUALS" | "NOT_EQUALS" | "CONTAINS" | "EXISTS" | "NOT_EXISTS" | "IN";
 
-const OPERATORS: AttrOperator[] = ["EQUALS", "NOT_EQUALS", "CONTAINS", "EXISTS", "NOT_EXISTS"];
+const OPERATORS: AttrOperator[] = ["EQUALS", "NOT_EQUALS", "CONTAINS", "IN", "EXISTS", "NOT_EXISTS"];
 
-/** EQUALS / NOT_EQUALS / CONTAINS compare against a value; EXISTS / NOT_EXISTS only test the key's presence. */
+/** EQUALS / NOT_EQUALS / CONTAINS compare against a scalar value; IN matches a list; EXISTS / NOT_EXISTS test presence. */
 function attrOperatorNeedsValue(op: AttrOperator): boolean {
   return op === "EQUALS" || op === "NOT_EQUALS" || op === "CONTAINS";
 }
 
-/** One predicate: (key, operator, value); the key operators (EXISTS / NOT_EXISTS) drop the value. */
+/** IN matches a non-empty value list; the other operators carry a scalar value or nothing. */
+function attrOperatorNeedsValues(op: AttrOperator): boolean {
+  return op === "IN";
+}
+
+/** One predicate: (key, operator, value | values). The key operators drop both; IN uses `values`, the rest `value`. */
 export interface AttrCondition {
   key: string;
   operator: AttrOperator;
-  value: string; // empty for the key operators (EXISTS / NOT_EXISTS)
+  value: string; // used by EQUALS / NOT_EQUALS / CONTAINS; empty otherwise
+  values: string[]; // used by IN; empty otherwise
 }
 
 /** A target is an AND-group of conditions (all must hold). It must carry at least one condition. */
@@ -34,23 +41,35 @@ export interface AttributeConditionWire {
   key?: string;
   operator?: AttrOperator;
   value?: string;
-  values?: string[]; // IN is not allowed on a policy target — always empty here, ignored.
+  values?: string[]; // populated for IN, empty/absent otherwise.
 }
 export interface AttributeTargetWire extends AttributeConditionWire {
   conditions?: AttributeConditionWire[];
 }
 
-const blankCondition = (): AttrCondition => ({ key: "", operator: "EQUALS", value: "" });
+const blankCondition = (): AttrCondition => ({ key: "", operator: "EQUALS", value: "", values: [] });
 
-/** Complete when it has a key, plus (EQUALS / NOT_EQUALS / CONTAINS) a value; the key operators need only the key. */
+/** An IN condition's non-empty values, trimmed. */
+const trimmedValues = (c: AttrCondition): string[] => c.values.map((v) => v.trim()).filter(Boolean);
+
+/**
+ * Complete when it has a key, plus (EQUALS / NOT_EQUALS / CONTAINS) a value or (IN) at least one list value;
+ * the key operators (EXISTS / NOT_EXISTS) need only the key.
+ */
 function conditionComplete(c: AttrCondition): boolean {
   if (!c.key.trim()) return false;
+  if (attrOperatorNeedsValues(c.operator)) return trimmedValues(c).length > 0;
   return !attrOperatorNeedsValue(c.operator) || c.value.trim().length > 0;
 }
 
-/** Trim and drop the value for the key operators, matching the request contract. */
+/** Trim; keep only the field the operator uses (scalar `value` for the value ops, `values` for IN, neither for keys). */
 function normalizeCondition(c: AttrCondition): AttrCondition {
-  return { key: c.key.trim(), operator: c.operator, value: attrOperatorNeedsValue(c.operator) ? c.value.trim() : "" };
+  return {
+    key: c.key.trim(),
+    operator: c.operator,
+    value: attrOperatorNeedsValue(c.operator) ? c.value.trim() : "",
+    values: attrOperatorNeedsValues(c.operator) ? trimmedValues(c) : [],
+  };
 }
 
 /** Parse API groups into editor targets, tolerating the pre-group single-predicate shape (defaults to EQUALS). */
@@ -59,19 +78,22 @@ export function parseAttributeTargets(raw: readonly AttributeTargetWire[] | null
     .map((g) => {
       const rows = Array.isArray(g.conditions) ? g.conditions : [g];
       return {
-        conditions: rows.map((c) => ({ key: c.key ?? "", operator: c.operator ?? "EQUALS", value: c.value ?? "" })),
+        conditions: rows.map((c) => ({
+          key: c.key ?? "", operator: c.operator ?? "EQUALS", value: c.value ?? "", values: c.values ?? [],
+        })),
       };
     })
     .filter((g) => g.conditions.length > 0);
 }
 
-/** Build the request body: each target sends its AND conditions; the key operators omit the value. */
+/** Build the request body: each target sends its AND conditions; IN sends `values`, the key operators send neither. */
 export function attributeTargetsToRequest(targets: AttributeTarget[]): { conditions: AttributeConditionWire[] }[] {
   return targets.map((g) => ({
-    conditions: g.conditions.map((c) =>
-      attrOperatorNeedsValue(c.operator)
-        ? { key: c.key, operator: c.operator, value: c.value }
-        : { key: c.key, operator: c.operator }),
+    conditions: g.conditions.map((c) => {
+      if (attrOperatorNeedsValues(c.operator)) return { key: c.key, operator: c.operator, values: c.values };
+      if (attrOperatorNeedsValue(c.operator)) return { key: c.key, operator: c.operator, value: c.value };
+      return { key: c.key, operator: c.operator };
+    }),
   }));
 }
 
@@ -83,6 +105,7 @@ function operatorLabel(op: AttrOperator, t: TFunction<"console">): string {
     case "CONTAINS": return t("attrTargetOpContains");
     case "EXISTS": return t("attrTargetOpExists");
     case "NOT_EXISTS": return t("attrTargetOpNotExists");
+    case "IN": return t("attrTargetOpIn");
   }
 }
 
@@ -97,6 +120,7 @@ function valueOperatorSymbol(op: AttrOperator, t: TFunction<"console">): string 
 function describeCondition(c: AttrCondition, t: TFunction<"console">): string {
   if (c.operator === "EXISTS") return `${c.key} ${t("attrTargetOpExists")}`;
   if (c.operator === "NOT_EXISTS") return `${c.key} ${t("attrTargetOpNotExists")}`;
+  if (c.operator === "IN") return `${c.key} ${t("mappingRulesIn")} (${c.values.join(", ")})`;
   return `${c.key} ${valueOperatorSymbol(c.operator, t)} ${c.value}`;
 }
 
@@ -106,7 +130,7 @@ function describeGroup(g: AttributeTarget, t: TFunction<"console">): string {
 }
 
 const groupIdentity = (g: AttributeTarget) =>
-  g.conditions.map((c) => `${c.key} ${c.operator} ${c.value}`).join(" AND ");
+  g.conditions.map((c) => `${c.key} ${c.operator} ${c.value} ${c.values.join(",")}`).join(" AND ");
 
 /**
  * Controlled editor for a policy's metadata-predicate targets. Each target is an AND-group of conditions
@@ -158,6 +182,12 @@ export function AttributeTargetEditor({ value, onChange }: {
                   <span className="font-mono">{c.key}</span>
                   {c.operator === "EXISTS" || c.operator === "NOT_EXISTS" ? (
                     <span className="text-muted-foreground">{operatorLabel(c.operator, t)}</span>
+                  ) : c.operator === "IN" ? (
+                    <>
+                      <span className="text-muted-foreground">{t("mappingRulesIn")} (</span>
+                      <span>{c.values.join(", ")}</span>
+                      <span className="text-muted-foreground">)</span>
+                    </>
                   ) : (
                     <>
                       <span className="text-muted-foreground">{valueOperatorSymbol(c.operator, t)}</span>
@@ -182,6 +212,7 @@ export function AttributeTargetEditor({ value, onChange }: {
       <div className="space-y-2 rounded-md border p-3">
         {draft.map((c, i) => {
           const needsValue = attrOperatorNeedsValue(c.operator);
+          const needsValues = attrOperatorNeedsValues(c.operator);
           return (
             <div key={i} className="flex flex-wrap items-center gap-2">
               {i > 0 && <span className="text-xs text-muted-foreground">{t("mappingRulesAnd")}</span>}
@@ -208,6 +239,15 @@ export function AttributeTargetEditor({ value, onChange }: {
                   onChange={(e) => setCondition(i, { value: e.target.value })}
                   placeholder={t("attrTargetValue")}
                 />
+              )}
+              {needsValues && (
+                <div className="max-w-52 flex-1">
+                  <ValueListInput
+                    value={c.values}
+                    onChange={(vs) => setCondition(i, { values: vs })}
+                    placeholder={t("mappingRulesValuesPlaceholder")}
+                  />
+                </div>
               )}
               <Button
                 type="button"
