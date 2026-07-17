@@ -1,6 +1,7 @@
 package com.example.sso.admin;
 
 import com.example.sso.admin.internal.group.api.AdminGroupController;
+import com.example.sso.admin.internal.group.application.GroupSessionTermination;
 import com.example.sso.admin.internal.group.api.SetGroupRolesRequest;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.user.application.UserAdminService;
@@ -178,6 +179,37 @@ class AbacAuthorizationIT extends AbstractIntegrationTest {
         assertThatThrownBy(() ->
                 groupController.setGroupRoles(groupId, new SetGroupRolesRequest(Set.of("ROLE_ADMIN"))))
                 .isInstanceOf(AccessDeniedException.class);
+
+        actAsWithAuthorities("admin", Permissions.GROUP_UPDATE);
+        userGroups.delete(groupId);
+    }
+
+    /**
+     * The group session-termination endpoint is gated by {@code @CanRevokeGroupSessions} =
+     * {@code hasAuthority('user:update') and @adminAccessPolicy.canAccessGroup(#id)}, evaluated through the
+     * method-security proxy. It reuses the SAME authority the single-user force-expiry needs (user:update), not
+     * a {@code group:*} perm — so a group manager without {@code user:update} cannot mass-terminate, and a
+     * delegate without reach to the group cannot either.
+     */
+    @Test
+    void revokeGroupSessionsRequiresUserUpdateAndGroupReach() {
+        UUID groupId = UUID.fromString(userGroups.create(new GroupSpec("RevokeDept", null, null, Set.of())).id());
+
+        // Wrong authority: group:update alone does NOT unlock the user-scoped force-expiry.
+        actAsWithAuthorities("admin", Permissions.GROUP_UPDATE);
+        assertThatThrownBy(() -> groupController.revokeGroupSessions(groupId))
+                .isInstanceOf(AccessDeniedException.class);
+
+        // Out of scope: a scoped delegate holding user:update but no reach to this group is denied (canAccessGroup).
+        create("revscoped", Set.of("ROLE_GROUP_ADMIN", "ROLE_USER"));
+        actAsWithAuthorities("revscoped", Permissions.USER_UPDATE);
+        assertThatThrownBy(() -> groupController.revokeGroupSessions(groupId))
+                .isInstanceOf(AccessDeniedException.class);
+
+        // Positive: a super admin with user:update passes the gate (empty group → nothing terminated).
+        actAsWithAuthorities("admin", Permissions.USER_UPDATE);
+        GroupSessionTermination result = groupController.revokeGroupSessions(groupId).getBody();
+        assertThat(result).isEqualTo(new GroupSessionTermination(0, 0, 0));
 
         actAsWithAuthorities("admin", Permissions.GROUP_UPDATE);
         userGroups.delete(groupId);

@@ -2,6 +2,7 @@ package com.example.sso.admin.internal.group.application;
 
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
+import com.example.sso.admin.internal.user.application.UserDetailAdminService;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.portal.application.ApplicationService;
@@ -19,6 +20,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
@@ -31,6 +33,7 @@ import org.springframework.stereotype.Service;
  * fresh group confers no reach.
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class GroupAdminService {
 
@@ -38,6 +41,7 @@ public class GroupAdminService {
     private final ApplicationService applications;
     private final AdminAccessPolicy accessPolicy;
     private final AdminAuditLogger auditLogger;
+    private final UserDetailAdminService userDetail;
     private final OrgContext orgContext;
 
     public Page<GroupView> list(int page, int size) {
@@ -91,6 +95,41 @@ public class GroupAdminService {
     public GroupMembersPage members(UUID id, int page, int size) {
         requireAccess(id);
         return userGroups.members(id, page, size);
+    }
+
+    /**
+     * Ends the live sessions of ALL the group's members in one action (e.g. off-boarding a team), reusing the
+     * per-user terminator so each member's OIDC/SAML participants are logged out via the same
+     * {@code SessionDestroyedEvent} path. A member the caller may not revoke (an administrator, for a scoped
+     * delegate) is SKIPPED, never escalated. Org-scoped: {@code memberIdsOf} and {@code terminateSessions} act
+     * only within the acting tenant.
+     */
+    public GroupSessionTermination terminateMemberSessions(UUID id) {
+        requireAccess(id);
+        int users = 0;
+        int sessions = 0;
+        int skipped = 0;
+        for (UUID memberId : userGroups.memberIdsOf(List.of(id))) {
+            // Apply the SAME per-member reach the single-user force-expiry composes (canAccessUser AND
+            // canRevokeSessions): a scoped delegate must not reach a same-org member OUTSIDE its subtree, nor
+            // force-logout an administrator, merely by virtue of shared group membership.
+            if (!accessPolicy.canAccessUser(memberId) || !accessPolicy.canRevokeSessions(memberId)) {
+                skipped++;
+                continue;
+            }
+            try {
+                sessions += userDetail.terminateSessions(memberId);
+                users++;
+            } catch (RuntimeException e) {
+                // A member vanished mid-batch (stale membership row): isolate it so one bad member never aborts
+                // the whole off-boarding, leaving the rest still logged in.
+                skipped++;
+                log.warn("skipping group member {} during bulk session termination", memberId, e);
+            }
+        }
+        auditLogger.log(AuditType.SESSION_ADMIN_REVOKED, AuditSubjectType.GROUP, id.toString(),
+                "group members signed out: users=" + users + " sessions=" + sessions + " skipped=" + skipped);
+        return new GroupSessionTermination(users, sessions, skipped);
     }
 
     public List<ApplicationView> applications(UUID id) {

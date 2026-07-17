@@ -1,7 +1,9 @@
 package com.example.sso.admin.internal.group.api;
 
 import com.example.sso.admin.internal.group.application.GroupAdminService;
+import com.example.sso.admin.internal.group.application.GroupSessionTermination;
 import com.example.sso.admin.internal.shared.security.CanAssignGroupRoles;
+import com.example.sso.admin.internal.shared.security.CanRevokeGroupSessions;
 import com.example.sso.portal.application.ApplicationView;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.security.RequirePermission;
@@ -85,6 +87,15 @@ public class AdminGroupController {
                                          @RequestParam(defaultValue = "0") int page,
                                          @RequestParam(defaultValue = "20") int size) {
         return groups.members(id, page, size);
+    }
+
+    /** Admin force-expiry of ALL the group's members' sessions (e.g. off-boarding a team); logs them out of
+     *  their OIDC/SAML apps too. Members the caller may not revoke (admins, for a scoped delegate) are skipped. */
+    @DeleteMapping("/{id}/sessions")
+    @CanRevokeGroupSessions
+    @RequireStepUp
+    public ResponseEntity<GroupSessionTermination> revokeGroupSessions(@PathVariable UUID id) {
+        return ResponseEntity.ok(groups.terminateMemberSessions(id));
     }
 
     @GetMapping("/{id}/applications")
