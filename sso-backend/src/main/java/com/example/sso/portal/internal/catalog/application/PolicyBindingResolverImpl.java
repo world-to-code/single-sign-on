@@ -130,7 +130,8 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
     }
 
     /** USER &gt; ATTRIBUTE(any value op) &gt; ATTRIBUTE(key ops only) &gt; role/group membership &gt; app-wide
-     *  default. A value condition (department = X) is a more deliberate target than a key-presence one. */
+     *  default. A value condition (department = X, or IN a list) is a more deliberate target than a key-presence
+     *  one (department EXISTS). */
     private int specificity(PolicyBinding b, Map<UUID, AttributePredicateGroup> groups) {
         if (b.getSubjectType() == null) {
             return 1;
@@ -143,7 +144,7 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
     }
 
     private boolean hasValueOperator(AttributePredicateGroup group) {
-        return group != null && group.conditions().stream().anyMatch(c -> c.operator().requiresValue());
+        return group != null && group.conditions().stream().anyMatch(c -> c.operator().targetsValue());
     }
 
     private int conditionCount(PolicyBinding b, Map<UUID, AttributePredicateGroup> groups) {

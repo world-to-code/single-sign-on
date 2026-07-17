@@ -259,9 +259,9 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
                 predicates);
     }
 
-    /** Defence in depth beyond the request DTO's {@code @AssertTrue}: a policy target may only use an operator
-     *  the resolver matches in memory (never the mapping-only IN), else a spec built outside the API would 500
-     *  on the child-table CHECK instead of a clean 400. */
+    /** Defence in depth beyond the request DTO's {@code @AssertTrue}: a policy target may only use an operator on
+     *  the targetable allow-list (guarding a future operator not yet admitted), else a spec built outside the API
+     *  would 500 on the child-table CHECK instead of a clean 400. */
     private void requireTargetable(AttributePredicateGroup group) {
         group.firstNonTargetableOperator().ifPresent(operator -> {
             throw new BadRequestException("operator " + operator + " cannot target a policy");

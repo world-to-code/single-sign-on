@@ -29,6 +29,15 @@ class AttributePredicateGroupTest {
     }
 
     @Test
+    void aGroupWithAnInConditionMatchesAnyListedValue() {
+        AttributePredicateGroup group = new AttributePredicateGroup(List.of(
+                AttributePredicate.in("dept", List.of("eng", "infra")), LEVEL_SENIOR));
+        assertThat(group.matches(List.of(new Attribute("dept", "infra"), new Attribute("level", "senior")))).isTrue();
+        assertThat(group.matches(List.of(new Attribute("dept", "sales"), new Attribute("level", "senior")))).isFalse();
+        assertThat(group.matches(List.of(new Attribute("level", "senior")))).isFalse(); // dept key absent → IN fails
+    }
+
+    @Test
     void aSingleConditionGroupMatchesLikeThePredicate() {
         AttributePredicateGroup group = AttributePredicateGroup.of(HAS_CLEARANCE);
         assertThat(group.matches(List.of(new Attribute("clearance", "ts")))).isTrue();

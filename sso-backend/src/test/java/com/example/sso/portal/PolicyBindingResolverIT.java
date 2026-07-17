@@ -672,6 +672,50 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
                 .map(SessionPolicyDetails::getId).contains(sess5);
     }
 
+    @Test
+    void anInListBindingMatchesAValueInTheListAndNothingOutsideIt() {
+        // A policy target may use IN (a value list stored in the condition child table): kim's dept "eng" is in
+        // {eng, infra} so the binding applies; lee's "sales" is not. The resolver matches the list in memory.
+        String app = "pbt-attr-in";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "eng");
+            attributes.set(EntityKind.USER, lee.getId().toString(), "dept", "sales");
+            attrSessionGroup(app, List.of(AttributePredicate.in("dept", List.of("eng", "infra"))), sess5, 10);
+        });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+        assertThat(resolveSession(lee, app)).isEmpty();
+    }
+
+    @Test
+    void anInListBindingIsAValueOperatorAndOutranksAKeyOperatorBinding() {
+        // IN targets specific values, so it sits in the value-operator tier (4), above a key-presence EXISTS
+        // binding (tier 3): kim's IN-matched binding wins over the EXISTS one it also matches even though EXISTS
+        // carries the higher priority — the cell that distinguishes tier 4 from tier 3 (a ROLE at tier 2 would not).
+        String app = "pbt-attr-in-spec";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "eng");
+            attrSessionGroup(app, List.of(AttributePredicate.in("dept", List.of("eng", "infra"))), sess5, 1);
+            attrSessionOp(app, "dept", AttributeOperator.EXISTS, null, sess15, 99); // key op, higher prio, tier 3
+        });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+    }
+
+    @Test
+    void aCompoundBindingCanMixInWithOtherOperators() {
+        // "dept IN (eng, infra) AND level = senior": kim (dept=infra, level=senior) matches; lee (dept=eng but
+        // not senior) is in the list yet fails the second condition, so the AND does not match.
+        String app = "pbt-and-in";
+        orgContext.runAsPlatform(() -> {
+            attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "infra");
+            attributes.set(EntityKind.USER, kim.getId().toString(), "level", "senior");
+            attributes.set(EntityKind.USER, lee.getId().toString(), "dept", "eng"); // in list but not senior
+            attrSessionGroup(app, List.of(AttributePredicate.in("dept", List.of("eng", "infra")),
+                    AttributePredicate.equals("level", "senior")), sess5, 10);
+        });
+        assertThat(resolveSession(kim, app)).map(SessionPolicyDetails::getId).contains(sess5);
+        assertThat(resolveSession(lee, app)).isEmpty();
+    }
+
     // --- helpers ---
 
     /** A GLOBAL multi-condition (AND) attribute session binding, for the compound resolution fixtures. */

@@ -32,6 +32,13 @@ public enum AttributeOperator {
         return this == IN;
     }
 
+    /** Whether this operator targets specific value(s) — a scalar (EQUALS/NOT_EQUALS/CONTAINS) or a list (IN) — as
+     *  opposed to mere key-presence (EXISTS/NOT_EXISTS). A value target is a more deliberate cohort than presence,
+     *  so it ranks higher in policy-binding specificity. */
+    public boolean targetsValue() {
+        return requiresValue() || requiresValueList();
+    }
+
     /** A null operator (a request that omits it) means EQUALS — the backward-compatible default. */
     public static AttributeOperator orDefault(AttributeOperator operator) {
         return operator == null ? EQUALS : operator;
@@ -45,13 +52,13 @@ public enum AttributeOperator {
         return op == EQUALS || op == EXISTS || op == IN || op == CONTAINS;
     }
 
-    /** Whether a (possibly null) operator may TARGET a policy binding — the operators the resolver matches in
-     *  memory (EQUALS, NOT_EQUALS, EXISTS, NOT_EXISTS, CONTAINS). The value-LIST operator IN is mapping-only, as it
-     *  needs list storage the policy binding lacks. An explicit allow-list (like {@link #mappable}, mirroring the
-     *  V99/V104 CHECK) so a future operator is denied by default until deliberately admitted. */
+    /** Whether a (possibly null) operator may TARGET a policy binding — every operator the resolver matches in
+     *  memory (EQUALS, NOT_EQUALS, EXISTS, NOT_EXISTS, CONTAINS, IN; IN's value list lives in the policy-binding
+     *  condition child table). An explicit allow-list (like {@link #mappable}, mirroring the V105/V106 child CHECK)
+     *  so a future operator is denied by default until deliberately admitted. */
     public static boolean targetable(AttributeOperator operator) {
         AttributeOperator op = orDefault(operator);
-        return op == EQUALS || op == NOT_EQUALS || op == EXISTS || op == NOT_EXISTS || op == CONTAINS;
+        return op == EQUALS || op == NOT_EQUALS || op == EXISTS || op == NOT_EXISTS || op == CONTAINS || op == IN;
     }
 
     /**

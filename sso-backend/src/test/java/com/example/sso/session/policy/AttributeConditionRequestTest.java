@@ -4,6 +4,7 @@ import com.example.sso.metadata.AttributeOperator;
 import com.example.sso.metadata.AttributePredicate;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -55,13 +56,27 @@ class AttributeConditionRequestTest {
     }
 
     @Test
-    void inIsRejectedButContainsIsAcceptedForAPolicyTarget() {
-        assertThat(validator.validate(new AttributeConditionRequest("dept", AttributeOperator.IN, "eng")))
-                .isNotEmpty();
+    void containsIsAcceptedForAPolicyTarget() {
         assertThat(validator.validate(new AttributeConditionRequest("dept", AttributeOperator.CONTAINS, "eng")))
                 .isEmpty();
         assertThat(new AttributeConditionRequest("dept", AttributeOperator.CONTAINS, "eng").toPredicate())
                 .isEqualTo(new AttributePredicate("dept", AttributeOperator.CONTAINS, "eng"));
+    }
+
+    @Test
+    void inTargetsAValueListNotAScalar() {
+        // IN is targetable but carries a non-empty value LIST, never a scalar value; a scalar op must carry no list.
+        assertThat(validator.validate(new AttributeConditionRequest("dept", AttributeOperator.IN, "eng")))
+                .isNotEmpty();
+        assertThat(validator.validate(new AttributeConditionRequest("dept", AttributeOperator.IN, null, List.of())))
+                .isNotEmpty();
+        assertThat(validator.validate(
+                new AttributeConditionRequest("dept", AttributeOperator.EQUALS, "eng", List.of("eng"))))
+                .isNotEmpty();
+        assertThat(validator.validate(
+                new AttributeConditionRequest("dept", AttributeOperator.IN, null, List.of("eng", "infra")))).isEmpty();
+        assertThat(new AttributeConditionRequest("dept", AttributeOperator.IN, null, List.of("eng", "infra"))
+                .toPredicate()).isEqualTo(AttributePredicate.in("dept", List.of("eng", "infra")));
     }
 
     @Test
