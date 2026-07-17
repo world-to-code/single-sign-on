@@ -3,6 +3,7 @@ package com.example.sso.saml.internal.logout.api;
 import com.example.sso.saml.internal.core.application.SamlBindingCodec;
 import com.example.sso.saml.internal.logout.application.SamlInboundLogoutService;
 import com.example.sso.saml.internal.logout.application.SamlInboundLogoutService.InboundLogout;
+import com.example.sso.saml.internal.logout.application.SamlInboundLogoutService.InboundResult;
 import com.example.sso.saml.internal.logout.application.SamlLogoutChainCookie;
 import com.example.sso.saml.internal.logout.application.SamlLogoutChainService;
 import com.example.sso.saml.internal.logout.application.SamlLogoutChainService.ChainStep;
@@ -61,7 +62,7 @@ public class SamlSloController {
             @RequestParam(value = "RelayState", required = false) String relayState,
             @RequestParam(value = "SigAlg", required = false) String sigAlg,
             @RequestParam(value = "Signature", required = false) String signature,
-            Authentication authentication, HttpServletRequest httpRequest) {
+            Authentication authentication, HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
         if (samlResponse != null) {
             return advanceChain(relayState); // a chained SP's LogoutResponse came back — go to the next SP
         }
@@ -80,8 +81,8 @@ public class SamlSloController {
         signatureValidator.verifyRedirect(signedContent.getBytes(StandardCharsets.US_ASCII), sigAlg,
                 Base64.getDecoder().decode(signature), relyingParty);
 
-        return render(inboundLogout.process(request, relyingParty, username(authentication, request),
-                authentication, relayState, httpRequest));
+        return renderInbound(inboundLogout.process(request, relyingParty, username(authentication, request),
+                authentication, relayState, httpRequest, httpResponse));
     }
 
     @PostMapping
@@ -89,7 +90,7 @@ public class SamlSloController {
             @RequestParam(value = "SAMLRequest", required = false) String samlRequest,
             @RequestParam(value = "SAMLResponse", required = false) String samlResponse,
             @RequestParam(value = "RelayState", required = false) String relayState,
-            Authentication authentication, HttpServletRequest httpRequest) {
+            Authentication authentication, HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
         if (samlResponse != null) {
             return advanceChain(relayState);
         }
@@ -98,8 +99,8 @@ public class SamlSloController {
 
         signatureValidator.verifyEmbedded(request, relyingParty); // always verify (see the Redirect handler)
 
-        return render(inboundLogout.process(request, relyingParty, username(authentication, request),
-                authentication, relayState, httpRequest));
+        return renderInbound(inboundLogout.process(request, relyingParty, username(authentication, request),
+                authentication, relayState, httpRequest, httpResponse));
     }
 
     /** Drives the next hop of a front-channel logout chain (emits a LogoutRequest to the next SP). */
@@ -119,6 +120,11 @@ public class SamlSloController {
             case ChainStep.Complete ignored -> {
                 chainCookie.clear(httpResponse);
                 yield redirectTo(POST_LOGOUT_LANDING);
+            }
+            case ChainStep.RespondToInitiator r -> {
+                // The chain drained on an SP-initiated logout — answer the initiator with its LogoutResponse.
+                chainCookie.clear(httpResponse);
+                yield postResponse(r.sloUrl(), r.base64Response(), r.relayState());
             }
         };
     }
@@ -153,11 +159,22 @@ public class SamlSloController {
         return request.getNameID() != null ? request.getNameID().getValue() : "unknown";
     }
 
+    /** An inbound LogoutRequest either runs the front-channel chain first, or answers the initiator now. */
+    private ResponseEntity<String> renderInbound(InboundResult result) {
+        return switch (result) {
+            case InboundResult.Chain chain -> redirectTo(chain.redirectUrl());
+            case InboundResult.Respond respond -> render(respond.logout());
+        };
+    }
+
     /** Posts the signed LogoutResponse back to the SP via an auto-submitting form (POST binding). */
     private ResponseEntity<String> render(InboundLogout result) {
+        return postResponse(result.sloUrl(), result.base64Response(), result.relayState());
+    }
+
+    private ResponseEntity<String> postResponse(String sloUrl, String base64Response, String relayState) {
         String nonce = newNonce();
-        return autoSubmit(codec.postBindingHtml(result.sloUrl(), result.base64Response(),
-                result.relayState(), nonce), nonce);
+        return autoSubmit(codec.postBindingHtml(sloUrl, base64Response, relayState, nonce), nonce);
     }
 
     private ResponseEntity<String> autoSubmit(String html, String nonce) {

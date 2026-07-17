@@ -18,4 +18,15 @@ public interface SamlFrontChannelLogout {
      * is disclosed to every participant SP as RelayState and therefore cannot be the sole capability).
      */
     Optional<String> startChain(String sid, HttpServletResponse response);
+
+    /**
+     * Like {@link #startChain} but for an SP-INITIATED {@code LogoutRequest}: stages the chain of the
+     * session's front-channel SAML SPs EXCLUDING the initiator ({@code initiatorEntityId}) — which initiated
+     * the logout and is instead answered with a {@code LogoutResponse} once the chain drains. {@code requestId}
+     * (the inbound request's ID, for {@code InResponseTo}) and {@code relayState} are carried for that final
+     * response. Empty when the session had no OTHER front-channel SP (the caller then answers the initiator
+     * immediately). MUST be called BEFORE the session is invalidated (see {@link #startChain}).
+     */
+    Optional<String> startInboundChain(String sid, String initiatorEntityId, String requestId, String relayState,
+                                       HttpServletResponse response);
 }

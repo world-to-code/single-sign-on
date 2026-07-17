@@ -18,6 +18,10 @@ public class SamlLogoutChainStore {
     private static final String SPS = "saml:slo:chain:%s:sps";
     private static final String NAMES = "saml:slo:chain:%s:names";
     private static final String SID = "saml:slo:chain:%s:sid";
+    private static final String RESPONDER = "saml:slo:chain:%s:responder";
+    private static final String RESPONDER_ENTITY = "entityId";
+    private static final String RESPONDER_REQUEST = "requestId";
+    private static final String RESPONDER_RELAY = "relayState";
 
     private final StringRedisTemplate redis;
     private final Duration ttl;
@@ -32,8 +36,16 @@ public class SamlLogoutChainStore {
     public record Hop(String entityId, String nameId, String sid) {
     }
 
-    /** Persists the chain and returns its id (RelayState). Order is preserved (first pushed = first popped). */
-    public String create(String logoutId, String sid, List<Participant> participants) {
+    /** The SP-initiated logout's originator, answered with a {@code LogoutResponse} once the chain drains. */
+    public record Responder(String entityId, String requestId, String relayState) {
+    }
+
+    /**
+     * Persists the chain and returns its id (RelayState). Order is preserved (first pushed = first popped).
+     * {@code responder} is the SP-initiated originator to answer once the chain drains, or null for the
+     * explicit-browser-logout path (which just lands on the post-logout page when the chain drains).
+     */
+    public String create(String logoutId, String sid, List<Participant> participants, Responder responder) {
         redis.opsForValue().set(SID.formatted(logoutId), sid, ttl);
         for (Participant p : participants) {
             redis.opsForList().rightPush(SPS.formatted(logoutId), p.entityId());
@@ -41,7 +53,30 @@ public class SamlLogoutChainStore {
         }
         redis.expire(SPS.formatted(logoutId), ttl);
         redis.expire(NAMES.formatted(logoutId), ttl);
+        if (responder != null) {
+            String key = RESPONDER.formatted(logoutId);
+            redis.opsForHash().put(key, RESPONDER_ENTITY, responder.entityId());
+            redis.opsForHash().put(key, RESPONDER_REQUEST, responder.requestId());
+            if (responder.relayState() != null) {
+                redis.opsForHash().put(key, RESPONDER_RELAY, responder.relayState());
+            }
+            redis.expire(key, ttl);
+        }
         return logoutId;
+    }
+
+    /** The SP-initiated originator to answer, if this chain was staged from an inbound {@code LogoutRequest}. */
+    public Optional<Responder> responder(String logoutId) {
+        String key = RESPONDER.formatted(logoutId);
+        Object entityId = redis.opsForHash().get(key, RESPONDER_ENTITY);
+        if (entityId == null) {
+            return Optional.empty();
+        }
+        Object requestId = redis.opsForHash().get(key, RESPONDER_REQUEST);
+        Object relayState = redis.opsForHash().get(key, RESPONDER_RELAY);
+        return Optional.of(new Responder(entityId.toString(),
+                requestId == null ? null : requestId.toString(),
+                relayState == null ? null : relayState.toString()));
     }
 
     /** Pops the next SP to contact, or empty when the chain is exhausted. */
@@ -56,7 +91,8 @@ public class SamlLogoutChainStore {
     }
 
     public void clear(String logoutId) {
-        redis.delete(List.of(SPS.formatted(logoutId), NAMES.formatted(logoutId), SID.formatted(logoutId)));
+        redis.delete(List.of(SPS.formatted(logoutId), NAMES.formatted(logoutId), SID.formatted(logoutId),
+                RESPONDER.formatted(logoutId)));
     }
 
     /** A front-channel SP participating in the chain. */

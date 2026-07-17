@@ -6,8 +6,11 @@ import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.factor.Factors;
+import com.example.sso.saml.internal.logout.application.SamlInboundLogoutService.InboundResult;
+import com.example.sso.saml.logout.SamlFrontChannelLogout;
 import javax.xml.namespace.QName;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,6 +25,7 @@ import org.opensaml.saml.saml2.core.LogoutResponse;
 import org.opensaml.saml.saml2.core.NameID;
 import org.opensaml.saml.saml2.core.SessionIndex;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -34,6 +38,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -53,6 +58,8 @@ class SamlInboundLogoutServiceTest {
     @Mock
     private SamlBindingCodec codec;
     @Mock
+    private SamlFrontChannelLogout frontChannel;
+    @Mock
     private AuditService audit;
 
     private SamlInboundLogoutService service;
@@ -62,10 +69,17 @@ class SamlInboundLogoutServiceTest {
     void setUp() throws Exception {
         InitializationService.initialize();
         builders = XMLObjectProviderRegistrySupport.getBuilderFactory();
-        service = new SamlInboundLogoutService(messageBuilder, codec, audit);
+        service = new SamlInboundLogoutService(messageBuilder, codec, frontChannel, audit);
         lenient().when(messageBuilder.signedLogoutResponse(any(), anyString(), anyBoolean()))
                 .thenReturn(build(LogoutResponse.DEFAULT_ELEMENT_NAME));
         lenient().when(codec.encodeObject(any())).thenReturn("b64");
+        // By default no OTHER front-channel SP remains -> the initiator is answered immediately. Individual
+        // tests override to stage a chain.
+        lenient().when(frontChannel.startInboundChain(any(), any(), any(), any(), any())).thenReturn(Optional.empty());
+    }
+
+    private MockHttpServletResponse resp() {
+        return new MockHttpServletResponse();
     }
 
     @SuppressWarnings("unchecked")
@@ -108,7 +122,7 @@ class SamlInboundLogoutServiceTest {
         MockHttpSession session = new MockHttpSession();
         MockHttpServletRequest httpRequest = requestWithSession(session);
 
-        service.process(logoutRequest(SID), rp(), "user", sessionPrincipal(), null, httpRequest);
+        service.process(logoutRequest(SID), rp(), "user", sessionPrincipal(), null, httpRequest, resp());
 
         assertThat(session.isInvalid()).isTrue();
     }
@@ -120,7 +134,7 @@ class SamlInboundLogoutServiceTest {
         MockHttpSession session = new MockHttpSession();
         MockHttpServletRequest httpRequest = requestWithSession(session);
 
-        service.process(logoutRequest("sid-other"), rp(), "user", sessionPrincipal(), null, httpRequest);
+        service.process(logoutRequest("sid-other"), rp(), "user", sessionPrincipal(), null, httpRequest, resp());
 
         assertThat(session.isInvalid()).isFalse();
     }
@@ -131,7 +145,7 @@ class SamlInboundLogoutServiceTest {
         MockHttpSession session = new MockHttpSession();
         MockHttpServletRequest httpRequest = requestWithSession(session);
 
-        service.process(logoutRequest(null), rp(), "user", sessionPrincipal(), null, httpRequest);
+        service.process(logoutRequest(null), rp(), "user", sessionPrincipal(), null, httpRequest, resp());
 
         assertThat(session.isInvalid()).isTrue();
     }
@@ -140,11 +154,47 @@ class SamlInboundLogoutServiceTest {
     void respondsWithoutASessionAtAll() {
         MockHttpServletRequest httpRequest = new MockHttpServletRequest("POST", "/saml2/idp/slo");
 
-        SamlInboundLogoutService.InboundLogout result =
-                service.process(logoutRequest(SID), rp(), "user", null, "relay", httpRequest);
+        InboundResult result = service.process(logoutRequest(SID), rp(), "user", null, "relay", httpRequest, resp());
 
-        assertThat(result.base64Response()).isEqualTo("b64");
-        assertThat(result.relayState()).isEqualTo("relay");
+        SamlInboundLogoutService.InboundLogout logout = respond(result);
+        assertThat(logout.base64Response()).isEqualTo("b64");
+        assertThat(logout.relayState()).isEqualTo("relay");
+    }
+
+    @Test
+    void stagesTheFrontChannelChainForTheOtherSpsAndAnswersTheInitiatorLast() {
+        // Another front-channel SP is still logged in: the browser is redirected through the chain (which ends
+        // by answering the initiator), instead of the initiator getting its LogoutResponse immediately. The
+        // initiator's OWN entityId is what the chain is told to EXCLUDE.
+        MockHttpSession session = new MockHttpSession();
+        when(frontChannel.startInboundChain(eq(SID), eq("https://sp.example"), eq("req-1"), any(), any()))
+                .thenReturn(Optional.of("/saml2/idp/slo/chain?logout=x"));
+
+        InboundResult result = service.process(logoutRequest(SID), rp(), "user", sessionPrincipal(), "relay",
+                requestWithSession(session), resp());
+
+        assertThat(result).isInstanceOf(InboundResult.Chain.class);
+        assertThat(((InboundResult.Chain) result).redirectUrl()).isEqualTo("/saml2/idp/slo/chain?logout=x");
+        assertThat(session.isInvalid()).isTrue(); // the session is still ended before the chain runs
+    }
+
+    @Test
+    void aFrontChannelStagingFailureStillEndsTheSessionAndAnswersTheInitiator() {
+        // Local logout is load-bearing: a Redis/DB fault while staging the chain must NOT leave the IdP session
+        // (and its SSO to every other RP) alive. Degrade to answering the initiator directly, session still ended.
+        MockHttpSession session = new MockHttpSession();
+        when(frontChannel.startInboundChain(any(), any(), any(), any(), any()))
+                .thenThrow(new RuntimeException("redis down"));
+
+        InboundResult result = service.process(logoutRequest(SID), rp(), "user", sessionPrincipal(), "relay",
+                requestWithSession(session), resp());
+
+        assertThat(session.isInvalid()).isTrue();
+        assertThat(result).isInstanceOf(InboundResult.Respond.class); // not a 500, not a chain — answered directly
+    }
+
+    private SamlInboundLogoutService.InboundLogout respond(InboundResult result) {
+        return ((InboundResult.Respond) result).logout();
     }
 
     @Test
@@ -155,20 +205,22 @@ class SamlInboundLogoutServiceTest {
         MockHttpSession session = new MockHttpSession();
         MockHttpServletRequest httpRequest = requestWithSession(session);
 
-        SamlInboundLogoutService.InboundLogout result =
-                service.process(logoutRequest("sid-stale"), rp(), "user", sessionPrincipal(), "relay", httpRequest);
+        InboundResult result = service.process(logoutRequest("sid-stale"), rp(), "user", sessionPrincipal(),
+                "relay", httpRequest, resp());
 
         assertThat(session.isInvalid()).isFalse();
         verify(messageBuilder).signedLogoutResponse(any(), eq("req-1"), eq(false)); // terminated=false
-        assertThat(result.base64Response()).isEqualTo("b64"); // the SP still gets a signed response
+        assertThat(respond(result).base64Response()).isEqualTo("b64"); // the SP still gets a signed response
         verify(audit).record(argThat(record -> !record.success()));
+        // A request that ended no session must NOT redirect the browser through other SPs' logout.
+        verify(frontChannel, never()).startInboundChain(any(), any(), any(), any(), any());
     }
 
     @Test
     void auditsASuccessWhenTheTargetedSessionIsTerminated() {
         MockHttpServletRequest httpRequest = requestWithSession(new MockHttpSession());
 
-        service.process(logoutRequest(SID), rp(), "user", sessionPrincipal(), null, httpRequest);
+        service.process(logoutRequest(SID), rp(), "user", sessionPrincipal(), null, httpRequest, resp());
 
         verify(messageBuilder).signedLogoutResponse(any(), eq("req-1"), eq(true));
         verify(audit).record(argThat(AuditRecord::success));
@@ -183,7 +235,7 @@ class SamlInboundLogoutServiceTest {
         second.setValue(SID);
         request.getSessionIndexes().add(second);
 
-        service.process(request, rp(), "user", sessionPrincipal(), null, requestWithSession(session));
+        service.process(request, rp(), "user", sessionPrincipal(), null, requestWithSession(session), resp());
 
         assertThat(session.isInvalid()).isTrue();
     }
@@ -195,7 +247,7 @@ class SamlInboundLogoutServiceTest {
         MockHttpSession session = new MockHttpSession();
         Authentication markerless = new UsernamePasswordAuthenticationToken("user", null, List.of());
 
-        service.process(logoutRequest(SID), rp(), "user", markerless, null, requestWithSession(session));
+        service.process(logoutRequest(SID), rp(), "user", markerless, null, requestWithSession(session), resp());
 
         assertThat(session.isInvalid()).isFalse();
     }

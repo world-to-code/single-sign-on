@@ -8,6 +8,7 @@ import com.example.sso.saml.internal.core.application.SamlRedirectEncoder;
 
 import com.example.sso.saml.relyingparty.SloBinding;
 import com.example.sso.saml.internal.logout.application.SamlLogoutChainStore.Hop;
+import com.example.sso.saml.internal.logout.application.SamlLogoutChainStore.Responder;
 import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;
 import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingPartyRepository;
 import com.example.sso.tenancy.OrgContext;
@@ -16,6 +17,7 @@ import java.util.Base64;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.opensaml.saml.saml2.core.LogoutResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -50,13 +52,18 @@ public class SamlLogoutChainService {
         /** The chain is finished — nothing more to send. */
         record Complete() implements ChainStep {
         }
+
+        /** The chain drained on an SP-initiated logout — auto-submit this LogoutResponse back to the initiator. */
+        record RespondToInitiator(String sloUrl, String base64Response, String relayState) implements ChainStep {
+        }
     }
 
     public ChainStep next(String logoutId, String scriptNonce) {
         Optional<Hop> hop = chainStore.next(logoutId);
         if (hop.isEmpty()) {
+            ChainStep end = finish(logoutId); // answer the SP-initiated originator, if any, else just complete
             chainStore.clear(logoutId);
-            return new ChainStep.Complete();
+            return end;
         }
         Hop h = hop.get();
         // The chain runs on the anonymous, post-logout /chain request (no OrgContext bound), so resolve the RP
@@ -76,6 +83,27 @@ public class SamlLogoutChainService {
         audit.record(new AuditRecord(AuditType.SAML_SLO, h.nameId(), true,
                 "sp=" + h.entityId() + " front-channel logout", null));
         return step;
+    }
+
+    /** When the chain drains: answer the SP-initiated originator with its LogoutResponse, or just complete. */
+    private ChainStep finish(String logoutId) {
+        return chainStore.responder(logoutId).map(this::respondToInitiator).orElseGet(ChainStep.Complete::new);
+    }
+
+    private ChainStep respondToInitiator(Responder responder) {
+        // Resolve + sign in the initiator RP's org so the LogoutResponse carries that tenant's SAML signature
+        // (the /chain request is anonymous with no OrgContext bound; a global RP signs in the ambient context).
+        SamlRelyingParty rp = orgContext.callAsPlatform(
+                () -> relyingParties.findByEntityId(responder.entityId()).orElse(null));
+        if (rp == null || !StringUtils.hasText(rp.getSingleLogoutUrl())) {
+            return new ChainStep.Complete(); // initiator vanished/unconfigured — the session is already gone
+        }
+        UUID org = rp.getOrgId();
+        LogoutResponse response = org == null
+                ? messageBuilder.signedLogoutResponse(rp, responder.requestId(), true)
+                : orgContext.callInOrg(org, () -> messageBuilder.signedLogoutResponse(rp, responder.requestId(), true));
+        return new ChainStep.RespondToInitiator(rp.getSingleLogoutUrl(), codec.encodeObject(response),
+                responder.relayState());
     }
 
     private ChainStep buildStep(SamlRelyingParty rp, Hop h, String logoutId, String scriptNonce) {
