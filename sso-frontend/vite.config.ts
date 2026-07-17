@@ -13,7 +13,11 @@ const proxy = Object.fromEntries(
   ["/api", "/oauth2", "/saml2", "/scim", "/userinfo", "/.well-known", "/connect", "/actuator",
    "/webauthn", "/login/webauthn"].map((p) => [
     p,
-    { target: backend, changeOrigin: true, cookieDomainRewrite: "localhost" },
+    // changeOrigin:false FORWARDS the browser's real Host (e.g. octatco.localhost:5173) to the backend.
+    // The IdP derives the tenant + per-tenant OIDC issuer + the admin-console same-origin redirect from that
+    // Host (dev has forward-headers-strategy:none, so X-Forwarded-Host is not an option) — rewriting it to
+    // localhost:9000 would lose the subdomain, so the org never resolves and /oauth2/authorize 400s.
+    { target: backend, changeOrigin: false, cookieDomainRewrite: "localhost" },
   ]),
 );
 

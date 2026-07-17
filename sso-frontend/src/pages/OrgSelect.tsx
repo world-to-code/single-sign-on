@@ -12,10 +12,18 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 
 /** The origin of the tenant's OWN subdomain ({slug}.{platform-host}), where its sign-in must complete —
- *  the session is host-bound, so an organization is reached ONLY through its subdomain, never the bare host. */
+ *  the session is host-bound, so an organization is reached ONLY through its subdomain, never the bare host.
+ *  This screen is served only on the bare platform host (a real tenant subdomain auto-resolves its org), so
+ *  {@code host} is the apex; the guard below keeps a stray render on an already-tenant host from nesting the
+ *  label ({slug}.{slug}.host). */
 function tenantOrigin(slug: string): string {
-  const { protocol, host } = window.location; // host includes the port (e.g. localhost:9000)
+  const { protocol, host } = window.location; // host includes the port (e.g. localhost:5173)
   return `${protocol}//${slug}.${host}`;
+}
+
+/** Already on this tenant's own subdomain — a defensive check so selecting it never appends the label again. */
+function alreadyOnTenant(slug: string): boolean {
+  return window.location.host.toLowerCase().startsWith(slug.toLowerCase() + ".");
 }
 
 /**
@@ -44,7 +52,8 @@ export default function OrgSelect() {
       // sign-in on the tenant's OWN subdomain, where the host-bound session belongs.
       await organization(trimmed);
       rememberOrg(trimmed);
-      window.location.assign(tenantOrigin(trimmed) + "/");
+      // If we are somehow already on this tenant's subdomain, go to its home rather than nesting the label.
+      window.location.assign(alreadyOnTenant(trimmed) ? "/" : tenantOrigin(trimmed) + "/");
     } catch (e) {
       if (e instanceof ApiError) {
         setError(e.status === 404 ? t("orgNotFound") : t("orgContinueFailed"));
