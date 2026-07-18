@@ -3,6 +3,7 @@ export const auth = {
   factorPassword: "Password",
   factorTotp: "Authenticator app",
   factorEmail: "Email code",
+  factorSms: "Text message",
   factorPasskey: "Passkey",
 
   // Shared words / buttons -------------------------------------------------
@@ -47,6 +48,7 @@ export const auth = {
   // Shared factor actions --------------------------------------------------
   usePasskey: "Use your passkey",
   emailMeCode: "Email me a code",
+  smsMeCode: "Text me a code",
   managePasskeys: "Manage passkeys",
   manageMyPasskeys: "Manage my passkeys",
   continueToSignIn: "Continue to sign in",
@@ -160,6 +162,9 @@ export const auth = {
   profileDescription: "Manage your own security factors, passkeys, and active sessions.",
   profileSecurityFactors: "Security factors",
   profileEmailTitle: "Email",
+  profilePhoneTitle: "Phone (SMS)",
+  profilePhoneNone: "No phone number added",
+  profilePhoneVerifyBtn: "Verify",
   profileRolesLabel: "Roles:",
   profilePasskeysSection: "Passkeys",
   profileActiveSessions: "Active sessions",
@@ -185,6 +190,16 @@ export const auth = {
   profileTotpInvalidCode: "Invalid code, try again.",
   profileTotpVerifyFailed: "Could not verify the code.",
   profileVerifyAndEnable: "Verify & enable",
+  profileRemovePhoneTitle: "Remove phone number?",
+  profileRemovePhoneDesc: "Text-message codes will no longer be accepted, and the SMS factor will be unavailable.",
+  profilePhoneDialogTitle: "Add a phone number",
+  profilePhoneDialogDesc: "Enter your number in international format (e.g. +14155550123). We'll text you a code to verify it.",
+  profilePhonePlaceholder: "+14155550123",
+  profilePhoneCodeSentTo: "Enter the code we texted to {{phone}}.",
+  profilePhoneInvalid: "Enter a valid phone number in international format.",
+  profilePhoneSendFailed: "Could not send the code. Please try again.",
+  profilePhoneCodeInvalid: "Invalid code, try again.",
+  profilePhoneVerifyFailed: "Could not verify the code.",
 
   // Passkeys page ----------------------------------------------------------
   passkeysTitle: "My Passkeys",

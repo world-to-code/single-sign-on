@@ -5,6 +5,7 @@ export const auth: Record<keyof typeof enAuth, string> = {
   factorPassword: "비밀번호",
   factorTotp: "인증 앱",
   factorEmail: "이메일 코드",
+  factorSms: "문자 메시지",
   factorPasskey: "패스키",
 
   // Shared words / buttons -------------------------------------------------
@@ -49,6 +50,7 @@ export const auth: Record<keyof typeof enAuth, string> = {
   // Shared factor actions --------------------------------------------------
   usePasskey: "패스키 사용",
   emailMeCode: "이메일로 코드 받기",
+  smsMeCode: "문자로 코드 받기",
   managePasskeys: "패스키 관리",
   manageMyPasskeys: "내 패스키 관리",
   continueToSignIn: "로그인 화면으로 이동",
@@ -162,6 +164,9 @@ export const auth: Record<keyof typeof enAuth, string> = {
   profileDescription: "본인의 보안 인증 수단, 패스키, 활성 세션을 관리합니다.",
   profileSecurityFactors: "보안 인증 수단",
   profileEmailTitle: "이메일",
+  profilePhoneTitle: "전화번호 (SMS)",
+  profilePhoneNone: "등록된 전화번호 없음",
+  profilePhoneVerifyBtn: "인증",
   profileRolesLabel: "역할:",
   profilePasskeysSection: "패스키",
   profileActiveSessions: "활성 세션",
@@ -187,6 +192,16 @@ export const auth: Record<keyof typeof enAuth, string> = {
   profileTotpInvalidCode: "잘못된 코드입니다. 다시 시도하세요.",
   profileTotpVerifyFailed: "코드를 확인할 수 없습니다.",
   profileVerifyAndEnable: "확인 후 활성화",
+  profileRemovePhoneTitle: "전화번호를 삭제할까요?",
+  profileRemovePhoneDesc: "문자 메시지 코드가 더 이상 인증에 사용되지 않으며, SMS 팩터를 사용할 수 없게 됩니다.",
+  profilePhoneDialogTitle: "전화번호 추가",
+  profilePhoneDialogDesc: "국제 표기 형식으로 번호를 입력하세요(예: +14155550123). 인증 코드를 문자로 보내드립니다.",
+  profilePhonePlaceholder: "+14155550123",
+  profilePhoneCodeSentTo: "{{phone}}(으)로 보낸 코드를 입력하세요.",
+  profilePhoneInvalid: "국제 표기 형식의 유효한 전화번호를 입력하세요.",
+  profilePhoneSendFailed: "코드를 보낼 수 없습니다. 다시 시도하세요.",
+  profilePhoneCodeInvalid: "코드가 올바르지 않습니다. 다시 시도하세요.",
+  profilePhoneVerifyFailed: "코드를 확인할 수 없습니다.",
 
   // Passkeys page ----------------------------------------------------------
   passkeysTitle: "내 패스키",

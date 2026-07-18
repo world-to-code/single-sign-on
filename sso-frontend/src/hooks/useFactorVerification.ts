@@ -12,21 +12,21 @@ export interface FactorVerificationState {
   setCode: Dispatch<SetStateAction<string>>;
   password: string;
   setPassword: Dispatch<SetStateAction<string>>;
-  emailSent: boolean;
+  codeSent: boolean;
   error: string | null;
   setError: Dispatch<SetStateAction<string | null>>;
   busy: boolean;
   setBusy: Dispatch<SetStateAction<boolean>>;
   submitCode: (event: FormEvent) => Promise<void>;
   submitPassword: (event: FormEvent) => Promise<void>;
-  sendEmail: () => Promise<void>;
+  sendCode: () => Promise<void>;
   fido2: () => Promise<void>;
   fido2Register: () => Promise<void>;
 }
 
 /**
  * Shared state machine for the factor-collection screens (login MFA + per-app step-up): tracks the
- * selected factor and its inputs, and runs prepare/verify for the password, TOTP/email-code and
+ * selected factor and its inputs, and runs prepare/verify for the password, TOTP/email-and-SMS-code and
  * passkey factors with consistent busy/error handling. `onSuccess` receives the resolved session.
  */
 export function useFactorVerification(
@@ -35,13 +35,13 @@ export function useFactorVerification(
   const [factor, setFactor] = useState(initialFactor);
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
-  const [emailSent, setEmailSent] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   // One set of inputs is reused across factors: clear them whenever the active factor changes.
   useEffect(() => {
-    setCode(""); setPassword(""); setEmailSent(false); setError(null); setBusy(false);
+    setCode(""); setPassword(""); setCodeSent(false); setError(null); setBusy(false);
   }, [factor]);
 
   const run = useCallback(async (
@@ -81,18 +81,19 @@ export function useFactorVerification(
     return verifyFactor("FIDO2", { credential: await registerFactorCredential(prepared) });
   }, "Passkey registration failed.", "Passkey registration was cancelled or failed."), [run]);
 
-  const sendEmail = useCallback(async () => {
+  // Sends a code for the CURRENTLY selected code factor (EMAIL or SMS); the backend prepare texts/emails it.
+  const sendCode = useCallback(async () => {
     setError(null);
     try {
-      await prepareFactor("EMAIL");
-      setEmailSent(true);
+      await prepareFactor(factor);
+      setCodeSent(true);
     } catch {
       setError("Could not send the code. Try again.");
     }
-  }, []);
+  }, [factor]);
 
   return {
-    factor, setFactor, code, setCode, password, setPassword, emailSent,
-    error, setError, busy, setBusy, submitCode, submitPassword, sendEmail, fido2, fido2Register,
+    factor, setFactor, code, setCode, password, setPassword, codeSent,
+    error, setError, busy, setBusy, submitCode, submitPassword, sendCode, fido2, fido2Register,
   };
 }

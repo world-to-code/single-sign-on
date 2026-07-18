@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Fingerprint, Loader2, Lock, Mail } from "lucide-react";
+import { Fingerprint, Loader2, Lock } from "lucide-react";
 import { getStepUp } from "../portal";
 import type { StepUpInfo } from "../portal";
 import { webAuthnSupported } from "../webauthn";
@@ -21,8 +21,8 @@ export default function AppStepUp() {
   const { t } = useTranslation("auth");
   const [info, setInfo] = useState<StepUpInfo | null>(null);
   const {
-    factor, setFactor, code, setCode, password, setPassword, emailSent,
-    error, setError, busy, submitCode, submitPassword, sendEmail, fido2,
+    factor, setFactor, code, setCode, password, setPassword, codeSent,
+    error, setError, busy, submitCode, submitPassword, sendCode, fido2,
   } = useFactorVerification({ initialFactor: "", onSuccess: () => refresh() });
 
   // After loading (and after each grant) check whether step-up is satisfied: if so resume the
@@ -59,10 +59,12 @@ export default function AppStepUp() {
           <Button type="submit" className="w-full" disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : <Lock />} {t("verify")}</Button>
         </form>
       )}
-      {factor === "EMAIL" && !emailSent && (
-        <Button type="button" className="w-full" onClick={sendEmail}><Mail /> {t("emailMeCode")}</Button>
+      {(factor === "EMAIL" || factor === "SMS") && !codeSent && (
+        <Button type="button" className="w-full" onClick={sendCode}>
+          <Icon /> {t(factor === "SMS" ? "smsMeCode" : "emailMeCode")}
+        </Button>
       )}
-      {(factor === "TOTP" || (factor === "EMAIL" && emailSent)) && (
+      {(factor === "TOTP" || ((factor === "EMAIL" || factor === "SMS") && codeSent)) && (
         <form onSubmit={submitCode} className="space-y-3">
           <OtpInput value={code} onChange={(e) => setCode(e.target.value)} />
           <Button type="submit" className="w-full" disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : <Icon />} {t("verify")}</Button>

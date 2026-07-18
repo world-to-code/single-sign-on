@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Fingerprint, Loader2, Lock, Mail } from "lucide-react";
+import { Fingerprint, Loader2, Lock } from "lucide-react";
 import { getSession, logout, prepareFactor } from "../auth";
 import type { FactorChallenge, SessionView } from "../auth";
 import { webAuthnSupported } from "../webauthn";
@@ -16,7 +16,7 @@ import { Input } from "../components/ui/input";
 /** Within a choice step, prefer a factor the user can use right now (no enrollment needed). */
 function preferredFactor(factors: string[], session: SessionView): string {
   const usable = factors.find((f) =>
-    f === "PASSWORD" || f === "EMAIL"
+    f === "PASSWORD" || f === "EMAIL" || f === "SMS"
     || (f === "TOTP" && session.totpEnrolled) || (f === "FIDO2" && session.fido2Enrolled));
   return usable ?? factors[0];
 }
@@ -26,8 +26,8 @@ export default function MfaStep({ session, onDone }: { session: SessionView; onD
   const { t } = useTranslation("auth");
   const factors = session.pendingFactors;
   const {
-    factor, setFactor, code, setCode, password, setPassword, emailSent,
-    error, setError, busy, setBusy, submitCode, submitPassword, sendEmail, fido2, fido2Register,
+    factor, setFactor, code, setCode, password, setPassword, codeSent,
+    error, setError, busy, setBusy, submitCode, submitPassword, sendCode, fido2, fido2Register,
   } = useFactorVerification({ initialFactor: preferredFactor(factors, session), onSuccess: onDone });
   const [challenge, setChallenge] = useState<FactorChallenge | null>(null);
 
@@ -101,8 +101,10 @@ export default function MfaStep({ session, onDone }: { session: SessionView; onD
         </form>
       )}
 
-      {factor === "EMAIL" && !emailSent && (
-        <Button type="button" className="w-full" onClick={sendEmail}><Mail /> {t("emailMeCode")}</Button>
+      {(factor === "EMAIL" || factor === "SMS") && !codeSent && (
+        <Button type="button" className="w-full" onClick={sendCode}>
+          <Icon /> {t(factor === "SMS" ? "smsMeCode" : "emailMeCode")}
+        </Button>
       )}
 
       {enrollBlocked && (
@@ -120,7 +122,7 @@ export default function MfaStep({ session, onDone }: { session: SessionView; onD
         </div>
       )}
 
-      {((factor === "TOTP" && !enrollBlocked) || (factor === "EMAIL" && emailSent)) && (
+      {((factor === "TOTP" && !enrollBlocked) || ((factor === "EMAIL" || factor === "SMS") && codeSent)) && (
         <form onSubmit={submitCode} className="space-y-3">
           <OtpInput value={code} onChange={(e) => setCode(e.target.value)} />
           <Button type="submit" className="w-full" disabled={busy}>

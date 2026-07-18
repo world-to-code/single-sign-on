@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { AppWindow, KeyRound, Loader2, Mail, MonitorSmartphone, Plus, ShieldCheck, Smartphone, LogOut, Trash2 } from "lucide-react";
+import { AppWindow, KeyRound, Loader2, Mail, MessageSquare, MonitorSmartphone, Plus, ShieldCheck, Smartphone, LogOut, Trash2 } from "lucide-react";
 import { ApiError } from "../api";
 import { PageHeader } from "../components/PageHeader";
 import PasskeyManager from "../components/PasskeyManager";
@@ -11,11 +11,12 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { Input } from "../components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { DataList, EmptyState } from "../components/states";
 import { useApiData } from "../useApiData";
 import { useDeleteConfirm } from "../hooks/useDeleteConfirm";
-import { confirmTotp, disableTotp, logoutAppSession, revokeSession, setupTotp } from "../profile";
+import { confirmPhone, confirmTotp, disableTotp, logoutAppSession, removePhone, requestPhoneCode, revokeSession, setupTotp } from "../profile";
 import type { AppSession, Profile as ProfileData, SessionDevice, TotpSetup } from "../profile";
 
 /** A single security-factor card: icon + title + status badge + optional detail line + action. */
@@ -110,12 +111,86 @@ function TotpSetupDialog({ open, onOpenChange, onEnrolled }: { open: boolean; on
   );
 }
 
+/**
+ * Self-service phone-enrollment dialog for the SMS factor: enter a number (E.164), receive a texted code,
+ * confirm it. `onEnrolled` reloads the profile so the card flips to "Verified".
+ */
+function PhoneSetupDialog({ open, onOpenChange, onEnrolled }: { open: boolean; onOpenChange: (o: boolean) => void; onEnrolled: () => void }) {
+  const { t } = useTranslation("auth");
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (open) { setPhone(""); setCode(""); setSent(false); setError(null); setBusy(false); }
+  }, [open]);
+
+  async function send(event: React.FormEvent) {
+    event.preventDefault();
+    setError(null); setBusy(true);
+    try {
+      await requestPhoneCode(phone);
+      setSent(true); setBusy(false);
+    } catch (e) {
+      setError(e instanceof ApiError && e.status === 400 ? t("profilePhoneInvalid") : t("profilePhoneSendFailed"));
+      setBusy(false);
+    }
+  }
+
+  async function verify(event: React.FormEvent) {
+    event.preventDefault();
+    setError(null); setBusy(true);
+    try {
+      await confirmPhone(code);
+      onEnrolled();
+      onOpenChange(false);
+    } catch (e) {
+      setError(e instanceof ApiError && e.status === 400 ? t("profilePhoneCodeInvalid") : t("profilePhoneVerifyFailed"));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t("profilePhoneDialogTitle")}</DialogTitle>
+          <DialogDescription>{t("profilePhoneDialogDesc")}</DialogDescription>
+        </DialogHeader>
+
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        {!sent ? (
+          <form onSubmit={send} className="space-y-3">
+            <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
+                   placeholder={t("profilePhonePlaceholder")} autoFocus required />
+            <Button type="submit" className="w-full" disabled={busy}>
+              {busy ? <Loader2 className="animate-spin" /> : <MessageSquare />} {t("smsMeCode")}
+            </Button>
+          </form>
+        ) : (
+          <form onSubmit={verify} className="space-y-3">
+            <p className="text-sm text-muted-foreground">{t("profilePhoneCodeSentTo", { phone })}</p>
+            <OtpInput value={code} onChange={(e) => setCode(e.target.value)} />
+            <Button type="submit" className="w-full" disabled={busy}>
+              {busy ? <Loader2 className="animate-spin" /> : <MessageSquare />} {t("profileVerifyAndEnable")}
+            </Button>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Profile() {
   const { t } = useTranslation(["auth", "states"]);
   const confirmRevoke = useDeleteConfirm();
   const confirmDelete = useDeleteConfirm();
   const confirmAppLogout = useDeleteConfirm();
   const [totpOpen, setTotpOpen] = useState(false);
+  const [phoneOpen, setPhoneOpen] = useState(false);
   const profile = useApiData<ProfileData>("/api/auth/profile");
   const sessions = useApiData<SessionDevice[]>("/api/auth/sessions");
   const appSessions = useApiData<AppSession[]>("/api/portal/app-sessions");
@@ -126,6 +201,16 @@ export default function Profile() {
       description: t("profileRemoveTotpDesc"),
       confirmText: t("remove"),
       run: () => disableTotp(),
+      onDeleted: () => profile.reload(),
+    });
+  }
+
+  async function unlinkPhone() {
+    await confirmDelete({
+      title: t("profileRemovePhoneTitle"),
+      description: t("profileRemovePhoneDesc"),
+      confirmText: t("remove"),
+      run: () => removePhone(),
       onDeleted: () => profile.reload(),
     });
   }
@@ -174,6 +259,17 @@ export default function Profile() {
             : <Badge variant="muted">…</Badge>}
         />
         <FactorCard
+          icon={<MessageSquare className="size-5" />}
+          title={t("profilePhoneTitle")}
+          detail={profile.data?.phoneNumber ?? t("profilePhoneNone")}
+          badge={profile.data
+            ? <Badge variant={profile.data.phoneVerified ? "success" : "muted"}>{profile.data.phoneVerified ? t("verified") : t("unverified")}</Badge>
+            : <Badge variant="muted">…</Badge>}
+          action={profile.data && (profile.data.phoneVerified
+            ? <Button variant="outline" size="sm" onClick={unlinkPhone}><Trash2 /> {t("remove")}</Button>
+            : <Button size="sm" onClick={() => setPhoneOpen(true)}><Plus /> {profile.data.phoneNumber ? t("profilePhoneVerifyBtn") : t("setUp")}</Button>)}
+        />
+        <FactorCard
           icon={<Smartphone className="size-5" />}
           title={t("profileTotpCardTitle")}
           detail={t("profileTotpDetail")}
@@ -196,6 +292,7 @@ export default function Profile() {
       </div>
 
       <TotpSetupDialog open={totpOpen} onOpenChange={setTotpOpen} onEnrolled={profile.reload} />
+      <PhoneSetupDialog open={phoneOpen} onOpenChange={setPhoneOpen} onEnrolled={profile.reload} />
 
       {profile.data && profile.data.roles.length > 0 && (
         <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">

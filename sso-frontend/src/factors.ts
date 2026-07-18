@@ -1,9 +1,9 @@
-import { Fingerprint, KeyRound, Lock, Mail, Smartphone } from "lucide-react";
+import { Fingerprint, KeyRound, Lock, Mail, MessageSquare, Smartphone } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { auth as authResources } from "@/i18n/en/auth";
 
 /** Canonical authentication factor identifiers used across login, step-up and policy UIs. */
-export const FACTORS = ["PASSWORD", "TOTP", "EMAIL", "FIDO2"] as const;
+export const FACTORS = ["PASSWORD", "TOTP", "EMAIL", "SMS", "FIDO2"] as const;
 export type Factor = (typeof FACTORS)[number];
 
 /** A key in the `auth` i18n namespace; the render site resolves it via t() bound to that namespace. */
@@ -18,6 +18,7 @@ const META: Record<string, FactorMeta> = {
   PASSWORD: { label: "factorPassword", icon: Lock },
   TOTP: { label: "factorTotp", icon: Smartphone },
   EMAIL: { label: "factorEmail", icon: Mail },
+  SMS: { label: "factorSms", icon: MessageSquare },
   FIDO2: { label: "factorPasskey", icon: Fingerprint },
 };
 

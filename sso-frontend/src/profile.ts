@@ -6,6 +6,8 @@ export interface Profile {
   email: string;
   displayName: string | null;
   emailVerified: boolean;
+  phoneNumber: string | null;
+  phoneVerified: boolean;
   totpEnrolled: boolean;
   fido2Enrolled: boolean;
   passkeyCount: number;
@@ -53,3 +55,10 @@ export const setupTotp = () => apiPost<TotpSetup>("/api/auth/factors/totp/setup"
 export const confirmTotp = (code: string) =>
   apiPost<void>("/api/auth/factors/totp/setup/confirm", { code });
 export const disableTotp = () => apiDelete("/api/auth/factors/totp");
+
+// Self-service phone enrollment for the SMS factor.
+export const requestPhoneCode = (phoneNumber: string) =>
+  apiPost<void>("/api/auth/phone-verification", { phoneNumber });
+export const confirmPhone = (code: string) =>
+  apiPost<void>("/api/auth/phone-verification/confirm", { code });
+export const removePhone = () => apiDelete("/api/auth/phone-verification");
