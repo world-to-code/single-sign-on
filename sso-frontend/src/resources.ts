@@ -95,7 +95,7 @@ export const detachMember = (id: string, memberType: string, memberId: string) =
   apiDelete(`/api/admin/resources/${encodeURIComponent(id)}/members/`
     + `${encodeURIComponent(memberType)}/${encodeURIComponent(memberId)}`);
 
-export const assignResourceAdmin = (id: string, userId: string) =>
-  apiPost<Resource>(`/api/admin/resources/${encodeURIComponent(id)}/admins`, { userId });
+export const assignResourceAdmin = (id: string, userId: string, tier: "ADMIN" | "VIEWER" = "ADMIN") =>
+  apiPost<Resource>(`/api/admin/resources/${encodeURIComponent(id)}/admins`, { userId, tier });
 export const revokeResourceAdmin = (id: string, userId: string) =>
   apiDelete(`/api/admin/resources/${encodeURIComponent(id)}/admins/${encodeURIComponent(userId)}`);

@@ -296,6 +296,7 @@ function ResourceDetailDialog(
   const [apps, setApps] = useState<AppOption[]>([]);
   const [memberAddKey, setMemberAddKey] = useState(0);
   const [adminAddKey, setAdminAddKey] = useState(0);
+  const [adminTier, setAdminTier] = useState<"ADMIN" | "VIEWER">("ADMIN");
 
   const load = useCallback(async () => {
     try {
@@ -417,10 +418,19 @@ function ResourceDetailDialog(
         <Section title={t("resourcesSectionAdmins")}>
           <ChipList items={detail.grants.map((g) => ({ key: g.userId, label: `${g.username ?? g.userId} · ${g.tier}` }))}
             onRemove={(userId) => void run(() => revokeResourceAdmin(resourceId, userId))} />
-          <SearchSelect resetKey={adminAddKey} placeholder={t("resourcesSearchAdmin")}
-            fetcher={searchUsers}
-            onSelect={(s) => { if (s) void run(() => assignResourceAdmin(resourceId, s.id))
-              .then((ok) => { if (ok) setAdminAddKey((k) => k + 1); }); }} />
+          <div className="flex gap-2">
+            <Select className="w-36" value={adminTier}
+              onChange={(e) => setAdminTier(e.target.value as "ADMIN" | "VIEWER")}>
+              <option value="ADMIN">{t("resourcesTierAdmin")}</option>
+              <option value="VIEWER">{t("resourcesTierViewer")}</option>
+            </Select>
+            <div className="flex-1">
+              <SearchSelect resetKey={adminAddKey} placeholder={t("resourcesSearchAdmin")}
+                fetcher={searchUsers}
+                onSelect={(s) => { if (s) void run(() => assignResourceAdmin(resourceId, s.id, adminTier))
+                  .then((ok) => { if (ok) setAdminAddKey((k) => k + 1); }); }} />
+            </div>
+          </div>
         </Section>
 
         <MetadataEditor kind="resources" entityId={resourceId} />

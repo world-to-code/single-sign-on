@@ -394,7 +394,9 @@ export const console = {
   resourcesSearchGroups: "Search groups by name…",
   resourcesSearchUsers: "Search users by name…",
   resourcesSearchApps: "Search applications by name…",
-  resourcesSearchAdmin: "Search users to grant admin…",
+  resourcesSearchAdmin: "Search users to grant a role…",
+  resourcesTierAdmin: "Admin",
+  resourcesTierViewer: "Viewer",
   resourcesDeleteResource: "Delete resource",
 
   // Audit log ---------------------------------------------------------------

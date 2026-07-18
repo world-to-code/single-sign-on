@@ -394,7 +394,9 @@ export const console: Record<keyof typeof enConsole, string> = {
   resourcesSearchGroups: "이름으로 그룹 검색…",
   resourcesSearchUsers: "이름으로 사용자 검색…",
   resourcesSearchApps: "이름으로 애플리케이션 검색…",
-  resourcesSearchAdmin: "관리자로 지정할 사용자 검색…",
+  resourcesSearchAdmin: "권한을 부여할 사용자 검색…",
+  resourcesTierAdmin: "관리자",
+  resourcesTierViewer: "뷰어",
   resourcesDeleteResource: "리소스 삭제",
 
   // Audit log
