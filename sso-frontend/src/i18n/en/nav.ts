@@ -27,6 +27,7 @@ export const nav = {
   networkZones: "Network Zones",
   mappingRules: "Mapping Rules",
   scimTokens: "SCIM Tokens",
+  smtpSettings: "SMTP Settings",
   auditLog: "Audit Log",
   // Shell chrome
   backToPortal: "Back to portal",

@@ -33,6 +33,7 @@ import SessionPolicy from "./pages/SessionPolicy";
 import SessionPolicyDetail from "./pages/SessionPolicyDetail";
 import NetworkZones from "./pages/NetworkZones";
 import MappingRules from "./pages/MappingRules";
+import SmtpSettings from "./pages/SmtpSettings";
 import MyApps from "./pages/MyApps";
 import Applications from "./pages/Applications";
 import Bindings from "./pages/Bindings";
@@ -92,6 +93,7 @@ export default function Console({ session }: { session: SessionView }) {
                     <Route path="network-zones" element={<NetworkZones />} />
                     <Route path="mapping-rules" element={<MappingRules />} />
                     <Route path="scim-tokens" element={<ScimTokens />} />
+                    <Route path="smtp-settings" element={<SmtpSettings />} />
                     <Route path="audit" element={<Audit session={session} />} />
                   </Route>
                   <Route path="*" element={<Navigate to="/admin" replace />} />

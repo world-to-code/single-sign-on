@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, KeyRound, Users, ShieldCheck, AppWindow, Network, Coins, ScrollText,
-  Clock, Globe, LayoutGrid, Boxes, UsersRound, UserCog, KeySquare, Building2, Link2, Wand2,
+  Clock, Globe, LayoutGrid, Boxes, UsersRound, UserCog, KeySquare, Building2, Link2, Wand2, Mail,
   type LucideIcon,
 } from "lucide-react";
 import type { nav as navResources } from "@/i18n/en/nav";
@@ -91,6 +91,7 @@ export const NAV: NavGroup[] = [
         requiresOrg: true,
         items: [
           { to: "/admin/scim-tokens", label: "scimTokens", icon: Coins, permission: "scim:manage" },
+          { to: "/admin/smtp-settings", label: "smtpSettings", icon: Mail, permission: "smtp-settings:read" },
           { to: "/admin/audit", label: "auditLog", icon: ScrollText, permission: "audit:read" },
         ],
       },

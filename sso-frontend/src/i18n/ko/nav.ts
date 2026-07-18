@@ -29,6 +29,7 @@ export const nav: Record<keyof typeof enNav, string> = {
   networkZones: "네트워크 영역",
   mappingRules: "매핑 규칙",
   scimTokens: "SCIM 토큰",
+  smtpSettings: "SMTP 설정",
   auditLog: "감사 로그",
   // Shell chrome
   backToPortal: "포털로 돌아가기",
