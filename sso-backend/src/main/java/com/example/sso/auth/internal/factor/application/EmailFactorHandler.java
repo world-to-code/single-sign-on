@@ -48,7 +48,7 @@ public class EmailFactorHandler implements FactorHandler {
         session.setAttribute(EXPIRES_AT, Instant.now().plus(ttl).toEpochMilli());
         session.setAttribute(ATTEMPTS, 0); // fresh code -> reset the guess counter
 
-        emails.sendCode(user.getEmail(), code);
+        emails.sendCode(user.getOrgId(), user.getEmail(), code);
         return FactorChallenge.sent();
     }
 

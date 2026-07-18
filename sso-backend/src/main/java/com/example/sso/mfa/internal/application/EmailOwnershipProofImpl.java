@@ -44,14 +44,14 @@ public class EmailOwnershipProofImpl implements EmailOwnershipProof {
     }
 
     @Override
-    public void challenge(UUID userId, String email) {
+    public void challenge(UUID userId, UUID orgId, String email) {
         String key = KEY.formatted(userId);
         String code = emails.generateCode();
         redis.delete(key); // exactly one live challenge per user
         redis.opsForHash().putAll(key, Map.of(
                 CODE, code, EMAIL, email, ATTEMPTS, String.valueOf(maxAttempts)));
         redis.expire(key, ttl);
-        emails.sendCode(email, code);
+        emails.sendCode(orgId, email, code);
     }
 
     @Override

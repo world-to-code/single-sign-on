@@ -29,6 +29,7 @@ import static org.mockito.Mockito.when;
 class EmailVerificationFlowTest {
 
     private static final UUID USER_ID = UUID.randomUUID();
+    private static final UUID ORG = UUID.randomUUID();
     private static final String EMAIL = "alice@example.com";
 
     @Mock
@@ -43,6 +44,7 @@ class EmailVerificationFlowTest {
     private EmailVerificationFlow flow() {
         lenient().when(currentUser.require()).thenReturn(user);
         lenient().when(user.getId()).thenReturn(USER_ID);
+        lenient().when(user.getOrgId()).thenReturn(ORG);
         lenient().when(user.getEmail()).thenReturn(EMAIL);
         return new EmailVerificationFlow(currentUser, proofs, users);
     }
@@ -53,7 +55,7 @@ class EmailVerificationFlowTest {
 
         flow().request();
 
-        verify(proofs).challenge(USER_ID, EMAIL);
+        verify(proofs).challenge(USER_ID, ORG, EMAIL);
         verify(users, never()).markEmailVerified(USER_ID); // requesting proves nothing
     }
 
@@ -64,7 +66,7 @@ class EmailVerificationFlowTest {
         when(user.isEmailVerified()).thenReturn(true);
 
         assertThatCode(() -> flow().request()).doesNotThrowAnyException();
-        verify(proofs, never()).challenge(any(), any());
+        verify(proofs, never()).challenge(any(), any(), any());
     }
 
     @Test

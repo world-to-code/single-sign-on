@@ -13,8 +13,11 @@ import java.util.UUID;
  */
 public interface EmailOwnershipProof {
 
-    /** Issues a code for {@code email} and mails it there, replacing any outstanding challenge. */
-    void challenge(UUID userId, String email);
+    /**
+     * Issues a code for {@code email} and mails it there (via {@code orgId}'s SMTP relay, or the platform
+     * default when null), replacing any outstanding challenge.
+     */
+    void challenge(UUID userId, UUID orgId, String email);
 
     /**
      * Redeems {@code code} for {@code email}. Returns false when there is no live challenge, the address no

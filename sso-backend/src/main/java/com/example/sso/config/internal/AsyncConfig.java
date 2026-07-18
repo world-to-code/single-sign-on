@@ -15,6 +15,12 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
  * onboarding and baseline provisioning to run off the request thread, so the create call returns
  * immediately. A {@code void @Async} failure never reaches a caller, so the uncaught-exception handler
  * is what makes it observable.
+ *
+ * <p>Deliberately installs NO OrgContext/SecurityContext-propagating {@code TaskDecorator}: async tenant
+ * work re-binds its OWN target org explicitly via {@code OrgContext.runInOrg(...)} (e.g. the onboarding
+ * invite and per-tenant OTP sends). Propagating the submitter's context here would be actively wrong —
+ * a platform super-admin drilled into tenant A could then have a global user's OTP egress tenant A's SMTP
+ * relay. Add a decorator only with that null-org relay-routing hazard handled.
  */
 @Configuration
 @EnableAsync

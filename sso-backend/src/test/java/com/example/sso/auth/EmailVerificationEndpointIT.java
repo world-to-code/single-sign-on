@@ -68,7 +68,7 @@ class EmailVerificationEndpointIT extends AbstractIntegrationTest {
                         .content("{\"code\":\"123456\"}"))
                 .andExpect(status().isUnauthorized());
 
-        verify(proofs, never()).challenge(any(), any());
+        verify(proofs, never()).challenge(any(), any(), any());
         verify(proofs, never()).redeem(any(), any(), any());
     }
 
@@ -79,7 +79,7 @@ class EmailVerificationEndpointIT extends AbstractIntegrationTest {
         mvc.perform(post(REQUEST_URI).with(user(subject.getUsername())).with(csrf()))
                 .andExpect(status().isAccepted());
 
-        verify(proofs).challenge(subject.getId(), subject.getEmail());
+        verify(proofs).challenge(subject.getId(), subject.getOrgId(), subject.getEmail());
     }
 
     @Test

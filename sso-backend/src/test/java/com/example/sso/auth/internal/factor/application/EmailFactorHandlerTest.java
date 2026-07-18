@@ -4,6 +4,7 @@ import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.mfa.EmailVerificationService;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.user.account.UserAccount;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,6 +29,7 @@ import static org.mockito.Mockito.when;
 class EmailFactorHandlerTest {
 
     private static final String CODE = "123456";
+    private static final UUID ORG = UUID.randomUUID();
 
     @Mock private EmailVerificationService emails;
     @Mock private UserAccount user;
@@ -39,6 +41,7 @@ class EmailFactorHandlerTest {
         // TTL 10 min, 3 attempts before the code is burned.
         handler = new EmailFactorHandler(emails, 10, 3);
         lenient().when(user.getEmail()).thenReturn("alice@example.com");
+        lenient().when(user.getOrgId()).thenReturn(ORG); // the code is routed through this tenant's relay
         // The address must be PROVEN before a one-time code is sent to it; the happy-path tests assume it is.
         lenient().when(user.isEmailVerified()).thenReturn(true);
     }
@@ -60,7 +63,7 @@ class EmailFactorHandlerTest {
         FactorChallenge challenge = handler.prepare(user, request);
 
         assertThat(challenge.prepared()).isTrue();
-        verify(emails).sendCode("alice@example.com", CODE);
+        verify(emails).sendCode(ORG, "alice@example.com", CODE); // via the user's own tenant relay
     }
 
     @Test
@@ -126,7 +129,7 @@ class EmailFactorHandlerTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
 
         assertThatThrownBy(() -> handler.prepare(user, request)).isInstanceOf(ForbiddenException.class);
-        verify(emails, never()).sendCode(any(), any());
+        verify(emails, never()).sendCode(any(), any(), any());
     }
 
     @Test

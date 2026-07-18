@@ -73,7 +73,7 @@ public class OnboardingServiceImpl {
         onboarding.linkProvisioned(org.id(), admin.getId());
         // Use the org's CANONICAL slug (normalized on create), not the raw request, so the emailed
         // workspace URL matches the real subdomain.
-        return new ProvisionResult(spec.adminEmail(), token, org.slug());
+        return new ProvisionResult(spec.adminEmail(), token, org.slug(), org.id());
     }
 
     /**
@@ -110,7 +110,7 @@ public class OnboardingServiceImpl {
         // Use the org's CANONICAL slug for the workspace URL, matching the original invitation email.
         String slug = organizations.findView(onboarding.getOrgId())
                 .map(OrganizationView::slug).orElse(onboarding.getSlug());
-        return new ReinviteResult(admin.getEmail(), token, slug);
+        return new ReinviteResult(admin.getEmail(), token, slug, onboarding.getOrgId());
     }
 
     private boolean awaitingInvitation(OnboardingStatus status) {
@@ -136,11 +136,11 @@ public class OnboardingServiceImpl {
         return onboardings.findById(id).orElseThrow(() -> new NotFoundException("onboarding not found"));
     }
 
-    /** The result the async worker needs after provisioning to send the invitation email. */
-    record ProvisionResult(String adminEmail, String rawToken, String slug) {
+    /** The result the async worker needs after provisioning to send the invitation email (via the org's relay). */
+    record ProvisionResult(String adminEmail, String rawToken, String slug, UUID orgId) {
     }
 
-    /** The result the async worker needs after re-issuing to re-send the invitation email. */
-    record ReinviteResult(String adminEmail, String rawToken, String slug) {
+    /** The result the async worker needs after re-issuing to re-send the invitation email (via the org's relay). */
+    record ReinviteResult(String adminEmail, String rawToken, String slug, UUID orgId) {
     }
 }

@@ -35,7 +35,7 @@ public class EmailVerificationFlow {
         if (user.isEmailVerified()) {
             return;
         }
-        proofs.challenge(user.getId(), user.getEmail());
+        proofs.challenge(user.getId(), user.getOrgId(), user.getEmail());
     }
 
     /** Redeems the code and marks the address verified; a wrong/expired code is a 400. */

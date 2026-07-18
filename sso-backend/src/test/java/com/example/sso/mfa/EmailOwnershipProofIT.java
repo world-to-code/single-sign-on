@@ -29,7 +29,7 @@ class EmailOwnershipProofIT extends AbstractIntegrationTest {
 
     @Test
     void aCodeIssuedForAnAddressRedeemsThatAddressOnce() {
-        proofs.challenge(userId, "alice@example.com");
+        proofs.challenge(userId, null, "alice@example.com");
         String code = issuedCode();
 
         assertThat(proofs.redeem(userId, "alice@example.com", code)).isTrue();
@@ -41,7 +41,7 @@ class EmailOwnershipProofIT extends AbstractIntegrationTest {
     void aCodeDoesNotRedeemADifferentAddress() {
         // The admin changed the address after the code was mailed to the OLD mailbox. Whoever holds that
         // mailbox must not be able to verify the NEW address with it.
-        proofs.challenge(userId, "old@example.com");
+        proofs.challenge(userId, null, "old@example.com");
         String code = issuedCode();
 
         assertThat(proofs.redeem(userId, "new@example.com", code)).isFalse();
@@ -49,7 +49,7 @@ class EmailOwnershipProofIT extends AbstractIntegrationTest {
 
     @Test
     void aWrongCodeIsRejectedAndTheChallengeBurnsAfterTooManyAttempts() {
-        proofs.challenge(userId, "alice@example.com");
+        proofs.challenge(userId, null, "alice@example.com");
         String code = issuedCode();
 
         for (int attempt = 0; attempt < 5; attempt++) {
@@ -61,9 +61,9 @@ class EmailOwnershipProofIT extends AbstractIntegrationTest {
 
     @Test
     void issuingAgainReplacesTheOutstandingChallenge() {
-        proofs.challenge(userId, "alice@example.com");
+        proofs.challenge(userId, null, "alice@example.com");
         String first = issuedCode();
-        proofs.challenge(userId, "alice@example.com");
+        proofs.challenge(userId, null, "alice@example.com");
         String second = issuedCode();
 
         assertThat(second).isNotEqualTo(first);
@@ -74,7 +74,7 @@ class EmailOwnershipProofIT extends AbstractIntegrationTest {
     @Test
     void anAbandonedChallengeExpiresRatherThanLivingForever() {
         // Without a TTL an unredeemed code stays grindable and Redis grows with every request ever made.
-        proofs.challenge(userId, "alice@example.com");
+        proofs.challenge(userId, null, "alice@example.com");
 
         assertThat(redis.getExpire("email:proof:" + userId)).isPositive();
     }
