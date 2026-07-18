@@ -1,13 +1,17 @@
 package com.example.sso.onboarding.internal.application;
 
+import com.example.sso.email.TenantMailSender;
+import com.example.sso.email.template.EmailComposer;
+import com.example.sso.email.template.EmailEvent;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.mail.SimpleMailMessage;
-import com.example.sso.email.TenantMailSender;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -17,12 +21,13 @@ import static org.mockito.Mockito.verify;
  * the right tenant. The self-service SIGNUP verification (activate) is the OPPOSITE: nothing is provisioned
  * yet — the tenant subdomain does NOT exist until activation creates the org — so that link must target the
  * PLATFORM host (a {slug} link would 404 at the unknown-subdomain guard); the SPA redirects to the tenant
- * subdomain only AFTER activation.
+ * subdomain only AFTER activation. The link is now passed to the composer as a template variable.
  */
 class OnboardingEmailSenderTest {
 
     private final TenantMailSender mailSender = mock(TenantMailSender.class);
-    private final OnboardingEmailSender sender = new OnboardingEmailSender(mailSender);
+    private final EmailComposer composer = mock(EmailComposer.class);
+    private final OnboardingEmailSender sender = new OnboardingEmailSender(mailSender, composer);
 
     @BeforeEach
     void configureTenantAwareUrls() {
@@ -31,25 +36,26 @@ class OnboardingEmailSenderTest {
         ReflectionTestUtils.setField(sender, "workspaceUrlTemplate", "http://{slug}.localhost:9000");
     }
 
-    private String sentBody() {
-        ArgumentCaptor<SimpleMailMessage> message = ArgumentCaptor.forClass(SimpleMailMessage.class);
-        verify(mailSender).send(message.capture());
-        return message.getValue().getText();
+    private Map<String, Object> composedVars(EmailEvent event) {
+        ArgumentCaptor<Map<String, Object>> vars = ArgumentCaptor.captor();
+        verify(composer).compose(eq(event), any(), vars.capture());
+        return vars.getValue();
     }
 
     @Test
     void theVerificationLinkTargetsThePlatformHostBecauseTheTenantDoesNotExistYet() {
         sender.sendVerification("admin@acme.example", "tok-123", "acme");
 
-        assertThat(sentBody()).contains("http://localhost:9000/activate?token=tok-123")
-                .doesNotContain("acme.localhost:9000/activate"); // the org isn't created until this link is redeemed
+        // NOT acme.localhost — the org isn't created until this link is redeemed.
+        assertThat(composedVars(EmailEvent.SIGNUP_VERIFICATION).get("activateUrl"))
+                .isEqualTo("http://localhost:9000/activate?token=tok-123");
     }
 
     @Test
     void theInvitationSetPasswordLinkTargetsTheTenantSubdomain() {
         sender.sendInvitation("admin@acme.example", "tok-456", "acme");
 
-        assertThat(sentBody()).contains("http://acme.localhost:9000/set-password?token=tok-456")
-                .doesNotContain("http://localhost:9000/set-password");
+        assertThat(composedVars(EmailEvent.ONBOARDING_INVITATION).get("setPasswordUrl"))
+                .isEqualTo("http://acme.localhost:9000/set-password?token=tok-456");
     }
 }

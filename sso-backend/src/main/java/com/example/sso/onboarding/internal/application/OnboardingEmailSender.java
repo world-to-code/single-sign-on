@@ -1,9 +1,11 @@
 package com.example.sso.onboarding.internal.application;
 
 import com.example.sso.email.TenantMailSender;
+import com.example.sso.email.template.EmailComposer;
+import com.example.sso.email.template.EmailEvent;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.SimpleMailMessage;
 import org.springframework.stereotype.Component;
 
 /** Emails the onboarding admin their one-time set-password link (the raw token lives only in this link). */
@@ -12,6 +14,7 @@ import org.springframework.stereotype.Component;
 class OnboardingEmailSender {
 
     private final TenantMailSender mailSender;
+    private final EmailComposer composer;
 
     // All three carry a {slug} placeholder substituted with the new tenant's subdomain: the set-password and
     // activation links MUST land on the tenant's OWN host (their session/login context is host-bound), not the
@@ -31,26 +34,15 @@ class OnboardingEmailSender {
      * "you (or someone) requested this; nothing was created yet" notice to an unwitting recipient.
      */
     void sendVerification(String adminEmail, String rawToken, String slug) {
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setTo(adminEmail);
-        message.setSubject("Verify your email to create your Mini SSO workspace");
-        message.setText("A workspace \"" + slug + "\" was requested on Mini SSO with this email address."
-                + "\n\nVerify your email and set your admin password to create it:\n\n"
-                + activateUrl.replace("{slug}", slug) + "?token=" + rawToken
-                + "\n\nIf you didn't request this, ignore this email — nothing has been created."
-                + " This one-time link expires soon.");
-        mailSender.send(message);
+        String activate = activateUrl.replace("{slug}", slug) + "?token=" + rawToken;
+        mailSender.send(composer.compose(EmailEvent.SIGNUP_VERIFICATION, adminEmail,
+                Map.of("slug", slug, "activateUrl", activate)));
     }
 
     void sendInvitation(String adminEmail, String rawToken, String slug) {
         String workspaceUrl = workspaceUrlTemplate.replace("{slug}", slug);
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setTo(adminEmail);
-        message.setSubject("Set up your Mini SSO admin account");
-        message.setText("Your workspace is ready at:\n\n" + workspaceUrl
-                + "\n\nSet your password to activate your admin account:\n\n"
-                + setPasswordUrl.replace("{slug}", slug) + "?token=" + rawToken
-                + "\n\nFor your security this is a one-time link and expires soon.");
-        mailSender.send(message);
+        String setPassword = setPasswordUrl.replace("{slug}", slug) + "?token=" + rawToken;
+        mailSender.send(composer.compose(EmailEvent.ONBOARDING_INVITATION, adminEmail,
+                Map.of("workspaceUrl", workspaceUrl, "setPasswordUrl", setPassword, "slug", slug)));
     }
 }

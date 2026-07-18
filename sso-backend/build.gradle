@@ -53,6 +53,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'       // server-rendered login/MFA ceremony pages
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.boot:spring-boot-starter-mail'            // OTT (one-time-token) email delivery
+    implementation 'com.samskivert:jmustache:1.16'                                // logic-less rendering of tenant-authored email templates (no SSTI)
 
     // --- Observability (all versions BOM-managed) ---
     // Distributed tracing via Micrometer Tracing + OpenTelemetry (W3C tracecontext). Every request gets a
