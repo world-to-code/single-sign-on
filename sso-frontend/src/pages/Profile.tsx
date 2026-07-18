@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { KeyRound, Loader2, Mail, MonitorSmartphone, Plus, ShieldCheck, Smartphone, LogOut, Trash2 } from "lucide-react";
+import { AppWindow, KeyRound, Loader2, Mail, MonitorSmartphone, Plus, ShieldCheck, Smartphone, LogOut, Trash2 } from "lucide-react";
 import { ApiError } from "../api";
 import { PageHeader } from "../components/PageHeader";
 import PasskeyManager from "../components/PasskeyManager";
@@ -15,8 +15,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { DataList, EmptyState } from "../components/states";
 import { useApiData } from "../useApiData";
 import { useDeleteConfirm } from "../hooks/useDeleteConfirm";
-import { confirmTotp, disableTotp, revokeSession, setupTotp } from "../profile";
-import type { Profile as ProfileData, SessionDevice, TotpSetup } from "../profile";
+import { confirmTotp, disableTotp, logoutAppSession, revokeSession, setupTotp } from "../profile";
+import type { AppSession, Profile as ProfileData, SessionDevice, TotpSetup } from "../profile";
 
 /** A single security-factor card: icon + title + status badge + optional detail line + action. */
 function FactorCard({ icon, title, badge, detail, action }: { icon: ReactNode; title: string; badge: ReactNode; detail?: string; action?: ReactNode }) {
@@ -114,9 +114,11 @@ export default function Profile() {
   const { t } = useTranslation(["auth", "states"]);
   const confirmRevoke = useDeleteConfirm();
   const confirmDelete = useDeleteConfirm();
+  const confirmAppLogout = useDeleteConfirm();
   const [totpOpen, setTotpOpen] = useState(false);
   const profile = useApiData<ProfileData>("/api/auth/profile");
   const sessions = useApiData<SessionDevice[]>("/api/auth/sessions");
+  const appSessions = useApiData<AppSession[]>("/api/portal/app-sessions");
 
   async function removeTotp() {
     await confirmDelete({
@@ -137,6 +139,18 @@ export default function Profile() {
       confirmText: s.current ? t("signOut") : t("revoke"),
       run: () => revokeSession(s.id),
       onDeleted: () => sessions.reload(),
+    });
+  }
+
+  async function logoutApp(app: AppSession) {
+    await confirmAppLogout({
+      title: t("profileAppLogoutTitle"),
+      description: t("profileAppLogoutDesc", { app: app.name }),
+      confirmText: t("signOut"),
+      run: async () => {
+        await logoutAppSession(app.type, app.appId);
+      },
+      onDeleted: () => appSessions.reload(),
     });
   }
 
@@ -229,6 +243,51 @@ export default function Profile() {
                   <TableCell className="text-right">
                     <Button variant={s.current ? "ghost" : "outline"} size="sm" onClick={() => revoke(s)}>
                       <LogOut /> {s.current ? t("signOut") : t("revoke")}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </DataList>
+
+      {/* Active app sessions (per-app SLO from the IdP) --------------------- */}
+      <h3 className="mb-3 mt-8 text-sm font-semibold text-muted-foreground">{t("profileAppSessionsSection")}</h3>
+      <DataList
+        data={appSessions.data}
+        error={appSessions.error}
+        errorAlways
+        isEmpty={(items) => items.length === 0}
+        empty={<EmptyState icon={<AppWindow className="size-8" />} title={t("states:profileAppSessionsEmptyTitle")} />}
+      >
+        {(items) => (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("profileAppSessionsCol")}</TableHead>
+                <TableHead className="w-0" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((app) => (
+                <TableRow key={`${app.type}:${app.appId}`}>
+                  <TableCell className="font-medium">
+                    <span className="inline-flex items-center gap-2">
+                      <AppWindow className="size-4 text-muted-foreground" />
+                      {app.name}
+                      <Badge variant="secondary">{app.type}</Badge>
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!app.oneClickLogoutSupported}
+                      title={app.oneClickLogoutSupported ? undefined : t("profileAppLogoutUnsupported")}
+                      onClick={() => logoutApp(app)}
+                    >
+                      <LogOut /> {t("signOut")}
                     </Button>
                   </TableCell>
                 </TableRow>

@@ -23,6 +23,15 @@ export interface SessionDevice {
   lastSeenAt: string;
 }
 
+/** One application the user still holds a live SSO session with, sign-out-able from the IdP (goal ③). */
+export interface AppSession {
+  type: "OIDC" | "SAML";
+  appId: string;
+  name: string;
+  /** False for apps that can only be signed out from the app itself (a SAML front-channel-only SP). */
+  oneClickLogoutSupported: boolean;
+}
+
 /** The QR + base32 secret returned when starting self-service TOTP enrollment. */
 export interface TotpSetup {
   secret: string | null;
@@ -33,6 +42,11 @@ export const getProfile = () => apiGet<Profile>("/api/auth/profile");
 export const listSessions = () => apiGet<SessionDevice[]>("/api/auth/sessions");
 export const revokeSession = (id: string) =>
   apiDelete(`/api/auth/sessions/${encodeURIComponent(id)}`);
+
+export const listAppSessions = () => apiGet<AppSession[]>("/api/portal/app-sessions");
+/** Signs the user out of ONE app from the IdP; returns their remaining app sessions. */
+export const logoutAppSession = (type: string, appId: string) =>
+  apiPost<AppSession[]>("/api/portal/app-sessions/logout", { type, appId });
 
 // Self-service authenticator (TOTP) enrollment.
 export const setupTotp = () => apiPost<TotpSetup>("/api/auth/factors/totp/setup");

@@ -39,4 +39,5 @@ export const states: Record<keyof typeof enStates, string> = {
   passkeysEmptyTitle: "등록된 패스키가 없습니다",
   passkeysEmptyHint: "비밀번호 없이 로그인할 보안 키나 플랫폼 패스키를 등록하세요.",
   profileSessionsEmptyTitle: "활성 세션이 없습니다",
+  profileAppSessionsEmptyTitle: "활성 앱 세션이 없습니다",
 };

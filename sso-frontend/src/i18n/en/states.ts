@@ -38,4 +38,5 @@ export const states = {
   passkeysEmptyTitle: "No passkeys registered",
   passkeysEmptyHint: "Register a security key or platform passkey to sign in without a password.",
   profileSessionsEmptyTitle: "No active sessions",
+  profileAppSessionsEmptyTitle: "No active app sessions",
 } as const;
