@@ -64,14 +64,28 @@ public class SmtpSettingsService {
     public void update(SmtpSettingsSpec spec) {
         UUID org = writableOrg();
         validate(spec);
-        String encrypted = StringUtils.hasText(spec.username()) && StringUtils.hasText(spec.password())
-                ? cipher.encrypt(spec.password())
-                : null;
-        ownRow().ifPresentOrElse(
-                existing -> existing.reconfigure(spec.host(), spec.port(), trimToNull(spec.username()), encrypted,
+        Optional<SmtpSettings> existing = ownRow();
+        String encrypted = resolvePassword(spec, existing.orElse(null));
+        existing.ifPresentOrElse(
+                row -> row.reconfigure(spec.host(), spec.port(), trimToNull(spec.username()), encrypted,
                         trimToNull(spec.fromAddress()), spec.starttls()),
                 () -> repository.save(SmtpSettings.create(org, spec.host(), spec.port(), trimToNull(spec.username()),
                         encrypted, trimToNull(spec.fromAddress()), spec.starttls())));
+    }
+
+    /**
+     * The ciphertext to persist. An unauthenticated relay (blank username) carries no password. Otherwise a
+     * newly-supplied password is encrypted; a BLANK password on an update KEEPS the stored ciphertext — the
+     * write-only secret is never echoed back to the client, so a save that edits other fields must not wipe it.
+     */
+    private String resolvePassword(SmtpSettingsSpec spec, SmtpSettings existing) {
+        if (!StringUtils.hasText(spec.username())) {
+            return null;
+        }
+        if (StringUtils.hasText(spec.password())) {
+            return cipher.encrypt(spec.password());
+        }
+        return existing != null ? existing.getPasswordEncrypted() : null;
     }
 
     /** Drops the acting tier's own row — its mail reverts to the platform default. */

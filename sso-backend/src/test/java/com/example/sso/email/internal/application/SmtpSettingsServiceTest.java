@@ -190,6 +190,32 @@ class SmtpSettingsServiceTest {
     }
 
     @Test
+    void updateWithoutAPasswordKeepsTheStoredSecret() {
+        SmtpSettings existing = row(ORG, "encg:kept");
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgId(ORG)).thenReturn(Optional.of(existing));
+
+        // The view never returns the password, so an edit of other fields submits a blank one — it must NOT wipe.
+        service.update(new SmtpSettingsSpec("smtp.new.example", 587, "postmaster", null, null, true));
+
+        assertThat(existing.getHost()).isEqualTo("smtp.new.example");
+        assertThat(existing.getPasswordEncrypted()).isEqualTo("encg:kept"); // retained, not cleared
+        verify(cipher, never()).encrypt(any());
+    }
+
+    @Test
+    void updateToAnUnauthenticatedRelayClearsTheStoredPassword() {
+        SmtpSettings existing = row(ORG, "encg:kept");
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgId(ORG)).thenReturn(Optional.of(existing));
+
+        service.update(new SmtpSettingsSpec("smtp.new.example", 25, null, null, null, true));
+
+        assertThat(existing.getUsername()).isNull();
+        assertThat(existing.getPasswordEncrypted()).isNull(); // no auth → no stored secret
+    }
+
+    @Test
     void deleteRemovesTheActingTiersOwnRow() {
         SmtpSettings existing = row(ORG, "encg:cipher");
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
