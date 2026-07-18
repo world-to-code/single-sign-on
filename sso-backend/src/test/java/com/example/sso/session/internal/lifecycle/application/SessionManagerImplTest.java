@@ -228,6 +228,54 @@ class SessionManagerImplTest {
         return session;
     }
 
+    /** A session carrying both the org marker and a {@code SID_<sid>} marker (as minted at login completion). */
+    private Session sessionWith(UUID orgId, String sid) {
+        MapSession session = new MapSession();
+        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(USER, null,
+                List.of(new SimpleGrantedAuthority(Factors.ORG_PREFIX + orgId),
+                        new SimpleGrantedAuthority(Factors.SID_PREFIX + sid)));
+        session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
+                new SecurityContextImpl(auth));
+        return session;
+    }
+
+    @Test
+    void activeSidsForUserReturnsOnlyTheTargetOrgsSids() {
+        // The apps of a same-named user in ANOTHER tenant (org B) must never surface in this user's portal.
+        UUID orgA = UUID.randomUUID();
+        UUID orgB = UUID.randomUUID();
+        when(sessionRepository.findByPrincipalName(USER)).thenReturn(Map.of(
+                "s-a", sessionWith(orgA, "sid-a"),
+                "s-b", sessionWith(orgB, "sid-b")));
+
+        assertThat(manager.activeSidsForUser(USER, orgA)).containsExactly("sid-a");
+    }
+
+    @Test
+    void activeSidsForUserWithNoOrgReturnsOnlyMarkerlessGlobalSessionSids() {
+        UUID org = UUID.randomUUID();
+        MapSession global = new MapSession();
+        global.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
+                new SecurityContextImpl(new UsernamePasswordAuthenticationToken(USER, null,
+                        List.of(new SimpleGrantedAuthority(Factors.SID_PREFIX + "sid-global")))));
+        when(sessionRepository.findByPrincipalName(USER)).thenReturn(Map.of(
+                "s-global", global,
+                "s-org", sessionWith(org, "sid-org")));
+
+        assertThat(manager.activeSidsForUser(USER, null)).containsExactly("sid-global");
+    }
+
+    @Test
+    void activeSidsForUserSkipsSessionsWithoutASidMarker() {
+        // A session that predates the SID_ marker (or an unauthenticated one) contributes no sid, silently.
+        UUID org = UUID.randomUUID();
+        when(sessionRepository.findByPrincipalName(USER)).thenReturn(Map.of(
+                "s-nosid", sessionBoundTo(org),          // org marker but no SID_
+                "s-sid", sessionWith(org, "sid-1")));
+
+        assertThat(manager.activeSidsForUser(USER, org)).containsExactly("sid-1");
+    }
+
     @Test
     void revokeOfAnUnknownHandleThrowsNotFound() {
         MockHttpServletRequest request = requestWithSession();

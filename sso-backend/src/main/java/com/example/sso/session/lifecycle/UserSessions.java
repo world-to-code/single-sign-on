@@ -38,4 +38,12 @@ public interface UserSessions {
      * user in another org.
      */
     Set<String> sessionIdsForUser(String username, UUID orgId);
+
+    /**
+     * The OIDC {@code sid}s of the user's live sessions bound to {@code orgId} (or, for a {@code null} orgId,
+     * those carrying no org marker) — the keys the OIDC/SAML participant indexes use. Lets the user portal
+     * enumerate the apps their OWN sessions still hold, then log out ONE app by its sid without ending the
+     * session. Org-scoped like {@link #sessionIdsForUser}, so a same-named user in another tenant is excluded.
+     */
+    Set<String> activeSidsForUser(String username, UUID orgId);
 }

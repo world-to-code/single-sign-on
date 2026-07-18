@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -138,20 +139,49 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
         return orgScopedSessionIds(username, orgId);
     }
 
+    @Override
+    public Set<String> activeSidsForUser(String username, UUID orgId) {
+        String marker = orgMarker(orgId);
+        Set<String> sids = new HashSet<>();
+        sessionRepository.findByPrincipalName(username).forEach((sessionId, session) -> {
+            if (matchesOrg(session, marker)) {
+                sidOf(session).ifPresent(sids::add);
+            }
+        });
+        return sids;
+    }
+
     /**
      * The ids of {@code username}'s sessions that belong to org {@code orgId}: those carrying the
      * {@code ORG_<orgId>} marker, or — for a global (null) account — those carrying NO org marker at all.
      * Usernames are unique only within an org, so this scoping keeps a same-named user in another tenant out.
      */
     private Set<String> orgScopedSessionIds(String username, UUID orgId) {
-        String marker = orgId == null ? null : Factors.ORG_PREFIX + orgId;
+        String marker = orgMarker(orgId);
         Set<String> ids = new HashSet<>();
         sessionRepository.findByPrincipalName(username).forEach((sessionId, session) -> {
-            if (marker == null ? !hasOrgMarker(session) : isBoundToOrg(session, marker)) {
+            if (matchesOrg(session, marker)) {
                 ids.add(sessionId);
             }
         });
         return ids;
+    }
+
+    private String orgMarker(UUID orgId) {
+        return orgId == null ? null : Factors.ORG_PREFIX + orgId;
+    }
+
+    /** True when the session belongs to the target org: carries the {@code marker}, or NO org marker when null. */
+    private boolean matchesOrg(Session session, String marker) {
+        return marker == null ? !hasOrgMarker(session) : isBoundToOrg(session, marker);
+    }
+
+    /** The session's OIDC {@code sid} (the {@code SID_} marker authority value), if it carries one. */
+    private Optional<String> sidOf(Session session) {
+        return authorities(session)
+                .filter(authority -> authority.startsWith(Factors.SID_PREFIX))
+                .map(authority -> authority.substring(Factors.SID_PREFIX.length()))
+                .findFirst();
     }
 
     /**
