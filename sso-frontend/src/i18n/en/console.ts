@@ -988,4 +988,22 @@ export const console = {
   customizePreviewHtml: "HTML",
   customizePreviewText: "Text",
   customizePreviewSubject: "Subject",
+
+  // Customize tab — branding
+  customizeBrandingSection: "Branding",
+  customizeBrandingSectionHint: "Your logo, accent color and product name on the sign-in and consent screens.",
+  brandingLogoUrl: "Logo URL",
+  brandingLogoHint: "An https image URL shown on your sign-in screens. Leave blank for the default mark.",
+  brandingAccent: "Accent color",
+  brandingAccentHint: "The primary color for buttons and highlights. Leave blank for the default.",
+  brandingProductName: "Product name",
+  brandingNameHint: "Shown beside the logo. Leave blank for the default.",
+  brandingReset: "Reset to default",
+  brandingResetTitle: "Reset branding to the default?",
+  brandingResetConfirm: "Your sign-in screens will use the platform's default logo, color and name again.",
+  brandingResetConfirmAction: "Reset",
+  brandingResetDone: "Reverted to the default branding.",
+  brandingSaved: "Branding saved.",
+  brandingPreviewSignIn: "Sign in",
+  brandingPreviewLink: "Need help signing in?",
 } as const;

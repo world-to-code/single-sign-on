@@ -988,4 +988,22 @@ export const console: Record<keyof typeof enConsole, string> = {
   customizePreviewHtml: "HTML",
   customizePreviewText: "텍스트",
   customizePreviewSubject: "제목",
+
+  // Customize 탭 — 브랜딩
+  customizeBrandingSection: "브랜딩",
+  customizeBrandingSectionHint: "로그인·동의 화면에 표시되는 로고·강조 색·제품명입니다.",
+  brandingLogoUrl: "로고 URL",
+  brandingLogoHint: "로그인 화면에 표시할 https 이미지 URL. 비우면 기본 마크.",
+  brandingAccent: "강조 색",
+  brandingAccentHint: "버튼·강조 요소의 주 색상. 비우면 기본값.",
+  brandingProductName: "제품명",
+  brandingNameHint: "로고 옆에 표시됩니다. 비우면 기본값.",
+  brandingReset: "기본값으로 초기화",
+  brandingResetTitle: "브랜딩을 기본값으로 초기화할까요?",
+  brandingResetConfirm: "로그인 화면이 다시 플랫폼 기본 로고·색·이름을 사용하게 됩니다.",
+  brandingResetConfirmAction: "초기화",
+  brandingResetDone: "기본 브랜딩으로 되돌렸습니다.",
+  brandingSaved: "브랜딩을 저장했습니다.",
+  brandingPreviewSignIn: "로그인",
+  brandingPreviewLink: "로그인에 도움이 필요하신가요?",
 };

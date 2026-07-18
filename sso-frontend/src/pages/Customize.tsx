@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { errorMessage } from "../api";
 import { listEmailTemplates, type EmailEvent, type EmailTemplate } from "../emailTemplates";
 import { EmailTemplateEditor } from "../components/customize/EmailTemplateEditor";
+import { BrandingEditor } from "../components/customize/BrandingEditor";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingCard, ErrorCard } from "@/components/states";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,14 +16,16 @@ const EVENT_LABEL = {
   SIGNUP_VERIFICATION: "customizeEventSignup",
 } as const satisfies Record<EmailEvent, string>;
 
+type Section = "email" | "branding";
+
 /**
- * The Customize admin tab. Its first section is the per-tenant email-template editor (one tab per event); the
- * auth-UI branding editor will join it here as a sibling section. Branding is per-tenant, so the tab lives
- * under org scope in the console.
+ * The Customize admin tab. Two sections — per-tenant email templates and auth-UI branding — each edits its
+ * own per-tenant surface. Both are per-tenant, so the tab lives under org scope in the console.
  */
 export default function Customize() {
   const { t } = useTranslation("console");
 
+  const [section, setSection] = useState<Section>("email");
   const [templates, setTemplates] = useState<EmailTemplate[] | null>(null);
   const [active, setActive] = useState<EmailEvent | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -42,7 +45,32 @@ export default function Customize() {
     <div className="space-y-6">
       <PageHeader title={t("customizeTitle")} description={t("customizeDescription")} />
 
-      {loadError ? (
+      <div className="flex gap-1 border-b border-border">
+        {(["email", "branding"] as const).map((key) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setSection(key)}
+            className={cn(
+              "-mb-px border-b-2 px-4 py-2 text-sm",
+              section === key
+                ? "border-primary font-medium text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {t(key === "email" ? "customizeEmailSection" : "customizeBrandingSection")}
+          </button>
+        ))}
+      </div>
+
+      {section === "branding" ? (
+        <Card>
+          <CardContent className="pt-6">
+            <p className="mb-3 text-xs text-muted-foreground">{t("customizeBrandingSectionHint")}</p>
+            <BrandingEditor />
+          </CardContent>
+        </Card>
+      ) : loadError ? (
         <ErrorCard message={loadError} />
       ) : !templates || !selected ? (
         <LoadingCard rows={8} />
@@ -50,7 +78,6 @@ export default function Customize() {
         <Card>
           <CardContent className="grid gap-6 pt-6">
             <div>
-              <p className="mb-1 text-sm font-medium">{t("customizeEmailSection")}</p>
               <p className="mb-3 text-xs text-muted-foreground">{t("customizeEmailSectionHint")}</p>
               <div className="flex flex-wrap gap-1 border-b border-border">
                 {templates.map((template) => (
