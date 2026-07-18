@@ -499,9 +499,16 @@ public class AdminAccessPolicy {
         return currentUserId().map(id -> id.equals(targetId)).orElse(false);
     }
 
-    /** Whether the target holds {@code ROLE_ADMIN} directly. */
+    /**
+     * Whether the target holds {@code ROLE_ADMIN} EFFECTIVELY — directly OR delegated via a group. The
+     * self-protection guards ({@code canRevokeSessions}/{@code canDeleteUser}/{@code canSetEnabled}/
+     * {@code canResetMfa}/{@code canManagePermissions}/{@code canUpdateUser}) key on this so a scoped delegate
+     * cannot force-log-out, demote, or delete an administrator who is one only through group membership.
+     * Uses the same effective-authority assembly as login, so the well-known {@code ROLE_ADMIN} name is emitted
+     * only for the GLOBAL super-admin role (a tenant cannot mint a system {@code ROLE_ADMIN}).
+     */
     private boolean isAdmin(UUID userId) {
-        return userService.hasRole(userId, ADMIN_ROLE);
+        return userService.effectiveAuthorities(userId).contains(ADMIN_ROLE);
     }
 
     /**

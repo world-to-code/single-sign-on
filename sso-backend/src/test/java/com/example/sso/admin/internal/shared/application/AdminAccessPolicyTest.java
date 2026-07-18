@@ -635,6 +635,30 @@ class AdminAccessPolicyTest {
     }
 
     @Test
+    void aGroupDelegatedAdminTargetIsProtectedFromAScopedDelegate() {
+        // #118: the target holds ROLE_ADMIN only via GROUP delegation (effective, not a direct assignment).
+        // A scoped delegate (the signed-in actor is not a super — hasRole unstubbed) must still be blocked from
+        // force-logging-out / deleting / disabling / MFA-resetting them — the guards key on EFFECTIVE admin.
+        when(userService.effectiveAuthorities(OTHER_ID)).thenReturn(Set.of(Roles.ADMIN)); // group-delegated
+        when(userService.hasRole(OTHER_ID, Roles.ADMIN)).thenReturn(false);              // NOT direct
+
+        assertThat(policy.canRevokeSessions(OTHER_ID)).isFalse();
+        assertThat(policy.canDeleteUser(OTHER_ID)).isFalse();
+        assertThat(policy.canSetEnabled(OTHER_ID, false)).isFalse();
+        assertThat(policy.canResetMfa(OTHER_ID)).isFalse();
+    }
+
+    @Test
+    void aSuperAdminMayStillForceExpireAGroupDelegatedAdmin() {
+        // The counterpart: a super admin CAN revoke a (group-delegated) administrator's sessions — force-expiring
+        // a compromised admin is legitimate. So the widened isAdmin does not over-block the super path.
+        makeActorSuper();
+        when(userService.effectiveAuthorities(OTHER_ID)).thenReturn(Set.of(Roles.ADMIN));
+
+        assertThat(policy.canRevokeSessions(OTHER_ID)).isTrue();
+    }
+
+    @Test
     void resettingOwnMfaIsAllowedButAnotherAdminsIsNot() {
         makeAdmin(ACTOR_ID);
         makeAdmin(OTHER_ID);
@@ -833,11 +857,13 @@ class AdminAccessPolicyTest {
     }
 
     private void makeActorSuper() {
-        when(userService.hasRole(ACTOR_ID, Roles.ADMIN)).thenReturn(true);
+        when(userService.hasRole(ACTOR_ID, Roles.ADMIN)).thenReturn(true);       // currentIsSuperAdmin (actor)
+        when(userService.effectiveAuthorities(ACTOR_ID)).thenReturn(Set.of(Roles.ADMIN)); // isAdmin(actor)
     }
 
+    /** Makes the target an EFFECTIVE administrator (isAdmin resolves ROLE_ADMIN direct OR group-delegated). */
     private void makeAdmin(UUID userId) {
-        when(userService.hasRole(userId, Roles.ADMIN)).thenReturn(true);
+        when(userService.effectiveAuthorities(userId)).thenReturn(Set.of(Roles.ADMIN));
     }
 
     private void signIn() {
