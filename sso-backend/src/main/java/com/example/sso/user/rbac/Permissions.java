@@ -71,6 +71,9 @@ public final class Permissions {
     // Per-tenant email templates (tenant-authored branded email per event)
     public static final String EMAIL_TEMPLATE_READ = "email-template:read";
     public static final String EMAIL_TEMPLATE_UPDATE = "email-template:update";
+    // Per-tenant auth-UI branding (logo/accent/product name on the login/MFA/consent screens)
+    public static final String BRANDING_READ = "branding:read";
+    public static final String BRANDING_UPDATE = "branding:update";
     // Application assignments (portal)
     public static final String APP_ASSIGNMENT_READ = "app-assignment:read";
     public static final String APP_ASSIGNMENT_ASSIGN = "app-assignment:assign";
@@ -128,6 +131,7 @@ public final class Permissions {
             PORTAL_SETTINGS_READ, PORTAL_SETTINGS_UPDATE,
             SMTP_SETTINGS_READ, SMTP_SETTINGS_UPDATE,
             EMAIL_TEMPLATE_READ, EMAIL_TEMPLATE_UPDATE,
+            BRANDING_READ, BRANDING_UPDATE,
             APP_ASSIGNMENT_READ, APP_ASSIGNMENT_ASSIGN, APP_ASSIGNMENT_UNASSIGN,
             RESOURCE_READ, RESOURCE_CREATE, RESOURCE_UPDATE, RESOURCE_DELETE, RESOURCE_ASSIGN_ADMIN,
             RESOURCE_CREATE_TYPE, RESOURCE_DELETE_TYPE,
