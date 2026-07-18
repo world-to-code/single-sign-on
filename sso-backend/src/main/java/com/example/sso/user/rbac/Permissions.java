@@ -65,6 +65,9 @@ public final class Permissions {
     // Admin-portal security settings (per-tenant)
     public static final String PORTAL_SETTINGS_READ = "portal-settings:read";
     public static final String PORTAL_SETTINGS_UPDATE = "portal-settings:update";
+    // Per-tenant SMTP relay settings (credential-bearing — a distinct grant from portal settings)
+    public static final String SMTP_SETTINGS_READ = "smtp-settings:read";
+    public static final String SMTP_SETTINGS_UPDATE = "smtp-settings:update";
     // Application assignments (portal)
     public static final String APP_ASSIGNMENT_READ = "app-assignment:read";
     public static final String APP_ASSIGNMENT_ASSIGN = "app-assignment:assign";
@@ -120,6 +123,7 @@ public final class Permissions {
             MAPPING_RULE_READ, MAPPING_RULE_CREATE, MAPPING_RULE_UPDATE, MAPPING_RULE_DELETE,
             NETWORK_ZONE_READ, NETWORK_ZONE_CREATE, NETWORK_ZONE_UPDATE, NETWORK_ZONE_DELETE,
             PORTAL_SETTINGS_READ, PORTAL_SETTINGS_UPDATE,
+            SMTP_SETTINGS_READ, SMTP_SETTINGS_UPDATE,
             APP_ASSIGNMENT_READ, APP_ASSIGNMENT_ASSIGN, APP_ASSIGNMENT_UNASSIGN,
             RESOURCE_READ, RESOURCE_CREATE, RESOURCE_UPDATE, RESOURCE_DELETE, RESOURCE_ASSIGN_ADMIN,
             RESOURCE_CREATE_TYPE, RESOURCE_DELETE_TYPE,

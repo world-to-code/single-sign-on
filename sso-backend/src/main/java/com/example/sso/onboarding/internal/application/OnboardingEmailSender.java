@@ -1,9 +1,9 @@
 package com.example.sso.onboarding.internal.application;
 
+import com.example.sso.email.TenantMailSender;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Component;
 
 /** Emails the onboarding admin their one-time set-password link (the raw token lives only in this link). */
@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 class OnboardingEmailSender {
 
-    private final JavaMailSender mailSender;
+    private final TenantMailSender mailSender;
 
     // All three carry a {slug} placeholder substituted with the new tenant's subdomain: the set-password and
     // activation links MUST land on the tenant's OWN host (their session/login context is host-bound), not the

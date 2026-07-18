@@ -1,10 +1,10 @@
 package com.example.sso.mfa.internal.application;
 
+import com.example.sso.email.TenantMailSender;
 import com.example.sso.mfa.EmailVerificationService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.scheduling.annotation.Async;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
@@ -19,10 +19,10 @@ public class EmailVerificationServiceImpl implements EmailVerificationService {
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    private final JavaMailSender mailSender;
+    private final TenantMailSender mailSender;
     private final long ttlMinutes; // single source of truth with the email factor's TTL, for the message text
 
-    public EmailVerificationServiceImpl(JavaMailSender mailSender,
+    public EmailVerificationServiceImpl(TenantMailSender mailSender,
                                         @Value("${sso.email-otp.ttl-minutes:10}") long ttlMinutes) {
         this.mailSender = mailSender;
         this.ttlMinutes = ttlMinutes;

@@ -4,7 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
+import com.example.sso.email.TenantMailSender;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -21,7 +21,7 @@ import static org.mockito.Mockito.verify;
  */
 class OnboardingEmailSenderTest {
 
-    private final JavaMailSender mailSender = mock(JavaMailSender.class);
+    private final TenantMailSender mailSender = mock(TenantMailSender.class);
     private final OnboardingEmailSender sender = new OnboardingEmailSender(mailSender);
 
     @BeforeEach
