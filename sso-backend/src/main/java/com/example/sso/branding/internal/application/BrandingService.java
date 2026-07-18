@@ -1,6 +1,7 @@
 package com.example.sso.branding.internal.application;
 
 import com.example.sso.branding.Branding;
+import com.example.sso.branding.BrandingResolver;
 import com.example.sso.branding.internal.domain.OrgBranding;
 import com.example.sso.branding.internal.domain.OrgBrandingRepository;
 import com.example.sso.shared.error.BadRequestException;
@@ -25,7 +26,7 @@ import org.springframework.util.StringUtils;
  */
 @Service
 @RequiredArgsConstructor
-public class BrandingService {
+public class BrandingService implements BrandingResolver {
 
     private static final Pattern ACCENT = Pattern.compile("^#[0-9a-fA-F]{6}$");
     private static final int MAX_PRODUCT_NAME = 64;
@@ -35,6 +36,7 @@ public class BrandingService {
     private final OrgContext orgContext;
 
     /** The branding to render for {@code orgId}: own row → platform override → built-in default. */
+    @Override
     @Transactional(readOnly = true)
     public Branding resolve(UUID orgId) {
         Optional<OrgBranding> row = orgId != null

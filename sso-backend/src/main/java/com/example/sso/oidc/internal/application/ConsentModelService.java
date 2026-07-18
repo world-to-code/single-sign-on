@@ -1,5 +1,8 @@
 package com.example.sso.oidc.internal.application;
 
+import com.example.sso.branding.Branding;
+import com.example.sso.branding.BrandingResolver;
+import com.example.sso.tenancy.OrgContext;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +34,8 @@ public class ConsentModelService {
     private final RegisteredClientRepository registeredClients;
     private final OAuth2AuthorizationConsentService authorizationConsents;
     private final MessageSource messageSource;
+    private final BrandingResolver branding;
+    private final OrgContext orgContext;
 
     public ConsentPageModel build(String clientId, String principalName, String requestedScope) {
         RegisteredClient client = registeredClients.findByClientId(clientId);
@@ -61,8 +66,50 @@ public class ConsentModelService {
         // federated or externally-registered client type is ever introduced.
         boolean thirdParty = false;
 
+        // The acting tenant's branding for the consent screen (org bound from the request host by consent time).
+        Branding brand = branding.resolve(orgContext.currentOrg().orElse(null));
         return new ConsentPageModel(client.getClientName(), redirectHost(client), thirdParty,
-                toApprove, previouslyGranted);
+                toApprove, previouslyGranted, brand.logoUrl(), accentTriple(brand.accentColor()),
+                brand.productName());
+    }
+
+    /**
+     * Convert a {@code #RRGGBB} accent to the CSS HSL triple ({@code "H S% L%"}) the consent stylesheet's
+     * {@code --accent} token uses, so a strict-hex-validated brand color overrides it inline (CSP permits
+     * inline styles). Returns null for an absent/unexpected value (the default accent then stands). The input
+     * is validated {@code ^#[0-9a-fA-F]{6}$} at write time, so the output is always safe digits/percent/space.
+     */
+    private String accentTriple(String hex) {
+        if (hex == null || hex.length() != 7 || hex.charAt(0) != '#') {
+            return null;
+        }
+        try {
+            double r = Integer.parseInt(hex.substring(1, 3), 16) / 255.0;
+            double g = Integer.parseInt(hex.substring(3, 5), 16) / 255.0;
+            double b = Integer.parseInt(hex.substring(5, 7), 16) / 255.0;
+            double max = Math.max(r, Math.max(g, b));
+            double min = Math.min(r, Math.min(g, b));
+            double l = (max + min) / 2;
+            double d = max - min;
+            double s = d == 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+            double h = 0;
+            if (d != 0) {
+                if (max == r) {
+                    h = ((g - b) / d) % 6;
+                } else if (max == g) {
+                    h = (b - r) / d + 2;
+                } else {
+                    h = (r - g) / d + 4;
+                }
+                h *= 60;
+                if (h < 0) {
+                    h += 360;
+                }
+            }
+            return "%d %d%% %d%%".formatted(Math.round(h), Math.round(s * 100), Math.round(l * 100));
+        } catch (NumberFormatException malformed) {
+            return null;
+        }
     }
 
     /** The host of the client's first redirect URI, or {@code null} if it cannot be derived. */

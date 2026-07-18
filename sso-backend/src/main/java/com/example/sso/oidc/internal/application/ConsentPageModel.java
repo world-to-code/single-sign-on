@@ -11,7 +11,11 @@ import java.util.List;
  *
  * @param redirectHost the host of the client's first redirect URI, or {@code null} when none can be
  *                     derived (opaque/relative URI or a client with no registered redirect URI)
+ * @param brandLogoUrl the tenant's logo URL (or {@code null} for the default shield mark)
+ * @param brandAccentTriple the tenant accent as a CSS HSL triple ({@code "H S% L%"}), or {@code null}
+ * @param brandProductName the tenant's product name (or {@code null} for "Mini SSO")
  */
 public record ConsentPageModel(String clientName, String redirectHost, boolean thirdParty,
-                               List<ConsentScopeView> toApprove, List<ConsentScopeView> previouslyGranted) {
+                               List<ConsentScopeView> toApprove, List<ConsentScopeView> previouslyGranted,
+                               String brandLogoUrl, String brandAccentTriple, String brandProductName) {
 }

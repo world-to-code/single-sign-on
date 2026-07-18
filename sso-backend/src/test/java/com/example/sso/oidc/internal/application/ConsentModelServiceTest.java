@@ -1,7 +1,12 @@
 package com.example.sso.oidc.internal.application;
 
+import com.example.sso.branding.Branding;
+import com.example.sso.branding.BrandingResolver;
+import com.example.sso.tenancy.OrgContext;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,6 +25,8 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 /**
@@ -40,6 +47,10 @@ class ConsentModelServiceTest {
     private RegisteredClientRepository registeredClients;
     @Mock
     private OAuth2AuthorizationConsentService authorizationConsents;
+    @Mock
+    private BrandingResolver branding;
+    @Mock
+    private OrgContext orgContext;
 
     private ConsentModelService service;
 
@@ -50,7 +61,10 @@ class ConsentModelServiceTest {
         messages.setBasename("messages");
         messages.setDefaultEncoding("UTF-8");
         messages.setFallbackToSystemLocale(false);
-        service = new ConsentModelService(registeredClients, authorizationConsents, messages);
+        service = new ConsentModelService(registeredClients, authorizationConsents, messages, branding, orgContext);
+        // Default: no tenant branding — the scope-bucketing tests don't care, so keep these lenient.
+        lenient().when(orgContext.currentOrg()).thenReturn(Optional.empty());
+        lenient().when(branding.resolve(any())).thenReturn(Branding.platformDefault());
         LocaleContextHolder.setLocale(Locale.ENGLISH);
     }
 
@@ -166,6 +180,36 @@ class ConsentModelServiceTest {
                 .isEqualTo("Your basic profile — display name and username");
         // An unknown scope falls back to its own name with separators as spaces — never blank, never raw.
         assertThat(descriptionOf(page.toApprove(), "custom_scope")).isEqualTo("custom scope");
+    }
+
+    @Test
+    void theActingTenantsBrandingIsResolvedIntoTheModel() {
+        RegisteredClient client = client();
+        when(registeredClients.findByClientId(CLIENT_ID)).thenReturn(client);
+        when(authorizationConsents.findById(client.getId(), PRINCIPAL)).thenReturn(null);
+        UUID org = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
+        when(branding.resolve(org)).thenReturn(new Branding("https://cdn.acme/l.png", "#7c3aed", "Acme"));
+
+        ConsentPageModel page = service.build(CLIENT_ID, PRINCIPAL, "openid profile");
+
+        assertThat(page.brandLogoUrl()).isEqualTo("https://cdn.acme/l.png");
+        assertThat(page.brandProductName()).isEqualTo("Acme");
+        assertThat(page.brandAccentTriple()).isEqualTo("262 83% 58%"); // #7c3aed → CSS HSL triple
+    }
+
+    @Test
+    void theBuiltInDefaultBrandingCarriesNoLogoOrAccent() {
+        RegisteredClient client = client();
+        when(registeredClients.findByClientId(CLIENT_ID)).thenReturn(client);
+        when(authorizationConsents.findById(client.getId(), PRINCIPAL)).thenReturn(null);
+        // setUp's lenient default: currentOrg empty → resolve → platformDefault().
+
+        ConsentPageModel page = service.build(CLIENT_ID, PRINCIPAL, "openid profile");
+
+        assertThat(page.brandProductName()).isEqualTo("Mini SSO");
+        assertThat(page.brandLogoUrl()).isNull();
+        assertThat(page.brandAccentTriple()).isNull();
     }
 
     @Test

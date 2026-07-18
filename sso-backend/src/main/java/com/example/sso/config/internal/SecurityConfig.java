@@ -249,7 +249,9 @@ public class SecurityConfig {
                         .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .headers(headers -> headers
                         .contentSecurityPolicy(csp -> csp.policyDirectives(
-                                "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+                                // img-src allows any https host: a tenant's branding logo (consent page / SPA) is
+                                // an admin-set https URL loaded by the browser, never fetched server-side.
+                                "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; "
                                         + "object-src 'none'; base-uri 'self'; frame-ancestors 'none'")));
         return http.build();
     }

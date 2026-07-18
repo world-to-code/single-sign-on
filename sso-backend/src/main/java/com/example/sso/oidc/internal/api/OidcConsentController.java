@@ -46,6 +46,9 @@ public class OidcConsentController {
         model.addAttribute("principalName", principal.getName());
         model.addAttribute("scopes", page.toApprove());
         model.addAttribute("previouslyGrantedScopes", page.previouslyGranted());
+        model.addAttribute("brandLogoUrl", page.brandLogoUrl());
+        model.addAttribute("brandAccentTriple", page.brandAccentTriple());
+        model.addAttribute("brandProductName", page.brandProductName());
         return "consent";
     }
 }
