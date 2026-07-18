@@ -13,6 +13,12 @@ public interface ResourceScope {
     /** Resources the actor administers: ADMIN-granted resources plus all DAG descendants. */
     Set<UUID> managedResourceIds(UUID actorUserId);
 
+    /**
+     * Resources the actor may VIEW: ANY-tier-granted resources (ADMIN or VIEWER) plus all DAG descendants —
+     * a superset of {@link #managedResourceIds}. The extra members are a pure VIEWER's read-only subtree.
+     */
+    Set<UUID> viewableResourceIds(UUID actorUserId);
+
     /** Super-admin bypass: an unscoped actor (direct {@code ROLE_ADMIN}) sees everything. */
     boolean isUnscoped(UUID actorUserId);
 

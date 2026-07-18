@@ -165,7 +165,7 @@ public class ResourceAdminController {
     @RequirePermission(Permissions.RESOURCE_ASSIGN_ADMIN)
     @RequireStepUp
     public ResourceView assignAdmin(@PathVariable UUID id, @Valid @RequestBody AdminGrantRequest request) {
-        return service.assignAdmin(id, request.userId());
+        return service.assignAdmin(id, request.userId(), request.resolvedTier());
     }
 
     @Audited(value = AuditType.RESOURCE_CHANGED, subject = AuditSubjectType.RESOURCE, subjectParam = "id")

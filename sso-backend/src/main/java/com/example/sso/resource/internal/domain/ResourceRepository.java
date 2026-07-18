@@ -38,6 +38,21 @@ public interface ResourceRepository extends JpaRepository<Resource, UUID> {
             """, nativeQuery = true)
     Set<UUID> findManagedResourceIds(@Param("userId") UUID userId, @Param("tier") String tier);
 
+    /**
+     * All resources the user can VIEW: those they hold ANY grant over (ADMIN or VIEWER — every grant confers
+     * at least read reach), plus every DAG descendant. A superset of {@link #findManagedResourceIds} (which is
+     * ADMIN-only); the difference is a pure VIEWER's read-only subtree.
+     */
+    @Query(value = """
+            WITH RECURSIVE viewable(id) AS (
+                SELECT rr.resource_id FROM resource_role rr WHERE rr.user_id = :userId
+                UNION
+                SELECT e.child_id FROM resource_edge e JOIN viewable v ON e.parent_id = v.id
+            )
+            SELECT id FROM viewable
+            """, nativeQuery = true)
+    Set<UUID> findViewableResourceIds(@Param("userId") UUID userId);
+
     /** Whether {@code descendantId} is reachable from {@code ancestorId} (inclusive: a node reaches itself). */
     @Query(value = """
             WITH RECURSIVE down(id) AS (

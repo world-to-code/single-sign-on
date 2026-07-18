@@ -72,15 +72,32 @@ public class ResourceAccessPolicy {
         return actorId().map(resourceAuth::managedResourceIds).orElseGet(Set::of);
     }
 
+    /** Resources this caller may VIEW — a superset of {@link #managedResourceIds} (adds VIEWER-tier subtrees). */
+    public Set<UUID> viewableResourceIds() {
+        return actorId().map(resourceAuth::viewableResourceIds).orElseGet(Set::of);
+    }
+
     /** True if the caller is a tier-admin (own-org, RLS-bounded) OR the resource is in their managed subtree. */
     public boolean canManage(UUID resourceId) {
         return isTierAdmin() || actorId().map(id -> resourceAuth.canManage(id, resourceId)).orElse(false);
+    }
+
+    /** Read reach: tier-admin, or the resource is in the caller's ADMIN or VIEWER subtree. */
+    public boolean canView(UUID resourceId) {
+        return isTierAdmin() || actorId().map(id -> resourceAuth.canView(id, resourceId)).orElse(false);
     }
 
     /** Denies (403) unless the caller manages the resource (tier-admin or subtree). */
     public void requireManage(UUID resourceId) {
         if (!canManage(resourceId)) {
             throw new ForbiddenException("Outside your managed resources.");
+        }
+    }
+
+    /** Denies (403) unless the caller may VIEW the resource (tier-admin, or ADMIN/VIEWER subtree). */
+    public void requireView(UUID resourceId) {
+        if (!canView(resourceId)) {
+            throw new ForbiddenException("Outside your resources.");
         }
     }
 

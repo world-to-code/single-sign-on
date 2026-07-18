@@ -22,7 +22,7 @@ public class ResourceAuthorizationImpl implements ResourceAuthorization {
     @Override
     @Transactional(readOnly = true)
     public boolean canView(UUID actorUserId, UUID resourceId) {
-        return canManage(actorUserId, resourceId); // VIEWER-tier semantics arrive in Phase 2
+        return scope.isUnscoped(actorUserId) || scope.viewableResourceIds(actorUserId).contains(resourceId);
     }
 
     @Override
@@ -35,5 +35,11 @@ public class ResourceAuthorizationImpl implements ResourceAuthorization {
     @Transactional(readOnly = true)
     public Set<UUID> managedResourceIds(UUID actorUserId) {
         return scope.managedResourceIds(actorUserId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Set<UUID> viewableResourceIds(UUID actorUserId) {
+        return scope.viewableResourceIds(actorUserId);
     }
 }

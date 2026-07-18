@@ -5,6 +5,7 @@ import com.example.sso.resource.internal.domain.MemberType;
 import com.example.sso.resource.internal.domain.Resource;
 import com.example.sso.resource.internal.domain.ResourceGrant;
 import com.example.sso.resource.internal.domain.ResourceGrantRow;
+import com.example.sso.resource.internal.domain.ResourceRoleTier;
 import com.example.sso.resource.internal.domain.ResourceGrantRowRepository;
 import com.example.sso.resource.internal.domain.ResourceMember;
 import com.example.sso.resource.internal.domain.ResourceMemberRow;
@@ -211,15 +212,68 @@ class ResourceScopeEnforcementIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void aViewerTierGrantConfersNoManagement() {
-        // A VIEWER grant must not enter the managed set (the CTE seeds ADMIN only).
+    void aViewerTierGrantConfersReadOnlyAccess() {
+        // A VIEWER grant confers READ reach (list + get + detail) over the subtree, but NEVER management — the
+        // managed set (ADMIN-seeded CTE) excludes it, so every mutation is refused.
         asRole(Roles.ADMIN, "admin");
         inTx(() -> grantRows.save(ResourceGrantRow.of(frontend, ResourceGrant.viewer(backendLead), null)));
 
         asDelegate(backendLead);
-        assertThat(service.list().stream().map(r -> UUID.fromString(r.id()))).doesNotContain(frontend);
-        assertForbidden(() -> service.get(frontend));
+        // View: the viewed resource now appears in the list and is gettable/detailable.
+        assertThat(service.list().stream().map(r -> UUID.fromString(r.id()))).contains(frontend);
+        assertThatCode(() -> service.get(frontend)).doesNotThrowAnyException();
+        assertThatCode(() -> service.detail(frontend)).doesNotThrowAnyException();
+        // Manage: every mutation is still forbidden (no ADMIN reach).
         assertForbidden(() -> service.rename(frontend, "x"));
+        assertForbidden(() -> service.assignAdmin(frontend, backendLead));
+        assertForbidden(() -> service.attachMember(frontend, MemberType.GROUP, UUID.randomUUID().toString()));
+    }
+
+    @Test
+    void assigningAViewerTierGrantConfersReadNotManageAndCannotReDelegate() {
+        // A subtree ADMIN may delegate a VIEWER grant on a resource they manage; the grantee then gets read-only
+        // reach — view yes, mutate/re-delegate no.
+        asDelegate(backendLead); // manages the backend subtree (incl. backendSub)
+        UUID viewer = user("scope-viewer");
+        service.assignAdmin(backendSub, viewer, ResourceRoleTier.VIEWER);
+
+        asDelegate(viewer);
+        assertThatCode(() -> service.get(backendSub)).doesNotThrowAnyException();     // read reach
+        assertForbidden(() -> service.rename(backendSub, "x"));                        // no manage
+        assertForbidden(() -> service.assignAdmin(backendSub, viewer));               // cannot re-delegate
+    }
+
+    @Test
+    void downgradingAnAdminGrantToViewerStripsManageButKeepsView() {
+        // The tier-agnostic upsert must replace an ADMIN grant with VIEWER (never leave both) — a downgrade
+        // that left the ADMIN row would keep full manage (zero-trust: a scope-narrowing must propagate).
+        asDelegate(backendLead);
+        UUID delegate = user("scope-downgrade");
+        service.assignAdmin(backendSub, delegate, ResourceRoleTier.ADMIN);
+        asDelegate(delegate);
+        assertThatCode(() -> service.rename(backendSub, "managed-by-admin")).doesNotThrowAnyException();
+
+        asDelegate(backendLead);
+        service.assignAdmin(backendSub, delegate, ResourceRoleTier.VIEWER); // downgrade
+        asDelegate(delegate);
+        assertThatCode(() -> service.get(backendSub)).doesNotThrowAnyException(); // still views
+        assertForbidden(() -> service.rename(backendSub, "x"));                    // manage stripped
+    }
+
+    @Test
+    void revokingAViewerGrantCollapsesTheGranteesViewReach() {
+        // revokeAdmin is tier-agnostic — revoking a VIEWER grant must remove read reach, not silently leave it.
+        asDelegate(backendLead);
+        UUID viewer = user("scope-revoke-viewer");
+        service.assignAdmin(backendSub, viewer, ResourceRoleTier.VIEWER);
+        asDelegate(viewer);
+        assertThatCode(() -> service.get(backendSub)).doesNotThrowAnyException();
+
+        asDelegate(backendLead);
+        service.revokeAdmin(backendSub, viewer);
+        asDelegate(viewer);
+        assertForbidden(() -> service.get(backendSub)); // view reach gone
+        assertThat(service.list()).noneMatch(r -> r.id().equals(backendSub.toString()));
     }
 
     @Test

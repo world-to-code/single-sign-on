@@ -235,13 +235,15 @@ class ResourceGraphIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void viewerTierConfersNoScopeInPhase0() {
+    void aViewerGrantConfersViewScopeButNotManage() {
         UUID watchedId = resources.save(new Resource("Res-Watched", types.findByNameAndOrgIdIsNull("ANY").orElseThrow(), null)).getId();
         grantRows.save(ResourceGrantRow.of(watchedId, ResourceGrant.viewer(backendLead), null));
 
+        // VIEWER grant → read reach only: in the viewable set + canView, but NOT the managed set nor canManage.
         assertThat(scope.managedResourceIds(backendLead)).doesNotContain(watchedId);
+        assertThat(scope.viewableResourceIds(backendLead)).contains(watchedId);
         assertThat(resourceAuthz.canManage(backendLead, watchedId)).isFalse();
-        assertThat(resourceAuthz.canView(backendLead, watchedId)).isFalse(); // canView==canManage until Phase 2
+        assertThat(resourceAuthz.canView(backendLead, watchedId)).isTrue();
     }
 
     @Test
@@ -271,7 +273,10 @@ class ResourceGraphIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void canViewMirrorsCanManageUntilPhase2() {
+    void canViewOnTheDeferredPortsStillEqualsCanManage() {
+        // The user/group/application ports still equate canView==canManage (admin-surface view-gating is a
+        // documented follow-up). The resource-port split is proven by aViewerGrantConfersViewScopeButNotManage;
+        // here backendLead holds only ADMIN grants, so its resource canView coincides with canManage.
         assertThat(resourceAuthz.canView(backendLead, backend)).isTrue();
         assertThat(resourceAuthz.canView(backendLead, frontend)).isFalse();
         assertThat(groupAuthz.canView(backendLead, backendGroup)).isTrue();

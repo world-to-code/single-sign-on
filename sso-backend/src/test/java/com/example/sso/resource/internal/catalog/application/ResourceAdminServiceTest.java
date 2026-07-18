@@ -241,14 +241,16 @@ class ResourceAdminServiceTest {
     }
 
     @Test
-    void listReturnsOnlyResourcesInsideTheScopedCallersManagedSet() {
-        UUID managedId = UUID.randomUUID();
+    void listReturnsOnlyResourcesInsideTheScopedCallersViewableSet() {
+        // A resource delegate's list is their VIEWABLE set (ADMIN or VIEWER subtrees) — so a pure VIEWER can see
+        // the tree they were granted read access to, not just what they manage.
+        UUID viewableId = UUID.randomUUID();
         UUID otherId = UUID.randomUUID();
-        Resource managed = viewable(managedId);
+        Resource inScope = viewable(viewableId);
         Resource other = viewable(otherId);
         when(access.isTierAdmin()).thenReturn(false); // a mere resource delegate — not a tenant/super admin
-        when(access.managedResourceIds()).thenReturn(Set.of(managedId));
-        when(resources.findAllFetchingType()).thenReturn(List.of(managed, other));
+        when(access.viewableResourceIds()).thenReturn(Set.of(viewableId));
+        when(resources.findAllFetchingType()).thenReturn(List.of(inScope, other));
         when(edges.findByParentIdIn(anyCollection())).thenReturn(List.of());
         when(memberRows.findByResourceIdIn(anyCollection())).thenReturn(List.of());
         when(grantRows.findByResourceIdIn(anyCollection())).thenReturn(List.of());
@@ -256,7 +258,7 @@ class ResourceAdminServiceTest {
         List<ResourceView> result = service.list();
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).id()).isEqualTo(managedId.toString());
+        assertThat(result.get(0).id()).isEqualTo(viewableId.toString());
     }
 
     @Test
@@ -272,7 +274,7 @@ class ResourceAdminServiceTest {
         when(grantRows.findByResourceIdIn(anyCollection())).thenReturn(List.of());
 
         assertThat(service.list()).hasSize(2);
-        verify(access, never()).managedResourceIds(); // never narrowed to a subtree
+        verify(access, never()).viewableResourceIds(); // never narrowed to a subtree (list uses the tier filter)
     }
 
     @Test

@@ -18,6 +18,11 @@ public interface ResourceGrantRowRepository extends JpaRepository<ResourceGrantR
     @Transactional
     void deleteByResourceIdAndUserIdAndTier(UUID resourceId, UUID userId, ResourceRoleTier tier);
 
+    /** Drops the user's grant on a resource regardless of tier (assign-upsert + tier-agnostic revoke). */
+    @Modifying
+    @Transactional
+    void deleteByResourceIdAndUserId(UUID resourceId, UUID userId);
+
     /** Drops every grant on a resource — used when deleting the resource. */
     @Modifying
     @Transactional

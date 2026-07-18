@@ -7,6 +7,7 @@ import com.example.sso.user.group.UserGroupService;
 import com.example.sso.user.account.UserService;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestAttributes;
@@ -28,7 +29,8 @@ import org.springframework.web.context.request.RequestContextHolder;
 @RequiredArgsConstructor
 public class ResourceScopeImpl implements ResourceScope {
 
-    private static final String CACHE_KEY = ResourceScopeImpl.class.getName() + ".managed";
+    private static final String MANAGED_KEY = ResourceScopeImpl.class.getName() + ".managed";
+    private static final String VIEWABLE_KEY = ResourceScopeImpl.class.getName() + ".viewable";
 
     private final ResourceRepository resources;
     private final UserService users;
@@ -36,16 +38,27 @@ public class ResourceScopeImpl implements ResourceScope {
 
     @Override
     public Set<UUID> managedResourceIds(UUID actorUserId) {
+        return memoized(MANAGED_KEY, actorUserId, () -> loadManagedIds(actorUserId));
+    }
+
+    @Override
+    public Set<UUID> viewableResourceIds(UUID actorUserId) {
+        return memoized(VIEWABLE_KEY, actorUserId, () -> Set.copyOf(resources.findViewableResourceIds(actorUserId)));
+    }
+
+    // Per-request memo of an IMMUTABLE scope set (an authorization decision may consult it several times while
+    // listing; sharing a mutable set would invite poisoning). Outside a request it is computed directly. See the
+    // class-level SECURITY INVARIANT on never shrinking-then-rechecking within one request.
+    private Set<UUID> memoized(String keyPrefix, UUID actorUserId, Supplier<Set<UUID>> load) {
         RequestAttributes request = RequestContextHolder.getRequestAttributes();
         if (request == null) {
-            return loadManagedIds(actorUserId);
+            return load.get();
         }
-
-        String key = CACHE_KEY + ":" + actorUserId;
+        String key = keyPrefix + ":" + actorUserId;
         @SuppressWarnings("unchecked")
         Set<UUID> cached = (Set<UUID>) request.getAttribute(key, RequestAttributes.SCOPE_REQUEST);
         if (cached == null) {
-            cached = loadManagedIds(actorUserId);
+            cached = load.get();
             request.setAttribute(key, cached, RequestAttributes.SCOPE_REQUEST);
         }
         return cached;

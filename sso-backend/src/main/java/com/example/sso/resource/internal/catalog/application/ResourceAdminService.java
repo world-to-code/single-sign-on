@@ -148,13 +148,15 @@ public class ResourceAdminService {
         // un-drilled super-admin (never all tenants' trees merged). A mere resource delegate is narrowed to
         // their managed subtree (empty for a pure tenant admin, which would otherwise hide their org's tree).
         boolean tierAdmin = access.isTierAdmin();
-        Set<UUID> managed = tierAdmin ? Set.of() : access.managedResourceIds();
+        // A resource delegate sees every resource they can VIEW (ADMIN or VIEWER subtree) — a pure VIEWER would
+        // otherwise get an empty list and never see the tree they were granted read access to.
+        Set<UUID> viewable = tierAdmin ? Set.of() : access.viewableResourceIds();
         UUID tier = tierGuard.currentTier();
         List<Resource> all = resources.findAllFetchingType();
         List<Resource> visible = all.stream()
                 .filter(resource -> tierAdmin
                         ? Objects.equals(resource.getOrgId(), tier)
-                        : managed.contains(resource.getId()))
+                        : viewable.contains(resource.getId()))
                 .toList();
         if (visible.isEmpty()) {
             return List.of();
@@ -180,7 +182,7 @@ public class ResourceAdminService {
 
     @Transactional(readOnly = true)
     public ResourceView get(UUID id) {
-        access.requireManage(id);
+        access.requireView(id); // read reach — a VIEWER-tier delegate may see, not mutate
         requireInTier(id); // a tenant tier-admin's manage bypass is RLS-bounded; reject a global/foreign row
         return viewOf(id);
     }
@@ -191,19 +193,19 @@ public class ResourceAdminService {
      */
     @Transactional(readOnly = true)
     public ResourceDetailView detail(UUID id) {
-        access.requireManage(id);
+        access.requireView(id); // read reach — a VIEWER-tier delegate may see the detail, not mutate it
         Resource resource = requireInTierFetchingType(id);
         List<ResourceMemberRow> members = memberRows.findByResourceId(id);
         List<ResourceGrantRow> grants = grantRows.findByResourceId(id);
 
         // Parents are ANCESTORS — above a scoped delegate's grant, so they must not learn about ancestors outside
-        // their subtree (filter to the ones they manage). A TIER admin (platform super OR tenant ORG_ADMIN) sees
+        // their subtree (filter to the ones they can VIEW). A TIER admin (platform super OR tenant ORG_ADMIN) sees
         // every ancestor in their own org tree — RLS already bounds the read to their org.
         boolean seesWholeTree = access.isTierAdmin();
-        Set<UUID> managed = seesWholeTree ? Set.of() : access.managedResourceIds();
+        Set<UUID> viewable = seesWholeTree ? Set.of() : access.viewableResourceIds();
         List<UUID> parentIds = edges.findByChildId(id).stream()
                 .map(ResourceEdge::getParentId)
-                .filter(parentId -> seesWholeTree || managed.contains(parentId))
+                .filter(parentId -> seesWholeTree || viewable.contains(parentId))
                 .toList();
         List<ResourceNodeView> parents = nodes(parentIds);
         List<ResourceNodeView> children = nodes(edges.findByParentId(id).stream()
@@ -219,11 +221,15 @@ public class ResourceAdminService {
                 .sorted(Comparator.comparing(ResourceMemberDetailView::memberType)
                         .thenComparing(ResourceMemberDetailView::memberId))
                 .toList();
-        List<ResourceGrantDetailView> grantViews = grants.stream()
-                .map(grant -> new ResourceGrantDetailView(grant.getUserId().toString(),
-                        userNames.get(grant.getUserId().toString()), grant.getTier().name()))
-                .sorted(Comparator.comparing(ResourceGrantDetailView::userId))
-                .toList();
+        // The delegation roster (who else administers/views this subtree) is a MANAGEMENT concern — hide it from
+        // a read-only VIEWER, who has no business learning the co-delegates' identities. Managers/tier-admins see it.
+        List<ResourceGrantDetailView> grantViews = access.canManage(id)
+                ? grants.stream()
+                        .map(grant -> new ResourceGrantDetailView(grant.getUserId().toString(),
+                                userNames.get(grant.getUserId().toString()), grant.getTier().name()))
+                        .sorted(Comparator.comparing(ResourceGrantDetailView::userId))
+                        .toList()
+                : List.of();
 
         return new ResourceDetailView(resource.getId().toString(), resource.getName(),
                 resource.getType().getName(), parents, children, memberViews, grantViews);
@@ -389,26 +395,33 @@ public class ResourceAdminService {
 
     // --- Delegation grants ---
 
+    /** Assigns an ADMIN (manage) grant — the default delegation tier. */
     @Transactional
     public ResourceView assignAdmin(UUID id, UUID userId) {
-        // A tier-admin (or subtree admin, or super) may delegate — but only on a resource in their own tier
-        // (requireInTier) and only to a user who belongs to that resource's org (requireGranteeInOrg), so a
-        // tenant can never make a global outsider an admin over its subtree.
+        return assignAdmin(id, userId, ResourceRoleTier.ADMIN);
+    }
+
+    @Transactional
+    public ResourceView assignAdmin(UUID id, UUID userId, ResourceRoleTier tier) {
+        // Delegating a grant (ADMIN = manage the subtree, VIEWER = read-only) requires MANAGE reach on the
+        // resource — a VIEWER cannot re-delegate. Only on a resource in the caller's own tier (requireInTier)
+        // and only to a user who belongs to that resource's org (requireGranteeInOrg), so a tenant can never
+        // grant a global outsider reach over its subtree.
         access.requireManage(id);
         Resource resource = requireInTier(id);
         users.findById(userId).orElseThrow(() -> new NotFoundException("User not found."));
         access.requireGranteeInOrg(resource.getOrgId(), userId);
-        grant(id, ResourceGrant.admin(userId), resource.getOrgId());
+        grant(id, new ResourceGrant(userId, tier, null), resource.getOrgId());
         return viewOf(id);
     }
 
     @Transactional
     public ResourceView revokeAdmin(UUID id, UUID userId) {
-        // Symmetric reach with assignAdmin; no grantee-membership check — revoking a grant only ever removes
-        // reach (safe even for a user who has since left the org).
+        // Symmetric reach with assignAdmin; removes the user's grant of EITHER tier — no grantee-membership
+        // check, since revoking only ever removes reach (safe even for a user who has since left the org).
         access.requireManage(id);
         requireInTier(id);
-        grantRows.deleteByResourceIdAndUserIdAndTier(id, userId, ResourceRoleTier.ADMIN);
+        grantRows.deleteByResourceIdAndUserId(id, userId);
         return viewOf(id);
     }
 
@@ -446,12 +459,14 @@ public class ResourceAdminService {
     }
 
     /**
-     * Persists a grant, replacing any existing row of the same user+tier. Replacement is explicit —
-     * delete the old row, then insert the new — because the DB primary key is {@code (resource, user,
-     * tier)} while a grant also carries {@code roleId}: two rows with the same PK could not coexist.
+     * Persists a grant, replacing the user's existing grant on the resource REGARDLESS of tier — so assigning
+     * VIEWER over an existing ADMIN (or vice versa) leaves exactly one grant, never both. Replacement is
+     * explicit (delete then insert) rather than a merge, keeping one row per (resource, user).
      */
     private void grant(UUID resourceId, ResourceGrant grant, UUID orgId) {
-        grantRows.deleteByResourceIdAndUserIdAndTier(resourceId, grant.userId(), grant.tier());
+        // One grant per (resource, user): drop any existing tier first, so assigning VIEWER replaces an ADMIN
+        // grant (and vice versa) rather than leaving the user with both.
+        grantRows.deleteByResourceIdAndUserId(resourceId, grant.userId());
         grantRows.save(ResourceGrantRow.of(resourceId, grant, orgId));
     }
 
