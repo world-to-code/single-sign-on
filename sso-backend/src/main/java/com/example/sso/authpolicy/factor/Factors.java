@@ -12,6 +12,7 @@ public final class Factors {
     public static final String PASSWORD = AuthFactor.PASSWORD.authority();
     public static final String TOTP = AuthFactor.TOTP.authority();
     public static final String EMAIL = AuthFactor.EMAIL.authority();
+    public static final String SMS = AuthFactor.SMS.authority();
     public static final String FIDO2 = AuthFactor.FIDO2.authority();
 
     /** Granted once the user's resolved authentication policy is fully satisfied. */

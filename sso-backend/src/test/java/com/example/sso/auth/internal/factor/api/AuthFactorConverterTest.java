@@ -21,6 +21,7 @@ class AuthFactorConverterTest {
         assertThat(converter.convert("fido2")).isEqualTo(AuthFactor.FIDO2);
         assertThat(converter.convert("password")).isEqualTo(AuthFactor.PASSWORD);
         assertThat(converter.convert("email")).isEqualTo(AuthFactor.EMAIL);
+        assertThat(converter.convert("sms")).isEqualTo(AuthFactor.SMS);
     }
 
     @Test
@@ -31,6 +32,6 @@ class AuthFactorConverterTest {
 
     @Test
     void rejectsAnUnknownFactor() {
-        assertThatThrownBy(() -> converter.convert("sms")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> converter.convert("carrierpigeon")).isInstanceOf(IllegalArgumentException.class);
     }
 }

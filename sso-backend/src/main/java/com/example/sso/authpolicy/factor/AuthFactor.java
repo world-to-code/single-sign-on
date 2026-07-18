@@ -5,6 +5,9 @@ public enum AuthFactor {
     PASSWORD("FACTOR_PASSWORD"),
     TOTP("FACTOR_TOTP"),
     EMAIL("FACTOR_EMAIL"),
+    // Ordinal position is deliberate: AuthStateService picks the SPA's default pending factor by ordinal, so
+    // SMS sits beside EMAIL (both are code-to-a-contact factors) rather than after the passkey.
+    SMS("FACTOR_SMS"),
     FIDO2("FACTOR_WEBAUTHN");
 
     private final String authority;

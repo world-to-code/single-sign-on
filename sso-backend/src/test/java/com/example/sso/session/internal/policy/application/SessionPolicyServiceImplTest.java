@@ -180,7 +180,7 @@ class SessionPolicyServiceImplTest {
     void createRejectsAnUnknownReauthFactor() {
         when(repository.findByNameAndOrgIdIsNull("Bad")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.create(spec("Bad", "TOTP,SMS")))
+        assertThatThrownBy(() -> service.create(spec("Bad", "TOTP,CARRIERPIGEON")))
                 .isInstanceOf(BadRequestException.class);
         verify(repository, never()).save(any());
     }
@@ -191,7 +191,7 @@ class SessionPolicyServiceImplTest {
         // so a valid reauthFactors cannot smuggle an unknown stepUpFactors through.
         when(repository.findByNameAndOrgIdIsNull("BadStepUp")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.create(spec("BadStepUp", "TOTP", "FIDO2,SMS")))
+        assertThatThrownBy(() -> service.create(spec("BadStepUp", "TOTP", "FIDO2,CARRIERPIGEON")))
                 .isInstanceOf(BadRequestException.class);
         verify(repository, never()).save(any());
     }
