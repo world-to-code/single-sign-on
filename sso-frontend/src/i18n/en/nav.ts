@@ -28,6 +28,7 @@ export const nav = {
   mappingRules: "Mapping Rules",
   scimTokens: "SCIM Tokens",
   smtpSettings: "SMTP Settings",
+  customize: "Customize",
   auditLog: "Audit Log",
   // Shell chrome
   backToPortal: "Back to portal",
