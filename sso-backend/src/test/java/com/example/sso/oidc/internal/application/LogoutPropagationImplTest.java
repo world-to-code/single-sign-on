@@ -71,8 +71,9 @@ class LogoutPropagationImplTest {
 
     @BeforeEach
     void setUp() {
-        propagation = new LogoutPropagationImpl(index, clients, tokens, audit, orgContext, organizations,
-                retryCoordinator, jdbc, "http://localhost:9000", Duration.ofSeconds(2));
+        OidcBackchannelDelivery delivery = new OidcBackchannelDelivery(clients, tokens, orgContext, organizations,
+                jdbc, "http://localhost:9000", Duration.ofSeconds(2));
+        propagation = new LogoutPropagationImpl(index, audit, retryCoordinator, delivery);
         // jdbc is left unstubbed: clientOrg(...) returns null (a global client), so the delivery runs without
         // an org context and never touches organizations/orgContext — keeping these classification tests focused.
         lenient().when(tokens.create(any(), any(), any(), any())).thenReturn("logout-token");
