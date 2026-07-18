@@ -73,6 +73,8 @@ sso:
   crypto:
     master-password: ${SSO_CRYPTO_MASTER_PASSWORD}
     salt: ${SSO_CRYPTO_SALT}   # no default in prod: fail fast; use a unique per-deployment salt
+  sms-otp:
+    log-code: false   # never write a one-time code to the log in prod; wire a real SmsSender gateway instead
   demo-client:
     enabled: ${SSO_DEMO_CLIENT_ENABLED:false}   # do not seed the known-secret demo client in prod
   integration-test:

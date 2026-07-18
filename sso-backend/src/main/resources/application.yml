@@ -204,6 +204,10 @@ sso:
   email-otp:
     ttl-minutes: 10                                  # email one-time-code validity
     max-attempts: 5                                  # wrong guesses before the code is burned
+  sms-otp:
+    ttl-minutes: 10                                  # SMS one-time-code validity
+    max-attempts: 5                                  # wrong guesses before the code is burned
+    log-code: true                                   # DEV: LoggingSmsSender prints the code (prod overrides to false)
   onboarding:
     min-password-length: 8                           # minimum length an invitee's chosen password must meet
     invitation-ttl: 72h                              # how long a set-password invitation stays redeemable

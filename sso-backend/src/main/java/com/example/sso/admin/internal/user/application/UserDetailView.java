@@ -10,8 +10,8 @@ import java.util.List;
  * (all role + group + direct permissions, read-implication expanded).
  */
 public record UserDetailView(String id, String username, String email, String displayName,
-                             boolean enabled, boolean emailVerified, boolean accountNonLocked,
-                             String externalId, Instant createdAt, Instant updatedAt,
+                             boolean enabled, boolean emailVerified, String phoneNumber, boolean phoneVerified,
+                             boolean accountNonLocked, String externalId, Instant createdAt, Instant updatedAt,
                              List<RoleAssignmentView> roleAssignments, List<String> directPermissions,
                              List<String> effectivePermissions) {
 
@@ -19,8 +19,8 @@ public record UserDetailView(String id, String username, String email, String di
     public static UserDetailView of(UserAccount user, List<RoleAssignmentView> roleAssignments,
                                     List<String> directPermissions, List<String> effectivePermissions) {
         return new UserDetailView(user.getId().toString(), user.getUsername(), user.getEmail(),
-                user.getDisplayName(), user.isEnabled(), user.isEmailVerified(), user.isAccountNonLocked(),
-                user.getExternalId(), user.getCreatedAt(), user.getUpdatedAt(),
-                roleAssignments, directPermissions, effectivePermissions);
+                user.getDisplayName(), user.isEnabled(), user.isEmailVerified(), user.getPhoneNumber(),
+                user.isPhoneVerified(), user.isAccountNonLocked(), user.getExternalId(), user.getCreatedAt(),
+                user.getUpdatedAt(), roleAssignments, directPermissions, effectivePermissions);
     }
 }

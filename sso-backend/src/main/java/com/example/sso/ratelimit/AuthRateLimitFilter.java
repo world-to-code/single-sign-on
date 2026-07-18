@@ -34,6 +34,9 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
                     // Mails a one-time code: unlimited requests would let a signed-in user mail-bomb their
                     // own address (and burn the mail quota).
                     "/api/auth/email-verification", "/api/auth/email-verification/confirm",
+                    // Texts a one-time code to a caller-supplied number: unthrottled, this is SMS-bombing of an
+                    // arbitrary victim and premium/international toll-fraud (direct spend), worse than email.
+                    "/api/auth/phone-verification", "/api/auth/phone-verification/confirm",
                     "/api/onboarding/apply", "/api/onboarding/activate", "/api/onboarding/set-password");
     private static final String FACTORS_PREFIX = "/api/auth/factors/"; // .../prepare and .../verify
     private static final String REAUTH_PREFIX = "/api/auth/reauth/";   // step-up / re-auth .../prepare and .../verify

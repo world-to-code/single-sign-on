@@ -470,6 +470,24 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
+    public void enrollPhone(UUID id, String phoneNumber) {
+        require(id).changePhone(phoneNumber);
+    }
+
+    @Override
+    @Transactional
+    public void markPhoneVerified(UUID id, String provenNumber) {
+        require(id).verifyPhone(provenNumber);
+    }
+
+    @Override
+    @Transactional
+    public void removePhone(UUID id) {
+        require(id).clearPhone();
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public boolean verifyPassword(String username, String rawPassword) {
         return users.findByUsernameInOrg(username, resolutionOrg())

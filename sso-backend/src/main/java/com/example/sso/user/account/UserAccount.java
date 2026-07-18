@@ -30,6 +30,12 @@ public interface UserAccount {
 
     boolean isEmailVerified();
 
+    /** The number SMS one-time codes are texted to; {@code null} until the user enrolls one. */
+    String getPhoneNumber();
+
+    /** True once the user has proven control of {@link #getPhoneNumber()} — the gate for offering the SMS factor. */
+    boolean isPhoneVerified();
+
     /** True when this user was given a temporary password and must set their own on first login. */
     boolean isPasswordResetRequired();
 

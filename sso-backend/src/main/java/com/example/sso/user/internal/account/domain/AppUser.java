@@ -74,6 +74,14 @@ public class AppUser extends AuditedEntity implements UserAccount {
     @Column(name = "email_verified", nullable = false)
     private boolean emailVerified = false;
 
+    // Destination of SMS one-time codes and the SMS factor's identifier. Like email, a CHANGED number is
+    // unproven (see setPhone), so the verified flag gates whether the SMS factor may be offered.
+    @Column(name = "phone_number", length = 32)
+    private String phoneNumber;
+
+    @Column(name = "phone_verified", nullable = false)
+    private boolean phoneVerified = false;
+
     // Admin-created users get a TEMPORARY password and must set their own on first login: while true, login
     // completion refuses to finalize (no MFA_COMPLETE) and routes the user to a reset step. Cleared by
     // changePassword — the user setting their own password is exactly what satisfies the requirement.
@@ -121,6 +129,35 @@ public class AppUser extends AuditedEntity implements UserAccount {
 
     public void verifyEmail() {
         this.emailVerified = true;
+    }
+
+    /**
+     * Records the phone number the SMS factor uses, leaving it UNPROVEN: a number is only usable for the factor
+     * once ownership is demonstrated ({@link #verifyPhone()} on a redeemed code). Setting the same number again
+     * is a no-op that preserves an existing proof, so re-saving the profile does not silently drop the factor.
+     */
+    public void changePhone(String phoneNumber) {
+        if (!Objects.equals(this.phoneNumber, phoneNumber)) {
+            this.phoneNumber = phoneNumber;
+            this.phoneVerified = false;
+        }
+    }
+
+    /**
+     * Marks the phone verified, but ONLY if {@code provenNumber} is still the number on the row — a
+     * compare-and-set that stops a proof for an old number from stamping a number changed since (e.g. the
+     * user raced a re-enrollment between redeeming and marking). Mirrors {@code redeem}'s number-binding.
+     */
+    public void verifyPhone(String provenNumber) {
+        if (Objects.equals(this.phoneNumber, provenNumber)) {
+            this.phoneVerified = true;
+        }
+    }
+
+    /** Removes the number and its proof — the SMS factor can no longer be offered for this user. */
+    public void clearPhone() {
+        this.phoneNumber = null;
+        this.phoneVerified = false;
     }
 
     /**

@@ -144,6 +144,15 @@ public interface UserService {
 
     void markEmailVerified(UUID id);
 
+    /** Records the user's phone number for the SMS factor, UNVERIFIED (ownership is proven separately). */
+    void enrollPhone(UUID id, String phoneNumber);
+
+    /** Marks the phone verified only if {@code provenNumber} is still the number on the account (compare-and-set). */
+    void markPhoneVerified(UUID id, String provenNumber);
+
+    /** Removes the number and its proof, disabling the SMS factor for the user. */
+    void removePhone(UUID id);
+
     // --- authentication helpers ---
 
     /** Verifies the password of the user resolved by username WITHIN the current resolution org (login path). */
