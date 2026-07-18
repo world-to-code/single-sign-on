@@ -102,9 +102,24 @@ class BrandingServiceTest {
     void getDoesNotSurfaceTheGlobalRowToABoundOrglessNonPlatformCaller() {
         when(orgContext.currentOrg()).thenReturn(Optional.empty());
         when(orgContext.isPlatform()).thenReturn(false);
+        // A global row EXISTS (read here only as the inherited starting-point, NOT as "own"): the mutation this
+        // catches is ownRow() returning it as own → configured=true for a non-platform caller.
+        when(repository.findByOrgIdIsNull()).thenReturn(Optional.of(row(null)));
 
         assertThat(service().get().configured()).isFalse();
-        verify(repository, never()).findByOrgId(any()); // never resolves the global row as "own"
+        verify(repository, never()).findByOrgId(any()); // an orgless caller never queries by a specific org
+    }
+
+    @Test
+    void getReturnsTheGlobalRowAsConfiguredForThePlatformTier() {
+        when(orgContext.currentOrg()).thenReturn(Optional.empty());
+        when(orgContext.isPlatform()).thenReturn(true); // the platform tier OWNS the global row
+        when(repository.findByOrgIdIsNull()).thenReturn(Optional.of(row(null)));
+
+        BrandingView view = service().get();
+
+        assertThat(view.configured()).isTrue();
+        assertThat(view.productName()).isEqualTo("Acme");
     }
 
     @Test
@@ -167,6 +182,16 @@ class BrandingServiceTest {
         service().delete();
 
         verify(repository).delete(existing);
+    }
+
+    @Test
+    void deleteIsANoOpWhenTheTierHasNoOwnRow() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgId(ORG)).thenReturn(Optional.empty());
+
+        service().delete();
+
+        verify(repository, never()).delete(any());
     }
 
     @Test

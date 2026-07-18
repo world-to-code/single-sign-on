@@ -29,6 +29,7 @@ public class BrandingService {
 
     private static final Pattern ACCENT = Pattern.compile("^#[0-9a-fA-F]{6}$");
     private static final int MAX_PRODUCT_NAME = 64;
+    private static final int MAX_LOGO_URL = 2048;
 
     private final OrgBrandingRepository repository;
     private final OrgContext orgContext;
@@ -39,19 +40,14 @@ public class BrandingService {
         Optional<OrgBranding> row = orgId != null
                 ? repository.findByOrgId(orgId).or(repository::findByOrgIdIsNull)
                 : repository.findByOrgIdIsNull();
-        return row.map(BrandingService::toBranding).orElseGet(Branding::platformDefault);
+        return row.map(this::toBranding).orElseGet(Branding::platformDefault);
     }
 
     /** The acting tier's OWN branding for the editor (or the inherited default as a starting point). */
     @Transactional(readOnly = true)
     public BrandingView get() {
-        return ownRow()
-                .map(b -> new BrandingView(true, b.getLogoUrl(), b.getAccentColor(), b.getProductName()))
-                .orElseGet(() -> {
-                    Branding inherited = inheritedDefault();
-                    return new BrandingView(false, inherited.logoUrl(), inherited.accentColor(),
-                            inherited.productName());
-                });
+        return ownRow().map(BrandingView::configured)
+                .orElseGet(() -> BrandingView.inherited(inheritedDefault()));
     }
 
     /** Registers/updates the acting tier's branding (validated: https logo, #RRGGBB accent, capped name). */
@@ -74,9 +70,14 @@ public class BrandingService {
     }
 
     private void validate(BrandingSpec spec) {
-        if (StringUtils.hasText(spec.logoUrl())
-                && !spec.logoUrl().trim().toLowerCase(Locale.ROOT).startsWith("https://")) {
-            throw new BadRequestException("The logo URL must be an https URL.");
+        if (StringUtils.hasText(spec.logoUrl())) {
+            String logo = spec.logoUrl().trim();
+            if (!logo.toLowerCase(Locale.ROOT).startsWith("https://")) {
+                throw new BadRequestException("The logo URL must be an https URL.");
+            }
+            if (logo.length() > MAX_LOGO_URL) {
+                throw new BadRequestException("The logo URL is too long.");
+            }
         }
         if (StringUtils.hasText(spec.accentColor()) && !ACCENT.matcher(spec.accentColor().trim()).matches()) {
             throw new BadRequestException("The accent color must be a #RRGGBB hex value.");
@@ -87,7 +88,7 @@ public class BrandingService {
     }
 
     private Branding inheritedDefault() {
-        return repository.findByOrgIdIsNull().map(BrandingService::toBranding).orElseGet(Branding::platformDefault);
+        return repository.findByOrgIdIsNull().map(this::toBranding).orElseGet(Branding::platformDefault);
     }
 
     /** The acting tier's OWN row — the platform tier owns the global (org_id NULL) row, a bound-orgless tenant none. */
@@ -108,7 +109,7 @@ public class BrandingService {
         return org;
     }
 
-    private static Branding toBranding(OrgBranding branding) {
+    private Branding toBranding(OrgBranding branding) {
         return new Branding(branding.getLogoUrl(), branding.getAccentColor(), branding.getProductName());
     }
 

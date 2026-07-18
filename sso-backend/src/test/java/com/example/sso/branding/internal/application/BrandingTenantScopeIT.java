@@ -81,6 +81,11 @@ class BrandingTenantScopeIT extends AbstractIntegrationTest {
         assertThat(resolveForHost(b.slug() + ".localhost").productName()).isEqualTo("Mini SSO");
         assertThat(resolveForHost("localhost").productName()).isEqualTo("Mini SSO");
         assertThat(resolveForHost("no-such-tenant.localhost").productName()).isEqualTo("Mini SSO");
+
+        // Now B configures its OWN distinct branding: each host returns strictly its own, never the other's.
+        orgContext.runInOrg(orgB, () -> branding.update(spec("Beta")));
+        assertThat(resolveForHost(a.slug() + ".localhost").productName()).isEqualTo("Acme");
+        assertThat(resolveForHost(b.slug() + ".localhost").productName()).isEqualTo("Beta");
     }
 
     @Test
