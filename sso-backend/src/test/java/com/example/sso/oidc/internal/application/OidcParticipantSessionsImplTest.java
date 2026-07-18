@@ -72,13 +72,13 @@ class OidcParticipantSessionsImplTest {
                 .thenReturn(new OidcBackchannelSessionIndex.Participants(USER, Set.of("c-bcl", "c-plain")));
         RegisteredClient bcl = client("c-bcl", "Billing", true);
         RegisteredClient plain = client("c-plain", "Wiki", false);
-        when(clients.findByClientId("c-bcl")).thenReturn(bcl);
-        when(clients.findByClientId("c-plain")).thenReturn(plain);
+        when(clients.findById("c-bcl")).thenReturn(bcl);
+        when(clients.findById("c-plain")).thenReturn(plain);
         when(delivery.supportsBackChannelLogout(bcl)).thenReturn(true);
         when(delivery.supportsBackChannelLogout(plain)).thenReturn(false);
 
         assertThat(sessions.participationsFor(Set.of(SID)))
-                .extracting(OidcParticipation::clientId, OidcParticipation::name,
+                .extracting(OidcParticipation::registeredClientId, OidcParticipation::name,
                         OidcParticipation::backChannelLogoutSupported)
                 .containsExactlyInAnyOrder(
                         tuple("c-bcl", "Billing", true),
@@ -88,7 +88,7 @@ class OidcParticipantSessionsImplTest {
     @Test
     void aClientRemovedSinceTokenIssueIsSkipped() {
         when(index.lookup(SID)).thenReturn(new OidcBackchannelSessionIndex.Participants(USER, Set.of("c-gone")));
-        when(clients.findByClientId("c-gone")).thenReturn(null);
+        when(clients.findById("c-gone")).thenReturn(null);
 
         assertThat(sessions.participationsFor(Set.of(SID))).isEmpty();
     }

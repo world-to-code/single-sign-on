@@ -8,9 +8,9 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 /**
- * Redis-backed {@link OidcBackchannelSessionIndex}: per {@code sid}, a set of participating client ids
- * ({@code oidc:bcl:{sid}:clients}) and the subject ({@code oidc:bcl:{sid}:sub}), both expiring after the
- * configured window (at least the longest possible session lifetime) so stale mappings self-clean.
+ * Redis-backed {@link OidcBackchannelSessionIndex}: per {@code sid}, a set of participating registered-client
+ * internal ids ({@code oidc:bcl:{sid}:clients}) and the subject ({@code oidc:bcl:{sid}:sub}), both expiring
+ * after the configured window (at least the longest possible session lifetime) so stale mappings self-clean.
  */
 @Service
 public class OidcBackchannelSessionIndexImpl implements OidcBackchannelSessionIndex {
@@ -28,26 +28,26 @@ public class OidcBackchannelSessionIndexImpl implements OidcBackchannelSessionIn
     }
 
     @Override
-    public void record(String sid, String clientId, String username) {
+    public void record(String sid, String registeredClientId, String username) {
         String clients = CLIENTS_KEY.formatted(sid);
         String sub = SUB_KEY.formatted(sid);
-        redis.opsForSet().add(clients, clientId);
+        redis.opsForSet().add(clients, registeredClientId);
         redis.opsForValue().set(sub, username, ttl);
         redis.expire(clients, ttl);
     }
 
     @Override
     public Participants lookup(String sid) {
-        Set<String> clientIds = redis.opsForSet().members(CLIENTS_KEY.formatted(sid));
+        Set<String> ids = redis.opsForSet().members(CLIENTS_KEY.formatted(sid));
         String username = redis.opsForValue().get(SUB_KEY.formatted(sid));
-        return new Participants(username, clientIds == null ? Set.of() : clientIds);
+        return new Participants(username, ids == null ? Set.of() : ids);
     }
 
     @Override
-    public int removeParticipants(String sid, Set<String> clientIds) {
+    public int removeParticipants(String sid, Set<String> registeredClientIds) {
         String clients = CLIENTS_KEY.formatted(sid);
-        if (!clientIds.isEmpty()) {
-            redis.opsForSet().remove(clients, clientIds.toArray());
+        if (!registeredClientIds.isEmpty()) {
+            redis.opsForSet().remove(clients, registeredClientIds.toArray());
         }
         Long remaining = redis.opsForSet().size(clients);
         int count = remaining == null ? 0 : remaining.intValue();

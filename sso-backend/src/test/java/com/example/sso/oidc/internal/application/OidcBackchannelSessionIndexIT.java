@@ -30,7 +30,7 @@ class OidcBackchannelSessionIndexIT extends AbstractIntegrationTest {
 
         assertThat(remaining).isEqualTo(1);
         OidcBackchannelSessionIndex.Participants after = index.lookup(sid);
-        assertThat(after.clientIds()).containsExactly("client-b");
+        assertThat(after.registeredClientIds()).containsExactly("client-b");
         assertThat(after.username()).isEqualTo("bob"); // retained while a client remains
     }
 
@@ -42,7 +42,7 @@ class OidcBackchannelSessionIndexIT extends AbstractIntegrationTest {
 
         assertThat(remaining).isZero();
         OidcBackchannelSessionIndex.Participants after = index.lookup(sid);
-        assertThat(after.clientIds()).isEmpty();
+        assertThat(after.registeredClientIds()).isEmpty();
         assertThat(after.username()).isNull(); // subject dropped with the last client
     }
 
@@ -54,6 +54,6 @@ class OidcBackchannelSessionIndexIT extends AbstractIntegrationTest {
         int remaining = index.removeParticipants(sid, Set.of());
 
         assertThat(remaining).isEqualTo(2);
-        assertThat(index.lookup(sid).clientIds()).containsExactlyInAnyOrder("client-a", "client-b");
+        assertThat(index.lookup(sid).registeredClientIds()).containsExactlyInAnyOrder("client-a", "client-b");
     }
 }

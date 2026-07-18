@@ -112,8 +112,9 @@ public class ClientAdminService {
             throw ConflictException.of("admin.client.duplicate");
         }
 
+        String internalId = UUID.randomUUID().toString();
         RegisteredClient.Builder clientBuilder =
-                RegisteredClient.withId(UUID.randomUUID().toString())
+                RegisteredClient.withId(internalId)
                         .clientId(request.clientId())
                         .clientName(
                                 StringUtils.hasText(request.clientName()) ? request.clientName() : request.clientId());
@@ -166,10 +167,11 @@ public class ClientAdminService {
                 .tokenSettings(tokenSettings(request));
         registeredClients.save(clientBuilder.build());
 
-        // initiate_login_uri is our launch metadata (not a Spring RegisteredClient field); persist it
-        // on the same row after Spring's save.
+        // initiate_login_uri is our launch metadata (not a Spring RegisteredClient field); persist it on the
+        // row we just saved, keyed by its internal id — client_id is unique only per tenant, so a client_id-keyed
+        // update would overwrite every other tenant's (and the global) client sharing this client_id.
         if (StringUtils.hasText(request.initiateLoginUri())) {
-            clientRows.updateInitiateLoginUri(request.clientId(), request.initiateLoginUri().trim());
+            clientRows.updateInitiateLoginUriById(internalId, request.initiateLoginUri().trim());
         }
 
         return new ClientCreated(request.clientId(), secret);

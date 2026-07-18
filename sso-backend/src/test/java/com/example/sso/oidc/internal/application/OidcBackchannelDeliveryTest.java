@@ -30,6 +30,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 /**
@@ -60,8 +61,9 @@ class OidcBackchannelDeliveryTest {
     void setUp() {
         delivery = new OidcBackchannelDelivery(clients, tokens, orgContext, organizations, jdbc,
                 "http://localhost:9000", Duration.ofSeconds(1));
-        when(clients.findByClientId("c-1")).thenReturn(bclClient());
-        when(tokens.create(any(), any(), any(), any())).thenReturn("logout-token");
+        // Lenient: the collision test below stubs its own clients/tokens and does not use "c-1".
+        lenient().when(clients.findById("c-1")).thenReturn(bclClient());
+        lenient().when(tokens.create(any(), any(), any(), any())).thenReturn("logout-token");
     }
 
     private RegisteredClient bclClient() {
@@ -101,6 +103,42 @@ class OidcBackchannelDeliveryTest {
 
         verify(orgContext, never()).callInOrg(any(), any());
         verify(tokens).create("c-1", "bob", "sid-1", "http://localhost:9000"); // platform issuer
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void twoTenantsSharingAClientIdEachResolveToTheirOwnOrgByInternalId() {
+        // #119 regression: client_id "acme" is registered by BOTH org A and org B (distinct internal ids). The
+        // org — and thus the signing key/issuer + aud — must be resolved by the UNAMBIGUOUS internal id, never by
+        // the shared client_id, so each logout goes to the right tenant.
+        UUID orgA = UUID.randomUUID();
+        UUID orgB = UUID.randomUUID();
+        when(jdbc.query(anyString(), any(ResultSetExtractor.class), eq("id-A"))).thenReturn(orgA);
+        when(jdbc.query(anyString(), any(ResultSetExtractor.class), eq("id-B"))).thenReturn(orgB);
+        when(clients.findById("id-A")).thenReturn(clientNamed("id-A", "acme"));
+        when(clients.findById("id-B")).thenReturn(clientNamed("id-B", "acme"));
+        when(organizations.findView(orgA)).thenReturn(Optional.of(orgView(orgA, "tenant-a")));
+        when(organizations.findView(orgB)).thenReturn(Optional.of(orgView(orgB, "tenant-b")));
+        when(orgContext.callInOrg(any(), any())).thenAnswer(inv -> inv.<Supplier<?>>getArgument(1).get());
+
+        delivery.deliver("id-A", "bob", "sid-1");
+        delivery.deliver("id-B", "carol", "sid-2");
+
+        verify(orgContext).callInOrg(eq(orgA), any());
+        verify(orgContext).callInOrg(eq(orgB), any());
+        verify(tokens).create("acme", "bob", "sid-1", "http://tenant-a.localhost:9000");   // org A's issuer
+        verify(tokens).create("acme", "carol", "sid-2", "http://tenant-b.localhost:9000"); // org B's issuer
+    }
+
+    private RegisteredClient clientNamed(String internalId, String clientId) {
+        return RegisteredClient.withId(internalId).clientId(clientId)
+                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .redirectUri("https://rp.example.com/cb").scope(OidcScopes.OPENID)
+                .clientSettings(ClientSettings.builder()
+                        .setting(BackChannelLogout.CLIENT_SETTING_URI, REFUSED_URI)
+                        .setting(BackChannelLogout.CLIENT_SETTING_SESSION_REQUIRED, true).build())
+                .build();
     }
 
     private OrganizationView orgView(UUID id, String slug) {

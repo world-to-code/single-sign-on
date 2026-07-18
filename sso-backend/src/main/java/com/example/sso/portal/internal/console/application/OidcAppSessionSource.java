@@ -27,8 +27,10 @@ class OidcAppSessionSource implements AppSessionSource {
 
     @Override
     public List<AppSessionParticipation> participationsFor(Set<String> sids) {
+        // appId = the OIDC client's internal id (an opaque routing key; the per-tenant client_id would be
+        // ambiguous). The user sees p.name(); the browser echoes appId back to log this one client out.
         return oidc.participationsFor(sids).stream()
-                .map(p -> new AppSessionParticipation(AppType.OIDC, p.clientId(), p.sid(), p.name(),
+                .map(p -> new AppSessionParticipation(AppType.OIDC, p.registeredClientId(), p.sid(), p.name(),
                         p.backChannelLogoutSupported()))
                 .toList();
     }

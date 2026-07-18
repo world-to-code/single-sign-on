@@ -57,16 +57,19 @@ class OidcBackchannelDelivery {
     }
 
     /**
-     * Builds and delivers the {@code logout_token} to one client under its own tenant scope, classifying the
-     * result: TERMINAL (client gone / not a back-channel client) is settled without retry; TRANSIENT (endpoint
-     * unreachable or token not buildable right now) is kept for the durable retry sweep; DELIVERED is settled.
+     * Builds and delivers the {@code logout_token} to one client (by its globally-unique internal id) under its
+     * own tenant scope, classifying the result: TERMINAL (client gone / not a back-channel client) is settled
+     * without retry; TRANSIENT (endpoint unreachable or token not buildable right now) is kept for the durable
+     * retry sweep; DELIVERED is settled. Resolving by the internal id (not the per-tenant {@code client_id})
+     * keeps the org — and thus the signing key/issuer/endpoint — unambiguous even when two tenants share a
+     * {@code client_id}.
      */
-    BackchannelDeliveryOutcome deliver(String clientId, String subject, String sid) {
-        UUID clientOrg = clientOrg(clientId);
+    BackchannelDeliveryOutcome deliver(String registeredClientId, String subject, String sid) {
+        UUID clientOrg = clientOrg(registeredClientId);
         String issuer = issuerFor(clientOrg);
         return clientOrg == null
-                ? sendLogout(clientId, subject, sid, issuer)
-                : orgContext.callInOrg(clientOrg, () -> sendLogout(clientId, subject, sid, issuer));
+                ? sendLogout(registeredClientId, subject, sid, issuer)
+                : orgContext.callInOrg(clientOrg, () -> sendLogout(registeredClientId, subject, sid, issuer));
     }
 
     /** True when the client is registered AND configured with a back-channel logout URI (one-click capable). */
@@ -75,8 +78,9 @@ class OidcBackchannelDelivery {
         return uri instanceof String logoutUri && !logoutUri.isBlank();
     }
 
-    private BackchannelDeliveryOutcome sendLogout(String clientId, String subject, String sid, String issuer) {
-        RegisteredClient client = clients.findByClientId(clientId);
+    private BackchannelDeliveryOutcome sendLogout(String registeredClientId, String subject, String sid,
+            String issuer) {
+        RegisteredClient client = clients.findById(registeredClientId);
         if (client == null) {
             return BackchannelDeliveryOutcome.TERMINAL;
         }
@@ -87,20 +91,23 @@ class OidcBackchannelDelivery {
         boolean sessionRequired = Boolean.TRUE.equals(
                 client.getClientSettings().getSetting(BackChannelLogout.CLIENT_SETTING_SESSION_REQUIRED));
         try {
-            return post((String) uri, tokens.create(clientId, subject, sessionRequired ? sid : null, issuer))
+            // aud = the client's own client_id (resolved from the unambiguous id) — the RP validates it.
+            String token = tokens.create(client.getClientId(), subject, sessionRequired ? sid : null, issuer);
+            return post((String) uri, token)
                     ? BackchannelDeliveryOutcome.DELIVERED
                     : BackchannelDeliveryOutcome.TRANSIENT;
         } catch (RuntimeException e) {
-            log.warn("back-channel logout to {} failed to build/send: {}", clientId, e.getMessage());
+            log.warn("back-channel logout to {} failed to build/send: {}", client.getClientId(), e.getMessage());
             return BackchannelDeliveryOutcome.TRANSIENT;
         }
     }
 
-    // The owning org of a client (null = a global/platform client). Direct lookup — oauth2_registered_client
-    // is not RLS-scoped, so this resolves regardless of the ambient (platform) propagation context.
-    private UUID clientOrg(String clientId) {
-        return jdbc.query("select org_id from oauth2_registered_client where client_id = ?",
-                rs -> rs.next() ? rs.getObject("org_id", UUID.class) : null, clientId);
+    // The owning org of a client by its internal id (null = a global/platform client). Direct lookup by the
+    // PRIMARY KEY — unambiguous even across tenants — and RLS-free (oauth2_registered_client is not RLS-scoped),
+    // so it resolves regardless of the ambient (platform) propagation context.
+    private UUID clientOrg(String registeredClientId) {
+        return jdbc.query("select org_id from oauth2_registered_client where id = ?",
+                rs -> rs.next() ? rs.getObject("org_id", UUID.class) : null, registeredClientId);
     }
 
     // The issuer a client's tokens were minted under: the platform issuer for a global client, or the

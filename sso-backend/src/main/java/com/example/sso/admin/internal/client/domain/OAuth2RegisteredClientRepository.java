@@ -25,8 +25,10 @@ public interface OAuth2RegisteredClientRepository extends JpaRepository<OAuth2Re
      *  in every tier's launchable-app catalog (its {@code id} is a random UUID, so a client_id lookup is needed). */
     Optional<OAuth2RegisteredClientEntity> findByClientId(String clientId);
 
-    /** Persists our launch-metadata column on the client row Spring just saved. */
+    /** Persists our launch-metadata column on the client row Spring just saved, keyed by its globally-unique
+     *  internal id — NOT client_id, which is unique only per tenant, so a client_id-keyed write would overwrite
+     *  every tenant's (and the global) row sharing that client_id. */
     @Modifying
-    @Query("update OAuth2RegisteredClientEntity c set c.initiateLoginUri = :uri where c.clientId = :clientId")
-    void updateInitiateLoginUri(@Param("clientId") String clientId, @Param("uri") String uri);
+    @Query("update OAuth2RegisteredClientEntity c set c.initiateLoginUri = :uri where c.id = :id")
+    void updateInitiateLoginUriById(@Param("id") String id, @Param("uri") String uri);
 }

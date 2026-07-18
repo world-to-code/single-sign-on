@@ -106,7 +106,7 @@ class LogoutPropagationImplTest {
     @Test
     void anUnregisteredClientIsTerminalAndSettled() {
         participants("c-gone");
-        when(clients.findByClientId("c-gone")).thenReturn(null);
+        when(clients.findById("c-gone")).thenReturn(null);
         when(index.removeParticipants(eq(SID), any())).thenReturn(0);
 
         propagation.propagate(SID, USER);
@@ -118,7 +118,7 @@ class LogoutPropagationImplTest {
     @Test
     void aClientNotConfiguredForBackChannelLogoutIsTerminal() {
         participants("c-plain");
-        when(clients.findByClientId("c-plain")).thenReturn(nonBclClient("c-plain"));
+        when(clients.findById("c-plain")).thenReturn(nonBclClient("c-plain"));
         when(index.removeParticipants(eq(SID), any())).thenReturn(0);
 
         propagation.propagate(SID, USER);
@@ -129,7 +129,7 @@ class LogoutPropagationImplTest {
     @Test
     void aTransientPostFailureIsKeptForRetryNotSettled() {
         participants("c-down");
-        when(clients.findByClientId("c-down")).thenReturn(bclClient("c-down", REFUSED_URI));
+        when(clients.findById("c-down")).thenReturn(bclClient("c-down", REFUSED_URI));
         when(index.removeParticipants(eq(SID), any())).thenReturn(1);
 
         propagation.propagate(SID, USER);
@@ -143,8 +143,8 @@ class LogoutPropagationImplTest {
     @Test
     void onlyTheTransientClientSurvivesAMixedPass() {
         participants("c-gone", "c-down");
-        when(clients.findByClientId("c-gone")).thenReturn(null);
-        when(clients.findByClientId("c-down")).thenReturn(bclClient("c-down", REFUSED_URI));
+        when(clients.findById("c-gone")).thenReturn(null);
+        when(clients.findById("c-down")).thenReturn(bclClient("c-down", REFUSED_URI));
         when(index.removeParticipants(eq(SID), any())).thenReturn(1);
 
         propagation.propagate(SID, USER);
@@ -165,7 +165,7 @@ class LogoutPropagationImplTest {
         try {
             String uri = "http://127.0.0.1:" + server.getAddress().getPort() + "/bcl";
             participants("c-ok");
-            when(clients.findByClientId("c-ok")).thenReturn(bclClient("c-ok", uri));
+            when(clients.findById("c-ok")).thenReturn(bclClient("c-ok", uri));
             when(index.removeParticipants(eq(SID), any())).thenReturn(0);
 
             propagation.propagate(SID, USER);
@@ -184,7 +184,7 @@ class LogoutPropagationImplTest {
         // A DB blip during fan-out (here: the client registry lookup) must not drop the logout — the client
         // stays in the index and the sweep re-drives it, and the loop still reaches reschedule.
         participants("c-db");
-        when(clients.findByClientId("c-db")).thenThrow(new QueryTimeoutException("pool exhausted"));
+        when(clients.findById("c-db")).thenThrow(new QueryTimeoutException("pool exhausted"));
         when(index.removeParticipants(eq(SID), any())).thenReturn(1);
 
         propagation.propagate(SID, USER);
@@ -198,7 +198,7 @@ class LogoutPropagationImplTest {
     @Test
     void givingUpAuditsEveryStillUndeliveredClientAndClears() {
         participants("c-down");
-        when(clients.findByClientId("c-down")).thenReturn(bclClient("c-down", REFUSED_URI));
+        when(clients.findById("c-down")).thenReturn(bclClient("c-down", REFUSED_URI));
         when(index.removeParticipants(eq(SID), any())).thenReturn(1);
 
         ArgumentCaptor<Runnable> onGiveUp = ArgumentCaptor.captor();

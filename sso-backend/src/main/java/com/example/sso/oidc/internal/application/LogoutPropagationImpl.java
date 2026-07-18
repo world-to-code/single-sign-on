@@ -46,22 +46,22 @@ class LogoutPropagationImpl implements LogoutPropagation {
         OidcBackchannelSessionIndex.Participants participants = index.lookup(sid);
         String subject = participants.username() != null ? participants.username() : username;
         Set<String> settled = new HashSet<>();
-        for (String clientId : participants.clientIds()) {
+        for (String registeredClientId : participants.registeredClientIds()) {
             BackchannelDeliveryOutcome outcome;
             try {
-                outcome = delivery.deliver(clientId, subject, sid);
-                audit.record(new AuditRecord(AuditType.OIDC_BACKCHANNEL_LOGOUT,
-                        subject, outcome == BackchannelDeliveryOutcome.DELIVERED, "client=" + clientId, null));
+                outcome = delivery.deliver(registeredClientId, subject, sid);
+                audit.record(new AuditRecord(AuditType.OIDC_BACKCHANNEL_LOGOUT, subject,
+                        outcome == BackchannelDeliveryOutcome.DELIVERED, "client=" + registeredClientId, null));
             } catch (RuntimeException e) {
                 // An IdP-side infra fault (client-org lookup, issuer resolution, audit write, a DB blip mid-fan-out)
                 // must NOT drop this client's logout: treat it as TRANSIENT so it stays in the index and the sweep
                 // re-drives it, and so the loop can never abort before the reschedule below (which alone makes the
                 // termination durable). Never lose a revocation to a transient fault.
-                log.warn("back-channel logout for client {} failed to process: {}", clientId, e.getMessage());
+                log.warn("back-channel logout for client {} failed to process: {}", registeredClientId, e.getMessage());
                 outcome = BackchannelDeliveryOutcome.TRANSIENT;
             }
             if (outcome != BackchannelDeliveryOutcome.TRANSIENT) {
-                settled.add(clientId); // delivered or terminally undeliverable — never retry it
+                settled.add(registeredClientId); // delivered or terminally undeliverable — never retry it
             }
         }
         // Clear ONLY what is settled; a transiently-failed client stays in the index for the durable retry
@@ -72,11 +72,12 @@ class LogoutPropagationImpl implements LogoutPropagation {
     }
 
     // Called once the retry cap is exhausted: the clients still in the index were never delivered. Audit each
-    // abandonment so a logout that could not propagate is VISIBLE to operators (A09), never silent, then clear.
+    // abandonment (by registered-client id) so a logout that could not propagate is VISIBLE to operators (A09),
+    // never silent, then clear.
     private void auditGaveUp(String sid, String subject) {
-        for (String clientId : index.lookup(sid).clientIds()) {
+        for (String registeredClientId : index.lookup(sid).registeredClientIds()) {
             audit.record(new AuditRecord(AuditType.OIDC_BACKCHANNEL_LOGOUT, subject, false,
-                    "client=" + clientId + " abandoned after exhausting retries", null));
+                    "client=" + registeredClientId + " abandoned after exhausting retries", null));
         }
         index.clear(sid);
     }

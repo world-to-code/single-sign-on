@@ -1,6 +1,8 @@
 package com.example.sso.oidc;
 
+import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
+import com.example.sso.organization.OrganizationView;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
 import com.nimbusds.jwt.SignedJWT;
@@ -132,6 +134,33 @@ class OidcFlowIT extends AbstractIntegrationTest {
         SignedJWT jwt = SignedJWT.parse(extractJson(response, "access_token"));
         assertThat(jwt.getJWTClaimsSet().getIssuer()).isEqualTo("http://" + DEFAULT_ORG_SLUG + ".localhost:9000");
         assertThat(jwt.getHeader().getKeyID()).isNotBlank();
+    }
+
+    @Test
+    void twoTenantsSharingAClientIdEachAuthenticateAndMintUnderTheirOwnIssuer() throws Exception {
+        // Per-tenant client_id: org A (the seeded default) and a fresh org B each own a client with the SAME
+        // client_id. The token endpoint must resolve the tier-correct client per host — never the other tenant's
+        // — so each mints under its OWN issuer. (If findByClientId returned an arbitrary shared-client_id row,
+        // one tenant's client would fail to authenticate at its own host.)
+        String sharedClientId = "shared-" + UUID.randomUUID().toString().substring(0, 8);
+        OrganizationView orgB = organizations.create(
+                new NewOrganization("shared-b-" + UUID.randomUUID().toString().substring(0, 8), "Org B"));
+        saveClient(sharedClientId, defaultOrgId());
+        saveClient(sharedClientId, orgB.id());
+
+        String atA = mvc.perform(post("http://" + DEFAULT_ORG_SLUG + ".localhost:9000/oauth2/token")
+                        .param("grant_type", "client_credentials").param("scope", "profile")
+                        .with(httpBasic(sharedClientId, CLIENT_SECRET)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(SignedJWT.parse(extractJson(atA, "access_token")).getJWTClaimsSet().getIssuer())
+                .isEqualTo("http://" + DEFAULT_ORG_SLUG + ".localhost:9000");
+
+        String atB = mvc.perform(post("http://" + orgB.slug() + ".localhost:9000/oauth2/token")
+                        .param("grant_type", "client_credentials").param("scope", "profile")
+                        .with(httpBasic(sharedClientId, CLIENT_SECRET)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(SignedJWT.parse(extractJson(atB, "access_token")).getJWTClaimsSet().getIssuer())
+                .isEqualTo("http://" + orgB.slug() + ".localhost:9000");
     }
 
     @Test

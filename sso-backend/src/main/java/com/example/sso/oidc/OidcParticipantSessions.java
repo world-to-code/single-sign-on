@@ -14,9 +14,10 @@ public interface OidcParticipantSessions {
     List<OidcParticipation> participationsFor(Set<String> sids);
 
     /**
-     * Logs {@code username} out of ONE OIDC client for ONE session: delivers a sid-scoped back-channel
-     * {@code logout_token} (the RP ends THAT session) and removes the client from the session's participant
-     * index — leaving the IdP session and every other app untouched. Best-effort delivery, always audited.
+     * Logs {@code username} out of ONE OIDC client (by its internal {@code registeredClientId}) for ONE
+     * session: delivers a sid-scoped back-channel {@code logout_token} (the RP ends THAT session) and removes
+     * the client from the session's participant index — leaving the IdP session and every other app untouched.
+     * Best-effort delivery, always audited; a transiently-failed client is kept for the durable retry sweep.
      */
-    void logout(String sid, String clientId, String username);
+    void logout(String sid, String registeredClientId, String username);
 }

@@ -50,6 +50,7 @@ import org.springframework.security.oauth2.server.authorization.OAuth2Authorizat
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.client.JdbcRegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
@@ -149,11 +150,12 @@ public class AuthorizationServerConfig {
     }
 
     @Bean
-    RegisteredClientRepository registeredClientRepository(JdbcTemplate jdbcTemplate, OrgContext orgContext) {
+    RegisteredClientRepository registeredClientRepository(JdbcTemplate jdbcTemplate, OrgContext orgContext,
+            PlatformTransactionManager txManager) {
         // Bind clients to their owning tenant so a client can only be used under its own tenant's host —
         // the per-tenant issuer/key is otherwise selected purely by the (attacker-influenceable) host.
         return new OrgScopedRegisteredClientRepository(
-                new JdbcRegisteredClientRepository(jdbcTemplate), orgContext, jdbcTemplate);
+                new JdbcRegisteredClientRepository(jdbcTemplate), orgContext, jdbcTemplate, txManager);
     }
 
     @Bean
@@ -265,7 +267,11 @@ public class AuthorizationServerConfig {
                                 .map(a -> a.substring(Factors.SID_PREFIX.length()))
                                 .ifPresent(sid -> {
                                     context.getClaims().claim("sid", sid);
-                                    backchannelIndex.record(sid, context.getRegisteredClient().getClientId(), username);
+                                    // Record the client by its globally-unique internal id, NOT client_id: a
+                                    // client_id is unique only per tenant, so the browser-less logout path must
+                                    // resolve the owning org from the unambiguous id to sign/deliver to the right
+                                    // tenant.
+                                    backchannelIndex.record(sid, context.getRegisteredClient().getId(), username);
                                 });
                     }
                 }
