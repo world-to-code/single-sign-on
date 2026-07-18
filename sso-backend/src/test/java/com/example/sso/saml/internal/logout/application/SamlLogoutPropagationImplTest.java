@@ -64,8 +64,10 @@ class SamlLogoutPropagationImplTest {
 
     @BeforeEach
     void setUp() {
-        propagation = new SamlLogoutPropagationImpl(index, relyingParties, messageBuilder, audit, orgContext,
-                retryCoordinator, Duration.ofSeconds(2));
+        SamlParticipantDelivery delivery =
+                new SamlParticipantDelivery(messageBuilder, orgContext, Duration.ofSeconds(2));
+        propagation = new SamlLogoutPropagationImpl(index, relyingParties, audit, orgContext, retryCoordinator,
+                delivery);
         // callAsPlatform just runs the RP lookup in this test.
         lenient().when(orgContext.callAsPlatform(any())).thenAnswer(inv -> inv.<Supplier<?>>getArgument(0).get());
     }

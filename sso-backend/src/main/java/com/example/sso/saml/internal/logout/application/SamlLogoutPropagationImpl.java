@@ -8,57 +8,41 @@ import com.example.sso.saml.relyingparty.SloBinding;
 import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;
 import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingPartyRepository;
 import com.example.sso.tenancy.OrgContext;
-import java.time.Duration;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.MediaType;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientException;
 
 /**
- * Back-channel SAML SLO: for each SOAP-binding participant SP of the terminated session, builds a signed
- * {@code LogoutRequest}, wraps it in a SOAP 1.1 envelope, and POSTs it to the SP's Single Logout endpoint.
- * Per-SP failures are isolated + audited; the mapping is cleared afterwards (one send per termination).
+ * Back-channel SAML SLO: for each SOAP-binding participant SP of the terminated session, delivers a signed
+ * {@code LogoutRequest} via {@link SamlParticipantDelivery}. Per-SP failures are isolated + audited; only
+ * settled SPs are cleared, so a transiently-failed SOAP SP stays for the durable retry sweep.
  */
 @Service
 class SamlLogoutPropagationImpl implements SamlLogoutPropagation {
 
     private static final Logger log = LoggerFactory.getLogger(SamlLogoutPropagationImpl.class);
-    private static final String SOAP_PREFIX =
-            "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body>";
-    private static final String SOAP_SUFFIX = "</soap:Body></soap:Envelope>";
 
     private final SamlSloSessionIndex index;
     private final SamlRelyingPartyRepository relyingParties;
-    private final SamlLogoutMessageBuilder messageBuilder;
     private final AuditService audit;
     private final OrgContext orgContext;
     private final LogoutRetryCoordinator retryCoordinator;
-    private final RestClient http;
+    private final SamlParticipantDelivery delivery;
 
     SamlLogoutPropagationImpl(SamlSloSessionIndex index, SamlRelyingPartyRepository relyingParties,
-            SamlLogoutMessageBuilder messageBuilder, AuditService audit, OrgContext orgContext,
-            LogoutRetryCoordinator retryCoordinator,
-            @Value("${sso.saml.slo.http-timeout:PT5S}") Duration timeout) {
+            AuditService audit, OrgContext orgContext, LogoutRetryCoordinator retryCoordinator,
+            SamlParticipantDelivery delivery) {
         this.index = index;
         this.relyingParties = relyingParties;
-        this.messageBuilder = messageBuilder;
         this.audit = audit;
         this.orgContext = orgContext;
         this.retryCoordinator = retryCoordinator;
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(timeout);
-        factory.setReadTimeout(timeout);
-        this.http = RestClient.builder().requestFactory(factory).build();
+        this.delivery = delivery;
     }
 
     // NOT @Transactional: this runs on the browser-less expiry path with no OrgContext bound, and each RP is
@@ -113,7 +97,7 @@ class SamlLogoutPropagationImpl implements SamlLogoutPropagation {
             // A delivered SP is settled; a transient build/send failure is left in the index for the retry sweep.
             boolean delivered;
             try {
-                delivered = sendSoapLogout(rp, nameId, sid);
+                delivered = delivery.sendSoap(rp, nameId, sid);
             } catch (RuntimeException e) {
                 log.warn("SAML SLO to {} failed to build/send: {}", entityId, e.getMessage());
                 delivered = false;
@@ -134,27 +118,5 @@ class SamlLogoutPropagationImpl implements SamlLogoutPropagation {
                     "sp=" + entityId + " abandoned after exhausting retries", null));
         }
         index.clear(sid);
-    }
-
-    // Build (which SIGNS with the RP's tenant SAML credential) + deliver, bound to the RP's org so the
-    // LogoutRequest is signed with that tenant's key; a global RP (org null) runs in the ambient context.
-    private boolean sendSoapLogout(SamlRelyingParty rp, String nameId, String sid) {
-        UUID org = rp.getOrgId();
-        if (org == null) {
-            return postSoap(rp.getSingleLogoutUrl(), messageBuilder.signedLogoutRequestXml(rp, nameId, sid));
-        }
-        return orgContext.callInOrg(org, () ->
-                postSoap(rp.getSingleLogoutUrl(), messageBuilder.signedLogoutRequestXml(rp, nameId, sid)));
-    }
-
-    private boolean postSoap(String url, String logoutRequestXml) {
-        try {
-            http.post().uri(url).contentType(MediaType.TEXT_XML)
-                    .body(SOAP_PREFIX + logoutRequestXml + SOAP_SUFFIX).retrieve().toBodilessEntity();
-            return true;
-        } catch (RestClientException e) {
-            log.warn("SAML back-channel LogoutRequest to {} failed: {}", url, e.getMessage());
-            return false;
-        }
     }
 }
