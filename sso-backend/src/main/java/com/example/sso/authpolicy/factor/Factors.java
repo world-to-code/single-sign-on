@@ -31,6 +31,14 @@ public final class Factors {
     /** Marker-authority prefix carrying this OP session's stable id, surfaced as the OIDC {@code sid}
      *  claim so back-channel logout can target the exact session (not every session of the subject).
      *  Generated once at login completion and carried across re-auth; mirrors the OIDC_SID session attribute. */
+    /**
+     * Marks a session whose primary factor was satisfied by an UPSTREAM identity provider rather than by a
+     * credential this IdP holds. Deliberately not {@code FACTOR_}-prefixed: it is not a factor, and anything
+     * carrying that prefix is counted as one. Surfaced to relying parties as the RFC 8176 {@code fed} method,
+     * so an RP can tell "the user proved themselves to their own IdP" from "this IdP verified a password".
+     */
+    public static final String FEDERATED = "AUTH_FEDERATED";
+
     public static final String SID_PREFIX = "SID_";
 
     /** Marker-authority prefix carrying the id of the organization (tenant) the session logged into,

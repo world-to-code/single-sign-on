@@ -128,4 +128,43 @@ class AuthenticationCompletionServiceTest {
         verify(factorAuth).establish(eq(request), eq(response), promoted.capture());
         assertThat(promoted.getValue().getAuthorities()).anyMatch(FactorGrantedAuthority.class::isInstance);
     }
+
+    /**
+     * Promotion REBUILDS the authority set from the freshly loaded principal, keeping only what it explicitly
+     * copies. The federated marker is deliberately not FACTOR_-prefixed (that prefix is counted as a factor),
+     * so the factor filter alone drops it — and the token then reports amr=pwd, telling every relying party
+     * this IdP verified a password it never saw.
+     */
+    @Test
+    void thePromotedAuthenticationCarriesTheFederatedMarker() {
+        signIn(Factors.PASSWORD, Factors.FEDERATED);
+        when(authState.isPolicySatisfied(any(), any())).thenReturn(true);
+        when(userDetailsService.loadUserByUsername("alice"))
+                .thenReturn(new User("alice", "", List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+        when(authState.describe(any(), any(), any())).thenReturn(AuthSessionView.organizationPending(true));
+
+        service.completeIfSatisfied(request, response);
+
+        ArgumentCaptor<Authentication> promoted = ArgumentCaptor.forClass(Authentication.class);
+        verify(factorAuth).establish(eq(request), eq(response), promoted.capture());
+        assertThat(promoted.getValue().getAuthorities()).extracting(GrantedAuthority::getAuthority)
+                .contains(Factors.FEDERATED);
+    }
+
+    /** ...and never invents it: an ordinary password login must not look federated to a relying party. */
+    @Test
+    void anOrdinaryLoginIsNotMarkedFederated() {
+        signIn(Factors.PASSWORD);
+        when(authState.isPolicySatisfied(any(), any())).thenReturn(true);
+        when(userDetailsService.loadUserByUsername("alice"))
+                .thenReturn(new User("alice", "", List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+        when(authState.describe(any(), any(), any())).thenReturn(AuthSessionView.organizationPending(true));
+
+        service.completeIfSatisfied(request, response);
+
+        ArgumentCaptor<Authentication> promoted = ArgumentCaptor.forClass(Authentication.class);
+        verify(factorAuth).establish(eq(request), eq(response), promoted.capture());
+        assertThat(promoted.getValue().getAuthorities()).extracting(GrantedAuthority::getAuthority)
+                .doesNotContain(Factors.FEDERATED);
+    }
 }

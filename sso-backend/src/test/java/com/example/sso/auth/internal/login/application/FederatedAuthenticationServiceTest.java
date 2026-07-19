@@ -23,6 +23,9 @@ import java.util.List;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.mockito.ArgumentCaptor;
+import org.springframework.security.core.GrantedAuthority;
+import static org.assertj.core.api.Assertions.assertThat;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -653,5 +656,27 @@ class FederatedAuthenticationServiceTest {
                 .isInstanceOf(BadRequestException.class);
         verify(federation, never()).beginLogin(any(), any(), any());
         verify(factorAuth, never()).establish(any(), any(), any());
+    }
+
+    /**
+     * The session must record that an UPSTREAM authenticated this user, not this IdP. Without the marker the
+     * token says amr=pwd, telling every relying party a password was verified here — a credential check that
+     * never happened, and one an RP may be relying on to allow something.
+     */
+    @Test
+    void aFederatedSessionIsMarkedAsFederated() {
+        UUID userId = UUID.randomUUID();
+        UserAccount member = user(userId);
+        completeLoginReturns(identity(true, false));
+        when(users.findByLoginInOrg("ada@example.com", ORG)).thenReturn(Optional.of(member));
+        when(organizations.isMember(ORG, userId)).thenReturn(true);
+
+        service.complete(ALIAS, CODE, STATE, request, response);
+
+        ArgumentCaptor<Authentication> established = ArgumentCaptor.forClass(Authentication.class);
+        verify(factorAuth).establish(eq(request), eq(response), established.capture());
+        assertThat(established.getValue().getAuthorities())
+                .extracting(GrantedAuthority::getAuthority)
+                .contains(Factors.FEDERATED);
     }
 }

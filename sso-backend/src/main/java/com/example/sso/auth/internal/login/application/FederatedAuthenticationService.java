@@ -32,6 +32,7 @@ import java.util.stream.Collectors;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -99,8 +100,10 @@ public class FederatedAuthenticationService {
                 pending.nonce(), pending.codeVerifier());
         UserAccount user = resolveOrProvision(identity, orgId, ClientIp.of(request));
 
-        Authentication preAuth = UsernamePasswordAuthenticationToken.authenticated(
-                user.getUsername(), null, List.of()); // identified via the upstream; factors granted next
+        // The FEDERATED marker rides along from the start: it is what lets a downstream RP tell an upstream
+        // sign-in from a password this IdP checked. Not a factor — factors are granted below.
+        Authentication preAuth = UsernamePasswordAuthenticationToken.authenticated(user.getUsername(), null,
+                List.of(new SimpleGrantedAuthority(Factors.FEDERATED)));
         factorAuth.establish(request, response, preAuth);
         factorAuth.grantFactor(request, response, Factors.PASSWORD); // federation satisfies the primary factor
         audit.record(new AuditRecord(AuditType.AUTH_SUCCESS, user.getUsername(), true, null,

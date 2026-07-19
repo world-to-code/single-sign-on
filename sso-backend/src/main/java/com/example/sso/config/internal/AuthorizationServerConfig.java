@@ -234,7 +234,7 @@ public class AuthorizationServerConfig {
                     Set<String> auth = context.getPrincipal().getAuthorities().stream()
                             .map(GrantedAuthority::getAuthority).collect(Collectors.toSet());
                     long factorCount = auth.stream().filter(a -> a.startsWith("FACTOR_")).count();
-                    List<String> amr = amrValues(auth, factorCount);
+                    List<String> amr = AuthenticationMethodReferences.of(auth, factorCount);
                     if (!amr.isEmpty()) {
                         context.getClaims().claim("amr", amr);
                         context.getClaims().claim("acr", factorCount >= 2 ? "mfa" : "sfa");
@@ -303,14 +303,4 @@ public class AuthorizationServerConfig {
         });
     }
 
-    /** Maps satisfied factor authorities to RFC 8176 Authentication Method References. */
-    private List<String> amrValues(Set<String> authorities, long factorCount) {
-        List<String> amr = new ArrayList<>();
-        if (authorities.contains(Factors.PASSWORD)) amr.add("pwd");
-        if (authorities.contains(Factors.TOTP)) amr.add("otp");
-        if (authorities.contains(Factors.EMAIL) && !amr.contains("otp")) amr.add("otp");
-        if (authorities.contains(Factors.FIDO2)) amr.add("hwk"); // hardware-backed / passkey
-        if (factorCount >= 2) amr.add("mfa");
-        return amr;
-    }
 }

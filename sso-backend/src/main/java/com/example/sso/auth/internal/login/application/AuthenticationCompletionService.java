@@ -76,8 +76,13 @@ public class AuthenticationCompletionService {
                     .orElseGet(() -> loginScope.within(loginOrg,
                             () -> userDetailsService.loadUserByUsername(authentication.getName())));
             Set<GrantedAuthority> authorities = new LinkedHashSet<>(principal.getAuthorities());
+            // The final authorities come from the freshly-loaded principal, so anything the login phase
+            // established has to be copied across explicitly: the satisfied factors, and whether an upstream
+            // provider — not this IdP — is what actually authenticated the user.
             authentication.getAuthorities().stream()
-                    .filter(a -> a.getAuthority().startsWith(Factors.FACTOR_PREFIX)).forEach(authorities::add);
+                    .filter(a -> a.getAuthority().startsWith(Factors.FACTOR_PREFIX)
+                            || Factors.FEDERATED.equals(a.getAuthority()))
+                    .forEach(authorities::add);
             authorities.add(new SimpleGrantedAuthority(Factors.MFA_COMPLETE));
             // Carry the authentication time as a marker authority so the OIDC token customizer can emit
             // the standard `auth_time` claim. (A details object would break JdbcOAuth2AuthorizationService,
