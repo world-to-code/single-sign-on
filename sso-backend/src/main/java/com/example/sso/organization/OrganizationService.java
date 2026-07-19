@@ -6,9 +6,15 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * The organization (tenant) registry and global-user↔org membership. Users are global identities
- * (Auth0-Organizations model); a membership links a user to many orgs, and login resolves the active
- * org. The backing entities never leave the module — callers consume {@link OrganizationRef}/
+ * The organization (tenant) registry and its memberships.
+ *
+ * <p>An organization OWNS its users. This started as the Auth0-Organizations shape — one global identity
+ * belonging to many organizations — and was reversed: {@code app_user} carries an {@code org_id}, and
+ * uniqueness on username and email is per-organization ({@code V67}, {@code V68}). So the same address is a
+ * DIFFERENT person in a different tenant, and someone who needs access to two organizations holds two
+ * accounts. A {@code null org_id} is the platform tier (the global super-admin), not a shared identity.
+ *
+ * <p>The backing entities never leave the module — callers consume {@link OrganizationRef}/
  * {@link OrganizationView} and plain ids.
  */
 public interface OrganizationService {
