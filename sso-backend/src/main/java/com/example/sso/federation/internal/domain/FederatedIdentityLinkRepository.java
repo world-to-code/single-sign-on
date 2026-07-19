@@ -43,6 +43,12 @@ public interface FederatedIdentityLinkRepository extends JpaRepository<Federated
             @Param("subject") String subject, @Param("providerAlias") String providerAlias,
             @Param("userId") UUID userId);
 
+    /** The identities bound to one account within a tenant — the admin listing. */
+    List<FederatedIdentityLink> findByOrgIdAndUserIdOrderByCreatedAt(UUID orgId, UUID userId);
+
+    /** One identity, addressed within the acting tenant so an admin cannot reach another org's row. */
+    Optional<FederatedIdentityLink> findByIdAndOrgId(UUID id, UUID orgId);
+
     /** The accounts holding an identity at this upstream — read before retiring them, to revoke their sessions. */
     @Query("select l.userId from FederatedIdentityLink l where l.orgId = :orgId and l.issuer = :issuer")
     List<UUID> findUserIdsAt(@Param("orgId") UUID orgId, @Param("issuer") String issuer);
