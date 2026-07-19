@@ -15,7 +15,20 @@ export interface SessionView {
   org: string | null;
   /** Whether the resolved tenant permits passwordless passkey sign-in as the first factor (admin opt-in). */
   passwordlessLoginAllowed: boolean;
+  /** The resolved tenant's enabled upstream OIDC providers, offered as "Sign in with …" on the identify screen. */
+  federationProviders: FederationProvider[];
 }
+
+/** A tenant's upstream OIDC provider offered on the login screen. `alias` keys the /start route. */
+export interface FederationProvider {
+  alias: string;
+  displayName: string;
+}
+
+/** Full-page navigation that begins a federated login (the backend 302s to the upstream provider). */
+export const startFederation = (alias: string) => {
+  window.location.href = `/api/auth/federation/${encodeURIComponent(alias)}/start`;
+};
 
 /** Pre-step data for a factor: TOTP enrollment secret + QR, or a WebAuthn options document. */
 export interface FactorChallenge {

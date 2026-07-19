@@ -38,7 +38,7 @@ export default function App() {
       .catch(() => setSession({
         authenticated: false, username: null, totpEnrolled: false, fido2Enrolled: false,
         factors: [], roles: [], permissions: [], next: "ORGANIZATION", pendingFactors: [],
-        mfaEnrollmentAllowed: true, org: null, passwordlessLoginAllowed: false,
+        mfaEnrollmentAllowed: true, org: null, passwordlessLoginAllowed: false, federationProviders: [],
       }))
       .finally(() => setLoading(false));
   }, [apply]);

@@ -74,6 +74,8 @@ export const auth = {
   loginDescription: "Enter your email to continue with your organization's sign-in policy.",
   loginEmailPlaceholder: "you@example.com",
   signInWithPasskey: "Sign in with a passkey",
+  signInWithProvider: "Sign in with {{provider}}",
+  loginFederationFailed: "Sign-in with your identity provider did not complete. You can continue with your email.",
   loginPolicyHint: "We'll ask for your password or other factors based on your sign-in policy. Need an account? Contact your administrator.",
   loginNoAccount: "No account found for that email. Accounts are created by an administrator — please contact them.",
   loginStartFailed: "Could not start sign-in. Please try again.",

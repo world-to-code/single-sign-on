@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { KeyRound, Loader2 } from "lucide-react";
+import { KeyRound, Loader2, LogIn } from "lucide-react";
 import { ApiError } from "../api";
-import { getSession, identify, logout } from "../auth";
+import { getSession, identify, logout, startFederation } from "../auth";
 import type { SessionView } from "../auth";
 import {
   conditionalMediationAvailable,
@@ -28,6 +28,8 @@ export default function Login({ session, onDone }: { session: SessionView; onDon
   const { t } = useTranslation("auth");
   const org = session.org;
   const passkeyOffered = session.passwordlessLoginAllowed && webAuthnSupported();
+  const providers = session.federationProviders ?? [];
+  const hasAlternatives = passkeyOffered || providers.length > 0;
   const [email, setEmail] = useState(() => (org ? lastEmail(org) ?? "" : ""));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -49,6 +51,18 @@ export default function Login({ session, onDone }: { session: SessionView; onDon
     })();
     return () => { active = false; controller.abort(); };
   }, [passkeyOffered, onDone]);
+
+  // A failed federated login (the /callback could not establish a session) redirects here with a flag; show a
+  // generic message and strip the flag so a reload doesn't repeat it. Non-revealing — the reason stays server-side.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("login_error") === "federation") {
+      setError(t("loginFederationFailed"));
+      params.delete("login_error");
+      const query = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (query ? `?${query}` : ""));
+    }
+  }, [t]);
 
   async function signInWithPasskey() {
     setError(null);
@@ -111,18 +125,28 @@ export default function Login({ session, onDone }: { session: SessionView; onDon
         </Button>
       </form>
 
-      {passkeyOffered && (
+      {hasAlternatives && (
         <>
           <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
             <span className="h-px flex-1 bg-border" />
             {t("or")}
             <span className="h-px flex-1 bg-border" />
           </div>
-          <Button type="button" variant="outline" className="w-full" disabled={passkeyBusy}
-                  onClick={signInWithPasskey}>
-            {passkeyBusy ? <Loader2 className="animate-spin" /> : <KeyRound />}
-            {t("signInWithPasskey")}
-          </Button>
+          <div className="space-y-2">
+            {passkeyOffered && (
+              <Button type="button" variant="outline" className="w-full" disabled={passkeyBusy}
+                      onClick={signInWithPasskey}>
+                {passkeyBusy ? <Loader2 className="animate-spin" /> : <KeyRound />}
+                {t("signInWithPasskey")}
+              </Button>
+            )}
+            {providers.map((provider) => (
+              <Button key={provider.alias} type="button" variant="outline" className="w-full"
+                      onClick={() => startFederation(provider.alias)}>
+                <LogIn /> {t("signInWithProvider", { provider: provider.displayName })}
+              </Button>
+            ))}
+          </div>
         </>
       )}
 

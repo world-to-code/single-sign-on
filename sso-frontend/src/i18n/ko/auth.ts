@@ -76,6 +76,8 @@ export const auth: Record<keyof typeof enAuth, string> = {
   loginDescription: "조직의 로그인 정책으로 계속하려면 이메일을 입력하세요.",
   loginEmailPlaceholder: "you@example.com",
   signInWithPasskey: "패스키로 로그인",
+  signInWithProvider: "{{provider}}(으)로 로그인",
+  loginFederationFailed: "외부 IdP 로그인이 완료되지 않았습니다. 이메일로 계속할 수 있습니다.",
   loginPolicyHint: "로그인 정책에 따라 비밀번호나 다른 인증 수단을 요청합니다. 계정이 필요하면 관리자에게 문의하세요.",
   loginNoAccount: "해당 이메일의 계정이 없습니다. 계정은 관리자가 생성하므로 관리자에게 문의하세요.",
   loginStartFailed: "로그인을 시작할 수 없습니다. 다시 시도하세요.",
