@@ -57,6 +57,16 @@ public interface AttributeService {
     void remove(EntityKind kind, String entityId, String key);
 
     /**
+     * Writes the values a DIRECTORY-owned attribute now holds, replacing whatever was there. The entry point a
+     * directory sync uses, and the only one that may touch a directory-owned key.
+     *
+     * <p>The guard runs BOTH ways, which is what makes the ownership model hold: an administrator cannot edit a
+     * directory-owned attribute through {@link #set}, and a sync cannot overwrite a locally-owned one through
+     * here. Without the second half, a mis-mapped connector would silently eat values an administrator owns.
+     */
+    void applyFromDirectory(EntityKind kind, String entityId, String key, Collection<String> values);
+
+    /**
      * The ids of the entities of this kind that carry {@code key = value}. CAVEAT: this is a flat match over
      * the RLS-visible rows and does NOT apply the own-shadows-global precedence that {@link #attributesOf} does,
      * so a global value can still match after a tenant overrode it. A caller that drives access decisions off

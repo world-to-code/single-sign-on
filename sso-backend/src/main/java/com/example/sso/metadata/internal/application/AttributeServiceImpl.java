@@ -6,6 +6,9 @@ import com.example.sso.metadata.EntityAttributeChangedEvent;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.metadata.internal.domain.EntityAttribute;
 import com.example.sso.metadata.internal.domain.EntityAttributeRepository;
+import com.example.sso.metadata.AttributeDefinition;
+import com.example.sso.metadata.AttributeDefinitionService;
+import com.example.sso.shared.error.ConflictException;
 import com.example.sso.tenancy.OrgTierGuard;
 import java.util.Collection;
 import java.util.Comparator;
@@ -32,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 class AttributeServiceImpl implements AttributeService {
 
     private final EntityAttributeRepository attributes;
+    private final AttributeDefinitionService definitions;
     private final OrgTierGuard tierGuard;
     private final ApplicationEventPublisher events;
 
@@ -104,6 +108,7 @@ class AttributeServiceImpl implements AttributeService {
     @Override
     @Transactional
     public void set(EntityKind kind, String entityId, String key, String value) {
+        requireLocallyOwned(kind, key);
         UUID tier = tierGuard.currentTier();
         List<EntityAttribute> rows = ownRows(kind, entityId, key, tier);
         List<EntityAttribute> stale = rows.stream().filter(row -> !row.getAttrValue().equals(value)).toList();
@@ -122,6 +127,7 @@ class AttributeServiceImpl implements AttributeService {
     @Override
     @Transactional
     public void add(EntityKind kind, String entityId, String key, String value) {
+        requireLocallyOwned(kind, key);
         UUID tier = tierGuard.currentTier();
         if (!ownValueExists(kind, entityId, key, value, tier)) { // idempotent — never a duplicate (key,value)
             attributes.save(new EntityAttribute(kind, entityId, key, value, tier));
@@ -132,6 +138,7 @@ class AttributeServiceImpl implements AttributeService {
     @Override
     @Transactional
     public void removeValue(EntityKind kind, String entityId, String key, String value) {
+        requireLocallyOwned(kind, key);
         UUID tier = tierGuard.currentTier();
         List<EntityAttribute> rows = ownRows(kind, entityId, key, tier).stream()
                 .filter(row -> row.getAttrValue().equals(value)).toList();
@@ -144,6 +151,7 @@ class AttributeServiceImpl implements AttributeService {
     @Override
     @Transactional
     public void remove(EntityKind kind, String entityId, String key) {
+        requireLocallyOwned(kind, key);
         UUID tier = tierGuard.currentTier();
         List<EntityAttribute> rows = ownRows(kind, entityId, key, tier);
         if (!rows.isEmpty()) {
@@ -205,6 +213,51 @@ class AttributeServiceImpl implements AttributeService {
 
     /** The acting tier's OWN rows for this key (never a shadowed global), so an edit touches only the tier's — a
      *  key may now hold several values, so this is a list. */
+    @Override
+    @Transactional
+    public void applyFromDirectory(EntityKind kind, String entityId, String key, Collection<String> values) {
+        requireDirectoryOwned(kind, key);
+        UUID tier = tierGuard.currentTier();
+        List<EntityAttribute> rows = ownRows(kind, entityId, key, tier);
+        Set<String> wanted = Set.copyOf(values);
+        List<EntityAttribute> stale = rows.stream()
+                .filter(row -> !wanted.contains(row.getAttrValue())).toList();
+        Set<String> present = rows.stream().map(EntityAttribute::getAttrValue).collect(Collectors.toSet());
+        if (!stale.isEmpty()) {
+            attributes.deleteAll(stale);
+        }
+        wanted.stream().filter(value -> !present.contains(value))
+                .forEach(value -> attributes.save(new EntityAttribute(kind, entityId, key, value, tier)));
+        if (!stale.isEmpty() || !present.containsAll(wanted)) {
+            events.publishEvent(new EntityAttributeChangedEvent(kind, entityId, tier));
+        }
+    }
+
+    /**
+     * An administrator may not edit an attribute a directory owns — the next sync would overwrite the edit, and
+     * a change that silently disappears hours later is worse than one that is refused now.
+     */
+    private void requireLocallyOwned(EntityKind kind, String key) {
+        definitions.definitionOf(kind, key)
+                .filter(definition -> !definition.locallyEditable())
+                .ifPresent(definition -> {
+                    throw ConflictException.of("attribute.directoryOwned", key);
+                });
+    }
+
+    /**
+     * The mirror image, and the half that is easy to forget: a sync may only write what its schema says it
+     * owns. Without this a mis-mapped connector silently eats values an administrator owns, and an undeclared
+     * key would let a sync invent schema by writing to it.
+     */
+    private void requireDirectoryOwned(EntityKind kind, String key) {
+        AttributeDefinition definition = definitions.definitionOf(kind, key)
+                .orElseThrow(() -> ConflictException.of("attribute.notDeclared", key));
+        if (definition.locallyEditable()) {
+            throw ConflictException.of("attribute.locallyOwned", key);
+        }
+    }
+
     private List<EntityAttribute> ownRows(EntityKind kind, String entityId, String key, UUID tier) {
         return tier == null
                 ? attributes.findByEntityKindAndEntityIdAndAttrKeyAndOrgIdIsNull(kind, entityId, key)
