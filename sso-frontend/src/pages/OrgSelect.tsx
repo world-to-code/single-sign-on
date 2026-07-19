@@ -1,66 +1,66 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowRight, Building2, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { ApiError } from "../api";
 import { goHome, organization } from "../auth";
-import { lastOrg, rememberOrg } from "../lib/loginMemory";
+import { forgetOrg, recentOrgs, rememberOrg } from "../lib/loginMemory";
+import { tenantHost } from "../lib/tenantHost";
+import { OrgCard } from "../components/auth/OrgCard";
 import AuthLayout from "../components/layout/AuthLayout";
 import { Alert, AlertDescription } from "../components/ui/alert";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 
-/** The origin of the tenant's OWN subdomain ({slug}.{platform-host}), where its sign-in must complete —
- *  the session is host-bound, so an organization is reached ONLY through its subdomain, never the bare host.
- *  This screen is served only on the bare platform host (a real tenant subdomain auto-resolves its org), so
- *  {@code host} is the apex; the guard below keeps a stray render on an already-tenant host from nesting the
- *  label ({slug}.{slug}.host). */
-function tenantOrigin(slug: string): string {
-  const { protocol, host } = window.location; // host includes the port (e.g. localhost:5173)
-  return `${protocol}//${slug}.${host}`;
-}
-
-/** Already on this tenant's own subdomain — a defensive check so selecting it never appends the label again. */
-function alreadyOnTenant(slug: string): boolean {
-  return window.location.host.toLowerCase().startsWith(slug.toLowerCase() + ".");
-}
-
 /**
  * Tenant-first entry screen, shown only on the bare platform host (a tenant subdomain auto-resolves its org
  * and skips straight to sign-in). The user identifies their organization; we then send them to that org's OWN
  * subdomain to sign in, because the session is host-bound — an organization is reached only through its
  * subdomain. Unknown/suspended organizations are rejected uniformly (no enumeration). A returning visitor is
- * offered their last-used organization for a one-tap continue.
+ * offered the organizations this browser has signed in through, for a one-tap continue — a person may hold
+ * accounts in several (a secondee is a separate user in the host company's tenant). That list is local to the
+ * browser: the server is never asked which organizations an identity belongs to.
  */
 export default function OrgSelect() {
   const { t } = useTranslation("auth");
-  const remembered = lastOrg();
-  // Start on the one-tap card when we remember an org; otherwise ask for the slug.
-  const [manual, setManual] = useState(!remembered);
-  const [slug, setSlug] = useState(remembered ?? "");
+  const [orgs, setOrgs] = useState(recentOrgs);
+  // Start on the remembered list when we have one; otherwise ask for the slug.
+  const [manual, setManual] = useState(orgs.length === 0);
+  const [slug, setSlug] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  // The organization currently being resolved — drives the spinner on the card that was tapped.
+  const [pending, setPending] = useState<string | null>(null);
+  const busy = pending !== null;
 
   async function resolve(value: string) {
     const trimmed = value.trim();
     if (!trimmed) return;
     setError(null);
-    setBusy(true);
+    setPending(trimmed);
     try {
       // Validate the organization exists and is ACTIVE (404 → inline error, no redirect), then continue the
       // sign-in on the tenant's OWN subdomain, where the host-bound session belongs.
       await organization(trimmed);
       rememberOrg(trimmed);
-      // If we are somehow already on this tenant's subdomain, go to its home rather than nesting the label.
-      window.location.assign(alreadyOnTenant(trimmed) ? "/" : tenantOrigin(trimmed) + "/");
+      // Continue on the tenant's OWN subdomain, where the host-bound session belongs. tenantHost is
+      // idempotent, so a stray render on an already-tenant host never nests the label ({slug}.{slug}.host).
+      const { protocol, host } = window.location; // host includes the port (e.g. localhost:5173)
+      window.location.assign(`${protocol}//${tenantHost(host, trimmed)}/`);
     } catch (e) {
       if (e instanceof ApiError) {
         setError(e.status === 404 ? t("orgNotFound") : t("orgContinueFailed"));
       }
       setManual(true); // let the user correct the slug
-      setBusy(false);
+      setPending(null);
     }
+  }
+
+  /** Drops one organization from this browser's memory. The render guard below falls back to the slug input
+   *  once none are left, so this does not also flip `manual` — two sources of truth would drift. */
+  function forget(value: string) {
+    forgetOrg(value);
+    setOrgs(recentOrgs());
   }
 
   function submit(event: FormEvent) {
@@ -77,25 +77,21 @@ export default function OrgSelect() {
         </Alert>
       )}
 
-      {!manual && remembered ? (
+      {!manual && orgs.length > 0 ? (
         <div className="space-y-3">
-          <button
-            type="button"
-            onClick={() => void resolve(remembered)}
-            disabled={busy}
-            className="flex w-full items-center gap-3 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent disabled:opacity-60"
-          >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-ink text-bg">
-              <Building2 className="size-4" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-medium">{remembered}</span>
-              <span className="block text-xs text-muted-foreground">{t("orgContinueToThis")}</span>
-            </span>
-            {busy
-              ? <Loader2 className="size-4 shrink-0 animate-spin" />
-              : <ArrowRight className="size-4 shrink-0 text-muted-foreground" />}
-          </button>
+          <p className="text-xs font-medium text-muted-foreground">{t("orgRecentTitle")}</p>
+          <div className="space-y-2">
+            {orgs.map((remembered) => (
+              <OrgCard
+                key={remembered}
+                slug={remembered}
+                disabled={busy}
+                pending={pending === remembered}
+                onSelect={() => void resolve(remembered)}
+                onForget={() => forget(remembered)}
+              />
+            ))}
+          </div>
           <Button type="button" variant="ghost" className="w-full" disabled={busy}
                   onClick={() => { setSlug(""); setManual(true); }}>
             {t("useDifferentOrg")}

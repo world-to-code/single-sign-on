@@ -67,6 +67,8 @@ export const auth: Record<keyof typeof enAuth, string> = {
   orgLabel: "조직",
   orgPlaceholder: "your-org",
   orgContinueToThis: "이 조직으로 계속",
+  orgRecentTitle: "최근 사용한 조직",
+  orgForget: "목록에서 {{slug}} 제거",
   orgSelectHint: "조직 식별자를 모르면 관리자에게 문의하세요.",
   orgNotFound: "해당 조직을 찾을 수 없습니다. 관리자에게 식별자를 확인하세요.",
   orgContinueFailed: "계속할 수 없습니다. 다시 시도하세요.",

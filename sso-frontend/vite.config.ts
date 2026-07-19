@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
 
@@ -28,4 +28,15 @@ export default defineConfig({
   // SPA loaded once behind the login gate — a single ~770KB (gzip ~220KB) bundle is fine, and
   // route-splitting an app served from one origin buys little. Raise the generic 500KB warning.
   build: { outDir: "dist", emptyOutDir: true, chunkSizeWarningLimit: 1000 },
+  // jsdom gives the tests a real localStorage and DOM — the sign-in memory (lib/loginMemory.ts) and the
+  // entry screens are built on them. passWithNoTests:false so a broken glob fails loudly instead of
+  // reporting success on zero collected tests; restoreMocks so a spy (e.g. a throwing localStorage) can
+  // never leak into a later test.
+  test: {
+    environment: "jsdom",
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    setupFiles: ["src/test/setup.ts"],
+    passWithNoTests: false,
+    restoreMocks: true,
+  },
 });

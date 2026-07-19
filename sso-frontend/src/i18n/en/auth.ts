@@ -65,6 +65,8 @@ export const auth = {
   orgLabel: "Organization",
   orgPlaceholder: "your-org",
   orgContinueToThis: "Continue to this organization",
+  orgRecentTitle: "Recent organizations",
+  orgForget: "Remove {{slug}} from this list",
   orgSelectHint: "Don't know your organization identifier? Contact your administrator.",
   orgNotFound: "We couldn't find that organization. Check the identifier with your administrator.",
   orgContinueFailed: "Could not continue. Please try again.",
