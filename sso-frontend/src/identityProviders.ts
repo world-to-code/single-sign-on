@@ -11,6 +11,7 @@ export interface IdentityProvider {
   clientId: string;
   scopes: string;
   allowJitProvisioning: boolean;
+  linkByVerifiedEmail: boolean;
   enabled: boolean;
 }
 
@@ -27,6 +28,7 @@ export interface IdentityProviderInput {
   clientSecret: string;
   scopes: string;
   allowJitProvisioning: boolean;
+  linkByVerifiedEmail: boolean;
   enabled: boolean;
 }
 

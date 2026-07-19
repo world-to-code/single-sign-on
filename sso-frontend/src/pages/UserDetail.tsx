@@ -23,6 +23,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { PermissionPicker } from "@/components/PermissionPicker";
 import { MetadataEditor } from "@/components/MetadataEditor";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { FederatedIdentities } from "@/components/FederatedIdentities";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -375,6 +376,7 @@ export default function UserDetail({ session }: { session: SessionView }) {
                 {user.externalId && <p className="font-mono text-xs text-muted-foreground">{t("userDetailExternalIdPrefix", { id: user.externalId })}</p>}
               </CardContent>
             </Card>
+            <FederatedIdentities userId={id} />
             <Card>
               <CardContent className="pt-6"><MetadataEditor kind="users" entityId={id} /></CardContent>
             </Card>

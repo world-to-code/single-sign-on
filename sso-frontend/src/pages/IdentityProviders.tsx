@@ -27,12 +27,13 @@ interface Editor {
   clientSecret: string;
   scopes: string;
   allowJitProvisioning: boolean;
+  linkByVerifiedEmail: boolean;
   enabled: boolean;
 }
 
 const blank: Editor = {
   id: null, alias: "", displayName: "", issuerUri: "", clientId: "", clientSecret: "",
-  scopes: "openid email profile", allowJitProvisioning: false, enabled: true,
+  scopes: "openid email profile", allowJitProvisioning: false, linkByVerifiedEmail: false, enabled: true,
 };
 
 /** Per-tenant upstream OIDC providers users can sign in through ("Sign in with …" on the login screen). */
@@ -53,6 +54,7 @@ export default function IdentityProviders() {
       clientSecret: e.clientSecret, // blank on edit → backend keeps the stored secret
       scopes: e.scopes.trim(),
       allowJitProvisioning: e.allowJitProvisioning,
+      linkByVerifiedEmail: e.linkByVerifiedEmail,
       enabled: e.enabled,
     }),
     create: (body) => saveIdentityProvider((body as { alias: string }).alias, body as Parameters<typeof saveIdentityProvider>[1]),
@@ -63,7 +65,8 @@ export default function IdentityProviders() {
   const edit = (p: IdentityProvider) =>
     openEdit({
       id: p.alias, alias: p.alias, displayName: p.displayName, issuerUri: p.issuerUri, clientId: p.clientId,
-      clientSecret: "", scopes: p.scopes, allowJitProvisioning: p.allowJitProvisioning, enabled: p.enabled,
+      clientSecret: "", scopes: p.scopes, allowJitProvisioning: p.allowJitProvisioning,
+      linkByVerifiedEmail: p.linkByVerifiedEmail, enabled: p.enabled,
     });
 
   const remove = (p: IdentityProvider) => {
@@ -120,6 +123,7 @@ export default function IdentityProviders() {
                     <div className="flex gap-1">
                       <Badge variant={p.enabled ? "success" : "muted"}>{p.enabled ? t("idpEnabled") : t("idpDisabled")}</Badge>
                       {p.allowJitProvisioning && <Badge variant="muted">{t("idpJit")}</Badge>}
+                      {p.linkByVerifiedEmail && <Badge variant="destructive">{t("idpEmailLinking")}</Badge>}
                     </div>
                   </TableCell>
                   <TableCell className="text-right">
@@ -185,6 +189,14 @@ export default function IdentityProviders() {
                 <p className="text-xs text-muted-foreground">{t("idpJitHint")}</p>
               </div>
               <Switch checked={editor.allowJitProvisioning} onCheckedChange={(v) => set({ allowJitProvisioning: v })} />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <p className="text-sm font-medium">{t("idpEmailLinkingLabel")}</p>
+                <p className="text-xs text-muted-foreground">{t("idpEmailLinkingHint")}</p>
+              </div>
+              <Switch checked={editor.linkByVerifiedEmail}
+                      onCheckedChange={(v) => set({ linkByVerifiedEmail: v })} />
             </div>
             <div className="flex items-center justify-between rounded-lg border p-3">
               <div>
