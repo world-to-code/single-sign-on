@@ -18,6 +18,8 @@ import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
+import com.example.sso.user.role.Roles;
+import com.example.sso.user.role.RoleRef;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.nio.charset.StandardCharsets;
@@ -126,12 +128,29 @@ public class FederatedAuthenticationService {
         }
         UserAccount existing = users.findByLoginInOrg(identity.email(), orgId).orElse(null);
         if (existing != null) {
-            return link(identity, orgId, authorized(existing, orgId));
+            return link(identity, orgId, unprivileged(authorized(existing, orgId)));
         }
         if (!identity.jitProvisioningAllowed()) {
             throw new ForbiddenException("No account exists for this identity. Contact your administrator.");
         }
         return link(identity, orgId, authorized(provision(identity, orgId), orgId));
+    }
+
+    /**
+     * Bars the email bootstrap from claiming a PRIVILEGED account. Whoever may register an identity provider
+     * decides what the upstream asserts, so without this the {@code identity-provider:write} permission is an
+     * admin-takeover primitive: register an IdP, assert the administrator's address as verified, and the email
+     * branch hands over their session and their roles. An ordinary account is one holding nothing but the
+     * baseline role and no direct permissions; anything above that must be linked deliberately (an existing
+     * link still signs in normally — the restriction is on bootstrapping BY ADDRESS, not on federating).
+     */
+    private UserAccount unprivileged(UserAccount account) {
+        boolean ordinary = account.getDirectPermissionNames().isEmpty()
+                && account.getRoles().stream().map(RoleRef::getName).allMatch(Roles.USER::equals);
+        if (!ordinary) {
+            throw new UnauthorizedException();
+        }
+        return account;
     }
 
     /** The current-state gates every federated login passes, however the account was found. */

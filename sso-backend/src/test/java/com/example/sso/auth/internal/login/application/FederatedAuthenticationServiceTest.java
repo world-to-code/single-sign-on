@@ -15,6 +15,9 @@ import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import com.example.sso.user.role.RoleRef;
+import com.example.sso.user.role.Roles;
+import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -28,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -91,9 +95,11 @@ class FederatedAuthenticationServiceTest {
                 jitAllowed);
     }
 
-    /** An org-owned, enabled, unlocked member of ORG — the happy-path account state. */
+    /** An org-owned, enabled, unlocked, UNPRIVILEGED member of ORG — the happy-path account state. */
     private UserAccount user(UUID id) {
         UserAccount u = mock(UserAccount.class);
+        lenient().doReturn(Set.of(roleNamed(Roles.USER))).when(u).getRoles();
+        lenient().when(u.getDirectPermissionNames()).thenReturn(Set.of());
         lenient().when(u.getId()).thenReturn(id);
         lenient().when(u.getUsername()).thenReturn("ada@example.com");
         lenient().when(u.getOrgId()).thenReturn(ORG);
@@ -437,5 +443,62 @@ class FederatedAuthenticationServiceTest {
         assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
                 .isInstanceOf(UnauthorizedException.class);
         verify(factorAuth, never()).establish(any(), any(), any());
+    }
+
+    private RoleRef roleNamed(String name) {
+        RoleRef role = mock(RoleRef.class);
+        lenient().when(role.getName()).thenReturn(name);
+        return role;
+    }
+
+    // --- the email bootstrap must not reach a privileged account -----------------------------------------
+    // Whoever can register an identity provider controls what the upstream asserts. If that assertion can
+    // claim an admin account by email, `identity-provider:write` IS an admin-takeover primitive.
+
+    @Test
+    void anAccountHoldingAnAdminRoleCannotBeClaimedByEmail() {
+        UUID userId = UUID.randomUUID();
+        UserAccount admin = user(userId);
+        doReturn(Set.of(roleNamed(Roles.ORG_ADMIN))).when(admin).getRoles();
+        completeLoginReturns(identity(true, true));
+        when(users.findByLoginInOrg("ada@example.com", ORG)).thenReturn(Optional.of(admin));
+        when(organizations.isMember(ORG, userId)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
+                .isInstanceOf(UnauthorizedException.class);
+        verify(links, never()).link(any(), any(), any(), any(), any());
+        verify(factorAuth, never()).establish(any(), any(), any());
+    }
+
+    @Test
+    void anAccountHoldingADirectPermissionCannotBeClaimedByEmail() {
+        UUID userId = UUID.randomUUID();
+        UserAccount privileged = user(userId);
+        when(privileged.getDirectPermissionNames()).thenReturn(Set.of("user:update"));
+        completeLoginReturns(identity(true, true));
+        when(users.findByLoginInOrg("ada@example.com", ORG)).thenReturn(Optional.of(privileged));
+        when(organizations.isMember(ORG, userId)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    /**
+     * Once LINKED, the same admin signs in normally — the restriction is on bootstrapping BY ADDRESS only.
+     * The role stub is deliberately lenient: the link path never consults it, and that is the assertion.
+     */
+    @Test
+    void anAlreadyLinkedAdminAccountStillSignsIn() {
+        UUID userId = UUID.randomUUID();
+        UserAccount admin = user(userId);
+        lenient().doReturn(Set.of(roleNamed(Roles.ORG_ADMIN))).when(admin).getRoles();
+        completeLoginReturns(identity(true, false));
+        when(links.findLinkedUser(ORG, ISSUER, "sub-1")).thenReturn(Optional.of(userId));
+        when(users.findById(userId)).thenReturn(Optional.of(admin));
+        when(organizations.isMember(ORG, userId)).thenReturn(true);
+
+        service.complete(ALIAS, CODE, STATE, request, response);
+
+        verify(factorAuth).grantFactor(request, response, Factors.PASSWORD);
     }
 }

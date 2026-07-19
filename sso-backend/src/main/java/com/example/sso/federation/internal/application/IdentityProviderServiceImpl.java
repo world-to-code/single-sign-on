@@ -22,6 +22,9 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.oauth2.core.oidc.OidcScopes;
+import com.example.sso.user.account.UserAccessChangedEvent;
+import com.example.sso.user.account.UserService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -41,6 +44,8 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
     private final IdentityProviderRepository repository;
     private final SecretCipher cipher;
     private final FederatedIdentityLinkStore links;
+    private final UserService users;
+    private final ApplicationEventPublisher events;
     private final OutboundHostValidator hostValidator;
     private final OrgContext orgContext;
 
@@ -106,8 +111,15 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
      * if global providers ever become login-reachable, this is where that decision has to be revisited.
      */
     private void retireLinks(UUID org, String issuer) {
-        if (org != null) {
-            links.unlinkAll(org, issuer);
+        if (org == null) {
+            return;
+        }
+        // Revoking the credential is only half of it: the sessions it authenticated stay valid until they
+        // expire otherwise, which is precisely what an admin repointing a compromised upstream is trying to
+        // stop. Terminating goes through the established access-change path (Redis + BCL/SLO propagation).
+        for (UUID retired : links.unlinkAll(org, issuer)) {
+            users.usernameOf(retired)
+                    .ifPresent(username -> events.publishEvent(new UserAccessChangedEvent(username, org)));
         }
     }
 

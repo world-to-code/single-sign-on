@@ -11,6 +11,9 @@ import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.shared.net.OutboundHostValidator;
 import com.example.sso.tenancy.OrgContext;
 import java.util.List;
+import com.example.sso.user.account.UserAccessChangedEvent;
+import com.example.sso.user.account.UserService;
+import org.springframework.context.ApplicationEventPublisher;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,6 +52,10 @@ class IdentityProviderServiceImplTest {
     @Mock
     FederatedIdentityLinkStore links;
     @Mock
+    UserService users;
+    @Mock
+    ApplicationEventPublisher events;
+    @Mock
     OutboundHostValidator hostValidator;
     @Mock
     OrgContext orgContext;
@@ -57,7 +64,8 @@ class IdentityProviderServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new IdentityProviderServiceImpl(repository, cipher, links, hostValidator, orgContext);
+        service = new IdentityProviderServiceImpl(repository, cipher, links, users, events, hostValidator,
+                orgContext);
     }
 
     private IdentityProvider row(UUID orgId, String encryptedSecret) {
@@ -305,6 +313,39 @@ class IdentityProviderServiceImplTest {
                 "openid email", true, true));
 
         verify(links, never()).unlinkAll(any(), any());
+    }
+
+    /**
+     * Retiring an identity revokes an authentication credential. Deleting the row while the sessions it
+     * authenticated are still alive is not revocation — the credential is gone and the access remains until
+     * expiry, which is exactly the case an admin repoints a compromised upstream to prevent.
+     */
+    @Test
+    void retiringIdentitiesTerminatesTheSessionsTheyAuthenticated() {
+        IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
+                "encg:cipher", "openid", true, true);
+        UUID retired = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
+        when(links.unlinkAll(ORG, ISSUER)).thenReturn(List.of(retired));
+        when(users.usernameOf(retired)).thenReturn(Optional.of("ada@example.com"));
+
+        service.delete(ALIAS);
+
+        verify(events).publishEvent(new UserAccessChangedEvent("ada@example.com", ORG));
+    }
+
+    @Test
+    void retiringNothingTerminatesNothing() {
+        IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
+                "encg:cipher", "openid", true, true);
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
+        when(links.unlinkAll(ORG, ISSUER)).thenReturn(List.of());
+
+        service.delete(ALIAS);
+
+        verify(events, never()).publishEvent(any(UserAccessChangedEvent.class));
     }
 
     @Test

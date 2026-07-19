@@ -1,5 +1,6 @@
 package com.example.sso.federation.internal.domain;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -41,6 +42,10 @@ public interface FederatedIdentityLinkRepository extends JpaRepository<Federated
     int insertIfAbsent(@Param("orgId") UUID orgId, @Param("issuer") String issuer,
             @Param("subject") String subject, @Param("providerAlias") String providerAlias,
             @Param("userId") UUID userId);
+
+    /** The accounts holding an identity at this upstream — read before retiring them, to revoke their sessions. */
+    @Query("select l.userId from FederatedIdentityLink l where l.orgId = :orgId and l.issuer = :issuer")
+    List<UUID> findUserIdsAt(@Param("orgId") UUID orgId, @Param("issuer") String issuer);
 
     /**
      * Drops an org's links for an upstream, e.g. when its provider is deleted or repointed elsewhere. A bulk

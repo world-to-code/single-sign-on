@@ -2,6 +2,7 @@ package com.example.sso.federation.internal.application;
 
 import com.example.sso.federation.internal.domain.FederatedIdentityLink;
 import com.example.sso.federation.internal.domain.FederatedIdentityLinkRepository;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -55,9 +56,15 @@ class FederatedIdentityLinkStore {
                 .orElse(false); // lost the account-uniqueness race — another subject owns this account here
     }
 
-    /** Retires every identity this org holds at {@code issuer}; returns how many were dropped. */
+    /**
+     * Retires every identity this org holds at {@code issuer} and returns the accounts that held them — the
+     * caller needs them to terminate the sessions those identities authenticated. Reading the ids first costs
+     * one indexed query and is what makes the revocation completable; a bare row count could not.
+     */
     @Transactional
-    int unlinkAll(UUID orgId, String issuer) {
-        return repository.deleteByOrgIdAndIssuer(orgId, issuer);
+    List<UUID> unlinkAll(UUID orgId, String issuer) {
+        List<UUID> affected = repository.findUserIdsAt(orgId, issuer);
+        repository.deleteByOrgIdAndIssuer(orgId, issuer);
+        return affected;
     }
 }
