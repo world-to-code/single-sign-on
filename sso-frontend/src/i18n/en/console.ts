@@ -1086,4 +1086,5 @@ export const console = {
   profileAttrRequiredHint: "Flagged when missing. Not enforced on existing people.",
   profileAttrDeleteTitle: "Delete this attribute definition?",
   profileAttrDeleteDescription: "{{name}} disappears from the editor, but values already recorded stay — policies and mapping rules matching on it keep working.",
+  metadataDirectoryOwned: "Directory-managed",
 } as const;

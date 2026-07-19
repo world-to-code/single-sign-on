@@ -10,18 +10,25 @@ import {
   type MetadataKind,
 } from "@/metadata";
 import { errorMessage } from "@/api";
+import { listAttributeDefinitions, type AttributeDefinition } from "@/attributeDefinitions";
+import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 /**
- * Reusable key/value metadata (tag) editor for an entity. Loads the entity's attributes and lets an admin add
- * or remove tags; the backend org-scopes and authorizes per entity kind. Embedded on user/group/resource
- * detail views.
+ * The entity's profile attributes. Schema-aware where a schema exists: a declared attribute is chosen by name,
+ * gets an input that matches its type, and — if a directory owns it — is shown read-only, because a sync would
+ * otherwise overwrite whatever was typed here. Keys that predate the schema stay free-form and editable, so
+ * nothing that already worked stops working.
+ *
+ * <p>The backend enforces the same ownership rule; this only stops an administrator being offered an edit that
+ * would be refused, or worse, silently reverted hours later.
  */
 export function MetadataEditor({ kind, entityId }: { kind: MetadataKind; entityId: string }) {
   const { t } = useTranslation("console");
   const [attrs, setAttrs] = useState<Attribute[] | null>(null);
+  const [definitions, setDefinitions] = useState<AttributeDefinition[]>([]);
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
@@ -31,6 +38,16 @@ export function MetadataEditor({ kind, entityId }: { kind: MetadataKind; entityI
     getAttributes(kind, entityId).then(setAttrs).catch((e) => setError(errorMessage(e)));
   }, [kind, entityId]);
   useEffect(reload, [reload]);
+
+  // A missing or forbidden schema is not an error here — the editor simply falls back to free-form keys.
+  useEffect(() => {
+    const entityKind = kind === "groups" ? "GROUP" : kind === "users" ? "USER" : "RESOURCE";
+    listAttributeDefinitions(entityKind).then(setDefinitions).catch(() => setDefinitions([]));
+  }, [kind]);
+
+  const definitionOf = (attrKey: string) => definitions.find((d) => d.key === attrKey);
+  /** Only attributes an administrator owns can be added here; a directory fills the rest. */
+  const editable = definitions.filter((d) => d.source === "LOCAL");
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -84,14 +101,18 @@ export function MetadataEditor({ kind, entityId }: { kind: MetadataKind; entityI
         <div className="flex flex-col gap-1.5">
           {groups.map(({ key: k, values }) => (
             <div key={k} className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                aria-label={t("metadataRemove", { key: k })}
-                className="font-mono text-xs text-muted-foreground hover:text-destructive"
-                onClick={() => void removeKey(k)}
-              >
-                {k}
-              </button>
+              {definitionOf(k)?.source === "DIRECTORY" ? (
+                <span className="font-mono text-xs text-muted-foreground">{definitionOf(k)?.displayName ?? k}</span>
+              ) : (
+                <button
+                  type="button"
+                  aria-label={t("metadataRemove", { key: k })}
+                  className="font-mono text-xs text-muted-foreground hover:text-destructive"
+                  onClick={() => void removeKey(k)}
+                >
+                  {definitionOf(k)?.displayName ?? k}
+                </button>
+              )}
               <span className="text-xs text-muted-foreground">=</span>
               {values.map((v) => (
                 <span
@@ -99,24 +120,59 @@ export function MetadataEditor({ kind, entityId }: { kind: MetadataKind; entityI
                   className="inline-flex items-center gap-1 rounded-full bg-muted py-0.5 pl-2.5 pr-1 text-xs"
                 >
                   {v}
-                  <button
-                    type="button"
-                    aria-label={t("metadataRemoveValue", { key: k, value: v })}
-                    className="rounded-full p-0.5 text-muted-foreground hover:text-destructive"
-                    onClick={() => void removeValue(k, v)}
-                  >
-                    <X className="size-3" />
-                  </button>
+                  {definitionOf(k)?.source !== "DIRECTORY" && (
+                    <button
+                      type="button"
+                      aria-label={t("metadataRemoveValue", { key: k, value: v })}
+                      className="rounded-full p-0.5 text-muted-foreground hover:text-destructive"
+                      onClick={() => void removeValue(k, v)}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  )}
                 </span>
               ))}
+              {definitionOf(k)?.source === "DIRECTORY" && (
+                <Badge variant="muted">{t("metadataDirectoryOwned")}</Badge>
+              )}
             </div>
           ))}
         </div>
       )}
 
       <form onSubmit={add} className="flex flex-wrap items-center gap-2">
-        <Input className="max-w-44" value={key} onChange={(e) => setKey(e.target.value)} placeholder={t("metadataKey")} />
-        <Input className="max-w-52" value={value} onChange={(e) => setValue(e.target.value)} placeholder={t("metadataValue")} />
+        {editable.length > 0 ? (
+          <select
+            className="h-9 max-w-52 rounded-md border bg-background px-3 text-sm"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            aria-label={t("metadataKey")}
+          >
+            <option value="">{t("metadataKey")}</option>
+            {editable.map((d) => (
+              <option key={d.id} value={d.key}>{d.displayName}</option>
+            ))}
+          </select>
+        ) : (
+          <Input className="max-w-44" value={key} onChange={(e) => setKey(e.target.value)}
+                 placeholder={t("metadataKey")} />
+        )}
+        {definitionOf(key)?.dataType === "ENUM" ? (
+          <select
+            className="h-9 max-w-52 rounded-md border bg-background px-3 text-sm"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            aria-label={t("metadataValue")}
+          >
+            <option value="">{t("metadataValue")}</option>
+            {definitionOf(key)?.enumValues.map((v) => <option key={v} value={v}>{v}</option>)}
+          </select>
+        ) : (
+          <Input className="max-w-52" value={value} onChange={(e) => setValue(e.target.value)}
+                 type={definitionOf(key)?.dataType === "DATE" ? "date"
+                   : definitionOf(key)?.dataType === "INTEGER" ? "number" : "text"}
+                 placeholder={t("metadataValue")} />
+        )}
         <Button type="submit" size="sm" variant="outline" disabled={busy || !key.trim() || !value.trim()}>
           <Plus /> {t("metadataAdd")}
         </Button>

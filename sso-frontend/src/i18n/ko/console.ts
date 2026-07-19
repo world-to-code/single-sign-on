@@ -1086,4 +1086,5 @@ export const console: Record<keyof typeof enConsole, string> = {
   profileAttrRequiredHint: "비어 있으면 표시합니다. 기존 사용자에게 강제되지는 않습니다.",
   profileAttrDeleteTitle: "이 속성 정의를 삭제할까요?",
   profileAttrDeleteDescription: "{{name}}이(가) 편집기에서 사라지지만 이미 기록된 값은 남습니다. 이 속성으로 매칭하는 정책과 매핑 규칙도 계속 동작합니다.",
+  metadataDirectoryOwned: "디렉터리 관리",
 };
