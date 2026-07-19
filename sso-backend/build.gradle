@@ -104,6 +104,13 @@ dependencies {
     implementation libs.scim.sdk.server
     implementation libs.scim.sdk.common
 
+    // --- LDAP / LDAPS directory sync ---
+    // UnboundID over spring-ldap: a single artifact with no Spring coupling, and — the deciding factor —
+    // explicit control of the TLS socket, so LDAPS can be given real hostname verification rather than
+    // whatever a JNDI environment map happens to default to. Its in-memory directory server also lets the
+    // connector be tested against a real LDAP round trip instead of a mock.
+    implementation 'com.unboundid:unboundid-ldapsdk:7.0.1'
+
     // --- QR codes for TOTP enrollment ---
     implementation 'com.google.zxing:core:3.5.3'
     implementation 'com.google.zxing:javase:3.5.3'
