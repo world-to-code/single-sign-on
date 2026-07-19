@@ -120,4 +120,46 @@ class AuthRateLimitFilterTest {
         assertThat(record.getValue().remoteIp()).isEqualTo(IP);
         assertThat(record.getValue().detail()).isEqualTo("/api/auth/email-verification");
     }
+
+    /**
+     * Federation start/callback are browser-navigation GETs, so a method-gated limiter never looked at them —
+     * yet each one drives an unauthenticated outbound fetch to the upstream (thread exhaustion) and the
+     * callback creates accounts and sessions. Throttle by what the endpoint DOES, not by its verb.
+     */
+    @Test
+    void throttlesTheFederationStartEvenThoughItIsAGet() throws Exception {
+        when(rateLimiter.tryAcquire(any())).thenReturn(false);
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/auth/federation/okta/start");
+        request.setServletPath("/api/auth/federation/okta/start");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+        verify(chain, never()).doFilter(any(), any());
+    }
+
+    @Test
+    void throttlesTheFederationCallbackEvenThoughItIsAGet() throws Exception {
+        when(rateLimiter.tryAcquire(any())).thenReturn(false);
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/auth/federation/okta/callback");
+        request.setServletPath("/api/auth/federation/okta/callback");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+    }
+
+    @Test
+    void leavesAnUnrelatedGetAlone() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/auth/session");
+        request.setServletPath("/api/auth/session");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, chain);
+
+        verify(chain).doFilter(request, response);
+        verify(rateLimiter, never()).tryAcquire(any());
+    }
 }

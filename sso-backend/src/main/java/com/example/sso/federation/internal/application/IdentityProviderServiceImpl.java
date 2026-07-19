@@ -76,7 +76,7 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
                     // Repointing the alias at a DIFFERENT upstream retires the identities the old one minted:
                     // they were proven against that issuer, and a colliding `sub` at the new one must not
                     // inherit the account they resolve to.
-                    retireLinksIfUpstreamChanged(org, row.getIssuerUri(), spec.issuerUri().trim());
+                    retireLinksIfUpstreamChanged(org, alias, row, spec);
                     row.reconfigure(spec.displayName().trim(), spec.issuerUri().trim(), spec.clientId().trim(),
                             encrypted, scopes, spec.allowJitProvisioning(), spec.enabled());
                 },
@@ -92,15 +92,24 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
         ownProvider(alias).ifPresent(provider -> { // ownProvider normalizes + validates the alias
             // Links outlive the provider row unless dropped here: a re-created alias pointing at an attacker's
             // issuer would otherwise resolve the retired identities to their old accounts.
-            retireLinks(org, provider.getIssuerUri());
+            retireLinks(org, provider.getAlias(), provider.getIssuerUri());
             repository.delete(provider);
         });
     }
 
-    /** Drops this org's identities for {@code oldIssuer} when the provider is being repointed elsewhere. */
-    private void retireLinksIfUpstreamChanged(UUID org, String oldIssuer, String newIssuer) {
-        if (!oldIssuer.equals(newIssuer)) {
-            retireLinks(org, oldIssuer);
+    /**
+     * Retires this provider's identities when the upstream it authenticates against changes. Both halves of
+     * the identifier matter: the issuer obviously, and the CLIENT ID because under pairwise subject
+     * identifiers (Azure AD app-scoped ids, Apple, anything using a sector identifier) the subject namespace
+     * is per-client — rotating the app registration gives every user a new {@code sub}, and links left behind
+     * would strand the whole tenant on the login path's fail-closed guard.
+     */
+    private void retireLinksIfUpstreamChanged(UUID org, String alias, IdentityProvider row,
+            IdentityProviderSpec spec) {
+        boolean sameUpstream = row.getIssuerUri().equals(spec.issuerUri().trim())
+                && row.getClientId().equals(spec.clientId().trim());
+        if (!sameUpstream) {
+            retireLinks(org, alias, row.getIssuerUri());
         }
     }
 
@@ -110,8 +119,13 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
      * provider can never mint a link. Stated explicitly rather than left to a null binding matching no rows —
      * if global providers ever become login-reachable, this is where that decision has to be revisited.
      */
-    private void retireLinks(UUID org, String issuer) {
+    private void retireLinks(UUID org, String alias, String issuer) {
         if (org == null) {
+            return;
+        }
+        // Two providers may legitimately point at the same upstream. Retiring by issuer alone would wipe the
+        // OTHER one's identities too, and every login through it would fall back to bootstrapping by address.
+        if (repository.existsByOrgIdAndIssuerUriAndAliasNot(org, issuer, alias)) {
             return;
         }
         // Revoking the credential is only half of it: the sessions it authenticated stay valid until they

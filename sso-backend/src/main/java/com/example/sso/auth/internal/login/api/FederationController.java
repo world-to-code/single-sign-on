@@ -60,7 +60,8 @@ public class FederationController {
             // that includes an unexpected failure (a store error, an oversized upstream claim), which would
             // otherwise escape as a stack-trace page. The reason is logged (not shown), so this stays
             // non-revealing either way.
-            log.info("Federated login callback rejected for alias={}: {}", alias, e.getMessage());
+            log.info("Federated login callback rejected for alias={}: {}", alias, e.getClass().getSimpleName());
+            log.debug("Federated login callback failure detail", e); // detail stays at DEBUG, off the default log
             return redirect(FAILURE);
         }
     }

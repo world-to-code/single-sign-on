@@ -12,6 +12,7 @@ import com.example.sso.federation.FederationLoginService;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.shared.web.ClientIp;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.UnauthorizedException;
 import com.example.sso.tenancy.OrgContext;
@@ -91,13 +92,14 @@ public class FederatedAuthenticationService {
 
         FederatedIdentity identity = federation.completeLogin(orgId, alias, code, pending.redirectUri(),
                 pending.nonce(), pending.codeVerifier());
-        UserAccount user = resolveOrProvision(identity, orgId);
+        UserAccount user = resolveOrProvision(identity, orgId, ClientIp.of(request));
 
         Authentication preAuth = UsernamePasswordAuthenticationToken.authenticated(
                 user.getUsername(), null, List.of()); // identified via the upstream; factors granted next
         factorAuth.establish(request, response, preAuth);
         factorAuth.grantFactor(request, response, Factors.PASSWORD); // federation satisfies the primary factor
-        audit.record(new AuditRecord(AuditType.AUTH_SUCCESS, user.getUsername(), true, null, null, orgId));
+        audit.record(new AuditRecord(AuditType.AUTH_SUCCESS, user.getUsername(), true, null,
+                ClientIp.of(request), orgId));
         completionService.completeIfSatisfied(request, response);
     }
 
@@ -114,7 +116,7 @@ public class FederatedAuthenticationService {
      * not locked (the same current-state re-verification the password path enforces). Every refusal is rendered
      * by the controller as one identical redirect, so the callback is not an account-existence oracle.
      */
-    private UserAccount resolveOrProvision(FederatedIdentity identity, UUID orgId) {
+    private UserAccount resolveOrProvision(FederatedIdentity identity, UUID orgId, String clientIp) {
         UUID linked = links.findLinkedUser(orgId, identity.issuer(), identity.subject()).orElse(null);
         if (linked != null) {
             // Fails closed on a dangling link (the account was deleted) rather than falling back to email —
@@ -128,12 +130,12 @@ public class FederatedAuthenticationService {
         }
         UserAccount existing = users.findByLoginInOrg(identity.email(), orgId).orElse(null);
         if (existing != null) {
-            return link(identity, orgId, unprivileged(authorized(existing, orgId)));
+            return link(identity, orgId, clientIp, unprivileged(authorized(existing, orgId)));
         }
         if (!identity.jitProvisioningAllowed()) {
             throw new ForbiddenException("No account exists for this identity. Contact your administrator.");
         }
-        return link(identity, orgId, authorized(provision(identity, orgId), orgId));
+        return link(identity, orgId, clientIp, authorized(provision(identity, orgId), orgId));
     }
 
     /**
@@ -171,11 +173,11 @@ public class FederatedAuthenticationService {
      * was reassigned upstream, and honouring it would hand the previous holder's account — and roles — to
      * whoever now owns the address, permanently. Re-linking is an administrative act, not a login-time one.
      */
-    private UserAccount link(FederatedIdentity identity, UUID orgId, UserAccount account) {
+    private UserAccount link(FederatedIdentity identity, UUID orgId, String clientIp, UserAccount account) {
         if (links.isLinked(orgId, identity.issuer(), account.getId())) {
             audit.record(new AuditRecord(AuditType.AUTH_FAILURE, account.getUsername(), false,
                     "federated identity refused: the account is already linked to a different upstream subject",
-                    null, orgId));
+                    clientIp, orgId));
             throw new UnauthorizedException();
         }
         if (!links.link(orgId, identity.issuer(), identity.subject(), identity.alias(), account.getId())) {
@@ -185,7 +187,7 @@ public class FederatedAuthenticationService {
         }
         // A durable credential binding: without this record, a wrong link is invisible to an investigation.
         audit.record(new AuditRecord(AuditType.USER_UPDATED, account.getUsername(), true,
-                "federated identity linked via provider " + identity.alias(), null, orgId));
+                "federated identity linked via provider " + identity.alias(), clientIp, orgId));
         return account;
     }
 

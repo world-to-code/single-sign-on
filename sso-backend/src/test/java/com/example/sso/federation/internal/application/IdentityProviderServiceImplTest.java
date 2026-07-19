@@ -302,6 +302,37 @@ class IdentityProviderServiceImplTest {
         verify(links).unlinkAll(ORG, ISSUER); // the OLD issuer's identities, not the new one's
     }
 
+    /** Under pairwise subject identifiers a client-id rotation renames every user's sub, so the old links
+     *  would strand the whole tenant on the login path's fail-closed guard. */
+    @Test
+    void rotatingTheClientIdRetiresTheIdentitiesToo() {
+        IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
+                "encg:cipher", "openid", true, true);
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
+        when(links.unlinkAll(ORG, ISSUER)).thenReturn(List.of());
+
+        service.save(new IdentityProviderSpec(ALIAS, "Google", ISSUER, "client-999", "s3cret", "openid",
+                true, true));
+
+        verify(links).unlinkAll(ORG, ISSUER);
+    }
+
+    /** Two providers may point at one upstream; retiring by issuer alone would wipe the other one's links. */
+    @Test
+    void anotherLiveProviderAtTheSameUpstreamKeepsItsIdentities() {
+        IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
+                "encg:cipher", "openid", true, true);
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
+        when(repository.existsByOrgIdAndIssuerUriAndAliasNot(ORG, ISSUER, ALIAS)).thenReturn(true);
+
+        service.delete(ALIAS);
+
+        verify(links, never()).unlinkAll(any(), any());
+        verify(repository).delete(existing);
+    }
+
     @Test
     void editingAProviderWithoutChangingItsUpstreamKeepsItsIdentities() {
         IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",

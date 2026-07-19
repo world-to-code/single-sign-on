@@ -40,6 +40,11 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
                     "/api/onboarding/apply", "/api/onboarding/activate", "/api/onboarding/set-password");
     private static final String FACTORS_PREFIX = "/api/auth/factors/"; // .../prepare and .../verify
     private static final String REAUTH_PREFIX = "/api/auth/reauth/";   // step-up / re-auth .../prepare and .../verify
+    // Browser-navigation GETs, so the method gate below deliberately does not apply to them. Each start
+    // drives an unauthenticated outbound fetch to the tenant's upstream (a slow IdP ties up a servlet thread
+    // for the whole timeout), and each callback can create an account and a session. Throttled on what they
+    // DO, not on their verb.
+    private static final String FEDERATION_PREFIX = "/api/auth/federation/";
 
     private final RateLimiter rateLimiter;
     private final AuditService audit;
@@ -52,7 +57,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        if ("POST".equalsIgnoreCase(request.getMethod()) && isLimited(request.getServletPath())) {
+        if (isLimited(request.getMethod(), request.getServletPath())) {
             String ip = request.getRemoteAddr();
             String key = request.getServletPath() + ":" + ip;
             if (!rateLimiter.tryAcquire(key)) {
@@ -66,9 +71,13 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         chain.doFilter(request, response);
     }
 
-    private boolean isLimited(String path) {
-        return LIMITED_PATHS.contains(path)
-                || path.startsWith(FACTORS_PREFIX)
-                || path.startsWith(REAUTH_PREFIX);
+    private boolean isLimited(String method, String path) {
+        if (path.startsWith(FEDERATION_PREFIX)) {
+            return true; // method-agnostic: these are GETs by design
+        }
+        return "POST".equalsIgnoreCase(method)
+                && (LIMITED_PATHS.contains(path)
+                    || path.startsWith(FACTORS_PREFIX)
+                    || path.startsWith(REAUTH_PREFIX));
     }
 }
