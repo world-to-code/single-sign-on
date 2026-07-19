@@ -10,6 +10,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 
 /**
@@ -50,6 +53,47 @@ class OidcUpstreamClientTest {
 
         assertThatThrownBy(() -> client.exchangeCodeForIdToken(metadata, "client-id", "secret", "code",
                 "https://rp.example/callback", "verifier"))
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    // --- endpoint validation ---------------------------------------------------------------------------
+    // The endpoints below come out of the DISCOVERY DOCUMENT, not the stored config: the moment the upstream
+    // is hostile or on-path, they are attacker-controlled. Validating the stored issuer's scheme says nothing
+    // about them.
+
+    @Test
+    void anEndpointMustBeHttpsEvenWhenItsHostIsAcceptable() {
+        // Cleartext here would put the DECRYPTED client secret on the wire (Basic auth on the token endpoint)
+        // and let an on-path attacker swap the JWKS and forge id_tokens.
+        assertThatThrownBy(() -> client.validateEndpoint("http://idp.example/token"))
+                .isInstanceOf(BadRequestException.class);
+        verify(hostValidator, never()).validate(any()); // rejected on scheme, before the host is even considered
+    }
+
+    @Test
+    void anEndpointWithNoSchemeIsRejected() {
+        assertThatThrownBy(() -> client.validateEndpoint("idp.example/token"))
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void anHttpsEndpointStillGoesThroughTheHostValidator() {
+        client.validateEndpoint("https://idp.example/token");
+
+        verify(hostValidator).validate("idp.example");
+    }
+
+    @Test
+    void anHttpsEndpointWithAnInternalHostIsRejected() {
+        doThrow(new BadRequestException("internal address")).when(hostValidator).validate("169.254.169.254");
+
+        assertThatThrownBy(() -> client.validateEndpoint(METADATA_INTERNAL_TOKEN))
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void aMalformedEndpointIsRejected() {
+        assertThatThrownBy(() -> client.validateEndpoint("https://"))
                 .isInstanceOf(BadRequestException.class);
     }
 }

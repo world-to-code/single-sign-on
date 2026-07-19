@@ -29,12 +29,7 @@ class FederatedIdentityLinksImpl implements FederatedIdentityLinks {
     }
 
     @Override
-    public void link(UUID orgId, String issuer, String subject, String providerAlias, UUID userId) {
-        orgContext.runInOrg(orgId, () -> store.link(orgId, issuer, subject, providerAlias, userId));
-    }
-
-    @Override
-    public void unlinkAll(UUID orgId, String issuer) {
-        orgContext.runInOrg(orgId, () -> store.unlinkAll(orgId, issuer));
+    public boolean link(UUID orgId, String issuer, String subject, String providerAlias, UUID userId) {
+        return orgContext.callInOrg(orgId, () -> store.link(orgId, issuer, subject, providerAlias, userId));
     }
 }

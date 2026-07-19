@@ -29,6 +29,8 @@ import org.springframework.web.client.RestClientException;
 @Component
 class OidcUpstreamClient {
 
+    private static final String HTTPS = "https";
+
     private static final String WELL_KNOWN = "/.well-known/openid-configuration";
     private static final ParameterizedTypeReference<Map<String, Object>> JSON_OBJECT =
             new ParameterizedTypeReference<>() {
@@ -46,9 +48,9 @@ class OidcUpstreamClient {
         this.http = RestClient.builder().requestFactory(factory).build();
     }
 
-    /** Fetches and validates the discovery document; every endpoint host is SSRF-checked before it is returned. */
+    /** Fetches and validates the discovery document; every endpoint is scheme- and SSRF-checked before return. */
     OidcMetadata discover(String issuerUri) {
-        validateHost(issuerUri);
+        validateEndpoint(issuerUri);
         Map<String, Object> doc = get(issuerUri + WELL_KNOWN);
         String issuer = string(doc, "issuer");
         String authorization = string(doc, "authorization_endpoint");
@@ -59,9 +61,9 @@ class OidcUpstreamClient {
         if (!issuerUri.equals(issuer)) {
             throw new BadRequestException("The provider's discovery issuer does not match its configured issuer.");
         }
-        validateHost(authorization);
-        validateHost(token);
-        validateHost(jwks);
+        validateEndpoint(authorization);
+        validateEndpoint(token);
+        validateEndpoint(jwks);
         return new OidcMetadata(issuer, authorization, token, jwks);
     }
 
@@ -71,7 +73,7 @@ class OidcUpstreamClient {
      */
     String exchangeCodeForIdToken(OidcMetadata metadata, String clientId, String clientSecret, String code,
             String redirectUri, String codeVerifier) {
-        validateHost(metadata.tokenEndpoint());
+        validateEndpoint(metadata.tokenEndpoint());
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("grant_type", "authorization_code");
         form.add("code", code);
@@ -104,12 +106,31 @@ class OidcUpstreamClient {
         }
     }
 
-    private void validateHost(String url) {
-        String host = url == null ? null : URI.create(url).getHost();
-        if (host == null) {
+    /**
+     * Validates an endpoint the DISCOVERY DOCUMENT handed us — not stored configuration. The moment an upstream
+     * is hostile or an attacker is on-path, these three URLs are attacker-controlled, so the scheme is checked
+     * here and not merely on the configured issuer: cleartext would put the DECRYPTED client secret on the wire
+     * (client_secret_basic on the token endpoint) and let the JWKS be swapped for a key set that signs forged
+     * id_tokens. Package-private so the rule is directly testable without an HTTP round trip.
+     */
+    void validateEndpoint(String url) {
+        URI uri = parse(url);
+        if (!HTTPS.equalsIgnoreCase(uri.getScheme())) {
+            throw new BadRequestException("The provider returned a non-HTTPS endpoint URL.");
+        }
+        if (uri.getHost() == null) {
             throw new BadRequestException("The provider returned a malformed endpoint URL.");
         }
-        hostValidator.validate(host); // SSRF: reject loopback/link-local/metadata/private targets at call time
+        hostValidator.validate(uri.getHost()); // SSRF: reject loopback/link-local/metadata/private targets
+    }
+
+    /** A URL the upstream chose is untrusted input, so an unparseable one is a 400 — never a raw ISE. */
+    private URI parse(String url) {
+        try {
+            return URI.create(url);
+        } catch (IllegalArgumentException | NullPointerException malformed) {
+            throw new BadRequestException("The provider returned a malformed endpoint URL.");
+        }
     }
 
     private String basicAuth(String clientId, String clientSecret) {

@@ -5,15 +5,18 @@ import com.example.sso.federation.internal.domain.FederatedIdentityLinkRepositor
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * The transactional side of the identity-link table. Its methods are invoked INSIDE
- * {@code orgContext.callInOrg(orgId, …)} by {@link FederatedIdentityLinksImpl}, so the RLS GUC reaches the
- * held connection — federated login runs pre-authentication, when no OrgContext is bound by the request
- * filter (the same arrangement as {@code FederationConfigStore}).
+ * The transactional side of the identity-link table.
+ *
+ * <p>Two entry paths, with different tenant-binding assumptions. The LOGIN path calls in through
+ * {@link FederatedIdentityLinksImpl}, which wraps every call in {@code orgContext.callInOrg(orgId, …)} because
+ * federated sign-in runs pre-authentication, when no OrgContext is bound by the request filter (the same
+ * arrangement as {@code FederationConfigStore}). The ADMIN path ({@code IdentityProviderServiceImpl} retiring
+ * an upstream's identities) calls {@link #unlinkAll} directly, relying on the context the request filter
+ * already bound. Either way the connection is borrowed inside a bound scope, so RLS sees the right tenant.
  */
 @Component
 @RequiredArgsConstructor
@@ -33,26 +36,28 @@ class FederatedIdentityLinkStore {
     }
 
     /**
-     * Insert-only. A link is never moved to another account here: repointing an existing identity is an
-     * administrative act, not something a login may do to itself. Two concurrent first logins for the same
-     * identity race to insert; the loser's unique-constraint violation is absorbed, because both resolved the
-     * SAME account (the caller only reaches this after the account passed every gate) so the row already says
-     * what this call wanted it to say.
+     * Insert-only, and idempotent. A link is never moved to another account here: repointing an existing
+     * identity is an administrative act, not something a login may do to itself.
+     *
+     * <p>Postgres resolves every conflict, so nothing is ever thrown and the transaction is never poisoned —
+     * but the two unique indexes mean opposite things, so the outcome is read back rather than assumed:
+     * a conflict on (org, issuer, subject) is the SAME identity arriving twice and is fine, while a conflict
+     * on (org, issuer, user_id) is a DIFFERENT subject claiming an account that already has an identity here,
+     * which must NOT be treated as linked.
+     *
+     * @return whether this identity is now linked to THIS account
      */
     @Transactional
-    void link(UUID orgId, String issuer, String subject, String providerAlias, UUID userId) {
-        try {
-            // saveAndFlush, not save: the insert must hit the connection while the org scope still holds, or a
-            // deferred flush would run outside it and RLS would reject the row.
-            repository.saveAndFlush(
-                    FederatedIdentityLink.create(orgId, issuer, subject, providerAlias, userId));
-        } catch (DataIntegrityViolationException alreadyLinked) {
-            // Lost the race — the winning row is this same identity→account mapping.
-        }
+    boolean link(UUID orgId, String issuer, String subject, String providerAlias, UUID userId) {
+        repository.insertIfAbsent(orgId, issuer, subject, providerAlias, userId);
+        return repository.findByOrgIdAndIssuerAndSubject(orgId, issuer, subject)
+                .map(existing -> existing.getUserId().equals(userId))
+                .orElse(false); // lost the account-uniqueness race — another subject owns this account here
     }
 
+    /** Retires every identity this org holds at {@code issuer}; returns how many were dropped. */
     @Transactional
-    void unlinkAll(UUID orgId, String issuer) {
-        repository.deleteByOrgIdAndIssuer(orgId, issuer);
+    int unlinkAll(UUID orgId, String issuer) {
+        return repository.deleteByOrgIdAndIssuer(orgId, issuer);
     }
 }

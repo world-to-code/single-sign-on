@@ -38,12 +38,9 @@ public interface FederatedIdentityLinks {
      * Records the link so the next login resolves by {@code subject} rather than by email. Idempotent: a
      * concurrent first login for the same identity is absorbed rather than failing. Callers record a link only
      * after the account has passed every authorization gate.
+     *
+     * @return whether this identity is now linked to THIS account. {@code false} means another subject already
+     *         owns the account at this issuer — the caller must refuse the login rather than proceed unlinked.
      */
-    void link(UUID orgId, String issuer, String subject, String providerAlias, UUID userId);
-
-    /**
-     * Drops every link an organization holds for {@code issuer} — used when a provider is deleted or repointed
-     * at a different upstream, so its identities do not survive to be re-resolved against a new IdP.
-     */
-    void unlinkAll(UUID orgId, String issuer);
+    boolean link(UUID orgId, String issuer, String subject, String providerAlias, UUID userId);
 }

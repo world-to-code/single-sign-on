@@ -92,7 +92,7 @@ class FederatedIdentityRlsIT extends AbstractIntegrationTest {
         UUID orgA = newOrg("fed-shared-a");
         UUID orgB = newOrg("fed-shared-b");
         UUID userA = seedLink(orgA, sharedSubject);
-        UUID userB = seedLink(orgB, sharedSubject); // the unique index is (org_id, alias, subject), so this is fine
+        UUID userB = seedLink(orgB, sharedSubject); // the key is (org_id, issuer, subject), so this is fine
 
         try (Connection probe = appRoleConnection()) {
             setContext(probe, "app.current_org", orgA.toString());
@@ -100,6 +100,28 @@ class FederatedIdentityRlsIT extends AbstractIntegrationTest {
 
             setContext(probe, "app.current_org", orgB.toString());
             assertThat(linkedUser(probe, sharedSubject)).isEqualTo(userB);
+        }
+    }
+
+    /** Retiring an upstream's identities is a DELETE — it must not reach across the tenant boundary either. */
+    @Test
+    void aTenantsDeleteCannotRetireAnotherTenantsIdentities() throws SQLException {
+        String s = suffix();
+        UUID orgA = newOrg("fed-del-a");
+        UUID orgB = newOrg("fed-del-b");
+        String subjectA = "del-a-" + s;
+        String subjectB = "del-b-" + s;
+        seedLink(orgA, subjectA);
+        seedLink(orgB, subjectB);
+
+        try (Connection probe = appRoleConnection()) {
+            setContext(probe, "app.current_org", orgA.toString());
+            // The org predicate is deliberately absent: RLS alone must confine the blast radius.
+            assertThat(deleteByIssuer(probe)).isEqualTo(1); // only org A's row was reachable
+
+            setContext(probe, "app.platform", "on");
+            assertThat(visible(probe, subjectA)).isFalse();
+            assertThat(visible(probe, subjectB)).isTrue(); // org B's identity survived
         }
     }
 
@@ -186,6 +208,14 @@ class FederatedIdentityRlsIT extends AbstractIntegrationTest {
             ps.setString(3, subject);
             ps.setObject(4, userId);
             ps.executeUpdate();
+        }
+    }
+
+    /** Deletes every link for the seeded issuer that the current context can SEE; returns the row count. */
+    private int deleteByIssuer(Connection c) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement("delete from federated_identity where issuer = ?")) {
+            ps.setString(1, ISSUER);
+            return ps.executeUpdate();
         }
     }
 

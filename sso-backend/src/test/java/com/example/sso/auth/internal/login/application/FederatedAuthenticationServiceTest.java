@@ -74,6 +74,7 @@ class FederatedAuthenticationServiceTest {
         // Unlinked by default: each test that exercises the link path stubs it explicitly.
         lenient().when(links.findLinkedUser(any(), any(), any())).thenReturn(Optional.empty());
         lenient().when(links.isLinked(any(), any(), any())).thenReturn(false);
+        lenient().when(links.link(any(), any(), any(), any(), any())).thenReturn(true);
         lenient().when(preAuthOrg.orgId(request)).thenReturn(Optional.of(ORG));
         lenient().when(preAuthFederation.pending(request)).thenReturn(Optional.of(PENDING));
         // callInOrg/runInOrg execute their action inline so provisioning is exercised.
@@ -420,6 +421,21 @@ class FederatedAuthenticationServiceTest {
         assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
                 .isInstanceOf(UnauthorizedException.class);
         verify(links, never()).link(any(), any(), any(), any(), any());
+        verify(factorAuth, never()).establish(any(), any(), any());
+    }
+
+    /** The account-level constraint is the backstop for the race the isLinked guard cannot see. */
+    @Test
+    void losingTheLinkRaceRefusesTheLoginRatherThanSigningInUnlinked() {
+        UUID userId = UUID.randomUUID();
+        UserAccount member = user(userId);
+        completeLoginReturns(identity(true, true));
+        when(users.findByLoginInOrg("ada@example.com", ORG)).thenReturn(Optional.of(member));
+        when(organizations.isMember(ORG, userId)).thenReturn(true);
+        when(links.link(ORG, ISSUER, "sub-1", ALIAS, userId)).thenReturn(false); // another subject won
+
+        assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
+                .isInstanceOf(UnauthorizedException.class);
         verify(factorAuth, never()).establish(any(), any(), any());
     }
 }

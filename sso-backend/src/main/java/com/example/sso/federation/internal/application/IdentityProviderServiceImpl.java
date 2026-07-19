@@ -87,7 +87,7 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
         ownProvider(alias).ifPresent(provider -> { // ownProvider normalizes + validates the alias
             // Links outlive the provider row unless dropped here: a re-created alias pointing at an attacker's
             // issuer would otherwise resolve the retired identities to their old accounts.
-            links.unlinkAll(org, provider.getIssuerUri());
+            retireLinks(org, provider.getIssuerUri());
             repository.delete(provider);
         });
     }
@@ -95,7 +95,19 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
     /** Drops this org's identities for {@code oldIssuer} when the provider is being repointed elsewhere. */
     private void retireLinksIfUpstreamChanged(UUID org, String oldIssuer, String newIssuer) {
         if (!oldIssuer.equals(newIssuer)) {
-            links.unlinkAll(org, oldIssuer);
+            retireLinks(org, oldIssuer);
+        }
+    }
+
+    /**
+     * Retires an upstream's identities for this tier. A PLATFORM-tier provider ({@code org == null}) owns none:
+     * federated_identity.org_id is NOT NULL and login resolves providers strictly per-tenant, so a global
+     * provider can never mint a link. Stated explicitly rather than left to a null binding matching no rows —
+     * if global providers ever become login-reachable, this is where that decision has to be revisited.
+     */
+    private void retireLinks(UUID org, String issuer) {
+        if (org != null) {
+            links.unlinkAll(org, issuer);
         }
     }
 

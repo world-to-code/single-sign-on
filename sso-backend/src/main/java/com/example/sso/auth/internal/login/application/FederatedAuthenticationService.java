@@ -159,7 +159,11 @@ public class FederatedAuthenticationService {
                     null, orgId));
             throw new UnauthorizedException();
         }
-        links.link(orgId, identity.issuer(), identity.subject(), identity.alias(), account.getId());
+        if (!links.link(orgId, identity.issuer(), identity.subject(), identity.alias(), account.getId())) {
+            // Lost the race the guard above normally catches: a concurrent callback linked a different subject
+            // to this account first. Refuse rather than sign in on a binding we do not hold.
+            throw new UnauthorizedException();
+        }
         // A durable credential binding: without this record, a wrong link is invisible to an investigation.
         audit.record(new AuditRecord(AuditType.USER_UPDATED, account.getUsername(), true,
                 "federated identity linked via provider " + identity.alias(), null, orgId));
