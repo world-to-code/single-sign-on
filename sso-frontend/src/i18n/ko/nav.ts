@@ -27,6 +27,7 @@ export const nav: Record<keyof typeof enNav, string> = {
   sessionPolicy: "세션 정책",
   bindings: "정책 바인딩",
   networkZones: "네트워크 영역",
+  identityProviders: "아이덴티티 공급자",
   mappingRules: "매핑 규칙",
   scimTokens: "SCIM 토큰",
   smtpSettings: "SMTP 설정",

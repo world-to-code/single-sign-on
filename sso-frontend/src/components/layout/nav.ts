@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, KeyRound, Users, ShieldCheck, AppWindow, Network, Coins, ScrollText,
-  Clock, Globe, LayoutGrid, Boxes, UsersRound, UserCog, KeySquare, Building2, Link2, Wand2, Mail, Palette,
+  Clock, Globe, LayoutGrid, Boxes, UsersRound, UserCog, KeySquare, Building2, Link2, Wand2, Mail, Palette, LogIn,
   type LucideIcon,
 } from "lucide-react";
 import type { nav as navResources } from "@/i18n/en/nav";
@@ -83,6 +83,7 @@ export const NAV: NavGroup[] = [
           { to: "/admin/session-policy", label: "sessionPolicy", icon: Clock, permission: "session-policy:read" },
           { to: "/admin/bindings", label: "bindings", icon: Link2, permission: "auth-policy:read" },
           { to: "/admin/network-zones", label: "networkZones", icon: Globe, permission: "network-zone:read" },
+          { to: "/admin/identity-providers", label: "identityProviders", icon: LogIn, permission: "identity-provider:read" },
           { to: "/admin/mapping-rules", label: "mappingRules", icon: Wand2, permission: "mapping-rule:read" },
         ],
       },

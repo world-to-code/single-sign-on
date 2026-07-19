@@ -32,6 +32,7 @@ import Passkeys from "./pages/Passkeys";
 import SessionPolicy from "./pages/SessionPolicy";
 import SessionPolicyDetail from "./pages/SessionPolicyDetail";
 import NetworkZones from "./pages/NetworkZones";
+import IdentityProviders from "./pages/IdentityProviders";
 import MappingRules from "./pages/MappingRules";
 import SmtpSettings from "./pages/SmtpSettings";
 import Customize from "./pages/Customize";
@@ -92,6 +93,7 @@ export default function Console({ session }: { session: SessionView }) {
                     <Route path="session-policy/:id" element={<SessionPolicyDetail />} />
                     <Route path="bindings" element={<Bindings />} />
                     <Route path="network-zones" element={<NetworkZones />} />
+                    <Route path="identity-providers" element={<IdentityProviders />} />
                     <Route path="mapping-rules" element={<MappingRules />} />
                     <Route path="scim-tokens" element={<ScimTokens />} />
                     <Route path="smtp-settings" element={<SmtpSettings />} />

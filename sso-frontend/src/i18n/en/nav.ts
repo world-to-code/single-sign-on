@@ -25,6 +25,7 @@ export const nav = {
   sessionPolicy: "Session Policy",
   bindings: "Policy Bindings",
   networkZones: "Network Zones",
+  identityProviders: "Identity Providers",
   mappingRules: "Mapping Rules",
   scimTokens: "SCIM Tokens",
   smtpSettings: "SMTP Settings",
