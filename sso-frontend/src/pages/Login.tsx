@@ -12,6 +12,7 @@ import {
   webAuthnSupported,
 } from "../webauthn";
 import { lastEmail, rememberEmail } from "../lib/loginMemory";
+import { organizationPickerTarget } from "../lib/tenantHost";
 import AuthLayout from "../components/layout/AuthLayout";
 import { Alert, AlertDescription } from "../components/ui/alert";
 import { Button } from "../components/ui/button";
@@ -92,9 +93,15 @@ export default function Login({ session, onDone }: { session: SessionView; onDon
   }
 
   // Return to organization selection: the resolved org lives in the pre-auth session, so clear it and
-  // re-probe. The remembered org is kept, so the picker still offers it.
+  // re-probe. The remembered orgs are kept, so the picker still offers them.
   async function useDifferentOrg() {
     try { await logout(); } catch { /* ignore */ }
+    const { protocol, host } = window.location;
+    const picker = organizationPickerTarget(protocol, host, org);
+    if (picker) {
+      window.location.assign(picker); // on a tenant subdomain the picker lives on another origin
+      return;
+    }
     onDone(await getSession());
   }
 
