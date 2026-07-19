@@ -178,6 +178,19 @@ sso:
         max-attempts: 10             # give-up cap; ~8-12h horizon, well under the P8D index TTL
         registry-ttl: P8D            # retry ZSET/meta TTL — aligned with the session-index TTLs
         sweep-batch-size: 100        # max due sids re-driven per queue per tick
+  directory:
+    sync:
+      # How often the sweep looks for connectors due a run. fixedDelay, so a slow tenant delays the next tick
+      # rather than stacking runs on top of each other.
+      interval: PT30M
+      # Longer than a sweep should ever take, so a crashed node's lock frees on its own without another node
+      # ever deleting a key it does not own.
+      lock-ttl: PT35M
+    ldap:
+      connect-timeout: PT10S
+      response-timeout: PT30S
+      # An unreachable directory must occupy a sync thread for a known interval, not indefinitely.
+      page-size: 500
   mapping:
     # Metadata-driven auto-mapping re-evaluation runs off the request thread on a dedicated bounded pool, with a
     # short in-thread retry for transient lock contention and a scheduled full-reconcile sweep as the durability

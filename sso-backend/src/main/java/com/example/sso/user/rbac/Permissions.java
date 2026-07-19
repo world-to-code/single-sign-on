@@ -82,6 +82,10 @@ public final class Permissions {
     // hands back control of a value a directory is supposed to own.
     public static final String ATTRIBUTE_DEFINITION_READ = "attribute-definition:read";
     public static final String ATTRIBUTE_DEFINITION_WRITE = "attribute-definition:write";
+    // Inbound directory sync: connections that PULL profile attributes from a tenant's own directory.
+    // Credential-bearing — a connector stores a bind password for someone else's directory.
+    public static final String DIRECTORY_CONNECTOR_READ = "directory-connector:read";
+    public static final String DIRECTORY_CONNECTOR_WRITE = "directory-connector:write";
     // Application assignments (portal)
     public static final String APP_ASSIGNMENT_READ = "app-assignment:read";
     public static final String APP_ASSIGNMENT_ASSIGN = "app-assignment:assign";
@@ -142,6 +146,7 @@ public final class Permissions {
             BRANDING_READ, BRANDING_UPDATE,
             IDENTITY_PROVIDER_READ, IDENTITY_PROVIDER_WRITE,
             ATTRIBUTE_DEFINITION_READ, ATTRIBUTE_DEFINITION_WRITE,
+            DIRECTORY_CONNECTOR_READ, DIRECTORY_CONNECTOR_WRITE,
             APP_ASSIGNMENT_READ, APP_ASSIGNMENT_ASSIGN, APP_ASSIGNMENT_UNASSIGN,
             RESOURCE_READ, RESOURCE_CREATE, RESOURCE_UPDATE, RESOURCE_DELETE, RESOURCE_ASSIGN_ADMIN,
             RESOURCE_CREATE_TYPE, RESOURCE_DELETE_TYPE,
