@@ -62,6 +62,7 @@ public class AuthenticationService {
     private final LoginResolutionScope loginScope;
     private final SubdomainTenantResolver subdomainResolver;
     private final AuditService audit;
+    private final CompletedSessionGuard completedSession;
 
     public AuthSessionView session(HttpServletRequest request) {
         autoSelectOrgFromHost(request);
@@ -124,6 +125,7 @@ public class AuthenticationService {
      */
     public AuthSessionView identify(String email, HttpServletRequest httpRequest,
                                     HttpServletResponse httpResponse) {
+        completedSession.refuseIfAlreadySignedIn();
         if (!targetSelected(httpRequest)) {
             throw BadRequestException.of("auth.org.selectFirst");
         }
@@ -147,6 +149,7 @@ public class AuthenticationService {
     /** Password sign-in; the password provider grants the password factor. Bad credentials → 401. */
     public AuthSessionView login(String username, String password, HttpServletRequest httpRequest,
                                  HttpServletResponse httpResponse) {
+        completedSession.refuseIfAlreadySignedIn();
         if (!targetSelected(httpRequest)) {
             throw BadRequestException.of("auth.org.selectFirst");
         }

@@ -37,6 +37,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -60,7 +61,7 @@ class FederatedAuthenticationServiceTest {
     private static final PendingFederation PENDING =
             new PendingFederation(ORG, ALIAS, STATE, "nonce-1", "verifier-1", "https://acme.example/callback");
 
-    @Mock private CurrentUserProvider currentUser;
+    @Mock private CompletedSessionGuard completedSession;
     @Mock private FederationLoginService federation;
     @Mock private FederatedIdentityLinks links;
     @Mock private PreAuthOrgSession preAuthOrg;
@@ -79,7 +80,7 @@ class FederatedAuthenticationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new FederatedAuthenticationService(currentUser, federation, links, preAuthOrg,
+        service = new FederatedAuthenticationService(completedSession, federation, links, preAuthOrg,
                 preAuthFederation,
                 provisioner, factorAuth, completionService, users, organizations, orgContext, audit);
         // Unlinked by default: each test that exercises the link path stubs it explicitly.
@@ -644,9 +645,8 @@ class FederatedAuthenticationServiceTest {
      */
     @Test
     void federationIsRefusedOnASessionThatHasAlreadySignedIn() {
-        Authentication signedIn = UsernamePasswordAuthenticationToken.authenticated("bob", null,
-                List.of(new SimpleGrantedAuthority(Factors.MFA_COMPLETE)));
-        when(currentUser.authentication()).thenReturn(signedIn);
+        doThrow(BadRequestException.of("auth.signin.inProgress"))
+                .when(completedSession).refuseIfAlreadySignedIn();
 
         assertThatThrownBy(() -> service.start(ALIAS, request)).isInstanceOf(BadRequestException.class);
         assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
