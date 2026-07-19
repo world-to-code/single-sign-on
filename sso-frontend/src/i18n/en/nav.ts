@@ -49,4 +49,5 @@ export const nav = {
   openNavigation: "Open navigation",
   closeNavigation: "Close navigation",
   breadcrumb: "Breadcrumb",
+  profileAttributes: "Profile attributes",
 } as const;

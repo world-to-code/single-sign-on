@@ -42,4 +42,6 @@ export const states: Record<keyof typeof enStates, string> = {
   passkeysEmptyHint: "비밀번호 없이 로그인할 보안 키나 플랫폼 패스키를 등록하세요.",
   profileSessionsEmptyTitle: "활성 세션이 없습니다",
   profileAppSessionsEmptyTitle: "활성 앱 세션이 없습니다",
+  profileAttrEmptyTitle: "정의된 속성이 없습니다",
+  profileAttrEmptyHint: "속성을 정의하면 프로필 편집기에 필드가 생기고, 디렉터리 커넥터가 매핑할 대상이 됩니다.",
 };

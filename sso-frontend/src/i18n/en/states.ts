@@ -41,4 +41,6 @@ export const states = {
   passkeysEmptyHint: "Register a security key or platform passkey to sign in without a password.",
   profileSessionsEmptyTitle: "No active sessions",
   profileAppSessionsEmptyTitle: "No active app sessions",
+  profileAttrEmptyTitle: "No attributes defined",
+  profileAttrEmptyHint: "Define one to give the profile editor a field, or to give a directory connector somewhere to map onto.",
 } as const;

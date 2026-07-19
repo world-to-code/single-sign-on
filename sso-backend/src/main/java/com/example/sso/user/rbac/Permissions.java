@@ -77,6 +77,11 @@ public final class Permissions {
     // Per-tenant inbound federation: upstream OIDC providers a tenant's users sign in through (credential-bearing)
     public static final String IDENTITY_PROVIDER_READ = "identity-provider:read";
     public static final String IDENTITY_PROVIDER_WRITE = "identity-provider:write";
+    // The tenant's profile schema: which attributes exist, their type, and whether a directory owns the value.
+    // Not credential-bearing, but it decides what an administrator may edit — a definition flipped to LOCAL
+    // hands back control of a value a directory is supposed to own.
+    public static final String ATTRIBUTE_DEFINITION_READ = "attribute-definition:read";
+    public static final String ATTRIBUTE_DEFINITION_WRITE = "attribute-definition:write";
     // Application assignments (portal)
     public static final String APP_ASSIGNMENT_READ = "app-assignment:read";
     public static final String APP_ASSIGNMENT_ASSIGN = "app-assignment:assign";
@@ -136,6 +141,7 @@ public final class Permissions {
             EMAIL_TEMPLATE_READ, EMAIL_TEMPLATE_UPDATE,
             BRANDING_READ, BRANDING_UPDATE,
             IDENTITY_PROVIDER_READ, IDENTITY_PROVIDER_WRITE,
+            ATTRIBUTE_DEFINITION_READ, ATTRIBUTE_DEFINITION_WRITE,
             APP_ASSIGNMENT_READ, APP_ASSIGNMENT_ASSIGN, APP_ASSIGNMENT_UNASSIGN,
             RESOURCE_READ, RESOURCE_CREATE, RESOURCE_UPDATE, RESOURCE_DELETE, RESOURCE_ASSIGN_ADMIN,
             RESOURCE_CREATE_TYPE, RESOURCE_DELETE_TYPE,

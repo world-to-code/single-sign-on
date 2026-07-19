@@ -1,4 +1,5 @@
 import {
+  Tags,
   LayoutDashboard, KeyRound, Users, ShieldCheck, AppWindow, Network, Coins, ScrollText,
   Clock, Globe, LayoutGrid, Boxes, UsersRound, UserCog, KeySquare, Building2, Link2, Wand2, Mail, Palette, LogIn,
   type LucideIcon,
@@ -63,6 +64,8 @@ export const NAV: NavGroup[] = [
           { to: "/admin/users", label: "users", icon: Users, permission: "user:read" },
           { to: "/admin/groups", label: "groups", icon: UsersRound, permission: "group:read" },
           { to: "/admin/resources", label: "resources", icon: Boxes, permission: "resource:read" },
+      { to: "/admin/profile-attributes", label: "profileAttributes", icon: Tags,
+        permission: "attribute-definition:read" },
         ],
       },
       {
