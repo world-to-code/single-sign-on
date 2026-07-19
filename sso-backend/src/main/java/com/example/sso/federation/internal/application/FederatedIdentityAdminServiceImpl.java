@@ -12,6 +12,10 @@ import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserAccessChangedEvent;
 import com.example.sso.user.account.UserService;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -29,8 +33,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 class FederatedIdentityAdminServiceImpl implements FederatedIdentityAdminService {
 
-    /** Enough to tell two identities apart and correlate one with the upstream; not the whole credential. */
-    private static final int SUBJECT_HINT_LENGTH = 8;
+    /** Enough to tell two identities apart on a screen; short enough not to be a lookup table of subjects. */
+    private static final int SUBJECT_HINT_LENGTH = 12;
 
     private final FederatedIdentityLinkRepository repository;
     private final UserService users;
@@ -73,10 +77,23 @@ class FederatedIdentityAdminServiceImpl implements FederatedIdentityAdminService
     }
 
     private FederatedIdentityView toView(FederatedIdentityLink link) {
-        String subject = link.getSubject();
-        String hint = subject.length() <= SUBJECT_HINT_LENGTH ? subject
-                : subject.substring(0, SUBJECT_HINT_LENGTH) + "…";
-        return new FederatedIdentityView(link.getId(), link.getProviderAlias(), link.getIssuer(), hint,
-                link.getCreatedAt());
+        return new FederatedIdentityView(link.getId(), link.getProviderAlias(), link.getIssuer(),
+                fingerprint(link.getSubject()), link.getCreatedAt());
+    }
+
+    /**
+     * A digest of the upstream subject, never a prefix of it. A prefix leaks the real identifier — and reveals
+     * it ENTIRELY when the upstream issues short subjects (employee numbers, sequential ids) — while doing the
+     * same job a fingerprint does: distinguishing two identities and matching one against the upstream's own
+     * console. Truncated because collision resistance is not the point; legibility is.
+     */
+    private String fingerprint(String subject) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(subject.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest).substring(0, SUBJECT_HINT_LENGTH);
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is required by every JRE", impossible);
+        }
     }
 }

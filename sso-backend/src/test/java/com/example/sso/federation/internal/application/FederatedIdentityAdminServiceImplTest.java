@@ -70,15 +70,28 @@ class FederatedIdentityAdminServiceImplTest {
         assertThat(views.getFirst().issuer()).isEqualTo(ISSUER);
     }
 
-    /** The admin needs to tell identities apart, not to read the whole opaque credential. */
+    /**
+     * A fingerprint, not a prefix. A prefix leaks the real identifier, and for a SHORT subject — an employee
+     * number, a sequential id — it leaks the whole thing.
+     */
     @Test
-    void abbreviatesTheUpstreamSubjectRatherThanExposingIt() {
-        when(repository.findByOrgIdAndUserIdOrderByCreatedAt(ORG, USER))
-                .thenReturn(List.of(link("00u1a2b3c4d5e6f7")));
+    void fingerprintsTheUpstreamSubjectRatherThanRevealingAnyOfIt() {
+        when(repository.findByOrgIdAndUserIdOrderByCreatedAt(ORG, USER)).thenReturn(List.of(link("42")));
 
         String hint = service.forUser(USER).getFirst().subjectHint();
 
-        assertThat(hint).doesNotContain("00u1a2b3c4d5e6f7").startsWith("00u1a2b3");
+        assertThat(hint).doesNotContain("42");
+    }
+
+    /** Stable, so an admin can match the same identity across screens and over time. */
+    @Test
+    void theFingerprintIsStableAndDistinguishesTwoIdentities() {
+        when(repository.findByOrgIdAndUserIdOrderByCreatedAt(ORG, USER))
+                .thenReturn(List.of(link("sub-a"), link("sub-b"), link("sub-a")));
+
+        List<String> hints = service.forUser(USER).stream().map(FederatedIdentityView::subjectHint).toList();
+
+        assertThat(hints.get(0)).isEqualTo(hints.get(2)).isNotEqualTo(hints.get(1));
     }
 
     @Test

@@ -4,10 +4,10 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * One upstream identity bound to a local account, as an administrator sees it. {@code subjectHint} is a short
- * prefix of the upstream {@code sub}, not the whole value: an admin needs to tell two identities apart and to
- * correlate one with their IdP, which a prefix does, while the full opaque identifier is credential-shaped
- * material that does not need to be readable on a management screen.
+ * One upstream identity bound to a local account, as an administrator sees it. {@code subjectHint} is a
+ * FINGERPRINT of the upstream {@code sub} — a truncated digest, never a prefix. It does what an admin needs
+ * (tell two identities apart, match one against the upstream's console) without handing back the identifier
+ * itself, which a prefix would leak, and would reveal entirely for a short subject.
  */
 public record FederatedIdentityView(UUID id, String providerAlias, String issuer, String subjectHint,
                                     Instant linkedAt) {

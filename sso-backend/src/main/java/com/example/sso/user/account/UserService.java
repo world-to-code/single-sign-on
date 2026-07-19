@@ -52,8 +52,8 @@ public interface UserService {
 
     /**
      * The account in {@code orgId} that an external directory provisioned under {@code externalId} (SCIM
-     * externalId). Empty when none matches AND when several do — nothing enforces uniqueness on that column,
-     * and picking one of several would be guessing at exactly the point a caller came here to avoid guessing.
+     * externalId). At most one can exist: the identifier is unique per tier (V120), which is where that rule
+     * belongs — a caller comes here precisely to stop guessing, so the answer must not be ambiguous.
      */
     Optional<UserAccount> findByExternalIdInOrg(String externalId, UUID orgId);
 

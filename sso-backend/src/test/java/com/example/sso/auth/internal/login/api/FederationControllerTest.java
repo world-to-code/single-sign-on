@@ -80,4 +80,18 @@ class FederationControllerTest {
                 .andExpect(status().isFound())
                 .andExpect(redirectedUrl("/?login_error=federation"));
     }
+
+    /**
+     * An UNEXPECTED failure — a store error, an oversized upstream claim — must render the same non-revealing
+     * redirect as a rejection, not a stack-trace page. The catch was widened past ApiException for exactly
+     * this, and narrowing it back would surface a 500 to the browser on an unauthenticated route.
+     */
+    @Test
+    void anUnexpectedFailureStillRendersTheOrdinaryFailureRedirect() throws Exception {
+        doThrow(new IllegalStateException("boom")).when(service).complete(any(), any(), any(), any(), any());
+
+        mvc.perform(get("/api/auth/federation/google/callback").param("code", "code-1").param("state", "state-1"))
+                .andExpect(status().isFound())
+                .andExpect(redirectedUrl("/?login_error=federation"));
+    }
 }

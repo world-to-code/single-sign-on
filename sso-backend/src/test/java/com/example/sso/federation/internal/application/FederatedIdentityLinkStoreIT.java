@@ -155,4 +155,21 @@ class FederatedIdentityLinkStoreIT extends AbstractIntegrationTest {
     private static String suffix() {
         return UUID.randomUUID().toString().substring(0, 8);
     }
+
+    /**
+     * Deleting an account must take its identities with it. Without the cascade a deleted user leaves a
+     * dangling link, and the login path's only defence against one is a fail-closed branch that no real
+     * database has ever exercised — the guarantee lives in the FK, so run it.
+     */
+    @Test
+    void deletingAnAccountRetiresItsIdentities() {
+        givenAnAccount();
+        String subject = "sub-" + suffix();
+        link(subject);
+
+        ownerJdbc().update("delete from app_user where id = ?", userId);
+        seededUsers.remove(userId); // already gone; teardown must not re-delete
+
+        assertThat(orgContext.callInOrg(orgId, () -> store.findUserId(orgId, ISSUER, subject))).isEmpty();
+    }
 }

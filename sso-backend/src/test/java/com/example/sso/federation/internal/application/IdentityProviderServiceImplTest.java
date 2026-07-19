@@ -74,6 +74,7 @@ class IdentityProviderServiceImplTest {
     }
 
     private IdentityProviderSpec spec(String secret, String scopes) {
+        // Three adjacent booleans, all DIFFERENT: two sharing a value makes a swap between them invisible.
         return new IdentityProviderSpec(ALIAS, "Google", ISSUER, "client-123", secret, scopes, true, false, true);
     }
 
@@ -113,7 +114,7 @@ class IdentityProviderServiceImplTest {
     void theViewCarriesEveryFieldExceptTheSecretWithBooleansUnswapped() {
         // Asymmetric booleans (allowJit=false, enabled=true) catch a swap in toView's two adjacent boolean args.
         IdentityProvider stored = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123", "encg:cipher",
-                "openid email", false, false, true);
+                "openid email", false, true, true);
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(stored));
 
@@ -124,7 +125,10 @@ class IdentityProviderServiceImplTest {
         assertThat(view.issuerUri()).isEqualTo(ISSUER);
         assertThat(view.clientId()).isEqualTo("client-123");
         assertThat(view.scopes()).isEqualTo("openid email");
+        // All three adjacent booleans asserted, and the fixture gives them DIFFERENT values — two sharing one
+        // would make a swap between them undetectable, which is the whole point of checking them here.
         assertThat(view.allowJitProvisioning()).isFalse();
+        assertThat(view.linkByVerifiedEmail()).isTrue();
         assertThat(view.enabled()).isTrue();
         // The record has no secret component at all — it cannot leak the ciphertext or plaintext.
         assertThat(view.toString()).doesNotContain("cipher").doesNotContain("s3cret");
