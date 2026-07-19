@@ -18,6 +18,11 @@ import jakarta.servlet.http.HttpServletResponse;
 import com.example.sso.user.role.RoleRef;
 import com.example.sso.user.role.Roles;
 import java.util.Set;
+import com.example.sso.shared.error.BadRequestException;
+import java.util.List;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -55,6 +60,7 @@ class FederatedAuthenticationServiceTest {
     private static final PendingFederation PENDING =
             new PendingFederation(ORG, ALIAS, STATE, "nonce-1", "verifier-1", "https://acme.example/callback");
 
+    @Mock private CurrentUserProvider currentUser;
     @Mock private FederationLoginService federation;
     @Mock private FederatedIdentityLinks links;
     @Mock private PreAuthOrgSession preAuthOrg;
@@ -73,7 +79,8 @@ class FederatedAuthenticationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new FederatedAuthenticationService(federation, links, preAuthOrg, preAuthFederation,
+        service = new FederatedAuthenticationService(currentUser, federation, links, preAuthOrg,
+                preAuthFederation,
                 provisioner, factorAuth, completionService, users, organizations, orgContext, audit);
         // Unlinked by default: each test that exercises the link path stubs it explicitly.
         lenient().when(links.findLinkedUser(any(), any(), any())).thenReturn(Optional.empty());
@@ -627,5 +634,24 @@ class FederatedAuthenticationServiceTest {
         service.complete(ALIAS, CODE, STATE, request, response);
 
         verify(factorAuth).grantFactor(request, response, Factors.PASSWORD);
+    }
+
+    /**
+     * Re-running a login on a session that already finished one is not a logout: it re-establishes the context
+     * and mints a NEW session id without destroying anything, so nothing propagates and everything indexed
+     * under the old id — back-channel-logout participants, the SAML SessionIndex — is orphaned and can no
+     * longer be logged out at all.
+     */
+    @Test
+    void federationIsRefusedOnASessionThatHasAlreadySignedIn() {
+        Authentication signedIn = UsernamePasswordAuthenticationToken.authenticated("bob", null,
+                List.of(new SimpleGrantedAuthority(Factors.MFA_COMPLETE)));
+        when(currentUser.authentication()).thenReturn(signedIn);
+
+        assertThatThrownBy(() -> service.start(ALIAS, request)).isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
+                .isInstanceOf(BadRequestException.class);
+        verify(federation, never()).beginLogin(any(), any(), any());
+        verify(factorAuth, never()).establish(any(), any(), any());
     }
 }

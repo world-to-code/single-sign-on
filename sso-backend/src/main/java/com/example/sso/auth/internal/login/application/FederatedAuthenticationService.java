@@ -32,6 +32,7 @@ import java.util.stream.Collectors;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -53,6 +54,7 @@ public class FederatedAuthenticationService {
 
     private static final String CALLBACK_TEMPLATE = "/api/auth/federation/{alias}/callback";
 
+    private final CurrentUserProvider currentUser;
     private final FederationLoginService federation;
     private final FederatedIdentityLinks links;
     private final PreAuthOrgSession preAuthOrg;
@@ -67,6 +69,7 @@ public class FederatedAuthenticationService {
 
     /** Begins federation for {@code alias}: returns the upstream authorization URI to redirect the browser to. */
     public String start(String alias, HttpServletRequest request) {
+        refuseIfAlreadySignedIn();
         UUID orgId = preAuthOrg.orgId(request)
                 .orElseThrow(() -> BadRequestException.of("auth.org.selectFirst"));
         String redirectUri = ServletUriComponentsBuilder.fromContextPath(request)
@@ -80,6 +83,7 @@ public class FederatedAuthenticationService {
     /** Completes the callback: validates it, resolves/provisions the user, and establishes the session. */
     public void complete(String alias, String code, String state, HttpServletRequest request,
             HttpServletResponse response) {
+        refuseIfAlreadySignedIn();
         UUID orgId = preAuthOrg.orgId(request)
                 .orElseThrow(() -> BadRequestException.of("auth.org.selectFirst"));
         PendingFederation pending = preAuthFederation.pending(request)
@@ -237,6 +241,24 @@ public class FederatedAuthenticationService {
         audit.record(new AuditRecord(AuditType.USER_CREATED, created.getUsername(), true,
                 "federated just-in-time provisioning", null, orgId));
         return created;
+    }
+
+    /**
+     * Refuses to re-run a login on a session that already finished one. These are permitAll GETs and the
+     * pre-auth org marker outlives completion, so a second pass was reachable from any signed-in browser — and
+     * it would re-establish the SecurityContext, minting a NEW session id. That is not a logout: nothing is
+     * destroyed, so no termination propagates, and everything indexed under the OLD id (back-channel-logout
+     * participants, the SAML SessionIndex, concurrency counters) is orphaned until it expires on its own.
+     * Those downstream sessions then cannot be logged out at all. Signing in as somebody else starts with
+     * signing out.
+     */
+    private void refuseIfAlreadySignedIn() {
+        Authentication current = currentUser.authentication();
+        boolean complete = current != null && current.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority).anyMatch(Factors.MFA_COMPLETE::equals);
+        if (complete) {
+            throw BadRequestException.of("auth.signin.inProgress");
+        }
     }
 
     private boolean constantTimeEquals(String expected, String actual) {
