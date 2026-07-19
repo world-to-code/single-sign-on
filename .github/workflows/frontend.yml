@@ -1,6 +1,6 @@
 name: Frontend
 
-# Reusable: frontend type-check + bundle, then the nginx-edge image (built only after the build passes).
+# Reusable: frontend unit tests + type-check + bundle, then the nginx-edge image (built only after those pass).
 # Called by ci.yml.
 on:
   workflow_call:
@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    name: Type-check + build
+    name: Test + type-check + build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -23,6 +23,10 @@ jobs:
       - name: npm ci
         working-directory: sso-frontend
         run: npm ci
+      - name: vitest
+        working-directory: sso-frontend
+        run: npm test
+
       - name: tsc + vite build
         working-directory: sso-frontend
         run: npm run build

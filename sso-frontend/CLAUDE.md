@@ -10,8 +10,9 @@ component layer (Radix primitives + `class-variance-authority` + `clsx`/`tailwin
 `lucide-react` icons. Import via the **`@/` alias** (→ `src/`), never long relative chains.
 
 Run from `sso-frontend/`: `npm run dev` (Vite `:5173`, proxies API to backend `:9000`) ·
-`npm run build` (**`tsc && vite build`** — type-check must pass; emits into the backend's
-`static/`). `npm run build` is the gate: it must be green.
+`npm test` (**Vitest + jsdom**, `npm run test:watch` while iterating) · `npm run build`
+(**`tsc && vite build`** — type-check must pass; emits into the backend's `static/`).
+**`npm test` and `npm run build` are BOTH the gate: both must be green** (CI runs both).
 
 ## Structure (keep to it)
 
