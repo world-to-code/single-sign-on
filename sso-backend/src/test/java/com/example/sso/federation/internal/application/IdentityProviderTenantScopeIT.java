@@ -130,4 +130,26 @@ class IdentityProviderTenantScopeIT extends AbstractIntegrationTest {
         assertThatThrownBy(() -> orgContext.runInOrg(null, () -> providers.save(spec("x", ISSUER_A, "s"))))
                 .isInstanceOf(ForbiddenException.class);
     }
+
+    /**
+     * The address-matching opt-in has to survive the whole config chain, and the three adjacent booleans have
+     * to be asymmetric, or a swap between them is undetectable. Asserts the PERSISTED column too: reading it
+     * back only through the view would pass even if the write forced a value.
+     */
+    @Test
+    void theEmailLinkingOptInSurvivesTheRoundTripAndKeepsItsOwnValue() {
+        UUID org = org("idp-optin-" + java.util.UUID.randomUUID().toString().substring(0, 8));
+        orgContext.runInOrg(org, () -> providers.save(new IdentityProviderSpec("okta", "Okta", ISSUER_A,
+                "client-id", "a-secret", "openid email", true, true, false)));
+
+        IdentityProviderView view = orgContext.callInOrg(org, () -> providers.get("okta"));
+        assertThat(view.linkByVerifiedEmail()).isTrue();
+        assertThat(view.allowJitProvisioning()).isTrue();
+        assertThat(view.enabled()).isFalse(); // asymmetric: a swap with either neighbour shows up here
+
+        Boolean stored = ownerJdbc().queryForObject(
+                "select link_by_verified_email from identity_provider where org_id = ? and alias = 'okta'",
+                Boolean.class, org);
+        assertThat(stored).isTrue();
+    }
 }

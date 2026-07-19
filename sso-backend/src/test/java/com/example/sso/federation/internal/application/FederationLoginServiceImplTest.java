@@ -99,4 +99,21 @@ class FederationLoginServiceImplTest {
             throw new IllegalStateException(e);
         }
     }
+
+    /** The login decision reads this flag off the identity; if it stopped at the config plane, the opt-in
+     *  would be inert and address matching would run for every provider. */
+    @Test
+    void theEmailLinkingOptInReachesTheLoginDecision() {
+        when(configStore.resolveEnabled(ORG, ALIAS)).thenReturn(
+                new ResolvedProvider(ALIAS, ISSUER, "client-123", "s3cret", "openid email", false, true));
+        when(upstream.exchangeCodeForIdToken(METADATA, "client-123", "s3cret", "code-1", REDIRECT, "verifier-1"))
+                .thenReturn("id-token");
+        when(verifier.verify(METADATA, "client-123", "id-token", "nonce-1"))
+                .thenReturn(new VerifiedIdToken("sub-9", "ada@example.com", true, "Ada"));
+
+        FederatedIdentity identity = service.completeLogin(ORG, ALIAS, "code-1", REDIRECT, "nonce-1", "verifier-1");
+
+        assertThat(identity.linkByVerifiedEmail()).isTrue();
+        assertThat(identity.jitProvisioningAllowed()).isFalse(); // asymmetric — a swap surfaces here
+    }
 }
