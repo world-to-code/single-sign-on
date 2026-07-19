@@ -1,0 +1,180 @@
+package com.example.sso.federation.internal.application;
+
+import com.example.sso.crypto.SecretCipher;
+import com.example.sso.federation.IdentityProviderService;
+import com.example.sso.federation.IdentityProviderSpec;
+import com.example.sso.federation.IdentityProviderView;
+import com.example.sso.federation.internal.domain.IdentityProvider;
+import com.example.sso.federation.internal.domain.IdentityProviderRepository;
+import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.shared.error.ForbiddenException;
+import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.shared.net.OutboundHostValidator;
+import com.example.sso.tenancy.OrgContext;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.regex.Pattern;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.oauth2.core.oidc.OidcScopes;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+
+/**
+ * Per-tenant OIDC-provider registry. Reads list the ACTING tier's own providers and writes go ONLY to that
+ * tier via the fail-closed {@link #writableOrg} — a bound-but-orgless non-platform caller can neither see nor
+ * edit the global providers. The issuer host is SSRF-validated and the client secret SecretCipher-encrypted
+ * BEFORE persist; the plaintext never reaches the DB, a log, or a view. Mirrors {@code SmtpSettingsService}.
+ */
+@Service
+@RequiredArgsConstructor
+public class IdentityProviderServiceImpl implements IdentityProviderService {
+
+    private static final Pattern ALIAS = Pattern.compile("^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$");
+
+    private final IdentityProviderRepository repository;
+    private final SecretCipher cipher;
+    private final OutboundHostValidator hostValidator;
+    private final OrgContext orgContext;
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<IdentityProviderView> list() {
+        return ownProviders().stream().map(this::toView).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public IdentityProviderView get(String alias) {
+        return ownProvider(alias).map(this::toView)
+                .orElseThrow(() -> new NotFoundException("Identity provider not found"));
+    }
+
+    @Override
+    @Transactional
+    public void save(IdentityProviderSpec spec) {
+        UUID org = writableOrg();
+        String alias = normalizeAlias(spec.alias());
+        validate(spec);
+        String scopes = normalizeScopes(spec.scopes());
+        Optional<IdentityProvider> existing = ownProvider(alias);
+        String encrypted = resolveSecret(spec, existing.orElse(null));
+        existing.ifPresentOrElse(
+                row -> row.reconfigure(spec.displayName().trim(), spec.issuerUri().trim(), spec.clientId().trim(),
+                        encrypted, scopes, spec.allowJitProvisioning(), spec.enabled()),
+                () -> repository.save(IdentityProvider.create(org, alias, spec.displayName().trim(),
+                        spec.issuerUri().trim(), spec.clientId().trim(), encrypted, scopes,
+                        spec.allowJitProvisioning(), spec.enabled())));
+    }
+
+    @Override
+    @Transactional
+    public void delete(String alias) {
+        writableOrg();
+        ownProvider(alias).ifPresent(repository::delete); // ownProvider normalizes + validates the alias
+    }
+
+    /**
+     * The ciphertext to persist. A newly-supplied secret is encrypted; a BLANK secret on an update KEEPS the
+     * stored ciphertext — the write-only secret is never echoed back, so an edit of other fields must not wipe
+     * it. A brand-new provider MUST carry a secret.
+     */
+    private String resolveSecret(IdentityProviderSpec spec, IdentityProvider existing) {
+        if (StringUtils.hasText(spec.clientSecret())) {
+            return cipher.encrypt(spec.clientSecret().trim());
+        }
+        if (existing != null) {
+            return existing.getClientSecretEncrypted();
+        }
+        throw new BadRequestException("A client secret is required for a new identity provider.");
+    }
+
+    private void validate(IdentityProviderSpec spec) {
+        if (!StringUtils.hasText(spec.displayName())) {
+            throw new BadRequestException("A display name is required.");
+        }
+        if (!StringUtils.hasText(spec.clientId())) {
+            throw new BadRequestException("A client id is required.");
+        }
+        validateIssuer(spec.issuerUri());
+    }
+
+    /** The issuer must be an absolute https URL, and its host must not resolve to an internal/metadata target. */
+    private void validateIssuer(String issuerUri) {
+        if (!StringUtils.hasText(issuerUri)) {
+            throw new BadRequestException("An issuer URL is required.");
+        }
+        URI uri;
+        try {
+            uri = new URI(issuerUri.trim());
+        } catch (URISyntaxException e) {
+            throw new BadRequestException("The issuer URL is malformed.");
+        }
+        if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null) {
+            throw new BadRequestException("The issuer URL must be an absolute https URL.");
+        }
+        hostValidator.validate(uri.getHost()); // SSRF: reject internal/metadata targets
+    }
+
+    private String normalizeAlias(String alias) {
+        String trimmed = alias == null ? "" : alias.trim().toLowerCase();
+        if (!ALIAS.matcher(trimmed).matches()) {
+            throw new BadRequestException("The alias must be 2–64 lowercase letters, digits or hyphens.");
+        }
+        return trimmed;
+    }
+
+    /** Requested scopes with {@code openid} guaranteed present (OIDC requires it), de-duplicated, space-joined. */
+    private String normalizeScopes(String scopes) {
+        Set<String> requested = new LinkedHashSet<>();
+        requested.add(OidcScopes.OPENID);
+        if (StringUtils.hasText(scopes)) {
+            Arrays.stream(scopes.trim().split("[,\\s]+"))
+                    .filter(StringUtils::hasText)
+                    .map(s -> s.toLowerCase())
+                    .forEach(requested::add);
+        }
+        return String.join(" ", requested);
+    }
+
+    private IdentityProviderView toView(IdentityProvider p) {
+        return new IdentityProviderView(p.getAlias(), p.getDisplayName(), p.getIssuerUri(), p.getClientId(),
+                p.getScopes(), p.isAllowJitProvisioning(), p.isEnabled());
+    }
+
+    /**
+     * The acting tier's OWN providers. Symmetric with {@link #writableOrg()}: only the PLATFORM tier owns the
+     * global (org_id NULL) providers — a bound-but-orgless non-platform caller owns nothing.
+     */
+    private List<IdentityProvider> ownProviders() {
+        UUID org = orgContext.currentOrg().orElse(null);
+        if (org != null) {
+            return repository.findByOrgIdOrderByAlias(org);
+        }
+        return orgContext.isPlatform() ? repository.findByOrgIdIsNullOrderByAlias() : List.of();
+    }
+
+    private Optional<IdentityProvider> ownProvider(String rawAlias) {
+        String alias = normalizeAlias(rawAlias); // parity with save/delete: an uppercase/invalid alias resolves the same
+        UUID org = orgContext.currentOrg().orElse(null);
+        if (org != null) {
+            return repository.findByOrgIdAndAlias(org, alias);
+        }
+        return orgContext.isPlatform() ? repository.findByOrgIdIsNullAndAlias(alias) : Optional.empty();
+    }
+
+    /** The acting org for a WRITE. Deny-by-default: a bound-but-orgless non-platform caller can't write global. */
+    private UUID writableOrg() {
+        UUID org = orgContext.currentOrg().orElse(null);
+        if (org == null && !orgContext.isPlatform()) {
+            throw new ForbiddenException("Only a platform administrator may edit the global identity providers.");
+        }
+        return org;
+    }
+}
