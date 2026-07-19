@@ -42,8 +42,9 @@ public class IdentityProvider extends AuditedEntity implements OrgOwned {
     @Column(name = "client_id", nullable = false)
     private String clientId;
 
-    /** SecretCipher ciphertext of the OAuth client secret; never the plaintext. */
-    @Column(name = "client_secret_encrypted", columnDefinition = "text")
+    /** SecretCipher ciphertext of the OAuth client secret; never the plaintext. Required — the token exchange
+     *  decrypts it, so a provider always carries one (the service enforces it on write). */
+    @Column(name = "client_secret_encrypted", columnDefinition = "text", nullable = false)
     private String clientSecretEncrypted;
 
     /** Space-separated OAuth scopes requested at the upstream; {@code openid} is always required. */

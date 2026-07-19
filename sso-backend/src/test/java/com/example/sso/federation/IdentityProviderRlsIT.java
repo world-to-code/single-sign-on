@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <ul>
  *   <li>a tenant's row is visible ONLY in its own org's context, never another tenant's, never the global tier;</li>
  *   <li>the platform-global row is visible ONLY in the platform context — never inside a tenant context;</li>
- *   <li>WITH CHECK: a tenant may write only its OWN row; a foreign org_id or a forged global (NULL) row is refused.</li>
+ *   <li>WITH CHECK: a tenant may write only its OWN row; a foreign org_id or a forged global row is refused.</li>
  * </ul>
  * Seeding/teardown use the privileged owner connection ({@link #ownerJdbc()}); the isolation assertions use a
  * raw {@link #appRoleConnection()}. Not {@code @Transactional} — each probe is its own connection.
@@ -115,8 +115,9 @@ class IdentityProviderRlsIT extends AbstractIntegrationTest {
     /** Insert a row directly (owner connection bypasses RLS) so we control its tier. {@code key} is alias+client_id. */
     private void seedRow(String key, UUID orgId) {
         ownerJdbc().update("""
-                insert into identity_provider (id, org_id, alias, display_name, issuer_uri, client_id, scopes)
-                values (gen_random_uuid(), ?, ?, 'Probe', 'https://idp.example', ?, 'openid')""",
+                insert into identity_provider
+                    (id, org_id, alias, display_name, issuer_uri, client_id, client_secret_encrypted, scopes)
+                values (gen_random_uuid(), ?, ?, 'Probe', 'https://idp.example', ?, 'encg:x', 'openid')""",
                 orgId, key, key);
         cleanups.add(() -> ownerJdbc().update("delete from identity_provider where client_id = ?", key));
     }
@@ -148,8 +149,9 @@ class IdentityProviderRlsIT extends AbstractIntegrationTest {
     private void insertRow(Connection c, String key, UUID orgId) throws SQLException {
         cleanups.add(() -> ownerJdbc().update("delete from identity_provider where client_id = ?", key));
         try (PreparedStatement ps = c.prepareStatement("""
-                insert into identity_provider (id, org_id, alias, display_name, issuer_uri, client_id, scopes)
-                values (gen_random_uuid(), ?, ?, 'Probe', 'https://idp.example', ?, 'openid')""")) {
+                insert into identity_provider
+                    (id, org_id, alias, display_name, issuer_uri, client_id, client_secret_encrypted, scopes)
+                values (gen_random_uuid(), ?, ?, 'Probe', 'https://idp.example', ?, 'encg:x', 'openid')""")) {
             ps.setObject(1, orgId);
             ps.setString(2, key);
             ps.setString(3, key);
