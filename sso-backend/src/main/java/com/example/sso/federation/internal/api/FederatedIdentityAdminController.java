@@ -38,7 +38,7 @@ public class FederatedIdentityAdminController {
     @RequirePermission(Permissions.USER_UPDATE)
     @RequireStepUp
     public ResponseEntity<Void> unlink(@PathVariable UUID userId, @PathVariable UUID identityId) {
-        service.unlink(identityId);
+        service.unlink(userId, identityId);
         return ResponseEntity.noContent().build();
     }
 }

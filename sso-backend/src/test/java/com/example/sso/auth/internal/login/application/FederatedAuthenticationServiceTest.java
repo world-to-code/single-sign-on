@@ -541,21 +541,6 @@ class FederatedAuthenticationServiceTest {
                 .isInstanceOf(UnauthorizedException.class);
     }
 
-    /** A privileged account may be reached this way: the directory ASSIGNED the identifier, the upstream did
-     *  not merely assert an address for it. That is a deliberate provisioning act, not a guess. */
-    @Test
-    void aDirectoryMatchedAdminAccountIsAllowed() {
-        UUID userId = UUID.randomUUID();
-        UserAccount admin = user(userId);
-        lenient().doReturn(Set.of(roleNamed(Roles.ORG_ADMIN))).when(admin).getRoles();
-        completeLoginReturns(identity(true, false));
-        when(users.findByExternalIdInOrg("sub-1", ORG)).thenReturn(Optional.of(admin));
-        when(organizations.isMember(ORG, userId)).thenReturn(true);
-
-        service.complete(ALIAS, CODE, STATE, request, response);
-
-        verify(factorAuth).grantFactor(request, response, Factors.PASSWORD);
-    }
 
     // --- address matching is opt-in ----------------------------------------------------------------------
 
@@ -585,5 +570,62 @@ class FederatedAuthenticationServiceTest {
         assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
                 .isInstanceOf(ForbiddenException.class);
         verify(users, never()).findByLoginInOrg(any(), any());
+    }
+
+    /**
+     * The guard's real failure mode. `role` is RLS-forced, so an account resolved outside the tenant's context
+     * hydrates with NO roles — and "every role is the baseline role" is vacuously TRUE of an empty set, which
+     * would wave an administrator straight through. An unreadable role set must refuse, not pass.
+     */
+    @Test
+    void anAccountWhoseRolesAreUnreadableIsRefusedRatherThanTreatedAsOrdinary() {
+        UUID userId = UUID.randomUUID();
+        UserAccount opaque = user(userId);
+        doReturn(Set.of()).when(opaque).getRoles(); // what an RLS-invisible hydration actually produces
+        completeLoginReturns(identity(true, true));
+        when(users.findByLoginInOrg("ada@example.com", ORG)).thenReturn(Optional.of(opaque));
+        when(organizations.isMember(ORG, userId)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
+                .isInstanceOf(UnauthorizedException.class);
+        verify(links, never()).link(any(), any(), any(), any(), any());
+    }
+
+    /** The directory branch is held to the same bar — external_id is writable through a tenant capability. */
+    @Test
+    void aDirectoryMatchedAdminAccountIsRefused() {
+        UUID userId = UUID.randomUUID();
+        UserAccount admin = user(userId);
+        doReturn(Set.of(roleNamed(Roles.ORG_ADMIN))).when(admin).getRoles();
+        completeLoginReturns(identity(true, true));
+        when(users.findByExternalIdInOrg("sub-1", ORG)).thenReturn(Optional.of(admin));
+        when(organizations.isMember(ORG, userId)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    /** The gate above every branch that keys on the address — including the pure JIT path. */
+    @Test
+    void anUnverifiedEmailIsRefusedEvenWhenOnlyJitWouldHaveRun() {
+        completeLoginReturns(identity(false, true, false)); // unverified, opt-in OFF, JIT ON
+
+        assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
+                .isInstanceOf(UnauthorizedException.class);
+        verify(provisioner, never()).provision(any(), any());
+    }
+
+    /** The directory branch must not depend on the address gates it sits above. */
+    @Test
+    void theDirectoryBranchResolvesWithoutAVerifiedAddressOrTheEmailOptIn() {
+        UUID userId = UUID.randomUUID();
+        UserAccount provisioned = user(userId);
+        completeLoginReturns(identity(false, false, false)); // unverified address, opt-in OFF, JIT OFF
+        when(users.findByExternalIdInOrg("sub-1", ORG)).thenReturn(Optional.of(provisioned));
+        when(organizations.isMember(ORG, userId)).thenReturn(true);
+
+        service.complete(ALIAS, CODE, STATE, request, response);
+
+        verify(factorAuth).grantFactor(request, response, Factors.PASSWORD);
     }
 }

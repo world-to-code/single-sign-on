@@ -18,6 +18,6 @@ public interface FederatedIdentityAdminService {
     /** The upstream identities bound to {@code userId} within the acting tenant, oldest first. */
     List<FederatedIdentityView> forUser(UUID userId);
 
-    /** Revokes one identity and terminates the sessions it authenticated. */
-    void unlink(UUID identityId);
+    /** Revokes one of {@code userId}'s identities and terminates the sessions it authenticated. */
+    void unlink(UUID userId, UUID identityId);
 }

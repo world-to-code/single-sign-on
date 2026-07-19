@@ -19,7 +19,4 @@ public interface IdentityProviderRepository extends JpaRepository<IdentityProvid
     Optional<IdentityProvider> findByOrgIdAndAlias(UUID orgId, String alias);
 
     Optional<IdentityProvider> findByOrgIdIsNullAndAlias(String alias);
-
-    /** Whether ANOTHER of this org's providers still points at {@code issuerUri} — its identities must survive. */
-    boolean existsByOrgIdAndIssuerUriAndAliasNot(UUID orgId, String issuerUri, String alias);
 }

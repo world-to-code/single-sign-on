@@ -49,11 +49,12 @@ class FederatedIdentityAdminServiceImpl implements FederatedIdentityAdminService
 
     @Override
     @Transactional
-    public void unlink(UUID identityId) {
+    public void unlink(UUID userId, UUID identityId) {
         UUID org = actingOrg();
-        FederatedIdentityLink link = repository.findByIdAndOrgId(identityId, org)
+        // Addressed by the account AND the tenant, so the route's {userId} is load-bearing: a delegate scoped to
+        // one user cannot pair it with another user's identity id.
+        FederatedIdentityLink link = repository.findByIdAndOrgIdAndUserId(identityId, org, userId)
                 .orElseThrow(() -> new NotFoundException("Federated identity not found"));
-        UUID userId = link.getUserId();
         repository.delete(link);
 
         // Revoking the credential without ending the sessions it authenticated is not revocation — the

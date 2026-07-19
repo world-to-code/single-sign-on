@@ -130,8 +130,11 @@ class FederatedIdentityLinkStoreIT extends AbstractIntegrationTest {
         link("sub-a-" + suffix());
         link("sub-b-" + suffix());
 
-        orgContext.runInOrg(orgId, () -> store.unlinkAll(orgId, ISSUER));
+        List<UUID> retired = orgContext.callInOrg(orgId, () -> store.unlinkAll(orgId, ISSUER, ALIAS));
 
+        // The RETURN is load-bearing: it is what the caller terminates sessions from, so reading the ids after
+        // the delete (always empty) would silently make revocation a no-op.
+        assertThat(retired).containsExactly(userId);
         assertThat(orgContext.callInOrg(orgId, () -> store.isLinked(orgId, ISSUER, userId))).isFalse();
     }
 
@@ -143,7 +146,7 @@ class FederatedIdentityLinkStoreIT extends AbstractIntegrationTest {
         link("sub-retired-" + suffix());
         orgContext.runInOrg(orgId, () -> store.link(orgId, "https://other.test", kept, "other", userId));
 
-        orgContext.runInOrg(orgId, () -> store.unlinkAll(orgId, ISSUER));
+        orgContext.runInOrg(orgId, () -> store.unlinkAll(orgId, ISSUER, ALIAS));
 
         assertThat(orgContext.callInOrg(orgId, () -> store.findUserId(orgId, "https://other.test", kept)))
                 .contains(userId);

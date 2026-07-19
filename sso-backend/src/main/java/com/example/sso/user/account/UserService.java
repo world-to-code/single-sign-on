@@ -73,6 +73,9 @@ public interface UserService {
      */
     Optional<String> usernameOf(UUID userId);
 
+    /** The usernames of {@code userIds}, in one query. Unknown ids are simply absent from the result. */
+    List<String> usernamesOf(Collection<UUID> userIds);
+
     List<UserAccount> findAll();
 
     /** A DB-paged slice of the users whose id is in {@code ids} — for a scoped admin's directory. */

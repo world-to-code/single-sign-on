@@ -299,7 +299,7 @@ class IdentityProviderServiceImplTest {
         service.save(new IdentityProviderSpec(ALIAS, "Google", "https://login.microsoftonline.test", "client-123",
                 "s3cret", "openid", true, false, true));
 
-        verify(links).unlinkAll(ORG, ISSUER); // the OLD issuer's identities, not the new one's
+        verify(links).unlinkAll(ORG, ISSUER, ALIAS); // the OLD issuer's identities, not the new one's
     }
 
     /** Under pairwise subject identifiers a client-id rotation renames every user's sub, so the old links
@@ -310,28 +310,14 @@ class IdentityProviderServiceImplTest {
                 "encg:cipher", "openid", true, false, true);
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
-        when(links.unlinkAll(ORG, ISSUER)).thenReturn(List.of());
+        when(links.unlinkAll(ORG, ISSUER, ALIAS)).thenReturn(List.of());
 
         service.save(new IdentityProviderSpec(ALIAS, "Google", ISSUER, "client-999", "s3cret", "openid",
                 true, false, true));
 
-        verify(links).unlinkAll(ORG, ISSUER);
+        verify(links).unlinkAll(ORG, ISSUER, ALIAS);
     }
 
-    /** Two providers may point at one upstream; retiring by issuer alone would wipe the other one's links. */
-    @Test
-    void anotherLiveProviderAtTheSameUpstreamKeepsItsIdentities() {
-        IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
-                "encg:cipher", "openid", true, false, true);
-        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
-        when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
-        when(repository.existsByOrgIdAndIssuerUriAndAliasNot(ORG, ISSUER, ALIAS)).thenReturn(true);
-
-        service.delete(ALIAS);
-
-        verify(links, never()).unlinkAll(any(), any());
-        verify(repository).delete(existing);
-    }
 
     @Test
     void editingAProviderWithoutChangingItsUpstreamKeepsItsIdentities() {
@@ -343,7 +329,7 @@ class IdentityProviderServiceImplTest {
         service.save(new IdentityProviderSpec(ALIAS, "Google Workspace", ISSUER, "client-123", "s3cret",
                 "openid email", true, false, true));
 
-        verify(links, never()).unlinkAll(any(), any());
+        verify(links, never()).unlinkAll(any(), any(), any());
     }
 
     /**
@@ -358,8 +344,8 @@ class IdentityProviderServiceImplTest {
         UUID retired = UUID.randomUUID();
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
-        when(links.unlinkAll(ORG, ISSUER)).thenReturn(List.of(retired));
-        when(users.usernameOf(retired)).thenReturn(Optional.of("ada@example.com"));
+        when(links.unlinkAll(ORG, ISSUER, ALIAS)).thenReturn(List.of(retired));
+        when(users.usernamesOf(List.of(retired))).thenReturn(List.of("ada@example.com"));
 
         service.delete(ALIAS);
 
@@ -372,7 +358,7 @@ class IdentityProviderServiceImplTest {
                 "encg:cipher", "openid", true, false, true);
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
-        when(links.unlinkAll(ORG, ISSUER)).thenReturn(List.of());
+        when(links.unlinkAll(ORG, ISSUER, ALIAS)).thenReturn(List.of());
 
         service.delete(ALIAS);
 
@@ -388,7 +374,7 @@ class IdentityProviderServiceImplTest {
 
         service.delete(ALIAS);
 
-        verify(links).unlinkAll(ORG, ISSUER);
+        verify(links).unlinkAll(ORG, ISSUER, ALIAS);
         verify(repository).delete(existing);
     }
 }

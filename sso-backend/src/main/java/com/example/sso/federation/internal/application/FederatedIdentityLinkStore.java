@@ -57,14 +57,14 @@ class FederatedIdentityLinkStore {
     }
 
     /**
-     * Retires every identity this org holds at {@code issuer} and returns the accounts that held them — the
+     * Retires every identity this org minted through {@code providerAlias} and returns the accounts that held them — the
      * caller needs them to terminate the sessions those identities authenticated. Reading the ids first costs
      * one indexed query and is what makes the revocation completable; a bare row count could not.
      */
     @Transactional
-    List<UUID> unlinkAll(UUID orgId, String issuer) {
-        List<UUID> affected = repository.findUserIdsAt(orgId, issuer);
-        repository.deleteByOrgIdAndIssuer(orgId, issuer);
+    List<UUID> unlinkAll(UUID orgId, String issuer, String providerAlias) {
+        List<UUID> affected = repository.findUserIdsAt(orgId, issuer, providerAlias);
+        repository.deleteByOrgIdAndIssuer(orgId, issuer, providerAlias);
         return affected;
     }
 }

@@ -112,6 +112,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Optional<UserAccount> findByLoginInOrg(String identifier, UUID orgId) {
         return users.findByLoginInOrg(identifier, orgId).map(hydrator::hydrateUser).map(u -> u);
     }
@@ -169,6 +170,18 @@ public class UserServiceImpl implements UserService {
         // RLS-bypassing so a context-free thread (the durable session-termination sweep) resolves it correctly
         // even if app_user later gains RLS — the same authoritative-lookup posture as orgIdOf above.
         return orgContext.callAsPlatform(() -> users.findById(userId).map(AppUser::getUsername));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<String> usernamesOf(Collection<UUID> userIds) {
+        if (userIds.isEmpty()) {
+            return List.of();
+        }
+        // Same RLS-bypassing posture as usernameOf: the caller has already established which ids it may act on.
+        return orgContext.callAsPlatform(() -> users.findAllById(userIds).stream()
+                .map(AppUser::getUsername)
+                .toList());
     }
 
     @Override

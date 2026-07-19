@@ -37,6 +37,10 @@ export default defineConfig({
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     setupFiles: ["src/test/setup.ts"],
     passWithNoTests: false,
+    // restoreMocks only unwinds vi.spyOn. Module mocks built from vi.fn() keep their call history across
+    // tests, so one test's calls leak into the next one's "was never called" assertion; clearMocks resets
+    // that history (implementations, set in the vi.mock factory, survive).
     restoreMocks: true,
+    clearMocks: true,
   },
 });

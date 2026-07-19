@@ -27,6 +27,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
@@ -108,7 +110,7 @@ public class FederatedAuthenticationService {
      * <ol>
      *   <li>the stable link (issuer + upstream {@code sub}) recorded by an earlier login — authoritative;</li>
      *   <li>an account the same directory provisioned under this {@code sub} (SCIM externalId) —
-     *       deterministic, because the directory assigned the identifier rather than asserting an attribute;</li>
+     *       deterministic rather than inferred, though still not privileged (see {@link #unprivileged});</li>
      *   <li>a VERIFIED-email match — an inference, and restricted accordingly (see {@link #unprivileged});</li>
      *   <li>just-in-time provisioning of a new account, when the provider allows it.</li>
      * </ol>
@@ -134,11 +136,15 @@ public class FederatedAuthenticationService {
         // account (SCIM externalId), it already recorded which local account this subject is, so there is
         // nothing to infer. This is the path a tenant should be on — it is deterministic, it survives an email
         // change, and it is how a seconded worker registered in the host company's tenant gets connected.
-        UserAccount provisioned = users.findByExternalIdInOrg(identity.subject(), orgId).orElse(null);
+        UserAccount provisioned = orgContext
+                .callInOrg(orgId, () -> users.findByExternalIdInOrg(identity.subject(), orgId)).orElse(null);
         if (provisioned != null) {
-            // A privileged account is reachable here, unlike the email branch: the directory ASSIGNED this
-            // identifier as a provisioning act — the upstream did not merely assert an address for it.
-            return link(identity, orgId, clientIp, authorized(provisioned, orgId));
+            // Held to the same bar as the address branch. It is tempting to trust this one more — the directory
+            // ASSIGNED the identifier rather than asserting an attribute — but external_id is writable through
+            // a tenant-grantable SCIM capability, so whoever can provision users can also choose which upstream
+            // subject resolves to which account. That is the same admin-takeover primitive as the address
+            // branch, through a different door. An administrator federates on a link created deliberately.
+            return link(identity, orgId, clientIp, unprivileged(authorized(provisioned, orgId)));
         }
         // Nothing but the address left, and everything below keys on it: the match obviously, and provisioning
         // too, which creates the account under that address AND marks it verified. So an address the upstream
@@ -150,7 +156,8 @@ public class FederatedAuthenticationService {
         // Matching an EXISTING account by address is an INFERENCE about who somebody is — an address can be
         // reassigned upstream — so the provider has to opt into it.
         if (identity.linkByVerifiedEmail()) {
-            UserAccount existing = users.findByLoginInOrg(identity.email(), orgId).orElse(null);
+            UserAccount existing = orgContext
+                    .callInOrg(orgId, () -> users.findByLoginInOrg(identity.email(), orgId)).orElse(null);
             if (existing != null) {
                 return link(identity, orgId, clientIp, unprivileged(authorized(existing, orgId)));
             }
@@ -162,16 +169,26 @@ public class FederatedAuthenticationService {
     }
 
     /**
-     * Bars the email bootstrap from claiming a PRIVILEGED account. Whoever may register an identity provider
-     * decides what the upstream asserts, so without this the {@code identity-provider:write} permission is an
-     * admin-takeover primitive: register an IdP, assert the administrator's address as verified, and the email
-     * branch hands over their session and their roles. An ordinary account is one holding nothing but the
-     * baseline role and no direct permissions; anything above that must be linked deliberately (an existing
-     * link still signs in normally — the restriction is on bootstrapping BY ADDRESS, not on federating).
+     * Bars a FIRST federated sign-in from claiming a PRIVILEGED account, on either bootstrap branch.
+     *
+     * <p>Both branches are decided by things a tenant administrator controls: whoever may register an identity
+     * provider decides what the upstream asserts, and whoever may provision users decides which upstream
+     * subject an account carries as its {@code external_id}. Without this bar, either capability is an
+     * admin-takeover primitive — name the administrator, and the login hands over their session and their
+     * roles. An ordinary account is one holding nothing but the baseline role and no direct permissions.
+     *
+     * <p>An existing LINK still signs in normally, however privileged: the restriction is on bootstrapping a
+     * binding that nobody created deliberately, not on federating.
      */
     private UserAccount unprivileged(UserAccount account) {
+        Set<String> roleNames = account.getRoles().stream().map(RoleRef::getName).collect(Collectors.toSet());
+        // Fails CLOSED on a degenerate read. `role` is RLS-forced, so an account resolved without the tenant's
+        // context hydrates with NO roles — and "every role is the baseline role" is vacuously true of an empty
+        // set, which would wave an administrator straight through. Demand the baseline role be PRESENT, so a
+        // read that saw nothing is refused rather than trusted. (The reads above are wrapped in callInOrg for
+        // exactly this reason; this is the second line, because the failure mode is silent.)
         boolean ordinary = account.getDirectPermissionNames().isEmpty()
-                && account.getRoles().stream().map(RoleRef::getName).allMatch(Roles.USER::equals);
+                && roleNames.equals(Set.of(Roles.USER));
         if (!ordinary) {
             throw new UnauthorizedException();
         }

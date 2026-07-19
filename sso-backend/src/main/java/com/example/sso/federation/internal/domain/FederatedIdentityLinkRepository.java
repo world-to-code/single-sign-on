@@ -21,46 +21,52 @@ public interface FederatedIdentityLinkRepository extends JpaRepository<Federated
      *  from claiming it by email (a recycled address must not inherit the previous holder's account). */
     boolean existsByOrgIdAndIssuerAndUserId(UUID orgId, String issuer, UUID userId);
 
+    /** The identities bound to one account within a tenant — the admin listing. */
+    List<FederatedIdentityLink> findByOrgIdAndUserIdOrderByCreatedAt(UUID orgId, UUID userId);
+
+    /** One identity, addressed by BOTH the account it belongs to and the acting tenant, so neither path
+     *  variable is decorative and a scoped delegate cannot pair an in-scope user with a foreign identity. */
+    Optional<FederatedIdentityLink> findByIdAndOrgIdAndUserId(UUID id, UUID orgId, UUID userId);
+
+    /** The accounts holding an identity minted through this provider — read before retiring, to revoke them. */
+    @Query("select l.userId from FederatedIdentityLink l "
+            + "where l.orgId = :orgId and l.issuer = :issuer and l.providerAlias = :providerAlias")
+    List<UUID> findUserIdsAt(@Param("orgId") UUID orgId, @Param("issuer") String issuer,
+            @Param("providerAlias") String providerAlias);
+
     /**
      * Inserts the link, doing nothing if this identity is already linked. A native upsert rather than a
      * check-then-insert: letting the unique constraint fire inside JPA marks the transaction rollback-only, so
      * catching the violation in Java is NOT enough — the commit then fails anyway and the login dies with it.
-     * Deferring the conflict to Postgres keeps the losing side of the race quiet, as it must be (both sides
-     * resolved the same account, so the winning row already says what this call wanted to say).
      *
-     * Absorbs EITHER unique conflict — the caller reads the resulting state back to tell them apart, since
+     * <p>Absorbs EITHER unique conflict; the caller reads the resulting state back to tell them apart, since
      * "this identity is already linked here" and "this account already has a different identity here" mean
      * opposite things.
      *
      * @return 1 when the link was created, 0 when a conflict absorbed it
      */
     @Modifying
-    @Query(value = """
-            insert into federated_identity (org_id, issuer, subject, provider_alias, user_id)
-            values (:orgId, :issuer, :subject, :providerAlias, :userId)
-            on conflict do nothing""", nativeQuery = true)
+    @Query(value = "insert into federated_identity (org_id, issuer, subject, provider_alias, user_id) "
+            + "values (:orgId, :issuer, :subject, :providerAlias, :userId) on conflict do nothing",
+            nativeQuery = true)
     int insertIfAbsent(@Param("orgId") UUID orgId, @Param("issuer") String issuer,
             @Param("subject") String subject, @Param("providerAlias") String providerAlias,
             @Param("userId") UUID userId);
 
-    /** The identities bound to one account within a tenant — the admin listing. */
-    List<FederatedIdentityLink> findByOrgIdAndUserIdOrderByCreatedAt(UUID orgId, UUID userId);
-
-    /** One identity, addressed within the acting tenant so an admin cannot reach another org's row. */
-    Optional<FederatedIdentityLink> findByIdAndOrgId(UUID id, UUID orgId);
-
-    /** The accounts holding an identity at this upstream — read before retiring them, to revoke their sessions. */
-    @Query("select l.userId from FederatedIdentityLink l where l.orgId = :orgId and l.issuer = :issuer")
-    List<UUID> findUserIdsAt(@Param("orgId") UUID orgId, @Param("issuer") String issuer);
-
     /**
-     * Drops an org's links for an upstream, e.g. when its provider is deleted or repointed elsewhere. A bulk
-     * DELETE rather than the derived form, which would SELECT every row and remove them one by one — and would
-     * report nothing, where this returns the count the caller can act on.
+     * Drops the links THIS provider minted, e.g. when it is deleted or repointed elsewhere. Scoped by alias,
+     * not by issuer alone: two providers may share an upstream, and retiring by issuer would either wipe a
+     * sibling's identities or — if skipped to protect the sibling — let an attacker register a decoy at the
+     * same issuer so that revoking the real provider retires nothing.
+     *
+     * <p>A bulk DELETE rather than the derived form, which would SELECT every row and remove them one by one —
+     * and would report nothing, where this returns the count the caller can act on.
      *
      * @return how many identities were retired
      */
     @Modifying
-    @Query("delete from FederatedIdentityLink l where l.orgId = :orgId and l.issuer = :issuer")
-    int deleteByOrgIdAndIssuer(@Param("orgId") UUID orgId, @Param("issuer") String issuer);
+    @Query("delete from FederatedIdentityLink l "
+            + "where l.orgId = :orgId and l.issuer = :issuer and l.providerAlias = :providerAlias")
+    int deleteByOrgIdAndIssuer(@Param("orgId") UUID orgId, @Param("issuer") String issuer,
+            @Param("providerAlias") String providerAlias);
 }

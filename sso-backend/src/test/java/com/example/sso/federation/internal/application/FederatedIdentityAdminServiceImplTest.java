@@ -85,10 +85,10 @@ class FederatedIdentityAdminServiceImplTest {
     void unlinkingRevokesTheIdentityAndEndsTheSessionsItAuthenticated() {
         UUID identityId = UUID.randomUUID();
         FederatedIdentityLink stored = link("sub-1");
-        when(repository.findByIdAndOrgId(identityId, ORG)).thenReturn(Optional.of(stored));
+        when(repository.findByIdAndOrgIdAndUserId(identityId, ORG, USER)).thenReturn(Optional.of(stored));
         when(users.usernameOf(USER)).thenReturn(Optional.of("ada@example.com"));
 
-        service.unlink(identityId);
+        service.unlink(USER, identityId);
 
         verify(repository).delete(stored);
         verify(events).publishEvent(new UserAccessChangedEvent("ada@example.com", ORG));
@@ -99,9 +99,9 @@ class FederatedIdentityAdminServiceImplTest {
     @Test
     void anIdentityOutsideTheActingTenantIsNotFound() {
         UUID identityId = UUID.randomUUID();
-        when(repository.findByIdAndOrgId(identityId, ORG)).thenReturn(Optional.empty());
+        when(repository.findByIdAndOrgIdAndUserId(identityId, ORG, USER)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.unlink(identityId)).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.unlink(USER, identityId)).isInstanceOf(NotFoundException.class);
         verify(repository, never()).delete(any());
         verify(events, never()).publishEvent(any(UserAccessChangedEvent.class));
     }
@@ -112,6 +112,6 @@ class FederatedIdentityAdminServiceImplTest {
         when(orgContext.currentOrg()).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.forUser(USER)).isInstanceOf(ForbiddenException.class);
-        assertThatThrownBy(() -> service.unlink(UUID.randomUUID())).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> service.unlink(USER, UUID.randomUUID())).isInstanceOf(ForbiddenException.class);
     }
 }

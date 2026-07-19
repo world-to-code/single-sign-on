@@ -123,18 +123,14 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
         if (org == null) {
             return;
         }
-        // Two providers may legitimately point at the same upstream. Retiring by issuer alone would wipe the
-        // OTHER one's identities too, and every login through it would fall back to bootstrapping by address.
-        if (repository.existsByOrgIdAndIssuerUriAndAliasNot(org, issuer, alias)) {
-            return;
-        }
         // Revoking the credential is only half of it: the sessions it authenticated stay valid until they
         // expire otherwise, which is precisely what an admin repointing a compromised upstream is trying to
         // stop. Terminating goes through the established access-change path (Redis + BCL/SLO propagation).
-        for (UUID retired : links.unlinkAll(org, issuer)) {
-            users.usernameOf(retired)
-                    .ifPresent(username -> events.publishEvent(new UserAccessChangedEvent(username, org)));
-        }
+        List<UUID> retired = links.unlinkAll(org, issuer, alias);
+        // One lookup for the whole set: a tenant that migrated its directory to this upstream can have
+        // thousands of identities here, and a per-row query would run them all inside this admin write.
+        users.usernamesOf(retired)
+                .forEach(username -> events.publishEvent(new UserAccessChangedEvent(username, org)));
     }
 
     /**
