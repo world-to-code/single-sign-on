@@ -5,8 +5,6 @@ import com.example.sso.organization.OrganizationService;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
-import java.security.SecureRandom;
-import java.util.Base64;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +24,6 @@ import org.springframework.util.StringUtils;
 @RequiredArgsConstructor
 class FederatedUserProvisioner {
 
-    private static final SecureRandom RANDOM = new SecureRandom();
     private static final String DEFAULT_ROLE = "ROLE_USER";
 
     private final UserService users;
@@ -36,17 +33,15 @@ class FederatedUserProvisioner {
     UserAccount provision(FederatedIdentity identity, UUID orgId) {
         String username = identity.email(); // unique within the org, and a stable handle
         String displayName = StringUtils.hasText(identity.name()) ? identity.name() : identity.email();
+        // NO password, rather than a random one nobody holds. A stored hash makes the account look
+        // password-enrolled: a tenant whose session policy lists PASSWORD among its re-auth factors would then
+        // offer this user a password prompt they cannot possibly satisfy, locking them out of every step-up
+        // gated action. Absent, the password factor is simply not enrolled — which is the truth.
         UserAccount created = users.createUser(
-                new NewUser(username, identity.email(), displayName, randomPassword(), Set.of(DEFAULT_ROLE)), orgId);
+                new NewUser(username, identity.email(), displayName, null, Set.of(DEFAULT_ROLE)), orgId);
         organizations.addMember(orgId, created.getId());
         users.markEmailVerified(created.getId());
         return created;
     }
 
-    /** A strong random password the federated account never uses (it authenticates via the upstream). */
-    private String randomPassword() {
-        byte[] bytes = new byte[32];
-        RANDOM.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
 }

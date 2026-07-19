@@ -21,9 +21,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for {@link FederatedUserProvisioner}: a JIT federated user is created in the tenant with a random
- * unusable password + ROLE_USER, made a member, and marked email-verified — the three writes that must land as
- * one transaction. The display name falls back to the email when the upstream sent none.
+ * Unit tests for {@link FederatedUserProvisioner}: a JIT federated user is created in the tenant with NO
+ * password + ROLE_USER, made a member, and marked email-verified — the three writes that must land as one
+ * transaction. The display name falls back to the email when the upstream sent none.
  */
 @ExtendWith(MockitoExtension.class)
 class FederatedUserProvisionerTest {
@@ -60,7 +60,7 @@ class FederatedUserProvisionerTest {
         assertThat(newUser.getValue().email()).isEqualTo("ada@example.com");
         assertThat(newUser.getValue().displayName()).isEqualTo("Ada");
         assertThat(newUser.getValue().roleNames()).containsExactly("ROLE_USER");
-        assertThat(newUser.getValue().rawPassword()).isNotBlank(); // random, unusable — federation is the credential
+        assertThat(newUser.getValue().rawPassword()).isNull(); // federation is the credential; see below
         verify(organizations).addMember(ORG, newId);
         verify(users).markEmailVerified(newId); // the upstream proved control of the address
     }
@@ -76,5 +76,23 @@ class FederatedUserProvisionerTest {
         ArgumentCaptor<NewUser> newUser = ArgumentCaptor.captor();
         verify(users).createUser(newUser.capture(), eq(ORG));
         assertThat(newUser.getValue().displayName()).isEqualTo("ada@example.com");
+    }
+
+    /**
+     * A federated account holds no password. A stored hash — even an unguessable random one — makes the
+     * account look password-enrolled, so a tenant whose session policy lists PASSWORD among its re-auth
+     * factors offers this user a prompt they cannot satisfy, blocking every step-up gated action for good.
+     */
+    @Test
+    void provisionsTheAccountWithNoPasswordAtAll() {
+        FederatedUserProvisioner provisioner = new FederatedUserProvisioner(users, organizations);
+        UserAccount account = created(UUID.randomUUID());
+        when(users.createUser(any(), eq(ORG))).thenReturn(account);
+
+        provisioner.provision(identity("Ada"), ORG);
+
+        ArgumentCaptor<NewUser> newUser = ArgumentCaptor.forClass(NewUser.class);
+        verify(users).createUser(newUser.capture(), eq(ORG));
+        assertThat(newUser.getValue().rawPassword()).isNull();
     }
 }
