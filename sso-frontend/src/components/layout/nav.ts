@@ -1,4 +1,5 @@
 import {
+  RefreshCw,
   Tags,
   LayoutDashboard, KeyRound, Users, ShieldCheck, AppWindow, Network, Coins, ScrollText,
   Clock, Globe, LayoutGrid, Boxes, UsersRound, UserCog, KeySquare, Building2, Link2, Wand2, Mail, Palette, LogIn,
@@ -66,6 +67,8 @@ export const NAV: NavGroup[] = [
           { to: "/admin/resources", label: "resources", icon: Boxes, permission: "resource:read" },
       { to: "/admin/profile-attributes", label: "profileAttributes", icon: Tags,
         permission: "attribute-definition:read" },
+      { to: "/admin/directory-sync", label: "directorySync", icon: RefreshCw,
+        permission: "directory-connector:read" },
         ],
       },
       {

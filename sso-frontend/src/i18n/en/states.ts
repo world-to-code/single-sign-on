@@ -43,4 +43,8 @@ export const states = {
   profileAppSessionsEmptyTitle: "No active app sessions",
   profileAttrEmptyTitle: "No attributes defined",
   profileAttrEmptyHint: "Define one to give the profile editor a field, or to give a directory connector somewhere to map onto.",
+  dirSyncEmptyTitle: "No directory connections",
+  dirSyncEmptyHint: "Connect a directory to keep people's profile attributes up to date automatically.",
+  dirSyncRunsEmptyTitle: "No runs yet",
+  dirSyncRunsEmptyHint: "Sync now, or wait for the schedule.",
 } as const;

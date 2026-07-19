@@ -50,4 +50,5 @@ export const nav = {
   closeNavigation: "Close navigation",
   breadcrumb: "Breadcrumb",
   profileAttributes: "Profile attributes",
+  directorySync: "Directory sync",
 } as const;

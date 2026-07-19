@@ -52,4 +52,5 @@ export const nav: Record<keyof typeof enNav, string> = {
   closeNavigation: "메뉴 닫기",
   breadcrumb: "탐색 경로",
   profileAttributes: "프로필 속성",
+  directorySync: "디렉터리 동기화",
 };

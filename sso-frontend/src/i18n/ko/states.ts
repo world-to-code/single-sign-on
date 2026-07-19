@@ -44,4 +44,8 @@ export const states: Record<keyof typeof enStates, string> = {
   profileAppSessionsEmptyTitle: "활성 앱 세션이 없습니다",
   profileAttrEmptyTitle: "정의된 속성이 없습니다",
   profileAttrEmptyHint: "속성을 정의하면 프로필 편집기에 필드가 생기고, 디렉터리 커넥터가 매핑할 대상이 됩니다.",
+  dirSyncEmptyTitle: "디렉터리 연결이 없습니다",
+  dirSyncEmptyHint: "디렉터리를 연결하면 사람들의 프로필 속성이 자동으로 최신 상태를 유지합니다.",
+  dirSyncRunsEmptyTitle: "아직 실행 기록이 없습니다",
+  dirSyncRunsEmptyHint: "지금 동기화하거나 예약 실행을 기다리세요.",
 };

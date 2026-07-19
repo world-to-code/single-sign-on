@@ -19,6 +19,7 @@ import RoleDetail from "./pages/RoleDetail";
 import Groups from "./pages/Groups";
 import Resources from "./pages/Resources";
 import ProfileAttributes from "./pages/ProfileAttributes";
+import DirectorySync from "./pages/DirectorySync";
 import GroupDetail from "./pages/GroupDetail";
 import Clients from "./pages/Clients";
 import ClientCreate from "./pages/ClientCreate";
@@ -80,6 +81,7 @@ export default function Console({ session }: { session: SessionView }) {
                     <Route path="groups/:id" element={<GroupDetail />} />
                     <Route path="resources" element={<Resources />} />
             <Route path="profile-attributes" element={<ProfileAttributes />} />
+            <Route path="directory-sync" element={<DirectorySync />} />
                     <Route path="applications" element={<Applications />} />
                     <Route path="clients" element={<Clients />} />
                     <Route path="clients/new" element={<ClientCreate />} />
