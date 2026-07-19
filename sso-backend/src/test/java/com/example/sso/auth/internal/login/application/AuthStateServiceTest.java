@@ -8,6 +8,7 @@ import com.example.sso.authpolicy.policy.AuthPolicyResolver;
 import com.example.sso.authpolicy.policy.AuthPolicyStepView;
 import com.example.sso.authpolicy.policy.AuthPolicyView;
 import com.example.sso.authpolicy.factor.Factors;
+import com.example.sso.federation.FederationLoginService;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
@@ -50,6 +51,7 @@ class AuthStateServiceTest {
     @Mock private UserAccount user;
     @Mock private LoginPolicyResolver loginPolicy;
     @Mock private OrganizationService organizations;
+    @Mock private FederationLoginService federation;
 
     @InjectMocks private AuthStateService service;
 

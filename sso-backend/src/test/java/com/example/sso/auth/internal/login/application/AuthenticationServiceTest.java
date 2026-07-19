@@ -183,7 +183,7 @@ class AuthenticationServiceTest {
                 .thenReturn(UsernamePasswordAuthenticationToken.authenticated("victim", null, List.of()));
         when(preAuthOrg.orgId(request)).thenReturn(Optional.of(orgId));
         when(authState.describe(any(), any(), any()))
-                .thenReturn(AuthSessionView.identifyPending("acme", true, false)); // next = IDENTIFY, no credential
+                .thenReturn(AuthSessionView.identifyPending("acme", true, false, List.of())); // next = IDENTIFY
 
         assertThatThrownBy(() -> service.changePassword("attacker-pass", request, response))
                 .isInstanceOf(UnauthorizedException.class);
