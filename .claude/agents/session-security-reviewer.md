@@ -25,6 +25,20 @@ everywhere it should** — with no silent gaps. A hole here means a "logged-out"
 somewhere, or a stale/duplicated session grants access. Assume a motivated attacker AND a careless
 operator. Prefer over-reporting to a missed gap; back every finding with file:line + a concrete scenario.
 
+## Always ask these two (they have both shipped defects here)
+
+- **Re-entering a login flow on an ALREADY-authenticated session.** Can the flow be re-driven while
+  a session is complete (pre-auth markers never cleared, no "already MFA_COMPLETE" guard, a
+  permitAll GET entry point)? If so the session id rotates without a `SessionDestroyedEvent`, and
+  everything indexed under the OLD id — back-channel-logout participants, SAML SLO SessionIndex,
+  concurrency counters — is orphaned until TTL. Those downstream sessions then become
+  un-logout-able. `changeSessionId` is NOT a destroy.
+- **Revocation completeness for a newly-revocable thing.** When the change adds any operation that
+  invalidates a credential or binding (unlink an identity, disable a provider/connection, revoke a
+  token, remove a factor), does it TERMINATE the sessions that credential authenticated? Deleting
+  the row while the session lives is not revocation. Trace it to `terminateForUser` → Redis → BCL/SLO,
+  and check the operation returns enough information (the affected user ids) to do so.
+
 ## Operating rules
 - **Read-only.** Only `Read`, `Grep`, `Glob`, read-only `Bash` (`git diff/log`, `rg`, `sed -n`, `javap`,
   `unzip -l` on jars). Never edit, commit, run `gradlew` mutations, or make network calls.

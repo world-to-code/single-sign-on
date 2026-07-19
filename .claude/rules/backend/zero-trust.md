@@ -28,6 +28,17 @@ Principles (NIST SP 800-207) applied as concrete coding rules for this IdP:
   lock, role revoke) take effect by terminating live sessions, not by waiting for expiry.
   Secrets are encrypted at rest; the session store (Redis) is treated as an auth-critical secret
   store (mandatory password in prod).
+- **Revoking a credential must end the access it granted.** Deleting a password hash, an enrolled
+  factor, an API token or an identity binding is not revocation while the sessions it authenticated
+  are still alive — the credential is gone and the access remains until expiry. Every revocation path
+  terminates the affected sessions through the established route (`UserAccessChangedEvent` →
+  `AccessChangeSessionTerminator` → `terminateForUser` → Redis + BCL/SLO propagation), and every
+  revocation is recoverable by an administrator ([identity-binding](identity-binding.md)).
+- **Re-authenticating on an already-authenticated session is an attack surface.** A login flow
+  re-entered while a session is complete can rotate the session id and orphan whatever the previous
+  id indexed (back-channel-logout participants, concurrency counters). Pre-auth markers are cleared
+  when authentication completes, and a completed session is refused re-entry rather than silently
+  re-authenticated.
 - **Re-verify state on sensitive operations.** Before a destructive/privilege-changing action,
   check current account state (enabled, not locked) and freshness (step-up) — do not trust
   authorities frozen into a session serialized minutes or days ago.

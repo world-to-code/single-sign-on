@@ -53,6 +53,14 @@ one). Your question for every test: **if the implementation were subtly broken, 
 5. **Mutation resistance.** Assertion-free tests (runs-without-exception), assertions on values
    the test itself constructed, `assertTrue(x != null)`-grade checks, catching exceptions and
    passing anyway. Spot-check: pick 2-3 core tests and name the code mutation each would miss.
+   Prefer assertions on PERSISTED/observable state over an accessor's return value — an accessor
+   that re-normalizes (re-sorts, re-caps, re-filters) masks write-side defects, so a cap/dedup/
+   ordering rule asserted only through its own getter is mutation-blind by construction.
+   When a mutation survives, suspect DUPLICATED logic before a missing test: two mechanisms
+   enforcing one rule, neither individually load-bearing. Recommend deleting the redundancy.
+   State the technique's limit in your report when relevant: mutation testing perturbs code that
+   EXISTS, so it can never demonstrate that a MISSING branch is missing. Never let a mutation pass
+   be presented as coverage.
 6. **Weakened tests.** In the diff: deleted cases, widened matchers (`any()`), removed assertions,
    raised tolerances, `@Disabled` without a linked reason. Each is a top-priority finding —
    explain what regression the old test caught that the new one doesn't.
@@ -62,6 +70,36 @@ one). Your question for every test: **if the implementation were subtly broken, 
 8. **Session/logout coverage.** If session or logout code changed, check the tests cover the
    termination×downstream matrix that [`session-security-reviewer`](session-security-reviewer.md)
    audits — its findings need pinning tests, not just fixes.
+9. **Mock-boundary blindness (run this on EVERY diff that touches persistence).** List each
+   invariant the change relies on that is enforced by POSTGRES, not by Java: unique/check
+   constraints, RLS policies, `ON CONFLICT`, `ON DELETE CASCADE`, FK existence, defaults. For each,
+   name the test that executes it against a real database. A service test that stubs the store, and
+   a raw-JDBC probe that bypasses the store, BOTH leave the store itself unexecuted — that
+   combination looks like thorough coverage and proves nothing. Any repository-backed
+   `@Transactional` component with no real-DB integration test is a HIGH finding, not a nit. (This
+   has already shipped a defect here: "a concurrent insert is absorbed" was mock-tested and threw
+   `UnexpectedRollbackException` the first time a real database ran it.)
+10. **Structurally invisible defects.** Say explicitly which risks in this diff NO test can catch,
+    and where the guarantee therefore has to live:
+    - **TOCTOU / concurrency** — a `exists(...)` check followed by an insert cannot be covered by a
+      sequential test. Ask "which DB constraint backs this?" and report its absence as the finding.
+    - **Cross-subsystem interaction** — a defect that appears only when two flows compose (login
+      rotating a session id and orphaning a logout index) belongs to no unit test. Point at the
+      relevant checklist instead.
+    - **Missing requirements** — a suite encodes what the author thought to require. If the diff
+      adds a revocation/retirement/disable operation, ask what SHOULD follow from it (sessions,
+      tokens, caches) and whether any test asserts that, rather than asserting only that the row
+      disappeared.
+11. **Capability reach, not endpoint status.** When the diff adds a permission, makes one
+    tenant-grantable, or adds an admin surface, a 401/403 test is not the matrix. The matrix is
+    "an actor holding ONLY this permission — what is the most privileged thing they reach,
+    INCLUDING indirectly?" Configuration-editing permissions that decide who may authenticate are
+    the dangerous case; require a test that walks the whole chain.
+12. **Multi-dimension validators.** For any validator with several axes (scheme, host, port,
+    redirect-following, size, timeout, algorithm), check each axis has its OWN assertion, and that
+    it is asserted where the value is USED. A "rejects a bad host" test stays green while the
+    scheme goes unchecked, and validating stored config proves nothing about a URL later read out
+    of a discovery/metadata document.
 
 ## Operating rules
 

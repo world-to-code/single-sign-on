@@ -44,6 +44,12 @@ Code style:
 - `file-layout.md` — one public type per file; no gratuitous `private static`
 - `no-magic-values.md` — protocol values → enum/constant; tunables → config
 
+Identity & data invariants:
+- `identity-binding.md` — what may decide "this assertion IS that account": stable issued keys, not
+  email; issuer-scoped; bindings are revocable credentials
+- `db-invariants.md` — uniqueness belongs in a UNIQUE index, not a check-then-act; catching a
+  constraint violation does not un-poison the transaction; derived deletes; FK indexes
+
 Security posture:
 - `owasp.md` — OWASP Top 10 (2021) coding rules tailored to this IdP (deny-by-default authz,
   crypto, injection/XXE, non-revealing errors, token/assertion integrity, SSRF)

@@ -74,21 +74,39 @@ rule). Key invariants:
    email-verification gating. Can any state let a request act as an unauthenticated or half-authenticated
    principal? Does `SsoUserDetailsService` grant an authority it shouldn't (e.g. an implied read that
    unlocks an endpoint, a role name minted from user input, a group granting `ROLE_ADMIN` unexpectedly)?
-2. **Authorization / privilege escalation** — missing/incorrect `@PreAuthorize`; wrong permission on an
+2. **Capability reach (run BEFORE the endpoint-level checks).** For every permission the change
+   introduces, widens, or makes tenant-grantable, answer: *an actor holding ONLY this permission —
+   what is the most privileged thing they can reach, INCLUDING indirectly?* Trace the chain, not the
+   route. The dangerous shape is a permission that merely edits CONFIGURATION which then decides who
+   may authenticate as whom: registering an identity provider / IdP connection / trusted issuer, or
+   editing a claim mapping, is an authentication-bypass primitive if the login path will honour an
+   assertion from it against an arbitrary local account. Ask explicitly whether the login path checks
+   that the asserted target is not MORE privileged than whoever configured the asserting party.
+3. **Authorization / privilege escalation** — missing/incorrect `@PreAuthorize`; wrong permission on an
    endpoint (e.g. a mutating route gated by a read perm); ABAC composed with `and` vs `or` (an `or` can
    nullify the base check); SpEL that fails **open** (unresolved `#arg` → null → predicate passes);
    `-parameters` dependence for SpEL arg binding; IDOR / missing instance (ownership) checks; whether a
    holder of `role:*`/`group:*`/`user:update` can escalate their own authority (role builder, group→role
    delegation, direct-permission grants, assigning `ROLE_ADMIN` to a group); self-privilege operations;
    system-role/last-admin protections and their bypasses; SCIM `PROTECTED_ROLES`.
-3. **Injection & untrusted input** — SQL/JPQL (string-built queries, `LIKE` wildcards, sort/limit
-   injection), SpEL/EL, path traversal, SSRF (metadata/JWKS/SAML-metadata/webhook fetches), XML/XXE
+4. **Identity binding** (rules: `.claude/rules/backend/identity-binding.md`) — whenever the change
+   decides "this external assertion IS that local account": is the join key STABLE and issued
+   (`sub`, persistent `NameID`, SCIM `externalId`) or descriptive and asserted (email, username)?
+   Email-matching an EXISTING account is an account-takeover primitive on address reassignment and
+   must be opt-in, first-binding-only, and barred from privileged targets. Is the key scoped by the
+   ISSUER (an alias/label can be repointed at another upstream) and by tenant? Under pairwise
+   subject identifiers the client id is part of the namespace — does rotating it strand every user?
+   Is the binding revocable by an administrator, and does revoking it terminate the sessions it
+   authenticated? A fail-closed guard with no unlink path is a permanent lockout, and turns a
+   one-time takeover into a permanent one.
+5. **Injection & untrusted input** — SQL/JPQL (string-built queries, `LIKE` wildcards, sort/limit
+   injection), SpEL/EL, path traversal, SSRF (metadata/JWKS/SAML-metadata/webhook fetches — check the SCHEME, not only the host range, and check it where the URL is USED: endpoints read out of a discovery document are attacker-controlled even when the stored issuer was validated), XML/XXE
    (SAML, metadata parsing), open redirect (OIDC `redirect_uri`, SAML `RelayState`, post-login `next`),
    header/host injection, deserialization, ReDoS.
-4. **Secrets & crypto** — hardcoded/logged secrets or tokens, weak/again-used IV/nonce, ECB, non-constant
+6. **Secrets & crypto** — hardcoded/logged secrets or tokens, weak/again-used IV/nonce, ECB, non-constant
    -time comparisons, predictable IDs/tokens, at-rest encryption removed in a refactor, key rotation
    correctness, JWT/JWS alg confusion (`none`, HMAC-vs-RSA), audience/issuer/expiry validation.
-5. **Information disclosure** — user/account enumeration via differing responses or timing, stack traces
+7. **Information disclosure** — user/account enumeration via differing responses or timing, stack traces
    or internal identifiers in error bodies, over-broad DTOs exposing hashes/internal fields, verbose
    permission/role errors, PII in logs. **Enumeration via ENRICHMENT:** resolving an attacker-supplied
    principal (a failed/pre-auth login name, an SMS/email target) into a real account — even if only
@@ -97,32 +115,32 @@ rule). Key invariants:
    for one reader must (a) cover EVERY sibling path returning the same DTO (grep all producers, not just
    the one you changed), and (b) null the COMPLETE sensitive set — correlation ids and client fingerprints
    (IP, User-Agent, device) are PII too, not just names.
-6. **Session / CSRF / transport** — CSRF token handling on state-changing routes, cookie `Secure`/
+8. **Session / CSRF / transport** — CSRF token handling on state-changing routes, cookie `Secure`/
    `HttpOnly`/`SameSite`, session invalidation on logout/step-up/reauth, fixation, concurrent-session
    limits, elevation-token scope/lifetime/replay. (Full session-lifecycle and logout-propagation depth
    is owned by [`session-security-reviewer`](session-security-reviewer.md) — flag here, defer the deep
    trace there when it is in scope.)
-7. **Persistence correctness & DoS** — N+1 (loops issuing per-row queries; note whether batch-fetch
+9. **Persistence correctness & DoS** — N+1 (loops issuing per-row queries; note whether batch-fetch
    actually covers it), lazy access outside a tx (OSIV off), missing/incorrect `@Transactional`
    (read-only vs write), unbounded result sets / missing pagination, cartesian fetch joins, migration
    mistakes (missing `ON DELETE`, nullability, defaults, index) in `db/migration`. (Deep persistence
    analysis — cascades, mappings, dirty-checking, pagination traps — is owned by
    [`jpa-reviewer`](jpa-reviewer.md); report here only what carries security or availability weight.)
-8. **Unintended side effects & logic bugs** — the code doing something other than intended: wrong
+10. **Unintended side effects & logic bugs** — the code doing something other than intended: wrong
    boolean/short-circuit, off-by-one, mutation of shared/unmodifiable collections, ordering assumptions
    on `Set`, idempotency, race conditions/TOCTOU, silent catch, resource leaks.
-9. **Module-boundary & API safety** — entities/repositories exposed cross-module, DTOs leaking mutable
+11. **Module-boundary & API safety** — entities/repositories exposed cross-module, DTOs leaking mutable
    entities, cross-module writes not via behavioral methods. (Boundary enforcement in depth — latent
    leaks, cycles, surface growth — is owned by
    [`module-boundary-reviewer`](module-boundary-reviewer.md); report here when a leak sits on a
    security path.)
-10. **Zero-trust regressions** (rules: `.claude/rules/backend/zero-trust.md`) — a check removed or
+12. **Zero-trust regressions** (rules: `.claude/rules/backend/zero-trust.md`) — a check removed or
     weakened because "an upstream filter / the gateway / the SPA already handles it"; implicit trust
     granted to localhost, internal callers, or machine clients; a token validated at issuance but
     trusted blindly at use; privilege that stopped being time-boxed (elevation/step-up bypassed or
     made non-expiring); an access change (disable/lock/revoke) that no longer terminates live
     sessions; authorities trusted from a stale serialized session before a sensitive operation.
-11. **Cross-cutting completeness** (a control is only as strong as its LEAKIEST path) — when the change
+13. **Cross-cutting completeness** (a control is only as strong as its LEAKIEST path) — when the change
     adds a GATE, REDACTION, SUPPRESSION, or ENRICHMENT at one site, it must hold at EVERY equivalent path:
     (a) **all emitters** of a shared recorder/sink — including Spring `@EventListener`s that produce the
     same record via a *parallel* path (an `AuthenticationFailureEvent` listener bypassing a call-site

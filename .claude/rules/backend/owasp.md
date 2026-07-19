@@ -23,7 +23,11 @@ coding rules, checked at write time; the adversarial audit lives in
   entities). No user input into SpEL.
 - **A04 Insecure Design.** Non-revealing errors (no account enumeration by response or timing),
   brute-force lockout, rate limits on auth endpoints — these are load-bearing designs; never
-  simplify them away.
+  simplify them away. **Rate-limit by what an endpoint DOES, not by its HTTP method**: any
+  unauthenticated route that performs an outbound fetch, creates an account, or establishes a session
+  needs a limit even when it is a `GET` (a browser-navigation callback still does all three).
+  An application-level "at most one X per Y" check is not a design control until a DB constraint
+  backs it ([db-invariants](db-invariants.md)).
 - **A05 Security Misconfiguration.** Cookies `HttpOnly` + `Secure` (prod) + explicit `SameSite`;
   CSRF protection on state-changing routes; no debug/actuator exposure in prod profiles.
 - **A07 Identification & Authentication Failures.** MFA step ordering is enforced server-side;
@@ -36,7 +40,12 @@ coding rules, checked at write time; the adversarial audit lives in
   PII. Admin/security-relevant actions leave an audit trail; failures are logged, not swallowed.
 - **A10 SSRF.** Outbound fetches driven by stored/user data (JWKS URIs, SAML metadata,
   back-channel logout URIs, webhooks) validate the target (scheme https, no link-local/metadata
-  ranges) and use timeouts.
+  ranges) and use timeouts, with redirects disabled.
+  **Validate at the point of USE, on every dimension.** Checking the scheme of the stored issuer says
+  nothing about the `token_endpoint`/`jwks_uri` later read out of that issuer's discovery document —
+  those are attacker-controlled the moment the upstream is. A host-range check is NOT a scheme check:
+  accepting `http://` there sends the decrypted client secret in the clear and lets an on-path
+  attacker swap the key set and forge tokens.
 
 Related: [zero-trust](zero-trust.md), [error-handling](error-handling.md),
 [step-up](step-up.md).

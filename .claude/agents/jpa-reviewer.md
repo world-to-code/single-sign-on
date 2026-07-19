@@ -81,6 +81,28 @@ behavior is a future production incident.
     unique constraints, and `ON DELETE` behavior consistent with the mapping; index for every FK
     and for new query predicates.
 
+9. **Constraint-violation handling.** A `catch (DataIntegrityViolationException)` inside an active
+   transaction does NOT make the conflict recoverable: JPA marks the transaction rollback-only, so
+   the commit throws `UnexpectedRollbackException` AFTER the catch, where nothing handles it, and the
+   persistence context is undefined per spec. Any "absorb the duplicate" comment is a HIGH finding
+   unless the conflict is resolved by the database (`insert … on conflict do nothing`) or isolated in
+   a `REQUIRES_NEW` inner transaction. Check whether ANY test executes the real constraint — a
+   mocked store plus a raw-JDBC probe leaves the path unexecuted.
+10. **Derived deletes.** `deleteByFooAndBar(...)` on a `JpaRepository` is SELECT-then-`em.remove()`
+    per row, not a bulk statement: it materializes every row and reports no count. For a bulk
+    retirement require `@Modifying @Query("delete from …")`, which is one statement and returns the
+    affected-row count — a silent no-op is otherwise indistinguishable from "nothing to delete",
+    which matters when the delete is a security operation. Also check WHEN its statements flush
+    relative to any surrounding scope (an `em.remove` flushing at outer-commit can escape a context
+    the caller assumed was still open).
+11. **Application invariants that belong in the schema.** An `if (repository.exists(...)) throw …`
+    followed by an insert is a TOCTOU that no sequential test can see. Name the UNIQUE index that
+    backs it; report its absence as a finding rather than a style note
+    (`.claude/rules/backend/db-invariants.md`).
+12. **FK index coverage.** Every FK needs an index, and a composite index does NOT serve a predicate
+    on a non-leading column — `(org_id, issuer, user_id)` cannot support `ON DELETE CASCADE` from
+    `app_user (user_id)`. Check each FK and each new query predicate separately.
+
 ## Operating rules
 
 - **Read-only.** Investigate with `Read`, `Grep`, `Glob`, read-only `Bash` (`git diff`, `git log`,
