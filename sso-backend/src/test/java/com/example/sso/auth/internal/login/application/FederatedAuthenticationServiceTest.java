@@ -78,6 +78,7 @@ class FederatedAuthenticationServiceTest {
         // Unlinked by default: each test that exercises the link path stubs it explicitly.
         lenient().when(links.findLinkedUser(any(), any(), any())).thenReturn(Optional.empty());
         lenient().when(links.isLinked(any(), any(), any())).thenReturn(false);
+        lenient().when(users.findByExternalIdInOrg(any(), any())).thenReturn(Optional.empty());
         lenient().when(links.link(any(), any(), any(), any(), any())).thenReturn(true);
         lenient().when(preAuthOrg.orgId(request)).thenReturn(Optional.of(ORG));
         lenient().when(preAuthFederation.pending(request)).thenReturn(Optional.of(PENDING));
@@ -91,8 +92,14 @@ class FederatedAuthenticationServiceTest {
     }
 
     private FederatedIdentity identity(boolean emailVerified, boolean jitAllowed) {
+        return identity(emailVerified, jitAllowed, true);
+    }
+
+    /** {@code linkByEmail} defaults to TRUE in the helper above so the pre-existing email-branch cases still
+     *  exercise that branch; the opt-in itself is covered by its own tests. */
+    private FederatedIdentity identity(boolean emailVerified, boolean jitAllowed, boolean linkByEmail) {
         return new FederatedIdentity(ALIAS, ISSUER, "sub-1", "ada@example.com", emailVerified, "Ada",
-                jitAllowed);
+                jitAllowed, linkByEmail);
     }
 
     /** An org-owned, enabled, unlocked, UNPRIVILEGED member of ORG — the happy-path account state. */
@@ -214,7 +221,7 @@ class FederatedAuthenticationServiceTest {
 
     @Test
     void aVerifiedButBlankEmailIsRefusedWithoutLookup() {
-        completeLoginReturns(new FederatedIdentity(ALIAS, ISSUER, "sub-1", "  ", true, "Ada", true));
+        completeLoginReturns(new FederatedIdentity(ALIAS, ISSUER, "sub-1", "  ", true, "Ada", true, false));
 
         assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
                 .isInstanceOf(UnauthorizedException.class);
@@ -273,7 +280,7 @@ class FederatedAuthenticationServiceTest {
     void aLinkedSubjectResolvesTheSameUserAfterTheUpstreamEmailChanged() {
         UUID userId = UUID.randomUUID();
         UserAccount member = user(userId);
-        completeLoginReturns(new FederatedIdentity(ALIAS, ISSUER, "sub-1", "ada.lovelace@example.com", true, "Ada", true));
+        completeLoginReturns(new FederatedIdentity(ALIAS, ISSUER, "sub-1", "ada.lovelace@example.com", true, "Ada", true, false));
         when(links.findLinkedUser(ORG, ISSUER, "sub-1")).thenReturn(Optional.of(userId));
         when(users.findById(userId)).thenReturn(Optional.of(member));
         when(organizations.isMember(ORG, userId)).thenReturn(true);
@@ -500,5 +507,83 @@ class FederatedAuthenticationServiceTest {
         service.complete(ALIAS, CODE, STATE, request, response);
 
         verify(factorAuth).grantFactor(request, response, Factors.PASSWORD);
+    }
+
+    // --- directory identity (SCIM externalId) ------------------------------------------------------------
+    // The account was provisioned by the same directory that is now asserting the login, so the directory
+    // already knows which account this is. Using it removes the guess that the email branch has to make.
+
+    @Test
+    void anAccountProvisionedWithThisUpstreamIdentifierIsResolvedWithoutGuessingByEmail() {
+        UUID userId = UUID.randomUUID();
+        UserAccount provisioned = user(userId);
+        completeLoginReturns(identity(true, false));
+        when(users.findByExternalIdInOrg("sub-1", ORG)).thenReturn(Optional.of(provisioned));
+        when(organizations.isMember(ORG, userId)).thenReturn(true);
+
+        service.complete(ALIAS, CODE, STATE, request, response);
+
+        verify(factorAuth).grantFactor(request, response, Factors.PASSWORD);
+        verify(users, never()).findByLoginInOrg(any(), any()); // the directory answered; no address matching
+        verify(links).link(ORG, ISSUER, "sub-1", ALIAS, userId);
+    }
+
+    /** The directory path still passes every gate — it finds the account, it does not authorize it. */
+    @Test
+    void aDirectoryMatchedAccountThatIsNotAMemberIsRefused() {
+        UUID userId = UUID.randomUUID();
+        UserAccount provisioned = user(userId);
+        completeLoginReturns(identity(true, true));
+        when(users.findByExternalIdInOrg("sub-1", ORG)).thenReturn(Optional.of(provisioned));
+        when(organizations.isMember(ORG, userId)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    /** A privileged account may be reached this way: the directory ASSIGNED the identifier, the upstream did
+     *  not merely assert an address for it. That is a deliberate provisioning act, not a guess. */
+    @Test
+    void aDirectoryMatchedAdminAccountIsAllowed() {
+        UUID userId = UUID.randomUUID();
+        UserAccount admin = user(userId);
+        lenient().doReturn(Set.of(roleNamed(Roles.ORG_ADMIN))).when(admin).getRoles();
+        completeLoginReturns(identity(true, false));
+        when(users.findByExternalIdInOrg("sub-1", ORG)).thenReturn(Optional.of(admin));
+        when(organizations.isMember(ORG, userId)).thenReturn(true);
+
+        service.complete(ALIAS, CODE, STATE, request, response);
+
+        verify(factorAuth).grantFactor(request, response, Factors.PASSWORD);
+    }
+
+    // --- address matching is opt-in ----------------------------------------------------------------------
+
+    /**
+     * With the provider not opted in, an existing account is NOT claimed by its address — the login falls
+     * through to provisioning (or refusal). An address can be reassigned upstream, so matching on it attaches
+     * a login to an account nobody deliberately connected.
+     */
+    @Test
+    void anExistingAccountIsNotClaimedByAddressWhenTheProviderHasNotOptedIn() {
+        UUID newId = UUID.randomUUID();
+        UserAccount created = user(newId);
+        completeLoginReturns(identity(true, true, false)); // verified email, but linking by email is OFF
+        when(provisioner.provision(any(), eq(ORG))).thenReturn(created);
+        when(organizations.isMember(ORG, newId)).thenReturn(true);
+
+        service.complete(ALIAS, CODE, STATE, request, response);
+
+        verify(users, never()).findByLoginInOrg(any(), any()); // the address was never consulted
+        verify(provisioner).provision(any(), eq(ORG));
+    }
+
+    @Test
+    void withoutTheOptInAndWithoutJitTheLoginIsRefused() {
+        completeLoginReturns(identity(true, false, false));
+
+        assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
+                .isInstanceOf(ForbiddenException.class);
+        verify(users, never()).findByLoginInOrg(any(), any());
     }
 }

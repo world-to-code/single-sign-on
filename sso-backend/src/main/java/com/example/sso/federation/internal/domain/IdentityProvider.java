@@ -55,6 +55,14 @@ public class IdentityProvider extends AuditedEntity implements OrgOwned {
     @Column(name = "allow_jit_provisioning", nullable = false)
     private boolean allowJitProvisioning;
 
+    /**
+     * Whether a first login with no link may claim an EXISTING local account by matching its verified email.
+     * Off by default: an address can be reassigned upstream, so this is an inference about who somebody is,
+     * and it is the one resolution step that can attach a login to an account nobody deliberately connected.
+     */
+    @Column(name = "link_by_verified_email", nullable = false)
+    private boolean linkByVerifiedEmail;
+
     /** A disabled provider is not offered on the login screen and refuses to start a federated login. */
     @Column(nullable = false)
     private boolean enabled;
@@ -62,28 +70,31 @@ public class IdentityProvider extends AuditedEntity implements OrgOwned {
     /** Owning tenant, or {@code null} for a platform-tier provider. */
     public static IdentityProvider create(UUID orgId, String alias, String displayName, String issuerUri,
             String clientId, String clientSecretEncrypted, String scopes, boolean allowJitProvisioning,
-            boolean enabled) {
+            boolean linkByVerifiedEmail, boolean enabled) {
         IdentityProvider provider = new IdentityProvider();
         provider.orgId = orgId;
         provider.alias = alias;
-        provider.apply(displayName, issuerUri, clientId, clientSecretEncrypted, scopes, allowJitProvisioning, enabled);
+        provider.apply(displayName, issuerUri, clientId, clientSecretEncrypted, scopes, allowJitProvisioning,
+                linkByVerifiedEmail, enabled);
         return provider;
     }
 
     /** Repoint this provider (intent-revealing mutation, not a JavaBean setter); the alias is immutable. */
     public void reconfigure(String displayName, String issuerUri, String clientId, String clientSecretEncrypted,
-            String scopes, boolean allowJitProvisioning, boolean enabled) {
-        apply(displayName, issuerUri, clientId, clientSecretEncrypted, scopes, allowJitProvisioning, enabled);
+            String scopes, boolean allowJitProvisioning, boolean linkByVerifiedEmail, boolean enabled) {
+        apply(displayName, issuerUri, clientId, clientSecretEncrypted, scopes, allowJitProvisioning,
+                linkByVerifiedEmail, enabled);
     }
 
     private void apply(String displayName, String issuerUri, String clientId, String clientSecretEncrypted,
-            String scopes, boolean allowJitProvisioning, boolean enabled) {
+            String scopes, boolean allowJitProvisioning, boolean linkByVerifiedEmail, boolean enabled) {
         this.displayName = displayName;
         this.issuerUri = issuerUri;
         this.clientId = clientId;
         this.clientSecretEncrypted = clientSecretEncrypted;
         this.scopes = scopes;
         this.allowJitProvisioning = allowJitProvisioning;
+        this.linkByVerifiedEmail = linkByVerifiedEmail;
         this.enabled = enabled;
     }
 }

@@ -70,6 +70,10 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
      * {@code findByLogin}), preferring an exact org match and falling back to a global (org-less) account. A
      * {@code null} orgId resolves only global accounts (the apex/platform path).
      */
+    /** Accounts in {@code orgId} carrying this directory identifier. A list, not an Optional: no unique
+     *  index backs {@code external_id}, so the caller decides what an ambiguous answer means. */
+    List<AppUser> findByExternalIdAndOrgId(String externalId, UUID orgId);
+
     default Optional<AppUser> findByLoginInOrg(String identifier, UUID orgId) {
         if (orgId == null) {
             return findByEmailAndOrgIdIsNull(identifier)

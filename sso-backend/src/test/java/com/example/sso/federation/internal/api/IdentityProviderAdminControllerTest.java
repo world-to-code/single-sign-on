@@ -9,6 +9,9 @@ import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import com.example.sso.federation.IdentityProviderSpec;
+import org.mockito.ArgumentCaptor;
+import static org.mockito.Mockito.verify;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -90,7 +93,7 @@ class IdentityProviderAdminControllerTest {
 
     private IdentityProviderView view() {
         return new IdentityProviderView("google", "Google", "https://accounts.google.com", "client-123",
-                "openid email", true, true);
+                "openid email", true, false, true);
     }
 
     private String permissionOf(String method, Class<?>... params) throws Exception {
@@ -102,5 +105,20 @@ class IdentityProviderAdminControllerTest {
 
     private boolean isStepUpGated(String method, Class<?>... params) throws Exception {
         return IdentityProviderAdminController.class.getMethod(method, params).isAnnotationPresent(RequireStepUp.class);
+    }
+
+    /**
+     * A client that predates the field must not be able to switch address-based account matching ON by
+     * omitting it — and must not be rejected for omitting it either. Absent means false.
+     */
+    @Test
+    void omittingTheEmailLinkingFlagIsAcceptedAndMeansOff() throws Exception {
+        when(service.get("google")).thenReturn(view());
+
+        expectPutStatus(body("Google", "https://accounts.google.com", "client-123"), 200);
+
+        ArgumentCaptor<IdentityProviderSpec> spec = ArgumentCaptor.forClass(IdentityProviderSpec.class);
+        verify(service).save(spec.capture());
+        assertThat(spec.getValue().linkByVerifiedEmail()).isFalse();
     }
 }

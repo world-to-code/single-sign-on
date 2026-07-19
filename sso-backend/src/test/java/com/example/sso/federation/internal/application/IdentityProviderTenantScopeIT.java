@@ -58,7 +58,7 @@ class IdentityProviderTenantScopeIT extends AbstractIntegrationTest {
     }
 
     private IdentityProviderSpec spec(String alias, String issuer, String secret) {
-        return new IdentityProviderSpec(alias, "Corp IdP", issuer, "client-id", secret, "openid email", true, true);
+        return new IdentityProviderSpec(alias, "Corp IdP", issuer, "client-id", secret, "openid email", true, false, true);
     }
 
     @Test
@@ -107,7 +107,7 @@ class IdentityProviderTenantScopeIT extends AbstractIntegrationTest {
         // two adjacent booleans survive spec→DB→view without a swap or a forced value.
         orgContext.runInOrg(orgA, () -> providers.save(
                 new IdentityProviderSpec("google", "Google", ISSUER_A, "client-id", "a-secret", "email profile",
-                        false, false)));
+                        false, false, false)));
 
         IdentityProviderView view = orgContext.callInOrg(orgA, () -> providers.get("google"));
         assertThat(view.scopes()).isEqualTo("openid email profile"); // openid injected at the front, rest preserved

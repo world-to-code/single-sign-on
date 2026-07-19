@@ -5,5 +5,6 @@ package com.example.sso.federation.internal.application;
  * only, never returned across the module boundary. {@code scopes} is the space-separated request list.
  */
 record ResolvedProvider(String alias, String issuerUri, String clientId, String clientSecret, String scopes,
-                        boolean jitProvisioningAllowed) {
+                        boolean jitProvisioningAllowed,
+                        boolean linkByVerifiedEmail) {
 }

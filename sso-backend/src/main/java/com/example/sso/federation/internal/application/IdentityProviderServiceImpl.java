@@ -78,11 +78,11 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
                     // inherit the account they resolve to.
                     retireLinksIfUpstreamChanged(org, alias, row, spec);
                     row.reconfigure(spec.displayName().trim(), spec.issuerUri().trim(), spec.clientId().trim(),
-                            encrypted, scopes, spec.allowJitProvisioning(), spec.enabled());
+                            encrypted, scopes, spec.allowJitProvisioning(), spec.linkByVerifiedEmail(), spec.enabled());
                 },
                 () -> repository.save(IdentityProvider.create(org, alias, spec.displayName().trim(),
                         spec.issuerUri().trim(), spec.clientId().trim(), encrypted, scopes,
-                        spec.allowJitProvisioning(), spec.enabled())));
+                        spec.allowJitProvisioning(), spec.linkByVerifiedEmail(), spec.enabled())));
     }
 
     @Override
@@ -202,7 +202,7 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
 
     private IdentityProviderView toView(IdentityProvider p) {
         return new IdentityProviderView(p.getAlias(), p.getDisplayName(), p.getIssuerUri(), p.getClientId(),
-                p.getScopes(), p.isAllowJitProvisioning(), p.isEnabled());
+                p.getScopes(), p.isAllowJitProvisioning(), p.isLinkByVerifiedEmail(), p.isEnabled());
     }
 
     /**

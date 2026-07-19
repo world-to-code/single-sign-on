@@ -13,5 +13,6 @@ package com.example.sso.federation;
  * new upstream. {@code emailVerified} is load-bearing wherever an account is matched BY email.
  */
 public record FederatedIdentity(String alias, String issuer, String subject, String email, boolean emailVerified,
-                                String name, boolean jitProvisioningAllowed) {
+                                String name, boolean jitProvisioningAllowed,
+                                boolean linkByVerifiedEmail) {
 }

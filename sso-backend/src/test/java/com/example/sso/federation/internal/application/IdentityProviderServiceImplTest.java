@@ -70,11 +70,11 @@ class IdentityProviderServiceImplTest {
 
     private IdentityProvider row(UUID orgId, String encryptedSecret) {
         return IdentityProvider.create(orgId, ALIAS, "Google", ISSUER, "client-123", encryptedSecret,
-                "openid email profile", true, true);
+                "openid email profile", true, false, true);
     }
 
     private IdentityProviderSpec spec(String secret, String scopes) {
-        return new IdentityProviderSpec(ALIAS, "Google", ISSUER, "client-123", secret, scopes, true, true);
+        return new IdentityProviderSpec(ALIAS, "Google", ISSUER, "client-123", secret, scopes, true, false, true);
     }
 
     @Test
@@ -101,7 +101,7 @@ class IdentityProviderServiceImplTest {
         when(cipher.encrypt(any())).thenReturn("encg:cipher");
 
         // Asymmetric values catch a swap of the two adjacent booleans anywhere in spec→create→entity→view.
-        service.save(new IdentityProviderSpec(ALIAS, "Google", ISSUER, "client-123", "s", "openid", false, true));
+        service.save(new IdentityProviderSpec(ALIAS, "Google", ISSUER, "client-123", "s", "openid", false, false, true));
 
         ArgumentCaptor<IdentityProvider> saved = ArgumentCaptor.captor();
         verify(repository).save(saved.capture());
@@ -113,7 +113,7 @@ class IdentityProviderServiceImplTest {
     void theViewCarriesEveryFieldExceptTheSecretWithBooleansUnswapped() {
         // Asymmetric booleans (allowJit=false, enabled=true) catch a swap in toView's two adjacent boolean args.
         IdentityProvider stored = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123", "encg:cipher",
-                "openid email", false, true);
+                "openid email", false, false, true);
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(stored));
 
@@ -179,10 +179,10 @@ class IdentityProviderServiceImplTest {
         lenient().when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.save(
-                new IdentityProviderSpec(ALIAS, "G", "http://accounts.google.com", "c", "s", "openid", false, true)))
+                new IdentityProviderSpec(ALIAS, "G", "http://accounts.google.com", "c", "s", "openid", false, false, true)))
                 .isInstanceOf(BadRequestException.class); // not https
         assertThatThrownBy(() -> service.save(
-                new IdentityProviderSpec(ALIAS, "G", "not a url", "c", "s", "openid", false, true)))
+                new IdentityProviderSpec(ALIAS, "G", "not a url", "c", "s", "openid", false, false, true)))
                 .isInstanceOf(BadRequestException.class); // malformed
         verify(repository, never()).save(any());
     }
@@ -194,7 +194,7 @@ class IdentityProviderServiceImplTest {
         doThrow(new BadRequestException("internal address")).when(hostValidator).validate("169.254.169.254");
 
         assertThatThrownBy(() -> service.save(
-                new IdentityProviderSpec(ALIAS, "G", "https://169.254.169.254", "c", "s", "openid", false, true)))
+                new IdentityProviderSpec(ALIAS, "G", "https://169.254.169.254", "c", "s", "openid", false, false, true)))
                 .isInstanceOf(BadRequestException.class);
         verify(repository, never()).save(any());
     }
@@ -204,7 +204,7 @@ class IdentityProviderServiceImplTest {
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
 
         assertThatThrownBy(() -> service.save(
-                new IdentityProviderSpec("bad_alias", "G", ISSUER, "c", "s", "openid", false, true)))
+                new IdentityProviderSpec("bad_alias", "G", ISSUER, "c", "s", "openid", false, false, true)))
                 .isInstanceOf(BadRequestException.class); // underscore is not URL-safe
         verify(repository, never()).save(any());
     }
@@ -215,11 +215,11 @@ class IdentityProviderServiceImplTest {
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         lenient().when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.save(new IdentityProviderSpec(ALIAS, "  ", ISSUER, "c", "s", "openid", false, true)))
+        assertThatThrownBy(() -> service.save(new IdentityProviderSpec(ALIAS, "  ", ISSUER, "c", "s", "openid", false, false, true)))
                 .isInstanceOf(BadRequestException.class);
-        assertThatThrownBy(() -> service.save(new IdentityProviderSpec(ALIAS, "G", ISSUER, "  ", "s", "openid", false, true)))
+        assertThatThrownBy(() -> service.save(new IdentityProviderSpec(ALIAS, "G", ISSUER, "  ", "s", "openid", false, false, true)))
                 .isInstanceOf(BadRequestException.class);
-        assertThatThrownBy(() -> service.save(new IdentityProviderSpec(ALIAS, "G", "  ", "c", "s", "openid", false, true)))
+        assertThatThrownBy(() -> service.save(new IdentityProviderSpec(ALIAS, "G", "  ", "c", "s", "openid", false, false, true)))
                 .isInstanceOf(BadRequestException.class);
         verify(repository, never()).save(any());
     }
@@ -292,12 +292,12 @@ class IdentityProviderServiceImplTest {
     @Test
     void repointingAProviderAtAnotherUpstreamRetiresItsIdentities() {
         IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
-                "encg:cipher", "openid", true, true);
+                "encg:cipher", "openid", true, false, true);
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
 
         service.save(new IdentityProviderSpec(ALIAS, "Google", "https://login.microsoftonline.test", "client-123",
-                "s3cret", "openid", true, true));
+                "s3cret", "openid", true, false, true));
 
         verify(links).unlinkAll(ORG, ISSUER); // the OLD issuer's identities, not the new one's
     }
@@ -307,13 +307,13 @@ class IdentityProviderServiceImplTest {
     @Test
     void rotatingTheClientIdRetiresTheIdentitiesToo() {
         IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
-                "encg:cipher", "openid", true, true);
+                "encg:cipher", "openid", true, false, true);
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
         when(links.unlinkAll(ORG, ISSUER)).thenReturn(List.of());
 
         service.save(new IdentityProviderSpec(ALIAS, "Google", ISSUER, "client-999", "s3cret", "openid",
-                true, true));
+                true, false, true));
 
         verify(links).unlinkAll(ORG, ISSUER);
     }
@@ -322,7 +322,7 @@ class IdentityProviderServiceImplTest {
     @Test
     void anotherLiveProviderAtTheSameUpstreamKeepsItsIdentities() {
         IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
-                "encg:cipher", "openid", true, true);
+                "encg:cipher", "openid", true, false, true);
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
         when(repository.existsByOrgIdAndIssuerUriAndAliasNot(ORG, ISSUER, ALIAS)).thenReturn(true);
@@ -336,12 +336,12 @@ class IdentityProviderServiceImplTest {
     @Test
     void editingAProviderWithoutChangingItsUpstreamKeepsItsIdentities() {
         IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
-                "encg:cipher", "openid", true, true);
+                "encg:cipher", "openid", true, false, true);
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
 
         service.save(new IdentityProviderSpec(ALIAS, "Google Workspace", ISSUER, "client-123", "s3cret",
-                "openid email", true, true));
+                "openid email", true, false, true));
 
         verify(links, never()).unlinkAll(any(), any());
     }
@@ -354,7 +354,7 @@ class IdentityProviderServiceImplTest {
     @Test
     void retiringIdentitiesTerminatesTheSessionsTheyAuthenticated() {
         IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
-                "encg:cipher", "openid", true, true);
+                "encg:cipher", "openid", true, false, true);
         UUID retired = UUID.randomUUID();
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
@@ -369,7 +369,7 @@ class IdentityProviderServiceImplTest {
     @Test
     void retiringNothingTerminatesNothing() {
         IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
-                "encg:cipher", "openid", true, true);
+                "encg:cipher", "openid", true, false, true);
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
         when(links.unlinkAll(ORG, ISSUER)).thenReturn(List.of());
@@ -382,7 +382,7 @@ class IdentityProviderServiceImplTest {
     @Test
     void deletingAProviderRetiresItsIdentities() {
         IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
-                "encg:cipher", "openid", true, true);
+                "encg:cipher", "openid", true, false, true);
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
 

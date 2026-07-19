@@ -48,7 +48,7 @@ class FederationLoginServiceImplTest {
         service = new FederationLoginServiceImpl(configStore, orgContext, upstream, verifier);
         when(orgContext.callInOrg(eq(ORG), any())).thenAnswer(i -> ((Supplier<?>) i.getArgument(1)).get());
         when(configStore.resolveEnabled(ORG, ALIAS)).thenReturn(
-                new ResolvedProvider(ALIAS, ISSUER, "client-123", "s3cret", "openid email", true));
+                new ResolvedProvider(ALIAS, ISSUER, "client-123", "s3cret", "openid email", true, false));
         when(upstream.discover(ISSUER)).thenReturn(METADATA);
     }
 

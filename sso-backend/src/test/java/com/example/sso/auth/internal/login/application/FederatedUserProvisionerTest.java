@@ -35,7 +35,7 @@ class FederatedUserProvisionerTest {
 
     private FederatedIdentity identity(String name) {
         return new FederatedIdentity("google", "https://accounts.google.test", "sub-1", "ada@example.com",
-                true, name, true);
+                true, name, true, false);
     }
 
     private UserAccount created(UUID id) {

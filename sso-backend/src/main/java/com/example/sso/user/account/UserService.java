@@ -50,6 +50,13 @@ public interface UserService {
      */
     Optional<UserAccount> findByLoginInOrg(String identifier, UUID orgId);
 
+    /**
+     * The account in {@code orgId} that an external directory provisioned under {@code externalId} (SCIM
+     * externalId). Empty when none matches AND when several do — nothing enforces uniqueness on that column,
+     * and picking one of several would be guessing at exactly the point a caller came here to avoid guessing.
+     */
+    Optional<UserAccount> findByExternalIdInOrg(String externalId, UUID orgId);
+
     Optional<UserAccount> findById(UUID id);
 
     /**

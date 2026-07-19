@@ -5,5 +5,6 @@ package com.example.sso.federation;
  * keys the login route; {@code scopes} is the space-separated OAuth scope list.
  */
 public record IdentityProviderView(String alias, String displayName, String issuerUri, String clientId,
-                                   String scopes, boolean allowJitProvisioning, boolean enabled) {
+                                   String scopes, boolean allowJitProvisioning, boolean linkByVerifiedEmail,
+                                   boolean enabled) {
 }

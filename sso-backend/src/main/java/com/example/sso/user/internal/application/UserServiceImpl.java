@@ -103,6 +103,15 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
+    public Optional<UserAccount> findByExternalIdInOrg(String externalId, UUID orgId) {
+        if (externalId == null || externalId.isBlank() || orgId == null) {
+            return Optional.empty();
+        }
+        List<AppUser> matches = users.findByExternalIdAndOrgId(externalId, orgId);
+        return matches.size() == 1 ? Optional.of(hydrator.hydrateUser(matches.getFirst())) : Optional.empty();
+    }
+
+    @Override
     public Optional<UserAccount> findByLoginInOrg(String identifier, UUID orgId) {
         return users.findByLoginInOrg(identifier, orgId).map(hydrator::hydrateUser).map(u -> u);
     }

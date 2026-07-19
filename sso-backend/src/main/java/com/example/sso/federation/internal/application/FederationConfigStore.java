@@ -32,7 +32,8 @@ class FederationConfigStore {
                 .filter(IdentityProvider::isEnabled)
                 .orElseThrow(() -> new NotFoundException("Unknown identity provider"));
         return new ResolvedProvider(p.getAlias(), p.getIssuerUri(), p.getClientId(),
-                cipher.decrypt(p.getClientSecretEncrypted()), p.getScopes(), p.isAllowJitProvisioning());
+                cipher.decrypt(p.getClientSecretEncrypted()), p.getScopes(), p.isAllowJitProvisioning(),
+                p.isLinkByVerifiedEmail());
     }
 
     @Transactional(readOnly = true)

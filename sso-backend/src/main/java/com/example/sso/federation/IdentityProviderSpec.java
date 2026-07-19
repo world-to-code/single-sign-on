@@ -8,5 +8,5 @@ package com.example.sso.federation;
  */
 public record IdentityProviderSpec(String alias, String displayName, String issuerUri, String clientId,
                                    String clientSecret, String scopes, boolean allowJitProvisioning,
-                                   boolean enabled) {
+                                   boolean linkByVerifiedEmail, boolean enabled) {
 }

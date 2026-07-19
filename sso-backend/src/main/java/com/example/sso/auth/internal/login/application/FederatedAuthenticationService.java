@@ -104,11 +104,18 @@ public class FederatedAuthenticationService {
     }
 
     /**
-     * Resolves the local account, preferring the STABLE link (issuer + upstream {@code sub}) recorded by an
-     * earlier login, and falling back to a verified-email match or just-in-time provisioning — recording the
-     * link in both of those cases so the next login no longer depends on the address. Email is a moving target:
-     * an upstream may rename it (matching on it would provision a duplicate and orphan the account's groups and
-     * roles) or reassign it to another person; {@code sub} is what OIDC keeps stable.
+     * Resolves the local account, in descending order of how much it has to GUESS:
+     * <ol>
+     *   <li>the stable link (issuer + upstream {@code sub}) recorded by an earlier login — authoritative;</li>
+     *   <li>an account the same directory provisioned under this {@code sub} (SCIM externalId) —
+     *       deterministic, because the directory assigned the identifier rather than asserting an attribute;</li>
+     *   <li>a VERIFIED-email match — an inference, and restricted accordingly (see {@link #unprivileged});</li>
+     *   <li>just-in-time provisioning of a new account, when the provider allows it.</li>
+     * </ol>
+     * Every one of 2-4 records the link, so only the FIRST login for an identity depends on anything but the
+     * subject. Email is a moving target: an upstream may rename it (matching on it would provision a duplicate
+     * and orphan the account's groups and roles) or reassign it to another person; {@code sub} is what OIDC
+     * keeps stable.
      *
      * <p>Every path ends at {@link #authorized}, so the link is a faster way to FIND the account, never a way to
      * skip a check. The account must be owned by the SELECTED tenant — a tenant-controlled upstream must never be
@@ -123,14 +130,30 @@ public class FederatedAuthenticationService {
             // falling back would let a recycled address resolve to whoever now holds it.
             return authorized(users.findById(linked).orElseThrow(UnauthorizedException::new), orgId);
         }
-        // No link yet, so the address is the only thing left to match on — and it may only be trusted when the
-        // upstream proved control of it. (A LINKED identity needs no such proof: the subject is the proof.)
+        // No link yet. Before guessing by address, ask the DIRECTORY: when the same upstream provisioned this
+        // account (SCIM externalId), it already recorded which local account this subject is, so there is
+        // nothing to infer. This is the path a tenant should be on — it is deterministic, it survives an email
+        // change, and it is how a seconded worker registered in the host company's tenant gets connected.
+        UserAccount provisioned = users.findByExternalIdInOrg(identity.subject(), orgId).orElse(null);
+        if (provisioned != null) {
+            // A privileged account is reachable here, unlike the email branch: the directory ASSIGNED this
+            // identifier as a provisioning act — the upstream did not merely assert an address for it.
+            return link(identity, orgId, clientIp, authorized(provisioned, orgId));
+        }
+        // Nothing but the address left, and everything below keys on it: the match obviously, and provisioning
+        // too, which creates the account under that address AND marks it verified. So an address the upstream
+        // did not prove control of gets no further, whichever branch would have taken it. (A LINKED identity
+        // needs no such proof: the subject is the proof.)
         if (!identity.emailVerified() || !StringUtils.hasText(identity.email())) {
             throw new UnauthorizedException();
         }
-        UserAccount existing = users.findByLoginInOrg(identity.email(), orgId).orElse(null);
-        if (existing != null) {
-            return link(identity, orgId, clientIp, unprivileged(authorized(existing, orgId)));
+        // Matching an EXISTING account by address is an INFERENCE about who somebody is — an address can be
+        // reassigned upstream — so the provider has to opt into it.
+        if (identity.linkByVerifiedEmail()) {
+            UserAccount existing = users.findByLoginInOrg(identity.email(), orgId).orElse(null);
+            if (existing != null) {
+                return link(identity, orgId, clientIp, unprivileged(authorized(existing, orgId)));
+            }
         }
         if (!identity.jitProvisioningAllowed()) {
             throw new ForbiddenException("No account exists for this identity. Contact your administrator.");

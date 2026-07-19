@@ -45,7 +45,7 @@ class FederatedUserProvisionerAtomicityIT extends AbstractIntegrationTest {
         UUID orgId = organizations.create(new NewOrganization("jit-atomic-" + suffix(), "JIT atomic")).id();
         String email = "orphan-" + suffix() + "@example.test";
         FederatedIdentity identity = new FederatedIdentity("okta", "https://okta.test", "sub-" + suffix(),
-                email, true, "Orphan", true);
+                email, true, "Orphan", true, false);
 
         doThrow(new IllegalStateException("membership write failed"))
                 .when(organizations).addMember(any(), any());
