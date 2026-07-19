@@ -4,6 +4,7 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.auth.internal.login.application.PreAuthFederationSession.PendingFederation;
 import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.federation.FederatedIdentity;
+import com.example.sso.federation.FederatedIdentityLinks;
 import com.example.sso.federation.FederationLoginService;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.organization.OrganizationService;
@@ -44,12 +45,14 @@ class FederatedAuthenticationServiceTest {
 
     private static final UUID ORG = UUID.randomUUID();
     private static final String ALIAS = "google";
+    private static final String ISSUER = "https://accounts.google.test";
     private static final String CODE = "auth-code";
     private static final String STATE = "state-xyz";
     private static final PendingFederation PENDING =
             new PendingFederation(ORG, ALIAS, STATE, "nonce-1", "verifier-1", "https://acme.example/callback");
 
     @Mock private FederationLoginService federation;
+    @Mock private FederatedIdentityLinks links;
     @Mock private PreAuthOrgSession preAuthOrg;
     @Mock private PreAuthFederationSession preAuthFederation;
     @Mock private FederatedUserProvisioner provisioner;
@@ -66,8 +69,11 @@ class FederatedAuthenticationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new FederatedAuthenticationService(federation, preAuthOrg, preAuthFederation, provisioner,
-                factorAuth, completionService, users, organizations, orgContext, audit);
+        service = new FederatedAuthenticationService(federation, links, preAuthOrg, preAuthFederation,
+                provisioner, factorAuth, completionService, users, organizations, orgContext, audit);
+        // Unlinked by default: each test that exercises the link path stubs it explicitly.
+        lenient().when(links.findLinkedUser(any(), any(), any())).thenReturn(Optional.empty());
+        lenient().when(links.isLinked(any(), any(), any())).thenReturn(false);
         lenient().when(preAuthOrg.orgId(request)).thenReturn(Optional.of(ORG));
         lenient().when(preAuthFederation.pending(request)).thenReturn(Optional.of(PENDING));
         // callInOrg/runInOrg execute their action inline so provisioning is exercised.
@@ -80,7 +86,8 @@ class FederatedAuthenticationServiceTest {
     }
 
     private FederatedIdentity identity(boolean emailVerified, boolean jitAllowed) {
-        return new FederatedIdentity(ALIAS, "sub-1", "ada@example.com", emailVerified, "Ada", jitAllowed);
+        return new FederatedIdentity(ALIAS, ISSUER, "sub-1", "ada@example.com", emailVerified, "Ada",
+                jitAllowed);
     }
 
     /** An org-owned, enabled, unlocked member of ORG — the happy-path account state. */
@@ -146,6 +153,7 @@ class FederatedAuthenticationServiceTest {
         completeLoginReturns(identity(true, true));
         when(users.findByLoginInOrg("ada@example.com", ORG)).thenReturn(Optional.empty());
         when(provisioner.provision(any(), eq(ORG))).thenReturn(created);
+        when(organizations.isMember(ORG, newId)).thenReturn(true); // the provisioner adds membership in-tx
 
         service.complete(ALIAS, CODE, STATE, request, response);
 
@@ -199,7 +207,7 @@ class FederatedAuthenticationServiceTest {
 
     @Test
     void aVerifiedButBlankEmailIsRefusedWithoutLookup() {
-        completeLoginReturns(new FederatedIdentity(ALIAS, "sub-1", "  ", true, "Ada", true));
+        completeLoginReturns(new FederatedIdentity(ALIAS, ISSUER, "sub-1", "  ", true, "Ada", true));
 
         assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
                 .isInstanceOf(UnauthorizedException.class);
@@ -249,5 +257,169 @@ class FederatedAuthenticationServiceTest {
         assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
                 .isInstanceOf(UnauthorizedException.class);
         verify(federation, never()).completeLogin(any(), any(), any(), any(), any(), any());
+    }
+
+    // --- stable-link resolution -------------------------------------------------------------------------
+
+    /** The upstream renamed the address; the subject did not. Matching on email would provision a DUPLICATE. */
+    @Test
+    void aLinkedSubjectResolvesTheSameUserAfterTheUpstreamEmailChanged() {
+        UUID userId = UUID.randomUUID();
+        UserAccount member = user(userId);
+        completeLoginReturns(new FederatedIdentity(ALIAS, ISSUER, "sub-1", "ada.lovelace@example.com", true, "Ada", true));
+        when(links.findLinkedUser(ORG, ISSUER, "sub-1")).thenReturn(Optional.of(userId));
+        when(users.findById(userId)).thenReturn(Optional.of(member));
+        when(organizations.isMember(ORG, userId)).thenReturn(true);
+
+        service.complete(ALIAS, CODE, STATE, request, response);
+
+        verify(factorAuth).grantFactor(request, response, Factors.PASSWORD);
+        verify(users, never()).findByLoginInOrg(any(), any()); // resolved by subject, never by the new address
+        verify(provisioner, never()).provision(any(), any());  // and certainly not provisioned again
+    }
+
+    /** Email verification gates LINKING BY EMAIL. Once linked, the subject is the proof and email is irrelevant. */
+    @Test
+    void aLinkedSubjectSignsInEvenWhenTheUpstreamStopsMarkingTheEmailVerified() {
+        UUID userId = UUID.randomUUID();
+        UserAccount member = user(userId);
+        completeLoginReturns(identity(false, false));
+        when(links.findLinkedUser(ORG, ISSUER, "sub-1")).thenReturn(Optional.of(userId));
+        when(users.findById(userId)).thenReturn(Optional.of(member));
+        when(organizations.isMember(ORG, userId)).thenReturn(true);
+
+        service.complete(ALIAS, CODE, STATE, request, response);
+
+        verify(factorAuth).grantFactor(request, response, Factors.PASSWORD);
+    }
+
+    @Test
+    void aLinkedUserWhoIsNoLongerAMemberIsRefused() {
+        UUID userId = UUID.randomUUID();
+        completeLoginReturns(identity(true, true));
+        UserAccount member = user(userId);
+        when(links.findLinkedUser(ORG, ISSUER, "sub-1")).thenReturn(Optional.of(userId));
+        when(users.findById(userId)).thenReturn(Optional.of(member));
+        when(organizations.isMember(ORG, userId)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
+                .isInstanceOf(UnauthorizedException.class);
+        verify(factorAuth, never()).establish(any(), any(), any());
+    }
+
+    @Test
+    void aLinkedUserWhoIsDisabledIsRefused() {
+        UUID userId = UUID.randomUUID();
+        UserAccount disabled = user(userId);
+        when(disabled.isEnabled()).thenReturn(false);
+        completeLoginReturns(identity(true, true));
+        when(links.findLinkedUser(ORG, ISSUER, "sub-1")).thenReturn(Optional.of(userId));
+        when(users.findById(userId)).thenReturn(Optional.of(disabled));
+        when(organizations.isMember(ORG, userId)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
+                .isInstanceOf(UnauthorizedException.class);
+        verify(factorAuth, never()).establish(any(), any(), any());
+    }
+
+    @Test
+    void aLinkedUserWhoIsLockedIsRefused() {
+        UUID userId = UUID.randomUUID();
+        UserAccount locked = user(userId);
+        when(locked.isAccountNonLocked()).thenReturn(false);
+        completeLoginReturns(identity(true, true));
+        when(links.findLinkedUser(ORG, ISSUER, "sub-1")).thenReturn(Optional.of(userId));
+        when(users.findById(userId)).thenReturn(Optional.of(locked));
+        when(organizations.isMember(ORG, userId)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    /** A link must never reach outside its tenant, even if a row somehow named a foreign/global account. */
+    @Test
+    void aLinkedUserOwnedByAnotherOrganizationIsRefused() {
+        UUID userId = UUID.randomUUID();
+        UserAccount foreign = user(userId);
+        when(foreign.getOrgId()).thenReturn(UUID.randomUUID());
+        completeLoginReturns(identity(true, true));
+        when(links.findLinkedUser(ORG, ISSUER, "sub-1")).thenReturn(Optional.of(userId));
+        when(users.findById(userId)).thenReturn(Optional.of(foreign));
+
+        assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
+                .isInstanceOf(UnauthorizedException.class);
+        verify(factorAuth, never()).establish(any(), any(), any());
+    }
+
+    /** A dangling link (account deleted) must fail closed, not silently fall back to matching on email. */
+    @Test
+    void aLinkPointingAtAMissingAccountIsRefused() {
+        UUID userId = UUID.randomUUID();
+        completeLoginReturns(identity(true, true));
+        when(links.findLinkedUser(ORG, ISSUER, "sub-1")).thenReturn(Optional.of(userId));
+        when(users.findById(userId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
+                .isInstanceOf(UnauthorizedException.class);
+        verify(users, never()).findByLoginInOrg(any(), any());
+        verify(provisioner, never()).provision(any(), any());
+    }
+
+    @Test
+    void resolvingByVerifiedEmailRecordsTheLinkForNextTime() {
+        UUID userId = UUID.randomUUID();
+        UserAccount member = user(userId);
+        completeLoginReturns(identity(true, false));
+        when(users.findByLoginInOrg("ada@example.com", ORG)).thenReturn(Optional.of(member));
+        when(organizations.isMember(ORG, userId)).thenReturn(true);
+
+        service.complete(ALIAS, CODE, STATE, request, response);
+
+        verify(links).link(ORG, ISSUER, "sub-1", ALIAS, userId);
+    }
+
+    @Test
+    void justInTimeProvisioningRecordsTheLink() {
+        UUID newId = UUID.randomUUID();
+        completeLoginReturns(identity(true, true));
+        when(users.findByLoginInOrg("ada@example.com", ORG)).thenReturn(Optional.empty());
+        UserAccount created = user(newId);
+        when(provisioner.provision(any(), eq(ORG))).thenReturn(created);
+        when(organizations.isMember(ORG, newId)).thenReturn(true); // the provisioner adds membership in-tx
+
+        service.complete(ALIAS, CODE, STATE, request, response);
+
+        verify(links).link(ORG, ISSUER, "sub-1", ALIAS, newId);
+    }
+
+    /** Nothing is linked on a refused login — a link would hand the next attempt a free pass past the gates. */
+    @Test
+    void aRefusedResolutionRecordsNoLink() {
+        UUID userId = UUID.randomUUID();
+        UserAccount member = user(userId);
+        completeLoginReturns(identity(true, true));
+        when(users.findByLoginInOrg("ada@example.com", ORG)).thenReturn(Optional.of(member));
+        when(organizations.isMember(ORG, userId)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
+                .isInstanceOf(UnauthorizedException.class);
+        verify(links, never()).link(any(), any(), any(), any(), any());
+    }
+
+    /** The address was reassigned upstream: honouring it would hand the previous holder's account to whoever
+     *  owns the address now — and the link would make that permanent. */
+    @Test
+    void aSecondSubjectClaimingAnAlreadyLinkedAccountByEmailIsRefused() {
+        UUID userId = UUID.randomUUID();
+        UserAccount member = user(userId);
+        completeLoginReturns(identity(true, true));
+        when(users.findByLoginInOrg("ada@example.com", ORG)).thenReturn(Optional.of(member));
+        when(organizations.isMember(ORG, userId)).thenReturn(true);
+        when(links.isLinked(ORG, ISSUER, userId)).thenReturn(true); // already holds an identity at this issuer
+
+        assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
+                .isInstanceOf(UnauthorizedException.class);
+        verify(links, never()).link(any(), any(), any(), any(), any());
+        verify(factorAuth, never()).establish(any(), any(), any());
     }
 }

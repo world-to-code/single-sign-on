@@ -40,6 +40,7 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
 
     private final IdentityProviderRepository repository;
     private final SecretCipher cipher;
+    private final FederatedIdentityLinkStore links;
     private final OutboundHostValidator hostValidator;
     private final OrgContext orgContext;
 
@@ -66,8 +67,14 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
         Optional<IdentityProvider> existing = ownProvider(alias);
         String encrypted = resolveSecret(spec, existing.orElse(null));
         existing.ifPresentOrElse(
-                row -> row.reconfigure(spec.displayName().trim(), spec.issuerUri().trim(), spec.clientId().trim(),
-                        encrypted, scopes, spec.allowJitProvisioning(), spec.enabled()),
+                row -> {
+                    // Repointing the alias at a DIFFERENT upstream retires the identities the old one minted:
+                    // they were proven against that issuer, and a colliding `sub` at the new one must not
+                    // inherit the account they resolve to.
+                    retireLinksIfUpstreamChanged(org, row.getIssuerUri(), spec.issuerUri().trim());
+                    row.reconfigure(spec.displayName().trim(), spec.issuerUri().trim(), spec.clientId().trim(),
+                            encrypted, scopes, spec.allowJitProvisioning(), spec.enabled());
+                },
                 () -> repository.save(IdentityProvider.create(org, alias, spec.displayName().trim(),
                         spec.issuerUri().trim(), spec.clientId().trim(), encrypted, scopes,
                         spec.allowJitProvisioning(), spec.enabled())));
@@ -76,8 +83,20 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
     @Override
     @Transactional
     public void delete(String alias) {
-        writableOrg();
-        ownProvider(alias).ifPresent(repository::delete); // ownProvider normalizes + validates the alias
+        UUID org = writableOrg();
+        ownProvider(alias).ifPresent(provider -> { // ownProvider normalizes + validates the alias
+            // Links outlive the provider row unless dropped here: a re-created alias pointing at an attacker's
+            // issuer would otherwise resolve the retired identities to their old accounts.
+            links.unlinkAll(org, provider.getIssuerUri());
+            repository.delete(provider);
+        });
+    }
+
+    /** Drops this org's identities for {@code oldIssuer} when the provider is being repointed elsewhere. */
+    private void retireLinksIfUpstreamChanged(UUID org, String oldIssuer, String newIssuer) {
+        if (!oldIssuer.equals(newIssuer)) {
+            links.unlinkAll(org, oldIssuer);
+        }
     }
 
     /**

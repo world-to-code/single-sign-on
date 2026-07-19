@@ -6,6 +6,7 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.auth.internal.login.application.PreAuthFederationSession.PendingFederation;
 import com.example.sso.federation.FederatedIdentity;
+import com.example.sso.federation.FederatedIdentityLinks;
 import com.example.sso.federation.FederationAuthorization;
 import com.example.sso.federation.FederationLoginService;
 import com.example.sso.mfa.FactorAuthorizationService;
@@ -48,6 +49,7 @@ public class FederatedAuthenticationService {
     private static final String CALLBACK_TEMPLATE = "/api/auth/federation/{alias}/callback";
 
     private final FederationLoginService federation;
+    private final FederatedIdentityLinks links;
     private final PreAuthOrgSession preAuthOrg;
     private final PreAuthFederationSession preAuthFederation;
     private final FederatedUserProvisioner provisioner;
@@ -98,32 +100,70 @@ public class FederatedAuthenticationService {
     }
 
     /**
-     * Links the federated identity to an existing tenant-OWNED member by verified email, or provisions a new
-     * member when the provider allows JIT. The account must be owned by the SELECTED tenant — a tenant-controlled
-     * upstream must never be able to name a global/platform (org-less) identity and sign in as it — and must be a
-     * member, enabled and not locked (the same current-state re-verification the password path enforces). An
-     * unverified email, a foreign/global/disabled/locked account, and a missing account with JIT off are each the
-     * same generic failure, so the callback is not an account-existence oracle.
+     * Resolves the local account, preferring the STABLE link (issuer + upstream {@code sub}) recorded by an
+     * earlier login, and falling back to a verified-email match or just-in-time provisioning — recording the
+     * link in both of those cases so the next login no longer depends on the address. Email is a moving target:
+     * an upstream may rename it (matching on it would provision a duplicate and orphan the account's groups and
+     * roles) or reassign it to another person; {@code sub} is what OIDC keeps stable.
+     *
+     * <p>Every path ends at {@link #authorized}, so the link is a faster way to FIND the account, never a way to
+     * skip a check. The account must be owned by the SELECTED tenant — a tenant-controlled upstream must never be
+     * able to name a global/platform (org-less) identity and sign in as it — and must be a member, enabled and
+     * not locked (the same current-state re-verification the password path enforces). Every refusal is rendered
+     * by the controller as one identical redirect, so the callback is not an account-existence oracle.
      */
     private UserAccount resolveOrProvision(FederatedIdentity identity, UUID orgId) {
+        UUID linked = links.findLinkedUser(orgId, identity.issuer(), identity.subject()).orElse(null);
+        if (linked != null) {
+            // Fails closed on a dangling link (the account was deleted) rather than falling back to email —
+            // falling back would let a recycled address resolve to whoever now holds it.
+            return authorized(users.findById(linked).orElseThrow(UnauthorizedException::new), orgId);
+        }
+        // No link yet, so the address is the only thing left to match on — and it may only be trusted when the
+        // upstream proved control of it. (A LINKED identity needs no such proof: the subject is the proof.)
         if (!identity.emailVerified() || !StringUtils.hasText(identity.email())) {
-            throw new UnauthorizedException(); // an unverified address cannot be trusted to link/provision
+            throw new UnauthorizedException();
         }
         UserAccount existing = users.findByLoginInOrg(identity.email(), orgId).orElse(null);
         if (existing != null) {
-            if (!orgId.equals(existing.getOrgId()) // org-strict: never a global/platform account via tenant federation
-                    || !organizations.isMember(orgId, existing.getId())
-                    || !existing.isEnabled()
-                    || !existing.isAccountNonLocked()
-                    || existing.isTemporarilyLocked(Instant.now())) {
-                throw new UnauthorizedException();
-            }
-            return existing;
+            return link(identity, orgId, authorized(existing, orgId));
         }
         if (!identity.jitProvisioningAllowed()) {
             throw new ForbiddenException("No account exists for this identity. Contact your administrator.");
         }
-        return provision(identity, orgId);
+        return link(identity, orgId, authorized(provision(identity, orgId), orgId));
+    }
+
+    /** The current-state gates every federated login passes, however the account was found. */
+    private UserAccount authorized(UserAccount account, UUID orgId) {
+        if (!orgId.equals(account.getOrgId()) // org-strict: never a global/platform account via tenant federation
+                || !organizations.isMember(orgId, account.getId())
+                || !account.isEnabled()
+                || !account.isAccountNonLocked()
+                || account.isTemporarilyLocked(Instant.now())) {
+            throw new UnauthorizedException();
+        }
+        return account;
+    }
+
+    /**
+     * Records the identity→account link, for an account just gated by {@link #authorized}. Refuses when that
+     * account ALREADY holds an identity at this issuer: a second subject reaching it by email means the address
+     * was reassigned upstream, and honouring it would hand the previous holder's account — and roles — to
+     * whoever now owns the address, permanently. Re-linking is an administrative act, not a login-time one.
+     */
+    private UserAccount link(FederatedIdentity identity, UUID orgId, UserAccount account) {
+        if (links.isLinked(orgId, identity.issuer(), account.getId())) {
+            audit.record(new AuditRecord(AuditType.AUTH_FAILURE, account.getUsername(), false,
+                    "federated identity refused: the account is already linked to a different upstream subject",
+                    null, orgId));
+            throw new UnauthorizedException();
+        }
+        links.link(orgId, identity.issuer(), identity.subject(), identity.alias(), account.getId());
+        // A durable credential binding: without this record, a wrong link is invisible to an investigation.
+        audit.record(new AuditRecord(AuditType.USER_UPDATED, account.getUsername(), true,
+                "federated identity linked via provider " + identity.alias(), null, orgId));
+        return account;
     }
 
     /** Provisions atomically (see {@link FederatedUserProvisioner}) inside the tenant's RLS context. */

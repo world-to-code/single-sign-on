@@ -73,8 +73,8 @@ public class FederationLoginServiceImpl implements FederationLoginService {
         String idToken = upstream.exchangeCodeForIdToken(metadata, provider.clientId(), provider.clientSecret(),
                 code, redirectUri, codeVerifier);
         VerifiedIdToken claims = verifier.verify(metadata, provider.clientId(), idToken, nonce);
-        return new FederatedIdentity(provider.alias(), claims.subject(), claims.email(), claims.emailVerified(),
-                claims.name(), provider.jitProvisioningAllowed());
+        return new FederatedIdentity(provider.alias(), provider.issuerUri(), claims.subject(), claims.email(),
+                claims.emailVerified(), claims.name(), provider.jitProvisioningAllowed());
     }
 
     /** Reads the provider inside the tenant's RLS context (pre-auth has none bound by the request filter). */

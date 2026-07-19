@@ -1,7 +1,6 @@
 package com.example.sso.auth.internal.login.api;
 
 import com.example.sso.auth.internal.login.application.FederatedAuthenticationService;
-import com.example.sso.shared.error.ApiException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.net.URI;
@@ -56,9 +55,11 @@ public class FederationController {
         try {
             federatedAuth.complete(alias, code, state, request, response);
             return redirect(SUCCESS);
-        } catch (ApiException e) {
-            // Browser-navigation endpoint: a failed federated login renders as an SPA redirect, not JSON. The
-            // reason is logged (not shown) so the callback stays non-revealing.
+        } catch (RuntimeException e) {
+            // Browser-navigation endpoint: a failed federated login renders as an SPA redirect, not JSON — and
+            // that includes an unexpected failure (a store error, an oversized upstream claim), which would
+            // otherwise escape as a stack-trace page. The reason is logged (not shown), so this stays
+            // non-revealing either way.
             log.info("Federated login callback rejected for alias={}: {}", alias, e.getMessage());
             return redirect(FAILURE);
         }

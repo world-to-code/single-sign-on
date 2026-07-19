@@ -34,7 +34,8 @@ class FederatedUserProvisionerTest {
     @Mock private OrganizationService organizations;
 
     private FederatedIdentity identity(String name) {
-        return new FederatedIdentity("google", "sub-1", "ada@example.com", true, name, true);
+        return new FederatedIdentity("google", "https://accounts.google.test", "sub-1", "ada@example.com",
+                true, name, true);
     }
 
     private UserAccount created(UUID id) {

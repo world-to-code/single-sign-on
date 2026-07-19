@@ -47,6 +47,8 @@ class IdentityProviderServiceImplTest {
     @Mock
     SecretCipher cipher;
     @Mock
+    FederatedIdentityLinkStore links;
+    @Mock
     OutboundHostValidator hostValidator;
     @Mock
     OrgContext orgContext;
@@ -55,7 +57,7 @@ class IdentityProviderServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new IdentityProviderServiceImpl(repository, cipher, hostValidator, orgContext);
+        service = new IdentityProviderServiceImpl(repository, cipher, links, hostValidator, orgContext);
     }
 
     private IdentityProvider row(UUID orgId, String encryptedSecret) {
@@ -273,5 +275,48 @@ class IdentityProviderServiceImplTest {
         assertThatThrownBy(() -> service.delete("bad_alias")).isInstanceOf(BadRequestException.class);
         verify(repository, never()).findByOrgIdAndAlias(any(), any());
         verify(repository, never()).delete(any());
+    }
+
+    // --- federated identities must not outlive the upstream that minted them -----------------------------
+
+    /** Repointing an alias at a DIFFERENT IdP retires its identities: a colliding `sub` at the new upstream
+     *  would otherwise inherit whichever account the old one had linked. */
+    @Test
+    void repointingAProviderAtAnotherUpstreamRetiresItsIdentities() {
+        IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
+                "encg:cipher", "openid", true, true);
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
+
+        service.save(new IdentityProviderSpec(ALIAS, "Google", "https://login.microsoftonline.test", "client-123",
+                "s3cret", "openid", true, true));
+
+        verify(links).unlinkAll(ORG, ISSUER); // the OLD issuer's identities, not the new one's
+    }
+
+    @Test
+    void editingAProviderWithoutChangingItsUpstreamKeepsItsIdentities() {
+        IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
+                "encg:cipher", "openid", true, true);
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
+
+        service.save(new IdentityProviderSpec(ALIAS, "Google Workspace", ISSUER, "client-123", "s3cret",
+                "openid email", true, true));
+
+        verify(links, never()).unlinkAll(any(), any());
+    }
+
+    @Test
+    void deletingAProviderRetiresItsIdentities() {
+        IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
+                "encg:cipher", "openid", true, true);
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
+
+        service.delete(ALIAS);
+
+        verify(links).unlinkAll(ORG, ISSUER);
+        verify(repository).delete(existing);
     }
 }
