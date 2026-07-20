@@ -105,7 +105,7 @@ class AttributeDefinitionRlsIT extends AbstractIntegrationTest {
         ownerJdbc().update("""
                 insert into attribute_definition
                     (id, org_id, entity_kind, attr_key, display_name, data_type)
-                values (gen_random_uuid(), ?, 'USER', ?, 'Probe', 'STRING')""", orgId, key);
+                values (gen_random_uuid(), ?, 'GROUP', ?, 'Probe', 'STRING')""", orgId, key);
         cleanups.add(() -> ownerJdbc().update("delete from attribute_definition where attr_key = ?", key));
     }
 
@@ -114,7 +114,7 @@ class AttributeDefinitionRlsIT extends AbstractIntegrationTest {
         try (PreparedStatement ps = c.prepareStatement("""
                 insert into attribute_definition
                     (id, org_id, entity_kind, attr_key, display_name, data_type)
-                values (gen_random_uuid(), ?, 'USER', ?, 'Probe', 'STRING')""")) {
+                values (gen_random_uuid(), ?, 'GROUP', ?, 'Probe', 'STRING')""")) {
             ps.setObject(1, orgId);
             ps.setString(2, key);
             ps.executeUpdate();

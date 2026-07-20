@@ -67,14 +67,20 @@ public class AttributeDefinitionEntity extends AuditedEntity implements OrgOwned
     @Column(nullable = false, length = 16)
     private AttributeSource source;
 
+    /** The profile this belongs to; null for GROUP/APPLICATION/RESOURCE tags, which are not part of a person. */
+    @Column(name = "profile_id")
+    private UUID profileId;
+
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
 
-    public static AttributeDefinitionEntity create(UUID orgId, EntityKind entityKind, String attrKey,
-            String displayName, String description, AttributeDataType dataType, List<String> enumValues,
-            boolean multiValued, boolean required, AttributeSource source, int sortOrder) {
+    public static AttributeDefinitionEntity create(UUID orgId, UUID profileId, EntityKind entityKind,
+            String attrKey, String displayName, String description, AttributeDataType dataType,
+            List<String> enumValues, boolean multiValued, boolean required, AttributeSource source,
+            int sortOrder) {
         AttributeDefinitionEntity definition = new AttributeDefinitionEntity();
         definition.orgId = orgId;
+        definition.profileId = profileId;
         definition.entityKind = entityKind;
         definition.attrKey = attrKey;
         definition.apply(displayName, description, dataType, enumValues, multiValued, required, source, sortOrder);

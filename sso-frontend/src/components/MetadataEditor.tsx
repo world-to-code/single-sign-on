@@ -11,6 +11,7 @@ import {
 } from "@/metadata";
 import { errorMessage } from "@/api";
 import { listAttributeDefinitions, type AttributeDefinition } from "@/attributeDefinitions";
+import { useTenantProfile } from "@/hooks/useTenantProfile";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,8 @@ export function MetadataEditor({ kind, entityId }: { kind: MetadataKind; entityI
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const profile = useTenantProfile();
+
   const reload = useCallback(() => {
     getAttributes(kind, entityId).then(setAttrs).catch((e) => setError(errorMessage(e)));
   }, [kind, entityId]);
@@ -42,8 +45,8 @@ export function MetadataEditor({ kind, entityId }: { kind: MetadataKind; entityI
   // A missing or forbidden schema is not an error here — the editor simply falls back to free-form keys.
   useEffect(() => {
     const entityKind = kind === "groups" ? "GROUP" : kind === "users" ? "USER" : "RESOURCE";
-    listAttributeDefinitions(entityKind).then(setDefinitions).catch(() => setDefinitions([]));
-  }, [kind]);
+    listAttributeDefinitions(entityKind, profile?.id).then(setDefinitions).catch(() => setDefinitions([]));
+  }, [kind, profile?.id]);
 
   const definitionOf = (attrKey: string) => definitions.find((d) => d.key === attrKey);
   /** Only attributes an administrator owns can be added here; a directory fills the rest. */

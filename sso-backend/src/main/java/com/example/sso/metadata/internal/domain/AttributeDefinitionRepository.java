@@ -27,4 +27,8 @@ public interface AttributeDefinitionRepository extends JpaRepository<AttributeDe
     Optional<AttributeDefinitionEntity> findByIdAndOrgId(UUID id, UUID orgId);
 
     Optional<AttributeDefinitionEntity> findByIdAndOrgIdIsNull(UUID id);
+
+    List<AttributeDefinitionEntity> findByProfileIdOrderBySortOrderAscAttrKeyAsc(UUID profileId);
+
+    Optional<AttributeDefinitionEntity> findByProfileIdAndAttrKey(UUID profileId, String attrKey);
 }

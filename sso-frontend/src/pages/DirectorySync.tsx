@@ -19,6 +19,7 @@ import {
   type DirectorySyncRun,
 } from "@/directoryConnectors";
 import { attributeDefinitionsPath, type AttributeDefinition } from "@/attributeDefinitions";
+import { useTenantProfile } from "@/hooks/useTenantProfile";
 import { PageHeader } from "@/components/PageHeader";
 import { DataList, EmptyState } from "@/components/states";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -295,7 +296,8 @@ function MappingsTab({ connector }: { connector: string }) {
   const mappings = useApiData<DirectoryAttributeMapping[]>(mappingsPath(connector));
   // Only DIRECTORY-owned attributes are mappable: the store refuses a sync writing anything else, so offering
   // them here would only produce a failure the admin has to decode from a run record.
-  const definitions = useApiData<AttributeDefinition[]>(attributeDefinitionsPath("USER"));
+  const profile = useTenantProfile();
+  const definitions = useApiData<AttributeDefinition[]>(attributeDefinitionsPath("USER", profile?.id));
   const targets = (definitions.data ?? []).filter((d) => d.source === "DIRECTORY");
   const [source, setSource] = useState("");
   const [target, setTarget] = useState("");

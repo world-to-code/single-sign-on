@@ -40,14 +40,37 @@ export interface AttributeDefinitionInput {
   sortOrder: number;
 }
 
-export const attributeDefinitionsPath = (kind: AttributeEntityKind) =>
-  `/api/admin/attribute-definitions?entityKind=${kind}`;
+/** A profile as the admin API returns it. USER attributes are declared inside one. */
+export interface Profile {
+  id: string;
+  name: string;
+  kind: "TENANT" | "LDAP" | "SCIM" | "CSV" | "GOOGLE_WORKSPACE" | "ENTRA_ID";
+  connectorId: string | null;
+  system: boolean;
+  defaultForCreation: boolean;
+}
 
-export const listAttributeDefinitions = (kind: AttributeEntityKind): Promise<AttributeDefinition[]> =>
-  apiGet<AttributeDefinition[]>(attributeDefinitionsPath(kind));
+export const profilesPath = "/api/admin/profiles";
 
-export const saveAttributeDefinition = (body: AttributeDefinitionInput): Promise<AttributeDefinition> =>
-  apiPost<AttributeDefinition>("/api/admin/attribute-definitions", body);
+export const listProfiles = (): Promise<Profile[]> => apiGet<Profile[]>(profilesPath);
+
+/** A person's attributes live in a profile; every other entity kind is a tag outside one. */
+export const attributeDefinitionsPath = (kind: AttributeEntityKind, profileId?: string) =>
+  kind === "USER" && profileId
+    ? `${profilesPath}/${encodeURIComponent(profileId)}/attributes`
+    : `/api/admin/attribute-definitions?entityKind=${kind}`;
+
+export const listAttributeDefinitions = (
+  kind: AttributeEntityKind, profileId?: string,
+): Promise<AttributeDefinition[]> =>
+  apiGet<AttributeDefinition[]>(attributeDefinitionsPath(kind, profileId));
+
+export const saveAttributeDefinition = (
+  body: AttributeDefinitionInput, profileId?: string,
+): Promise<AttributeDefinition> =>
+  body.entityKind === "USER" && profileId
+    ? apiPost<AttributeDefinition>(`${profilesPath}/${encodeURIComponent(profileId)}/attributes`, body)
+    : apiPost<AttributeDefinition>("/api/admin/attribute-definitions", body);
 
 export const deleteAttributeDefinition = (id: string): Promise<void> =>
   apiDelete(`/api/admin/attribute-definitions/${encodeURIComponent(id)}`);

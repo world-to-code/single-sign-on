@@ -5,6 +5,7 @@ import com.example.sso.metadata.AttributeDefinition;
 import com.example.sso.metadata.AttributeDefinitionService;
 import com.example.sso.metadata.AttributeDefinitionSpec;
 import com.example.sso.metadata.EntityKind;
+import com.example.sso.metadata.internal.domain.ProfileRepository;
 import com.example.sso.metadata.internal.domain.AttributeDefinitionEntity;
 import com.example.sso.metadata.internal.domain.AttributeDefinitionRepository;
 import com.example.sso.shared.error.BadRequestException;
@@ -33,6 +34,7 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
     private static final Pattern KEY = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,63}");
 
     private final AttributeDefinitionRepository repository;
+    private final ProfileRepository profiles;
     private final OrgContext orgContext;
 
     @Override
@@ -50,6 +52,22 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<AttributeDefinition> definitionsIn(UUID profileId) {
+        return requireOwnProfile(profileId).stream()
+                .flatMap(id -> repository.findByProfileIdOrderBySortOrderAscAttrKeyAsc(id).stream())
+                .map(this::toDefinition).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<AttributeDefinition> definitionIn(UUID profileId, String key) {
+        return requireOwnProfile(profileId)
+                .flatMap(id -> repository.findByProfileIdAndAttrKey(id, key == null ? "" : key.trim()))
+                .map(this::toDefinition);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Optional<AttributeDefinition> definitionOf(EntityKind kind, String key) {
         return find(kind, key).map(this::toDefinition);
     }
@@ -57,9 +75,33 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
     @Override
     @Transactional
     public AttributeDefinition save(AttributeDefinitionSpec spec) {
+        if (spec.entityKind() == EntityKind.USER) {
+            // A person's attributes belong to a profile; allowing a profile-less USER definition would put a
+            // row where nothing can find it and the schema CHECK would reject it anyway.
+            throw BadRequestException.of("metadata.definition.profileRequired");
+        }
         validate(spec);
         UUID tier = writableTier();
         AttributeDefinitionEntity existing = find(spec.entityKind(), spec.key()).orElse(null);
+        if (existing != null) {
+            existing.redefine(spec.displayName().trim(), spec.description(), spec.dataType(), spec.enumValues(),
+                    spec.multiValued(), spec.required(), spec.source(), spec.sortOrder());
+            return toDefinition(existing);
+        }
+        return toDefinition(repository.save(AttributeDefinitionEntity.create(tier, null, spec.entityKind(),
+                spec.key().trim(), spec.displayName().trim(), spec.description(), spec.dataType(),
+                spec.enumValues(), spec.multiValued(), spec.required(), spec.source(), spec.sortOrder())));
+    }
+
+    @Override
+    @Transactional
+    public AttributeDefinition save(UUID profileId, AttributeDefinitionSpec spec) {
+        validate(spec);
+        UUID tier = writableTier();
+        UUID profile = requireOwnProfile(profileId)
+                .orElseThrow(() -> new NotFoundException("Profile not found"));
+        AttributeDefinitionEntity existing =
+                repository.findByProfileIdAndAttrKey(profile, spec.key().trim()).orElse(null);
         if (existing != null) {
             // The key is the identity: live attribute rows, mapping rules and policy bindings all reference it
             // as a bare string with no foreign key back here, so it is redefined in place, never re-keyed.
@@ -67,7 +109,7 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
                     spec.multiValued(), spec.required(), spec.source(), spec.sortOrder());
             return toDefinition(existing);
         }
-        return toDefinition(repository.save(AttributeDefinitionEntity.create(tier, spec.entityKind(),
+        return toDefinition(repository.save(AttributeDefinitionEntity.create(tier, profile, spec.entityKind(),
                 spec.key().trim(), spec.displayName().trim(), spec.description(), spec.dataType(),
                 spec.enumValues(), spec.multiValued(), spec.required(), spec.source(), spec.sortOrder())));
     }
@@ -112,6 +154,20 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
             throw ForbiddenException.of("metadata.definition.global.platformOnly");
         }
         return actingTier();
+    }
+
+    /**
+     * The profile, only if it belongs to the acting organization. A profile id is client-supplied, so this is
+     * the ownership check that stops one tenant declaring attributes inside another's schema — the attributes
+     * their ABAC rules then match on.
+     */
+    private Optional<UUID> requireOwnProfile(UUID profileId) {
+        if (profileId == null) {
+            return Optional.empty();
+        }
+        return orgContext.currentOrg()
+                .flatMap(org -> profiles.findByIdAndOrgId(profileId, org))
+                .map(profile -> profile.getId());
     }
 
     private void validate(AttributeDefinitionSpec spec) {

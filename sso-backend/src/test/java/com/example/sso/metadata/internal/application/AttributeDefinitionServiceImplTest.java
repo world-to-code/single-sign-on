@@ -7,6 +7,9 @@ import com.example.sso.metadata.AttributeSource;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.metadata.internal.domain.AttributeDefinitionEntity;
 import com.example.sso.metadata.internal.domain.AttributeDefinitionRepository;
+import com.example.sso.metadata.internal.domain.ProfileEntity;
+import com.example.sso.metadata.internal.domain.ProfileRepository;
+import com.example.sso.metadata.ProfileKind;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
@@ -36,15 +39,18 @@ import static org.mockito.Mockito.when;
 class AttributeDefinitionServiceImplTest {
 
     private static final UUID ORG = UUID.randomUUID();
+    private static final UUID PROFILE = UUID.randomUUID();
 
     @Mock private AttributeDefinitionRepository repository;
     @Mock private OrgContext orgContext;
+    @Mock private ProfileRepository profiles;
 
     private AttributeDefinitionServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new AttributeDefinitionServiceImpl(repository, orgContext);
+        service = new AttributeDefinitionServiceImpl(repository, profiles, orgContext);
+        lenient().when(profiles.findByIdAndOrgId(PROFILE, ORG)).thenReturn(Optional.of(profileRow()));
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         lenient().when(repository.save(any())).thenAnswer(i -> i.getArgument(0));
     }
@@ -61,6 +67,12 @@ class AttributeDefinitionServiceImplTest {
         when(orgContext.isPlatform()).thenReturn(false);
     }
 
+    private ProfileEntity profileRow() {
+        ProfileEntity profile = ProfileEntity.tenantDefault(ORG, "acme");
+        org.springframework.test.util.ReflectionTestUtils.setField(profile, "id", PROFILE);
+        return profile;
+    }
+
     private AttributeDefinitionSpec spec(String key, AttributeDataType type, List<String> enumValues,
             AttributeSource source) {
         return new AttributeDefinitionSpec(EntityKind.USER, key, "Department", "Which team", type, enumValues,
@@ -75,10 +87,10 @@ class AttributeDefinitionServiceImplTest {
 
     @Test
     void definesTheAttributeWithinTheActingTier() {
-        when(repository.findByOrgIdAndEntityKindAndAttrKey(ORG, EntityKind.USER, "department"))
+        when(repository.findByProfileIdAndAttrKey(PROFILE, "department"))
                 .thenReturn(Optional.empty());
 
-        AttributeDefinition saved = service.save(valid());
+        AttributeDefinition saved = service.save(PROFILE, valid());
 
         assertThat(saved.key()).isEqualTo("department");
         assertThat(saved.source()).isEqualTo(AttributeSource.LOCAL);
@@ -86,27 +98,26 @@ class AttributeDefinitionServiceImplTest {
 
     @Test
     void redefinesAnExistingKeyRatherThanDuplicatingIt() {
-        AttributeDefinitionEntity existing = AttributeDefinitionEntity.create(ORG, EntityKind.USER, "department",
+        AttributeDefinitionEntity existing = AttributeDefinitionEntity.create(ORG, PROFILE, EntityKind.USER, "department",
                 "Old", null, AttributeDataType.STRING, null, false, false, AttributeSource.LOCAL, 0);
-        when(repository.findByOrgIdAndEntityKindAndAttrKey(ORG, EntityKind.USER, "department"))
+        when(repository.findByProfileIdAndAttrKey(PROFILE, "department"))
                 .thenReturn(Optional.of(existing));
 
-        service.save(valid());
+        service.save(PROFILE, valid());
 
         assertThat(existing.getDisplayName()).isEqualTo("Department");
         verify(repository, never()).save(any()); // a managed row is updated in place, not re-inserted
     }
 
-    /** A platform caller edits the global tier; a tenant caller can never reach it. */
+    /**
+     * A person's attributes belong to a profile, and profiles are a tenant's — the platform tier has none.
+     * So a USER definition without a profile is refused rather than landing where nothing can find it (the
+     * schema CHECK would reject it anyway).
+     */
     @Test
-    void aPlatformCallerDefinesTheGlobalTier() {
-        platformTier();
-        when(repository.findByOrgIdIsNullAndEntityKindAndAttrKey(EntityKind.USER, "department"))
-                .thenReturn(Optional.empty());
-
-        service.save(valid());
-
-        verify(repository).save(any());
+    void aUserAttributeMustBeDeclaredInsideAProfile() {
+        assertThatThrownBy(() -> service.save(valid())).isInstanceOf(BadRequestException.class);
+        verify(repository, never()).save(any());
     }
 
     @Test
@@ -135,35 +146,35 @@ class AttributeDefinitionServiceImplTest {
 
     @Test
     void rejectsAKeyThatThePredicateLayerCouldNotReference() {
-        assertThatThrownBy(() -> service.save(spec("has space", AttributeDataType.STRING, null,
+        assertThatThrownBy(() -> service.save(PROFILE, spec("has space", AttributeDataType.STRING, null,
                 AttributeSource.LOCAL))).isInstanceOf(BadRequestException.class);
-        assertThatThrownBy(() -> service.save(spec("-leading", AttributeDataType.STRING, null,
+        assertThatThrownBy(() -> service.save(PROFILE, spec("-leading", AttributeDataType.STRING, null,
                 AttributeSource.LOCAL))).isInstanceOf(BadRequestException.class);
-        assertThatThrownBy(() -> service.save(spec("", AttributeDataType.STRING, null,
+        assertThatThrownBy(() -> service.save(PROFILE, spec("", AttributeDataType.STRING, null,
                 AttributeSource.LOCAL))).isInstanceOf(BadRequestException.class);
     }
 
     @Test
     void anEnumMustDeclareItsPermittedValues() {
-        assertThatThrownBy(() -> service.save(spec("region", AttributeDataType.ENUM, null,
+        assertThatThrownBy(() -> service.save(PROFILE, spec("region", AttributeDataType.ENUM, null,
                 AttributeSource.LOCAL))).isInstanceOf(BadRequestException.class);
-        assertThatThrownBy(() -> service.save(spec("region", AttributeDataType.ENUM, List.of(),
+        assertThatThrownBy(() -> service.save(PROFILE, spec("region", AttributeDataType.ENUM, List.of(),
                 AttributeSource.LOCAL))).isInstanceOf(BadRequestException.class);
     }
 
     /** Values on a non-ENUM would be silently ignored, so say so rather than storing something inert. */
     @Test
     void onlyAnEnumMayDeclarePermittedValues() {
-        assertThatThrownBy(() -> service.save(spec("department", AttributeDataType.STRING, List.of("a"),
+        assertThatThrownBy(() -> service.save(PROFILE, spec("department", AttributeDataType.STRING, List.of("a"),
                 AttributeSource.LOCAL))).isInstanceOf(BadRequestException.class);
     }
 
     @Test
     void anEnumKeepsItsPermittedValues() {
-        when(repository.findByOrgIdAndEntityKindAndAttrKey(ORG, EntityKind.USER, "region"))
+        when(repository.findByProfileIdAndAttrKey(PROFILE, "region"))
                 .thenReturn(Optional.empty());
 
-        AttributeDefinition saved = service.save(
+        AttributeDefinition saved = service.save(PROFILE, 
                 spec("region", AttributeDataType.ENUM, List.of("emea", "apac"), AttributeSource.LOCAL));
 
         assertThat(saved.enumValues()).containsExactly("emea", "apac");
@@ -174,10 +185,10 @@ class AttributeDefinitionServiceImplTest {
     /** The flag the whole directory-ownership model rests on has to survive the round trip. */
     @Test
     void aDirectoryOwnedAttributeIsNotLocallyEditable() {
-        when(repository.findByOrgIdAndEntityKindAndAttrKey(ORG, EntityKind.USER, "department"))
+        when(repository.findByProfileIdAndAttrKey(PROFILE, "department"))
                 .thenReturn(Optional.empty());
 
-        AttributeDefinition saved = service.save(
+        AttributeDefinition saved = service.save(PROFILE, 
                 spec("department", AttributeDataType.STRING, null, AttributeSource.DIRECTORY));
 
         assertThat(saved.source()).isEqualTo(AttributeSource.DIRECTORY);
@@ -186,10 +197,10 @@ class AttributeDefinitionServiceImplTest {
 
     @Test
     void aLocalAttributeIsLocallyEditable() {
-        when(repository.findByOrgIdAndEntityKindAndAttrKey(ORG, EntityKind.USER, "department"))
+        when(repository.findByProfileIdAndAttrKey(PROFILE, "department"))
                 .thenReturn(Optional.empty());
 
-        assertThat(service.save(valid()).locallyEditable()).isTrue();
+        assertThat(service.save(PROFILE, valid()).locallyEditable()).isTrue();
     }
 
     // --- tier scoping ------------------------------------------------------------------------------------
@@ -212,7 +223,7 @@ class AttributeDefinitionServiceImplTest {
     void aBoundButOrglessNonPlatformCallerMayNotWrite() {
         boundToNothing();
 
-        assertThatThrownBy(() -> service.save(valid())).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> service.save(PROFILE, valid())).isInstanceOf(ForbiddenException.class);
         verify(repository, never()).save(any());
     }
 

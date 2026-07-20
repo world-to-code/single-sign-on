@@ -12,13 +12,23 @@ import java.util.UUID;
  */
 public interface AttributeDefinitionService {
 
-    /** The acting tier's definitions for {@code kind}, in display order. */
+    /** The acting tier's definitions for {@code kind}, in display order. Non-USER kinds only — a person's
+     *  attributes live in a profile, see {@link #definitionsIn}. */
     List<AttributeDefinition> definitionsFor(EntityKind kind);
+
+    /** One profile's USER attribute definitions, in display order. */
+    List<AttributeDefinition> definitionsIn(UUID profileId);
+
+    /** One profile's definition of a key, if it declares one. */
+    Optional<AttributeDefinition> definitionIn(UUID profileId, String key);
 
     /** The acting tier's definition of one key, if it declares one. */
     Optional<AttributeDefinition> definitionOf(EntityKind kind, String key);
 
-    /** Creates or replaces the definition of {@code spec.key()} within the acting tier. */
+    /** Creates or replaces the definition of {@code spec.key()} within {@code profileId} (USER attributes). */
+    AttributeDefinition save(UUID profileId, AttributeDefinitionSpec spec);
+
+    /** Creates or replaces a non-USER definition — GROUP/APPLICATION/RESOURCE tags live outside profiles. */
     AttributeDefinition save(AttributeDefinitionSpec spec);
 
     void delete(UUID id);

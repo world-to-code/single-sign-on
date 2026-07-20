@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useApiData } from "@/useApiData";
+import { useTenantProfile } from "@/hooks/useTenantProfile";
 import { useEditorForm } from "@/hooks/useEditorForm";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 import {
@@ -60,7 +61,8 @@ const splitValues = (raw: string) => raw.split(",").map((v) => v.trim()).filter(
 export default function ProfileAttributes() {
   const { t } = useTranslation(["console", "states"]);
   const [kind, setKind] = useState<AttributeEntityKind>("USER");
-  const definitions = useApiData<AttributeDefinition[]>(attributeDefinitionsPath(kind));
+  const profile = useTenantProfile();
+  const definitions = useApiData<AttributeDefinition[]>(attributeDefinitionsPath(kind, profile?.id));
   const confirmDelete = useDeleteConfirm();
 
   const editor = useEditorForm<Editor>({
@@ -78,8 +80,8 @@ export default function ProfileAttributes() {
       sortOrder: e.sortOrder,
     }),
     // The key is the identity, so the backend upserts on (kind, key) — both paths POST the same body.
-    create: (body) => saveAttributeDefinition(body as never),
-    update: (_id, body) => saveAttributeDefinition(body as never),
+    create: (body) => saveAttributeDefinition(body as never, profile?.id),
+    update: (_id, body) => saveAttributeDefinition(body as never, profile?.id),
     onSaved: definitions.reload,
   });
 
