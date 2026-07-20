@@ -74,6 +74,16 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
      *  {@code (org_id, external_id)} unique per tier, so the answer is never ambiguous. */
     Optional<AppUser> findByExternalIdAndOrgId(String externalId, UUID orgId);
 
+    /**
+     * The same correlation for a whole page of directory entries, in ONE query and without hydrating anything
+     * the caller does not read. Callers must guard against an empty collection — an empty {@code IN ()} is not
+     * valid SQL.
+     */
+    @Query("select new com.example.sso.user.internal.account.domain.ExternalIdRow(u.externalId, u.id) "
+            + "from AppUser u where u.orgId = :orgId and u.externalId in :externalIds")
+    List<ExternalIdRow> findExternalIdRowsInOrg(@Param("externalIds") Collection<String> externalIds,
+            @Param("orgId") UUID orgId);
+
     default Optional<AppUser> findByLoginInOrg(String identifier, UUID orgId) {
         if (orgId == null) {
             return findByEmailAndOrgIdIsNull(identifier)

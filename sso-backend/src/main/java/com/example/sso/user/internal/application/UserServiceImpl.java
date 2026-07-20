@@ -12,6 +12,7 @@ import com.example.sso.user.rbac.PermissionGrantPolicy;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.internal.account.domain.AppUser;
 import com.example.sso.user.internal.account.domain.AppUserRepository;
+import com.example.sso.user.internal.account.domain.ExternalIdRow;
 import com.example.sso.user.internal.rbac.domain.Permission;
 import com.example.sso.user.internal.role.domain.Role;
 import com.example.sso.user.internal.role.domain.RoleRepository;
@@ -46,6 +47,7 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -108,6 +110,16 @@ public class UserServiceImpl implements UserService {
             return Optional.empty();
         }
         return users.findByExternalIdAndOrgId(externalId, orgId).map(hydrator::hydrateUser).map(u -> u);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<String, UUID> idsByExternalIdInOrg(Collection<String> externalIds, UUID orgId) {
+        if (orgId == null || externalIds == null || externalIds.isEmpty()) {
+            return Map.of(); // an empty IN () is not valid SQL, and there is nothing to correlate anyway
+        }
+        return users.findExternalIdRowsInOrg(externalIds, orgId).stream()
+                .collect(Collectors.toMap(ExternalIdRow::externalId, ExternalIdRow::userId));
     }
 
     @Override

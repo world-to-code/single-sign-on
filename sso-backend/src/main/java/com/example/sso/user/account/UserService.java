@@ -6,6 +6,7 @@ import com.example.sso.shared.Page;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -56,6 +57,13 @@ public interface UserService {
      * belongs — a caller comes here precisely to stop guessing, so the answer must not be ambiguous.
      */
     Optional<UserAccount> findByExternalIdInOrg(String externalId, UUID orgId);
+
+    /**
+     * The same correlation for a whole batch, keyed by directory identifier and omitting the ones that match
+     * no account. A directory sync correlates a page at a time and reads nothing but the id, so resolving them
+     * one {@link #findByExternalIdInOrg} at a time costs an RBAC hydration per entry for data nobody reads.
+     */
+    Map<String, UUID> idsByExternalIdInOrg(Collection<String> externalIds, UUID orgId);
 
     Optional<UserAccount> findById(UUID id);
 
