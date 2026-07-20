@@ -13,6 +13,9 @@ import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.role.Roles;
 import com.example.sso.user.group.GroupMembership;
+import com.example.sso.metadata.AttributeService;
+import com.example.sso.metadata.EntityKind;
+import com.example.sso.metadata.ProfileAttributeValidator;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.RoleRef;
@@ -53,6 +56,8 @@ public class UserAdminService {
     private final AdminAccessPolicy accessPolicy;
     private final AdminAuditLogger auditLogger;
     private final LastAdminGuard lastAdminGuard;
+    private final ProfileAttributeValidator validator;
+    private final AttributeService attributes;
     private final OrgContext orgContext;
     private final OrganizationService organizations;
 
@@ -112,10 +117,21 @@ public class UserAdminService {
     }
 
     @Transactional
-    public AdminUserView createUser(NewUser newUser) {
+    public AdminUserView createUser(NewUser newUser, Map<String, List<String>> attributeValues) {
         try {
             UUID org = actingOrg();
+            // Validate BEFORE creating: a required attribute missing should not leave a half-made account
+            // behind, and the profile is what makes those declarations mean anything at all.
+            UUID profileId = org == null ? null : validator.defaultForCreation();
+            if (profileId != null) {
+                validator.validate(profileId, attributeValues);
+            }
             UserAccount user = userService.createUser(newUser, org);
+            if (profileId != null) {
+                userService.assignProfile(user.getId(), profileId);
+                attributeValues.forEach((key, values) -> values.stream().filter(v -> v != null && !v.isBlank())
+                        .forEach(value -> attributes.add(EntityKind.USER, user.getId().toString(), key, value)));
+            }
             // Record the org membership too (SCIM and self-signup already do): a user carries a home org_id AND is
             // a member of that org, so every isMember-based check (e.g. resource-admin delegation) sees it.
             if (org != null) {

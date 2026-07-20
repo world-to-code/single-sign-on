@@ -4,6 +4,8 @@ import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.shared.application.LastAdminGuard;
 import com.example.sso.organization.OrganizationService;
+import com.example.sso.metadata.AttributeService;
+import com.example.sso.metadata.ProfileAttributeValidator;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
@@ -50,6 +52,9 @@ class UserAdminServiceTest {
     private LastAdminGuard lastAdminGuard;
     private OrgContext orgContext;
     private OrganizationService organizations;
+    private ProfileAttributeValidator validator;
+    private AttributeService attributes;
+
     private UserAdminService service;
 
     @BeforeEach
@@ -62,8 +67,10 @@ class UserAdminServiceTest {
         lastAdminGuard = mock(LastAdminGuard.class);
         orgContext = mock(OrgContext.class);
         organizations = mock(OrganizationService.class);
+        validator = mock(ProfileAttributeValidator.class);
+        attributes = mock(AttributeService.class);
         service = new UserAdminService(userService, mfaService, userGroups, accessPolicy, auditLogger,
-                lastAdminGuard, orgContext, organizations);
+                lastAdminGuard, validator, attributes, orgContext, organizations);
     }
 
     @Test
@@ -115,7 +122,7 @@ class UserAdminServiceTest {
         when(orgContext.currentOrg()).thenReturn(Optional.of(org));
         when(userService.createUser(eq(newUser), eq(org))).thenReturn(created);
 
-        service.createUser(newUser);
+        service.createUser(newUser, java.util.Map.of());
 
         verify(organizations).addMember(org, userId);
     }
@@ -127,7 +134,7 @@ class UserAdminServiceTest {
         UserAccount created = user(UUID.randomUUID());
         when(userService.createUser(eq(newUser), any())).thenReturn(created);
 
-        service.createUser(newUser);
+        service.createUser(newUser, java.util.Map.of());
 
         verify(organizations, never()).addMember(any(), any());
     }
@@ -137,7 +144,7 @@ class UserAdminServiceTest {
         NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "pw", Set.of());
         when(userService.createUser(eq(newUser), any())).thenThrow(new IllegalArgumentException("username taken"));
 
-        assertThatThrownBy(() -> service.createUser(newUser)).isInstanceOf(ConflictException.class);
+        assertThatThrownBy(() -> service.createUser(newUser, java.util.Map.of())).isInstanceOf(ConflictException.class);
     }
 
     @Test
@@ -146,7 +153,7 @@ class UserAdminServiceTest {
         UserAccount created = user(UUID.randomUUID());
         when(userService.createUser(eq(newUser), any())).thenReturn(created);
 
-        service.createUser(newUser);
+        service.createUser(newUser, java.util.Map.of());
 
         verify(auditLogger).log(eq(AuditType.USER_CREATED), eq(AuditSubjectType.USER), any(), any());
     }
@@ -158,7 +165,7 @@ class UserAdminServiceTest {
         UserAccount created = user(newId);
         when(userService.createUser(eq(newUser), any())).thenReturn(created);
 
-        service.createUser(newUser);
+        service.createUser(newUser, java.util.Map.of());
 
         verify(userService).requirePasswordReset(newId);
     }
@@ -169,7 +176,7 @@ class UserAdminServiceTest {
         UserAccount created = user(UUID.randomUUID());
         when(userService.createUser(eq(newUser), any())).thenReturn(created);
 
-        service.createUser(newUser);
+        service.createUser(newUser, java.util.Map.of());
 
         verify(userService, never()).requirePasswordReset(any());
     }

@@ -116,7 +116,7 @@ public class AdminUserController {
     @CanCreateUser
     @RequireStepUp
     public ResponseEntity<AdminUserView> createUser(@Valid @RequestBody CreateUserRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(userAdminService.createUser(request.toNewUser()));
+        return ResponseEntity.status(HttpStatus.CREATED).body(userAdminService.createUser(request.toNewUser(), request.attributeValues()));
     }
 
     @PutMapping("/{id}")

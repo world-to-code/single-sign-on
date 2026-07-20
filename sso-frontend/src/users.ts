@@ -40,6 +40,8 @@ export interface CreateUserRequest {
   displayName: string | null;
   password: string;
   roles: string[];
+  /** Values for the attributes the tenant's default profile declares; validated server-side. */
+  attributes?: Record<string, string[]>;
 }
 
 export interface UpdateUserRequest {

@@ -10,6 +10,9 @@ import { SettingsSection } from "@/components/SettingsSection";
 import { Field } from "@/components/form/fields";
 import { CheckboxGroup } from "@/components/form/CheckboxGroup";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { listAttributeDefinitions, type AttributeDefinition } from "@/attributeDefinitions";
+import { useTenantProfile } from "@/hooks/useTenantProfile";
 
 interface Role { id: string; name: string }
 const blank = { username: "", email: "", displayName: "", password: "", roles: ["ROLE_USER"] };
@@ -20,6 +23,15 @@ export default function UserCreate() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ ...blank });
   const [roles, setRoles] = useState<Role[]>([]);
+  const [definitions, setDefinitions] = useState<AttributeDefinition[]>([]);
+  const [attrs, setAttrs] = useState<Record<string, string>>({});
+  const profile = useTenantProfile();
+
+  // A tenant with no declared attributes simply gets no extra section — the schema is a catalog, not a demand.
+  useEffect(() => {
+    if (!profile) return;
+    listAttributeDefinitions("USER", profile.id).then(setDefinitions).catch(() => setDefinitions([]));
+  }, [profile]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -45,6 +57,8 @@ export default function UserCreate() {
         displayName: form.displayName || null,
         password: form.password,
         roles: form.roles,
+        attributes: Object.fromEntries(
+          Object.entries(attrs).filter(([, v]) => v.trim() !== "").map(([k, v]) => [k, [v]])),
       });
       navigate("/admin/users");
     } catch (e) {
@@ -52,6 +66,10 @@ export default function UserCreate() {
       setBusy(false);
     }
   }
+
+  // The profile declares what a person of this tenant HAS, so the form asks for exactly that — no more
+  // hardcoded field list. Built-ins already have their own inputs above.
+  const declared = definitions.filter((d) => !d.base);
 
   return (
     <EditorPage
@@ -77,6 +95,28 @@ export default function UserCreate() {
           <Input type="password" value={form.password} onChange={(e) => set({ password: e.target.value })} required />
         </Field>
       </SettingsSection>
+
+      {declared.length > 0 && (
+        <SettingsSection title={t("userCreateProfileTitle")} description={t("userCreateProfileDesc")}>
+          {declared.map((d) => (
+            <Field key={d.key} label={d.displayName} hint={d.description ?? undefined}>
+              {d.dataType === "ENUM" ? (
+                <Select value={attrs[d.key] ?? ""}
+                        onChange={(e) => setAttrs({ ...attrs, [d.key]: e.target.value })}
+                        required={d.required}>
+                  <option value="">{t("userCreateAttrUnset")}</option>
+                  {d.enumValues.map((v) => <option key={v} value={v}>{v}</option>)}
+                </Select>
+              ) : (
+                <Input type={d.dataType === "DATE" ? "date" : d.dataType === "INTEGER" ? "number" : "text"}
+                       value={attrs[d.key] ?? ""}
+                       onChange={(e) => setAttrs({ ...attrs, [d.key]: e.target.value })}
+                       required={d.required} />
+              )}
+            </Field>
+          ))}
+        </SettingsSection>
+      )}
 
       <SettingsSection title={t("userCreateRolesTitle")} description={t("userCreateRolesDesc")}>
         <CheckboxGroup
