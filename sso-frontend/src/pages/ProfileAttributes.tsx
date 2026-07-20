@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useApiData } from "@/useApiData";
-import { useTenantProfile } from "@/hooks/useTenantProfile";
+
 import { useEditorForm } from "@/hooks/useEditorForm";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 import {
   attributeDefinitionsPath,
+  listProfiles,
+  type Profile,
   deleteAttributeDefinition,
   saveAttributeDefinition,
   type AttributeDataType,
@@ -24,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
@@ -61,8 +64,23 @@ const splitValues = (raw: string) => raw.split(",").map((v) => v.trim()).filter(
 export default function ProfileAttributes() {
   const { t } = useTranslation(["console", "states"]);
   const [kind, setKind] = useState<AttributeEntityKind>("USER");
-  const profile = useTenantProfile();
-  const definitions = useApiData<AttributeDefinition[]>(attributeDefinitionsPath(kind, profile?.id));
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [profileId, setProfileId] = useState<string | null>(null);
+
+  // A person's attributes belong to a profile, so which profile is the first question this page asks. Every
+  // identity source has one of its own, and seeing them side by side is what makes a mapping legible.
+  useEffect(() => {
+    listProfiles()
+      .then((all) => {
+        setProfiles(all);
+        setProfileId((current) => current ?? all.find((p) => p.kind === "TENANT")?.id ?? null);
+      })
+      .catch(() => setProfiles([]));
+  }, []);
+
+  const profile = profiles.find((p) => p.id === profileId) ?? null;
+  const definitions = useApiData<AttributeDefinition[]>(
+    attributeDefinitionsPath(kind, profile?.id ?? undefined));
   const confirmDelete = useDeleteConfirm();
 
   const editor = useEditorForm<Editor>({
@@ -113,6 +131,23 @@ export default function ProfileAttributes() {
           </Button>
         }
       />
+
+      {kind === "USER" && profiles.length > 0 && (
+        <div className="mb-4 max-w-sm space-y-1.5">
+          <Label htmlFor="profile-picker">{t("profileAttrProfile")}</Label>
+          <Select id="profile-picker" value={profileId ?? ""}
+                  onChange={(e) => setProfileId(e.target.value || null)}>
+            {profiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}{p.kind === "TENANT" ? "" : ` · ${p.kind}`}
+              </option>
+            ))}
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {profile?.kind === "TENANT" ? t("profileAttrTenantHint") : t("profileAttrSourceHint")}
+          </p>
+        </div>
+      )}
 
       <div className="flex gap-1 border-b border-border">
         {KINDS.map((k) => (
