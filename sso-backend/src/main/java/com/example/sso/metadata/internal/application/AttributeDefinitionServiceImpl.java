@@ -4,11 +4,13 @@ import com.example.sso.metadata.AttributeDataType;
 import com.example.sso.metadata.AttributeDefinition;
 import com.example.sso.metadata.AttributeDefinitionService;
 import com.example.sso.metadata.AttributeDefinitionSpec;
+import com.example.sso.metadata.BaseAttributes;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.metadata.internal.domain.ProfileRepository;
 import com.example.sso.metadata.internal.domain.AttributeDefinitionEntity;
 import com.example.sso.metadata.internal.domain.AttributeDefinitionRepository;
 import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
@@ -16,6 +18,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,9 +56,15 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
     @Override
     @Transactional(readOnly = true)
     public List<AttributeDefinition> definitionsIn(UUID profileId) {
-        return requireOwnProfile(profileId).stream()
-                .flatMap(id -> repository.findByProfileIdOrderBySortOrderAscAttrKeyAsc(id).stream())
-                .map(this::toDefinition).toList();
+        return requireOwnProfile(profileId)
+                .map(id -> Stream.concat(
+                        // The columns app_user already carries, shown so a profile is the whole shape of a
+                        // person rather than only the half an administrator declared. Synthesised, never
+                        // stored — see BaseAttributes.
+                        BaseAttributes.definitions().stream(),
+                        repository.findByProfileIdOrderBySortOrderAscAttrKeyAsc(id).stream()
+                                .map(this::toDefinition)).toList())
+                .orElseGet(List::of);
     }
 
     @Override
@@ -96,6 +105,7 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
     @Override
     @Transactional
     public AttributeDefinition save(UUID profileId, AttributeDefinitionSpec spec) {
+        requireNotBase(spec.key());
         validate(spec);
         UUID tier = writableTier();
         UUID profile = requireOwnProfile(profileId)
@@ -168,6 +178,17 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
         return orgContext.currentOrg()
                 .flatMap(org -> profiles.findByIdAndOrgId(profileId, org))
                 .map(profile -> profile.getId());
+    }
+
+    /**
+     * A base attribute is an {@code app_user} column, not a profile attribute. Redefining one here would
+     * create a second declaration of a shape the table already fixes, and the two would drift — while login,
+     * email one-time codes, SCIM and the session layer went on reading the column.
+     */
+    private void requireNotBase(String key) {
+        if (BaseAttributes.contains(key)) {
+            throw ConflictException.of("metadata.definition.baseAttribute", key == null ? "" : key.trim());
+        }
     }
 
     private void validate(AttributeDefinitionSpec spec) {

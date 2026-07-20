@@ -13,7 +13,16 @@ import java.util.UUID;
  */
 public record AttributeDefinition(UUID id, EntityKind entityKind, String key, String displayName,
                                   String description, AttributeDataType dataType, List<String> enumValues,
-                                  boolean multiValued, boolean required, AttributeSource source, int sortOrder) {
+                                  boolean multiValued, boolean required, AttributeSource source, int sortOrder,
+                                  boolean base) {
+
+    /** A stored definition — one an administrator declared, as opposed to a synthesised base attribute. */
+    public AttributeDefinition(UUID id, EntityKind entityKind, String key, String displayName, String description,
+            AttributeDataType dataType, List<String> enumValues, boolean multiValued, boolean required,
+            AttributeSource source, int sortOrder) {
+        this(id, entityKind, key, displayName, description, dataType, enumValues, multiValued, required, source,
+                sortOrder, false);
+    }
 
     /** Whether an administrator may edit values of this attribute, as opposed to a directory owning them. */
     public boolean locallyEditable() {

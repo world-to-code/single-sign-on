@@ -30,7 +30,7 @@ const USER = "11111111-1111-1111-1111-111111111111";
 
 const definition = (key: string, source: "LOCAL" | "DIRECTORY", extra = {}) => ({
   id: `def-${key}`, entityKind: "USER" as const, key, displayName: `The ${key}`, description: null,
-  dataType: "STRING" as const, enumValues: [], multiValued: false, required: false, source, sortOrder: 0,
+  dataType: "STRING" as const, enumValues: [], multiValued: false, required: false, source, sortOrder: 0, base: false,
   ...extra,
 });
 

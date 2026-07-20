@@ -1066,6 +1066,7 @@ export const console = {
   profileAttrType_BOOLEAN: "Yes / no",
   profileAttrType_DATE: "Date",
   profileAttrType_ENUM: "Choice",
+  profileAttrBuiltIn: "Built-in",
   profileAttrSource_LOCAL: "Administrator",
   profileAttrSource_DIRECTORY: "Directory",
   profileAttrDialogCreate: "Define an attribute",

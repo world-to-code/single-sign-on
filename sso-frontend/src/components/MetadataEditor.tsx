@@ -50,7 +50,7 @@ export function MetadataEditor({ kind, entityId }: { kind: MetadataKind; entityI
 
   const definitionOf = (attrKey: string) => definitions.find((d) => d.key === attrKey);
   /** Only attributes an administrator owns can be added here; a directory fills the rest. */
-  const editable = definitions.filter((d) => d.source === "LOCAL");
+  const editable = definitions.filter((d) => d.source === "LOCAL" && !d.base);
 
   async function add(e: React.FormEvent) {
     e.preventDefault();

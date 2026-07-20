@@ -1066,6 +1066,7 @@ export const console: Record<keyof typeof enConsole, string> = {
   profileAttrType_BOOLEAN: "예 / 아니오",
   profileAttrType_DATE: "날짜",
   profileAttrType_ENUM: "선택",
+  profileAttrBuiltIn: "기본 제공",
   profileAttrSource_LOCAL: "관리자",
   profileAttrSource_DIRECTORY: "디렉터리",
   profileAttrDialogCreate: "속성 정의하기",

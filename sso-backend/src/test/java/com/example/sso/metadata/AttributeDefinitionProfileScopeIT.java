@@ -2,6 +2,7 @@ package com.example.sso.metadata;
 
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
+import com.example.sso.shared.error.ConflictException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
 import java.util.List;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 /**
@@ -66,7 +68,7 @@ class AttributeDefinitionProfileScopeIT extends AbstractIntegrationTest {
 
         List<AttributeDefinition> inProfile =
                 orgContext.callInOrg(orgA, () -> definitions.definitionsIn(tenant.id()));
-        assertThat(inProfile).extracting(AttributeDefinition::key).containsExactly("team");
+        assertThat(inProfile).extracting(AttributeDefinition::key).contains("team");
     }
 
     /** A profile is a boundary: a key declared in one is not visible in another, even in the same tenant. */
@@ -80,19 +82,38 @@ class AttributeDefinitionProfileScopeIT extends AbstractIntegrationTest {
         try {
             Profile otherTenant = tenantProfile(otherOrg);
             assertThat(orgContext.callInOrg(otherOrg, () -> definitions.definitionsIn(otherTenant.id())))
-                    .isEmpty();
+                    .extracting(AttributeDefinition::key).doesNotContain("team");
         } finally {
             organizations.delete(otherOrg);
         }
     }
 
     /** Deleting a profile takes its declarations with it — they describe nothing once it is gone. */
+    /**
+     * A profile shows the WHOLE shape of a person: the columns app_user already carries, then whatever the
+     * tenant declared. Without the first half an administrator reading a profile would think a user has no
+     * email — the one attribute almost everything else keys on.
+     */
     @Test
-    void definitionsGoWithTheProfile() {
+    void aProfileShowsTheBuiltInAttributesToo() {
         orgA = org();
         Profile tenant = tenantProfile(orgA);
-        orgContext.runInOrg(orgA, () -> definitions.save(tenant.id(), spec("team")));
 
-        assertThat(orgContext.callInOrg(orgA, () -> definitions.definitionsIn(tenant.id()))).hasSize(1);
+        List<AttributeDefinition> shown =
+                orgContext.callInOrg(orgA, () -> definitions.definitionsIn(tenant.id()));
+
+        assertThat(shown).extracting(AttributeDefinition::key)
+                .containsSequence("username", "email", "displayName", "phoneNumber", "externalId");
+        assertThat(shown).filteredOn(AttributeDefinition::base).allSatisfy(d -> assertThat(d.id()).isNull());
+    }
+
+    /** They are app_user columns, not declarations — a second declaration would drift from the table. */
+    @Test
+    void aBuiltInAttributeCannotBeRedefined() {
+        orgA = org();
+        Profile tenant = tenantProfile(orgA);
+
+        assertThatThrownBy(() -> orgContext.runInOrg(orgA, () -> definitions.save(tenant.id(), spec("email"))))
+                .isInstanceOf(ConflictException.class);
     }
 }

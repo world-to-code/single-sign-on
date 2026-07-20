@@ -24,6 +24,8 @@ export interface AttributeDefinition {
   required: boolean;
   source: AttributeSource;
   sortOrder: number;
+  /** An app_user column surfaced for context — synthesised server-side, so it has no id and cannot be edited. */
+  base: boolean;
 }
 
 /** What the definition form submits. The key is the identity — re-declaring one redefines it in place. */

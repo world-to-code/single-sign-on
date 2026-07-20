@@ -151,24 +151,27 @@ export default function ProfileAttributes() {
             </TableHeader>
             <TableBody>
               {rows.map((d) => (
-                <TableRow key={d.id}>
+                <TableRow key={d.id ?? d.key}>
                   <TableCell className="font-medium">{d.displayName}</TableCell>
                   <TableCell><Badge variant="muted" className="font-mono">{d.key}</Badge></TableCell>
                   <TableCell className="text-muted-foreground">
                     {t(`profileAttrType_${d.dataType}`)}{d.multiValued ? ` · ${t("profileAttrMulti")}` : ""}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={d.source === "DIRECTORY" ? "default" : "muted"}>
-                      {t(`profileAttrSource_${d.source}`)}
+                    <Badge variant={d.base ? "secondary" : d.source === "DIRECTORY" ? "default" : "muted"}>
+                      {d.base ? t("profileAttrBuiltIn") : t(`profileAttrSource_${d.source}`)}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => edit(d)}><Pencil /></Button>
-                      <Button variant="ghost" size="icon"
-                              className="text-muted-foreground hover:text-destructive"
-                              onClick={() => remove(d)}><Trash2 /></Button>
-                    </div>
+                    {/* A built-in is an app_user column shown for context: there is no declaration to edit. */}
+                    {!d.base && (
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => edit(d)}><Pencil /></Button>
+                        <Button variant="ghost" size="icon"
+                                className="text-muted-foreground hover:text-destructive"
+                                onClick={() => remove(d)}><Trash2 /></Button>
+                      </div>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
