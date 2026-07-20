@@ -89,6 +89,9 @@ public class AppUser extends AuditedEntity implements UserAccount {
     private boolean passwordResetRequired = false;
 
     /** SCIM externalId — set when provisioned by an external IdP/HR system. */
+    @Column(name = "profile_id")
+    private UUID profileId;
+
     @Column(name = "external_id", length = 255)
     private String externalId;
 
@@ -171,6 +174,11 @@ public class AppUser extends AuditedEntity implements UserAccount {
             this.email = email;
             this.emailVerified = false;
         }
+    }
+
+    /** Binds this user to a profile; null falls back to the organization's default-for-creation profile. */
+    public void assignProfile(UUID profileId) {
+        this.profileId = profileId;
     }
 
     public void assignExternalId(String externalId) {

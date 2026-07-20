@@ -46,6 +46,9 @@ public interface UserAccount {
 
     String getExternalId();
 
+    /** The profile governing this user's attributes; null falls back to the organization's default. */
+    UUID getProfileId();
+
     Instant getCreatedAt();
 
     Instant getUpdatedAt();

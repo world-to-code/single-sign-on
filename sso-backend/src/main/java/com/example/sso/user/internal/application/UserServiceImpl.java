@@ -342,7 +342,13 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
+    public void assignProfile(UUID id, UUID profileId) {
+        require(id).assignProfile(profileId);
+    }
+
+    @Override
+    @Transactional
     public void requestEmailVerification(UUID id) {
         requestEmailVerification(require(id));
     }

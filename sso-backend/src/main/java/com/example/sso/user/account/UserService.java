@@ -158,6 +158,9 @@ public interface UserService {
 
     void assignExternalId(UUID id, String externalId);
 
+    /** Binds a user to a profile; null falls back to the organization default. */
+    void assignProfile(UUID id, UUID profileId);
+
     void delete(UUID id);
 
     void markEmailVerified(UUID id);
