@@ -1,6 +1,7 @@
 package com.example.sso.bootstrap.internal;
 
 import com.example.sso.authpolicy.policy.AuthPolicyAdminService;
+import com.example.sso.metadata.ProfileService;
 import com.example.sso.organization.OrganizationCreatedEvent;
 import com.example.sso.session.policy.SessionPolicyService;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,7 @@ public class TenantBaselineProvisioner {
 
     private final SessionPolicyService sessionPolicies;
     private final AuthPolicyAdminService authPolicies;
+    private final ProfileService profiles;
 
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -36,7 +38,9 @@ public class TenantBaselineProvisioner {
         try {
             sessionPolicies.provisionDefault(event.orgId());
             authPolicies.provisionDefault(event.orgId());
-            log.info("Provisioned baseline session + auth policies for organization {}", event.orgId());
+            // The tenant's own profile: the unit attribute definitions and directory mappings hang off.
+            profiles.provisionDefault(event.orgId());
+            log.info("Provisioned baseline session + auth policies and profile for organization {}", event.orgId());
         } catch (Exception e) {
             // Never fatal to the (already committed) creation; observable with the affected org. Until the
             // tenant's own Default exists it inherits the strength-identical global fallback — re-run to heal.
