@@ -8,8 +8,9 @@ import com.example.sso.metadata.EntityKind;
 import com.example.sso.metadata.internal.domain.AttributeDefinitionEntity;
 import com.example.sso.metadata.internal.domain.AttributeDefinitionRepository;
 import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
-import com.example.sso.tenancy.OrgTierGuard;
+import com.example.sso.tenancy.OrgContext;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -37,15 +38,27 @@ class AttributeDefinitionServiceImplTest {
     private static final UUID ORG = UUID.randomUUID();
 
     @Mock private AttributeDefinitionRepository repository;
-    @Mock private OrgTierGuard tierGuard;
+    @Mock private OrgContext orgContext;
 
     private AttributeDefinitionServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new AttributeDefinitionServiceImpl(repository, tierGuard);
-        lenient().when(tierGuard.currentTier()).thenReturn(ORG);
+        service = new AttributeDefinitionServiceImpl(repository, orgContext);
+        lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         lenient().when(repository.save(any())).thenAnswer(i -> i.getArgument(0));
+    }
+
+    /** The platform super-admin: the one caller for whom "no organization" legitimately means the global tier. */
+    private void platformTier() {
+        when(orgContext.currentOrg()).thenReturn(Optional.empty());
+        when(orgContext.isPlatform()).thenReturn(true);
+    }
+
+    /** Bound to no organization and NOT the platform tier — the state a GLOBAL non-super account logs in with. */
+    private void boundToNothing() {
+        when(orgContext.currentOrg()).thenReturn(Optional.empty());
+        when(orgContext.isPlatform()).thenReturn(false);
     }
 
     private AttributeDefinitionSpec spec(String key, AttributeDataType type, List<String> enumValues,
@@ -87,7 +100,7 @@ class AttributeDefinitionServiceImplTest {
     /** A platform caller edits the global tier; a tenant caller can never reach it. */
     @Test
     void aPlatformCallerDefinesTheGlobalTier() {
-        when(tierGuard.currentTier()).thenReturn(null);
+        platformTier();
         when(repository.findByOrgIdIsNullAndEntityKindAndAttrKey(EntityKind.USER, "department"))
                 .thenReturn(Optional.empty());
 
@@ -177,5 +190,37 @@ class AttributeDefinitionServiceImplTest {
                 .thenReturn(Optional.empty());
 
         assertThat(service.save(valid()).locallyEditable()).isTrue();
+    }
+
+    // --- tier scoping ------------------------------------------------------------------------------------
+
+    /**
+     * A GLOBAL account that holds the permission but is not a platform super-admin logs in bound to no
+     * organization. The acting tier is then indistinguishable from "the platform tier" by id alone, so the
+     * caller has to be asked whether it IS the platform — otherwise it reads the platform's schema. RLS is no
+     * backstop here: the policy admits {@code org_id IS NULL} on exactly this connection state.
+     */
+    @Test
+    void aBoundButOrglessNonPlatformCallerReadsNothing() {
+        boundToNothing();
+
+        assertThat(service.definitionsFor(EntityKind.USER)).isEmpty();
+        verify(repository, never()).findByOrgIdIsNullAndEntityKindOrderBySortOrderAscAttrKeyAsc(any());
+    }
+
+    @Test
+    void aBoundButOrglessNonPlatformCallerMayNotWrite() {
+        boundToNothing();
+
+        assertThatThrownBy(() -> service.save(valid())).isInstanceOf(ForbiddenException.class);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void aBoundButOrglessNonPlatformCallerMayNotDelete() {
+        boundToNothing();
+
+        assertThatThrownBy(() -> service.delete(UUID.randomUUID())).isInstanceOf(ForbiddenException.class);
+        verify(repository, never()).delete(any());
     }
 }

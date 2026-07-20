@@ -92,7 +92,7 @@ public class AttributeDefinitionEntity extends AuditedEntity implements OrgOwned
         this.displayName = displayName;
         this.description = description;
         this.dataType = dataType;
-        this.enumValues = enumValues;
+        this.enumValues = enumValues == null ? null : List.copyOf(enumValues);
         this.multiValued = multiValued;
         this.required = required;
         this.source = source;

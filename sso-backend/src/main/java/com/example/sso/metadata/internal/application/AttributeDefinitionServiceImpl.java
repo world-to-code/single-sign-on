@@ -8,8 +8,9 @@ import com.example.sso.metadata.EntityKind;
 import com.example.sso.metadata.internal.domain.AttributeDefinitionEntity;
 import com.example.sso.metadata.internal.domain.AttributeDefinitionRepository;
 import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
-import com.example.sso.tenancy.OrgTierGuard;
+import com.example.sso.tenancy.OrgContext;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -32,12 +33,15 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
     private static final Pattern KEY = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,63}");
 
     private final AttributeDefinitionRepository repository;
-    private final OrgTierGuard tierGuard;
+    private final OrgContext orgContext;
 
     @Override
     @Transactional(readOnly = true)
     public List<AttributeDefinition> definitionsFor(EntityKind kind) {
-        UUID tier = tierGuard.currentTier();
+        if (!actingTierIsOwned()) {
+            return List.of();
+        }
+        UUID tier = actingTier();
         List<AttributeDefinitionEntity> rows = tier == null
                 ? repository.findByOrgIdIsNullAndEntityKindOrderBySortOrderAscAttrKeyAsc(kind)
                 : repository.findByOrgIdAndEntityKindOrderBySortOrderAscAttrKeyAsc(tier, kind);
@@ -54,7 +58,7 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
     @Transactional
     public AttributeDefinition save(AttributeDefinitionSpec spec) {
         validate(spec);
-        UUID tier = tierGuard.currentTier();
+        UUID tier = writableTier();
         AttributeDefinitionEntity existing = find(spec.entityKind(), spec.key()).orElse(null);
         if (existing != null) {
             // The key is the identity: live attribute rows, mapping rules and policy bindings all reference it
@@ -71,7 +75,7 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
     @Override
     @Transactional
     public void delete(UUID id) {
-        UUID tier = tierGuard.currentTier();
+        UUID tier = writableTier();
         AttributeDefinitionEntity row = (tier == null
                 ? repository.findByIdAndOrgIdIsNull(id)
                 : repository.findByIdAndOrgId(id, tier))
@@ -82,11 +86,32 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
     }
 
     private Optional<AttributeDefinitionEntity> find(EntityKind kind, String key) {
-        UUID tier = tierGuard.currentTier();
+        UUID tier = actingTier();
         String attrKey = key == null ? "" : key.trim();
         return tier == null
                 ? repository.findByOrgIdIsNullAndEntityKindAndAttrKey(kind, attrKey)
                 : repository.findByOrgIdAndEntityKindAndAttrKey(tier, kind, attrKey);
+    }
+
+    // --- tier guards -------------------------------------------------------------------------------------
+    // "No bound organization" means the GLOBAL tier for a platform super-admin and NOTHING for anyone else, and
+    // the two are indistinguishable by org id alone. RLS is no backstop: its policy admits `org_id IS NULL` on
+    // exactly the connection state an orgless non-platform caller has, so the tier has to be decided here.
+
+    private UUID actingTier() {
+        return orgContext.currentOrg().orElse(null);
+    }
+
+    private boolean actingTierIsOwned() {
+        return orgContext.currentOrg().isPresent() || orgContext.isPlatform();
+    }
+
+    /** The read guard mirrors this one — a caller that may not write a tier may not enumerate it either. */
+    private UUID writableTier() {
+        if (!actingTierIsOwned()) {
+            throw new ForbiddenException("Not permitted to edit the global profile schema");
+        }
+        return actingTier();
     }
 
     private void validate(AttributeDefinitionSpec spec) {
