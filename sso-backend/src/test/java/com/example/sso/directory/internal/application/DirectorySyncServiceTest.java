@@ -54,6 +54,7 @@ class DirectorySyncServiceTest {
     private static final Instant NOW = Instant.parse("2026-07-20T10:00:00Z");
 
     @Mock private LdapDirectoryClient ldap;
+    @Mock private DirectoryClients clients;
     @Mock private DirectoryAttributeMappingRepository mappings;
     @Mock private AttributeDefinitionService definitions;
     @Mock private SecretCipher cipher;
@@ -65,7 +66,8 @@ class DirectorySyncServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new DirectorySyncService(ldap, mappings, definitions, cipher, users, writer);
+        service = new DirectorySyncService(clients, mappings, definitions, cipher, users, writer);
+        lenient().when(clients.forKind(DirectoryConnectorKind.LDAP)).thenReturn(ldap);
         connector = DirectoryConnector.create(ORG, "corp", DirectoryConnectorKind.LDAP);
         connector.reconfigure("Corp LDAP", true, "ldap.corp.test", 636, true, false, "cn=svc",
                 "encg:cipher", "dc=corp", "(objectClass=person)", "entryUUID");

@@ -1,5 +1,6 @@
 package com.example.sso.directory.internal.application;
 
+import com.example.sso.directory.DirectoryConnectorKind;
 import com.example.sso.directory.internal.domain.DirectoryConnector;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.net.OutboundHostValidator;
@@ -50,7 +51,7 @@ import org.springframework.util.StringUtils;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-class LdapDirectoryClient {
+class LdapDirectoryClient implements DirectoryClient {
 
     private final OutboundHostValidator hostValidator;
 
@@ -72,7 +73,13 @@ class LdapDirectoryClient {
      * that identifier are dropped here rather than downstream: without it there is nothing to correlate, and
      * guessing by name is the mistake this whole feature exists to avoid.
      */
-    List<DirectoryEntry> readUsers(DirectoryConnector connector, String bindPassword,
+    @Override
+    public DirectoryConnectorKind kind() {
+        return DirectoryConnectorKind.LDAP;
+    }
+
+    @Override
+    public List<DirectoryEntry> readUsers(DirectoryConnector connector, String bindPassword,
             Collection<String> attributes) {
         hostValidator.validate(connector.getHost()); // re-validate at connect time, not only at save time
         List<String> requested = new ArrayList<>(attributes);

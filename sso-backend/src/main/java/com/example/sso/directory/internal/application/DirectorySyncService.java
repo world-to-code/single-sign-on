@@ -31,6 +31,10 @@ import org.springframework.util.StringUtils;
  * <p>An entry with no local account is counted and skipped. Account creation belongs to SCIM and federation
  * JIT; a second owner for lifecycle would mean a mis-aimed connector could fill a tenant with accounts.
  *
+ * <p>Protocol-agnostic on purpose: it asks {@link DirectoryClients} for the client matching the connector's
+ * kind and works entirely in terms of {@link DirectoryEntry}, so a new directory is a new client bean and
+ * nothing else.
+ *
  * <p><b>Deliberately not {@code @Transactional}.</b> The directory is a remote host an administrator chose, so
  * reading it inside a transaction would pin a pooled connection — with a tenant-scoped RLS setting on it — for
  * as long as that host cares to take. Writes go through {@link DirectorySyncWriter}, which owns the
@@ -41,7 +45,7 @@ import org.springframework.util.StringUtils;
 @Slf4j
 public class DirectorySyncService {
 
-    private final LdapDirectoryClient ldap;
+    private final DirectoryClients clients;
     private final DirectoryAttributeMappingRepository mappings;
     private final AttributeDefinitionService definitions;
     private final SecretCipher cipher;
@@ -77,7 +81,8 @@ public class DirectorySyncService {
             return writer.succeeded(runId, 0, 0, 0, 0);
         }
 
-        List<DirectoryEntry> entries = ldap.readUsers(connector, bindPassword(connector), sourcesOf(mapped));
+        List<DirectoryEntry> entries = clients.forKind(connector.getKind())
+                .readUsers(connector, bindPassword(connector), sourcesOf(mapped));
 
         Set<String> externalIds = entries.stream().map(DirectoryEntry::externalId).collect(Collectors.toSet());
         Map<String, UUID> accounts = users.idsByExternalIdInOrg(externalIds, connector.getOrgId());
