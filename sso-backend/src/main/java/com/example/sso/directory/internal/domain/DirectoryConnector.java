@@ -70,6 +70,10 @@ public class DirectoryConnector extends AuditedEntity implements OrgOwned {
     @Column(name = "external_id_attribute", nullable = false, length = 64)
     private String externalIdAttribute;
 
+    /** The administrator who last saved this connector; NULL is "unknown" and fails closed at grant time. */
+    @Column(name = "configured_by")
+    private UUID configuredBy;
+
     public static DirectoryConnector create(UUID orgId, String name, DirectoryConnectorKind kind) {
         DirectoryConnector connector = new DirectoryConnector();
         connector.orgId = orgId;
@@ -79,6 +83,11 @@ public class DirectoryConnector extends AuditedEntity implements OrgOwned {
     }
 
     /** Repoints the connector (intent-revealing mutation, not a JavaBean setter); the name is immutable. */
+    /** Records who vouched for this configuration — see {@code V124} for why the grant path needs to know. */
+    public void configuredBy(UUID actorId) {
+        this.configuredBy = actorId;
+    }
+
     public void reconfigure(String displayName, boolean enabled, String host, int port, boolean useSsl,
             boolean startTls, String bindDn, String bindPasswordEncrypted, String baseDn, String userFilter,
             String externalIdAttribute) {

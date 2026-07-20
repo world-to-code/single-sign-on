@@ -187,10 +187,13 @@ sso:
       # ever deleting a key it does not own.
       lock-ttl: PT35M
     ldap:
+      # An unreachable directory must occupy a sync thread for a known interval, not indefinitely.
       connect-timeout: PT10S
       response-timeout: PT30S
-      # An unreachable directory must occupy a sync thread for a known interval, not indefinitely.
+      # How many entries one paged search request asks for. Real paging, so this is NOT a ceiling on the
+      # directory's size — max-entries is, and it bounds how much a remote host can push into our heap.
       page-size: 500
+      max-entries: 10000
   mapping:
     # Metadata-driven auto-mapping re-evaluation runs off the request thread on a dedicated bounded pool, with a
     # short in-thread retry for transient lock contention and a scheduled full-reconcile sweep as the durability

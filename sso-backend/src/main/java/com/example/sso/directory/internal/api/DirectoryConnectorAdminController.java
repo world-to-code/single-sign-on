@@ -1,5 +1,7 @@
 package com.example.sso.directory.internal.api;
 
+import com.example.sso.audit.Audited;
+import com.example.sso.audit.AuditType;
 import com.example.sso.directory.DirectoryAttributeMappingView;
 import com.example.sso.directory.DirectoryConnectorService;
 import com.example.sso.directory.DirectoryConnectorView;
@@ -40,6 +42,7 @@ public class DirectoryConnectorAdminController {
         return service.list();
     }
 
+    @Audited(AuditType.DIRECTORY_CONNECTOR_CHANGED)
     @PutMapping("/{name}")
     @RequirePermission(Permissions.DIRECTORY_CONNECTOR_WRITE)
     @RequireStepUp
@@ -49,6 +52,7 @@ public class DirectoryConnectorAdminController {
         return service.get(name);
     }
 
+    @Audited(AuditType.DIRECTORY_CONNECTOR_CHANGED)
     @DeleteMapping("/{name}")
     @RequirePermission(Permissions.DIRECTORY_CONNECTOR_WRITE)
     @RequireStepUp
@@ -63,7 +67,9 @@ public class DirectoryConnectorAdminController {
         return service.mappings(name);
     }
 
+    @Audited(AuditType.DIRECTORY_CONNECTOR_CHANGED)
     @PutMapping("/{name}/mappings")
+    @RequireStepUp
     @RequirePermission(Permissions.DIRECTORY_CONNECTOR_WRITE)
     public List<DirectoryAttributeMappingView> map(@PathVariable String name,
             @Valid @RequestBody DirectoryAttributeMappingRequest request) {
@@ -71,7 +77,9 @@ public class DirectoryConnectorAdminController {
         return service.mappings(name);
     }
 
+    @Audited(AuditType.DIRECTORY_CONNECTOR_CHANGED)
     @DeleteMapping("/{name}/mappings/{mappingId}")
+    @RequireStepUp
     @RequirePermission(Permissions.DIRECTORY_CONNECTOR_WRITE)
     public ResponseEntity<Void> unmap(@PathVariable String name, @PathVariable UUID mappingId) {
         service.unmapAttribute(name, mappingId);
@@ -79,6 +87,7 @@ public class DirectoryConnectorAdminController {
     }
 
     /** Runs it now. Step-up gated like the writes: it reaches out with the stored credential. */
+    @Audited(AuditType.DIRECTORY_SYNC_RUN)
     @PostMapping("/{name}/sync")
     @RequirePermission(Permissions.DIRECTORY_CONNECTOR_WRITE)
     @RequireStepUp

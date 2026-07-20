@@ -14,6 +14,10 @@ import com.example.sso.mapping.internal.domain.MappingRuleMembershipRepository;
 import com.example.sso.mapping.internal.domain.MappingRuleRepository;
 import com.example.sso.metadata.Attribute;
 import com.example.sso.metadata.AttributeService;
+import com.example.sso.directory.DirectoryConnectorService;
+import com.example.sso.mapping.MappingTargetKind;
+import com.example.sso.directory.DirectorySourceAuthors;
+import com.example.sso.metadata.AttributeDefinitionService;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.group.UserGroupService;
@@ -50,6 +54,8 @@ class MappingRuleEvaluator {
 
     private final MappingRuleRepository rules;
     private final MappingRuleConditionRepository conditions;
+    private final AttributeDefinitionService definitions;
+    private final DirectoryConnectorService connectors;
     private final MappingRuleMembershipRepository memberships;
     private final AttributeService attributes;
     private final List<MappingTargetApplier> appliers;
@@ -202,6 +208,9 @@ class MappingRuleEvaluator {
         if (!authorStillAuthorized(rule)) {
             return; // author lost authority for the whole cohort — skip (audited once)
         }
+        if (!directorySourcesAuthorized(rule)) {
+            return; // a directory decides who matches this rule, and nobody vouched for it (audited once)
+        }
         UUID tier = tierGuard.currentTier();
         Set<UUID> newlyClaimed = userIds.stream()
                 .filter(userId -> memberships.insertClaimIfAbsent(rule.getId(), userId, rule.getTargetId(), tier) == 1)
@@ -229,6 +238,42 @@ class MappingRuleEvaluator {
         }
         recordAuthor(AuditType.MAPPING_RULE_AUTHOR_UNAUTHORIZED, rule);
         return false;
+    }
+
+    /**
+     * The second question the author check cannot ask: WHO decided that this user matches?
+     *
+     * <p>When a rule's conditions read an attribute a DIRECTORY owns, the person who aimed that directory
+     * chooses which users satisfy the rule — without ever needing authority over its target. Holding only
+     * {@code directory-connector:write} would otherwise be enough to point a connector at a directory you
+     * control, assert the matching value for yourself, and collect whatever an existing, entirely legitimate
+     * rule grants. So every connector that can fill those attributes must have been configured by someone who
+     * could have made this grant by hand.
+     *
+     * <p>Only privilege-granting targets are gated: a RESOURCE_MEMBER rule confers no authority. Fails CLOSED —
+     * a connector with no recorded configurator vouches for nothing.
+     */
+    private boolean directorySourcesAuthorized(MappingRule rule) {
+        if (rule.getThenKind() == MappingTargetKind.RESOURCE_MEMBER) {
+            return true;
+        }
+        Set<String> directoryKeys = conditionsOf(rule.getId()).stream()
+                .map(MappingCondition::attrKey)
+                .filter(key -> definitions.definitionOf(EntityKind.USER, key)
+                        .filter(definition -> !definition.locallyEditable())
+                        .isPresent())
+                .collect(Collectors.toSet());
+        if (directoryKeys.isEmpty()) {
+            return true; // no directory decides who matches this rule
+        }
+        DirectorySourceAuthors authors = connectors.authorsFilling(directoryKeys);
+        boolean authorized = authors.complete() && !authors.configurators().isEmpty()
+                && authors.configurators().stream().allMatch(configurator ->
+                        targetAuthority.authorMayAssign(configurator, rule.getThenKind(), rule.getTargetId()));
+        if (!authorized) {
+            recordAuthor(AuditType.MAPPING_RULE_DIRECTORY_SOURCE_UNAUTHORIZED, rule);
+        }
+        return authorized;
     }
 
     private void noteLegacyAuthor(MappingRule rule) {

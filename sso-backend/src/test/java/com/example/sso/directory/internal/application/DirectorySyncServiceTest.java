@@ -6,14 +6,17 @@ import com.example.sso.directory.internal.domain.DirectoryAttributeMapping;
 import com.example.sso.directory.internal.domain.DirectoryAttributeMappingRepository;
 import com.example.sso.directory.internal.domain.DirectoryConnector;
 import com.example.sso.directory.internal.domain.DirectorySyncRun;
-import com.example.sso.directory.internal.domain.DirectorySyncRunRepository;
-import com.example.sso.metadata.AttributeService;
+import com.example.sso.metadata.AttributeDataType;
+import com.example.sso.metadata.AttributeDefinition;
+import com.example.sso.metadata.AttributeDefinitionService;
+import com.example.sso.metadata.AttributeSource;
 import com.example.sso.metadata.EntityKind;
-import com.example.sso.user.account.UserAccount;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.user.account.UserService;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -22,51 +25,82 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
+import org.mockito.Mockito;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * The sync engine. Two decisions carry the weight: WHICH local account a directory entry is (correlation), and
- * WHETHER the sync may write what it found (ownership). Everything else is counting.
+ * The sync engine. Three decisions carry the weight: WHICH local account a directory entry is (correlation),
+ * WHETHER the sync may write what it found (ownership, settled before the bind), and whether the outcome is
+ * recorded no matter what happened (the run record). Everything else is counting.
  */
 @ExtendWith(MockitoExtension.class)
 class DirectorySyncServiceTest {
 
     private static final UUID ORG = UUID.randomUUID();
     private static final UUID CONNECTOR = UUID.randomUUID();
+    private static final UUID RUN = UUID.randomUUID();
     private static final Instant NOW = Instant.parse("2026-07-20T10:00:00Z");
 
     @Mock private LdapDirectoryClient ldap;
     @Mock private DirectoryAttributeMappingRepository mappings;
-    @Mock private DirectorySyncRunRepository runs;
+    @Mock private AttributeDefinitionService definitions;
     @Mock private SecretCipher cipher;
     @Mock private UserService users;
-    @Mock private AttributeService attributes;
+    @Mock private DirectorySyncWriter writer;
 
     private DirectorySyncService service;
     private DirectoryConnector connector;
 
     @BeforeEach
     void setUp() {
-        service = new DirectorySyncService(ldap, mappings, runs, cipher, users, attributes,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new DirectorySyncService(ldap, mappings, definitions, cipher, users, writer);
         connector = DirectoryConnector.create(ORG, "corp", DirectoryConnectorKind.LDAP);
         connector.reconfigure("Corp LDAP", true, "ldap.corp.test", 636, true, false, "cn=svc",
                 "encg:cipher", "dc=corp", "(objectClass=person)", "entryUUID");
+
+        DirectorySyncRun started = DirectorySyncRun.started(CONNECTOR, ORG, NOW);
+        ReflectionTestUtils.setField(started, "id", RUN);
+        lenient().when(writer.start(connector)).thenReturn(started);
+        lenient().when(writer.succeeded(eq(RUN), anyInt(), anyInt(), anyInt(), anyInt()))
+                .thenAnswer(i -> finished(DirectorySyncRun.SUCCEEDED, i.getArgument(1), i.getArgument(2),
+                        i.getArgument(3), i.getArgument(4), null));
+        lenient().when(writer.failed(eq(RUN), any()))
+                .thenAnswer(i -> finished(DirectorySyncRun.FAILED, 0, 0, 0, 0, i.getArgument(1)));
+
         lenient().when(cipher.decrypt("encg:cipher")).thenReturn("s3cret");
-        lenient().when(runs.save(any())).thenAnswer(i -> i.getArgument(0));
         lenient().when(mappings.findByConnectorIdOrderBySourceAttribute(any())).thenReturn(List.of(
                 DirectoryAttributeMapping.create(CONNECTOR, ORG, "department", "department")));
+        lenient().when(definitions.definitionOf(EntityKind.USER, "department"))
+                .thenReturn(Optional.of(definition(AttributeSource.DIRECTORY)));
+    }
+
+    /** The writer persists in its own transaction; here we only need a run object carrying the outcome. */
+    private DirectorySyncRun finished(String status, int read, int matched, int updated, int skipped,
+            String error) {
+        DirectorySyncRun run = DirectorySyncRun.started(CONNECTOR, ORG, NOW);
+        if (DirectorySyncRun.SUCCEEDED.equals(status)) {
+            run.succeeded(NOW, read, matched, updated, skipped);
+        } else {
+            run.failed(NOW, error);
+        }
+        return run;
+    }
+
+    private AttributeDefinition definition(AttributeSource source) {
+        return new AttributeDefinition(UUID.randomUUID(), EntityKind.USER, "department", "Department", null,
+                AttributeDataType.STRING, List.of(), false, false, source, 0);
     }
 
     private void directoryReturns(DirectoryEntry... entries) {
@@ -77,27 +111,33 @@ class DirectorySyncServiceTest {
         return new DirectoryEntry(externalId, Map.of("department", List.of(department)));
     }
 
-    private UserAccount account(UUID id) {
-        UserAccount user = org.mockito.Mockito.mock(UserAccount.class);
-        lenient().when(user.getId()).thenReturn(id);
-        return user;
-    }
-
     // --- correlation -------------------------------------------------------------------------------------
 
     @Test
     void fillsTheAttributesOfAnAccountItCanCorrelate() {
         UUID userId = UUID.randomUUID();
-        UserAccount user = account(userId);
-        directoryReturns(entry("dir-1", "Sales"));
-        when(users.findByExternalIdInOrg("dir-1", ORG)).thenReturn(Optional.of(user));
+        DirectoryEntry ada = entry("dir-1", "Sales");
+        directoryReturns(ada);
+        when(users.idsByExternalIdInOrg(any(), eq(ORG))).thenReturn(Map.of("dir-1", userId));
+        when(writer.apply(eq(userId), any(), eq(ada))).thenReturn(true);
 
         DirectorySyncRun run = service.sync(connector);
 
-        verify(attributes).applyFromDirectory(EntityKind.USER, userId.toString(), "department", List.of("Sales"));
         assertThat(run.getStatus()).isEqualTo(DirectorySyncRun.SUCCEEDED);
-        assertThat(run.getMatched()).isEqualTo(1);
-        assertThat(run.getUpdated()).isEqualTo(1);
+        verify(writer).succeeded(RUN, 1, 1, 1, 0);
+    }
+
+    /** One query for the whole page, not one RBAC hydration per entry for data the sync never reads. */
+    @Test
+    void correlatesTheWholePageInOneLookup() {
+        directoryReturns(entry("dir-1", "Sales"), entry("dir-2", "Ops"), entry("dir-3", "Legal"));
+        when(users.idsByExternalIdInOrg(any(), eq(ORG))).thenReturn(Map.of());
+
+        service.sync(connector);
+
+        ArgumentCaptor<Collection<String>> asked = ArgumentCaptor.captor();
+        verify(users).idsByExternalIdInOrg(asked.capture(), eq(ORG));
+        assertThat(asked.getValue()).containsExactlyInAnyOrder("dir-1", "dir-2", "dir-3");
     }
 
     /**
@@ -108,81 +148,96 @@ class DirectorySyncServiceTest {
     @Test
     void countsAnUnmatchedEntryInsteadOfCreatingAnAccount() {
         directoryReturns(entry("dir-unknown", "Sales"));
-        when(users.findByExternalIdInOrg("dir-unknown", ORG)).thenReturn(Optional.empty());
+        when(users.idsByExternalIdInOrg(any(), eq(ORG))).thenReturn(Map.of());
 
         DirectorySyncRun run = service.sync(connector);
 
         verify(users, never()).createUser(any(), any());
-        verify(attributes, never()).applyFromDirectory(any(), any(), any(), any());
-        assertThat(run.getSkipped()).isEqualTo(1);
-        assertThat(run.getMatched()).isZero();
+        verify(writer, never()).apply(any(), any(), any());
+        verify(writer).succeeded(RUN, 1, 0, 0, 1);
         assertThat(run.getStatus()).isEqualTo(DirectorySyncRun.SUCCEEDED); // not an error — just nothing to do
-    }
-
-    @Test
-    void writesOnlyTheMappedAttributes() {
-        UUID userId = UUID.randomUUID();
-        UserAccount user = account(userId);
-        when(ldap.readUsers(eq(connector), eq("s3cret"), any())).thenReturn(List.of(
-                new DirectoryEntry("dir-1", Map.of("department", List.of("Sales"), "title", List.of("Lead")))));
-        when(users.findByExternalIdInOrg("dir-1", ORG)).thenReturn(Optional.of(user));
-
-        service.sync(connector);
-
-        verify(attributes).applyFromDirectory(EntityKind.USER, userId.toString(), "department", List.of("Sales"));
-        verify(attributes, never()).applyFromDirectory(any(), any(), eq("title"), any());
     }
 
     /** Only the mapped source attributes are asked for — a directory read is not a licence to hoover up PII. */
     @Test
     void asksTheDirectoryOnlyForWhatItMapped() {
         directoryReturns(entry("dir-1", "Sales"));
-        when(users.findByExternalIdInOrg(anyString(), any())).thenReturn(Optional.empty());
+        when(users.idsByExternalIdInOrg(any(), eq(ORG))).thenReturn(Map.of());
 
         service.sync(connector);
 
-        ArgumentCaptor<java.util.Collection<String>> asked = ArgumentCaptor.forClass(java.util.Collection.class);
+        ArgumentCaptor<Collection<String>> asked = ArgumentCaptor.captor();
         verify(ldap).readUsers(eq(connector), eq("s3cret"), asked.capture());
         assertThat(asked.getValue()).containsExactly("department");
     }
 
-    // --- ownership and failure ---------------------------------------------------------------------------
+    // --- ownership, settled before the bind ---------------------------------------------------------------
 
     /**
-     * A target the schema says an administrator owns must not be overwritten. The store refuses it; the sync's
-     * job is to carry on and report, not to abort the whole run over one mis-mapped attribute.
+     * A target the schema says an administrator owns must never be filled by a directory. Deciding this BEFORE
+     * the bind is the point: it costs nothing, names the key to fix, and leaves no tenant half-applied. A
+     * half-run would also have meant binding to a remote host to do work we already knew we must refuse.
      */
     @Test
-    void aRefusedAttributeDoesNotAbortTheRun() {
-        UUID userId = UUID.randomUUID();
-        UUID secondId = UUID.randomUUID();
-        UserAccount first = account(userId);
-        UserAccount second = account(secondId);
-        directoryReturns(entry("dir-1", "Sales"), entry("dir-2", "Ops"));
-        when(users.findByExternalIdInOrg("dir-1", ORG)).thenReturn(Optional.of(first));
-        when(users.findByExternalIdInOrg("dir-2", ORG)).thenReturn(Optional.of(second));
-        doThrow(com.example.sso.shared.error.ConflictException.of("attribute.locallyOwned", "department"))
-                .when(attributes)
-                .applyFromDirectory(EntityKind.USER, userId.toString(), "department", List.of("Sales"));
+    void refusesBeforeContactingTheDirectoryWhenATargetIsLocallyOwned() {
+        when(definitions.definitionOf(EntityKind.USER, "department"))
+                .thenReturn(Optional.of(definition(AttributeSource.LOCAL)));
 
         DirectorySyncRun run = service.sync(connector);
 
-        verify(attributes).applyFromDirectory(EntityKind.USER, secondId.toString(), "department", List.of("Ops"));
-        assertThat(run.getStatus()).isEqualTo(DirectorySyncRun.SUCCEEDED);
-        assertThat(run.getUpdated()).isEqualTo(1); // the refused one did not count as updated
+        verify(ldap, never()).readUsers(any(), any(), any());
+        assertThat(run.getStatus()).isEqualTo(DirectorySyncRun.FAILED);
+        assertThat(run.getError()).contains("department");
     }
+
+    /** An undeclared key would let a connector invent schema by writing to it. */
+    @Test
+    void refusesATargetNoDefinitionDeclares() {
+        when(definitions.definitionOf(EntityKind.USER, "department")).thenReturn(Optional.empty());
+
+        DirectorySyncRun run = service.sync(connector);
+
+        verify(ldap, never()).readUsers(any(), any(), any());
+        assertThat(run.getStatus()).isEqualTo(DirectorySyncRun.FAILED);
+    }
+
+    // --- the run record -----------------------------------------------------------------------------------
 
     /** Nobody is watching an unattended run, so a failure is only knowable because it is written down. */
     @Test
     void recordsWhyARunFailed() {
-        when(ldap.readUsers(any(), any(), any()))
-                .thenThrow(new com.example.sso.shared.error.BadRequestException("unreachable"));
+        when(ldap.readUsers(any(), any(), any())).thenThrow(new BadRequestException("unreachable"));
 
         DirectorySyncRun run = service.sync(connector);
 
         assertThat(run.getStatus()).isEqualTo(DirectorySyncRun.FAILED);
         assertThat(run.getError()).isNotBlank();
-        assertThat(run.getFinishedAt()).isEqualTo(NOW);
+    }
+
+    /** The upstream's own words could name DNs or filter fragments; the record carries ours instead. */
+    @Test
+    void theRecordedFailureDoesNotRepeatTheUpstreamsMessage() {
+        when(ldap.readUsers(any(), any(), any()))
+                .thenThrow(new BadRequestException("cn=svc,dc=corp bind failed"));
+
+        service.sync(connector);
+
+        ArgumentCaptor<String> recorded = ArgumentCaptor.captor();
+        verify(writer).failed(eq(RUN), recorded.capture());
+        assertThat(recorded.getValue()).doesNotContain("cn=svc").doesNotContain("dc=corp");
+    }
+
+    /** The run is on record BEFORE the directory is contacted, so a hang leaves evidence rather than silence. */
+    @Test
+    void recordsTheRunBeforeContactingTheDirectory() {
+        directoryReturns(entry("dir-1", "Sales"));
+        when(users.idsByExternalIdInOrg(any(), eq(ORG))).thenReturn(Map.of());
+
+        service.sync(connector);
+
+        InOrder order = Mockito.inOrder(writer, ldap);
+        order.verify(writer).start(connector);
+        order.verify(ldap).readUsers(any(), any(), any());
     }
 
     /** A connector with nothing mapped would read a directory and write nothing — say so rather than pretend. */

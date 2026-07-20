@@ -39,4 +39,9 @@ public class DirectoryAttributeMapping extends AuditedEntity implements OrgOwned
         mapping.targetKey = targetKey;
         return mapping;
     }
+
+    /** Aims an existing mapping at a different profile attribute; the source it reads is its identity. */
+    public void retarget(String targetKey) {
+        this.targetKey = targetKey;
+    }
 }

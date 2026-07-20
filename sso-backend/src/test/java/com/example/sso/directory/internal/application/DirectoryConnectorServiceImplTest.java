@@ -11,6 +11,7 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.net.OutboundHostValidator;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.user.account.UserService;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,13 +45,14 @@ class DirectoryConnectorServiceImplTest {
     @Mock private SecretCipher cipher;
     @Mock private OutboundHostValidator hostValidator;
     @Mock private OrgContext orgContext;
+    @Mock private UserService users;
 
     private DirectoryConnectorServiceImpl service;
 
     @BeforeEach
     void setUp() {
         service = new DirectoryConnectorServiceImpl(connectors, mappings, runs, sync, cipher, hostValidator,
-                orgContext);
+                orgContext, users);
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         lenient().when(cipher.encrypt(any())).thenReturn("encg:cipher");
         lenient().when(connectors.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -123,6 +125,54 @@ class DirectoryConnectorServiceImplTest {
 
         assertThat(existing.getBindPasswordEncrypted()).isEqualTo("encg:stored");
         verify(cipher, never()).encrypt(any());
+    }
+
+    /**
+     * The credential belongs to a DESTINATION, not to a row. Someone who may edit the connector but may not
+     * read the password could otherwise repoint {@code host} at a directory they control, leave the password
+     * blank, and have us bind the tenant's real corporate service account against their server — handing them
+     * a credential that is typically broad read over the customer's whole estate. Moving the destination
+     * therefore invalidates the stored secret; it has to be re-supplied in the same request.
+     */
+    @Test
+    void repointingAConnectorMayNotCarryTheStoredCredentialToTheNewDestination() {
+        DirectoryConnector existing = stored();
+        when(connectors.findByOrgIdAndName(ORG, "corp")).thenReturn(Optional.of(existing));
+        DirectoryConnectorSpec repointed = new DirectoryConnectorSpec("corp", "Corp LDAP",
+                DirectoryConnectorKind.LDAP, true, "ldap.attacker.test", 636, true, false, "cn=svc", "",
+                "dc=corp", "(objectClass=person)", "entryUUID");
+
+        assertThatThrownBy(() -> service.save(repointed)).isInstanceOf(BadRequestException.class);
+        assertThat(existing.getHost()).isEqualTo("ldap.corp.test"); // nothing was written
+    }
+
+    /** The same reasoning for the other two things that decide where the credential goes and who it binds as. */
+    @Test
+    void changingThePortOrTheBindDnAlsoInvalidatesTheStoredCredential() {
+        DirectoryConnector existing = stored();
+        when(connectors.findByOrgIdAndName(ORG, "corp")).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> service.save(new DirectoryConnectorSpec("corp", "Corp LDAP",
+                DirectoryConnectorKind.LDAP, true, "ldap.corp.test", 389, false, true, "cn=svc", "",
+                "dc=corp", "(objectClass=person)", "entryUUID"))).isInstanceOf(BadRequestException.class);
+
+        assertThatThrownBy(() -> service.save(new DirectoryConnectorSpec("corp", "Corp LDAP",
+                DirectoryConnectorKind.LDAP, true, "ldap.corp.test", 636, true, false, "cn=other", "",
+                "dc=corp", "(objectClass=person)", "entryUUID"))).isInstanceOf(BadRequestException.class);
+    }
+
+    /** Repointing is legitimate when the password comes with it — the rule is re-supply, not refuse. */
+    @Test
+    void repointingWithAFreshPasswordIsAllowed() {
+        DirectoryConnector existing = stored();
+        when(connectors.findByOrgIdAndName(ORG, "corp")).thenReturn(Optional.of(existing));
+
+        service.save(new DirectoryConnectorSpec("corp", "Corp LDAP", DirectoryConnectorKind.LDAP, true,
+                "ldap.moved.test", 636, true, false, "cn=svc", "fresh", "dc=corp", "(objectClass=person)",
+                "entryUUID"));
+
+        verify(cipher).encrypt("fresh");
+        assertThat(existing.getHost()).isEqualTo("ldap.moved.test");
     }
 
     /** A NEW connector with a bind DN and no password would bind anonymously by accident. */

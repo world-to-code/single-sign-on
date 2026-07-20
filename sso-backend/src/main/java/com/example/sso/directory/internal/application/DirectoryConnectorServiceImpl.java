@@ -5,6 +5,7 @@ import com.example.sso.directory.DirectoryAttributeMappingView;
 import com.example.sso.directory.DirectoryConnectorService;
 import com.example.sso.directory.DirectoryConnectorSpec;
 import com.example.sso.directory.DirectoryConnectorView;
+import com.example.sso.directory.DirectorySourceAuthors;
 import com.example.sso.directory.DirectorySyncRunView;
 import com.example.sso.directory.internal.domain.DirectoryAttributeMapping;
 import com.example.sso.directory.internal.domain.DirectoryAttributeMappingRepository;
@@ -17,12 +18,23 @@ import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.shared.net.OutboundHostValidator;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.user.account.UserAccount;
+import com.example.sso.user.account.UserService;
+import com.example.sso.user.role.Roles;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -47,6 +59,31 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
     private final SecretCipher cipher;
     private final OutboundHostValidator hostValidator;
     private final OrgContext orgContext;
+    private final UserService users;
+
+    @Override
+    @Transactional(readOnly = true)
+    public DirectorySourceAuthors authorsFilling(Collection<String> targetKeys) {
+        if (targetKeys == null || targetKeys.isEmpty()) {
+            return DirectorySourceAuthors.none();
+        }
+        UUID org = orgContext.currentOrg().orElse(null);
+        List<DirectoryAttributeMapping> filling = org != null
+                ? mappings.findByOrgIdAndTargetKeyIn(org, targetKeys)
+                : mappings.findByOrgIdIsNullAndTargetKeyIn(targetKeys);
+        Set<UUID> connectorIds = filling.stream()
+                .map(DirectoryAttributeMapping::getConnectorId).collect(Collectors.toSet());
+        Set<UUID> configurators = new HashSet<>();
+        boolean complete = true;
+        for (DirectoryConnector connector : connectors.findAllById(connectorIds)) {
+            if (connector.getConfiguredBy() == null) {
+                complete = false; // an unattributed connector cannot vouch for anything
+            } else {
+                configurators.add(connector.getConfiguredBy());
+            }
+        }
+        return new DirectorySourceAuthors(Set.copyOf(configurators), complete);
+    }
 
     @Override
     @Transactional(readOnly = true)
@@ -73,6 +110,9 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
         connector.reconfigure(spec.displayName().trim(), spec.enabled(), spec.host().trim(), spec.port(),
                 spec.useSsl(), spec.startTls(), trimmedOrNull(spec.bindDn()), encrypted, spec.baseDn().trim(),
                 spec.userFilter().trim(), spec.externalIdAttribute().trim());
+        // Whoever saved this vouches for the directory it now points at; auto-mapping checks them before letting
+        // an attribute this connector fills drive a role or group grant.
+        connector.configuredBy(resolveConfigurator());
     }
 
     @Override
@@ -98,9 +138,13 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
         String source = requireText(sourceAttribute, "directory.mapping.source.required").trim();
         String target = requireText(targetKey, "directory.mapping.target.required").trim();
         // One rule per source, so re-mapping a source replaces rather than accumulates — two rules filling
-        // different targets from one source would make the result order-dependent.
-        mappings.deleteByConnectorIdAndSourceAttribute(connector.getId(), source);
-        mappings.save(DirectoryAttributeMapping.create(connector.getId(), org, source, target));
+        // different targets from one source would make the result order-dependent. Re-aiming an EXISTING
+        // mapping is an update in place, not a delete-then-insert: Hibernate orders inserts before deletes
+        // within a flush, so the insert would hit uq_directory_mapping_source while the old row still exists.
+        mappings.findByConnectorIdAndSourceAttribute(connector.getId(), source)
+                .ifPresentOrElse(existing -> existing.retarget(target),
+                        () -> mappings.save(
+                                DirectoryAttributeMapping.create(connector.getId(), org, source, target)));
     }
 
     @Override
@@ -113,8 +157,12 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
                 .ifPresent(mappings::delete);
     }
 
+    /**
+     * Deliberately not {@code @Transactional}: the sync contacts a remote directory, and an enclosing
+     * transaction would both pin a pooled connection for the length of that round trip and swallow the run
+     * record if anything inside were to fail. {@link DirectorySyncService} owns its own write boundaries.
+     */
     @Override
-    @Transactional
     public DirectorySyncRunView syncNow(String name) {
         writableOrg();
         return toView(sync.sync(require(name)));
@@ -126,6 +174,24 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
         return runs.findByConnectorIdOrderByStartedAtDesc(require(name).getId(),
                         PageRequest.of(0, Math.clamp(limit, 1, 100))).stream()
                 .map(this::toView).toList();
+    }
+
+    /**
+     * The administrator behind this request, resolved the same way a mapping rule resolves its author: a
+     * platform super-admin is a global account, anyone else is looked up in their own tier. Null when there is
+     * no authenticated principal (a seeder or a test), which the grant path then treats as unattributed.
+     */
+    private UUID resolveConfigurator() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return null;
+        }
+        boolean platformAdmin = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority).anyMatch(Roles.ADMIN::equals);
+        return (platformAdmin
+                ? users.findByUsernameInOrg(authentication.getName(), null)
+                : users.findByUsername(authentication.getName()))
+                .map(UserAccount::getId).orElse(null);
     }
 
     // --- tier guards -------------------------------------------------------------------------------------
@@ -181,9 +247,15 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
     }
 
     /**
-     * The ciphertext to persist. A supplied password is encrypted; a BLANK one on an update KEEPS the stored
-     * ciphertext, because the view never echoes it and editing another field must not silently clear it. A
-     * connector that binds anonymously carries none at all.
+     * The ciphertext to persist. A supplied password is encrypted; a BLANK one on an update keeps the stored
+     * ciphertext, because the view never echoes it and editing an unrelated field must not silently clear it.
+     * A connector that binds anonymously carries none at all.
+     *
+     * <p>But the credential belongs to a DESTINATION, not to a row. Whoever may edit the connector may not
+     * read the password back, so carrying it across a change of {@code host}, {@code port} or {@code bindDn}
+     * would let them repoint the connector at a directory they control and have us bind the tenant's real
+     * corporate service account against it — a credential whose blast radius is the customer's whole estate,
+     * not just this IdP. Moving the destination therefore invalidates the stored secret.
      */
     private String resolveSecret(DirectoryConnectorSpec spec, DirectoryConnector existing) {
         if (StringUtils.hasText(spec.bindPassword())) {
@@ -192,10 +264,17 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
         if (!StringUtils.hasText(spec.bindDn())) {
             return null; // anonymous bind — nothing to keep
         }
-        if (existing != null) {
+        if (existing != null && bindsTheSameDestination(spec, existing)) {
             return existing.getBindPasswordEncrypted();
         }
         throw BadRequestException.of("directory.connector.bindPassword.required");
+    }
+
+    /** Whether this update still binds as the same identity to the same place the stored secret was issued for. */
+    private boolean bindsTheSameDestination(DirectoryConnectorSpec spec, DirectoryConnector existing) {
+        return existing.getHost().equalsIgnoreCase(spec.host().trim())
+                && existing.getPort() == spec.port()
+                && Objects.equals(existing.getBindDn(), trimmedOrNull(spec.bindDn()));
     }
 
     private String requireText(String value, String messageKey) {

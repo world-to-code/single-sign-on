@@ -16,9 +16,7 @@ public interface DirectoryConnectorRepository extends JpaRepository<DirectoryCon
 
     Optional<DirectoryConnector> findByOrgIdIsNullAndName(String name);
 
-    Optional<DirectoryConnector> findByIdAndOrgId(UUID id, UUID orgId);
 
-    Optional<DirectoryConnector> findByIdAndOrgIdIsNull(UUID id);
 
     /** Every enabled connector across all tiers — the scheduled sweep's enumeration, run as platform. */
     List<DirectoryConnector> findByEnabledTrueOrderById();

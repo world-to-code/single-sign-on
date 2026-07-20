@@ -10,6 +10,9 @@ import com.unboundid.ldap.listener.InMemoryListenerConfig;
 import com.unboundid.util.ssl.KeyStoreKeyManager;
 import com.unboundid.util.ssl.SSLUtil;
 import com.unboundid.util.ssl.TrustAllTrustManager;
+import com.unboundid.util.ssl.cert.ManageCertificates;
+import java.io.File;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -72,17 +75,18 @@ class LdapDirectoryClientIT {
                 return new SSLUtil(new TrustAllTrustManager());
             }
         };
-        ReflectionTestUtils.setField(client, "connectTimeout", java.time.Duration.ofSeconds(5));
-        ReflectionTestUtils.setField(client, "responseTimeout", java.time.Duration.ofSeconds(5));
+        ReflectionTestUtils.setField(client, "connectTimeout", Duration.ofSeconds(5));
+        ReflectionTestUtils.setField(client, "responseTimeout", Duration.ofSeconds(5));
         ReflectionTestUtils.setField(client, "pageSize", 500);
+        ReflectionTestUtils.setField(client, "maxEntries", 10000);
     }
 
     /** A throwaway self-signed certificate so the listener can speak StartTLS at all. */
     private KeyStoreKeyManager selfSignedKeyManager() throws Exception {
-        java.io.File keyStore = java.io.File.createTempFile("ldap-test-", ".jks");
+        File keyStore = File.createTempFile("ldap-test-", ".jks");
         keyStore.deleteOnExit();
         keyStore.delete(); // the tool wants to create it
-        com.unboundid.util.ssl.cert.ManageCertificates.main(null, System.out, System.err,
+        ManageCertificates.main(null, System.out, System.err,
                 "generate-self-signed-certificate",
                 "--keystore", keyStore.getAbsolutePath(),
                 "--keystore-password", "changeit",
@@ -146,6 +150,42 @@ class LdapDirectoryClientIT {
         List<DirectoryEntry> entries = client.readUsers(connector("(uid=ada)"), "s3cret", List.of("department"));
 
         assertThat(entries.getFirst().attributes()).containsOnlyKeys("department");
+    }
+
+    /**
+     * The case that used to break silently. A server-side size limit makes the search FAIL once a directory
+     * grows past it, so a tenant crossing the threshold would stop having its attribute-driven memberships
+     * maintained — forever, and with an error that named no cause. Paging has to walk the whole result set.
+     */
+    @Test
+    void readsEveryPersonEvenWhenTheDirectoryOutgrowsOnePage() throws Exception {
+        for (int i = 0; i < 25; i++) {
+            server.add("dn: uid=bulk" + i + "," + BASE, "objectClass: top", "objectClass: person",
+                    "cn: Bulk" + i, "sn: Person", "uid: bulk" + i, "employeeNumber: dir-bulk-" + i,
+                    "department: Bulk");
+        }
+        ReflectionTestUtils.setField(client, "pageSize", 5); // five pages plus the two fixtures above
+
+        List<DirectoryEntry> entries = client.readUsers(connector("(objectClass=person)"), "s3cret",
+                List.of("department"));
+
+        assertThat(entries).hasSize(27);
+        assertThat(entries).extracting(DirectoryEntry::externalId).contains("dir-bulk-0", "dir-bulk-24");
+    }
+
+    /** A remote host must not be able to push an unbounded result set into our heap. */
+    @Test
+    void refusesToReadPastTheConfiguredCeiling() throws Exception {
+        for (int i = 0; i < 25; i++) {
+            server.add("dn: uid=bulk" + i + "," + BASE, "objectClass: top", "objectClass: person",
+                    "cn: Bulk" + i, "sn: Person", "uid: bulk" + i, "employeeNumber: dir-bulk-" + i,
+                    "department: Bulk");
+        }
+        ReflectionTestUtils.setField(client, "pageSize", 5);
+        ReflectionTestUtils.setField(client, "maxEntries", 10);
+
+        assertThatThrownBy(() -> client.readUsers(connector("(objectClass=person)"), "s3cret",
+                List.of("department"))).isInstanceOf(BadRequestException.class);
     }
 
     // --- transport ---------------------------------------------------------------------------------------

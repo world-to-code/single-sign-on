@@ -3,6 +3,7 @@ package com.example.sso.directory.internal.application;
 import com.example.sso.directory.internal.domain.DirectoryConnector;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.net.OutboundHostValidator;
+import com.unboundid.asn1.ASN1OctetString;
 import com.unboundid.ldap.sdk.LDAPConnection;
 import com.unboundid.ldap.sdk.LDAPConnectionOptions;
 import com.unboundid.ldap.sdk.LDAPException;
@@ -10,9 +11,12 @@ import com.unboundid.ldap.sdk.SearchRequest;
 import com.unboundid.ldap.sdk.SearchResult;
 import com.unboundid.ldap.sdk.SearchResultEntry;
 import com.unboundid.ldap.sdk.SearchScope;
+import com.unboundid.ldap.sdk.controls.SimplePagedResultsControl;
+import com.unboundid.ldap.sdk.extensions.StartTLSExtendedRequest;
 import com.unboundid.util.ssl.HostNameSSLSocketVerifier;
 import com.unboundid.util.ssl.SSLUtil;
 import java.time.Duration;
+import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -59,6 +63,10 @@ class LdapDirectoryClient {
     @Value("${sso.directory.ldap.page-size:500}")
     private int pageSize;
 
+    /** An overall ceiling: the directory is a remote host, and an unbounded result set is unbounded heap. */
+    @Value("${sso.directory.ldap.max-entries:10000}")
+    private int maxEntries;
+
     /**
      * Every person the connector's filter matches, keyed by the identifier we correlate on. Entries without
      * that identifier are dropped here rather than downstream: without it there is nothing to correlate, and
@@ -71,15 +79,30 @@ class LdapDirectoryClient {
         requested.add(connector.getExternalIdAttribute());
 
         try (LDAPConnection connection = connect(connector, bindPassword)) {
-            SearchRequest request = new SearchRequest(connector.getBaseDn(), SearchScope.SUB,
-                    connector.getUserFilter(), requested.toArray(String[]::new));
-            request.setSizeLimit(pageSize);
-            request.setTimeLimitSeconds((int) responseTimeout.toSeconds());
-            SearchResult result = connection.search(request);
-            return result.getSearchEntries().stream()
-                    .map(entry -> toEntry(entry, connector.getExternalIdAttribute(), attributes))
-                    .filter(entry -> StringUtils.hasText(entry.externalId()))
-                    .toList();
+            List<DirectoryEntry> collected = new ArrayList<>();
+            ASN1OctetString cookie = null;
+            do {
+                SearchRequest request = new SearchRequest(connector.getBaseDn(), SearchScope.SUB,
+                        connector.getUserFilter(), requested.toArray(String[]::new));
+                request.setTimeLimitSeconds((int) responseTimeout.toSeconds());
+                // Real paging, not a size limit: a server-side size limit makes the search FAIL once the
+                // directory outgrows it, which would silently stop maintaining every attribute-driven
+                // membership in a tenant from the day it passed the threshold.
+                request.addControl(new SimplePagedResultsControl(pageSize, cookie, true));
+                SearchResult result = connection.search(request);
+                result.getSearchEntries().stream()
+                        .map(entry -> toEntry(entry, connector.getExternalIdAttribute(), attributes))
+                        .filter(entry -> StringUtils.hasText(entry.externalId()))
+                        .forEach(collected::add);
+                if (collected.size() > maxEntries) {
+                    log.warn("Directory search for connector {} exceeded the {}-entry ceiling",
+                            connector.getName(), maxEntries);
+                    throw new BadRequestException("The directory returned more entries than permitted.");
+                }
+                SimplePagedResultsControl page = SimplePagedResultsControl.get(result);
+                cookie = page == null ? null : page.getCookie();
+            } while (cookie != null && cookie.getValueLength() > 0);
+            return List.copyOf(collected);
         } catch (LDAPException e) {
             // The upstream's own message can carry DNs and filter fragments; keep it out of the caller's face
             // and out of anything that renders. The detail goes to the run record via the caller.
@@ -107,7 +130,7 @@ class LdapDirectoryClient {
                     ? new LDAPConnection(sslUtil.createSSLSocketFactory(), options, connector.getHost(),
                             connector.getPort())
                     : startTls(options, connector, sslUtil);
-        } catch (java.security.GeneralSecurityException e) {
+        } catch (GeneralSecurityException e) {
             throw new BadRequestException("The directory's TLS could not be negotiated.");
         }
         if (StringUtils.hasText(connector.getBindDn())) {
@@ -128,11 +151,11 @@ class LdapDirectoryClient {
 
     /** Opens on 389 and upgrades BEFORE binding, so the credential never crosses a cleartext socket. */
     private LDAPConnection startTls(LDAPConnectionOptions options, DirectoryConnector connector, SSLUtil sslUtil)
-            throws LDAPException, java.security.GeneralSecurityException {
+            throws LDAPException, GeneralSecurityException {
         LDAPConnection connection = new LDAPConnection(options, connector.getHost(), connector.getPort());
         SSLSocketFactory factory = sslUtil.createSSLSocketFactory();
         connection.processExtendedOperation(
-                new com.unboundid.ldap.sdk.extensions.StartTLSExtendedRequest(factory));
+                new StartTLSExtendedRequest(factory));
         return connection;
     }
 
