@@ -14,6 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.springframework.context.ApplicationEventPublisher;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -41,16 +42,17 @@ class ProfileMappingCredentialGuardTest {
     @Mock private ProfileRepository profiles;
     @Mock private ProfileService profileService;
     @Mock private OrgContext orgContext;
+    @Mock private ApplicationEventPublisher events;
 
     private ProfileMappingServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new ProfileMappingServiceImpl(repository, profiles, profileService, orgContext);
+        service = new ProfileMappingServiceImpl(repository, profiles, profileService, orgContext, events);
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         lenient().when(profiles.findByIdAndOrgId(SOURCE, ORG)).thenReturn(Optional.of(profile(SOURCE)));
         lenient().when(profiles.findByIdAndOrgId(TARGET, ORG)).thenReturn(Optional.of(profile(TARGET)));
-        lenient().when(profileService.ownTenantProfile(TARGET)).thenReturn(Optional.of(
+        lenient().when(profileService.findById(TARGET)).thenReturn(Optional.of(
                 new Profile(TARGET, "acme", ProfileKind.TENANT, null, true, true)));
         lenient().when(repository.findBySourceProfileIdAndSourceAttrKey(SOURCE, "department"))
                 .thenReturn(Optional.empty());
@@ -80,7 +82,8 @@ class ProfileMappingCredentialGuardTest {
         UUID otherSource = UUID.randomUUID();
         lenient().when(profiles.findByIdAndOrgId(otherSource, ORG))
                 .thenReturn(Optional.of(sourceProfile(otherSource)));
-        lenient().when(profileService.ownTenantProfile(otherSource)).thenReturn(Optional.empty());
+        lenient().when(profileService.findById(otherSource)).thenReturn(Optional.of(
+                new Profile(otherSource, "LDAP", ProfileKind.LDAP, UUID.randomUUID(), false, false)));
 
         assertThatThrownBy(() -> service.map(SOURCE, "department", otherSource, "team"))
                 .isInstanceOf(BadRequestException.class);

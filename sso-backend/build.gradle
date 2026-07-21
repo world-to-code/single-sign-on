@@ -91,6 +91,7 @@ dependencies {
     // Functional core only — NOT the spring-boot integration, which would pull AOP + a synchronous
     // in-call @Retry we deliberately do not use (the durable sweep is the retry). Pinned like the rest.
     implementation 'io.github.resilience4j:resilience4j-core:2.3.0'
+    implementation 'com.github.ben-manes.caffeine:caffeine:3.2.4'
 
     // --- SAML2 IdP (OpenSAML 5) ---
     implementation libs.opensaml.core.api

@@ -13,6 +13,7 @@ import com.example.sso.directory.internal.domain.DirectorySyncRunRepository;
 import com.example.sso.metadata.AttributeSourceAuthors;
 import com.example.sso.metadata.AttributeSourceAuthority;
 import com.example.sso.metadata.Profile;
+import com.example.sso.metadata.AttributeSourceConfigurationChangedEvent;
 import com.example.sso.metadata.ProfileKind;
 import com.example.sso.metadata.ProfileMapping;
 import com.example.sso.metadata.ProfileMappingService;
@@ -39,6 +40,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -66,6 +68,7 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService, Attrib
     private final SecretCipher cipher;
     private final OutboundHostValidator hostValidator;
     private final OrgContext orgContext;
+    private final ApplicationEventPublisher events;
     private final UserService users;
 
     @Override
@@ -130,6 +133,7 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService, Attrib
         // nowhere to declare what it provides, and the schema cascades the profile away with the connector.
         profiles.provisionForConnector(connector.getId(), spec.displayName().trim(),
                 ProfileKind.valueOf(spec.kind().name()));
+        sourcesChanged();
     }
 
     @Override
@@ -137,6 +141,13 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService, Attrib
     public void delete(String name) {
         writableOrg();
         connectors.delete(require(name)); // mappings and runs cascade with it
+        // Deleting a connector is a revocation: whatever it vouched for, it no longer does. Say so, or a
+        // cached provenance verdict keeps an attribute-conditioned policy binding alive after the source is gone.
+        sourcesChanged();
+    }
+
+    private void sourcesChanged() {
+        events.publishEvent(new AttributeSourceConfigurationChangedEvent(orgContext.currentOrg().orElse(null)));
     }
 
     @Override

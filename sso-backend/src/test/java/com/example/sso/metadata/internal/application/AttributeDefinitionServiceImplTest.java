@@ -21,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.springframework.context.ApplicationEventPublisher;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,12 +45,13 @@ class AttributeDefinitionServiceImplTest {
     @Mock private AttributeDefinitionRepository repository;
     @Mock private OrgContext orgContext;
     @Mock private ProfileRepository profiles;
+    @Mock private ApplicationEventPublisher events;
 
     private AttributeDefinitionServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new AttributeDefinitionServiceImpl(repository, profiles, orgContext);
+        service = new AttributeDefinitionServiceImpl(repository, profiles, orgContext, events);
         lenient().when(profiles.findByIdAndOrgId(PROFILE, ORG)).thenReturn(Optional.of(profileRow()));
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         lenient().when(repository.save(any())).thenAnswer(i -> i.getArgument(0));

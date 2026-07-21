@@ -5,9 +5,7 @@ import com.example.sso.authpolicy.policy.AuthPolicyView;
 import com.example.sso.metadata.Attribute;
 import com.example.sso.metadata.AttributePredicate;
 import com.example.sso.metadata.AttributePredicateGroup;
-import com.example.sso.metadata.AttributeDefinitionService;
 import com.example.sso.metadata.AttributeService;
-import com.example.sso.metadata.AttributeSourceAuthority;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.binding.PolicyBindingResolver;
@@ -52,8 +50,7 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
     private final AuthPolicyResolver authPolicies;
     private final SessionPolicyService sessionPolicies;
     private final AttributeService attributes;
-    private final AttributeDefinitionService definitions;
-    private final AttributeSourceAuthority sources;
+    private final AttributeSourceProvenance provenance;
 
     @Override
     @Transactional(readOnly = true)
@@ -156,20 +153,17 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
      * posture. Auto-mapping already refuses to let an unattributable source drive a role grant; the same
      * question belongs here, because the reach is the same: a machine credential that can write a
      * directory-owned attribute could otherwise relax a live session's re-authentication interval, its
-     * re-auth factors or its client binding, and shorten the next login's MFA, without any step-up.
+     * factors, or its client binding.
      *
-     * <p>Only DIRECTORY-owned keys are gated. A key an administrator owns is written through the audited
-     * admin path by someone who already holds the authority, so it is not the attacker's lever.
+     * <p>Note the direction, because it is not the same as auto-mapping's. There, refusing means withholding a
+     * grant, which is closed. Here it means the binding does not match and the user falls back to the
+     * organization's default policy — which is LOOSER than this binding whenever an administrator wrote the
+     * binding to tighten something. We cannot compare two policies for strictness in general, so the failure
+     * is not silent instead: {@link AttributeSourceProvenance} warns when a verdict is negative.
      */
     private boolean sourcesAccountedFor(AttributePredicateGroup group) {
-        Set<String> sourced = group.conditions().stream()
-                .map(AttributePredicate::key)
-                .filter(key -> definitions.definitionOf(EntityKind.USER, key)
-                        .filter(definition -> !definition.locallyEditable())
-                        .isPresent())
-                .collect(Collectors.toSet());
-        // Nothing a source fills — an administrator owns every key here, so there is nobody to vouch for.
-        return sourced.isEmpty() || sources.authorsFilling(sourced).fullyAttributed();
+        return provenance.accountedFor(group.conditions().stream()
+                .map(AttributePredicate::key).collect(Collectors.toSet()));
     }
 
     private boolean hasValueOperator(AttributePredicateGroup group) {
