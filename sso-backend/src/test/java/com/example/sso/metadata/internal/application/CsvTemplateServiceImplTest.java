@@ -13,15 +13,20 @@ import com.example.sso.shared.error.NotFoundException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.context.support.ResourceBundleMessageSource;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,11 +46,21 @@ class CsvTemplateServiceImplTest {
     @Mock private ProfileService profiles;
     @Mock private AttributeDefinitionService definitions;
 
+    /** The real bundles, so the test reads what an administrator reads rather than a stub of it. */
+    private final MessageSource messages = bundle();
+
+    private static MessageSource bundle() {
+        ResourceBundleMessageSource source = new ResourceBundleMessageSource();
+        source.setBasename("messages");
+        source.setDefaultEncoding("UTF-8");
+        return source;
+    }
+
     private CsvTemplateServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new CsvTemplateServiceImpl(profiles, definitions);
+        service = new CsvTemplateServiceImpl(profiles, definitions, new CsvGuidanceRow(messages));
         Profile tenant = new Profile(PROFILE, "acme.com", ProfileKind.TENANT, null, true, true);
         lenient().when(profiles.findById(PROFILE)).thenReturn(Optional.of(tenant));
     }
@@ -71,15 +86,31 @@ class CsvTemplateServiceImplTest {
     }
 
     /** The rules travel with the file, so someone filling it in is not reading documentation elsewhere. */
+    /**
+     * The rules travel with the file, so someone filling it in is not reading documentation elsewhere — which
+     * means they have to be readable. This row was English literals while every error, mail and console label
+     * around it resolved through the bundles, so a Korean administrator got the one instruction they actually
+     * need in a language they may not read.
+     */
     @Test
-    void theGuidanceRowSaysWhatEachColumnAccepts() {
+    void theGuidanceRowSaysWhatEachColumnAcceptsInTheReadersLanguage() {
         declares(column("username", AttributeDataType.STRING, List.of(), true),
                 column("region", AttributeDataType.ENUM, List.of("emea", "apac"), false));
 
-        CSVRecord guidance = guidanceRow();
+        LocaleContextHolder.setLocale(Locale.ENGLISH);
+        CSVRecord english = guidanceRow();
+        assertThat(english.get(0)).contains("required").contains("text");
+        assertThat(english.get(1)).contains("optional").contains("emea | apac");
 
-        assertThat(guidance.get(0)).contains("required string");
-        assertThat(guidance.get(1)).contains("optional enum").contains("emea | apac");
+        LocaleContextHolder.setLocale(Locale.KOREAN);
+        CSVRecord korean = guidanceRow();
+        assertThat(korean.get(0)).contains("필수").contains("텍스트");
+        assertThat(korean.get(1)).contains("선택").contains("emea | apac");
+    }
+
+    @AfterEach
+    void clearLocale() {
+        LocaleContextHolder.resetLocaleContext();
     }
 
     /**

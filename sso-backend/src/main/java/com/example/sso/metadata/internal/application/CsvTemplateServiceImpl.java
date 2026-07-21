@@ -31,6 +31,7 @@ class CsvTemplateServiceImpl implements CsvTemplateService {
 
     private final ProfileService profiles;
     private final AttributeDefinitionService definitions;
+    private final CsvGuidanceRow guidance;
 
     @Override
     @Transactional(readOnly = true)
@@ -43,7 +44,7 @@ class CsvTemplateServiceImpl implements CsvTemplateService {
             // A guidance row rather than prose in a separate document: it travels with the file, and an
             // administrator filling it in has the rules in front of them. It is deleted before uploading —
             // the importer skips a row whose first cell starts with '#'.
-            printer.printRecord(guidance(columns));
+            printer.printRecord(guidance.forColumns(columns));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -69,21 +70,6 @@ class CsvTemplateServiceImpl implements CsvTemplateService {
         return headers;
     }
 
-    private List<String> guidance(List<AttributeDefinition> columns) {
-        List<String> row = new ArrayList<>();
-        boolean first = true;
-        for (AttributeDefinition column : columns) {
-            String hint = (column.required() ? "required " : "optional ")
-                    + column.dataType().name().toLowerCase(Locale.ROOT)
-                    + (column.enumValues().isEmpty() ? "" : " (" + String.join(" | ", column.enumValues()) + ")");
-            // Only the FIRST cell carries the marker: that is what the importer looks at to drop this row, and
-            // a marker in every cell would be noise in a file a person has to edit.
-            row.add(CsvCells.neutralise(first ? "# " + hint : hint));
-            first = false;
-        }
-        row.add("optional, separate several with ;");
-        return row;
-    }
 
     // The columns are definitionsIn(profileId): base attributes included and first, because they are the
     // app_user columns a create needs — leaving them out would make the template useless for its one purpose.
