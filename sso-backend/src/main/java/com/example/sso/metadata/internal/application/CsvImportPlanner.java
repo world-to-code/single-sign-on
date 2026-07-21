@@ -6,68 +6,32 @@ import com.example.sso.metadata.CsvGroupDirectory;
 import com.example.sso.metadata.CsvImportPreview;
 import com.example.sso.metadata.CsvPlannedUser;
 import com.example.sso.metadata.CsvRowFailure;
-import com.example.sso.metadata.ProfileAttributeValidator;
-import com.example.sso.shared.error.ApiException;
-import com.example.sso.shared.error.BadRequestException;
-import com.example.sso.user.account.BaseUserFields;
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import org.apache.commons.csv.CSVFormat;
-import org.apache.commons.csv.CSVParser;
-import org.apache.commons.csv.CSVRecord;
-import org.springframework.beans.factory.annotation.Value;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
  * Works out what an import would do, and does none of it.
  *
- * <p>Two kinds of refusal, and the difference is the design. A file whose SHAPE is wrong — an undeclared
- * column, more rows or columns than we accept — is refused whole: applying the half we understood is exactly
- * how a file aimed at the wrong profile quietly fills a tenant with accounts missing the data somebody thought
- * they were providing. A row whose DATA is wrong fails alone, because one typo in a five-thousand-line file
- * should not cost the other 4999.
- *
- * <p>Value rules are the profile's, not this class's: the same validator that guards a manually created user
- * checks each row, so no rule can hold on one path and not the other, and its refusal becomes the row's
- * reported reason.
+ * <p>Reading the file and judging a row are separate collaborators, because they refuse in opposite ways: a
+ * wrong SHAPE throws and costs the whole file, a wrong VALUE returns and costs its row. What is left here is
+ * the assembly — resolve the profile's declarations once, ask the two bulk questions once, and sort the rows
+ * into created, already-here, and refused.
  */
 @Component
+@RequiredArgsConstructor
 class CsvImportPlanner {
 
-    /** Written by the template so a person filling it in has the rules in front of them. Not a user. */
-    private static final String GUIDANCE_MARKER = "#";
-
     private final AttributeDefinitionService definitions;
-    private final ProfileAttributeValidator values;
-    private final CsvFailureText text;
+    private final CsvFileReader reader;
+    private final CsvRowValidator rowValidator;
     private final CsvExistingUsers existingUsers;
     private final CsvGroupDirectory groups;
-    private final int maxRows;
-    private final int maxColumns;
-    private final int maxCellLength;
-
-    CsvImportPlanner(AttributeDefinitionService definitions, ProfileAttributeValidator values,
-            CsvFailureText text, CsvExistingUsers existingUsers, CsvGroupDirectory groups,
-            @Value("${sso.metadata.csv-import.max-rows}") int maxRows,
-            @Value("${sso.metadata.csv-import.max-columns}") int maxColumns,
-            @Value("${sso.metadata.csv-import.max-cell-length}") int maxCellLength) {
-        this.definitions = definitions;
-        this.values = values;
-        this.text = text;
-        this.existingUsers = existingUsers;
-        this.groups = groups;
-        this.maxRows = maxRows;
-        this.maxColumns = maxColumns;
-        this.maxCellLength = maxCellLength;
-    }
 
     CsvImportPreview plan(UUID profileId, String csv) {
         List<AttributeDefinition> columns = definitions.definitionsIn(profileId);
@@ -80,16 +44,15 @@ class CsvImportPlanner {
                 .map(AttributeDefinition::key).collect(Collectors.toCollection(LinkedHashSet::new));
         // The declarations do not change between rows, so they are resolved once and validated against —
         // per-row resolution cost a profile lookup and a definitions read for every line of the file.
-        List<AttributeDefinition> profileColumns = columns.stream()
-                .filter(column -> !column.base()).toList();
-        List<CsvRow> rows = read(csv, declared, baseKeys);
+        List<AttributeDefinition> profileColumns = columns.stream().filter(column -> !column.base()).toList();
+        List<CsvRow> rows = reader.read(csv, declared, baseKeys);
 
         // Asked once for the whole file rather than once per row: an import is the one path here that is
-        // deliberately bulk, and a per-row lookup turns a five-thousand-line file into ten thousand round trips.
+        // deliberately bulk, and a per-row lookup turns a five-hundred-line file into a thousand round trips.
         List<String> existing = existingUsers.present(rows.stream().map(CsvRow::username).toList());
-        // "Unusable", not "missing": a group the actor may not put a member in is refused the same way one that
-        // does not exist is. Telling those apart here is what let a delegate enumerate groups outside their
-        // subtree by reading which rows came back importable.
+        // "Unusable", not "missing": a group the actor may not put a member in is refused the same way one
+        // that does not exist is. Telling those apart let a delegate enumerate groups outside their subtree by
+        // reading which rows came back importable.
         Set<String> unusableGroups = Set.copyOf(groups.unusable(
                 rows.stream().flatMap(row -> row.groups().stream()).distinct().toList()));
 
@@ -97,7 +60,7 @@ class CsvImportPlanner {
         List<CsvRowFailure> failures = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
         for (CsvRow row : rows) {
-            CsvRowFailure failure = failureIn(profileColumns, row, seen, unusableGroups);
+            CsvRowFailure failure = rowValidator.failureIn(profileColumns, row, seen, unusableGroups);
             if (failure != null) {
                 failures.add(failure);
                 continue;
@@ -113,107 +76,4 @@ class CsvImportPlanner {
         return new CsvImportPreview(rows.size(), toCreate,
                 existing.stream().filter(name -> !name.isEmpty()).toList(), failures);
     }
-
-    private CsvRowFailure failureIn(List<AttributeDefinition> profileColumns, CsvRow row, Set<String> seen,
-            Set<String> unusableGroups) {
-        if (row.username().isEmpty()) {
-            return text.at(row.line(), "metadata.csv.row.missingRequired", BaseUserFields.USERNAME);
-        }
-        // app_user.email is NOT NULL, and "" is a value under the per-org unique index — so a file with no
-        // address would create exactly one account and report every later row as a duplicate of it. Required
-        // here rather than papered over with a synthetic address.
-        if (row.attributes().getOrDefault(BaseUserFields.EMAIL, "").isEmpty()) {
-            return text.at(row.line(), "metadata.csv.row.missingRequired", BaseUserFields.EMAIL);
-        }
-        if (seen.contains(row.username())) {
-            return text.at(row.line(), "metadata.csv.row.duplicateUsername", row.username());
-        }
-        if (row.oversizedGroups()) {
-            return text.at(row.line(), "metadata.csv.row.valueTooLong", CsvTemplateServiceImpl.GROUPS_COLUMN);
-        }
-        for (Map.Entry<String, String> cell : row.attributes().entrySet()) {
-            if (cell.getValue().length() > maxCellLength) {
-                return text.at(row.line(), "metadata.csv.row.valueTooLong", cell.getKey());
-            }
-            // Refused rather than neutralised on the way in: we re-export these values in a template later,
-            // and a username or an address that opens like a formula is never legitimate, so refusing costs
-            // nothing real and keeps the payload out of the database entirely.
-            if (CsvCells.isFormula(cell.getValue())) {
-                return text.at(row.line(), "metadata.csv.row.formulaValue", cell.getKey());
-            }
-        }
-        String unknownGroup = row.groups().stream().filter(unusableGroups::contains).findFirst().orElse(null);
-        if (unknownGroup != null) {
-            return text.at(row.line(), "metadata.csv.row.unknownGroup", unknownGroup);
-        }
-        try {
-            values.validate(profileColumns, row.profileValues().entrySet().stream()
-                    .collect(Collectors.toMap(Map.Entry::getKey, e -> List.of(e.getValue()))));
-        } catch (ApiException refused) {
-            return text.at(row.line(), refused.getMessageKey(), refused.getMessageArgs());
-        }
-        return null;
-    }
-
-    private List<CsvRow> read(String csv, Set<String> declared, Set<String> baseKeys) {
-        CSVFormat format = CSVFormat.DEFAULT.builder()
-                .setHeader().setSkipHeaderRecord(true).setIgnoreEmptyLines(true).setTrim(true).build();
-        try (CSVParser parser = CSVParser.parse(csv, format)) {
-            List<String> header = parser.getHeaderNames();
-            requireShape(header, declared);
-            List<CsvRow> rows = new ArrayList<>();
-            for (CSVRecord record : parser) {
-                if (rows.size() >= maxRows) {
-                    throw BadRequestException.of("metadata.csv.tooManyRows", String.valueOf(maxRows));
-                }
-                if (isGuidance(record)) {
-                    continue;
-                }
-                // The parser's own line counter, not the record number: blank lines are skipped and a quoted
-                // cell can span several lines, so record numbers stop tracking the file an administrator has
-                // open — which is the only thing this number is for.
-                rows.add(CsvRow.of(record, parser.getCurrentLineNumber(), header, declared, baseKeys,
-                        maxCellLength));
-            }
-            return rows;
-        } catch (IOException | UncheckedIOException malformed) {
-            // commons-csv reports a syntax error from the record ITERATOR, wrapped in UncheckedIOException —
-            // not as the checked IOException reading a String could never throw anyway. Unwrapped it escaped
-            // every catch and became a 500, which is what an administrator got for one stray quote.
-            throw BadRequestException.of("metadata.csv.malformed");
-        }
-    }
-
-    /**
-     * The header, before any row is read.
-     *
-     * <p>The column count is checked FIRST: a file with thousands of columns costs memory per row, and there
-     * is no point learning which of them the profile declares.
-     */
-    private void requireShape(List<String> header, Set<String> declared) {
-        if (header.size() > maxColumns) {
-            throw BadRequestException.of("metadata.csv.tooManyColumns", String.valueOf(maxColumns));
-        }
-        String unknown = header.stream()
-                .filter(column -> !declared.contains(column) && !CsvTemplateServiceImpl.GROUPS_COLUMN.equals(column))
-                .findFirst().orElse(null);
-        if (unknown != null) {
-            throw BadRequestException.of("metadata.csv.unknownColumn", unknown);
-        }
-        if (!header.contains(BaseUserFields.USERNAME)) {
-            throw BadRequestException.of("metadata.csv.missingUsernameColumn");
-        }
-        // A repeated column means the file was built by hand against a schema it does not match. The parser
-        // would let the last one win and discard the administrator's other column without a word.
-        String duplicate = header.stream().filter(column -> Collections.frequency(header, column) > 1)
-                .findFirst().orElse(null);
-        if (duplicate != null) {
-            throw BadRequestException.of("metadata.csv.duplicateColumn", duplicate);
-        }
-    }
-
-    private boolean isGuidance(CSVRecord record) {
-        return record.size() > 0 && record.get(0).startsWith(GUIDANCE_MARKER);
-    }
-
 }

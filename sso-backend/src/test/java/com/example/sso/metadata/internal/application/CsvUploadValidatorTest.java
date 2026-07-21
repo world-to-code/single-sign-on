@@ -34,7 +34,7 @@ class CsvUploadValidatorTest {
 
     @BeforeEach
     void setUp() {
-        validator = new CsvUploadValidator(MAX_BYTES);
+        validator = new CsvUploadValidator(new CsvImportLimits(MAX_BYTES, 100, 20, 255));
     }
 
     private MultipartFile upload(String filename, String contentType, byte[] content) {

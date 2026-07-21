@@ -30,7 +30,7 @@ record CsvRow(long line, String username, Map<String, String> attributes, Set<St
             // cells than the header threw IllegalArgumentException out of the whole request — one short line
             // turning a five-thousand-row import into a 500 that names no row.
             String value = record.isSet(column) ? record.get(column) : "";
-            if (CsvTemplateServiceImpl.GROUPS_COLUMN.equals(column)) {
+            if (CsvColumns.GROUPS.equals(column)) {
                 // Measured BEFORE the split. The groups column is not a declared attribute, so the per-cell
                 // ceiling the planner applies to attributes never covered it — and it is the one cell that
                 // fans out, so a megabyte of semicolons became a quarter of a million names in one bind list.
@@ -56,7 +56,8 @@ record CsvRow(long line, String username, Map<String, String> attributes, Set<St
         if (value.isBlank()) {
             return List.of();
         }
-        return Arrays.stream(value.split(";")).map(String::strip).filter(name -> !name.isEmpty()).toList();
+        return Arrays.stream(value.split(CsvColumns.GROUP_SEPARATOR))
+                .map(String::strip).filter(name -> !name.isEmpty()).toList();
     }
 
     /** The values that become the ACCOUNT (username, email, displayName) rather than profile attributes. */

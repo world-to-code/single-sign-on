@@ -72,8 +72,11 @@ class CsvImportPlannerTest {
 
     @BeforeEach
     void setUp() {
-        planner = new CsvImportPlanner(definitions, values, new CsvFailureText(bundle()), existingUsers,
-                groups, 100, 20, 255);
+        // The real reader and row validator, not stubs: they are the two halves this class assembles, and a
+        // stub of either would leave the assembly asserting only that it called what the test told it to.
+        CsvImportLimits limits = new CsvImportLimits(2_097_152, 100, 20, 255);
+        planner = new CsvImportPlanner(definitions, new CsvFileReader(limits),
+                new CsvRowValidator(values, new CsvFailureText(bundle()), limits), existingUsers, groups);
         declares(base(BaseUserFields.USERNAME), base(BaseUserFields.EMAIL), optional("team"));
         lenient().when(existingUsers.present(any())).thenReturn(List.of());
         lenient().when(groups.unusable(any())).thenReturn(List.of());

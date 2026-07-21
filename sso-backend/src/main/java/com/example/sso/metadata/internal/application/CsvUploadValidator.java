@@ -11,7 +11,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Set;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.multipart.MultipartRequest;
@@ -47,10 +46,10 @@ class CsvUploadValidator {
 
     private static final byte[] UTF8_BOM = {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF};
 
-    private final int maxBytes;
+    private final CsvImportLimits limits;
 
-    CsvUploadValidator(@Value("${sso.metadata.csv-import.max-file-bytes}") int maxBytes) {
-        this.maxBytes = maxBytes;
+    CsvUploadValidator(CsvImportLimits limits) {
+        this.limits = limits;
     }
 
     /**
@@ -78,7 +77,7 @@ class CsvUploadValidator {
         if (content.length == 0) {
             throw BadRequestException.of("metadata.csv.empty");
         }
-        if (content.length > maxBytes) {
+        if (content.length > limits.maxFileBytes()) {
             // Also capped at the container (spring.servlet.multipart.max-file-size), which is what stops the
             // bytes reaching the heap at all. This one is the honest error for a file that got past that.
             throw BadRequestException.of("metadata.csv.tooLarge");

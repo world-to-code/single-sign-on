@@ -27,7 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 class CsvTemplateServiceImpl implements CsvTemplateService {
 
     /** Optional, and last so it does not crowd the identity columns. Several groups separated by a semicolon. */
-    static final String GROUPS_COLUMN = "groups";
+
 
     private final ProfileService profiles;
     private final AttributeDefinitionService definitions;
@@ -66,7 +66,7 @@ class CsvTemplateServiceImpl implements CsvTemplateService {
         // rule one commit away from being relaxed, and it is not where this file's safety should live.
         List<String> headers = new ArrayList<>(columns.stream()
                 .map(AttributeDefinition::key).map(CsvCells::neutralise).toList());
-        headers.add(GROUPS_COLUMN);
+        headers.add(CsvColumns.GROUPS);
         return headers;
     }
 
