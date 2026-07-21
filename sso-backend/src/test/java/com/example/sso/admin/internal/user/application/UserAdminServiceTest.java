@@ -13,13 +13,11 @@ import com.example.sso.metadata.ProfileAttributeValidator;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
-import com.example.sso.mfa.MfaService;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.role.Roles;
 import com.example.sso.user.account.UserAccount;
-import com.example.sso.user.group.UserGroupService;
 import com.example.sso.user.account.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -49,8 +47,6 @@ import static org.mockito.Mockito.when;
 class UserAdminServiceTest {
 
     private UserService userService;
-    private MfaService mfaService;
-    private UserGroupService userGroups;
     private AdminAccessPolicy accessPolicy;
     private AdminAuditLogger auditLogger;
     private LastAdminGuard lastAdminGuard;
@@ -61,14 +57,11 @@ class UserAdminServiceTest {
     @BeforeEach
     void setUp() {
         userService = mock(UserService.class);
-        mfaService = mock(MfaService.class);
-        userGroups = mock(UserGroupService.class);
         accessPolicy = mock(AdminAccessPolicy.class);
         auditLogger = mock(AdminAuditLogger.class);
         lastAdminGuard = mock(LastAdminGuard.class);
         tier = mock(ActingAdminTier.class);
-        service = new UserAdminService(userService, tier, mfaService, userGroups, accessPolicy, auditLogger,
-                lastAdminGuard);
+        service = new UserAdminService(userService, tier, accessPolicy, auditLogger, lastAdminGuard);
     }
 
     @Test

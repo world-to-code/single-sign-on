@@ -53,8 +53,6 @@ public class UserAdminService {
 
     private final UserService userService;
     private final ActingAdminTier tier;
-    private final MfaService mfaService;
-    private final UserGroupService userGroups;
     private final AdminAccessPolicy accessPolicy;
     private final AdminAuditLogger auditLogger;
     private final LastAdminGuard lastAdminGuard;
@@ -129,82 +127,11 @@ public class UserAdminService {
         auditLogger.log(AuditType.USER_DELETED, AuditSubjectType.USER, id.toString(), "user=" + id);
     }
 
-    /** Clears a user's MFA enrollment so they re-enroll on next login (recovery). */
-    @Transactional
-    public void resetUserMfa(UUID id) {
-        if (userService.findById(id).isEmpty()) {
-            throw NotFoundException.of("user.notFound");
-        }
-        mfaService.resetMfa(id);
-        auditLogger.log(AuditType.USER_MFA_RESET, AuditSubjectType.USER, id.toString(), "user=" + id);
-    }
-
-    /**
-     * Re-sends the proof-of-ownership mail for an unverified address. Recovery, not a grant: the code it mails
-     * only flips the verified flag, so it cannot be used to sign in as the user.
-     */
-    @Transactional
-    public void resendEmailVerification(UUID id) {
-        if (userService.findById(id).isEmpty()) {
-            throw NotFoundException.of("user.notFound");
-        }
-        userService.requestEmailVerification(id);
-        auditLogger.log(AuditType.USER_UPDATED, AuditSubjectType.USER, id.toString(),
-                "email verification resent user=" + id);
-    }
-
     @Transactional
     public AdminUserView setUserPermissions(UUID id, Set<String> permissionNames) {
         AdminUserView view = AdminUserView.of(userService.setDirectPermissions(id, permissionNames));
         auditLogger.log(AuditType.USER_PERMISSIONS_UPDATED, AuditSubjectType.USER, id.toString(),
                 "user=" + id + " permissions=" + permissionNames);
         return view;
-    }
-
-    /** Full detail for a single user, with roles attributed to their source and effective permissions. */
-    @Transactional(readOnly = true)
-    public UserDetailView getUser(UUID id) {
-        UserAccount user = userService.findById(id).orElseThrow(() -> NotFoundException.of("user.notFound"));
-        List<GroupMembership> memberships = userGroups.membershipsForUser(id);
-
-        return UserDetailView.of(user, roleAssignments(user, memberships),
-                user.getDirectPermissionNames().stream().sorted().toList(),
-                effectivePermissions(user, memberships));
-    }
-
-    /** Merges the user's direct roles with roles delegated via groups, tracking each role's source. */
-    private List<RoleAssignmentView> roleAssignments(UserAccount user, List<GroupMembership> memberships) {
-        Map<UUID, String> names = new LinkedHashMap<>();
-        Set<UUID> directIds = new HashSet<>();
-        Map<UUID, TreeSet<String>> viaGroups = new LinkedHashMap<>();
-
-        for (RoleRef role : user.getRoles()) {
-            names.put(role.getId(), role.getName());
-            directIds.add(role.getId());
-        }
-        for (GroupMembership membership : memberships) {
-            for (RoleRef role : membership.roles()) {
-                names.putIfAbsent(role.getId(), role.getName());
-                viaGroups.computeIfAbsent(role.getId(), k -> new TreeSet<>()).add(membership.groupName());
-            }
-        }
-
-        List<RoleAssignmentView> assignments = new ArrayList<>();
-        names.forEach((roleId, name) -> assignments.add(new RoleAssignmentView(roleId.toString(), name,
-                directIds.contains(roleId), List.copyOf(viaGroups.getOrDefault(roleId, new TreeSet<>())))));
-        assignments.sort((a, b) -> a.roleName().compareToIgnoreCase(b.roleName()));
-
-        return assignments;
-    }
-
-    /** All permissions the user effectively holds: role + group-role + direct, read-implication expanded. */
-    private List<String> effectivePermissions(UserAccount user, List<GroupMembership> memberships) {
-        Set<String> permissions = new HashSet<>();
-        user.getRoles().forEach(role -> permissions.addAll(role.getPermissionNames()));
-        memberships.forEach(membership -> membership.roles()
-                .forEach(role -> permissions.addAll(role.getPermissionNames())));
-        permissions.addAll(user.getDirectPermissionNames());
-
-        return Permissions.expandImplied(permissions).stream().sorted().toList();
     }
 }

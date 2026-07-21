@@ -14,10 +14,19 @@ import com.example.sso.shared.Page;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
+import com.example.sso.user.group.GroupMembership;
+import com.example.sso.user.group.UserGroupService;
+import com.example.sso.user.rbac.Permissions;
+import com.example.sso.user.role.RoleRef;
 import com.example.sso.webauthn.PasskeyService;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 
 import lombok.RequiredArgsConstructor;
@@ -35,6 +44,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserDetailAdminService {
 
     private final UserService userService;
+    private final UserGroupService userGroups;
     private final ApplicationService applications;
     private final PasskeyService passkeys;
     private final MfaService mfaService;
@@ -42,6 +52,59 @@ public class UserDetailAdminService {
     private final UserSessions userSessions;
     private final AuditService audit;
     private final AuditAccessPolicy auditAccessPolicy;
+
+    /**
+     * Full detail for a single user, with roles attributed to their source and effective permissions.
+     *
+     * <p>Here rather than on the admin service it came from: this class already exists to answer "everything
+     * about one user", and that was the only place needing the group service — a collaborator carried by a
+     * larger class for one method.
+     */
+    @Transactional(readOnly = true)
+    public UserDetailView getUser(UUID id) {
+        UserAccount user = userService.findById(id).orElseThrow(() -> NotFoundException.of("user.notFound"));
+        List<GroupMembership> memberships = userGroups.membershipsForUser(id);
+
+        return UserDetailView.of(user, roleAssignments(user, memberships),
+                user.getDirectPermissionNames().stream().sorted().toList(),
+                effectivePermissions(user, memberships));
+    }
+
+    /** Merges the user's direct roles with roles delegated via groups, tracking each role's source. */
+    private List<RoleAssignmentView> roleAssignments(UserAccount user, List<GroupMembership> memberships) {
+        Map<UUID, String> names = new LinkedHashMap<>();
+        Set<UUID> directIds = new HashSet<>();
+        Map<UUID, TreeSet<String>> viaGroups = new LinkedHashMap<>();
+
+        for (RoleRef role : user.getRoles()) {
+            names.put(role.getId(), role.getName());
+            directIds.add(role.getId());
+        }
+        for (GroupMembership membership : memberships) {
+            for (RoleRef role : membership.roles()) {
+                names.putIfAbsent(role.getId(), role.getName());
+                viaGroups.computeIfAbsent(role.getId(), key -> new TreeSet<>()).add(membership.groupName());
+            }
+        }
+
+        List<RoleAssignmentView> assignments = new ArrayList<>();
+        names.forEach((roleId, name) -> assignments.add(new RoleAssignmentView(roleId.toString(), name,
+                directIds.contains(roleId), List.copyOf(viaGroups.getOrDefault(roleId, new TreeSet<>())))));
+        assignments.sort((first, second) -> first.roleName().compareToIgnoreCase(second.roleName()));
+
+        return assignments;
+    }
+
+    /** All permissions the user effectively holds: role + group-role + direct, read-implication expanded. */
+    private List<String> effectivePermissions(UserAccount user, List<GroupMembership> memberships) {
+        Set<String> permissions = new HashSet<>();
+        user.getRoles().forEach(role -> permissions.addAll(role.getPermissionNames()));
+        memberships.forEach(membership -> membership.roles()
+                .forEach(role -> permissions.addAll(role.getPermissionNames())));
+        permissions.addAll(user.getDirectPermissionNames());
+
+        return Permissions.expandImplied(permissions).stream().sorted().toList();
+    }
 
     @Transactional(readOnly = true)
     public List<ApplicationView> applications(UUID userId) {

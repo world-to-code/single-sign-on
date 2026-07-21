@@ -13,6 +13,7 @@ import com.example.sso.admin.internal.user.application.NewUserCommand;
 import com.example.sso.admin.internal.user.application.UserAdminService;
 import com.example.sso.admin.internal.user.application.UserProvisioningService;
 import com.example.sso.admin.internal.user.application.UserDetailAdminService;
+import com.example.sso.admin.internal.user.application.UserRecoveryAdminService;
 import com.example.sso.admin.internal.user.application.UserDetailView;
 import com.example.sso.admin.internal.user.application.UserDevicesView;
 import com.example.sso.admin.internal.user.application.UserSessionView;
@@ -53,6 +54,7 @@ public class AdminUserController {
     private final UserAdminService userAdminService;
     private final UserProvisioningService provisioning;
     private final UserDetailAdminService userDetailAdminService;
+    private final UserRecoveryAdminService recovery;
 
     @GetMapping
     @RequirePermission(Permissions.USER_READ)
@@ -77,7 +79,7 @@ public class AdminUserController {
     @GetMapping("/{id}")
     @CanViewUser
     public UserDetailView userDetail(@PathVariable UUID id) {
-        return userAdminService.getUser(id);
+        return userDetailAdminService.getUser(id);
     }
 
     @GetMapping("/{id}/applications")
@@ -148,7 +150,7 @@ public class AdminUserController {
     @CanResetUserMfa
     @RequireStepUp
     public ResponseEntity<Void> resetMfa(@PathVariable UUID id) {
-        userAdminService.resetUserMfa(id);
+        recovery.resetUserMfa(id);
         return ResponseEntity.noContent().build();
     }
 
@@ -156,7 +158,7 @@ public class AdminUserController {
     @CanResetUserMfa
     @RequireStepUp
     public ResponseEntity<Void> resendEmailVerification(@PathVariable UUID id) {
-        userAdminService.resendEmailVerification(id);
+        recovery.resendEmailVerification(id);
         return ResponseEntity.accepted().build();
     }
 
