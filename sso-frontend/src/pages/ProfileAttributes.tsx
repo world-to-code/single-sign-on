@@ -17,6 +17,7 @@ import {
   type AttributeSource,
 } from "@/attributeDefinitions";
 import { PageHeader } from "@/components/PageHeader";
+import { ProfileMappings } from "@/components/ProfileMappings";
 import { DataList, EmptyState } from "@/components/states";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -79,6 +80,7 @@ export default function ProfileAttributes() {
   }, []);
 
   const profile = profiles.find((p) => p.id === profileId) ?? null;
+  const tenantProfile = profiles.find((p) => p.kind === "TENANT") ?? null;
   const definitions = useApiData<AttributeDefinition[]>(
     attributeDefinitionsPath(kind, profile?.id ?? undefined));
   const confirmDelete = useDeleteConfirm();
@@ -214,6 +216,11 @@ export default function ProfileAttributes() {
           </Table>
         )}
       </DataList>
+
+      {/* A source profile only matters through what it feeds; the tenant's own has nothing to map INTO. */}
+      {kind === "USER" && profile && profile.kind !== "TENANT" && tenantProfile && (
+        <ProfileMappings source={profile} tenant={tenantProfile} />
+      )}
 
       <Dialog open={editor.open} onOpenChange={editor.setOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto">

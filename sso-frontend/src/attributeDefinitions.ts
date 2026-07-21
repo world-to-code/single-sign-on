@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPost } from "./api";
+import { apiDelete, apiGet, apiPost, apiPut } from "./api";
 
 export type AttributeDataType = "STRING" | "INTEGER" | "BOOLEAN" | "DATE" | "ENUM";
 
@@ -55,6 +55,27 @@ export interface Profile {
 export const profilesPath = "/api/admin/profiles";
 
 export const listProfiles = (): Promise<Profile[]> => apiGet<Profile[]>(profilesPath);
+
+/** One attribute carried from a source profile into a target profile. */
+export interface ProfileMapping {
+  id: string;
+  sourceProfileId: string;
+  sourceKey: string;
+  targetProfileId: string;
+  targetKey: string;
+}
+
+const at = (profileId: string) => `${profilesPath}/${encodeURIComponent(profileId)}`;
+
+export const profileMappingsPath = (profileId: string) => `${at(profileId)}/mappings`;
+
+export const mapProfileAttribute = (
+  profileId: string, sourceKey: string, targetProfileId: string, targetKey: string,
+): Promise<ProfileMapping> =>
+  apiPut<ProfileMapping>(profileMappingsPath(profileId), { sourceKey, targetProfileId, targetKey });
+
+export const unmapProfileAttribute = (profileId: string, mappingId: string): Promise<void> =>
+  apiDelete(`${profileMappingsPath(profileId)}/${encodeURIComponent(mappingId)}`);
 
 /** A person's attributes live in a profile; every other entity kind is a tag outside one. */
 export const attributeDefinitionsPath = (kind: AttributeEntityKind, profileId?: string) =>
