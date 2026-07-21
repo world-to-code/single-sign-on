@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -26,6 +27,33 @@ public interface EntityAttributeRepository extends JpaRepository<EntityAttribute
 
     /** All rows for several entities of one kind in a single query — the fan-in for attribute inheritance. */
     List<EntityAttribute> findByEntityKindAndEntityIdIn(EntityKind entityKind, Collection<String> entityIds);
+
+    /** The tier's rows for several entities at once — the group-inheritance read on the authorization path. */
+    List<EntityAttribute> findByOrgIdAndEntityKindAndEntityIdIn(UUID orgId, EntityKind entityKind,
+            Collection<String> entityIds);
+
+    List<EntityAttribute> findByOrgIdIsNullAndEntityKindAndEntityIdIn(EntityKind entityKind,
+            Collection<String> entityIds);
+
+    /**
+     * Retires several keys in ONE statement, and says how many rows it took.
+     *
+     * <p>A derived {@code deleteBy…} would SELECT every row and then issue a DELETE each, materialising
+     * entities only to discard them. The count matters more than the round trips: this removal can retract an
+     * ABAC-granted role, and without it a delete that matched nothing is indistinguishable from one that
+     * worked — the difference between a revocation and the appearance of one.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from EntityAttribute a where a.orgId = :orgId and a.entityKind = :kind "
+            + "and a.entityId = :entityId and a.attrKey in :keys")
+    int deleteKeysInOrg(@Param("orgId") UUID orgId, @Param("kind") EntityKind kind,
+            @Param("entityId") String entityId, @Param("keys") Collection<String> keys);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from EntityAttribute a where a.orgId is null and a.entityKind = :kind "
+            + "and a.entityId = :entityId and a.attrKey in :keys")
+    int deleteKeysGlobally(@Param("kind") EntityKind kind, @Param("entityId") String entityId,
+            @Param("keys") Collection<String> keys);
 
     /** The acting tier's rows for one key — several now that a key may carry multiple values. */
     List<EntityAttribute> findByEntityKindAndEntityIdAndAttrKeyAndOrgId(

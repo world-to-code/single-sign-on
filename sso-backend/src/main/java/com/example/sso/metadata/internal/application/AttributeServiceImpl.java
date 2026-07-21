@@ -89,10 +89,14 @@ class AttributeServiceImpl implements AttributeService {
             return List.of();
         }
         UUID tier = tierGuard.currentTier();
+        // Scoped in the QUERY, like its single-entity sibling: this runs on the authorization path (group
+        // inheritance for a policy binding), and the kind/id-only finder cannot use an index that leads with
+        // org_id — so it scanned the ABAC hot table on every authenticated request.
+        List<EntityAttribute> rows = tier == null
+                ? attributes.findByOrgIdIsNullAndEntityKindAndEntityIdIn(kind, entityIds)
+                : attributes.findByOrgIdAndEntityKindAndEntityIdIn(tier, kind, entityIds);
         Set<Attribute> union = new LinkedHashSet<>();
-        attributes.findByEntityKindAndEntityIdIn(kind, entityIds).stream()
-                .filter(row -> Objects.equals(row.getOrgId(), tier)) // own-tier rows only, no inherited globals
-                .forEach(row -> union.add(new Attribute(row.getAttrKey(), row.getAttrValue())));
+        rows.forEach(row -> union.add(new Attribute(row.getAttrKey(), row.getAttrValue())));
         return List.copyOf(union);
     }
 
@@ -171,11 +175,14 @@ class AttributeServiceImpl implements AttributeService {
         }
         keys.forEach(key -> requireLocallyOwned(kind, key)); // refuse the whole set before deleting any of it
         UUID tier = tierGuard.currentTier();
-        List<EntityAttribute> rows = keys.stream()
-                .flatMap(key -> ownRows(kind, entityId, key, tier).stream())
-                .toList();
-        if (!rows.isEmpty()) {
-            attributes.deleteAll(rows);
+        List<String> distinct = keys.stream().distinct().toList();
+        // One statement, and it returns the row count. A derived delete would SELECT every row and issue a
+        // DELETE each; the count is what matters more, because this retirement can retract an ABAC-granted
+        // role and a delete that matched nothing must not look like one that worked.
+        int removed = tier == null
+                ? attributes.deleteKeysGlobally(kind, entityId, distinct)
+                : attributes.deleteKeysInOrg(tier, kind, entityId, distinct);
+        if (removed > 0) {
             // One event for the whole retirement: the listener re-evaluates every mapping rule for this user,
             // and doing that once per key would repeat the same work for one logical change.
             events.publishEvent(new EntityAttributeChangedEvent(kind, entityId, tier));

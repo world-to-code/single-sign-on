@@ -196,4 +196,74 @@ class AttributeServiceIT extends AbstractIntegrationTest {
         String s = UUID.randomUUID().toString().substring(0, 8);
         return organizations.create(new NewOrganization(prefix + "-" + s, prefix + " " + s)).id();
     }
+    /**
+     * The bulk retirement, which is one statement now rather than a SELECT plus a DELETE per row. It is also a
+     * security operation — removing an attribute can retract an ABAC-granted role — so the case that matters
+     * most is the one where it removes NOTHING and must not look like it worked.
+     */
+    @Test
+    void retiringSeveralKeysRemovesThemAllInOneGo() {
+        UUID orgA = newOrg("attr-bulk");
+        String userId = UUID.randomUUID().toString();
+        orgContext.runInOrg(orgA, () -> {
+            attributes.set(EntityKind.USER, userId, "team", "platform");
+            attributes.set(EntityKind.USER, userId, "tier", "gold");
+            attributes.set(EntityKind.USER, userId, "kept", "yes");
+        });
+
+        orgContext.runInOrg(orgA, () -> attributes.removeAll(EntityKind.USER, userId, List.of("team", "tier")));
+
+        assertThat(orgContext.callInOrg(orgA, () -> attributes.attributesOf(EntityKind.USER, userId)))
+                .extracting(Attribute::key).containsExactly("kept");
+    }
+
+    /** Retiring keys that are not there changes nothing and, crucially, deletes nothing else. */
+    @Test
+    void retiringKeysThatAreNotThereIsHarmless() {
+        UUID orgA = newOrg("attr-none");
+        String userId = UUID.randomUUID().toString();
+        orgContext.runInOrg(orgA, () -> attributes.set(EntityKind.USER, userId, "kept", "yes"));
+
+        orgContext.runInOrg(orgA, () -> attributes.removeAll(EntityKind.USER, userId, List.of("absent")));
+
+        assertThat(orgContext.callInOrg(orgA, () -> attributes.attributesOf(EntityKind.USER, userId)))
+                .extracting(Attribute::key).containsExactly("kept");
+    }
+
+    /**
+     * A tenant's retirement must not reach the platform tier's rows for the same entity — the delete is now a
+     * single statement, so its WHERE clause is the only thing holding that line.
+     */
+    @Test
+    void retiringInATenantLeavesTheGlobalRowAlone() {
+        UUID orgA = newOrg("attr-tier");
+        String userId = UUID.randomUUID().toString();
+        orgContext.runAsPlatform(() -> attributes.set(EntityKind.USER, userId, "clearance", "global"));
+        orgContext.runInOrg(orgA, () -> attributes.set(EntityKind.USER, userId, "clearance", "tenant"));
+
+        orgContext.runInOrg(orgA, () -> attributes.removeAll(EntityKind.USER, userId, List.of("clearance")));
+
+        assertThat(orgContext.callAsPlatform(() -> attributes.attributesOfInTier(EntityKind.USER, userId)))
+                .extracting(Attribute::value).containsExactly("global");
+    }
+
+    /**
+     * The group-inheritance read on the authorization path. It used to fetch every tier's rows and filter in
+     * memory, which could not use an index that leads with org_id — on the ABAC hot table, on every request.
+     */
+    @Test
+    void theUnionReadSeesOnlyTheActingTiersRows() {
+        UUID orgA = newOrg("attr-union");
+        String one = UUID.randomUUID().toString();
+        String two = UUID.randomUUID().toString();
+        orgContext.runAsPlatform(() -> attributes.set(EntityKind.GROUP, one, "scope", "global"));
+        orgContext.runInOrg(orgA, () -> {
+            attributes.set(EntityKind.GROUP, one, "scope", "tenant");
+            attributes.set(EntityKind.GROUP, two, "extra", "yes");
+        });
+
+        assertThat(orgContext.callInOrg(orgA,
+                () -> attributes.unionAttributesOfInTier(EntityKind.GROUP, List.of(one, two))))
+                .extracting(Attribute::value).containsExactlyInAnyOrder("tenant", "yes");
+    }
 }
