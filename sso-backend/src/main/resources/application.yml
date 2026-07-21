@@ -115,6 +115,9 @@ sso:
     keystore-path: data/saml-idp.p12
     keystore-password: changeit  # dev only
     key-size: 2048                       # self-signed IdP signing key size (bits)
+    # Ceiling on a redirect-binding message AFTER inflation. Unauthenticated and pre-signature,
+    # so this is what stands between a query string and the heap. A real AuthnRequest is a few KB.
+    max-inflated-bytes: 262144
     certificate-validity-days: 3650      # self-signed IdP certificate lifetime
     assertion-validity-seconds: 300      # SAML assertion/response validity window (SP clock-skew tolerance)
   scim:

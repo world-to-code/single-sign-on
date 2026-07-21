@@ -1,7 +1,6 @@
 package com.example.sso.saml.internal.core.application;
 
 import com.example.sso.shared.error.BadRequestException;
-import lombok.RequiredArgsConstructor;
 import net.shibboleth.shared.xml.ParserPool;
 import net.shibboleth.shared.xml.SerializeSupport;
 import org.opensaml.core.xml.XMLObject;
@@ -12,6 +11,7 @@ import org.opensaml.saml.saml2.core.AuthnRequest;
 import org.opensaml.saml.saml2.core.LogoutRequest;
 import org.opensaml.saml.saml2.core.Response;
 import org.opensaml.saml.common.SignableSAMLObject;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.HtmlUtils;
 import org.w3c.dom.Document;
@@ -30,10 +30,22 @@ import java.util.zip.InflaterInputStream;
  * HTTP-POST binding (base64(xml) in an auto-submitting form) — never deflated.
  */
 @Component
-@RequiredArgsConstructor
 public class SamlBindingCodec {
 
     private final ParserPool parserPool;
+    private final int maxInflatedBytes;
+
+    /**
+     * @param maxInflatedBytes how far a redirect-binding message may inflate. Deflate reaches roughly 1000:1 on
+     *                         repetitive input, so a query string that fits inside the container's header limit
+     *                         expands to megabytes of heap — and this runs on an unauthenticated endpoint,
+     *                         BEFORE the signature is checked, so there is no earlier filter.
+     */
+    public SamlBindingCodec(ParserPool parserPool,
+            @Value("${sso.saml.max-inflated-bytes}") int maxInflatedBytes) {
+        this.parserPool = parserPool;
+        this.maxInflatedBytes = maxInflatedBytes;
+    }
 
     /** Decodes a {@code SAMLRequest} carried over the HTTP-Redirect binding. */
     public AuthnRequest decodeRedirect(String samlRequest) {
@@ -57,9 +69,28 @@ public class SamlBindingCodec {
 
     private XMLObject parseRedirect(String message) {
         byte[] deflated = Base64.getDecoder().decode(message);
-        try (InflaterInputStream inflater =
-                     new InflaterInputStream(new ByteArrayInputStream(deflated), new Inflater(true))) {
-            return parse(inflater);
+        byte[] xml;
+        // end() explicitly: InflaterInputStream.close() releases the inflater only when it created one itself,
+        // so a supplied Inflater leaves its native zlib state to a Cleaner. Small requests generate almost no
+        // heap pressure, so a flood of them grows off-heap memory without ever prompting a collection — the
+        // exact exhaustion this method exists to bound.
+        Inflater inflater = new Inflater(true);
+        try (InflaterInputStream in = new InflaterInputStream(new ByteArrayInputStream(deflated), inflater)) {
+            // Read one byte past the bound rather than inflating and then measuring: readNBytes stops there,
+            // so an oversized message never allocates more than the limit no matter how far it would expand.
+            xml = in.readNBytes(maxInflatedBytes + 1);
+        } catch (Exception e) {
+            throw BadRequestException.of("saml.binding.invalidRedirect");
+        } finally {
+            inflater.end();
+        }
+        if (xml.length > maxInflatedBytes) {
+            // Refused here, so the parser is never handed the expanded document — the parse is the second
+            // half of the cost, and OpenSAML's own limits sit behind it rather than in front.
+            throw BadRequestException.of("saml.binding.tooLarge");
+        }
+        try {
+            return parse(new ByteArrayInputStream(xml));
         } catch (Exception e) {
             throw BadRequestException.of("saml.binding.invalidRedirect");
         }
@@ -67,6 +98,12 @@ public class SamlBindingCodec {
 
     private XMLObject parsePost(String message) {
         byte[] xml = Base64.getDecoder().decode(message);
+        // Same ceiling as the redirect binding. There is no amplification here — the cost is linear in the
+        // request — but it is the same unauthenticated, pre-signature parser, and Boot's default 2MB form-post
+        // limit otherwise lets a POST hand it several times what a redirect may carry.
+        if (xml.length > maxInflatedBytes) {
+            throw BadRequestException.of("saml.binding.tooLarge");
+        }
         try {
             return parse(new ByteArrayInputStream(xml));
         } catch (Exception e) {
