@@ -7,9 +7,10 @@ package com.example.sso.metadata.internal.application;
  * first character — is executed as a formula when the file is opened. {@code =cmd|'/c calc'!A1} is the
  * canonical demonstration; the realistic version exfiltrates the sheet via {@code WEBSERVICE()} or a DDE call.
  *
- * <p>Only the OUTBOUND direction is wired today: a template we generate carries attribute keys and guidance an
- * administrator will open in Excel. When an import path lands it should refuse on the way in too — a value we
- * store is re-exported later — but saying so here before it exists would describe a control that is not there.
+ * <p>Both directions are wired. Outbound, a template we generate carries attribute keys and guidance an
+ * administrator will open in Excel, so {@link #neutralise} prefixes the value. Inbound, {@code CsvRowValidator}
+ * REFUSES the row instead of neutralising it: a stored value is re-exported later, and a username or attribute
+ * that opens like a formula is never legitimate data.
  */
 final class CsvCells {
 

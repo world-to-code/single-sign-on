@@ -9,6 +9,7 @@ import com.example.sso.shared.IdName;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.admin.internal.shared.application.ActingAdminTier;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.rbac.Permissions;
@@ -63,7 +64,8 @@ class RoleAdminServiceTest {
         orgContext = mock(OrgContext.class);
         tierGuard = new OrgTierGuard(orgContext);
         service = new RoleAdminService(
-                roleService, rbacService, accessPolicy, auditLogger, lastAdminGuard, orgContext, tierGuard);
+                roleService, rbacService, accessPolicy, auditLogger, lastAdminGuard,
+                new ActingAdminTier(accessPolicy, orgContext), tierGuard);
     }
 
     @Test

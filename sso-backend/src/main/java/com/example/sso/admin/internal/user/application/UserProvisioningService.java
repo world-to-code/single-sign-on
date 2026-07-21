@@ -1,5 +1,6 @@
 package com.example.sso.admin.internal.user.application;
 
+import com.example.sso.admin.internal.shared.application.ActingAdminTier;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;

@@ -21,6 +21,7 @@ import com.example.sso.user.role.RoleRef;
 import com.example.sso.webauthn.PasskeyService;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -98,12 +99,19 @@ public class UserDetailAdminService {
     /** All permissions the user effectively holds: role + group-role + direct, read-implication expanded. */
     private List<String> effectivePermissions(UserAccount user, List<GroupMembership> memberships) {
         Set<String> permissions = new HashSet<>();
-        user.getRoles().forEach(role -> permissions.addAll(role.getPermissionNames()));
-        memberships.forEach(membership -> membership.roles()
-                .forEach(role -> permissions.addAll(role.getPermissionNames())));
+        addPermissionsOf(user.getRoles(), permissions);
+        for (GroupMembership membership : memberships) {
+            addPermissionsOf(membership.roles(), permissions);
+        }
         permissions.addAll(user.getDirectPermissionNames());
 
         return Permissions.expandImplied(permissions).stream().sorted().toList();
+    }
+
+    private void addPermissionsOf(Collection<? extends RoleRef> roles, Set<String> permissions) {
+        for (RoleRef role : roles) {
+            permissions.addAll(role.getPermissionNames());
+        }
     }
 
     @Transactional(readOnly = true)

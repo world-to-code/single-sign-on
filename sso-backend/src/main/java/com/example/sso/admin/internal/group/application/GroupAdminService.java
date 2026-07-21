@@ -1,5 +1,6 @@
 package com.example.sso.admin.internal.group.application;
 
+import com.example.sso.admin.internal.shared.application.ActingAdminTier;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.user.application.UserDetailAdminService;
@@ -9,7 +10,6 @@ import com.example.sso.portal.application.ApplicationService;
 import com.example.sso.portal.application.ApplicationView;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.error.ForbiddenException;
-import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.group.GroupMembersPage;
 import com.example.sso.user.group.GroupRequest;
 import com.example.sso.user.group.GroupView;
@@ -42,25 +42,15 @@ public class GroupAdminService {
     private final AdminAccessPolicy accessPolicy;
     private final AdminAuditLogger auditLogger;
     private final UserDetailAdminService userDetail;
-    private final OrgContext orgContext;
+    private final ActingAdminTier tier;
 
     public Page<GroupView> list(int page, int size) {
         // Tier-scoped: an un-drilled platform admin (tier null) sees ONLY the global/system groups; a super-admin
         // drilled into a tenant, or a tenant admin, sees THAT org's groups — never all tenants' groups merged.
-        if (isTierAdmin()) {
-            return userGroups.listByOrg(actingOrg(), page, size);
+        if (tier.administersWholeTier()) {
+            return userGroups.listByOrg(tier.actingOrg(), page, size);
         }
         return userGroups.listByIds(accessPolicy.currentScopedGroupIds(), page, size); // resource delegate: subtree
-    }
-
-    /** A platform super-admin (drilled or not) OR a tenant admin — both scope to their acting tier. */
-    private boolean isTierAdmin() {
-        return accessPolicy.isCurrentActorUnscoped() || accessPolicy.administersBoundOrg();
-    }
-
-    /** The org the acting admin is bound to (their login org, or a drill-in), or null for the platform tier. */
-    private UUID actingOrg() {
-        return orgContext.currentOrg().orElse(null);
     }
 
     public GroupView create(GroupRequest request) {
@@ -138,8 +128,8 @@ public class GroupAdminService {
     }
 
     public List<Suggestion> search(String query, int limit) {
-        if (isTierAdmin()) {
-            return userGroups.searchInOrg(query, actingOrg(), limit);     // tier-scoped (global groups if null)
+        if (tier.administersWholeTier()) {
+            return userGroups.searchInOrg(query, tier.actingOrg(), limit);     // tier-scoped (global groups if null)
         }
 
         Set<UUID> scoped = accessPolicy.currentScopedGroupIds();

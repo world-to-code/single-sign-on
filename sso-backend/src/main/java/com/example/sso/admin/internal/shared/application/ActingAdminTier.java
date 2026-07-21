@@ -1,6 +1,5 @@
-package com.example.sso.admin.internal.user.application;
+package com.example.sso.admin.internal.shared.application;
 
-import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.tenancy.OrgContext;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;

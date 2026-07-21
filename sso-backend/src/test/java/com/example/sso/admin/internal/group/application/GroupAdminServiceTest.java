@@ -9,6 +9,7 @@ import com.example.sso.portal.application.ApplicationService;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.admin.internal.shared.application.ActingAdminTier;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.group.GroupView;
 import com.example.sso.user.group.UserGroupService;
@@ -58,7 +59,8 @@ class GroupAdminServiceTest {
         auditLogger = mock(AdminAuditLogger.class);
         userDetail = mock(UserDetailAdminService.class);
         orgContext = mock(OrgContext.class);
-        service = new GroupAdminService(userGroups, applications, accessPolicy, auditLogger, userDetail, orgContext);
+        service = new GroupAdminService(userGroups, applications, accessPolicy, auditLogger, userDetail,
+                new ActingAdminTier(accessPolicy, orgContext));
     }
 
     @Test

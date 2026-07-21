@@ -1,5 +1,6 @@
 package com.example.sso.admin.internal.role.application;
 
+import com.example.sso.admin.internal.shared.application.ActingAdminTier;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.shared.application.LastAdminGuard;
@@ -9,7 +10,6 @@ import com.example.sso.shared.IdName;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
-import com.example.sso.tenancy.OrgContext;
 import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.rbac.RbacService;
@@ -43,7 +43,7 @@ public class RoleAdminService {
     private final AdminAccessPolicy accessPolicy;
     private final AdminAuditLogger auditLogger;
     private final LastAdminGuard lastAdminGuard;
-    private final OrgContext orgContext;
+    private final ActingAdminTier actingTier;
     private final OrgTierGuard tierGuard;
 
     @Transactional(readOnly = true)
@@ -237,12 +237,12 @@ public class RoleAdminService {
         }
 
         List<UserAccount> members = roleService.members(roleId);
-        if (accessPolicy.isCurrentActorUnscoped() || accessPolicy.administersBoundOrg()) {
+        if (actingTier.administersWholeTier()) {
             // Tier-scoped: the role's holders that belong to the ACTING tier — an un-drilled super-admin sees
             // only global holders, a super-admin drilled into a tenant (or a tenant admin) sees that org's
             // holders (a global role has members across tenants — never all merged).
-            UUID tier = orgContext.currentOrg().orElse(null);
-            members = members.stream().filter(user -> Objects.equals(user.getOrgId(), tier)).toList();
+            UUID actingOrg = actingTier.actingOrg();
+            members = members.stream().filter(user -> Objects.equals(user.getOrgId(), actingOrg)).toList();
         } else {
             Set<UUID> managed = accessPolicy.currentManagedUserIds();     // resource delegate: subtree
             members = members.stream().filter(user -> managed.contains(user.getId())).toList();
