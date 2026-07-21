@@ -119,12 +119,16 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: The lockfile must match build.gradle
+      # Both lockfiles, not just the build one: settings-gradle.lockfile pins what the settings-level
+      # configurations resolve to, and it is empty only until a version catalog is added.
+      - name: The lockfiles must match build.gradle
         working-directory: sso-backend
         run: |
           ./gradlew resolveAndLockAll --write-locks -q
-          git diff --exit-code gradle.lockfile \
-            || { echo "::error::gradle.lockfile is stale — run ./gradlew resolveAndLockAll --write-locks"; exit 1; }
+          git diff --exit-code gradle.lockfile settings-gradle.lockfile \
+            || { echo "::error::a lockfile is stale — run ./gradlew resolveAndLockAll --write-locks"; exit 1; }
+          git status --porcelain --untracked-files=normal gradle.lockfile settings-gradle.lockfile \
+            | grep -q '^??' && { echo "::error::a generated lockfile is untracked — commit it"; exit 1; } || true
 
       - name: Trivy dependency scan (backend lockfile + frontend lockfile)
         run: |
