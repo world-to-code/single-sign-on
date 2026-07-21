@@ -99,8 +99,8 @@ class DirectoryConnectorRlsIT extends AbstractIntegrationTest {
             setContext(probe, "app.current_org", orgA.toString());
             assertThat(countFor(probe, "directory_sync_run", connectorA)).isOne();
             assertThat(countFor(probe, "directory_sync_run", connectorB)).isZero();
-            assertThat(countFor(probe, "directory_attribute_mapping", connectorA)).isOne();
-            assertThat(countFor(probe, "directory_attribute_mapping", connectorB)).isZero();
+            assertThat(mappingsVisible(probe, orgA)).isOne();
+            assertThat(mappingsVisible(probe, orgB)).isZero();
         }
     }
 
@@ -129,11 +129,29 @@ class DirectoryConnectorRlsIT extends AbstractIntegrationTest {
                 values (gen_random_uuid(), ?, ?, 'SUCCEEDED')""", connectorId, orgId);
     }
 
+    /** A source profile for the connector and a mapping from it onto the tenant's own profile. */
     private void seedMapping(UUID connectorId, UUID orgId, String source) {
+        UUID sourceProfile = UUID.randomUUID();
         ownerJdbc().update("""
-                insert into directory_attribute_mapping
-                    (id, connector_id, org_id, source_attribute, target_key)
-                values (gen_random_uuid(), ?, ?, ?, ?)""", connectorId, orgId, source, source);
+                insert into profile (id, org_id, name, kind, connector_id)
+                values (?, ?, ?, 'LDAP', ?)""", sourceProfile, orgId, "src-" + source + "-" + connectorId, connectorId);
+        UUID tenantProfile = ownerJdbc().queryForObject(
+                "select id from profile where org_id = ? and kind = 'TENANT'", UUID.class, orgId);
+        ownerJdbc().update("""
+                insert into profile_attribute_mapping
+                    (id, org_id, source_profile_id, source_attr_key, target_profile_id, target_attr_key)
+                values (gen_random_uuid(), ?, ?, ?, ?, ?)""", orgId, sourceProfile, source, tenantProfile, source);
+    }
+
+    private int mappingsVisible(Connection c, UUID orgId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "select count(*) from profile_attribute_mapping where org_id = ?")) {
+            ps.setObject(1, orgId);
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return rs.getInt(1);
+            }
+        }
     }
 
     private void insertConnector(Connection c, String name, UUID orgId) throws SQLException {

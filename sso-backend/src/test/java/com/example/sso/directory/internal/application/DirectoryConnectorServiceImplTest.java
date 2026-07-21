@@ -3,12 +3,12 @@ package com.example.sso.directory.internal.application;
 import com.example.sso.crypto.SecretCipher;
 import com.example.sso.directory.DirectoryConnectorKind;
 import com.example.sso.directory.DirectoryConnectorSpec;
-import com.example.sso.directory.internal.domain.DirectoryAttributeMappingRepository;
+import com.example.sso.metadata.ProfileMappingService;
+import com.example.sso.metadata.ProfileService;
 import com.example.sso.directory.internal.domain.DirectoryConnector;
 import com.example.sso.directory.internal.domain.DirectoryConnectorRepository;
 import com.example.sso.directory.internal.domain.DirectorySyncRunRepository;
 import com.example.sso.shared.error.BadRequestException;
-import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.net.OutboundHostValidator;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserService;
@@ -39,7 +39,8 @@ class DirectoryConnectorServiceImplTest {
     private static final UUID ORG = UUID.randomUUID();
 
     @Mock private DirectoryConnectorRepository connectors;
-    @Mock private DirectoryAttributeMappingRepository mappings;
+    @Mock private ProfileMappingService mappings;
+    @Mock private ProfileService profiles;
     @Mock private DirectorySyncRunRepository runs;
     @Mock private DirectorySyncService sync;
     @Mock private SecretCipher cipher;
@@ -51,8 +52,8 @@ class DirectoryConnectorServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new DirectoryConnectorServiceImpl(connectors, mappings, runs, sync, cipher, hostValidator,
-                orgContext, users);
+        service = new DirectoryConnectorServiceImpl(connectors, profiles, mappings, runs, sync, cipher,
+                hostValidator, orgContext, users);
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         lenient().when(cipher.encrypt(any())).thenReturn("encg:cipher");
         lenient().when(connectors.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -208,12 +209,26 @@ class DirectoryConnectorServiceImplTest {
     // --- tier scoping ------------------------------------------------------------------------------------
 
     @Test
-    void aBoundButOrglessNonPlatformCallerMayNotWrite() {
+    void aBoundButOrglessCallerMayNotWrite() {
         when(orgContext.currentOrg()).thenReturn(Optional.empty());
-        when(orgContext.isPlatform()).thenReturn(false);
 
         assertThatThrownBy(() -> service.save(spec("s3cret", 636, true, false)))
-                .isInstanceOf(ForbiddenException.class);
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    /**
+     * A connector correlates entries by external_id within an organization, and that lookup returns nothing
+     * when there is no organization — so a platform-tier connector could never match anybody. It would still
+     * bind to a remote directory and pull a page of people's data to do nothing with it, and it now has no
+     * profile to describe what it provides. Refuse it rather than keep a path that only fails quietly.
+     */
+    @Test
+    void aPlatformTierConnectorIsRefused() {
+        when(orgContext.currentOrg()).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.save(spec("s3cret", 636, true, false)))
+                .isInstanceOf(BadRequestException.class);
+        verify(connectors, never()).save(any());
     }
 
     @Test

@@ -6,6 +6,7 @@ import com.example.sso.metadata.AttributeDefinitionService;
 import com.example.sso.metadata.AttributeDefinitionSpec;
 import com.example.sso.metadata.BaseAttributes;
 import com.example.sso.metadata.EntityKind;
+import com.example.sso.metadata.ProfileKind;
 import com.example.sso.metadata.internal.domain.ProfileRepository;
 import com.example.sso.metadata.internal.domain.AttributeDefinitionEntity;
 import com.example.sso.metadata.internal.domain.AttributeDefinitionRepository;
@@ -78,6 +79,17 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
     @Override
     @Transactional(readOnly = true)
     public Optional<AttributeDefinition> definitionOf(EntityKind kind, String key) {
+        if (kind == EntityKind.USER) {
+            // A person's attributes are the TENANT profile's. Resolving these org-wide would let a definition
+            // declared inside a connector's source profile — a place an administrator reasonably treats as
+            // "describing the remote directory" — decide whether a directory owns the tenant's key, and that
+            // ownership is what the sync write guard and the auto-mapping escalation guard both read.
+            return orgContext.currentOrg()
+                    .flatMap(org -> profiles.findByOrgIdAndKind(org, ProfileKind.TENANT))
+                    .flatMap(tenant -> repository.findByProfileIdAndAttrKey(tenant.getId(),
+                            key == null ? "" : key.trim()))
+                    .map(this::toDefinition);
+        }
         return find(kind, key).map(this::toDefinition);
     }
 
@@ -105,6 +117,11 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
     @Override
     @Transactional
     public AttributeDefinition save(UUID profileId, AttributeDefinitionSpec spec) {
+        if (spec.entityKind() != EntityKind.USER) {
+            // Only a person's attributes live in a profile; the schema CHECK says so too, and without this the
+            // violation surfaces as a 500 instead of a 400.
+            throw BadRequestException.of("metadata.definition.userOnly");
+        }
         requireNotBase(spec.key());
         validate(spec);
         UUID tier = writableTier();

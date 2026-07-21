@@ -7,12 +7,15 @@ import com.example.sso.directory.DirectoryConnectorSpec;
 import com.example.sso.directory.DirectoryConnectorView;
 import com.example.sso.directory.DirectorySourceAuthors;
 import com.example.sso.directory.DirectorySyncRunView;
-import com.example.sso.directory.internal.domain.DirectoryAttributeMapping;
-import com.example.sso.directory.internal.domain.DirectoryAttributeMappingRepository;
 import com.example.sso.directory.internal.domain.DirectoryConnector;
 import com.example.sso.directory.internal.domain.DirectoryConnectorRepository;
 import com.example.sso.directory.internal.domain.DirectorySyncRun;
 import com.example.sso.directory.internal.domain.DirectorySyncRunRepository;
+import com.example.sso.metadata.Profile;
+import com.example.sso.metadata.ProfileKind;
+import com.example.sso.metadata.ProfileMapping;
+import com.example.sso.metadata.ProfileMappingService;
+import com.example.sso.metadata.ProfileService;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
@@ -51,9 +54,12 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
     private static final Pattern NAME = Pattern.compile("[a-z0-9][a-z0-9-]{0,62}[a-z0-9]");
     /** Only the IANA LDAP ports; the schema agrees. An arbitrary port aims a bind credential at anything. */
     private static final List<Integer> LDAP_PORTS = List.of(389, 636);
+    /** The profile named after a connector carries this name, and {@code profile.name} is varchar(120). */
+    private static final int MAX_DISPLAY_NAME = 120;
 
     private final DirectoryConnectorRepository connectors;
-    private final DirectoryAttributeMappingRepository mappings;
+    private final ProfileService profiles;
+    private final ProfileMappingService mappings;
     private final DirectorySyncRunRepository runs;
     private final DirectorySyncService sync;
     private final SecretCipher cipher;
@@ -67,12 +73,12 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
         if (targetKeys == null || targetKeys.isEmpty()) {
             return DirectorySourceAuthors.none();
         }
-        UUID org = orgContext.currentOrg().orElse(null);
-        List<DirectoryAttributeMapping> filling = org != null
-                ? mappings.findByOrgIdAndTargetKeyIn(org, targetKeys)
-                : mappings.findByOrgIdIsNullAndTargetKeyIn(targetKeys);
-        Set<UUID> connectorIds = filling.stream()
-                .map(DirectoryAttributeMapping::getConnectorId).collect(Collectors.toSet());
+        // Which directories can fill these attributes: the mappings that target them, then the connectors
+        // behind their source profiles. A profile that describes no connector vouches for nothing and is
+        // skipped, which keeps this the same question it was before profiles existed.
+        Set<UUID> sourceProfiles = mappings.mappingsFilling(targetKeys).stream()
+                .map(ProfileMapping::sourceProfileId).collect(Collectors.toSet());
+        Set<UUID> connectorIds = profiles.connectorIdsOf(sourceProfiles);
         Set<UUID> configurators = new HashSet<>();
         boolean complete = true;
         for (DirectoryConnector connector : connectors.findAllById(connectorIds)) {
@@ -113,6 +119,10 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
         // Whoever saved this vouches for the directory it now points at; auto-mapping checks them before letting
         // an attribute this connector fills drive a role or group grant.
         connector.configuredBy(resolveConfigurator());
+        // The connector and the profile describing it share a lifecycle: a connector with no profile has
+        // nowhere to declare what it provides, and the schema cascades the profile away with the connector.
+        profiles.provisionForConnector(connector.getId(), spec.displayName().trim(),
+                ProfileKind.valueOf(spec.kind().name()));
     }
 
     @Override
@@ -125,26 +135,22 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
     @Override
     @Transactional(readOnly = true)
     public List<DirectoryAttributeMappingView> mappings(String name) {
-        return mappings.findByConnectorIdOrderBySourceAttribute(require(name).getId()).stream()
-                .map(m -> new DirectoryAttributeMappingView(m.getId(), m.getSourceAttribute(), m.getTargetKey()))
+        return sourceProfile(require(name)).stream()
+                .flatMap(profile -> mappings.mappingsFrom(profile.id()).stream())
+                .map(m -> new DirectoryAttributeMappingView(m.id(), m.sourceKey(), m.targetKey()))
                 .toList();
     }
 
     @Override
     @Transactional
     public void mapAttribute(String name, String sourceAttribute, String targetKey) {
-        UUID org = writableOrg();
+        writableOrg();
         DirectoryConnector connector = require(name);
-        String source = requireText(sourceAttribute, "directory.mapping.source.required").trim();
-        String target = requireText(targetKey, "directory.mapping.target.required").trim();
-        // One rule per source, so re-mapping a source replaces rather than accumulates — two rules filling
-        // different targets from one source would make the result order-dependent. Re-aiming an EXISTING
-        // mapping is an update in place, not a delete-then-insert: Hibernate orders inserts before deletes
-        // within a flush, so the insert would hit uq_directory_mapping_source while the old row still exists.
-        mappings.findByConnectorIdAndSourceAttribute(connector.getId(), source)
-                .ifPresentOrElse(existing -> existing.retarget(target),
-                        () -> mappings.save(
-                                DirectoryAttributeMapping.create(connector.getId(), org, source, target)));
+        Profile source = sourceProfile(connector)
+                .orElseThrow(() -> new NotFoundException("Directory connector profile not found"));
+        Profile tenant = profiles.tenantProfile()
+                .orElseThrow(() -> new NotFoundException("Tenant profile not found"));
+        mappings.map(source.id(), sourceAttribute, tenant.id(), targetKey);
     }
 
     @Override
@@ -152,9 +158,13 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
     public void unmapAttribute(String name, UUID mappingId) {
         writableOrg();
         DirectoryConnector connector = require(name);
-        mappings.findById(mappingId)
-                .filter(m -> m.getConnectorId().equals(connector.getId()))
-                .ifPresent(mappings::delete);
+        // Scoped to THIS connector's profile: the id is client-supplied, and without this an id belonging to
+        // another connector — or to a mapping no connector owns — would be deleted through this route.
+        UUID source = sourceProfile(connector).map(Profile::id).orElse(null);
+        mappings.mappingsFrom(source).stream()
+                .filter(mapping -> mapping.id().equals(mappingId))
+                .findFirst()
+                .ifPresent(mapping -> mappings.unmap(mapping.id()));
     }
 
     /**
@@ -194,6 +204,11 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
                 .map(UserAccount::getId).orElse(null);
     }
 
+    /** The profile describing this connector's directory. */
+    private Optional<Profile> sourceProfile(DirectoryConnector connector) {
+        return profiles.findByConnectorId(connector.getId());
+    }
+
     // --- tier guards -------------------------------------------------------------------------------------
 
     private List<DirectoryConnector> ownConnectors() {
@@ -217,12 +232,16 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
                 .orElseThrow(() -> NotFoundException.of("directory.connector.notFound"));
     }
 
+    /**
+     * The organization this connector belongs to. There is no platform tier: correlation is
+     * {@code findByExternalIdInOrg}, which returns nothing without an organization, so a global connector
+     * could never match anybody — it would bind to a remote directory and pull a page of people's data only to
+     * discard it. It also has no profile to describe what it provides, and a sync with no profile would record
+     * a SUCCEEDED run that read nothing, which is indistinguishable from an empty directory.
+     */
     private UUID writableOrg() {
-        UUID org = orgContext.currentOrg().orElse(null);
-        if (org == null && !orgContext.isPlatform()) {
-            throw ForbiddenException.of("directory.connector.global.platformOnly");
-        }
-        return org;
+        return orgContext.currentOrg()
+                .orElseThrow(() -> BadRequestException.of("directory.connector.orgRequired"));
     }
 
     // --- validation --------------------------------------------------------------------------------------
@@ -231,7 +250,11 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
         if (!NAME.matcher(normalize(spec.name())).matches()) {
             throw BadRequestException.of("directory.connector.name.invalid", spec.name());
         }
-        requireText(spec.displayName(), "directory.connector.displayName.required");
+        String displayName = requireText(spec.displayName(), "directory.connector.displayName.required").trim();
+        if (displayName.length() > MAX_DISPLAY_NAME) {
+            throw BadRequestException.of("directory.connector.displayName.tooLong",
+                    String.valueOf(MAX_DISPLAY_NAME));
+        }
         requireText(spec.baseDn(), "directory.connector.baseDn.required");
         requireText(spec.userFilter(), "directory.connector.userFilter.required");
         requireText(spec.externalIdAttribute(), "directory.connector.externalIdAttribute.required");

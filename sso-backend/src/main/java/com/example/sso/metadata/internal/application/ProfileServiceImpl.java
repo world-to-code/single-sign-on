@@ -1,6 +1,7 @@
 package com.example.sso.metadata.internal.application;
 
 import com.example.sso.metadata.Profile;
+import com.example.sso.metadata.ProfileKind;
 import com.example.sso.metadata.ProfileService;
 import com.example.sso.metadata.internal.domain.ProfileEntity;
 import com.example.sso.metadata.internal.domain.ProfileRepository;
@@ -8,7 +9,11 @@ import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationView;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.tenancy.OrgContext;
+import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +48,41 @@ class ProfileServiceImpl implements ProfileService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public Optional<Profile> findByConnectorId(UUID connectorId) {
+        return actingOrg().flatMap(org -> repository.findByConnectorIdAndOrgId(connectorId, org))
+                .map(this::toProfile);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<Profile> tenantProfile() {
+        return actingOrg().flatMap(org -> repository.findByOrgIdAndKind(org, ProfileKind.TENANT))
+                .map(this::toProfile);
+    }
+
+    @Override
+    @Transactional
+    public Profile provisionForConnector(UUID connectorId, String name, ProfileKind kind) {
+        UUID org = actingOrg()
+                .orElseThrow(() -> new ForbiddenException("Profiles belong to an organization."));
+        // Idempotent: saving a connector again must not mint a second schema for the same directory.
+        return repository.findByConnectorIdAndOrgId(connectorId, org)
+                .map(this::toProfile)
+                .orElseGet(() -> toProfile(repository.saveAndFlush(
+                        ProfileEntity.forConnector(org, uniqueName(org, name), kind, connectorId))));
+    }
+
+    /** Profile names are unique per organization; a connector's display name may already be taken. */
+    private String uniqueName(UUID org, String name) {
+        String candidate = name;
+        for (int suffix = 2; repository.findByOrgIdAndName(org, candidate).isPresent(); suffix++) {
+            candidate = name + " (" + suffix + ")";
+        }
+        return candidate;
+    }
+
+    @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void provisionDefault(UUID orgId) {
         // REQUIRES_NEW because this runs from an AFTER_COMMIT listener, where the creating transaction is
@@ -57,6 +97,21 @@ class ProfileServiceImpl implements ProfileService {
             }
             repository.saveAndFlush(ProfileEntity.tenantDefault(orgId, name));
         });
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Set<UUID> connectorIdsOf(Collection<UUID> profileIds) {
+        if (profileIds == null || profileIds.isEmpty()) {
+            return Set.of();
+        }
+        return actingOrg()
+                .map(org -> repository.findAllById(profileIds).stream()
+                        .filter(profile -> org.equals(profile.getOrgId()))
+                        .map(ProfileEntity::getConnectorId)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet()))
+                .orElseGet(Set::of);
     }
 
     /** The organization whose profiles the caller may see; empty when bound to none. */

@@ -2,13 +2,16 @@ package com.example.sso.directory.internal.application;
 
 import com.example.sso.crypto.SecretCipher;
 import com.example.sso.directory.DirectoryConnectorKind;
-import com.example.sso.directory.internal.domain.DirectoryAttributeMapping;
-import com.example.sso.directory.internal.domain.DirectoryAttributeMappingRepository;
 import com.example.sso.directory.internal.domain.DirectoryConnector;
 import com.example.sso.directory.internal.domain.DirectorySyncRun;
 import com.example.sso.metadata.AttributeDataType;
 import com.example.sso.metadata.AttributeDefinition;
 import com.example.sso.metadata.AttributeDefinitionService;
+import com.example.sso.metadata.Profile;
+import com.example.sso.metadata.ProfileKind;
+import com.example.sso.metadata.ProfileMapping;
+import com.example.sso.metadata.ProfileMappingService;
+import com.example.sso.metadata.ProfileService;
 import com.example.sso.metadata.AttributeSource;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.shared.error.BadRequestException;
@@ -51,11 +54,14 @@ class DirectorySyncServiceTest {
     private static final UUID ORG = UUID.randomUUID();
     private static final UUID CONNECTOR = UUID.randomUUID();
     private static final UUID RUN = UUID.randomUUID();
+    private static final UUID SOURCE_PROFILE = UUID.randomUUID();
+    private static final UUID TENANT_PROFILE = UUID.randomUUID();
     private static final Instant NOW = Instant.parse("2026-07-20T10:00:00Z");
 
     @Mock private LdapDirectoryClient ldap;
     @Mock private DirectoryClients clients;
-    @Mock private DirectoryAttributeMappingRepository mappings;
+    @Mock private ProfileMappingService mappings;
+    @Mock private ProfileService profiles;
     @Mock private AttributeDefinitionService definitions;
     @Mock private SecretCipher cipher;
     @Mock private UserService users;
@@ -66,7 +72,7 @@ class DirectorySyncServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new DirectorySyncService(clients, mappings, definitions, cipher, users, writer);
+        service = new DirectorySyncService(clients, mappings, profiles, definitions, cipher, users, writer);
         lenient().when(clients.forKind(DirectoryConnectorKind.LDAP)).thenReturn(ldap);
         connector = DirectoryConnector.create(ORG, "corp", DirectoryConnectorKind.LDAP);
         connector.reconfigure("Corp LDAP", true, "ldap.corp.test", 636, true, false, "cn=svc",
@@ -82,8 +88,13 @@ class DirectorySyncServiceTest {
                 .thenAnswer(i -> finished(DirectorySyncRun.FAILED, 0, 0, 0, 0, i.getArgument(1)));
 
         lenient().when(cipher.decrypt("encg:cipher")).thenReturn("s3cret");
-        lenient().when(mappings.findByConnectorIdOrderBySourceAttribute(any())).thenReturn(List.of(
-                DirectoryAttributeMapping.create(CONNECTOR, ORG, "department", "department")));
+        Profile sourceProfile = new Profile(SOURCE_PROFILE, "corp LDAP", ProfileKind.LDAP, CONNECTOR, false, false);
+        lenient().when(profiles.findByConnectorId(any())).thenReturn(Optional.of(sourceProfile));
+        lenient().when(profiles.tenantProfile()).thenReturn(Optional.of(
+                new Profile(TENANT_PROFILE, "acme", ProfileKind.TENANT, null, true, true)));
+        lenient().when(mappings.mappingsFrom(SOURCE_PROFILE)).thenReturn(List.of(
+                new ProfileMapping(UUID.randomUUID(), SOURCE_PROFILE, "department", TENANT_PROFILE,
+                        "department")));
         lenient().when(definitions.definitionOf(EntityKind.USER, "department"))
                 .thenReturn(Optional.of(definition(AttributeSource.DIRECTORY)));
     }
@@ -245,7 +256,7 @@ class DirectorySyncServiceTest {
     /** A connector with nothing mapped would read a directory and write nothing — say so rather than pretend. */
     @Test
     void aConnectorWithNoMappingsDoesNotTouchTheDirectory() {
-        when(mappings.findByConnectorIdOrderBySourceAttribute(any())).thenReturn(List.of());
+        when(mappings.mappingsFrom(SOURCE_PROFILE)).thenReturn(List.of());
 
         DirectorySyncRun run = service.sync(connector);
 

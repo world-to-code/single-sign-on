@@ -1,10 +1,10 @@
 package com.example.sso.directory.internal.application;
 
-import com.example.sso.directory.internal.domain.DirectoryAttributeMapping;
 import com.example.sso.directory.internal.domain.DirectoryConnector;
 import com.example.sso.directory.internal.domain.DirectorySyncRun;
 import com.example.sso.directory.internal.domain.DirectorySyncRunRepository;
 import com.example.sso.metadata.AttributeService;
+import com.example.sso.metadata.ProfileMapping;
 import com.example.sso.metadata.EntityKind;
 import java.time.Clock;
 import java.util.List;
@@ -60,14 +60,14 @@ class DirectorySyncWriter {
      * @return whether anything was actually written for them.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public boolean apply(UUID userId, List<DirectoryAttributeMapping> mapped, DirectoryEntry entry) {
+    public boolean apply(UUID userId, List<ProfileMapping> mapped, DirectoryEntry entry) {
         boolean wrote = false;
-        for (DirectoryAttributeMapping mapping : mapped) {
-            List<String> values = entry.attributes().getOrDefault(mapping.getSourceAttribute(), List.of());
+        for (ProfileMapping mapping : mapped) {
+            List<String> values = entry.attributes().getOrDefault(mapping.sourceKey(), List.of());
             if (values.isEmpty()) {
                 continue; // the directory did not carry it; absent is not an instruction to clear it
             }
-            attributes.applyFromDirectory(EntityKind.USER, userId.toString(), mapping.getTargetKey(), values);
+            attributes.applyFromDirectory(EntityKind.USER, userId.toString(), mapping.targetKey(), values);
             wrote = true;
         }
         return wrote;

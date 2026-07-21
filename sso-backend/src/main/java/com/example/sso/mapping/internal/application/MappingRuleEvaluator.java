@@ -190,6 +190,9 @@ class MappingRuleEvaluator {
         if (!authorStillAuthorized(rule)) {
             return; // the author lost the authority this grant would need — skip (audited)
         }
+        if (!directorySourcesAuthorized(rule)) {
+            return; // a directory decides who matches this rule, and nobody vouched for it (audited once)
+        }
         // Claim FIRST (ON CONFLICT DO NOTHING): only the tx that actually inserts the provenance row grants and
         // audits, so a concurrent twin neither re-grants, double-audits, nor aborts on the unique constraint.
         if (memberships.insertClaimIfAbsent(rule.getId(), userId, rule.getTargetId(), tierGuard.currentTier()) == 0) {

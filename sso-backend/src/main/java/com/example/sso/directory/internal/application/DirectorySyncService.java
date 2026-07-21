@@ -1,11 +1,13 @@
 package com.example.sso.directory.internal.application;
 
 import com.example.sso.crypto.SecretCipher;
-import com.example.sso.directory.internal.domain.DirectoryAttributeMapping;
-import com.example.sso.directory.internal.domain.DirectoryAttributeMappingRepository;
 import com.example.sso.directory.internal.domain.DirectoryConnector;
 import com.example.sso.directory.internal.domain.DirectorySyncRun;
 import com.example.sso.metadata.AttributeDefinitionService;
+import com.example.sso.metadata.Profile;
+import com.example.sso.metadata.ProfileMapping;
+import com.example.sso.metadata.ProfileMappingService;
+import com.example.sso.metadata.ProfileService;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.user.account.UserService;
 import java.util.List;
@@ -46,7 +48,8 @@ import org.springframework.util.StringUtils;
 public class DirectorySyncService {
 
     private final DirectoryClients clients;
-    private final DirectoryAttributeMappingRepository mappings;
+    private final ProfileMappingService mappings;
+    private final ProfileService profiles;
     private final AttributeDefinitionService definitions;
     private final SecretCipher cipher;
     private final UserService users;
@@ -66,8 +69,19 @@ public class DirectorySyncService {
     }
 
     private DirectorySyncRun run(DirectoryConnector connector, UUID runId) {
-        List<DirectoryAttributeMapping> mapped =
-                mappings.findByConnectorIdOrderBySourceAttribute(connector.getId());
+        Profile source = profiles.findByConnectorId(connector.getId()).orElse(null);
+        if (source == null) {
+            // No profile means nothing describes what this connector provides. Reporting a SUCCEEDED run that
+            // read nothing would be indistinguishable from an empty directory, so say what actually happened.
+            return writer.failed(runId, "the connector has no profile describing it");
+        }
+        UUID tenantProfile = profiles.tenantProfile().map(Profile::id).orElse(null);
+        // Only mappings onto the tenant's OWN profile are applied. The escalation guard resolves a key's
+        // directory provenance through that profile, so a mapping onto any other one would write values it
+        // cannot see — and a rule keyed on them would grant unchecked.
+        List<ProfileMapping> mapped = mappings.mappingsFrom(source.id()).stream()
+                .filter(mapping -> mapping.targetProfileId().equals(tenantProfile))
+                .toList();
         List<String> unwritable = unwritableTargets(mapped);
         if (!unwritable.isEmpty()) {
             // Settled before the bind: a connector aimed at a key its own schema does not let a directory own
@@ -102,9 +116,9 @@ public class DirectorySyncService {
     }
 
     /** The mapped targets this tenant's schema does NOT let a directory fill, in the order they were mapped. */
-    private List<String> unwritableTargets(List<DirectoryAttributeMapping> mapped) {
+    private List<String> unwritableTargets(List<ProfileMapping> mapped) {
         return mapped.stream()
-                .map(DirectoryAttributeMapping::getTargetKey)
+                .map(ProfileMapping::targetKey)
                 .filter(key -> definitions.definitionOf(EntityKind.USER, key)
                         .filter(definition -> !definition.locallyEditable())
                         .isEmpty())
@@ -112,8 +126,8 @@ public class DirectorySyncService {
                 .toList();
     }
 
-    private List<String> sourcesOf(List<DirectoryAttributeMapping> mapped) {
-        return mapped.stream().map(DirectoryAttributeMapping::getSourceAttribute).distinct().toList();
+    private List<String> sourcesOf(List<ProfileMapping> mapped) {
+        return mapped.stream().map(ProfileMapping::sourceKey).distinct().toList();
     }
 
     private String bindPassword(DirectoryConnector connector) {
