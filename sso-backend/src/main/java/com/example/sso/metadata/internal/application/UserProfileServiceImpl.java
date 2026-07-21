@@ -13,9 +13,11 @@ import com.example.sso.metadata.ProfileSwitchPreview;
 import com.example.sso.metadata.UserProfileService;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -40,6 +42,7 @@ class UserProfileServiceImpl implements UserProfileService {
     private final AttributeDefinitionService definitions;
     private final AttributeService attributes;
     private final AuditService audit;
+    private final OrgContext orgContext;
 
     @Override
     @Transactional(readOnly = true)
@@ -88,12 +91,24 @@ class UserProfileServiceImpl implements UserProfileService {
         }
     }
 
+    /**
+     * The subject, only if they belong to the acting organization.
+     *
+     * <p>{@code app_user} carries no RLS — users are global identities — so nothing below this service scopes
+     * a user id. Without this check an administrator of one tenant could bind another tenant's person (or a
+     * platform account, crossing the tier without drilling in) to their own schema. Non-revealing on purpose:
+     * a foreign id is indistinguishable from one that does not exist.
+     */
     private UserAccount requireUser(UUID userId) {
-        return users.findById(userId).orElseThrow(() -> new NotFoundException("User not found"));
+        UserAccount user = users.findById(userId)
+                .filter(candidate -> Objects.equals(users.orgIdOf(userId).orElse(null),
+                        orgContext.currentOrg().orElse(null)))
+                .orElseThrow(() -> NotFoundException.of("user.notFound"));
+        return user;
     }
 
     private UUID requireProfile(UUID profileId) {
         return profiles.findById(profileId)
-                .orElseThrow(() -> new NotFoundException("Profile not found")).id();
+                .orElseThrow(() -> NotFoundException.of("metadata.profile.notFound")).id();
     }
 }

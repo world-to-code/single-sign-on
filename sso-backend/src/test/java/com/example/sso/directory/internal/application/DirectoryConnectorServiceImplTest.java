@@ -3,6 +3,8 @@ package com.example.sso.directory.internal.application;
 import com.example.sso.crypto.SecretCipher;
 import com.example.sso.directory.DirectoryConnectorKind;
 import com.example.sso.directory.DirectoryConnectorSpec;
+import com.example.sso.directory.DirectorySourceAuthors;
+import com.example.sso.metadata.ProfileMapping;
 import com.example.sso.metadata.ProfileMappingService;
 import com.example.sso.metadata.ProfileService;
 import com.example.sso.directory.internal.domain.DirectoryConnector;
@@ -12,7 +14,9 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.net.OutboundHostValidator;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserService;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -229,6 +233,51 @@ class DirectoryConnectorServiceImplTest {
         assertThatThrownBy(() -> service.save(spec("s3cret", 636, true, false)))
                 .isInstanceOf(BadRequestException.class);
         verify(connectors, never()).save(any());
+    }
+
+    // --- who can fill an attribute ------------------------------------------------------------------------
+
+    /**
+     * The escalation guard asks this "who can fill these keys?" and refuses the grant unless every answer
+     * could have made it by hand. A SCIM or CSV source profile has no connector to attribute, so reporting
+     * only the connector-backed half would let a legitimate LDAP configurator vouch for a value a SCIM client
+     * wrote. An unattributable source makes the answer INCOMPLETE, and incomplete fails closed upstream.
+     */
+    @Test
+    void aSourceWithNoConnectorMakesTheAnswerIncomplete() {
+        UUID ldapProfile = UUID.randomUUID();
+        UUID scimProfile = UUID.randomUUID();
+        UUID connector = UUID.randomUUID();
+        when(mappings.mappingsFilling(any())).thenReturn(List.of(
+                new ProfileMapping(UUID.randomUUID(), ldapProfile, "ou", UUID.randomUUID(), "department"),
+                new ProfileMapping(UUID.randomUUID(), scimProfile, "dept", UUID.randomUUID(), "department")));
+        // Only the LDAP profile resolves to a connector; the SCIM one has none.
+        when(profiles.connectorIdsOf(any())).thenReturn(Set.of(connector));
+        DirectoryConnector row = stored();
+        row.configuredBy(UUID.randomUUID());
+        when(connectors.findAllById(any())).thenReturn(List.of(row));
+
+        DirectorySourceAuthors authors = service.authorsFilling(List.of("department"));
+
+        assertThat(authors.complete()).isFalse();
+    }
+
+    @Test
+    void everySourceHavingAConnectorLeavesTheAnswerComplete() {
+        UUID ldapProfile = UUID.randomUUID();
+        UUID connector = UUID.randomUUID();
+        UUID configurator = UUID.randomUUID();
+        when(mappings.mappingsFilling(any())).thenReturn(List.of(
+                new ProfileMapping(UUID.randomUUID(), ldapProfile, "ou", UUID.randomUUID(), "department")));
+        when(profiles.connectorIdsOf(any())).thenReturn(Set.of(connector));
+        DirectoryConnector row = stored();
+        row.configuredBy(configurator);
+        when(connectors.findAllById(any())).thenReturn(List.of(row));
+
+        DirectorySourceAuthors authors = service.authorsFilling(List.of("department"));
+
+        assertThat(authors.complete()).isTrue();
+        assertThat(authors.configurators()).containsExactly(configurator);
     }
 
     @Test

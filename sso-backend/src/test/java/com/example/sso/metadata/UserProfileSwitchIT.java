@@ -3,6 +3,7 @@ package com.example.sso.metadata;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.shared.error.ConflictException;
+import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.NewUser;
@@ -37,11 +38,11 @@ class UserProfileSwitchIT extends AbstractIntegrationTest {
     @Autowired OrgContext orgContext;
 
     private UUID orgA;
-    private final List<UUID> createdUsers = new java.util.ArrayList<>();
+    private final List<java.util.Map.Entry<UUID, UUID>> createdUsers = new java.util.ArrayList<>();
 
     @AfterEach
     void tearDown() {
-        createdUsers.forEach(id -> orgContext.runInOrg(orgA, () -> users.delete(id)));
+        createdUsers.forEach(entry -> orgContext.runInOrg(entry.getValue(), () -> users.delete(entry.getKey())));
         createdUsers.clear();
         if (orgA != null) {
             organizations.delete(orgA);
@@ -70,7 +71,7 @@ class UserProfileSwitchIT extends AbstractIntegrationTest {
         UserAccount created = orgContext.callInOrg(orgId,
                 () -> users.createUser(new NewUser(name, name + "@example.com", "U", "S3cret!pw",
                         Set.of("ROLE_USER")), orgId));
-        createdUsers.add(created.getId());
+        createdUsers.add(java.util.Map.entry(created.getId(), orgId));
         return created;
     }
 

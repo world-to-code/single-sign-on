@@ -121,6 +121,22 @@ class ScimAttributeSyncTest {
         verify(attributes, never()).applyFromDirectory(any(), any(), any(), any());
     }
 
+    /**
+     * entity_attribute.attr_value is varchar(255) and SCIM input is unbounded. Reaching the insert would fail
+     * the whole provisioning call on a constraint the client cannot see — and, inside the caller's
+     * transaction, the swallowed violation would surface at commit where nothing can handle it.
+     */
+    @Test
+    void refusesAValueTooLongForTheAttributeStore() {
+        maps("title", "jobTitle");
+        User resource = user();
+        resource.setTitle("x".repeat(256));
+
+        sync.apply(USER, resource);
+
+        verify(attributes, never()).applyFromDirectory(any(), any(), any(), any());
+    }
+
     /** A mapping onto any profile but the tenant's is ignored — the same rule the directory sync follows. */
     @Test
     void ignoresAMappingOntoAnotherProfile() {

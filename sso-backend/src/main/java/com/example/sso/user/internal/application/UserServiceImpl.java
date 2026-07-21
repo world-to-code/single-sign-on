@@ -348,7 +348,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    @Transactional
+    @Transactional(readOnly = true)
     public void requestEmailVerification(UUID id) {
         requestEmailVerification(require(id));
     }

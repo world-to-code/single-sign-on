@@ -7,6 +7,7 @@ import com.example.sso.metadata.ProfileKind;
 import com.example.sso.metadata.ProfileMapping;
 import com.example.sso.metadata.ProfileMappingService;
 import com.example.sso.metadata.ProfileService;
+import com.example.sso.shared.error.ConflictException;
 import com.fasterxml.jackson.databind.JsonNode;
 import de.captaingoldfish.scim.sdk.common.resources.User;
 import java.util.ArrayList;
@@ -31,6 +32,9 @@ import org.springframework.stereotype.Component;
 @Slf4j
 class ScimAttributeSync {
 
+    /** entity_attribute.attr_value is varchar(255) (V93); SCIM input has no length of its own. */
+    private static final int MAX_VALUE = 255;
+
     private final ProfileService profiles;
     private final ProfileMappingService mappings;
     private final AttributeService attributes;
@@ -51,11 +55,21 @@ class ScimAttributeSync {
             if (values.isEmpty()) {
                 continue; // absent is not an instruction to clear it
             }
+            if (values.stream().anyMatch(value -> value.length() > MAX_VALUE)) {
+                // entity_attribute.attr_value is varchar(255) and SCIM input is unbounded. Refusing the one
+                // attribute keeps the rest of the payload applying; letting it reach the insert would fail the
+                // whole provisioning call on a constraint the client cannot see.
+                log.warn("SCIM value for {} exceeds {} characters", mapping.targetKey(), MAX_VALUE);
+                continue;
+            }
             try {
                 attributes.applyFromDirectory(EntityKind.USER, userId.toString(), mapping.targetKey(), values);
-            } catch (RuntimeException refused) {
-                // A target the schema does not let a directory own. Log the KEY, never the value — SCIM
-                // payloads are personal data.
+            } catch (ConflictException refused) {
+                // ONLY the ownership refusal, which requireDirectoryOwned throws before touching the database.
+                // Catching RuntimeException here would also absorb a constraint violation — an over-length
+                // value is trivially reachable, SCIM input being unbounded — and that marks the surrounding
+                // transaction rollback-only, so the commit fails afterwards where nothing can handle it.
+                // Log the KEY, never the value: SCIM payloads are personal data.
                 log.warn("SCIM could not fill {}: {}", mapping.targetKey(), refused.getClass().getSimpleName());
             }
         }

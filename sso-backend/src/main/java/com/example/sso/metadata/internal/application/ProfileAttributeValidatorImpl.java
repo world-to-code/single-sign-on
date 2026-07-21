@@ -41,11 +41,19 @@ class ProfileAttributeValidatorImpl implements ProfileAttributeValidator {
                 // Refuse rather than store: an undeclared key is a typo that becomes data nobody can find.
                 throw BadRequestException.of("metadata.attribute.undeclared", key);
             }
+            if (!definition.locallyEditable()) {
+                // A directory owns this one, so the sync would overwrite whatever an administrator typed. The
+                // store refuses it downstream; catching it here is what makes "validate before creating"
+                // true — otherwise validation passes and the account is half-made when add() throws.
+                throw BadRequestException.of("metadata.attribute.directoryOwned", definition.displayName());
+            }
             check(definition, given);
         });
 
         declared.values().stream()
                 .filter(AttributeDefinition::required)
+                // A required attribute a directory fills is not the administrator's to supply.
+                .filter(AttributeDefinition::locallyEditable)
                 .filter(definition -> isBlank(values.get(definition.key())))
                 .findFirst()
                 .ifPresent(definition -> {

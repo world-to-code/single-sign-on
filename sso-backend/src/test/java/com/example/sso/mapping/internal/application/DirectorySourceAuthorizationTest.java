@@ -132,6 +132,22 @@ class DirectorySourceAuthorizationTest {
         verify(memberships).insertClaimIfAbsent(rule.getId(), USER, TARGET_ROLE, ORG);
     }
 
+    /**
+     * A source with no connector at all — SCIM, CSV — fills the key too, and nobody configured a directory we
+     * could hold responsible for it. Answering "who can fill this?" with only the connector-backed half would
+     * let a legitimate LDAP configurator vouch for a value a SCIM client wrote. The set must be COMPLETE.
+     */
+    @Test
+    void anUnattributableSourceMakesTheAnswerIncompleteEvenAlongsideAGoodConnector() {
+        when(connectors.authorsFilling(any()))
+                .thenReturn(new DirectorySourceAuthors(Set.of(CONFIGURATOR), false));
+        lenient().when(targetAuthority.authorMayAssign(eq(CONFIGURATOR), any(), any())).thenReturn(true);
+
+        ReflectionTestUtils.invokeMethod(evaluator, "materialize", rule, USER);
+
+        verify(memberships, never()).insertClaimIfAbsent(any(), any(), any(), any());
+    }
+
     /** An unattributed connector vouches for nothing — fail closed rather than guess who aimed it. */
     @Test
     void anUnattributedDirectoryVouchesForNothing() {

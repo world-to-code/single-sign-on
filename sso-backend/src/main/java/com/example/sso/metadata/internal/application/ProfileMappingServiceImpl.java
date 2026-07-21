@@ -12,6 +12,7 @@ import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +31,11 @@ import org.springframework.util.StringUtils;
 @Service
 @RequiredArgsConstructor
 class ProfileMappingServiceImpl implements ProfileMappingService {
+
+    /** Substring match on purpose: the shape varies by source ({@code password}, {@code userPassword}, an
+     *  extension's {@code credentials.secret}), and a missed one is stored in the clear. */
+    private static final List<String> CREDENTIAL_PARTS =
+            List.of("password", "secret", "credential", "privatekey", "private_key", "token");
 
     private final ProfileAttributeMappingRepository repository;
     private final ProfileRepository profiles;
@@ -53,7 +59,15 @@ class ProfileMappingServiceImpl implements ProfileMappingService {
         if (source.equals(target)) {
             throw BadRequestException.of("metadata.mapping.sameProfile");
         }
-        String from = requireKey(sourceKey);
+        // Both consumers — the directory sync and the SCIM sync — apply only mappings onto the tenant's own
+        // profile, because that is the profile the escalation guard resolves a key's provenance through.
+        // Accepting any other target would store configuration that looks active, does nothing, and is
+        // invisible to that guard. Say the invariant here rather than letting two readers enforce it silently.
+        if (!profiles.findByIdAndOrgId(target, org)
+                .map(profile -> profile.getKind() == ProfileKind.TENANT).orElse(false)) {
+            throw BadRequestException.of("metadata.mapping.targetNotTenant");
+        }
+        String from = requireCarryable(requireKey(sourceKey));
         String to = requireKey(targetKey);
         // Re-aiming an existing mapping is an update in place, not delete-then-insert: Hibernate flushes
         // inserts before deletes, so the insert would hit uq_profile_mapping_source while the old row remains.
@@ -99,6 +113,23 @@ class ProfileMappingServiceImpl implements ProfileMappingService {
         return orgContext.currentOrg()
                 .flatMap(org -> profiles.findByIdAndOrgId(profileId, org))
                 .map(profile -> profile.getId());
+    }
+
+    /**
+     * Credential material is never a profile attribute.
+     *
+     * <p>A source payload can carry a password — SCIM's core {@code User} has one, write-only — and a mapping
+     * reads whatever path it is given. Aiming one at an attribute would store the plaintext in
+     * {@code entity_attribute}, where it is readable in the console and usable as an ABAC condition value.
+     * Refuse at configuration time: the alternative is discovering it after a sync has already written it.
+     */
+    private String requireCarryable(String key) {
+        String lower = key.toLowerCase(Locale.ROOT);
+        boolean credential = CREDENTIAL_PARTS.stream().anyMatch(lower::contains);
+        if (credential) {
+            throw BadRequestException.of("metadata.mapping.credentialSource", key);
+        }
+        return key;
     }
 
     private String requireKey(String key) {

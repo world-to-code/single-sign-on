@@ -79,6 +79,12 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
         Set<UUID> sourceProfiles = mappings.mappingsFilling(targetKeys).stream()
                 .map(ProfileMapping::sourceProfileId).collect(Collectors.toSet());
         Set<UUID> connectorIds = profiles.connectorIdsOf(sourceProfiles);
+        // A source profile with no connector — SCIM, CSV — fills these keys too, and there is no configured
+        // directory to attribute it to. Dropping it silently answers "who can fill this key?" with only the
+        // connector-backed half, so a rule vouched for by an LDAP configurator would pass while a SCIM client
+        // wrote the matching value. That premise held only while every source profile had a connector; V129
+        // removed exactly that, so an unattributable source now makes the answer INCOMPLETE.
+        boolean everySourceAttributable = connectorIds.size() == sourceProfiles.size();
         Set<UUID> configurators = new HashSet<>();
         boolean complete = true;
         for (DirectoryConnector connector : connectors.findAllById(connectorIds)) {
@@ -88,7 +94,7 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
                 configurators.add(connector.getConfiguredBy());
             }
         }
-        return new DirectorySourceAuthors(Set.copyOf(configurators), complete);
+        return new DirectorySourceAuthors(Set.copyOf(configurators), complete && everySourceAttributable);
     }
 
     @Override

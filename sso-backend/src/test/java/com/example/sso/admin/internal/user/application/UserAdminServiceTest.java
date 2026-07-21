@@ -5,6 +5,10 @@ import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.shared.application.LastAdminGuard;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.metadata.AttributeService;
+import com.example.sso.metadata.EntityKind;
+import com.example.sso.shared.error.BadRequestException;
+import java.util.List;
+import java.util.Map;
 import com.example.sso.metadata.ProfileAttributeValidator;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.audit.AuditSubjectType;
@@ -109,6 +113,62 @@ class UserAdminServiceTest {
         assertThatThrownBy(() -> service.deleteUser(targetId)).isInstanceOf(ConflictException.class);
         verify(userService, never()).delete(any());
         verify(auditLogger, never()).log(any(), any(), any(), any());
+    }
+
+    /**
+     * The attribute branch of createUser. Every other test here leaves defaultForCreation() returning null,
+     * which skips validation, profile assignment and the attribute writes entirely — so without these the
+     * whole feature could be deleted and the suite would stay green.
+     */
+    @Test
+    void validationRunsBeforeTheAccountIsWritten() {
+        UUID org = UUID.randomUUID();
+        UUID profile = UUID.randomUUID();
+        NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "pw", Set.of(Roles.USER));
+        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
+        when(validator.defaultForCreation()).thenReturn(profile);
+        doThrow(BadRequestException.of("metadata.attribute.required", "Team"))
+                .when(validator).validate(eq(profile), any());
+
+        assertThatThrownBy(() -> service.createUser(newUser, Map.of("team", List.of(""))))
+                .isInstanceOf(BadRequestException.class);
+
+        // The point of validating first: a rejected attribute must not leave a half-made account behind.
+        verify(userService, never()).createUser(any(), any());
+    }
+
+    @Test
+    void aCreatedUserIsBoundToTheCreationProfileAndCarriesItsAttributes() {
+        UUID org = UUID.randomUUID();
+        UUID profile = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "pw", Set.of(Roles.USER));
+        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
+        when(validator.defaultForCreation()).thenReturn(profile);
+        UserAccount created = user(userId); // the helper stubs, so it cannot run inside when(...)
+        when(userService.createUser(eq(newUser), eq(org))).thenReturn(created);
+
+        service.createUser(newUser, Map.of("team", List.of("Platform")));
+
+        verify(userService).assignProfile(userId, profile);
+        verify(attributes).add(EntityKind.USER, userId.toString(), "team", "Platform");
+    }
+
+    /** A blank value is "not supplied", not an empty attribute nobody can search for. */
+    @Test
+    void blankAttributeValuesAreNotStored() {
+        UUID org = UUID.randomUUID();
+        UUID profile = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "pw", Set.of(Roles.USER));
+        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
+        when(validator.defaultForCreation()).thenReturn(profile);
+        UserAccount created = user(userId);
+        when(userService.createUser(eq(newUser), eq(org))).thenReturn(created);
+
+        service.createUser(newUser, Map.of("team", List.of("  ")));
+
+        verify(attributes, never()).add(any(), any(), any(), any());
     }
 
     @Test

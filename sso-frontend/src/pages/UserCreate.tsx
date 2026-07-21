@@ -12,7 +12,7 @@ import { CheckboxGroup } from "@/components/form/CheckboxGroup";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { listAttributeDefinitions, type AttributeDefinition } from "@/attributeDefinitions";
-import { useTenantProfile } from "@/hooks/useTenantProfile";
+import { useCreationProfile } from "@/hooks/useCreationProfile";
 
 interface Role { id: string; name: string }
 const blank = { username: "", email: "", displayName: "", password: "", roles: ["ROLE_USER"] };
@@ -25,7 +25,7 @@ export default function UserCreate() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [definitions, setDefinitions] = useState<AttributeDefinition[]>([]);
   const [attrs, setAttrs] = useState<Record<string, string>>({});
-  const profile = useTenantProfile();
+  const profile = useCreationProfile();
 
   // A tenant with no declared attributes simply gets no extra section — the schema is a catalog, not a demand.
   useEffect(() => {
