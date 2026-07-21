@@ -2,6 +2,7 @@ package com.example.sso.metadata;
 
 import com.example.sso.shared.error.BadRequestException;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -23,6 +24,16 @@ public interface ProfileAttributeValidator {
      *                   single-valued attribute
      */
     void validate(UUID profileId, Map<String, ? extends Collection<String>> values);
+
+    /**
+     * The same rules, against definitions the caller already holds.
+     *
+     * <p>For a bulk operation. The profile's declarations do not change between one row of a file and the
+     * next, but re-resolving them per row costs two queries each — a profile lookup and its definitions — so a
+     * five-hundred-row import paid a thousand for an answer it already had. Taking the list keeps ONE set of
+     * rules rather than a second copy that could drift from this one.
+     */
+    void validate(List<AttributeDefinition> declaredIn, Map<String, ? extends Collection<String>> values);
 
     /** The profile a manually created user is given: the tenant's designated default, else its own. */
     UUID defaultForCreation();

@@ -75,6 +75,10 @@ class CsvImportPlanner {
         // reach the validator.
         Set<String> baseKeys = columns.stream().filter(AttributeDefinition::base)
                 .map(AttributeDefinition::key).collect(Collectors.toCollection(LinkedHashSet::new));
+        // The declarations do not change between rows, so they are resolved once and validated against —
+        // per-row resolution cost a profile lookup and a definitions read for every line of the file.
+        List<AttributeDefinition> profileColumns = columns.stream()
+                .filter(column -> !column.base()).toList();
         List<CsvRow> rows = read(csv, declared, baseKeys);
 
         // Asked once for the whole file rather than once per row: an import is the one path here that is
@@ -87,7 +91,7 @@ class CsvImportPlanner {
         List<CsvRowFailure> failures = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
         for (CsvRow row : rows) {
-            CsvRowFailure failure = failureIn(profileId, row, seen, missingGroups);
+            CsvRowFailure failure = failureIn(profileColumns, row, seen, missingGroups);
             if (failure != null) {
                 failures.add(failure);
                 continue;
@@ -104,7 +108,8 @@ class CsvImportPlanner {
                 existing.stream().filter(name -> !name.isEmpty()).toList(), failures);
     }
 
-    private CsvRowFailure failureIn(UUID profileId, CsvRow row, Set<String> seen, Set<String> missingGroups) {
+    private CsvRowFailure failureIn(List<AttributeDefinition> profileColumns, CsvRow row, Set<String> seen,
+            Set<String> missingGroups) {
         if (row.username().isEmpty()) {
             return row.fails("metadata.csv.row.missingRequired", BaseUserFields.USERNAME);
         }
@@ -133,7 +138,7 @@ class CsvImportPlanner {
             return row.fails("metadata.csv.row.unknownGroup", unknownGroup);
         }
         try {
-            values.validate(profileId, row.profileValues().entrySet().stream()
+            values.validate(profileColumns, row.profileValues().entrySet().stream()
                     .collect(Collectors.toMap(Map.Entry::getKey, e -> List.of(e.getValue()))));
         } catch (ApiException refused) {
             return row.fails(refused.getMessageKey(), null);

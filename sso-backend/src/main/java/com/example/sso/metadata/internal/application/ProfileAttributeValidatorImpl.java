@@ -30,7 +30,12 @@ class ProfileAttributeValidatorImpl implements ProfileAttributeValidator {
     @Override
     @Transactional(readOnly = true)
     public void validate(UUID profileId, Map<String, ? extends Collection<String>> values) {
-        Map<String, AttributeDefinition> declared = definitions.definitionsIn(profileId).stream()
+        validate(definitions.definitionsIn(profileId), values);
+    }
+
+    @Override
+    public void validate(List<AttributeDefinition> declaredIn, Map<String, ? extends Collection<String>> values) {
+        Map<String, AttributeDefinition> declared = declaredIn.stream()
                 // Base attributes are app_user columns written through their own fields, not as attributes.
                 .filter(definition -> !definition.base())
                 .collect(Collectors.toMap(AttributeDefinition::key, Function.identity()));

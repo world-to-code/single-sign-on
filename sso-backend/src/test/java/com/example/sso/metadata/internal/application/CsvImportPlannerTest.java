@@ -28,6 +28,7 @@ import org.assertj.core.api.InstanceOfAssertFactories;
 
 import static org.assertj.core.api.InstanceOfAssertFactories.type;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.doThrow;
@@ -218,7 +219,7 @@ class CsvImportPlannerTest {
     @Test
     void aValueTheProfileRefusesFailsWithTheProfilesOwnReason() {
         doThrow(BadRequestException.of("metadata.attribute.enumValue", "region"))
-                .when(values).validate(eq(PROFILE), any());
+                .when(values).validate(anyList(), any());
 
         CsvImportPreview preview = plan("username,email,team\nada,a@x.io,antarctica\n");
 
@@ -294,7 +295,7 @@ class CsvImportPlannerTest {
         CsvImportPreview preview = plan("username,email,team\nada,ada@example.com,platform\n");
 
         ArgumentCaptor<Map<String, List<String>>> validated = ArgumentCaptor.forClass(Map.class);
-        verify(values).validate(eq(PROFILE), validated.capture());
+        verify(values).validate(anyList(), validated.capture());
         assertThat(validated.getValue()).containsOnlyKeys("team");
         assertThat(preview.failures()).isEmpty();
     }
