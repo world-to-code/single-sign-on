@@ -1,8 +1,11 @@
 package com.example.sso.metadata.internal.application;
 
+import com.example.sso.metadata.Profile;
+import com.example.sso.metadata.AttributeSourceConfigurationChangedEvent;
 import com.example.sso.metadata.ProfileKind;
 import com.example.sso.metadata.ProfileMapping;
 import com.example.sso.metadata.ProfileMappingService;
+import com.example.sso.metadata.ProfileService;
 import com.example.sso.metadata.internal.domain.ProfileAttributeMapping;
 import com.example.sso.metadata.internal.domain.ProfileAttributeMappingRepository;
 import com.example.sso.metadata.internal.domain.ProfileRepository;
@@ -16,6 +19,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -39,7 +43,9 @@ class ProfileMappingServiceImpl implements ProfileMappingService {
 
     private final ProfileAttributeMappingRepository repository;
     private final ProfileRepository profiles;
+    private final ProfileService profileService;
     private final OrgContext orgContext;
+    private final ApplicationEventPublisher events;
 
     @Override
     @Transactional(readOnly = true)
@@ -63,14 +69,14 @@ class ProfileMappingServiceImpl implements ProfileMappingService {
         // profile, because that is the profile the escalation guard resolves a key's provenance through.
         // Accepting any other target would store configuration that looks active, does nothing, and is
         // invisible to that guard. Say the invariant here rather than letting two readers enforce it silently.
-        if (!profiles.findByIdAndOrgId(target, org)
-                .map(profile -> profile.getKind() == ProfileKind.TENANT).orElse(false)) {
+        if (!profileService.findById(target).map(Profile::governsUsers).orElse(false)) {
             throw BadRequestException.of("metadata.mapping.targetNotTenant");
         }
         String from = requireCarryable(requireKey(sourceKey));
         String to = requireKey(targetKey);
         // Re-aiming an existing mapping is an update in place, not delete-then-insert: Hibernate flushes
         // inserts before deletes, so the insert would hit uq_profile_mapping_source while the old row remains.
+        sourcesChanged();
         return toMapping(repository.findBySourceProfileIdAndSourceAttrKey(source, from)
                 .map(existing -> {
                     existing.retarget(target, to);
@@ -98,6 +104,12 @@ class ProfileMappingServiceImpl implements ProfileMappingService {
     @Transactional
     public void unmap(UUID mappingId) {
         repository.findByIdAndOrgId(mappingId, requireOrg()).ifPresent(repository::delete);
+        sourcesChanged();
+    }
+
+    /** Which source may fill which attribute just changed, and that answer is cached elsewhere. */
+    private void sourcesChanged() {
+        events.publishEvent(new AttributeSourceConfigurationChangedEvent(orgContext.currentOrg().orElse(null)));
     }
 
     private UUID requireOrg() {

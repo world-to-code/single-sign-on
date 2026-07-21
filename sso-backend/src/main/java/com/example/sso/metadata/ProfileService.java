@@ -19,6 +19,7 @@ public interface ProfileService {
     /** The tenant's own profile — the target every source profile ultimately feeds. */
     Optional<Profile> tenantProfile();
 
+
     /**
      * Creates the profile describing a connector, if it has none. Called when the connector is saved: the two
      * share a lifecycle, so a connector without a profile would have nowhere to declare what it provides.

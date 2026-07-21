@@ -8,6 +8,7 @@ import com.example.sso.metadata.EntityKind;
 import com.example.sso.metadata.Profile;
 import com.example.sso.metadata.ProfileKind;
 import com.example.sso.metadata.ProfileService;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.NotFoundException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -45,8 +46,8 @@ class CsvTemplateServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new CsvTemplateServiceImpl(profiles, definitions);
-        lenient().when(profiles.findById(PROFILE)).thenReturn(Optional.of(
-                new Profile(PROFILE, "acme.com", ProfileKind.TENANT, null, true, true)));
+        Profile tenant = new Profile(PROFILE, "acme.com", ProfileKind.TENANT, null, true, true);
+        lenient().when(profiles.findById(PROFILE)).thenReturn(Optional.of(tenant));
     }
 
     private AttributeDefinition column(String key, AttributeDataType type, List<String> enumValues,
@@ -141,5 +142,18 @@ class CsvTemplateServiceImplTest {
         when(profiles.findById(PROFILE)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.templateFor(PROFILE)).isInstanceOf(NotFoundException.class);
+    }
+
+    /**
+     * A source profile describes what SCIM or a directory SENDS us. Users are not created on it, so a template
+     * for one would be a file an administrator fills in and uploads to no effect — and it would look entirely
+     * plausible, because definitionsIn synthesises the base attributes for every profile alike.
+     */
+    @Test
+    void aSourceProfileHasNoTemplate() {
+        when(profiles.findById(PROFILE)).thenReturn(Optional.of(
+                new Profile(PROFILE, "SCIM", ProfileKind.SCIM, null, false, false)));
+
+        assertThatThrownBy(() -> service.templateFor(PROFILE)).isInstanceOf(BadRequestException.class);
     }
 }

@@ -1,7 +1,9 @@
 package com.example.sso.metadata.internal.application;
 
 import com.example.sso.metadata.internal.domain.ProfileAttributeMappingRepository;
+import com.example.sso.metadata.Profile;
 import com.example.sso.metadata.ProfileKind;
+import com.example.sso.metadata.ProfileService;
 import com.example.sso.metadata.internal.domain.ProfileEntity;
 import com.example.sso.metadata.internal.domain.ProfileRepository;
 import com.example.sso.shared.error.BadRequestException;
@@ -37,16 +39,19 @@ class ProfileMappingCredentialGuardTest {
 
     @Mock private ProfileAttributeMappingRepository repository;
     @Mock private ProfileRepository profiles;
+    @Mock private ProfileService profileService;
     @Mock private OrgContext orgContext;
 
     private ProfileMappingServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new ProfileMappingServiceImpl(repository, profiles, orgContext);
+        service = new ProfileMappingServiceImpl(repository, profiles, profileService, orgContext);
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         lenient().when(profiles.findByIdAndOrgId(SOURCE, ORG)).thenReturn(Optional.of(profile(SOURCE)));
         lenient().when(profiles.findByIdAndOrgId(TARGET, ORG)).thenReturn(Optional.of(profile(TARGET)));
+        lenient().when(profileService.ownTenantProfile(TARGET)).thenReturn(Optional.of(
+                new Profile(TARGET, "acme", ProfileKind.TENANT, null, true, true)));
         lenient().when(repository.findBySourceProfileIdAndSourceAttrKey(SOURCE, "department"))
                 .thenReturn(Optional.empty());
         lenient().when(repository.saveAndFlush(org.mockito.ArgumentMatchers.any()))
@@ -75,6 +80,7 @@ class ProfileMappingCredentialGuardTest {
         UUID otherSource = UUID.randomUUID();
         lenient().when(profiles.findByIdAndOrgId(otherSource, ORG))
                 .thenReturn(Optional.of(sourceProfile(otherSource)));
+        lenient().when(profileService.ownTenantProfile(otherSource)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.map(SOURCE, "department", otherSource, "team"))
                 .isInstanceOf(BadRequestException.class);

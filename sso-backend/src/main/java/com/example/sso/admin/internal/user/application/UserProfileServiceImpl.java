@@ -1,15 +1,11 @@
 package com.example.sso.admin.internal.user.application;
 
-import com.example.sso.audit.AuditRecord;
-import com.example.sso.audit.AuditService;
-import com.example.sso.audit.AuditType;
 import com.example.sso.metadata.Attribute;
 import com.example.sso.metadata.AttributeDefinition;
 import com.example.sso.metadata.AttributeDefinitionService;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.metadata.Profile;
-import com.example.sso.metadata.ProfileKind;
 import com.example.sso.metadata.ProfileService;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
@@ -25,6 +21,8 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,7 +42,6 @@ class UserProfileServiceImpl implements UserProfileService {
     private final ProfileService profiles;
     private final AttributeDefinitionService definitions;
     private final AttributeService attributes;
-    private final AuditService audit;
     private final ApplicationEventPublisher events;
     private final OrgContext orgContext;
 
@@ -76,13 +73,23 @@ class UserProfileServiceImpl implements UserProfileService {
         // The deletion can retract a role, so it has to be attributable afterwards — the keys, not the values.
         // Published rather than recorded inline: AuditService writes REQUIRES_NEW, so an inline record would
         // commit independently and then assert a deletion that a rollback undid.
-        events.publishEvent(new ProfileSwitched(user.getUsername(), user.getOrgId(), target, removed));
+        events.publishEvent(new ProfileSwitched(actingAdministrator(), user.getUsername(),
+                user.getOrgId(), target, removed));
         // Own the termination rather than leaning on the async mapping re-evaluation the attribute deletions
         // also trigger. That path covers a key used by a mapping RULE, but not one used only by a policy
         // binding, and when it fails the retraction waits out the sweep interval — or is lost entirely, since
         // the sweeper does not re-drive a retraction whose claim row is already gone. A destructive,
         // privilege-changing operation should not depend on a side effect to take effect.
         events.publishEvent(new UserAccessChangedEvent(user.getUsername(), user.getOrgId()));
+    }
+
+    /**
+     * Who is performing the move, read while still on the request thread — the AFTER_COMMIT listener that
+     * writes the audit row may not have a security context, and a later @Async move would certainly not.
+     */
+    private String actingAdministrator() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication == null ? null : authentication.getName();
     }
 
     /**
@@ -141,17 +148,13 @@ class UserProfileServiceImpl implements UserProfileService {
     }
 
     /**
-     * The target, which must be one of the tenant's OWN profiles.
-     *
-     * <p>A source profile describes what a directory provides, not what a person is, and it dies with its
-     * connector — {@code profile.connector_id} cascades, and {@code app_user.profile_id} is ON DELETE SET
-     * NULL, so deleting a connector would silently reset every bound user's schema with nothing recorded.
-     * The mapping side already refuses a non-tenant target for a related reason.
+     * The target, which must be one of the tenant's OWN profiles — see {@link Profile#governsUsers()}. The
+     * mapping side refuses a non-tenant target for the same reason, and reports it differently.
      */
     private UUID requireProfile(UUID profileId) {
         Profile profile = profiles.findById(profileId)
                 .orElseThrow(() -> NotFoundException.of("metadata.profile.notFound"));
-        if (profile.kind() != ProfileKind.TENANT) {
+        if (!profile.governsUsers()) {
             throw BadRequestException.of("metadata.profile.notAssignable");
         }
         return profile.id();

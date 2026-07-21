@@ -6,6 +6,7 @@ import com.example.sso.metadata.CsvTemplate;
 import com.example.sso.metadata.CsvTemplateService;
 import com.example.sso.metadata.Profile;
 import com.example.sso.metadata.ProfileService;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.NotFoundException;
 import java.io.IOException;
 import java.io.StringWriter;
@@ -86,8 +87,17 @@ class CsvTemplateServiceImpl implements CsvTemplateService {
     // The columns are definitionsIn(profileId): base attributes included and first, because they are the
     // app_user columns a create needs — leaving them out would make the template useless for its one purpose.
 
+    /**
+     * The profile users will be created on. A source profile describes what SCIM or a directory SENDS us, so
+     * a template for one would be a file an administrator fills in to no effect — and it would look entirely
+     * plausible, since the base attributes are synthesised for every profile alike.
+     */
     private Profile requireProfile(UUID profileId) {
-        return profiles.findById(profileId)
+        Profile profile = profiles.findById(profileId)
                 .orElseThrow(() -> NotFoundException.of("metadata.profile.notFound"));
+        if (!profile.governsUsers()) {
+            throw BadRequestException.of("metadata.profile.notCreatable");
+        }
+        return profile;
     }
 }

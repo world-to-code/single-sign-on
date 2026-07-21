@@ -1,6 +1,5 @@
 package com.example.sso.admin.internal.user.application;
 
-import com.example.sso.audit.AuditService;
 import com.example.sso.metadata.Attribute;
 import com.example.sso.metadata.AttributeDataType;
 import com.example.sso.metadata.AttributeDefinition;
@@ -11,6 +10,7 @@ import com.example.sso.metadata.EntityKind;
 import com.example.sso.metadata.Profile;
 import com.example.sso.metadata.ProfileKind;
 import com.example.sso.metadata.ProfileService;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserAccount;
@@ -53,7 +53,6 @@ class ProfileSwitchBlockingTest {
     @Mock private ProfileService profiles;
     @Mock private AttributeDefinitionService definitions;
     @Mock private AttributeService attributes;
-    @Mock private AuditService audit;
     @Mock private ApplicationEventPublisher events;
     @Mock private OrgContext orgContext;
 
@@ -61,7 +60,7 @@ class ProfileSwitchBlockingTest {
 
     @BeforeEach
     void setUp() {
-        service = new UserProfileServiceImpl(users, profiles, definitions, attributes, audit, events, orgContext);
+        service = new UserProfileServiceImpl(users, profiles, definitions, attributes, events, orgContext);
         UserAccount user = org.mockito.Mockito.mock(UserAccount.class);
         lenient().when(user.getId()).thenReturn(USER);
         lenient().when(user.getUsername()).thenReturn("ada");
@@ -70,8 +69,9 @@ class ProfileSwitchBlockingTest {
         lenient().when(users.findById(USER)).thenReturn(Optional.of(user));
         lenient().when(users.orgIdOf(USER)).thenReturn(Optional.of(ORG));
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
-        lenient().when(profiles.findById(TARGET)).thenReturn(Optional.of(
-                new Profile(TARGET, "acme", ProfileKind.TENANT, null, true, true)));
+        Profile target = new Profile(TARGET, "acme", ProfileKind.TENANT, null, true, true);
+        lenient().when(profiles.findById(TARGET)).thenReturn(Optional.of(target));
+        lenient().when(profiles.ownTenantProfile(TARGET)).thenReturn(Optional.of(target));
         // The target declares nothing, so everything the user carries would be removed.
         lenient().when(definitions.definitionsIn(TARGET)).thenReturn(List.of());
         lenient().when(attributes.attributesOfInTier(eq(EntityKind.USER), any()))
@@ -114,5 +114,23 @@ class ProfileSwitchBlockingTest {
 
         verify(attributes).removeAll(EntityKind.USER, USER.toString(), List.of("syncedTeam"));
         verify(users).assignProfile(USER, TARGET);
+    }
+
+    /**
+     * A source profile describes what a directory SENDS, not what a person is, and it dies with its connector —
+     * {@code profile.connector_id} cascades while {@code app_user.profile_id} is ON DELETE SET NULL, so binding
+     * users to one means deleting the connector silently resets their schema with nothing recorded.
+     */
+    @Test
+    void aSourceProfileCannotGovernAUser() {
+        UUID source = UUID.randomUUID();
+        when(profiles.findById(source)).thenReturn(Optional.of(
+                new Profile(source, "LDAP", ProfileKind.LDAP, UUID.randomUUID(), false, false)));
+        when(profiles.ownTenantProfile(source)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.switchTo(USER, source)).isInstanceOf(BadRequestException.class);
+
+        verify(attributes, never()).removeAll(any(), any(), any());
+        verify(users, never()).assignProfile(any(), any());
     }
 }
