@@ -7,6 +7,7 @@ import com.example.sso.user.group.UserGroupService;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -48,11 +49,26 @@ class CsvGroupDirectoryAdapter implements CsvGroupDirectory {
      * rather than quietly accepted.
      */
     Map<String, UUID> usableIds(Collection<String> names) {
-        return orgContext.currentOrg()
+        Map<String, UUID> inReach = orgContext.currentOrg()
                 .map(org -> groups.groupIdsByName(names, org))
                 .orElseGet(Map::of)
                 .entrySet().stream()
                 .filter(entry -> accessPolicy.canAccessGroup(entry.getValue()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+        // Reach is not enough: membership CONFERS the group's roles, so the grant has to clear the same
+        // ceiling a direct role grant does. One query for the whole set, not one per group.
+        Map<UUID, Set<String>> delegated = groups.delegatedRoleNames(inReach.values());
+        return inReach.entrySet().stream()
+                .filter(entry -> mayConfer(delegated.get(entry.getValue())))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    }
+
+    /**
+     * A group delegating no role confers nothing, so there is no ceiling for it to clear — absent from the
+     * map, which is how {@code delegatedRoleNames} reports that rather than with an empty set.
+     */
+    private boolean mayConfer(Set<String> delegatedRoles) {
+        return delegatedRoles == null || accessPolicy.mayAssignRoles(delegatedRoles);
     }
 }

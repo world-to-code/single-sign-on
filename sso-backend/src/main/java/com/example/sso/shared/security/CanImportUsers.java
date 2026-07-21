@@ -23,8 +23,14 @@ import org.springframework.security.access.prepost.PreAuthorize;
  * the route it guards is served from another module. The SpEL names {@code adminAccessPolicy} as a BEAN, so
  * this is a runtime lookup and no module dependency is created by it.
  *
- * <p>No {@code mayAssignRoles} term: an imported account is created with no roles at all, so there is nothing
- * to assign. If a file ever names roles, this annotation is where that check belongs.
+ * <p>No {@code mayAssignRoles} term HERE, because the roles an import can confer are not in the request: a
+ * file names no role, but it names GROUPS, and a group delegates its roles to every member. The ceiling
+ * therefore lives where the group set is known — {@code CsvGroupDirectoryAdapter} treats a group whose
+ * delegated roles the actor may not assign as unusable, so the row is refused exactly as an unreachable group
+ * is. Saying "an imported account is created with no roles, so there is nothing to assign" — as this did —
+ * was how the membership grant became a way around the direct-grant ceiling.
+ *
+ * <p>If a file ever names roles directly, this annotation is where THAT check belongs.
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)

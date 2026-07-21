@@ -39,6 +39,16 @@ public interface UserGroupService {
      */
     Map<String, UUID> groupIdsByName(Collection<String> names, UUID orgId);
 
+    /**
+     * The role names each of these groups delegates to its members, in ONE query.
+     *
+     * <p>Putting a user in a group GRANTS them the group's roles, so a caller deciding whether an actor may do
+     * that has to know which roles that is — the membership grant is otherwise a way to confer a role the
+     * actor could not assign directly. A group with no delegated roles is absent from the map rather than
+     * present with an empty set.
+     */
+    Map<UUID, Set<String>> delegatedRoleNames(Collection<UUID> groupIds);
+
     GroupView get(UUID id);
 
     /** A page of a group's members (id, username), ordered by username. */

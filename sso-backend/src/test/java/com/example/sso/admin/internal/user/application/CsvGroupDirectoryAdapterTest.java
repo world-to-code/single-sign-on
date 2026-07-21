@@ -7,6 +7,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
@@ -113,6 +114,43 @@ class CsvGroupDirectoryAdapterTest {
         assertThat(directory.unusable(List.of())).isEmpty();
 
         verify(groups, never()).groupIdsByName(any(), any());
+    }
+
+    /**
+     * Putting a user in a group GRANTS them the roles that group delegates, so the membership grant has to
+     * clear the same ceiling a direct role grant does.
+     *
+     * <p>Without this a tenant admin mints, by naming a group in a column, an account holding a role
+     * {@code POST /api/admin/users} would refuse them — and the CSV supplies that account's address, so they
+     * can drive its verification and sign in as it. Group reach alone is only "administers the group's org",
+     * which is strictly weaker than the dominance-and-grant-only-what-you-hold rule.
+     */
+    @Test
+    void aGroupDelegatingARoleTheActorMayNotAssignIsUnusable() {
+        when(accessPolicy.canAccessGroup(REACHABLE)).thenReturn(true);
+        when(groups.delegatedRoleNames(any())).thenReturn(Map.of(REACHABLE, Set.of("ROLE_ADMIN")));
+        when(accessPolicy.mayAssignRoles(Set.of("ROLE_ADMIN"))).thenReturn(false);
+
+        assertThat(directory.unusable(List.of("platform"))).containsExactly("platform");
+    }
+
+    @Test
+    void aGroupDelegatingOnlyRolesTheActorMayAssignStaysUsable() {
+        when(accessPolicy.canAccessGroup(REACHABLE)).thenReturn(true);
+        when(groups.delegatedRoleNames(any())).thenReturn(Map.of(REACHABLE, Set.of("ROLE_USER")));
+        when(accessPolicy.mayAssignRoles(Set.of("ROLE_USER"))).thenReturn(true);
+
+        assertThat(directory.unusable(List.of("platform"))).isEmpty();
+    }
+
+    /** A group delegating nothing confers nothing, so the ceiling has no work to do and must not refuse it. */
+    @Test
+    void aGroupThatDelegatesNoRoleNeedsNoAssignmentCeiling() {
+        when(accessPolicy.canAccessGroup(REACHABLE)).thenReturn(true);
+        when(groups.delegatedRoleNames(any())).thenReturn(Map.of());
+
+        assertThat(directory.unusable(List.of("platform"))).isEmpty();
+        verify(accessPolicy, never()).mayAssignRoles(any());
     }
 
     /** Fails closed: with no organization bound nothing is usable, so every group-bearing row is refused. */

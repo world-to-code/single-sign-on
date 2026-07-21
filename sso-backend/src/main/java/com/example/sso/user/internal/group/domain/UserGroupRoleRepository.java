@@ -14,6 +14,19 @@ public interface UserGroupRoleRepository extends JpaRepository<UserGroupRole, Us
     @Query("select gr.id.roleId from UserGroupRole gr where gr.id.groupId = :groupId")
     List<UUID> findRoleIdsByGroupId(@Param("groupId") UUID groupId);
 
+    /**
+     * Which roles each of these groups delegates, in ONE query.
+     *
+     * <p>For a bulk decision — deciding whether an actor may put members into a set of groups asks this of
+     * every group at once, and the per-group finder above would make that a query per group.
+     */
+    @Query("""
+            select gr.id.groupId as groupId, r.name as roleName
+            from UserGroupRole gr, Role r
+            where r.id = gr.id.roleId and gr.id.groupId in :groupIds
+            """)
+    List<GroupRoleName> findRoleNamesByGroupIds(@Param("groupIds") Collection<UUID> groupIds);
+
     @Modifying
     @Query("delete from UserGroupRole gr where gr.id.groupId = :groupId and gr.id.roleId = :roleId")
     void deleteByGroupIdAndRoleId(@Param("groupId") UUID groupId, @Param("roleId") UUID roleId);

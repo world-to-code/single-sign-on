@@ -12,6 +12,7 @@ import com.example.sso.user.group.GroupSpec;
 import com.example.sso.user.group.UserGroupService;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -111,6 +112,40 @@ class UserGroupMemberOpsIT extends AbstractIntegrationTest {
             assertThatThrownBy(() -> groups.addMembers(group, Set.of(a, foreign)))
                     .isInstanceOf(BadRequestException.class);              // a foreign-org user aborts the batch
         });
+    }
+
+    /**
+     * The roles a set of groups delegates, read in one query.
+     *
+     * <p>A real database is the only thing that can prove this one: it is an interface projection, so the
+     * query's column aliases have to match the accessor names, and a mock of the service asserts nothing about
+     * either. The import path refuses a group whose delegated roles the actor may not assign, so a query that
+     * silently returned nothing would open that ceiling rather than close it.
+     */
+    @Test
+    void delegatedRoleNamesAnswersForEveryGroupInOneCall() {
+        UUID org = newOrg("mem-roles");
+        UUID withRoles = orgContext.callInOrg(org, () -> group());
+        UUID alsoWithRoles = orgContext.callInOrg(org, () -> group());
+        UUID withNone = orgContext.callInOrg(org, () -> group());
+
+        orgContext.runInOrg(org, () -> {
+            groups.setRoles(withRoles, Set.of("ROLE_USER"));
+            groups.setRoles(alsoWithRoles, Set.of("ROLE_USER", "ROLE_GROUP_ADMIN"));
+
+            Map<UUID, Set<String>> delegated =
+                    groups.delegatedRoleNames(List.of(withRoles, alsoWithRoles, withNone));
+
+            assertThat(delegated.get(withRoles)).containsExactly("ROLE_USER");
+            assertThat(delegated.get(alsoWithRoles)).containsExactlyInAnyOrder("ROLE_USER", "ROLE_GROUP_ADMIN");
+            // Absent, not an empty set — the caller reads null as "delegates nothing, so no ceiling applies".
+            assertThat(delegated).doesNotContainKey(withNone);
+        });
+    }
+
+    @Test
+    void delegatedRoleNamesIsANoOpForAnEmptySet() {
+        assertThat(groups.delegatedRoleNames(List.of())).isEmpty();
     }
 
     @Test
