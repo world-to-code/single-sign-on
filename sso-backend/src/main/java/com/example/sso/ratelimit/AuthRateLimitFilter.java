@@ -8,7 +8,11 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -27,6 +31,7 @@ import java.util.Set;
  * {@code framework} (it trusts XFF unconditionally, letting clients rotate it for a fresh bucket).
  */
 @Component
+@Slf4j
 public class AuthRateLimitFilter extends OncePerRequestFilter {
 
     private static final Set<String> LIMITED_PATHS =
@@ -61,14 +66,43 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             String ip = request.getRemoteAddr();
             String key = request.getServletPath() + ":" + ip;
             if (!rateLimiter.tryAcquire(key)) {
-                audit.record(new AuditRecord(AuditType.RATE_LIMITED, ip, false, request.getServletPath(), ip));
-                response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
-                response.getWriter().write("Too many requests. Please retry later.");
+                // Attribute it to the principal when there IS one: several limited routes are called by a
+                // signed-in user, and an audit row carrying only an IP is unattributable — and invisible in
+                // the tenant-scoped audit view, which is precisely where an operator would look for it.
+                String actor = principal();
+                audit.record(new AuditRecord(AuditType.RATE_LIMITED, actor == null ? ip : actor, false,
+                        request.getServletPath(), ip));
+                // A throttled credential endpoint is a security signal; without a log line the defence works
+                // and nobody can tell that it did.
+                log.warn("Rate limit reached for {} (actor={}, ip={})", request.getServletPath(),
+                        actor == null ? "anonymous" : actor, ip);
+                writeProblem(response, request.getServletPath());
                 return;
             }
         }
 
         chain.doFilter(request, response);
+    }
+
+    /** The authenticated caller, or null — several limited routes are reachable only while signed in. */
+    private String principal() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.isAuthenticated()
+                && !"anonymousUser".equals(authentication.getName())
+                ? authentication.getName() : null;
+    }
+
+    /**
+     * RFC 7807, like every other error this API returns. A bare text body left the client unable to parse the
+     * one response it most needs to explain, so a throttled user saw nothing at all.
+     */
+    private void writeProblem(HttpServletResponse response, String path) throws IOException {
+        response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
+        response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        response.setCharacterEncoding("UTF-8");
+        response.getWriter().write("{\"type\":\"about:blank\",\"title\":\"Too Many Requests\",\"status\":429,"
+                + "\"code\":\"RATE_LIMITED\",\"detail\":\"Too many attempts. Please wait and try again.\","
+                + "\"instance\":\"" + path.replace("\"", "") + "\"}");
     }
 
     private boolean isLimited(String method, String path) {
