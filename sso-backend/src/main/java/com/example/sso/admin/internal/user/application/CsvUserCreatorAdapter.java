@@ -1,11 +1,8 @@
 package com.example.sso.admin.internal.user.application;
 
-import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.metadata.CsvPlannedUser;
 import com.example.sso.metadata.CsvUserCreator;
-import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
-import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.BaseUserFields;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.group.UserGroupService;
@@ -40,8 +37,7 @@ class CsvUserCreatorAdapter implements CsvUserCreator {
 
     private final UserProvisioningService provisioning;
     private final UserGroupService groups;
-    private final AdminAccessPolicy accessPolicy;
-    private final OrgContext orgContext;
+    private final CsvGroupDirectoryAdapter directory;
 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -74,27 +70,25 @@ class CsvUserCreatorAdapter implements CsvUserCreator {
     }
 
     /**
-     * The named groups by id, each checked for reach — one directory read for the row rather than one per name.
+     * The named groups by id — one directory read for the row rather than one per name.
      *
-     * <p>The reach check is the same question the console's own group screen asks. Without it a bulk import
-     * would be the way around subtree scope: a delegate who cannot see a group could still write its name in a
-     * column and have the server add members to it.
+     * <p>Reach is decided by {@link CsvGroupDirectoryAdapter}, which is also what the preview consults, so a
+     * group the actor cannot use is refused identically on both paths. That matters beyond tidiness: when only
+     * this path checked, the difference between "unknown group" and "importable" told a delegate which groups
+     * exist outside their subtree.
      */
     private Map<UUID, String> resolveGroups(List<String> names) {
         if (names.isEmpty()) {
             return Map.of();
         }
-        Map<String, UUID> byName = orgContext.currentOrg()
-                .map(org -> groups.groupIdsByName(names, org))
-                .orElseGet(Map::of);
+        Map<String, UUID> usable = directory.usableIds(names);
         Map<UUID, String> resolved = new LinkedHashMap<>();
         for (String name : names) {
-            UUID groupId = byName.get(name);
+            UUID groupId = usable.get(name);
             if (groupId == null) {
+                // Deliberately the same refusal for "no such group" and "not yours" — telling them apart is
+                // the oracle. The preview already reported the row, so this is the belt to that braces.
                 throw NotFoundException.of("metadata.csv.row.unknownGroup", name);
-            }
-            if (!accessPolicy.canAccessGroup(groupId)) {
-                throw ForbiddenException.of("admin.group.outsideScope");
             }
             resolved.put(groupId, name);
         }

@@ -4,6 +4,7 @@ import com.example.sso.metadata.AttributeDataType;
 import com.example.sso.metadata.AttributeDefinition;
 import com.example.sso.metadata.AttributeDefinitionService;
 import com.example.sso.metadata.AttributeSource;
+import com.example.sso.metadata.CsvGroupDirectory;
 import com.example.sso.metadata.CsvImportPreview;
 import com.example.sso.metadata.CsvRowFailure;
 import com.example.sso.metadata.EntityKind;
@@ -30,6 +31,7 @@ import org.assertj.core.api.InstanceOfAssertFactories;
 
 import static org.assertj.core.api.InstanceOfAssertFactories.type;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -55,7 +57,7 @@ class CsvImportPlannerTest {
 
     @Mock private AttributeDefinitionService definitions;
     @Mock private CsvExistingUsers existingUsers;
-    @Mock private CsvGroups groups;
+    @Mock private CsvGroupDirectory groups;
     @Mock private ProfileAttributeValidator values;
 
     /** The real bundles: the point of the change is that a failure reads as a sentence, not as a key. */
@@ -74,7 +76,7 @@ class CsvImportPlannerTest {
                 groups, 100, 20, 255);
         declares(base(BaseUserFields.USERNAME), base(BaseUserFields.EMAIL), optional("team"));
         lenient().when(existingUsers.present(any())).thenReturn(List.of());
-        lenient().when(groups.missing(any())).thenReturn(List.of());
+        lenient().when(groups.unusable(any())).thenReturn(List.of());
     }
 
     private AttributeDefinition column(String key, boolean required, AttributeDataType type,
@@ -134,7 +136,7 @@ class CsvImportPlannerTest {
         plan("username,email,team\nada,a@x.io,platform\n");
 
         verify(existingUsers).present(any());
-        verify(groups).missing(any());
+        verify(groups).unusable(any());
         verifyNoMoreInteractions(existingUsers, groups);
     }
 
@@ -286,7 +288,7 @@ class CsvImportPlannerTest {
      */
     @Test
     void aGroupThatDoesNotExistFailsTheRowRatherThanCreatingIt() {
-        when(groups.missing(any())).thenReturn(List.of("platfrom"));
+        when(groups.unusable(any())).thenReturn(List.of("platfrom"));
 
         CsvImportPreview preview = plan("username,email,groups\nada,a@x.io,platfrom\n");
 
@@ -390,6 +392,21 @@ class CsvImportPlannerTest {
     @Test
     void aQuoteInTheMiddleOfAFieldIsRefusedAsABadRequest() {
         refusesFile("username,email,team\nada,a@x.io,\"quoted\"trailing\n", "metadata.csv.malformed");
+    }
+
+    /**
+     * The groups cell is not a declared attribute, so the per-cell ceiling the row applies to attributes never
+     * covered it — and it is the one cell that fans out, since every name becomes a bind parameter in one
+     * lookup. A megabyte of semicolons was a quarter of a million names in a single statement.
+     */
+    @Test
+    void anOversizedGroupsCellFailsTheRowRatherThanFanningOut() {
+        CsvImportPreview preview = plan("username,email,groups\nada,a@x.io," + "g;".repeat(400) + "\n");
+
+        assertThat(preview.toCreate()).isEmpty();
+        assertThat(preview.failures()).singleElement()
+                .extracting(CsvRowFailure::reason).asString().contains("groups");
+        verify(groups, never()).unusable(argThat(names -> names.size() > 10));
     }
 
     // --- the accepted side of every ceiling ---------------------------------------------------------

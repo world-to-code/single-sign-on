@@ -3,18 +3,18 @@ package com.example.sso.admin.internal.user.application;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.metadata.CsvPlannedUser;
 import com.example.sso.shared.error.ApiException;
-import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.BaseUserFields;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.account.OwnershipChallenge;
-import com.example.sso.user.account.OwnershipChallenge;
 import com.example.sso.user.group.UserGroupService;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,7 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.api.InstanceOfAssertFactories.type;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -58,10 +58,19 @@ class CsvUserCreatorAdapterTest {
 
     @BeforeEach
     void setUp() {
-        adapter = new CsvUserCreatorAdapter(provisioning, groups, accessPolicy, orgContext);
+        // The real directory adapter, not a stub of it: reach is the thing under test, and stubbing the
+        // component that decides it would prove only that the mock returned what the test set.
+        CsvGroupDirectoryAdapter directory = new CsvGroupDirectoryAdapter(groups, accessPolicy, orgContext);
+        adapter = new CsvUserCreatorAdapter(provisioning, groups, directory);
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
-        lenient().when(groups.groupIdsByName(any(), eq(ORG)))
-                .thenReturn(Map.of("platform", REACHABLE, "finance", OUT_OF_SCOPE));
+        // Answers the names it was ASKED for, as the real query does. A stub that returns the whole directory
+        // regardless makes the code check groups the row never named, which is not what production does.
+        Map<String, UUID> directoryContents = Map.of("platform", REACHABLE, "finance", OUT_OF_SCOPE);
+        lenient().when(groups.groupIdsByName(any(), eq(ORG))).thenAnswer(call -> {
+            Collection<String> asked = call.getArgument(0);
+            return directoryContents.entrySet().stream().filter(entry -> asked.contains(entry.getKey()))
+                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        });
         AdminUserView created = mock(AdminUserView.class);
         lenient().when(created.id()).thenReturn(CREATED.toString());
         lenient().when(provisioning.create(any())).thenReturn(created);
@@ -90,8 +99,7 @@ class CsvUserCreatorAdapterTest {
         when(accessPolicy.canAccessGroup(OUT_OF_SCOPE)).thenReturn(false);
 
         assertThatThrownBy(() -> adapter.create(planned("finance"), PROFILE))
-                .asInstanceOf(type(ApiException.class))
-                .extracting(ApiException::getMessageKey).isEqualTo("admin.group.outsideScope");
+                .isInstanceOf(NotFoundException.class);
 
         verify(groups, never()).addMember(any(), any());
     }
@@ -104,6 +112,24 @@ class CsvUserCreatorAdapterTest {
         verify(groups, never()).addMember(any(), any());
     }
 
+    /**
+     * A group the actor cannot reach is refused exactly as one that does not exist. Telling them apart was an
+     * existence oracle: a delegate could upload guessed names and read back which of them are real groups
+     * outside their subtree.
+     */
+    @Test
+    void anUnreachableGroupIsIndistinguishableFromAMissingOne() {
+        when(accessPolicy.canAccessGroup(OUT_OF_SCOPE)).thenReturn(false);
+
+        ApiException unreachable = catchThrowableOfType(
+                () -> adapter.create(planned("finance"), PROFILE), ApiException.class);
+        ApiException absent = catchThrowableOfType(
+                () -> adapter.create(planned("no-such-group"), PROFILE), ApiException.class);
+
+        assertThat(unreachable.getMessageKey()).isEqualTo(absent.getMessageKey());
+        assertThat(unreachable.getClass()).isEqualTo(absent.getClass());
+    }
+
     /** Every named group is checked, not just the first — otherwise one reachable group covers the rest. */
     @Test
     void everyGroupOnTheRowIsChecked() {
@@ -111,7 +137,9 @@ class CsvUserCreatorAdapterTest {
         when(accessPolicy.canAccessGroup(OUT_OF_SCOPE)).thenReturn(false);
 
         assertThatThrownBy(() -> adapter.create(planned("platform", "finance"), PROFILE))
-                .isInstanceOf(ForbiddenException.class);
+                .isInstanceOf(NotFoundException.class);
+
+        verify(groups, never()).addMember(any(), any());
     }
 
     /**

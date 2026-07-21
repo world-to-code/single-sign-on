@@ -2,6 +2,7 @@ package com.example.sso.metadata.internal.application;
 
 import com.example.sso.metadata.AttributeDefinition;
 import com.example.sso.metadata.AttributeDefinitionService;
+import com.example.sso.metadata.CsvGroupDirectory;
 import com.example.sso.metadata.CsvImportPreview;
 import com.example.sso.metadata.CsvPlannedUser;
 import com.example.sso.metadata.CsvRowFailure;
@@ -48,13 +49,13 @@ class CsvImportPlanner {
     private final ProfileAttributeValidator values;
     private final CsvFailureText text;
     private final CsvExistingUsers existingUsers;
-    private final CsvGroups groups;
+    private final CsvGroupDirectory groups;
     private final int maxRows;
     private final int maxColumns;
     private final int maxCellLength;
 
     CsvImportPlanner(AttributeDefinitionService definitions, ProfileAttributeValidator values,
-            CsvFailureText text, CsvExistingUsers existingUsers, CsvGroups groups,
+            CsvFailureText text, CsvExistingUsers existingUsers, CsvGroupDirectory groups,
             @Value("${sso.metadata.csv-import.max-rows}") int maxRows,
             @Value("${sso.metadata.csv-import.max-columns}") int maxColumns,
             @Value("${sso.metadata.csv-import.max-cell-length}") int maxCellLength) {
@@ -86,14 +87,17 @@ class CsvImportPlanner {
         // Asked once for the whole file rather than once per row: an import is the one path here that is
         // deliberately bulk, and a per-row lookup turns a five-thousand-line file into ten thousand round trips.
         List<String> existing = existingUsers.present(rows.stream().map(CsvRow::username).toList());
-        Set<String> missingGroups = Set.copyOf(groups.missing(
+        // "Unusable", not "missing": a group the actor may not put a member in is refused the same way one that
+        // does not exist is. Telling those apart here is what let a delegate enumerate groups outside their
+        // subtree by reading which rows came back importable.
+        Set<String> unusableGroups = Set.copyOf(groups.unusable(
                 rows.stream().flatMap(row -> row.groups().stream()).distinct().toList()));
 
         List<CsvPlannedUser> toCreate = new ArrayList<>();
         List<CsvRowFailure> failures = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
         for (CsvRow row : rows) {
-            CsvRowFailure failure = failureIn(profileColumns, row, seen, missingGroups);
+            CsvRowFailure failure = failureIn(profileColumns, row, seen, unusableGroups);
             if (failure != null) {
                 failures.add(failure);
                 continue;
@@ -111,7 +115,7 @@ class CsvImportPlanner {
     }
 
     private CsvRowFailure failureIn(List<AttributeDefinition> profileColumns, CsvRow row, Set<String> seen,
-            Set<String> missingGroups) {
+            Set<String> unusableGroups) {
         if (row.username().isEmpty()) {
             return text.at(row.line(), "metadata.csv.row.missingRequired", BaseUserFields.USERNAME);
         }
@@ -124,6 +128,9 @@ class CsvImportPlanner {
         if (seen.contains(row.username())) {
             return text.at(row.line(), "metadata.csv.row.duplicateUsername", row.username());
         }
+        if (row.oversizedGroups()) {
+            return text.at(row.line(), "metadata.csv.row.valueTooLong", CsvTemplateServiceImpl.GROUPS_COLUMN);
+        }
         for (Map.Entry<String, String> cell : row.attributes().entrySet()) {
             if (cell.getValue().length() > maxCellLength) {
                 return text.at(row.line(), "metadata.csv.row.valueTooLong", cell.getKey());
@@ -135,7 +142,7 @@ class CsvImportPlanner {
                 return text.at(row.line(), "metadata.csv.row.formulaValue", cell.getKey());
             }
         }
-        String unknownGroup = row.groups().stream().filter(missingGroups::contains).findFirst().orElse(null);
+        String unknownGroup = row.groups().stream().filter(unusableGroups::contains).findFirst().orElse(null);
         if (unknownGroup != null) {
             return text.at(row.line(), "metadata.csv.row.unknownGroup", unknownGroup);
         }
@@ -165,7 +172,8 @@ class CsvImportPlanner {
                 // The parser's own line counter, not the record number: blank lines are skipped and a quoted
                 // cell can span several lines, so record numbers stop tracking the file an administrator has
                 // open — which is the only thing this number is for.
-                rows.add(CsvRow.of(record, parser.getCurrentLineNumber(), header, declared, baseKeys));
+                rows.add(CsvRow.of(record, parser.getCurrentLineNumber(), header, declared, baseKeys,
+                        maxCellLength));
             }
             return rows;
         } catch (IOException | UncheckedIOException malformed) {
