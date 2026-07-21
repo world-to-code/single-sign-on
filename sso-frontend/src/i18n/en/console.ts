@@ -1054,6 +1054,16 @@ export const console = {
   idpCreate: "Add provider",
 
   // Profile attributes (schema)
+  // CSV user import ---------------------------------------------------------
+  csvImportTitle: "Create users from a file",
+  csvImportDescription: "Download the template for {{profile}}, fill it in, and upload it. Its columns are that profile's attributes.",
+  csvImportDownloadTemplate: "Download template",
+  csvImportChooseFile: "Choose file",
+  csvImportSummary: "{{create}} to create · {{existing}} already here · {{failed}} rows will not be applied.",
+  csvImportConfirm: "Create {{count}} users",
+  csvImportCancel: "Cancel",
+  csvImportDone: "Created {{created}} · {{existing}} already here · {{failed}} rows not applied.",
+  csvImportLine: "Line {{line}}:",
   profileAttrTitle: "Profile attributes",
   profileAttrDescription: "The attributes your people and groups carry, what each one holds, and who owns the value.",
   profileAttrNew: "Define attribute",

@@ -163,6 +163,56 @@ export async function apiDelete(path: string): Promise<void> {
 }
 
 /**
+ * POSTs a file as multipart/form-data, through the same step-up and elevation handling as every other
+ * mutating call.
+ *
+ * <p>Separate from `send` because the Content-Type must NOT be set: the browser has to write it itself so the
+ * multipart boundary matches the body. Setting it by hand produces a request the server cannot parse, and the
+ * failure looks like a malformed file rather than a malformed request.
+ */
+export async function apiUpload<T>(path: string, file: File, retried = false): Promise<T> {
+  lastActivityAt = Date.now();
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(path, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Accept-Language": i18n.language,
+      ...csrfHeader(), ...adminAuthHeader(path), ...orgContextHeader(path),
+    },
+    body: form,
+  });
+  if (await resolveStepUp(res, retried)) {
+    return apiUpload<T>(path, file, true);
+  }
+  if (handleElevationChallenge(path, res)) {
+    return new Promise<T>(() => {});
+  }
+  return parse<T>(res);
+}
+
+/**
+ * Downloads a text response (the CSV template) and hands back its filename.
+ *
+ * <p>Not a plain link: the route needs the admin bearer and the org-context header the API client attaches,
+ * which an anchor cannot carry.
+ */
+export async function apiDownloadText(path: string): Promise<{ filename: string; content: string }> {
+  lastActivityAt = Date.now();
+  const res = await fetch(path, {
+    credentials: "include",
+    headers: { "Accept-Language": i18n.language, ...adminAuthHeader(path), ...orgContextHeader(path) },
+  });
+  if (!res.ok) {
+    return parse(res); // throws the ApiError the rest of the client produces
+  }
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const named = /filename="?([^";]+)"?/.exec(disposition);
+  return { filename: named ? named[1] : "users.csv", content: await res.text() };
+}
+
+/**
  * Step-up re-auth bridge: the StepUpProvider registers a handler that prompts the user for a fresh
  * factor. When a mutating request is rejected with X-Step-Up-Required, we run it and retry once.
  */

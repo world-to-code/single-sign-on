@@ -17,6 +17,7 @@ import {
   type AttributeSource,
 } from "@/attributeDefinitions";
 import { PageHeader } from "@/components/PageHeader";
+import { CsvImport } from "@/components/CsvImport";
 import { ProfileMappings } from "@/components/ProfileMappings";
 import { DataList, EmptyState } from "@/components/states";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -221,6 +222,9 @@ export default function ProfileAttributes() {
       {kind === "USER" && profile && profile.kind !== "TENANT" && tenantProfile && (
         <ProfileMappings source={profile} tenant={tenantProfile} />
       )}
+
+      {/* The mirror image: users are created ON a tenant profile, never on one that describes a source. */}
+      {kind === "USER" && profile?.kind === "TENANT" && <CsvImport profile={profile} />}
 
       <Dialog open={editor.open} onOpenChange={editor.setOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto">

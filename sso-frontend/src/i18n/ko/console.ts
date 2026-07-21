@@ -1054,6 +1054,16 @@ export const console: Record<keyof typeof enConsole, string> = {
   idpCreate: "공급자 추가",
 
   // Profile attributes (schema)
+  // CSV user import
+  csvImportTitle: "파일로 사용자 만들기",
+  csvImportDescription: "{{profile}} 프로필의 템플릿을 내려받아 채운 뒤 올리세요. 열이 곧 그 프로필의 속성입니다.",
+  csvImportDownloadTemplate: "템플릿 내려받기",
+  csvImportChooseFile: "파일 선택",
+  csvImportSummary: "생성 {{create}}건 · 이미 있음 {{existing}}건 · 적용되지 않을 행 {{failed}}건",
+  csvImportConfirm: "사용자 {{count}}명 만들기",
+  csvImportCancel: "취소",
+  csvImportDone: "생성 {{created}}건 · 이미 있음 {{existing}}건 · 적용되지 않은 행 {{failed}}건",
+  csvImportLine: "{{line}}행:",
   profileAttrTitle: "프로필 속성",
   profileAttrDescription: "사용자와 그룹이 가지는 속성, 각 속성이 담는 값, 그리고 그 값을 누가 소유하는지.",
   profileAttrNew: "속성 정의",

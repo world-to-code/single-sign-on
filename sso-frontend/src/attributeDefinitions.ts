@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPost, apiPut } from "./api";
+import { apiDelete, apiDownloadText, apiGet, apiPost, apiPut, apiUpload } from "./api";
 
 export type AttributeDataType = "STRING" | "INTEGER" | "BOOLEAN" | "DATE" | "ENUM";
 
@@ -97,3 +97,44 @@ export const saveAttributeDefinition = (
 
 export const deleteAttributeDefinition = (id: string): Promise<void> =>
   apiDelete(`/api/admin/attribute-definitions/${encodeURIComponent(id)}`);
+
+/** One row an import will not apply. `reason` is a message key the server already resolved for us. */
+export interface CsvRowFailure {
+  line: number;
+  reason: string;
+  detail: string | null;
+}
+
+/** An account an import would create. Nothing here has been written yet. */
+export interface CsvPlannedUser {
+  line: number;
+  username: string;
+  base: Record<string, string>;
+  attributes: Record<string, string>;
+  groups: string[];
+}
+
+/** What an upload WOULD do — shown for confirmation before anything is created. */
+export interface CsvImportPreview {
+  rowsRead: number;
+  toCreate: CsvPlannedUser[];
+  existing: string[];
+  failures: CsvRowFailure[];
+}
+
+/** What an import actually did. Same shape as the preview so the two can be compared. */
+export interface CsvImportResult {
+  created: number;
+  existing: string[];
+  failures: CsvRowFailure[];
+}
+
+/** The CSV whose columns ARE this profile's attributes — what an administrator fills in. */
+export const downloadCsvTemplate = (profileId: string) =>
+  apiDownloadText(`${at(profileId)}/csv-template`);
+
+export const previewCsvImport = (profileId: string, file: File): Promise<CsvImportPreview> =>
+  apiUpload<CsvImportPreview>(`${at(profileId)}/csv-import/preview`, file);
+
+export const applyCsvImport = (profileId: string, file: File): Promise<CsvImportResult> =>
+  apiUpload<CsvImportResult>(`${at(profileId)}/csv-import`, file);

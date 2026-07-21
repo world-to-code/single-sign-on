@@ -173,21 +173,16 @@ def compose = { List<String> args, Logger log ->
     }
 }
 
-tasks.register('testInfraUp') {
-    description = 'Starts the shared Postgres/Redis the integration tests attach to.'
-    onlyIf { !project.hasProperty('skipTestInfra') }
-    doLast {
-        if (compose(['up', '-d', '--wait'], logger)) {
-            logger.lifecycle('testInfra: shared Postgres/Redis up on 55432/56379')
-        } else {
-            logger.warn('testInfra: unavailable, so each fork will start its own containers')
-        }
-    }
-}
+// Started from the test task's own doFirst rather than a dependsOn task: a dependency runs even when `test`
+// is UP-TO-DATE, so `./gradlew test` with nothing changed used to start and stop two containers to run zero
+// tests. doFirst runs only when the task actually executes, which is exactly the condition the containers are
+// for. The teardown is finalizedBy so it still happens when the suite FAILS, guarded by the same flag so it
+// does not fire for a run that never started them.
+ext.testInfraStarted = false
 
 tasks.register('testInfraDown') {
     description = 'Stops the shared Postgres/Redis. Runs after the test task, whether it passed or failed.'
-    onlyIf { !project.hasProperty('skipTestInfra') && !project.hasProperty('keepTestInfra') }
+    onlyIf { project.ext.testInfraStarted && !project.hasProperty('keepTestInfra') }
     doLast {
         // -v so the databases go with them: the next run must not inherit this one's rows.
         if (compose(['down', '-v'], logger)) {
@@ -197,10 +192,18 @@ tasks.register('testInfraDown') {
 }
 
 tasks.named('test') {
-    dependsOn 'testInfraUp'
-    // finalizedBy, not a doLast: the containers must go even when the suite fails, or a red run leaves them
-    // behind and the next one silently inherits its data.
     finalizedBy 'testInfraDown'
+    doFirst {
+        if (project.hasProperty('skipTestInfra')) {
+            return
+        }
+        if (compose(['up', '-d', '--wait'], logger)) {
+            project.ext.testInfraStarted = true
+            logger.lifecycle('testInfra: shared Postgres/Redis up on 55432/56379')
+        } else {
+            logger.warn('testInfra: unavailable, so each fork will start its own containers')
+        }
+    }
     useJUnitPlatform()
     // Run test classes in parallel across JVM forks. Each fork gets its own Spring context and its OWN
     // database inside the shared Postgres (see AbstractIntegrationTest), so forks share a server and never a
