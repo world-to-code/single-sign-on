@@ -239,48 +239,7 @@ class DirectoryConnectorServiceImplTest {
 
     // --- who can fill an attribute ------------------------------------------------------------------------
 
-    /**
-     * The escalation guard asks this "who can fill these keys?" and refuses the grant unless every answer
-     * could have made it by hand. A SCIM or CSV source profile has no connector to attribute, so reporting
-     * only the connector-backed half would let a legitimate LDAP configurator vouch for a value a SCIM client
-     * wrote. An unattributable source makes the answer INCOMPLETE, and incomplete fails closed upstream.
-     */
-    @Test
-    void aSourceWithNoConnectorMakesTheAnswerIncomplete() {
-        UUID ldapProfile = UUID.randomUUID();
-        UUID scimProfile = UUID.randomUUID();
-        UUID connector = UUID.randomUUID();
-        when(mappings.mappingsFilling(any())).thenReturn(List.of(
-                new ProfileMapping(UUID.randomUUID(), ldapProfile, "ou", UUID.randomUUID(), "department"),
-                new ProfileMapping(UUID.randomUUID(), scimProfile, "dept", UUID.randomUUID(), "department")));
-        // Only the LDAP profile resolves to a connector; the SCIM one has none.
-        when(profiles.connectorIdsOf(any())).thenReturn(Set.of(connector));
-        DirectoryConnector row = stored();
-        row.configuredBy(UUID.randomUUID());
-        when(connectors.findAllById(any())).thenReturn(List.of(row));
 
-        AttributeSourceAuthors authors = service.authorsFilling(List.of("department"));
-
-        assertThat(authors.complete()).isFalse();
-    }
-
-    @Test
-    void everySourceHavingAConnectorLeavesTheAnswerComplete() {
-        UUID ldapProfile = UUID.randomUUID();
-        UUID connector = UUID.randomUUID();
-        UUID configurator = UUID.randomUUID();
-        when(mappings.mappingsFilling(any())).thenReturn(List.of(
-                new ProfileMapping(UUID.randomUUID(), ldapProfile, "ou", UUID.randomUUID(), "department")));
-        when(profiles.connectorIdsOf(any())).thenReturn(Set.of(connector));
-        DirectoryConnector row = stored();
-        row.configuredBy(configurator);
-        when(connectors.findAllById(any())).thenReturn(List.of(row));
-
-        AttributeSourceAuthors authors = service.authorsFilling(List.of("department"));
-
-        assertThat(authors.complete()).isTrue();
-        assertThat(authors.configurators()).containsExactly(configurator);
-    }
 
     @Test
     void readsOnlyTheActingTiersConnectors() {

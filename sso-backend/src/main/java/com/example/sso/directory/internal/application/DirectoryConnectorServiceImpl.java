@@ -10,12 +10,9 @@ import com.example.sso.directory.internal.domain.DirectoryConnector;
 import com.example.sso.directory.internal.domain.DirectoryConnectorRepository;
 import com.example.sso.directory.internal.domain.DirectorySyncRun;
 import com.example.sso.directory.internal.domain.DirectorySyncRunRepository;
-import com.example.sso.metadata.AttributeSourceAuthors;
-import com.example.sso.metadata.AttributeSourceAuthority;
 import com.example.sso.metadata.Profile;
 import com.example.sso.metadata.AttributeSourceConfigurationChangedEvent;
 import com.example.sso.metadata.ProfileKind;
-import com.example.sso.metadata.ProfileMapping;
 import com.example.sso.metadata.ProfileMappingService;
 import com.example.sso.metadata.ProfileService;
 import com.example.sso.shared.error.BadRequestException;
@@ -26,15 +23,12 @@ import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
 import com.example.sso.user.role.Roles;
-import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.Authentication;
@@ -52,7 +46,7 @@ import org.springframework.util.StringUtils;
  */
 @Service
 @RequiredArgsConstructor
-class DirectoryConnectorServiceImpl implements DirectoryConnectorService, AttributeSourceAuthority {
+class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
 
     private static final Pattern NAME = Pattern.compile("[a-z0-9][a-z0-9-]{0,62}[a-z0-9]");
     /** Only the IANA LDAP ports; the schema agrees. An arbitrary port aims a bind credential at anything. */
@@ -71,35 +65,6 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService, Attrib
     private final ApplicationEventPublisher events;
     private final UserService users;
 
-    @Override
-    @Transactional(readOnly = true)
-    public AttributeSourceAuthors authorsFilling(Collection<String> targetKeys) {
-        if (targetKeys == null || targetKeys.isEmpty()) {
-            return AttributeSourceAuthors.none();
-        }
-        // Which directories can fill these attributes: the mappings that target them, then the connectors
-        // behind their source profiles. A profile that describes no connector vouches for nothing and is
-        // skipped, which keeps this the same question it was before profiles existed.
-        Set<UUID> sourceProfiles = mappings.mappingsFilling(targetKeys).stream()
-                .map(ProfileMapping::sourceProfileId).collect(Collectors.toSet());
-        Set<UUID> connectorIds = profiles.connectorIdsOf(sourceProfiles);
-        // A source profile with no connector — SCIM, CSV — fills these keys too, and there is no configured
-        // directory to attribute it to. Dropping it silently answers "who can fill this key?" with only the
-        // connector-backed half, so a rule vouched for by an LDAP configurator would pass while a SCIM client
-        // wrote the matching value. That premise held only while every source profile had a connector; V129
-        // removed exactly that, so an unattributable source now makes the answer INCOMPLETE.
-        boolean everySourceAttributable = connectorIds.size() == sourceProfiles.size();
-        Set<UUID> configurators = new HashSet<>();
-        boolean complete = true;
-        for (DirectoryConnector connector : connectors.findAllById(connectorIds)) {
-            if (connector.getConfiguredBy() == null) {
-                complete = false; // an unattributed connector cannot vouch for anything
-            } else {
-                configurators.add(connector.getConfiguredBy());
-            }
-        }
-        return new AttributeSourceAuthors(Set.copyOf(configurators), complete && everySourceAttributable);
-    }
 
     @Override
     @Transactional(readOnly = true)

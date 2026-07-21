@@ -14,7 +14,7 @@ class ScimTokenTest {
 
     @Test
     void aTokenWithNoExpiryIsAlwaysActive() {
-        ScimToken token = new ScimToken("ci", "hash-1", null, null);
+        ScimToken token = new ScimToken("ci", "hash-1", null, null, null);
 
         assertThat(token.isActiveAt(Instant.now())).isTrue();
     }
@@ -22,7 +22,7 @@ class ScimTokenTest {
     @Test
     void aTokenIsActiveBeforeItsExpiry() {
         Instant now = Instant.now();
-        ScimToken token = new ScimToken("ci", "hash-2", now.plusSeconds(60), null);
+        ScimToken token = new ScimToken("ci", "hash-2", now.plusSeconds(60), null, null);
 
         assertThat(token.isActiveAt(now)).isTrue();
     }
@@ -30,7 +30,7 @@ class ScimTokenTest {
     @Test
     void aTokenIsInactiveAfterItsExpiry() {
         Instant now = Instant.now();
-        ScimToken token = new ScimToken("ci", "hash-3", now.minusSeconds(60), null);
+        ScimToken token = new ScimToken("ci", "hash-3", now.minusSeconds(60), null, null);
 
         assertThat(token.isActiveAt(now)).isFalse();
     }

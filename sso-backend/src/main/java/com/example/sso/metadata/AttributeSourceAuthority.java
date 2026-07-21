@@ -7,8 +7,9 @@ import java.util.Collection;
  *
  * <p>Lives here rather than in either caller because two of them need it — auto-mapping, before letting an
  * attribute grant a role, and policy binding, before letting one select a policy — and the question is about
- * attribute provenance, which is this module's subject. The implementation lives in {@code directory}, which
- * owns connectors; both callers already depend on {@code metadata}, so nobody gains an edge.
+ * attribute provenance, which is this module's subject. The implementation is here too, because no other
+ * module can answer for every kind of source: it finds which sources fill the attributes and asks each one's
+ * owning module through {@link SourceConfigurators}.
  */
 public interface AttributeSourceAuthority {
 
