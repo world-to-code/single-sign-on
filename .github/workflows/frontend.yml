@@ -20,11 +20,6 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: sso-frontend/package-lock.json
-      # Pin npm to the major the lock file was generated with. npm 10 and 11 resolve optional transitive
-      # dependencies differently, so a lock written by one makes `npm ci` fail under the other — which is
-      # exactly what happened here, twice, with @napi-rs/wasm-runtime's @emnapi packages.
-      - name: pin npm
-        run: npm i -g npm@11
       - name: npm ci
         working-directory: sso-frontend
         run: npm ci

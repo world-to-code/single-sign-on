@@ -14,6 +14,14 @@ Run from `sso-frontend/`: `npm run dev` (Vite `:5173`, proxies API to backend `:
 (**`tsc && vite build`** — type-check must pass; emits into the backend's `static/`).
 **`npm test` and `npm run build` are BOTH the gate: both must be green** (CI runs both).
 
+**Do not remove the `@emnapi/core` / `@emnapi/runtime` devDependencies** — nothing imports them on
+purpose. `@napi-rs/wasm-runtime` gets hoisted out of rolldown's optional `wasm32-wasi` binding and
+declares them as top-level peers on a caret range. Without a direct declaration to anchor them, some
+npm versions materialise those peers (resolving the caret against the registry, so `npm ci` fails on
+whatever patch shipped that day) while others prune them straight back out of the lock — meaning the
+lock's validity depended on which npm last touched it. Declaring them keeps the tree identical on
+every npm version. Regenerating the lock with any npm is safe.
+
 ## Structure (keep to it)
 
 ```
