@@ -141,14 +141,18 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
-    // Run test classes in parallel across JVM forks. Each fork gets its OWN Spring context + its OWN singleton
-    // Postgres/Redis (Testcontainers on random host ports), so forks are fully isolated — no shared DB state,
-    // no port clashes. Each fork costs ~1GB (JVM + Spring context + 2 containers), so the fork count is capped
-    // to avoid thrashing/OOM; CI runners (fewer cores + the CI env var) get fewer. Override with -PtestForks=N.
+    // Run test classes in parallel across JVM forks. Each fork gets its own Spring context and its OWN
+    // database inside the shared Postgres (see AbstractIntegrationTest), so forks share a server and never a
+    // schema. Threads instead of forks was measured and does not work: one JVM means one datasource, so the
+    // classes collide in a single database — 84 of 2179 tests failed, for no wall-clock gain.
+    //
+    // Measured on 12 cores, whole suite: 4x1g 2m25s / 4x512m 2m37s / 4x384m 2m44s / 2x512m 3m15s / 1x1g 5m13s.
+    // 384m is the knee — 62% less heap than the old 1g cap for 13% more wall clock. Override either with
+    // -PtestForks=N -PtestHeap=512m; drop to -PtestForks=2 when the machine is busy with something else.
     int cores = Runtime.runtime.availableProcessors()
     int defaultForks = System.getenv('CI') ? 2 : Math.max(1, cores.intdiv(3))
     maxParallelForks = (project.findProperty('testForks') ?: defaultForks) as int
-    maxHeapSize = '1g'
+    maxHeapSize = (project.findProperty('testHeap') ?: '384m') as String
     // Fast startup for short-lived test forks: C1-only JIT (test code runs ~once, so C2's warmup rarely pays
     // off) + a predictable parallel GC. Cuts each fork's JVM warmup — which matters when N forks each boot a
     // Spring context.

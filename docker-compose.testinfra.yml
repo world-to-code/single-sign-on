@@ -1,0 +1,66 @@
+# Backend test infrastructure: ONE Postgres and ONE Redis for the whole suite.
+#
+# Why this exists: Gradle runs the tests across several JVM forks, and Testcontainers' singleton is per-JVM, so
+# every fork started its own Postgres, Redis and Ryuk reaper — a dozen containers for one `./gradlew test`.
+# Marking them reusable does not fix it either: forks start simultaneously, so all of them look for an existing
+# container before any of them has finished creating one.
+#
+# So the containers are started once, here, and the isolation moves inside them: each Gradle worker creates its
+# own database and takes its own Redis database index (see AbstractIntegrationTest). Forks share a server,
+# never a schema.
+#
+#   docker compose -f docker-compose.testinfra.yml up -d
+#   cd sso-backend && ./gradlew test
+#
+# Ports are deliberately NOT the dev ones (5432/6379). This stack is disposable — every run drops and recreates
+# its worker databases — and it must never be able to do that to the database you are developing against.
+# When these are unreachable the suite starts Testcontainers on its own instead, which is what CI does.
+name: sso-testinfra   # its own compose project, so up/down never touches the dev stack or the SAML/OIDC clients
+services:
+  postgres:
+    image: postgres:17
+    container_name: sso-testinfra-postgres
+    ports:
+      - "55432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      # Creates the non-superuser runtime role the app connects as, so RLS is actually enforced — a superuser
+      # bypasses it even under FORCE. The same script Testcontainers uses, so both paths behave identically.
+      - ./sso-backend/src/test/resources/testcontainers/create-runtime-role.sql:/docker-entrypoint-initdb.d/10-runtime-role.sql:ro
+    # No volume: the data is worthless by construction, so it lives in RAM and cannot survive to confuse the
+    # next run. Durability settings off for the same reason — fsync buys nothing and costs every write.
+    tmpfs:
+      - /var/lib/postgresql/data
+    command:
+      - postgres
+      - -c
+      - fsync=off
+      - -c
+      - full_page_writes=off
+      - -c
+      - synchronous_commit=off
+      - -c
+      - max_connections=300   # several forks, each with a Hikari pool and a few raw RLS connections
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  redis:
+    image: redis:7
+    container_name: sso-testinfra-redis
+    ports:
+      - "56379:6379"
+    # Egx lets an idle session's TTL expiry publish a SessionExpiredEvent. Spring Session also CONFIG SETs this
+    # at startup; setting it here means the behaviour does not depend on that having happened yet.
+    # `--save ""` disables snapshotting: nothing here is worth writing to disk.
+    command: ["redis-server", "--notify-keyspace-events", "Egx", "--save", ""]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15

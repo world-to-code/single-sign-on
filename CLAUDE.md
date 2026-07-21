@@ -13,7 +13,8 @@ sso-frontend/   React + Vite SPA; `npm run build` emits a standalone `dist/` bun
 scripts/        Python live-flow verifiers (OIDC / SAML / SCIM / admin)
 test-client/    Standalone OIDC RP for manual testing
 docs/           Project docs (e.g. commit-convention.md)
-docker-compose.yml   Postgres :5432, MailHog :8025 (dev infra)
+docker-compose.yml   Postgres :5432, MailHog :8025, Redis :6379 (dev infra)
+docker-compose.testinfra.yml  Postgres :55432, Redis :56379 (backend test suite; see "Verifying end to end")
 ```
 
 Dev topology: backend on `:9000`; frontend dev server on `:5173` (Vite proxies API/OIDC/SAML/
@@ -56,6 +57,11 @@ commit messages are written in **English**.
 ## Verifying end to end
 
 - Infra: `docker compose up -d` (Postgres + MailHog).
-- Backend: `cd sso-backend && ./gradlew test` (Testcontainers — needs Docker).
+- Test infra: `docker compose -f docker-compose.testinfra.yml up -d` — ONE Postgres + Redis for the whole
+  suite, on non-dev ports. Optional but strongly preferred: Gradle forks the tests across JVMs and a
+  Testcontainers singleton is per-JVM, so without it every fork starts its own Postgres, Redis and reaper.
+  Each fork gets its own database inside that shared server, so the isolation is unchanged.
+- Backend: `cd sso-backend && ./gradlew test` (falls back to Testcontainers when the stack above is not up —
+  which is what CI does). Tune with `-PtestForks=N -PtestHeap=512m`.
 - Frontend: `cd sso-frontend && npm run build` (type-check + bundle).
 - Live flows: `python3 scripts/{oidc_authcode_flow,saml_sso_flow,admin_api_flow}.py`.

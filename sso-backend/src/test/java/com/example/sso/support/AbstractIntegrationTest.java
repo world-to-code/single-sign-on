@@ -7,6 +7,7 @@ import jakarta.servlet.http.Cookie;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.sql.Statement;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
@@ -17,14 +18,18 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.web.context.request.RequestContextHolder;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
- * Base for integration tests. Starts single shared PostgreSQL + Redis containers (singleton
- * pattern) reused across all test classes in the JVM, with Flyway migrations applied and
- * Hibernate in {@code validate} mode. Sessions live in Redis (see RedisSessionConfig), so the
- * context needs a running Redis to start.
+ * Base for integration tests: Flyway migrations applied, Hibernate in {@code validate} mode, sessions in Redis
+ * (see RedisSessionConfig), so the context needs a running Redis to start.
+ *
+ * <p>Where the servers come from is {@link TestInfrastructure}'s decision. What matters here is that Gradle
+ * runs test classes across several JVM forks and a Testcontainers singleton is per-JVM — so the previous
+ * arrangement started a Postgres, a Redis and a Ryuk reaper PER FORK: a dozen containers for one test run.
+ *
+ * <p>The isolation moves inside the servers instead. Each Gradle worker drops and recreates its OWN database
+ * and takes its own Redis database index, so forks share a server and never a schema. That holds whether the
+ * servers are the shared compose stack or this fork's own containers.
  */
 @SpringBootTest
 public abstract class AbstractIntegrationTest {
@@ -66,11 +71,55 @@ public abstract class AbstractIntegrationTest {
                 .andReturn(), null);
     }
 
-    // Testcontainers 2.x: org.testcontainers.postgresql.PostgreSQLContainer is non-generic.
-    // withInitScript provisions the non-superuser runtime role `sso_app` (as the container superuser, before
-    // Flyway) so the app connects as a role RLS actually constrains — mirroring dev + prod. See #91 / V54.
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17")
-            .withInitScript("testcontainers/create-runtime-role.sql");
+    /**
+     * This fork's slot. Gradle numbers its test workers and hands the number over as a system property; it is
+     * the only fork-local identifier available, and it is what keeps two forks off each other's data.
+     */
+    private static final int WORKER = workerSlot();
+
+    /** This fork's own database. Dropped and recreated at fork start, so a shared server starts clean. */
+    private static final String DATABASE = "sso_w" + WORKER;
+
+    /** Redis numbers its databases 0-15; SELECT is all the separation session keys need between forks. */
+    private static final int REDIS_DATABASE = WORKER % 16;
+
+    static {
+        createWorkerDatabase();
+    }
+
+    private static int workerSlot() {
+        try {
+            // Ids increment across the whole build, so this is unique among LIVE workers, not small.
+            return Math.abs(Integer.parseInt(System.getProperty("org.gradle.test.worker", "0")));
+        } catch (NumberFormatException notFromGradle) {
+            return 0;
+        }
+    }
+
+    /**
+     * A fresh database for this fork, as the server's privileged owner.
+     *
+     * <p>FORCE terminates whatever a previous run left connected: the compose stack outlives the build, so
+     * "already exists" is the normal case rather than the exceptional one. The runtime role is cluster-wide and
+     * created when the server starts, so it is already there; only its table grants are per database, and those
+     * come from the Flyway migration this database is about to run.
+     */
+    private static void createWorkerDatabase() {
+        try (Connection admin = DriverManager.getConnection(TestInfrastructure.adminJdbcUrl(),
+                TestInfrastructure.adminUser(), TestInfrastructure.adminPassword());
+                Statement statement = admin.createStatement()) {
+            statement.execute("DROP DATABASE IF EXISTS " + DATABASE + " WITH (FORCE)");
+            statement.execute("CREATE DATABASE " + DATABASE);
+        } catch (SQLException e) {
+            throw new IllegalStateException("could not provision this fork's database", e);
+        }
+    }
+
+    /** The JDBC URL of this fork's database, rather than the server's default one. */
+    protected static String workerJdbcUrl() {
+        return "jdbc:postgresql://" + TestInfrastructure.postgresHost() + ":"
+                + TestInfrastructure.postgresPort() + "/" + DATABASE;
+    }
 
     /** The non-superuser runtime role the app connects as (RLS applies); its creds are dev/test-only. */
     protected static final String APP_DB_USER = "sso_app";
@@ -84,43 +133,33 @@ public abstract class AbstractIntegrationTest {
      * (a superuser bypasses RLS). Caller closes it.
      */
     protected static Connection appRoleConnection() throws SQLException {
-        return DriverManager.getConnection(POSTGRES.getJdbcUrl(), APP_DB_USER, APP_DB_PASSWORD);
+        return DriverManager.getConnection(workerJdbcUrl(), APP_DB_USER, APP_DB_PASSWORD);
     }
 
     /**
-     * A {@code JdbcTemplate} as the privileged OWNER (the container superuser), used by RLS tests for
-     * cross-org seeding and teardown that must BYPASS RLS (a non-superuser cannot insert another org's rows,
-     * and cascade-deletes would be blocked by RLS). Never use it to assert isolation — only to arrange it.
+     * A {@code JdbcTemplate} as the privileged OWNER, used by RLS tests for cross-org seeding and teardown that
+     * must BYPASS RLS (a non-superuser cannot insert another org's rows, and cascade-deletes would be blocked
+     * by RLS). Never use it to assert isolation — only to arrange it.
      */
     protected static JdbcTemplate ownerJdbc() {
         if (ownerJdbc == null) {
             ownerJdbc = new JdbcTemplate(new DriverManagerDataSource(
-                    POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()));
+                    workerJdbcUrl(), TestInfrastructure.adminUser(), TestInfrastructure.adminPassword()));
         }
         return ownerJdbc;
     }
 
-    // Session store. `--notify-keyspace-events Egx` lets an idle session's TTL expiry publish a
-    // SessionExpiredEvent (Spring Session also CONFIG SETs this at startup; set here for determinism).
-    static final GenericContainer<?> REDIS = new GenericContainer<>("redis:7")
-            .withExposedPorts(6379)
-            .withCommand("redis-server", "--notify-keyspace-events", "Egx");
-
-    static {
-        POSTGRES.start();
-        REDIS.start();
-    }
-
     @DynamicPropertySource
     static void datasourceProperties(DynamicPropertyRegistry registry) {
-        // Runtime datasource = the non-superuser role (RLS enforced); Flyway = the container owner (keeps DDL).
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+        // Runtime datasource = the non-superuser role (RLS enforced); Flyway = the server owner (keeps DDL).
+        registry.add("spring.datasource.url", AbstractIntegrationTest::workerJdbcUrl);
         registry.add("spring.datasource.username", () -> APP_DB_USER);
         registry.add("spring.datasource.password", () -> APP_DB_PASSWORD);
-        registry.add("spring.flyway.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.flyway.user", POSTGRES::getUsername);
-        registry.add("spring.flyway.password", POSTGRES::getPassword);
-        registry.add("spring.data.redis.host", REDIS::getHost);
-        registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
+        registry.add("spring.flyway.url", AbstractIntegrationTest::workerJdbcUrl);
+        registry.add("spring.flyway.user", TestInfrastructure::adminUser);
+        registry.add("spring.flyway.password", TestInfrastructure::adminPassword);
+        registry.add("spring.data.redis.host", TestInfrastructure::redisHost);
+        registry.add("spring.data.redis.port", TestInfrastructure::redisPort);
+        registry.add("spring.data.redis.database", () -> REDIS_DATABASE);
     }
 }
