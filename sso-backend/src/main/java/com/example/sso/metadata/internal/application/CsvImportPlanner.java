@@ -12,6 +12,7 @@ import com.example.sso.user.account.BaseUserFields;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -66,9 +67,15 @@ class CsvImportPlanner {
     }
 
     CsvImportPreview plan(UUID profileId, String csv) {
-        Set<String> declared = definitions.definitionsIn(profileId).stream()
+        List<AttributeDefinition> columns = definitions.definitionsIn(profileId);
+        Set<String> declared = columns.stream()
                 .map(AttributeDefinition::key).collect(Collectors.toCollection(LinkedHashSet::new));
-        List<CsvRow> rows = read(csv, declared);
+        // definitionsIn synthesises username/email/displayName as BASE definitions. They are columns of
+        // app_user, and the profile validator refuses them by name — so they travel with the row but never
+        // reach the validator.
+        Set<String> baseKeys = columns.stream().filter(AttributeDefinition::base)
+                .map(AttributeDefinition::key).collect(Collectors.toCollection(LinkedHashSet::new));
+        List<CsvRow> rows = read(csv, declared, baseKeys);
 
         // Asked once for the whole file rather than once per row: an import is the one path here that is
         // deliberately bulk, and a per-row lookup turns a five-thousand-line file into ten thousand round trips.
@@ -89,7 +96,8 @@ class CsvImportPlanner {
             // An account that already exists is neither created nor a failure — an import fills a tenant it
             // does not already have, and saying "already there" is the useful answer, not an error.
             if (!existing.contains(row.username())) {
-                toCreate.add(new CsvPlannedUser(row.username(), row.attributes(), row.groups()));
+                toCreate.add(new CsvPlannedUser(row.line(), row.username(), row.baseValues(),
+                        row.profileValues(), row.groups()));
             }
         }
         return new CsvImportPreview(rows.size(), toCreate,
@@ -99,6 +107,12 @@ class CsvImportPlanner {
     private CsvRowFailure failureIn(UUID profileId, CsvRow row, Set<String> seen, Set<String> missingGroups) {
         if (row.username().isEmpty()) {
             return row.fails("metadata.csv.row.missingRequired", BaseUserFields.USERNAME);
+        }
+        // app_user.email is NOT NULL, and "" is a value under the per-org unique index — so a file with no
+        // address would create exactly one account and report every later row as a duplicate of it. Required
+        // here rather than papered over with a synthetic address.
+        if (row.attributes().getOrDefault(BaseUserFields.EMAIL, "").isEmpty()) {
+            return row.fails("metadata.csv.row.missingRequired", BaseUserFields.EMAIL);
         }
         if (seen.contains(row.username())) {
             return row.fails("metadata.csv.row.duplicateUsername", row.username());
@@ -119,7 +133,7 @@ class CsvImportPlanner {
             return row.fails("metadata.csv.row.unknownGroup", unknownGroup);
         }
         try {
-            values.validate(profileId, row.attributes().entrySet().stream()
+            values.validate(profileId, row.profileValues().entrySet().stream()
                     .collect(Collectors.toMap(Map.Entry::getKey, e -> List.of(e.getValue()))));
         } catch (ApiException refused) {
             return row.fails(refused.getMessageKey(), null);
@@ -127,7 +141,7 @@ class CsvImportPlanner {
         return null;
     }
 
-    private List<CsvRow> read(String csv, Set<String> declared) {
+    private List<CsvRow> read(String csv, Set<String> declared, Set<String> baseKeys) {
         CSVFormat format = CSVFormat.DEFAULT.builder()
                 .setHeader().setSkipHeaderRecord(true).setIgnoreEmptyLines(true).setTrim(true).build();
         try (CSVParser parser = CSVParser.parse(csv, format)) {
@@ -141,7 +155,10 @@ class CsvImportPlanner {
                 if (isGuidance(record)) {
                     continue;
                 }
-                rows.add(CsvRow.of(record, header, declared));
+                // The parser's own line counter, not the record number: blank lines are skipped and a quoted
+                // cell can span several lines, so record numbers stop tracking the file an administrator has
+                // open — which is the only thing this number is for.
+                rows.add(CsvRow.of(record, parser.getCurrentLineNumber(), header, declared, baseKeys));
             }
             return rows;
         } catch (IOException e) {
@@ -167,6 +184,13 @@ class CsvImportPlanner {
         }
         if (!header.contains(BaseUserFields.USERNAME)) {
             throw BadRequestException.of("metadata.csv.missingUsernameColumn");
+        }
+        // A repeated column means the file was built by hand against a schema it does not match. The parser
+        // would let the last one win and discard the administrator's other column without a word.
+        String duplicate = header.stream().filter(column -> Collections.frequency(header, column) > 1)
+                .findFirst().orElse(null);
+        if (duplicate != null) {
+            throw BadRequestException.of("metadata.csv.duplicateColumn", duplicate);
         }
     }
 

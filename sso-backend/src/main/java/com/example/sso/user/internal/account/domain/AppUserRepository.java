@@ -109,6 +109,10 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 
     boolean existsByUsernameAndOrgId(String username, UUID orgId);
 
+    /** Which of these usernames the organization already has — one query for a whole imported file. */
+    @Query("select u.username from AppUser u where u.orgId = :orgId and u.username in :usernames")
+    List<String> findExistingUsernames(@Param("orgId") UUID orgId, @Param("usernames") Collection<String> usernames);
+
     boolean existsByUsernameAndOrgIdIsNull(String username);
 
     boolean existsByEmailAndOrgId(String email, UUID orgId);

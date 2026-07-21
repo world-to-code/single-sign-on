@@ -6,10 +6,12 @@ import com.example.sso.metadata.CsvUserCreator;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.user.account.BaseUserFields;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.group.GroupView;
 import com.example.sso.user.group.UserGroupService;
 import com.example.sso.shared.Page;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -49,35 +51,61 @@ class CsvUserCreatorAdapter implements CsvUserCreator {
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public UUID create(CsvPlannedUser user, UUID profileId) {
+        // Only the profile's OWN attributes go to the validator; the base ones are account columns and it
+        // refuses them by name. Resolve the groups before creating, so a row that names an unreachable one
+        // does not leave an account behind that the caller was told had failed.
+        Map<UUID, String> reachableGroups = resolveGroups(user.groups());
         Map<String, List<String>> values = user.attributes().entrySet().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, e -> List.of(e.getValue())));
         // No password and no roles: a file may say who exists, never what they may do or how they prove it.
         UUID userId = UUID.fromString(users.createUser(
-                new NewUser(user.username(), values.getOrDefault("email", List.of("")).getFirst(),
-                        values.getOrDefault("displayName", List.of("")).getFirst(), null, Set.of()),
+                new NewUser(user.username(), user.base().get(BaseUserFields.EMAIL),
+                        blankToNull(user.base().get(BaseUserFields.DISPLAY_NAME)), null, Set.of()),
                 values, profileId).id());
-        user.groups().forEach(name -> groups.addMember(requireAccessibleGroup(name), userId));
+        reachableGroups.keySet().forEach(groupId -> groups.addMember(groupId, userId));
         return userId;
     }
 
     /**
-     * The group by name, only if the acting administrator may put someone in it.
+     * An absent optional value is null, never "".
      *
-     * <p>The same check the console's own group screen applies. Without it a bulk import would be a way around
-     * subtree scope: a delegate who cannot see a group could still write its name in a column and have the
-     * server add members to it.
+     * <p>Not applied to the address: {@code app_user.email} is NOT NULL, so a null there is a crash rather than
+     * an absence. The empty-string collision that motivated this — "" is a value under the per-org unique
+     * index, so the first address-less row persists and every later one fails as a duplicate — is prevented by
+     * the planner refusing a row with no address at all.
      */
-    private UUID requireAccessibleGroup(String name) {
-        UUID groupId = orgContext.currentOrg()
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
+    }
+
+    /**
+     * The named groups by id, each checked for reach — one directory read for the row rather than one per name.
+     *
+     * <p>The reach check is the same question the console's own group screen asks. Without it a bulk import
+     * would be the way around subtree scope: a delegate who cannot see a group could still write its name in a
+     * column and have the server add members to it.
+     */
+    private Map<UUID, String> resolveGroups(List<String> names) {
+        if (names.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, UUID> byName = orgContext.currentOrg()
                 .map(org -> groups.listByOrg(org, 0, maxGroupsConsidered))
                 .map(Page::items)
                 .orElseGet(List::of)
-                .stream().filter(group -> group.name().equals(name)).findFirst()
-                .map(GroupView::id).map(UUID::fromString)
-                .orElseThrow(() -> NotFoundException.of("metadata.csv.row.unknownGroup", name));
-        if (!accessPolicy.canAccessGroup(groupId)) {
-            throw ForbiddenException.of("admin.group.outsideScope");
+                .stream().collect(Collectors.toMap(GroupView::name, group -> UUID.fromString(group.id()),
+                        (first, second) -> first));
+        Map<UUID, String> resolved = new LinkedHashMap<>();
+        for (String name : names) {
+            UUID groupId = byName.get(name);
+            if (groupId == null) {
+                throw NotFoundException.of("metadata.csv.row.unknownGroup", name);
+            }
+            if (!accessPolicy.canAccessGroup(groupId)) {
+                throw ForbiddenException.of("admin.group.outsideScope");
+            }
+            resolved.put(groupId, name);
         }
-        return groupId;
+        return resolved;
     }
 }

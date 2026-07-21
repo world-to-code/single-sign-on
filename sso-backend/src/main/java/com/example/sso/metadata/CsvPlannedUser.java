@@ -10,9 +10,16 @@ import java.util.Map;
  * would produce BEFORE it produces them — a bulk create is the one import path that makes accounts rather
  * than filling existing ones, so a file aimed wrongly must not be able to do it quietly.
  *
+ * @param line       the line in the uploaded file this row came from, carried so a failure DURING the apply —
+ *                   a race with another administrator, a group renamed since the preview — can name the row
+ *                   the way a failure during planning does
  * @param username   the account name, which is also how an existing user is recognised
- * @param attributes the profile's attributes this row fills
+ * @param base       values that become COLUMNS of the account (email, displayName) rather than attributes.
+ *                   Kept apart because the profile validator refuses these keys by name — they are app_user's,
+ *                   not entity_attribute's, and handing it the whole map failed every row of every real import
+ * @param attributes the profile's own attributes this row fills
  * @param groups     groups the row asks for, already checked to exist
  */
-public record CsvPlannedUser(String username, Map<String, String> attributes, List<String> groups) {
+public record CsvPlannedUser(long line, String username, Map<String, String> base,
+                             Map<String, String> attributes, List<String> groups) {
 }

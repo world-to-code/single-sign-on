@@ -104,6 +104,14 @@ public interface UserService {
      *  {@code orgId} is null — the per-organization uniqueness check (exact, no global fallback). */
     boolean existsByUsernameInOrg(String username, UUID orgId);
 
+    /**
+     * Which of these usernames the organization already has, in ONE query.
+     *
+     * <p>For a bulk import: asking per row turns a five-thousand-line file into five thousand round trips, and
+     * the answer is the same shape either way.
+     */
+    List<String> existingUsernamesInOrg(Collection<String> usernames, UUID orgId);
+
     boolean hasPassword(UUID id);
 
     /** Whether the user has the named role assigned DIRECTLY (not inherited via a group). */

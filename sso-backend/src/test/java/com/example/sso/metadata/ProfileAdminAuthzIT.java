@@ -4,7 +4,7 @@ import com.example.sso.metadata.internal.api.ProfileAdminController;
 import com.example.sso.metadata.internal.api.ProfileMappingRequest;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.rbac.Permissions;
-import com.example.sso.shared.security.RequirePermission;
+import org.springframework.security.access.prepost.PreAuthorize;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Arrays;
@@ -101,7 +101,10 @@ class ProfileAdminAuthzIT extends AbstractIntegrationTest {
         List<String> ungated = Arrays.stream(ProfileAdminController.class.getDeclaredMethods())
                 .filter(method -> Modifier.isPublic(method.getModifiers()))
                 .filter(method -> AnnotatedElementUtils.hasAnnotation(method, RequestMapping.class))
-                .filter(method -> !AnnotatedElementUtils.hasAnnotation(method, RequirePermission.class))
+                // PreAuthorize, not RequirePermission: the CSV routes carry @CanImportUsers, which adds the
+                // scope term the console's create has. Asking for one particular annotation would have made
+                // this test fail the moment a route was gated MORE strictly.
+                .filter(method -> !AnnotatedElementUtils.hasAnnotation(method, PreAuthorize.class))
                 .map(Method::getName)
                 .toList();
 
@@ -126,5 +129,19 @@ class ProfileAdminAuthzIT extends AbstractIntegrationTest {
         // Reaches the service (which then refuses the unknown profile) rather than being denied by authority.
         assertThatThrownBy(() -> controller.csvTemplate(UUID.randomUUID()))
                 .isNotInstanceOf(AccessDeniedException.class);
+    }
+    /**
+     * The permission is not the whole gate. A resource-subtree delegate holding user:create is refused by the
+     * console's own create — canCreateUser() is false for anyone who is neither a super admin nor the bound
+     * organization's administrator — and the import route must refuse them for the same reason. Without this
+     * term a delegate could mint accounts across the entire tenant, five thousand at a time, through the one
+     * route that skipped the ABAC half.
+     */
+    @Test
+    void holdingTheCreatePermissionWithoutTheScopeIsNotEnoughToImport() {
+        actAs(Permissions.USER_CREATE);
+
+        assertDenied(() -> controller.previewCsvImport(UUID.randomUUID(), new MockMultipartHttpServletRequest()));
+        assertDenied(() -> controller.importCsv(UUID.randomUUID(), new MockMultipartHttpServletRequest()));
     }
 }

@@ -10,6 +10,7 @@ import com.example.sso.metadata.Profile;
 import com.example.sso.metadata.ProfileService;
 import com.example.sso.shared.error.ApiException;
 import com.example.sso.shared.error.BadRequestException;
+import org.springframework.dao.DataIntegrityViolationException;
 import com.example.sso.shared.error.NotFoundException;
 import java.util.ArrayList;
 import java.util.List;
@@ -58,10 +59,17 @@ class CsvImportServiceImpl implements CsvImportService {
             try {
                 creator.create(user, profileId);
                 created++;
+            } catch (DataIntegrityViolationException raceLost) {
+                // The preview-to-apply window made real: another import or administrator inserted this username
+                // first, so the per-org unique index refused ours. That arrives as a constraint violation, not
+                // an ApiException, and it used to escape the loop and 500 the request — losing the
+                // partial-failure report this whole design exists to produce. REQUIRES_NEW on the creator is
+                // what makes catching it safe: the poisoned transaction was that row's alone.
+                failures.add(new CsvRowFailure(user.line(), "user.username.duplicate", user.username()));
             } catch (ApiException refused) {
                 // The window between confirming and applying is real: someone else can create that account, or
                 // a group can be renamed. Report the row and keep going.
-                failures.add(new CsvRowFailure(0, refused.getMessageKey(), user.username()));
+                failures.add(new CsvRowFailure(user.line(), refused.getMessageKey(), user.username()));
             }
         }
         return new CsvImportResult(created, plan.existing(), failures);

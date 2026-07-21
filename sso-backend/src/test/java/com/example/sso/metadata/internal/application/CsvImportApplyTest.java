@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.mock.web.MockMultipartHttpServletRequest;
 import org.springframework.web.multipart.MultipartRequest;
@@ -71,7 +72,7 @@ class CsvImportApplyTest {
     }
 
     private CsvPlannedUser planned(String username, String... groups) {
-        return new CsvPlannedUser(username, Map.of("username", username), List.of(groups));
+        return new CsvPlannedUser(7, username, Map.of("username", username), Map.of(), List.of(groups));
     }
 
     private void plans(List<CsvPlannedUser> toCreate, List<String> existing, List<CsvRowFailure> failures) {
@@ -103,6 +104,21 @@ class CsvImportApplyTest {
         verify(creator, never()).create(eq(planned("ada")), any());
     }
 
+    /** A row losing the preview-to-apply race is reported with its line, not lost as a 500. */
+    @Test
+    void losingTheRaceToAnotherImportIsAReportedRowNotAFailedRequest() {
+        plans(List.of(planned("ada"), planned("grace")), List.of(), List.of());
+        doThrow(new DataIntegrityViolationException("uq_app_user_org_username"))
+                .when(creator).create(planned("ada"), PROFILE);
+
+        CsvImportResult result = service.apply(PROFILE, request());
+
+        assertThat(result.created()).isEqualTo(1);
+        assertThat(result.failures()).singleElement()
+                .extracting(CsvRowFailure::reason, CsvRowFailure::line)
+                .containsExactly("user.username.duplicate", 7L);
+    }
+
     /** Rows the plan already refused are carried into the result, not silently dropped. */
     @Test
     void rowsThePlanRefusedStayRefused() {
@@ -128,7 +144,8 @@ class CsvImportApplyTest {
 
         assertThat(result.created()).isEqualTo(1);
         assertThat(result.failures()).singleElement()
-                .extracting(CsvRowFailure::reason).isEqualTo("user.username.taken");
+                .extracting(CsvRowFailure::reason, CsvRowFailure::line)
+                .containsExactly("user.username.taken", 7L);
         verify(creator).create(planned("grace"), PROFILE);
     }
 

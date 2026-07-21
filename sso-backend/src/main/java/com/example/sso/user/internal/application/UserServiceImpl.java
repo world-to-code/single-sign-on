@@ -265,6 +265,15 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<String> existingUsernamesInOrg(Collection<String> usernames, UUID orgId) {
+        if (usernames == null || usernames.isEmpty() || orgId == null) {
+            return List.of();
+        }
+        return users.findExistingUsernames(orgId, usernames.stream().distinct().toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public boolean hasPassword(UUID id) {
         return require(id).getPasswordHash() != null;
     }

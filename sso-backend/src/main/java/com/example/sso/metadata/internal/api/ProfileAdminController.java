@@ -11,6 +11,8 @@ import com.example.sso.metadata.Profile;
 import com.example.sso.metadata.ProfileMapping;
 import com.example.sso.metadata.ProfileMappingService;
 import com.example.sso.metadata.ProfileService;
+
+import com.example.sso.shared.security.CanImportUsers;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.rbac.Permissions;
@@ -61,7 +63,7 @@ public class ProfileAdminController {
      * as the write.
      */
     @PostMapping("/{id}/csv-import/preview")
-    @RequirePermission(Permissions.USER_CREATE)
+    @CanImportUsers
     @RequireStepUp
     public CsvImportPreview previewCsvImport(@PathVariable UUID id, MultipartRequest request) {
         return imports.preview(id, request);
@@ -72,7 +74,7 @@ public class ProfileAdminController {
      * and this decides which accounts exist.
      */
     @PostMapping("/{id}/csv-import")
-    @RequirePermission(Permissions.USER_CREATE)
+    @CanImportUsers
     @RequireStepUp
     public CsvImportResult importCsv(@PathVariable UUID id, MultipartRequest request) {
         return imports.apply(id, request);

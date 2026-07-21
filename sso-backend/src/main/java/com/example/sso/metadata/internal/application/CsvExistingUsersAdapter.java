@@ -1,9 +1,11 @@
 package com.example.sso.metadata.internal.application;
 
+import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserService;
 import java.util.Collection;
 import java.util.List;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,9 +30,11 @@ class CsvExistingUsersAdapter implements CsvExistingUsers {
         if (usernames == null || usernames.isEmpty()) {
             return List.of();
         }
-        return orgContext.currentOrg()
-                .map(org -> usernames.stream().distinct()
-                        .filter(username -> users.existsByUsernameInOrg(username, org)).toList())
-                .orElseGet(List::of);
+        // Fail CLOSED. An empty answer here means "none of these exist", which the planner reads as "create
+        // them all" — so an unbound context would mint accounts rather than refuse. Its sibling adapter
+        // already fails closed on the same condition.
+        UUID org = orgContext.currentOrg()
+                .orElseThrow(() -> ForbiddenException.of("metadata.csv.noOrganization"));
+        return users.existingUsernamesInOrg(usernames, org);
     }
 }

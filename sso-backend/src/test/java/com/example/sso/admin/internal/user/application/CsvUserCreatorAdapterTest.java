@@ -7,6 +7,7 @@ import com.example.sso.shared.error.ApiException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.user.account.BaseUserFields;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.group.GroupView;
 import com.example.sso.user.group.UserGroupService;
@@ -28,6 +29,7 @@ import static org.assertj.core.api.InstanceOfAssertFactories.type;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -62,7 +64,7 @@ class CsvUserCreatorAdapterTest {
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         lenient().when(groups.listByOrg(eq(ORG), eq(0), eq(1000))).thenReturn(new Page<>(2, 0, 1000, List.of(
                 group(REACHABLE, "platform"), group(OUT_OF_SCOPE, "finance"))));
-        AdminUserView created = org.mockito.Mockito.mock(AdminUserView.class);
+        AdminUserView created = mock(AdminUserView.class);
         lenient().when(created.id()).thenReturn(CREATED.toString());
         lenient().when(users.createUser(any(), any(), any())).thenReturn(created);
     }
@@ -72,8 +74,8 @@ class CsvUserCreatorAdapterTest {
     }
 
     private CsvPlannedUser planned(String... groupNames) {
-        return new CsvPlannedUser("ada", Map.of("username", "ada", "email", "ada@example.com"),
-                List.of(groupNames));
+        return new CsvPlannedUser(3, "ada", Map.of("username", "ada", "email", "ada@example.com"),
+                Map.of("team", "platform"), List.of(groupNames));
     }
 
     @Test
@@ -132,6 +134,39 @@ class CsvUserCreatorAdapterTest {
         assertThat(created.getValue().rawPassword()).isNull();
         assertThat(created.getValue().roleNames()).isEmpty();
         assertThat(created.getValue().username()).isEqualTo("ada");
+        assertThat(created.getValue().email()).isEqualTo("ada@example.com");
+    }
+
+    /**
+     * The validator refuses base keys by name, so only the profile's own attributes may reach it. Sending the
+     * whole map failed every row of every real import with "undeclared: username".
+     */
+    @Test
+    void onlyTheProfilesOwnAttributesReachTheValidator() {
+        adapter.create(planned(), PROFILE);
+
+        ArgumentCaptor<Map<String, List<String>>> values = ArgumentCaptor.forClass(Map.class);
+        verify(users).createUser(any(), values.capture(), eq(PROFILE));
+
+        assertThat(values.getValue()).containsOnlyKeys("team");
+    }
+
+    /**
+     * displayName is nullable in the schema and an empty one is meaningless, so it becomes null. The ADDRESS is
+     * deliberately not treated this way: app_user.email is NOT NULL, so a null there is a crash rather than an
+     * absence — the planner refuses an address-less row instead.
+     */
+    @Test
+    void anEmptyDisplayNameBecomesNull() {
+        adapter.create(new CsvPlannedUser(3, "ada",
+                Map.of(BaseUserFields.EMAIL, "ada@example.com", BaseUserFields.DISPLAY_NAME, ""),
+                Map.of(), List.of()), PROFILE);
+
+        ArgumentCaptor<NewUser> created = ArgumentCaptor.forClass(NewUser.class);
+        verify(users).createUser(created.capture(), any(), any());
+
+        assertThat(created.getValue().displayName()).isNull();
+        assertThat(created.getValue().email()).isEqualTo("ada@example.com");
     }
 
     /**
