@@ -50,6 +50,11 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     // for the whole timeout), and each callback can create an account and a session. Throttled on what they
     // DO, not on their verb.
     private static final String FEDERATION_PREFIX = "/api/auth/federation/";
+    // One accepted file becomes hundreds of accounts, so this is throttled on what it DOES, not on being an
+    // authenticated admin route. Keyed on the principal rather than the IP below: the callers are signed-in
+    // administrators, often behind one office address, and an IP key would let one of them exhaust the budget
+    // for all of them.
+    private static final String CSV_IMPORT_SUFFIX = "/csv-import/preview";
 
     private final RateLimiter rateLimiter;
     private final AuditService audit;
@@ -64,7 +69,8 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         if (isLimited(request.getMethod(), request.getServletPath())) {
             String ip = request.getRemoteAddr();
-            String key = request.getServletPath() + ":" + ip;
+            String actorKey = request.getServletPath().endsWith(CSV_IMPORT_SUFFIX) ? principal() : null;
+            String key = request.getServletPath() + ":" + (actorKey == null ? ip : actorKey);
             if (!rateLimiter.tryAcquire(key)) {
                 // Attribute it to the principal when there IS one: several limited routes are called by a
                 // signed-in user, and an audit row carrying only an IP is unattributable — and invisible in
@@ -112,6 +118,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         return "POST".equalsIgnoreCase(method)
                 && (LIMITED_PATHS.contains(path)
                     || path.startsWith(FACTORS_PREFIX)
-                    || path.startsWith(REAUTH_PREFIX));
+                    || path.startsWith(REAUTH_PREFIX)
+                    || path.endsWith(CSV_IMPORT_SUFFIX));
     }
 }

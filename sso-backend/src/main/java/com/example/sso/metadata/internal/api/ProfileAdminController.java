@@ -2,6 +2,8 @@ package com.example.sso.metadata.internal.api;
 
 import com.example.sso.metadata.AttributeDefinition;
 import com.example.sso.metadata.AttributeDefinitionService;
+import com.example.sso.metadata.CsvImportPreview;
+import com.example.sso.metadata.CsvImportService;
 import com.example.sso.metadata.CsvTemplate;
 import com.example.sso.metadata.CsvTemplateService;
 import com.example.sso.metadata.Profile;
@@ -26,6 +28,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartRequest;
 
 /**
  * The acting tenant's profiles and the attributes each declares. A profile id is client-supplied, so the
@@ -40,11 +43,27 @@ public class ProfileAdminController {
     private final AttributeDefinitionService definitions;
     private final ProfileMappingService mappings;
     private final CsvTemplateService templates;
+    private final CsvImportService imports;
 
     @GetMapping
     @RequirePermission(Permissions.ATTRIBUTE_DEFINITION_READ)
     public List<Profile> list() {
         return profiles.list();
+    }
+
+    /**
+     * What an uploaded CSV WOULD do on this profile, having written none of it.
+     *
+     * <p>Carries the create permission and a step-up, not the schema-read one the template download uses: a
+     * file here becomes accounts, and bulk account creation is a privilege-changing act however routine it
+     * looks. It writes nothing, but it is the step an administrator authorises the write from, so it is gated
+     * as the write.
+     */
+    @PostMapping("/{id}/csv-import/preview")
+    @RequirePermission(Permissions.USER_CREATE)
+    @RequireStepUp
+    public CsvImportPreview previewCsvImport(@PathVariable UUID id, MultipartRequest request) {
+        return imports.preview(id, request);
     }
 
     @GetMapping("/{id}/attributes")
