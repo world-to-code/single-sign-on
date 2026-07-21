@@ -35,7 +35,10 @@ class CsvGroupDirectoryAdapter implements CsvGroupDirectory {
         if (names == null || names.isEmpty()) {
             return List.of();
         }
-        return names.stream().distinct().filter(name -> usableIds(names).get(name) == null).toList();
+        // Resolved ONCE for the whole file. This sat inside the filter, so a file naming D groups cost D
+        // directory reads and up to D squared authorization lookups on a single admin request.
+        Map<String, UUID> usable = usableIds(names);
+        return names.stream().distinct().filter(name -> !usable.containsKey(name)).toList();
     }
 
     /**

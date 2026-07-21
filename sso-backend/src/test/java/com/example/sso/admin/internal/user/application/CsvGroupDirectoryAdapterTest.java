@@ -19,6 +19,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -87,6 +90,31 @@ class CsvGroupDirectoryAdapterTest {
         assertThat(directory.unusable(List.of("platform", "finance"))).containsExactly("finance");
     }
 
+    /**
+     * The whole file costs ONE directory read. This resolved inside the filter predicate once, so a file
+     * naming D groups issued D directory reads and up to D squared authorization lookups on a single request —
+     * the same fan-out the oversized-cell ceiling exists to prevent, one layer above where it can see it.
+     */
+    @Test
+    void theDirectoryIsReadOnceForTheWholeFileNotOncePerName() {
+        when(accessPolicy.canAccessGroup(REACHABLE)).thenReturn(true);
+        when(accessPolicy.canAccessGroup(OUT_OF_SCOPE)).thenReturn(false);
+
+        directory.unusable(List.of("platform", "finance", "platform"));
+
+        verify(groups, times(1)).groupIdsByName(any(), eq(ORG));
+        verify(accessPolicy, times(1)).canAccessGroup(REACHABLE);
+        verify(accessPolicy, times(1)).canAccessGroup(OUT_OF_SCOPE);
+    }
+
+    /** What the name has always promised: no names, no round trip. */
+    @Test
+    void askingAboutNothingCostsNoQuery() {
+        assertThat(directory.unusable(List.of())).isEmpty();
+
+        verify(groups, never()).groupIdsByName(any(), any());
+    }
+
     /** Fails closed: with no organization bound nothing is usable, so every group-bearing row is refused. */
     @Test
     void nothingIsUsableWithNoOrganizationBound() {
@@ -95,8 +123,4 @@ class CsvGroupDirectoryAdapterTest {
         assertThat(directory.unusable(List.of("platform"))).containsExactly("platform");
     }
 
-    @Test
-    void askingAboutNothingCostsNoQuery() {
-        assertThat(directory.unusable(List.of())).isEmpty();
-    }
 }
