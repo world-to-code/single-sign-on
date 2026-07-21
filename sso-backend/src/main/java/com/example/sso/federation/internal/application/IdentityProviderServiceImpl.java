@@ -59,7 +59,7 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
     @Transactional(readOnly = true)
     public IdentityProviderView get(String alias) {
         return ownProvider(alias).map(this::toView)
-                .orElseThrow(() -> new NotFoundException("Identity provider not found"));
+                .orElseThrow(() -> NotFoundException.of("federation.provider.notFound"));
     }
 
     @Override
@@ -145,15 +145,15 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
         if (existing != null) {
             return existing.getClientSecretEncrypted();
         }
-        throw new BadRequestException("A client secret is required for a new identity provider.");
+        throw BadRequestException.of("federation.provider.clientSecretRequired");
     }
 
     private void validate(IdentityProviderSpec spec) {
         if (!StringUtils.hasText(spec.displayName())) {
-            throw new BadRequestException("A display name is required.");
+            throw BadRequestException.of("federation.provider.displayNameRequired");
         }
         if (!StringUtils.hasText(spec.clientId())) {
-            throw new BadRequestException("A client id is required.");
+            throw BadRequestException.of("federation.provider.clientIdRequired");
         }
         validateIssuer(spec.issuerUri());
     }
@@ -161,16 +161,16 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
     /** The issuer must be an absolute https URL, and its host must not resolve to an internal/metadata target. */
     private void validateIssuer(String issuerUri) {
         if (!StringUtils.hasText(issuerUri)) {
-            throw new BadRequestException("An issuer URL is required.");
+            throw BadRequestException.of("federation.provider.issuerRequired");
         }
         URI uri;
         try {
             uri = new URI(issuerUri.trim());
         } catch (URISyntaxException e) {
-            throw new BadRequestException("The issuer URL is malformed.");
+            throw BadRequestException.of("federation.provider.issuerMalformed");
         }
         if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null) {
-            throw new BadRequestException("The issuer URL must be an absolute https URL.");
+            throw BadRequestException.of("federation.provider.issuerNotHttps");
         }
         hostValidator.validate(uri.getHost()); // SSRF: reject internal/metadata targets
     }
@@ -178,7 +178,7 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
     private String normalizeAlias(String alias) {
         String trimmed = alias == null ? "" : alias.trim().toLowerCase();
         if (!ALIAS.matcher(trimmed).matches()) {
-            throw new BadRequestException("The alias must be 2–64 lowercase letters, digits or hyphens.");
+            throw BadRequestException.of("federation.provider.aliasInvalid");
         }
         return trimmed;
     }
@@ -226,7 +226,7 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
     private UUID writableOrg() {
         UUID org = orgContext.currentOrg().orElse(null);
         if (org == null && !orgContext.isPlatform()) {
-            throw new ForbiddenException("Only a platform administrator may edit the global identity providers.");
+            throw ForbiddenException.of("federation.provider.global.platformOnly");
         }
         return org;
     }

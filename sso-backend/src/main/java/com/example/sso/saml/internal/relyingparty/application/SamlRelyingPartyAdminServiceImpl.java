@@ -63,7 +63,7 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
     @Transactional
     public RelyingPartyView update(UUID id, RelyingPartyRequest request) {
         SamlRelyingParty rp = tierGuard.requireInTier(relyingParties.findById(id),
-                () -> new NotFoundException("relying party not found"));
+                () -> NotFoundException.of("saml.relyingParty.notFound"));
 
         rp.update(request.displayName(), request.acsUrl(), nameIdFormat(request), settings(request),
                 trimToNull(request.signingCertificate()), trimToNull(request.encryptionCertificate()),
@@ -75,7 +75,7 @@ public class SamlRelyingPartyAdminServiceImpl implements SamlRelyingPartyAdminSe
     @Transactional
     public void delete(UUID id) {
         SamlRelyingParty rp = tierGuard.requireInTier(relyingParties.findById(id),
-                () -> new NotFoundException("relying party not found"));
+                () -> NotFoundException.of("saml.relyingParty.notFound"));
 
         relyingParties.delete(rp);
         events.publishEvent(new ApplicationDeletedEvent(id.toString()));

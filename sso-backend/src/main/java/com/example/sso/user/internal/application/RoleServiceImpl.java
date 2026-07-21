@@ -198,7 +198,7 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional
     public RoleRef updateRole(UUID roleId, String name, Set<String> permissionNames) {
-        Role role = roles.findById(roleId).orElseThrow(() -> new NotFoundException("role not found"));
+        Role role = roles.findById(roleId).orElseThrow(() -> NotFoundException.of("user.role.notFound"));
         if (ADMIN_ROLE.equals(role.getName())) {
             throw ConflictException.of("user.role.adminImmutable");
         }
@@ -255,7 +255,7 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional
     public void setInheritsFrom(UUID parentRoleId, Set<UUID> newChildIds) {
-        Role role = roles.findById(parentRoleId).orElseThrow(() -> new NotFoundException("role not found"));
+        Role role = roles.findById(parentRoleId).orElseThrow(() -> NotFoundException.of("user.role.notFound"));
         UUID org = role.getOrgId();
         Set<UUID> current = roleClosure.childrenOf(parentRoleId);
         newChildIds.stream().filter(child -> !current.contains(child))
@@ -271,7 +271,7 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional
     public void deleteRole(UUID roleId) {
-        Role role = roles.findById(roleId).orElseThrow(() -> new NotFoundException("role not found"));
+        Role role = roles.findById(roleId).orElseThrow(() -> NotFoundException.of("user.role.notFound"));
         if (role.isSystem()) {
             throw ConflictException.of("user.role.systemNoDelete", role.getName());
         }
@@ -349,7 +349,7 @@ public class RoleServiceImpl implements RoleService {
             }
             boolean permitted = roleOrg != null ? !Permissions.isPlatform(name) : grantPolicy.mayGrant(name);
             if (!permitted) {
-                throw new ForbiddenException("not permitted to grant permission: " + name);
+                throw ForbiddenException.of("user.permission.notGrantable", name);
             }
             return permissions.findByName(name).orElseGet(() -> permissions.save(new Permission(name)));
         }).collect(Collectors.toSet());
@@ -431,7 +431,7 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional
     public void setMembers(UUID roleId, Set<UUID> userIds) {
-        roles.findById(roleId).orElseThrow(() -> new NotFoundException("role not found"));
+        roles.findById(roleId).orElseThrow(() -> NotFoundException.of("user.role.notFound"));
         Set<UUID> currentIds = new HashSet<>(userRoles.findUserIdsByRoleId(roleId));
 
         // Explicitly delete the assignments of members no longer wanted...
@@ -451,8 +451,8 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional
     public void addMember(UUID roleId, UUID userId) {
-        roles.findById(roleId).orElseThrow(() -> new NotFoundException("role not found"));
-        AppUser user = users.findById(userId).orElseThrow(() -> new NotFoundException("user not found"));
+        roles.findById(roleId).orElseThrow(() -> NotFoundException.of("user.role.notFound"));
+        AppUser user = users.findById(userId).orElseThrow(() -> NotFoundException.of("user.notFound"));
         userRoles.save(new UserRole(user.getId(), roleId)); // idempotent (composite PK)
         accessChanges.forUserIds(Set.of(userId));
     }
@@ -460,8 +460,8 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional
     public void removeMember(UUID roleId, UUID userId) {
-        roles.findById(roleId).orElseThrow(() -> new NotFoundException("role not found"));
-        AppUser user = users.findById(userId).orElseThrow(() -> new NotFoundException("user not found"));
+        roles.findById(roleId).orElseThrow(() -> NotFoundException.of("user.role.notFound"));
+        AppUser user = users.findById(userId).orElseThrow(() -> NotFoundException.of("user.notFound"));
         userRoles.deleteByUserIdAndRoleId(user.getId(), roleId); // idempotent
         accessChanges.forUserIds(Set.of(userId));
     }

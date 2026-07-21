@@ -59,7 +59,7 @@ class OidcUpstreamClient {
         // OIDC Discovery §4.3: the returned issuer MUST exactly equal the requested one — else a rogue document
         // could point auth/token/jwks anywhere while masquerading as the trusted issuer.
         if (!issuerUri.equals(issuer)) {
-            throw new BadRequestException("The provider's discovery issuer does not match its configured issuer.");
+            throw BadRequestException.of("federation.discovery.issuerMismatch");
         }
         validateEndpoint(authorization);
         validateEndpoint(token);
@@ -102,7 +102,7 @@ class OidcUpstreamClient {
         try {
             return http.get().uri(url).retrieve().body(JSON_OBJECT);
         } catch (RestClientException e) {
-            throw new BadRequestException("The identity provider's discovery endpoint is unreachable.");
+            throw BadRequestException.of("federation.discovery.unreachable");
         }
     }
 
@@ -116,10 +116,10 @@ class OidcUpstreamClient {
     void validateEndpoint(String url) {
         URI uri = parse(url);
         if (!HTTPS.equalsIgnoreCase(uri.getScheme())) {
-            throw new BadRequestException("The provider returned a non-HTTPS endpoint URL.");
+            throw BadRequestException.of("federation.discovery.endpointNotHttps");
         }
         if (uri.getHost() == null) {
-            throw new BadRequestException("The provider returned a malformed endpoint URL.");
+            throw BadRequestException.of("federation.discovery.endpointMalformed");
         }
         hostValidator.validate(uri.getHost()); // SSRF: reject loopback/link-local/metadata/private targets
     }
@@ -129,7 +129,7 @@ class OidcUpstreamClient {
         try {
             return URI.create(url);
         } catch (IllegalArgumentException | NullPointerException malformed) {
-            throw new BadRequestException("The provider returned a malformed endpoint URL.");
+            throw BadRequestException.of("federation.discovery.endpointMalformed");
         }
     }
 
@@ -141,7 +141,7 @@ class OidcUpstreamClient {
     private String string(Map<String, Object> doc, String key) {
         Object value = doc.get(key);
         if (!(value instanceof String s) || s.isBlank()) {
-            throw new BadRequestException("The provider's discovery document is missing '" + key + "'.");
+            throw BadRequestException.of("federation.discovery.missingField", key);
         }
         return s;
     }

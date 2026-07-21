@@ -43,11 +43,11 @@ public class SamlMetadataService {
             if (subdomainResolver.isBaseDomain(host)) {
                 return null;
             }
-            throw new NotFoundException("Unknown host");
+            throw NotFoundException.of("saml.host.unknown");
         }
         return organizations.findBySlug(slug)
                 .filter(org -> org.getStatus() == OrganizationStatus.ACTIVE)
                 .map(OrganizationRef::getId)
-                .orElseThrow(() -> new NotFoundException("No such organization"));
+                .orElseThrow(() -> NotFoundException.of("organization.notFound"));
     }
 }

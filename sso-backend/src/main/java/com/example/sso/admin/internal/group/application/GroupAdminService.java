@@ -149,7 +149,7 @@ public class GroupAdminService {
 
     private void requireAccess(UUID groupId) {
         if (!accessPolicy.canAccessGroup(groupId)) {
-            throw new ForbiddenException("Outside your managed groups.");
+            throw ForbiddenException.of("admin.group.outsideScope");
         }
     }
 }

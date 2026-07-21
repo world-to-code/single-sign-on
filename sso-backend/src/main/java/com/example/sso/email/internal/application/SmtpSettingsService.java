@@ -97,10 +97,10 @@ public class SmtpSettingsService {
 
     private void validate(SmtpSettingsSpec spec) {
         if (!ALLOWED_PORTS.contains(spec.port())) {
-            throw new BadRequestException("Unsupported SMTP port.");
+            throw BadRequestException.of("email.smtp.port.unsupported");
         }
         if (!spec.starttls() && spec.port() != IMPLICIT_TLS_PORT) {
-            throw new BadRequestException("SMTP must use TLS (STARTTLS, or implicit TLS on 465).");
+            throw BadRequestException.of("email.smtp.tls.required");
         }
         hostValidator.validate(spec.host()); // SSRF: reject internal/metadata targets
     }
@@ -128,7 +128,7 @@ public class SmtpSettingsService {
     private UUID writableOrg() {
         UUID org = orgContext.currentOrg().orElse(null);
         if (org == null && !orgContext.isPlatform()) {
-            throw new ForbiddenException("Only a platform administrator may edit the global SMTP default.");
+            throw ForbiddenException.of("email.smtp.global.platformOnly");
         }
         return org;
     }

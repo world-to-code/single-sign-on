@@ -117,7 +117,7 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
     @Override
     public void revoke(String username, String handle) {
         SessionMetadata target = sessionMetadata.findByUserAndHandle(username, handle)
-                .orElseThrow(() -> new NotFoundException("session not found"));
+                .orElseThrow(() -> NotFoundException.of("session.notFound"));
 
         SessionInformation info = sessionRegistry.getSessionInformation(target.sessionId());
         if (info != null) {

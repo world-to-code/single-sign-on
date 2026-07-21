@@ -46,9 +46,9 @@ public class ResourceGraphService {
         // predate the lock — re-read the edges after locking before raising isolation.
         resources.lockEdgeMutations();
         Resource parent = resources.findById(parentId)
-                .orElseThrow(() -> new NotFoundException("Resource not found."));
+                .orElseThrow(() -> NotFoundException.of("resource.notFound"));
         Resource child = resources.findById(childId)
-                .orElseThrow(() -> new NotFoundException("Resource not found."));
+                .orElseThrow(() -> NotFoundException.of("resource.notFound"));
 
         // Single-org invariant: an edge must stay within ONE tenant (or link two global nodes) — never bridge
         // two orgs, nor a global node to a tenant one. Enforced here as a domain guarantee (independent of the
@@ -70,9 +70,9 @@ public class ResourceGraphService {
     @Transactional
     public void detachChild(UUID parentId, UUID childId) {
         resources.findById(parentId)
-                .orElseThrow(() -> new NotFoundException("Resource not found."));
+                .orElseThrow(() -> NotFoundException.of("resource.notFound"));
         resources.findById(childId)
-                .orElseThrow(() -> new NotFoundException("Resource not found."));
+                .orElseThrow(() -> NotFoundException.of("resource.notFound"));
         edges.deleteByParentIdAndChildId(parentId, childId); // no-op when the edge is absent
     }
 

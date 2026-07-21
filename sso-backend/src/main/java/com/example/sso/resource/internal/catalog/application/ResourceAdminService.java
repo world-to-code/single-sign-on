@@ -120,7 +120,7 @@ public class ResourceAdminService {
         // Confined to the acting tier: a tenant deletes only its OWN types, the platform super only global ones.
         // A foreign/global type for a tenant (or a tenant type for the platform) is a non-revealing 404.
         ResourceType type = tierGuard.requireInTier(
-                types.findById(id), () -> new NotFoundException("Resource type not found."));
+                types.findById(id), () -> NotFoundException.of("resource.type.notFound"));
         // Check for use RLS-BLIND: a global type may be referenced by another tenant's resources that the
         // acting (e.g. un-drilled super) context cannot see, so a plain check would report "unused" and let
         // the delete hit the FK → a 500. Platform scope sees every referencing resource → a clean 409.
@@ -136,7 +136,7 @@ public class ResourceAdminService {
         UUID tier = tierGuard.currentTier();
         return (tier == null ? Optional.<ResourceType>empty() : types.findByNameAndOrgId(typeName, tier))
                 .or(() -> types.findByNameAndOrgIdIsNull(typeName))
-                .orElseThrow(() -> new NotFoundException("Resource type not found."));
+                .orElseThrow(() -> NotFoundException.of("resource.type.notFound"));
     }
 
     // --- Resources ---
@@ -409,7 +409,7 @@ public class ResourceAdminService {
         // grant a global outsider reach over its subtree.
         access.requireManage(id);
         Resource resource = requireInTier(id);
-        users.findById(userId).orElseThrow(() -> new NotFoundException("User not found."));
+        users.findById(userId).orElseThrow(() -> NotFoundException.of("user.notFound"));
         access.requireGranteeInOrg(resource.getOrgId(), userId);
         grant(id, new ResourceGrant(userId, tier, null), resource.getOrgId());
         return viewOf(id);
@@ -471,7 +471,7 @@ public class ResourceAdminService {
     }
 
     private Resource requireFetchingType(UUID id) {
-        return resources.findByIdFetchingType(id).orElseThrow(() -> new NotFoundException("Resource not found."));
+        return resources.findByIdFetchingType(id).orElseThrow(() -> NotFoundException.of("resource.notFound"));
     }
 
     // A tier-admin's manage bypass ({@link ResourceAccessPolicy#isTierAdmin}) is only RLS-bounded, and RLS lets
@@ -479,12 +479,12 @@ public class ResourceAdminService {
     // resource belongs to the caller's tier — a mismatch (a global row, or the platform's un-drilled context on
     // an org row) is a non-revealing 404, never a mutation on a resource the caller does not own.
     private Resource requireInTier(UUID id) {
-        return tierGuard.requireInTier(resources.findById(id), () -> new NotFoundException("Resource not found."));
+        return tierGuard.requireInTier(resources.findById(id), () -> NotFoundException.of("resource.notFound"));
     }
 
     private Resource requireInTierFetchingType(UUID id) {
         return tierGuard.requireInTier(resources.findByIdFetchingType(id),
-                () -> new NotFoundException("Resource not found."));
+                () -> NotFoundException.of("resource.notFound"));
     }
 
     /** Projects the single-resource admin view, loading its explicit edge/member/grant rows. */
@@ -517,7 +517,7 @@ public class ResourceAdminService {
             case RESOURCE -> throw BadRequestException.of("resource.member.childNotMember");
         };
         if (!exists) {
-            throw new NotFoundException("Member " + memberType + " not found.");
+            throw NotFoundException.of("resource.member.notFound", memberType);
         }
     }
 

@@ -112,7 +112,7 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
     @Override
     @Transactional
     public NetworkZoneView update(UUID id, NetworkZoneSpec spec) {
-        NetworkZone zone = tierGuard.requireInTier(repository.findById(id), () -> new NotFoundException("zone not found"));
+        NetworkZone zone = tierGuard.requireInTier(repository.findById(id), () -> NotFoundException.of("session.zone.notFound"));
         findInTier(spec.name(), tierGuard.currentTier())
                 .filter(other -> !other.getId().equals(id))
                 .ifPresent(other -> { throw ConflictException.of("session.zone.duplicate"); });
@@ -137,7 +137,7 @@ public class NetworkZoneServiceImpl implements NetworkZoneService {
     @Override
     @Transactional
     public void delete(UUID id) {
-        NetworkZone zone = tierGuard.requireInTier(repository.findById(id), () -> new NotFoundException("zone not found"));
+        NetworkZone zone = tierGuard.requireInTier(repository.findById(id), () -> NotFoundException.of("session.zone.notFound"));
         if (policyIpRules.countByZoneId(id) > 0) {
             throw ConflictException.of("session.zone.inUse");
         }

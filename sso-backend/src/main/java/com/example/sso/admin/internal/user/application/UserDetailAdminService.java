@@ -89,6 +89,6 @@ public class UserDetailAdminService {
     }
 
     private UserAccount require(UUID userId) {
-        return userService.findById(userId).orElseThrow(() -> new NotFoundException("User not found"));
+        return userService.findById(userId).orElseThrow(() -> NotFoundException.of("user.notFound"));
     }
 }

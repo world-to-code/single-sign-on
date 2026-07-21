@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -25,6 +26,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -141,5 +143,29 @@ class EmailVerificationEndpointIT extends AbstractIntegrationTest {
         mvc.perform(post(CONFIRM_URI).with(user(subject.getUsername())).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content("{\"code\":\"000000\"}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    /**
+     * The header path, end to end. Every other localization test drives {@code LocaleContextHolder} directly,
+     * which proves the bundles resolve but says nothing about whether an incoming {@code Accept-Language}
+     * ever reaches them — the gap that let a Korean console answer in English. This one sends the real header
+     * through the real filter chain and reads the rendered ProblemDetail.
+     */
+    @Test
+    void theAcceptLanguageHeaderSelectsTheLanguageOfTheError() throws Exception {
+        UserAccount subject = unverifiedUser();
+        when(proofs.redeem(any(), any(), any())).thenReturn(false);
+
+        mvc.perform(post(CONFIRM_URI).with(user(subject.getUsername())).with(csrf())
+                        .header(HttpHeaders.ACCEPT_LANGUAGE, "ko")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"code\":\"000000\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("유효하지 않거나 만료된 인증 코드입니다."));
+
+        mvc.perform(post(CONFIRM_URI).with(user(subject.getUsername())).with(csrf())
+                        .header(HttpHeaders.ACCEPT_LANGUAGE, "en")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"code\":\"000000\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Invalid or expired verification code."));
     }
 }

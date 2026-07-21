@@ -38,7 +38,7 @@ public class MetricsAdminService {
     @Transactional(readOnly = true)
     public OrgMetricsView organization(UUID id) {
         OrganizationView org = organizations.findView(id)
-                .orElseThrow(() -> new NotFoundException("organization not found"));
+                .orElseThrow(() -> NotFoundException.of("organization.notFound"));
         return new OrgMetricsView(org.id(), org.slug(), org.name(),
                 organizations.memberCount(id), trendDays, audit.signInTrend(id, windowStart()));
     }

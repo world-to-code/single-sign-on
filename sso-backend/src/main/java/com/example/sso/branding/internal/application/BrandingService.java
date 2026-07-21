@@ -75,17 +75,17 @@ public class BrandingService implements BrandingResolver {
         if (StringUtils.hasText(spec.logoUrl())) {
             String logo = spec.logoUrl().trim();
             if (!logo.toLowerCase(Locale.ROOT).startsWith("https://")) {
-                throw new BadRequestException("The logo URL must be an https URL.");
+                throw BadRequestException.of("branding.logoUrl.notHttps");
             }
             if (logo.length() > MAX_LOGO_URL) {
-                throw new BadRequestException("The logo URL is too long.");
+                throw BadRequestException.of("branding.logoUrl.tooLong");
             }
         }
         if (StringUtils.hasText(spec.accentColor()) && !ACCENT.matcher(spec.accentColor().trim()).matches()) {
-            throw new BadRequestException("The accent color must be a #RRGGBB hex value.");
+            throw BadRequestException.of("branding.accentColor.invalid");
         }
         if (StringUtils.hasText(spec.productName()) && spec.productName().trim().length() > MAX_PRODUCT_NAME) {
-            throw new BadRequestException("The product name is too long.");
+            throw BadRequestException.of("branding.productName.tooLong");
         }
     }
 
@@ -106,7 +106,7 @@ public class BrandingService implements BrandingResolver {
     private UUID writableOrg() {
         UUID org = orgContext.currentOrg().orElse(null);
         if (org == null && !orgContext.isPlatform()) {
-            throw new ForbiddenException("Only a platform administrator may edit the global branding.");
+            throw ForbiddenException.of("branding.global.platformOnly");
         }
         return org;
     }

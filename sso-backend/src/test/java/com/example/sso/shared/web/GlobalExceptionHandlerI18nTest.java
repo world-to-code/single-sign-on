@@ -1,5 +1,7 @@
 package com.example.sso.shared.web;
 
+import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.shared.error.UnauthorizedException;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.LockedException;
 import org.junit.jupiter.api.AfterEach;
@@ -125,5 +127,31 @@ class GlobalExceptionHandlerI18nTest {
         LocaleContextHolder.setLocale(Locale.ENGLISH);
         assertThat(handler.handleApiException(LockedException.of("auth.account.locked"), null).getDetail())
                 .isEqualTo("Account is temporarily locked. Try again later.");
+    }
+
+    /**
+     * The bare 401 changed shape: it used to carry the literal "Unauthorized", and now resolves a shared key.
+     * Every non-revealing 401 in the codebase goes through this no-arg constructor, so if the key were wrong
+     * the whole class of them would silently render the raw key string to users.
+     */
+    @Test
+    void theBare401ResolvesTheSharedKeyInBothLanguages() {
+        ServletWebRequest request = new ServletWebRequest(new MockHttpServletRequest("GET", "/api/x"));
+        LocaleContextHolder.setLocale(Locale.KOREAN);
+        assertThat(handler.handleApiException(new UnauthorizedException(), request).getDetail())
+                .isEqualTo("인증이 필요합니다.");
+
+        LocaleContextHolder.setLocale(Locale.ENGLISH);
+        assertThat(handler.handleApiException(new UnauthorizedException(), request).getDetail())
+                .isEqualTo("Authentication is required.");
+    }
+
+    /** NotFoundException only just gained the key factory, and it holds the most migrated sites. */
+    @Test
+    void aNotFoundKeyIsLocalized() {
+        ServletWebRequest request = new ServletWebRequest(new MockHttpServletRequest("GET", "/api/x"));
+        LocaleContextHolder.setLocale(Locale.KOREAN);
+        assertThat(handler.handleApiException(NotFoundException.of("user.notFound"), request).getDetail())
+                .isEqualTo("사용자를 찾을 수 없습니다");
     }
 }

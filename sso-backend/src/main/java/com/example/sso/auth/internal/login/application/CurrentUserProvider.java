@@ -42,7 +42,7 @@ public class CurrentUserProvider {
         boolean complete = authentication().getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority).anyMatch(Factors.MFA_COMPLETE::equals);
         if (!complete) {
-            throw new ForbiddenException("Finish signing in first.");
+            throw ForbiddenException.of("auth.signIn.incomplete");
         }
         return user;
     }

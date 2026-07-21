@@ -29,7 +29,7 @@ class PortalOrgScope {
     UUID writableOrg() {
         UUID org = actingOrg();
         if (org == null && !orgContext.isPlatform()) {
-            throw new ForbiddenException("only a platform administrator may edit the global portal default");
+            throw ForbiddenException.of("portal.global.platformOnly");
         }
         return org;
     }

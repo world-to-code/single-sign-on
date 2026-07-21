@@ -90,14 +90,14 @@ public class ResourceAccessPolicy {
     /** Denies (403) unless the caller manages the resource (tier-admin or subtree). */
     public void requireManage(UUID resourceId) {
         if (!canManage(resourceId)) {
-            throw new ForbiddenException("Outside your managed resources.");
+            throw ForbiddenException.of("resource.outsideManagedScope");
         }
     }
 
     /** Denies (403) unless the caller may VIEW the resource (tier-admin, or ADMIN/VIEWER subtree). */
     public void requireView(UUID resourceId) {
         if (!canView(resourceId)) {
-            throw new ForbiddenException("Outside your resources.");
+            throw ForbiddenException.of("resource.outsideScope");
         }
     }
 
@@ -135,7 +135,7 @@ public class ResourceAccessPolicy {
         if (isTierAdmin()) {
             return;
         }
-        UUID actor = actorId().orElseThrow(() -> new ForbiddenException("Outside your managed resources."));
+        UUID actor = actorId().orElseThrow(() -> ForbiddenException.of("resource.outsideManagedScope"));
         boolean manages = switch (memberType) {
             case GROUP -> groupAuth.canManage(actor, MemberIds.requireUuid(memberId));
             case USER -> userAuth.canManage(actor, MemberIds.requireUuid(memberId));
@@ -143,7 +143,7 @@ public class ResourceAccessPolicy {
             case RESOURCE -> false;
         };
         if (!manages) {
-            throw new ForbiddenException("You may only attach a member you already manage.");
+            throw ForbiddenException.of("resource.member.notManaged");
         }
     }
 

@@ -120,10 +120,10 @@ class MappingRuleServiceImpl implements MappingRuleService {
      *  request DTO. */
     private void requireMappableConditions(List<MappingCondition> ruleConditions) {
         if (ruleConditions.isEmpty()) {
-            throw new BadRequestException("a mapping rule needs at least one condition");
+            throw BadRequestException.of("mapping.rule.conditionRequired");
         }
         if (!ruleConditions.stream().allMatch(c -> AttributeOperator.mappable(c.attrOp()))) {
-            throw new BadRequestException("a mapping rule supports only EQUALS, EXISTS, IN or CONTAINS");
+            throw BadRequestException.of("mapping.rule.operatorUnsupported");
         }
     }
 
@@ -137,12 +137,12 @@ class MappingRuleServiceImpl implements MappingRuleService {
     }
 
     private MappingRule requireInTier(UUID id) {
-        return tierGuard.requireInTier(rules.findById(id), () -> new NotFoundException("mapping rule not found"));
+        return tierGuard.requireInTier(rules.findById(id), () -> NotFoundException.of("mapping.rule.notFound"));
     }
 
     /** As {@link #requireInTier} but under a row write-lock, so a mutation serializes against the async materialize. */
     private MappingRule requireInTierForUpdate(UUID id) {
-        return tierGuard.requireInTier(rules.findByIdForUpdate(id), () -> new NotFoundException("mapping rule not found"));
+        return tierGuard.requireInTier(rules.findByIdForUpdate(id), () -> NotFoundException.of("mapping.rule.notFound"));
     }
 
     private MappingTargetApplier applier(MappingTargetKind kind) {

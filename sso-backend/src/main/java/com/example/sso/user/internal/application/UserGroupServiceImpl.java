@@ -309,7 +309,7 @@ public class UserGroupServiceImpl implements UserGroupService {
     }
 
     private UserGroup require(UUID id) {
-        return repository.findById(id).orElseThrow(() -> new NotFoundException("group not found"));
+        return repository.findById(id).orElseThrow(() -> NotFoundException.of("user.group.notFound"));
     }
 
     /** The group's delegated roles, with permission names hydrated (consumed by the user-detail view). */

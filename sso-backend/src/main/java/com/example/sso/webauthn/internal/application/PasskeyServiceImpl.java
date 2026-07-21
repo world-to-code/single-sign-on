@@ -47,7 +47,7 @@ public class PasskeyServiceImpl implements PasskeyService {
                 .filter(c -> c.getCredentialId().toBase64UrlString().equals(credentialId))
                 .findFirst().orElse(null);
         if (owned == null) {
-            throw new NotFoundException("passkey not found");
+            throw NotFoundException.of("webauthn.passkey.notFound");
         }
 
         credentials.delete(owned.getCredentialId());

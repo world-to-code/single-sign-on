@@ -48,7 +48,7 @@ class EmailTemplateRenderer {
             try {
                 plainCompiler.compile(template);
             } catch (MustacheException e) {
-                throw new BadRequestException("The template has a syntax error: " + e.getMessage());
+                throw BadRequestException.of("email.template.syntaxInvalid");
             }
         }
     }

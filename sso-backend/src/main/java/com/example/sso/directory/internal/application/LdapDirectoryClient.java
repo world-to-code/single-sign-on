@@ -97,7 +97,7 @@ class LdapDirectoryClient {
                 if (collected.size() > maxEntries) {
                     log.warn("Directory search for connector {} exceeded the {}-entry ceiling",
                             connector.getName(), maxEntries);
-                    throw new BadRequestException("The directory returned more entries than permitted.");
+                    throw BadRequestException.of("directory.search.tooManyEntries");
                 }
                 SimplePagedResultsControl page = SimplePagedResultsControl.get(result);
                 cookie = page == null ? null : page.getCookie();
@@ -107,14 +107,14 @@ class LdapDirectoryClient {
             // The upstream's own message can carry DNs and filter fragments; keep it out of the caller's face
             // and out of anything that renders. The detail goes to the run record via the caller.
             log.warn("Directory search failed for connector {}: {}", connector.getName(), e.getResultCode());
-            throw new BadRequestException("The directory could not be searched.");
+            throw BadRequestException.of("directory.search.failed");
         }
     }
 
     /** Opens a bound, TLS-protected connection — or fails. There is no cleartext path. */
     private LDAPConnection connect(DirectoryConnector connector, String bindPassword) throws LDAPException {
         if (!connector.isUseSsl() && !connector.isStartTls()) {
-            throw new BadRequestException("A directory connection must use LDAPS or StartTLS.");
+            throw BadRequestException.of("directory.connection.tlsRequired");
         }
         LDAPConnectionOptions options = new LDAPConnectionOptions();
         options.setConnectTimeoutMillis((int) connectTimeout.toMillis());
@@ -131,7 +131,7 @@ class LdapDirectoryClient {
                             connector.getPort())
                     : startTls(options, connector, sslUtil);
         } catch (GeneralSecurityException e) {
-            throw new BadRequestException("The directory's TLS could not be negotiated.");
+            throw BadRequestException.of("directory.connection.tlsFailed");
         }
         if (StringUtils.hasText(connector.getBindDn())) {
             connection.bind(connector.getBindDn(), bindPassword);

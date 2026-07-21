@@ -15,7 +15,7 @@ public record AppSessionLogoutRequest(@NotBlank String type, @NotBlank String ap
         try {
             return AppType.valueOf(type);
         } catch (IllegalArgumentException e) {
-            throw new BadRequestException("Unknown application type.");
+            throw BadRequestException.of("portal.appType.unknown");
         }
     }
 }

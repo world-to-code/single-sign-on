@@ -166,7 +166,7 @@ public class UserAdminService {
     @Transactional
     public void resetUserMfa(UUID id) {
         if (userService.findById(id).isEmpty()) {
-            throw new NotFoundException("User not found");
+            throw NotFoundException.of("user.notFound");
         }
         mfaService.resetMfa(id);
         auditLogger.log(AuditType.USER_MFA_RESET, AuditSubjectType.USER, id.toString(), "user=" + id);
@@ -179,7 +179,7 @@ public class UserAdminService {
     @Transactional
     public void resendEmailVerification(UUID id) {
         if (userService.findById(id).isEmpty()) {
-            throw new NotFoundException("User not found");
+            throw NotFoundException.of("user.notFound");
         }
         userService.requestEmailVerification(id);
         auditLogger.log(AuditType.USER_UPDATED, AuditSubjectType.USER, id.toString(),
@@ -197,7 +197,7 @@ public class UserAdminService {
     /** Full detail for a single user, with roles attributed to their source and effective permissions. */
     @Transactional(readOnly = true)
     public UserDetailView getUser(UUID id) {
-        UserAccount user = userService.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
+        UserAccount user = userService.findById(id).orElseThrow(() -> NotFoundException.of("user.notFound"));
         List<GroupMembership> memberships = userGroups.membershipsForUser(id);
 
         return UserDetailView.of(user, roleAssignments(user, memberships),

@@ -39,7 +39,7 @@ public class OnboardingInvitationService {
      */
     @Transactional
     public String issue(UUID userId, Duration ttl) {
-        UserAccount user = users.findById(userId).orElseThrow(() -> new NotFoundException("user not found"));
+        UserAccount user = users.findById(userId).orElseThrow(() -> NotFoundException.of("user.notFound"));
         if (user.isEnabled() || users.hasPassword(userId)) {
             throw BadRequestException.of("onboarding.invitation.onlyInactive");
         }

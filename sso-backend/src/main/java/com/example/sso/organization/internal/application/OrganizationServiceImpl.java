@@ -130,7 +130,7 @@ public class OrganizationServiceImpl implements OrganizationService {
         orgContext.runInOrg(orgId, () -> {
             require(orgId); // reject membership in an unknown org
             if (users.findById(userId).isEmpty()) { // reject an unknown user (else a bare FK violation -> 500)
-                throw new NotFoundException("user not found");
+                throw NotFoundException.of("user.notFound");
             }
             if (!memberships.existsByOrgIdAndUserId(orgId, userId)) {
                 // saveAndFlush: force the INSERT to run INSIDE this runInOrg scope (GUC = orgId) so RLS WITH
@@ -181,7 +181,7 @@ public class OrganizationServiceImpl implements OrganizationService {
     }
 
     private Organization require(UUID id) {
-        return organizations.findById(id).orElseThrow(() -> new NotFoundException("organization not found"));
+        return organizations.findById(id).orElseThrow(() -> NotFoundException.of("organization.notFound"));
     }
 
     private OrganizationView view(Organization org) {

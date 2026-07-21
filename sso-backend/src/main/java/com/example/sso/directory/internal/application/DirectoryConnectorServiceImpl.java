@@ -214,13 +214,13 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
 
     private DirectoryConnector require(String name) {
         return ownConnector(normalize(name))
-                .orElseThrow(() -> new NotFoundException("Directory connector not found"));
+                .orElseThrow(() -> NotFoundException.of("directory.connector.notFound"));
     }
 
     private UUID writableOrg() {
         UUID org = orgContext.currentOrg().orElse(null);
         if (org == null && !orgContext.isPlatform()) {
-            throw new ForbiddenException("Only a platform administrator may edit the global connectors.");
+            throw ForbiddenException.of("directory.connector.global.platformOnly");
         }
         return org;
     }

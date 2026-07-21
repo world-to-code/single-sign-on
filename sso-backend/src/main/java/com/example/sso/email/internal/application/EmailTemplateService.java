@@ -89,7 +89,7 @@ public class EmailTemplateService {
     private void validate(EmailTemplateSpec spec) {
         if (StringUtils.hasText(spec.logoUrl())
                 && !spec.logoUrl().trim().toLowerCase(Locale.ROOT).startsWith("https://")) {
-            throw new BadRequestException("The logo URL must be an https URL.");
+            throw BadRequestException.of("branding.logoUrl.notHttps");
         }
         // Reject a template that won't compile HERE, so a malformed body can never throw at send time.
         renderer.validateSyntax(spec.subject(), spec.htmlBody(), spec.textBody());
@@ -108,7 +108,7 @@ public class EmailTemplateService {
     private UUID writableOrg() {
         UUID org = orgContext.currentOrg().orElse(null);
         if (org == null && !orgContext.isPlatform()) {
-            throw new ForbiddenException("Only a platform administrator may edit the global email templates.");
+            throw ForbiddenException.of("email.template.global.platformOnly");
         }
         return org;
     }

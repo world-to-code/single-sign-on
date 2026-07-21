@@ -48,7 +48,7 @@ public class AdminService {
         // Defense-in-depth: the controller's @auditAccessPolicy.canRead gate is the point of record, but re-assert
         // here so a specific category can never be read without its grant even if that annotation is bypassed.
         if (!auditAccessPolicy.canRead(category)) {
-            throw new ForbiddenException("not permitted to read this audit category");
+            throw ForbiddenException.of("admin.audit.categoryForbidden");
         }
         UUID actingOrg = accessPolicy.actingOrg();
         List<AuditEntry> events = category == null

@@ -58,7 +58,7 @@ class FederatedIdentityAdminServiceImpl implements FederatedIdentityAdminService
         // Addressed by the account AND the tenant, so the route's {userId} is load-bearing: a delegate scoped to
         // one user cannot pair it with another user's identity id.
         FederatedIdentityLink link = repository.findByIdAndOrgIdAndUserId(identityId, org, userId)
-                .orElseThrow(() -> new NotFoundException("Federated identity not found"));
+                .orElseThrow(() -> NotFoundException.of("federation.identity.notFound"));
         repository.delete(link);
 
         // Revoking the credential without ending the sessions it authenticated is not revocation — the
@@ -73,7 +73,7 @@ class FederatedIdentityAdminServiceImpl implements FederatedIdentityAdminService
     /** The tenant whose identities the caller may manage; there is no global tier for identity bindings. */
     private UUID actingOrg() {
         return orgContext.currentOrg()
-                .orElseThrow(() -> new ForbiddenException("Federated identities belong to an organization."));
+                .orElseThrow(() -> ForbiddenException.of("federation.identity.orgRequired"));
     }
 
     private FederatedIdentityView toView(FederatedIdentityLink link) {

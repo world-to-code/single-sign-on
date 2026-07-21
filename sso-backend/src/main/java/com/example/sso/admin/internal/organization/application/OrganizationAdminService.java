@@ -38,7 +38,7 @@ public class OrganizationAdminService {
     }
 
     public OrganizationView get(UUID id) {
-        return organizations.findView(id).orElseThrow(() -> new NotFoundException("organization not found"));
+        return organizations.findView(id).orElseThrow(() -> NotFoundException.of("organization.notFound"));
     }
 
     public OrganizationView create(NewOrganization command) {

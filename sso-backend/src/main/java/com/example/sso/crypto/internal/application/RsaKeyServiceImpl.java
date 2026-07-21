@@ -164,7 +164,7 @@ public class RsaKeyServiceImpl implements RsaKeyService, ApplicationRunner {
         if (org == null && !orgContext.isPlatform()) {
             // Fail closed: the global default is inherited by every tenant that has not customized its own,
             // so only the platform context may write it (mirror of the admin-portal-settings global write).
-            throw new ForbiddenException("only a platform administrator may edit the global signing-key retention");
+            throw ForbiddenException.of("crypto.retention.global.platformOnly");
         }
         SigningKeyRetention row = (org == null
                 ? retentionRepository.findByOrgIdIsNull()

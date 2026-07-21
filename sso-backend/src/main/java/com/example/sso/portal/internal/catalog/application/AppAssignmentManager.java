@@ -193,7 +193,7 @@ class AppAssignmentManager {
         // tier before deleting (a tenant admin cannot remove a global or another tenant's assignment) — a
         // non-revealing 404 on mismatch, not disclosing that the assignment exists.
         AppAssignment assignment = tierGuard.requireInTier(assignments.findById(assignmentId),
-                () -> new NotFoundException("assignment not found"));
+                () -> NotFoundException.of("portal.assignment.notFound"));
         assignments.delete(assignment);
         // Drop the per-subject sign-on binding this assignment carried (if any) — no orphan governing a subject
         // that can no longer launch the app.

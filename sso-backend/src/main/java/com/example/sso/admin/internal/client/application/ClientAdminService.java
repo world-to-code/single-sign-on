@@ -182,7 +182,7 @@ public class ClientAdminService {
         // Only a client in the actor's tier may be deleted — a super-admin drilled into org A cannot delete
         // another tenant's (or a global) client; mismatch → 404 (non-revealing).
         OAuth2RegisteredClientEntity client =
-                tierGuard.requireInTier(clientRows.findById(id), () -> new NotFoundException("Client not found"));
+                tierGuard.requireInTier(clientRows.findById(id), () -> NotFoundException.of("admin.client.notFound"));
 
         // The first-party admin console is a fixed part of the platform (auto-assigned to admins,
         // launches /admin); it is protected from deletion so the admin entry point can't be removed.

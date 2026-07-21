@@ -274,7 +274,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
     @Override
     @Transactional
     public SessionPolicyDetails update(UUID id, SessionPolicyUpdate update) {
-        SessionPolicy policy = tierGuard.requireInTier(repository.findById(id), () -> new NotFoundException("policy not found"));
+        SessionPolicy policy = tierGuard.requireInTier(repository.findById(id), () -> NotFoundException.of("policy.notFound"));
 
         String reauthFactors = validateReauthFactors(update.reauthFactors());
         String stepUpFactors = validateReauthFactors(update.stepUpFactors());
@@ -314,7 +314,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
     @Override
     @Transactional
     public void delete(UUID id) {
-        SessionPolicy policy = tierGuard.requireInTier(repository.findById(id), () -> new NotFoundException("policy not found"));
+        SessionPolicy policy = tierGuard.requireInTier(repository.findById(id), () -> NotFoundException.of("policy.notFound"));
         if (isDefaultFallback(policy)) {
             throw BadRequestException.of("session.policy.defaultNoDelete");
         }
@@ -393,7 +393,7 @@ public class SessionPolicyServiceImpl implements SessionPolicyService {
      *  would 500 on the child-table CHECK instead of a clean 400. */
     private void requireTargetable(AttributePredicateGroup group) {
         group.firstNonTargetableOperator().ifPresent(operator -> {
-            throw new BadRequestException("operator " + operator + " cannot target a policy");
+            throw BadRequestException.of("policy.operator.cannotTarget", operator);
         });
     }
 

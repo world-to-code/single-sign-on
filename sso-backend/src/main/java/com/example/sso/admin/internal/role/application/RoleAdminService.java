@@ -88,7 +88,7 @@ public class RoleAdminService {
             return;
         }
         if (!roleService.effectivePermissionNames(apex).containsAll(permissions)) {
-            throw new ForbiddenException("a created role may not carry a permission its parent role lacks");
+            throw ForbiddenException.of("admin.role.permissionExceedsParent");
         }
     }
 
@@ -100,9 +100,9 @@ public class RoleAdminService {
         // would leak the permissions/inheritance of the level above them (e.g. a sub-admin viewing ORG_ADMIN).
         // Non-revealing 404, identical to a role that is out of tier.
         if (!accessPolicy.isCurrentActorUnscoped() && accessPolicy.currentRolesAboveActor().contains(id)) {
-            throw new NotFoundException("role not found");
+            throw NotFoundException.of("user.role.notFound");
         }
-        RoleRef role = roleService.findById(id).orElseThrow(() -> new NotFoundException("role not found"));
+        RoleRef role = roleService.findById(id).orElseThrow(() -> NotFoundException.of("user.role.notFound"));
         List<IdName> inheritsFrom = roleService.idNames(roleService.childRoleIds(id));
         List<IdName> inheritedBy = roleService.idNames(visibleRoleIds(meaningfulParents(id)));
         return RoleDetailView.of(role, inheritsFrom, inheritedBy, roleService.effectivePermissionNames(Set.of(id)));
@@ -160,12 +160,12 @@ public class RoleAdminService {
     @Transactional
     public RoleDetailView setInheritance(UUID id, Set<UUID> childRoleIds) {
         requireRoleInTier(id);
-        RoleRef role = roleService.findById(id).orElseThrow(() -> new NotFoundException("role not found"));
+        RoleRef role = roleService.findById(id).orElseThrow(() -> NotFoundException.of("user.role.notFound"));
         if (role.isSystem()) {
-            throw new ForbiddenException("a system role's inheritance cannot be edited");
+            throw ForbiddenException.of("admin.role.systemInheritanceLocked");
         }
         if (!accessPolicy.currentIsSuperAdmin() && !accessPolicy.currentActorMayManageRole(id)) {
-            throw new ForbiddenException("not permitted to modify this role");
+            throw ForbiddenException.of("admin.role.notPermitted");
         }
         childRoleIds.forEach(this::requireRoleInTier); // each child must be in the actor's tier (no cross-tier/global)
         Set<UUID> current = roleService.childRoleIds(id);
@@ -178,7 +178,7 @@ public class RoleAdminService {
         } catch (IllegalStateException cycle) {
             // The DAG cycle guard (the sole multi-hop guard, in RoleHierarchyWriter.link) is a user-triggerable
             // 4xx, not a 500 — a caller chose a child that (transitively, or itself) already inherits this role.
-            throw new BadRequestException("a role cannot inherit a role that would create a cycle");
+            throw BadRequestException.of("admin.role.inheritanceCycle");
         }
         auditLogger.log(AuditType.ROLE_UPDATED, "role=" + id + " inheritsFrom=" + childRoleIds);
         return roleDetail(id);
@@ -192,7 +192,7 @@ public class RoleAdminService {
         // tenant admin could rewrite a role to carry an authority they lack, or edit a role at their level.
         if (!accessPolicy.currentIsSuperAdmin()
                 && !(accessPolicy.currentActorMayManageRole(id) && accessPolicy.mayGrantPermissions(permissions))) {
-            throw new ForbiddenException("not permitted to modify this role");
+            throw ForbiddenException.of("admin.role.notPermitted");
         }
         RoleView view = RoleView.of(roleService.updateRole(id, name, permissions));
         auditLogger.log(AuditType.ROLE_UPDATED, "role=" + id + " name=" + name + " permissions=" + permissions);
@@ -201,7 +201,7 @@ public class RoleAdminService {
 
     private void requireMayGrantPermissions(Set<String> permissions) {
         if (!accessPolicy.mayGrantPermissions(permissions)) {
-            throw new ForbiddenException("not permitted to grant one or more of these permissions");
+            throw ForbiddenException.of("admin.role.permissionNotGrantable");
         }
     }
 
@@ -225,7 +225,7 @@ public class RoleAdminService {
     private void requireRoleInTier(UUID id) {
         UUID roleTier = roleService.orgIdOf(id).orElse(null);
         if (!Objects.equals(roleTier, tierGuard.currentTier())) {
-            throw new NotFoundException("role not found");
+            throw NotFoundException.of("user.role.notFound");
         }
     }
 
@@ -233,7 +233,7 @@ public class RoleAdminService {
     @Transactional(readOnly = true)
     public List<RoleMemberView> roleMembers(UUID roleId) {
         if (roleService.findById(roleId).isEmpty()) {
-            throw new NotFoundException("role not found");
+            throw NotFoundException.of("user.role.notFound");
         }
 
         List<UserAccount> members = roleService.members(roleId);

@@ -24,17 +24,17 @@ public class OutboundHostValidator {
     /** Throws {@link BadRequestException} if {@code host} is blank, unresolvable, or resolves to a blocked range. */
     public void validate(String host) {
         if (host == null || host.isBlank()) {
-            throw new BadRequestException("A host is required.");
+            throw BadRequestException.of("shared.host.required");
         }
         InetAddress[] addresses;
         try {
             addresses = InetAddress.getAllByName(host.trim());
         } catch (UnknownHostException e) {
-            throw new BadRequestException("The host could not be resolved."); // fail closed
+            throw BadRequestException.of("shared.host.unresolvable"); // fail closed
         }
         for (InetAddress address : addresses) {
             if (isBlocked(address)) {
-                throw new BadRequestException("The host resolves to a disallowed (internal) address.");
+                throw BadRequestException.of("shared.host.internalAddress");
             }
         }
     }

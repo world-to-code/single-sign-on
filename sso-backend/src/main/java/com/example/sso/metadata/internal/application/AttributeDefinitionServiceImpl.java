@@ -79,7 +79,7 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
         AttributeDefinitionEntity row = (tier == null
                 ? repository.findByIdAndOrgIdIsNull(id)
                 : repository.findByIdAndOrgId(id, tier))
-                .orElseThrow(() -> new NotFoundException("Attribute definition not found"));
+                .orElseThrow(() -> NotFoundException.of("metadata.definition.notFound"));
         // Attribute VALUES deliberately survive: a definition is a catalog entry, and deleting it must not
         // silently strip data that mapping rules and policy bindings are still matching on.
         repository.delete(row);
@@ -109,7 +109,7 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
     /** The read guard mirrors this one — a caller that may not write a tier may not enumerate it either. */
     private UUID writableTier() {
         if (!actingTierIsOwned()) {
-            throw new ForbiddenException("Not permitted to edit the global profile schema");
+            throw ForbiddenException.of("metadata.definition.global.platformOnly");
         }
         return actingTier();
     }

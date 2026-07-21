@@ -48,7 +48,7 @@ class AppAuthBinding {
     private void upsert(AppType appType, String appId, SubjectType subjectType, UUID subjectId, UUID authPolicyId) {
         if (authPolicyId != null && !authPolicies.exists(authPolicyId)) {
             // A dangling policy id would silently resolve to "no policy" and quietly drop the configured step-up.
-            throw new NotFoundException("policy not found");
+            throw NotFoundException.of("policy.notFound");
         }
         UUID org = tierGuard.currentTier();
         if (authPolicyId == null) {

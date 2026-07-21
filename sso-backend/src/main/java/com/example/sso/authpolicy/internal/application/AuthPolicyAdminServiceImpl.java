@@ -135,7 +135,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
     @Override
     @Transactional
     public AuthPolicyView update(UUID id, AuthPolicyUpdate update) {
-        AuthPolicy policy = tierGuard.requireInTier(repository.findById(id), () -> new NotFoundException("policy not found"));
+        AuthPolicy policy = tierGuard.requireInTier(repository.findById(id), () -> NotFoundException.of("policy.notFound"));
         if (isGlobalDefault(policy)) {
             throw BadRequestException.of("authpolicy.defaultNoEdit");
         }
@@ -161,7 +161,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
     @Override
     @Transactional
     public void delete(UUID id) {
-        AuthPolicy policy = tierGuard.requireInTier(repository.findById(id), () -> new NotFoundException("policy not found"));
+        AuthPolicy policy = tierGuard.requireInTier(repository.findById(id), () -> NotFoundException.of("policy.notFound"));
         if (isGlobalDefault(policy)) {
             throw BadRequestException.of("authpolicy.defaultNoDelete");
         }
@@ -264,7 +264,7 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
      *  would 500 on the child-table CHECK instead of a clean 400. */
     private void requireTargetable(AttributePredicateGroup group) {
         group.firstNonTargetableOperator().ifPresent(operator -> {
-            throw new BadRequestException("operator " + operator + " cannot target a policy");
+            throw BadRequestException.of("policy.operator.cannotTarget", operator);
         });
     }
 

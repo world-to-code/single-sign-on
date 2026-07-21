@@ -169,7 +169,7 @@ public class FederatedAuthenticationService {
             }
         }
         if (!identity.jitProvisioningAllowed()) {
-            throw new ForbiddenException("No account exists for this identity. Contact your administrator.");
+            throw ForbiddenException.of("auth.identity.noAccount");
         }
         return link(identity, orgId, clientIp, authorized(provision(identity, orgId), orgId));
     }

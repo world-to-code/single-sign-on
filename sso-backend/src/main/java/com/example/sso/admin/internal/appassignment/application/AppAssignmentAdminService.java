@@ -68,7 +68,7 @@ public class AppAssignmentAdminService {
 
     private void requireAccess(String appId) {
         if (!accessPolicy.canAccessApp(appId)) {
-            throw new ForbiddenException("Outside your managed applications.");
+            throw ForbiddenException.of("admin.app.outsideScope");
         }
     }
 }

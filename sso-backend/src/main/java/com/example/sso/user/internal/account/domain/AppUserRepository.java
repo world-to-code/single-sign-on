@@ -79,7 +79,7 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
      * the caller does not read. Callers must guard against an empty collection — an empty {@code IN ()} is not
      * valid SQL.
      */
-    @Query("select new com.example.sso.user.internal.account.domain.ExternalIdRow(u.externalId, u.id) "
+    @Query("select u.externalId as externalId, u.id as userId "
             + "from AppUser u where u.orgId = :orgId and u.externalId in :externalIds")
     List<ExternalIdRow> findExternalIdRowsInOrg(@Param("externalIds") Collection<String> externalIds,
             @Param("orgId") UUID orgId);

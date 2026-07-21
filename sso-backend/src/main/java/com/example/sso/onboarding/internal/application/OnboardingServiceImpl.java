@@ -88,7 +88,7 @@ public class OnboardingServiceImpl {
             throw BadRequestException.of("onboarding.noAdminAwaiting");
         }
         UserAccount admin = users.findById(onboarding.getAdminUserId())
-                .orElseThrow(() -> new NotFoundException("onboarding admin not found"));
+                .orElseThrow(() -> NotFoundException.of("onboarding.admin.notFound"));
         // Same gate as OnboardingInvitationService.issue (enabled OR has a password = already activated), so a
         // once-activated-then-disabled admin is rejected HERE with an honest 400 rather than passing to the
         // async worker, whose issue() would reject and leave the job stuck mid-PROVISIONING.
@@ -105,7 +105,7 @@ public class OnboardingServiceImpl {
     public ReinviteResult reissueInvitation(UUID id) {
         Onboarding onboarding = require(id);
         UserAccount admin = users.findById(onboarding.getAdminUserId())
-                .orElseThrow(() -> new NotFoundException("onboarding admin not found"));
+                .orElseThrow(() -> NotFoundException.of("onboarding.admin.notFound"));
         String token = invitations.reissue(admin.getId(), invitationTtl);
         // Use the org's CANONICAL slug for the workspace URL, matching the original invitation email.
         String slug = organizations.findView(onboarding.getOrgId())
@@ -133,7 +133,7 @@ public class OnboardingServiceImpl {
     }
 
     private Onboarding require(UUID id) {
-        return onboardings.findById(id).orElseThrow(() -> new NotFoundException("onboarding not found"));
+        return onboardings.findById(id).orElseThrow(() -> NotFoundException.of("onboarding.notFound"));
     }
 
     /** The result the async worker needs after provisioning to send the invitation email (via the org's relay). */

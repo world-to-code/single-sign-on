@@ -109,7 +109,7 @@ public class AuthenticationService {
         // The org (the tenant) must be ACTIVE. Rejected uniformly (no enumeration of which orgs exist).
         OrganizationRef org = organizations.findBySlug(slug)
                 .filter(o -> o.getStatus() == OrganizationStatus.ACTIVE)
-                .orElseThrow(() -> new NotFoundException("No such organization."));
+                .orElseThrow(() -> NotFoundException.of("organization.notFound"));
         preAuthOrg.stash(request, org.getId(), org.getSlug());
         // Tag the selected tenant so this pre-auth event files under it (not the platform-global feed); the
         // principal is the org slug, not an account, so it never enriches.
@@ -136,7 +136,7 @@ public class AuthenticationService {
         if (user == null || !authorizedForTarget(httpRequest, user.getId())) {
             audit.record(new AuditRecord(AuditType.AUTH_IDENTIFY, email, false, "no active account for the target",
                     null).unverifiedActor());
-            throw new NotFoundException("No active account for that email. Contact your administrator.");
+            throw NotFoundException.of("auth.account.noneForEmail");
         }
 
         Authentication preAuth = UsernamePasswordAuthenticationToken.authenticated(

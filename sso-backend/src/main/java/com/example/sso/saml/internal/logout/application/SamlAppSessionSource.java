@@ -61,11 +61,11 @@ class SamlAppSessionSource implements AppSessionSource {
             return; // not held under this sid (already logged out) — nothing to do
         }
         SamlRelyingParty rp = relyingParties.findByEntityId(entityId)
-                .orElseThrow(() -> new BadRequestException("Unknown application."));
+                .orElseThrow(() -> BadRequestException.of("saml.application.unknown"));
         if (!oneClickCapable(rp)) {
             // Defense in depth: the button is disabled client-side, but a front-channel-only SP can never be
             // logged out on the browser-less back-channel — refuse rather than silently claim success.
-            throw new BadRequestException("This application can only be signed out from the application itself.");
+            throw BadRequestException.of("saml.logout.appOnly");
         }
         boolean delivered = delivery.sendSoap(rp, nameId, sid);
         audit.record(new AuditRecord(AuditType.SAML_SLO, username, delivered,

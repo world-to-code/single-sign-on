@@ -121,7 +121,7 @@ public class UserServiceImpl implements UserService {
             return Map.of(); // an empty IN () is not valid SQL, and there is nothing to correlate anyway
         }
         return users.findExternalIdRowsInOrg(externalIds, orgId).stream()
-                .collect(Collectors.toMap(ExternalIdRow::externalId, ExternalIdRow::userId));
+                .collect(Collectors.toMap(ExternalIdRow::getExternalId, ExternalIdRow::getUserId));
     }
 
     @Override
@@ -505,7 +505,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public void delete(UUID id) {
         AppUser user = users.findById(id)
-                .orElseThrow(() -> new NotFoundException("User not found"));
+                .orElseThrow(() -> NotFoundException.of("user.notFound"));
         String username = user.getUsername();
         UUID orgId = user.getOrgId(); // capture before deletion — the session termination is scoped to it
 
@@ -580,7 +580,7 @@ public class UserServiceImpl implements UserService {
     }
 
     private AppUser require(UUID id) {
-        return users.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
+        return users.findById(id).orElseThrow(() -> NotFoundException.of("user.notFound"));
     }
 
     /**
@@ -610,7 +610,7 @@ public class UserServiceImpl implements UserService {
         // Direct grants also honour grant-only-what-you-hold, so the invariant does not live in the
         // endpoint gate alone (defence in depth: a dropped annotation must not open an escalation).
         if (!grantPolicy.mayGrantDirectly(name)) {
-            throw new ForbiddenException("not permitted to grant permission: " + name);
+            throw ForbiddenException.of("user.permission.notGrantable", name);
         }
 
         return permissions.findByName(name).orElseGet(() -> permissions.save(new Permission(name)));

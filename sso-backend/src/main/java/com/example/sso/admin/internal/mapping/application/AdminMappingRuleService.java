@@ -58,7 +58,7 @@ public class AdminMappingRuleService {
 
     private void requireAccess(MappingRuleView view) {
         if (!mayAccess(view)) {
-            throw new ForbiddenException("Outside your managed targets.");
+            throw ForbiddenException.of("admin.mapping.targetOutsideScope");
         }
     }
 }

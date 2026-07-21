@@ -30,7 +30,7 @@ class FederationConfigStore {
     ResolvedProvider resolveEnabled(UUID orgId, String alias) {
         IdentityProvider p = repository.findByOrgIdAndAlias(orgId, normalize(alias))
                 .filter(IdentityProvider::isEnabled)
-                .orElseThrow(() -> new NotFoundException("Unknown identity provider"));
+                .orElseThrow(() -> NotFoundException.of("federation.provider.unknown"));
         return new ResolvedProvider(p.getAlias(), p.getIssuerUri(), p.getClientId(),
                 cipher.decrypt(p.getClientSecretEncrypted()), p.getScopes(), p.isAllowJitProvisioning(),
                 p.isLinkByVerifiedEmail());

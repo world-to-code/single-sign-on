@@ -114,7 +114,7 @@ public class FactorStepService {
             return; // not a passkey, or not the first factor (a later step-up) — passwordless gate doesn't apply
         }
         if (!organizations.isPasswordlessLoginEnabled(loginOrgId)) {
-            throw new ForbiddenException("Passwordless passkey sign-in is not enabled for this organization.");
+            throw ForbiddenException.of("auth.passwordless.disabled");
         }
     }
 
