@@ -37,8 +37,11 @@ class ProfileServiceImpl implements ProfileService {
     @Override
     @Transactional(readOnly = true)
     public List<Profile> list() {
-        return actingOrg().map(org -> repository.findByOrgIdOrderByName(org).stream().map(this::toProfile).toList())
-                .orElseGet(List::of);
+        UUID org = actingOrg().orElse(null);
+        if (org == null) {
+            return List.of(); // a profile always belongs to a tenant, so "no organization" is an absence
+        }
+        return repository.findByOrgIdOrderByName(org).stream().map(this::toProfile).toList();
     }
 
     @Override
@@ -116,13 +119,16 @@ class ProfileServiceImpl implements ProfileService {
         if (profileIds == null || profileIds.isEmpty()) {
             return Set.of();
         }
-        return actingOrg()
-                .map(org -> repository.findAllById(profileIds).stream()
-                        .filter(profile -> org.equals(profile.getOrgId()))
-                        .map(ProfileEntity::getConnectorId)
-                        .filter(Objects::nonNull)
-                        .collect(Collectors.toSet()))
-                .orElseGet(Set::of);
+        UUID org = actingOrg().orElse(null);
+        if (org == null) {
+            return Set.of();
+        }
+        // Re-filtered by org: this answers a provenance question, so a foreign id must contribute nothing.
+        return repository.findAllById(profileIds).stream()
+                .filter(profile -> org.equals(profile.getOrgId()))
+                .map(ProfileEntity::getConnectorId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
     }
 
     /** The organization whose profiles the caller may see; empty when bound to none. */

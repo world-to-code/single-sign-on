@@ -37,9 +37,8 @@ class CsvImportPlanner {
         List<AttributeDefinition> columns = definitions.definitionsIn(profileId);
         Set<String> declared = columns.stream()
                 .map(AttributeDefinition::key).collect(Collectors.toCollection(LinkedHashSet::new));
-        // definitionsIn synthesises username/email/displayName as BASE definitions. They are columns of
-        // app_user, and the profile validator refuses them by name — so they travel with the row but never
-        // reach the validator.
+        // definitionsIn synthesises username/email as BASE definitions: app_user columns, which the profile
+        // validator refuses by name. They travel with the row but never reach it.
         Set<String> baseKeys = columns.stream().filter(AttributeDefinition::base)
                 .map(AttributeDefinition::key).collect(Collectors.toCollection(LinkedHashSet::new));
         // The declarations do not change between rows, so they are resolved once and validated against —
@@ -50,9 +49,8 @@ class CsvImportPlanner {
         // Asked once for the whole file rather than once per row: an import is the one path here that is
         // deliberately bulk, and a per-row lookup turns a five-hundred-line file into a thousand round trips.
         List<String> existing = existingUsers.present(rows.stream().map(CsvRow::username).toList());
-        // "Unusable", not "missing": a group the actor may not put a member in is refused the same way one
-        // that does not exist is. Telling those apart let a delegate enumerate groups outside their subtree by
-        // reading which rows came back importable.
+        // "Unusable", not "missing": an unreachable group is refused as a missing one, or the difference
+        // becomes an existence oracle.
         Set<String> unusableGroups = Set.copyOf(groups.unusable(
                 rows.stream().flatMap(row -> row.groups().stream()).distinct().toList()));
 

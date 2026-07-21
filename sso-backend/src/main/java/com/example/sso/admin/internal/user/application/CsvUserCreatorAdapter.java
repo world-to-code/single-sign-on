@@ -42,9 +42,7 @@ class CsvUserCreatorAdapter implements CsvUserCreator {
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public UUID create(CsvPlannedUser user, UUID profileId) {
-        // Only the profile's OWN attributes go to the validator; the base ones are account columns and it
-        // refuses them by name. Resolve the groups before creating, so a row that names an unreachable one
-        // does not leave an account behind that the caller was told had failed.
+        // Groups resolved before creating: a row naming an unreachable one must not leave an account behind.
         Map<UUID, String> reachableGroups = resolveGroups(user.groups());
         Map<String, List<String>> values = user.attributes().entrySet().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, e -> List.of(e.getValue())));

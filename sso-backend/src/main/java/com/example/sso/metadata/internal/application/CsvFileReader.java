@@ -49,17 +49,15 @@ class CsvFileReader {
                 if (isGuidance(record)) {
                     continue;
                 }
-                // The parser's own line counter, not the record number: blank lines are skipped and a quoted
-                // cell can span several lines, so record numbers stop tracking the file an administrator has
-                // open — which is the only thing this number is for.
+                // The parser's line counter, not the record number: blank lines and multi-line cells
+                // desynchronise them, and this number exists to find the row in the file.
                 rows.add(CsvRow.of(record, parser.getCurrentLineNumber(), header, declared, baseKeys,
                         limits.maxCellLength()));
             }
             return rows;
         } catch (IOException | UncheckedIOException malformed) {
-            // commons-csv reports a syntax error from the record ITERATOR, wrapped in UncheckedIOException —
-            // not as the checked IOException reading a String could never throw anyway. Unwrapped it escaped
-            // every catch and became a 500, which is what an administrator got for one stray quote.
+            // commons-csv raises syntax errors from the ITERATOR as UncheckedIOException, so unwrapped they
+            // escaped every catch and became a 500 — see the class Javadoc.
             throw BadRequestException.of("metadata.csv.malformed");
         }
     }

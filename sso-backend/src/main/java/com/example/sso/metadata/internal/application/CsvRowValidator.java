@@ -43,9 +43,8 @@ class CsvRowValidator {
         if (row.username().isEmpty()) {
             return text.at(row.line(), "metadata.csv.row.missingRequired", BaseUserFields.USERNAME);
         }
-        // app_user.email is NOT NULL, and "" is a value under the per-org unique index — so a file with no
-        // address would create exactly one account and report every later row as a duplicate of it. Required
-        // here rather than papered over with a synthetic address.
+        // app_user.email is NOT NULL and "" collides with itself under the per-org unique index, so a file
+        // with no address would create one account and call every later row a duplicate.
         if (row.attributes().getOrDefault(BaseUserFields.EMAIL, "").isEmpty()) {
             return text.at(row.line(), "metadata.csv.row.missingRequired", BaseUserFields.EMAIL);
         }
@@ -59,9 +58,8 @@ class CsvRowValidator {
             if (cell.getValue().length() > limits.maxCellLength()) {
                 return text.at(row.line(), "metadata.csv.row.valueTooLong", cell.getKey());
             }
-            // Refused rather than neutralised on the way in: we re-export these values in a template later,
-            // and a username or an address that opens like a formula is never legitimate, so refusing costs
-            // nothing real and keeps the payload out of the database entirely.
+            // Refused, not neutralised: these values are re-exported later, and a username opening like a
+            // formula is never legitimate.
             if (CsvCells.isFormula(cell.getValue())) {
                 return text.at(row.line(), "metadata.csv.row.formulaValue", cell.getKey());
             }

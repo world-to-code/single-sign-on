@@ -26,14 +26,12 @@ record CsvRow(long line, String username, Map<String, String> attributes, Set<St
         List<String> groups = List.of();
         boolean oversizedGroups = false;
         for (String column : header) {
-            // isSet, not isMapped: isMapped only asks whether the HEADER has the name, so a row with fewer
-            // cells than the header threw IllegalArgumentException out of the whole request — one short line
-            // turning a five-thousand-row import into a 500 that names no row.
+            // isSet, not isMapped: isMapped only checks the HEADER, so a short row used to throw
+            // IllegalArgumentException out of the entire request.
             String value = record.isSet(column) ? record.get(column) : "";
             if (CsvColumns.GROUPS.equals(column)) {
-                // Measured BEFORE the split. The groups column is not a declared attribute, so the per-cell
-                // ceiling the planner applies to attributes never covered it — and it is the one cell that
-                // fans out, so a megabyte of semicolons became a quarter of a million names in one bind list.
+                // Measured BEFORE the split: the planner's per-cell ceiling never covered this column, and
+                // it is the one that fans out into bind parameters.
                 oversizedGroups = value.length() > maxCellLength;
                 groups = oversizedGroups ? List.of() : splitGroups(value);
             } else if (declared.contains(column) && !value.isEmpty()) {
