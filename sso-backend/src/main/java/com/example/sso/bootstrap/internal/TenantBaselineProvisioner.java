@@ -44,6 +44,9 @@ public class TenantBaselineProvisioner {
             // SCIM pushes to us whether or not anyone configured a connector, so the schema describing what it
             // sends exists from the start — otherwise the first push would have nowhere to map from.
             profiles.provisionForSource(event.orgId(), ProfileKind.SCIM, "SCIM");
+            // No CSV profile: an upload does not describe a source we read FROM. The administrator picks one
+            // of their own profiles, downloads its template, and the columns ARE that profile's attributes —
+            // so there is nothing to map between and no second schema to keep in step.
             log.info("Provisioned baseline session + auth policies and profile for organization {}", event.orgId());
         } catch (Exception e) {
             // Never fatal to the (already committed) creation; observable with the affected org. Until the

@@ -111,6 +111,11 @@ dependencies {
     // connector be tested against a real LDAP round trip instead of a mock.
     implementation 'com.unboundid:unboundid-ldapsdk:7.0.1'
 
+    // --- CSV user import ---
+    // Commons CSV over hand-parsing: quoting, embedded newlines and a BOM are the cases a split(",") gets
+    // wrong, and getting them wrong here means silently importing the wrong values onto real accounts.
+    implementation 'org.apache.commons:commons-csv:1.12.0'
+
     // --- QR codes for TOTP enrollment ---
     implementation 'com.google.zxing:core:3.5.3'
     implementation 'com.google.zxing:javase:3.5.3'

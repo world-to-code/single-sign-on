@@ -2,6 +2,8 @@ package com.example.sso.metadata.internal.api;
 
 import com.example.sso.metadata.AttributeDefinition;
 import com.example.sso.metadata.AttributeDefinitionService;
+import com.example.sso.metadata.CsvTemplate;
+import com.example.sso.metadata.CsvTemplateService;
 import com.example.sso.metadata.Profile;
 import com.example.sso.metadata.ProfileMapping;
 import com.example.sso.metadata.ProfileMappingService;
@@ -13,6 +15,8 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,6 +39,7 @@ public class ProfileAdminController {
     private final ProfileService profiles;
     private final AttributeDefinitionService definitions;
     private final ProfileMappingService mappings;
+    private final CsvTemplateService templates;
 
     @GetMapping
     @RequirePermission(Permissions.ATTRIBUTE_DEFINITION_READ)
@@ -46,6 +51,17 @@ public class ProfileAdminController {
     @RequirePermission(Permissions.ATTRIBUTE_DEFINITION_READ)
     public List<AttributeDefinition> attributes(@PathVariable UUID id) {
         return definitions.definitionsIn(id);
+    }
+
+    /** The CSV an administrator fills in to create users on this profile — its columns ARE its attributes. */
+    @GetMapping(value = "/{id}/csv-template", produces = "text/csv")
+    @RequirePermission(Permissions.ATTRIBUTE_DEFINITION_READ)
+    public ResponseEntity<String> csvTemplate(@PathVariable UUID id) {
+        CsvTemplate template = templates.templateFor(id);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(template.filename()).build().toString())
+                .body(template.content());
     }
 
     /** What this profile feeds. A source profile's mappings are how its values reach the tenant's own. */
