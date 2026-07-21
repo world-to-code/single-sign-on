@@ -33,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.Optional;
@@ -90,6 +91,18 @@ public class UserGroupServiceImpl implements UserGroupService {
         return toPage(orgId == null
                 ? repository.findByOrgIdIsNullOrderByNameAsc(pageRequest)
                 : repository.findByOrgIdOrderByNameAsc(orgId, pageRequest));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<String, UUID> groupIdsByName(Collection<String> names, UUID orgId) {
+        if (names == null || names.isEmpty() || orgId == null) {
+            return Map.of();
+        }
+        // Names, not views: this answers "which of these exist and what are their ids", and toView would
+        // materialise every group's whole membership list to answer it.
+        return repository.findByOrgIdAndNameIn(orgId, names.stream().distinct().toList()).stream()
+                .collect(Collectors.toMap(UserGroup::getName, UserGroup::getId, (first, second) -> first));
     }
 
     @Override

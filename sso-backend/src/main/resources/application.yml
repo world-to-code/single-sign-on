@@ -131,9 +131,6 @@ sso:
       # Matches entity_attribute.attr_value, so a value that would not survive the write is refused where the
       # administrator can still see which row it was.
       max-cell-length: 255
-      # An organization has tens of groups. The bound is here so an unexpected number degrades to "no such
-      # group" — a refused row an administrator can see — rather than to a slow scan on every import.
-      max-groups-considered: 1000
   portal:
     # A policy binding's attribute conditions are checked against who can fill those attributes. That verdict
     # depends on the tenant's connectors and mappings, not on the user, so it is cached off the session path.

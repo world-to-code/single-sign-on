@@ -9,9 +9,7 @@ import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.BaseUserFields;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.account.OwnershipChallenge;
-import com.example.sso.user.group.GroupView;
 import com.example.sso.user.group.UserGroupService;
-import com.example.sso.shared.Page;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,7 +17,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,9 +43,6 @@ class CsvUserCreatorAdapter implements CsvUserCreator {
     private final UserGroupService groups;
     private final AdminAccessPolicy accessPolicy;
     private final OrgContext orgContext;
-
-    @Value("${sso.metadata.csv-import.max-groups-considered}")
-    private int maxGroupsConsidered;
 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -92,11 +86,8 @@ class CsvUserCreatorAdapter implements CsvUserCreator {
             return Map.of();
         }
         Map<String, UUID> byName = orgContext.currentOrg()
-                .map(org -> groups.listByOrg(org, 0, maxGroupsConsidered))
-                .map(Page::items)
-                .orElseGet(List::of)
-                .stream().collect(Collectors.toMap(GroupView::name, group -> UUID.fromString(group.id()),
-                        (first, second) -> first));
+                .map(org -> groups.groupIdsByName(names, org))
+                .orElseGet(Map::of);
         Map<UUID, String> resolved = new LinkedHashMap<>();
         for (String name : names) {
             UUID groupId = byName.get(name);

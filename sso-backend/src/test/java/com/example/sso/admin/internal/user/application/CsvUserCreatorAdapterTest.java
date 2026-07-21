@@ -2,7 +2,6 @@ package com.example.sso.admin.internal.user.application;
 
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.metadata.CsvPlannedUser;
-import com.example.sso.shared.Page;
 import com.example.sso.shared.error.ApiException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
@@ -10,7 +9,6 @@ import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.BaseUserFields;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.account.OwnershipChallenge;
-import com.example.sso.user.group.GroupView;
 import com.example.sso.user.group.UserGroupService;
 import java.util.List;
 import java.util.Map;
@@ -22,7 +20,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -61,17 +58,12 @@ class CsvUserCreatorAdapterTest {
     @BeforeEach
     void setUp() {
         adapter = new CsvUserCreatorAdapter(users, groups, accessPolicy, orgContext);
-        ReflectionTestUtils.setField(adapter, "maxGroupsConsidered", 1000);
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
-        lenient().when(groups.listByOrg(eq(ORG), eq(0), eq(1000))).thenReturn(new Page<>(2, 0, 1000, List.of(
-                group(REACHABLE, "platform"), group(OUT_OF_SCOPE, "finance"))));
+        lenient().when(groups.groupIdsByName(any(), eq(ORG)))
+                .thenReturn(Map.of("platform", REACHABLE, "finance", OUT_OF_SCOPE));
         AdminUserView created = mock(AdminUserView.class);
         lenient().when(created.id()).thenReturn(CREATED.toString());
         lenient().when(users.createUser(any(), any(), any(), any())).thenReturn(created);
-    }
-
-    private GroupView group(UUID id, String name) {
-        return new GroupView(id.toString(), name, null, null, List.of(), 0, false, List.of());
     }
 
     private CsvPlannedUser planned(String... groupNames) {

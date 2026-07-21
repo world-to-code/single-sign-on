@@ -38,6 +38,9 @@ public interface UserGroupRepository extends JpaRepository<UserGroup, UUID> {
      *  which must never surface the platform-wide groups RLS keeps visible for login role-resolution. */
     Page<UserGroup> findByOrgIdOrderByNameAsc(UUID orgId, Pageable pageable);
 
+    /** The named groups of one organization, in one query — for a bulk operation that resolves many at once. */
+    List<UserGroup> findByOrgIdAndNameIn(UUID orgId, Collection<String> names);
+
     /** A page of the GLOBAL/system groups (org_id IS NULL) — what an un-drilled platform admin sees. */
     Page<UserGroup> findByOrgIdIsNullOrderByNameAsc(Pageable pageable);
 

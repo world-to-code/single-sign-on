@@ -6,6 +6,7 @@ import com.example.sso.shared.IdName;
 import com.example.sso.shared.Page;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -28,6 +29,15 @@ public interface UserGroupService {
     /** A DB-paged slice of ONE organization's groups (excludes GLOBAL/system groups) — a tenant admin's
      *  directory, which must not surface the platform-wide groups RLS keeps visible for login resolution. */
     Page<GroupView> listByOrg(UUID orgId, int page, int size);
+
+    /**
+     * The named groups of one organization as name-to-id, in ONE query.
+     *
+     * <p>For bulk work that resolves many names at once. Paging the whole directory and matching by hand — the
+     * shape this replaces — costs a query per name, materialises every group's full membership list on the way,
+     * and silently loses anything past the page ceiling, so a group past it reads as one that does not exist.
+     */
+    Map<String, UUID> groupIdsByName(Collection<String> names, UUID orgId);
 
     GroupView get(UUID id);
 
