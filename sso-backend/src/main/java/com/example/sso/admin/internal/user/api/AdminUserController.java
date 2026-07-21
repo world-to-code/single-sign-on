@@ -148,6 +148,14 @@ public class AdminUserController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/{id}/resend-email-verification")
+    @CanResetUserMfa
+    @RequireStepUp
+    public ResponseEntity<Void> resendEmailVerification(@PathVariable UUID id) {
+        userAdminService.resendEmailVerification(id);
+        return ResponseEntity.accepted().build();
+    }
+
     @PutMapping("/{id}/permissions")
     @CanManageUserPermissions
     @RequireStepUp

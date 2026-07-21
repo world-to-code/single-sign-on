@@ -56,6 +56,12 @@ export const confirmTotp = (code: string) =>
   apiPost<void>("/api/auth/factors/totp/setup/confirm", { code });
 export const disableTotp = () => apiDelete("/api/auth/factors/totp");
 
+// Self-service re-proof of the account's OWN email address. An address an administrator changed is unproven,
+// which disables the EMAIL one-time-code factor for it; this is how the owner gets the factor back.
+export const requestEmailCode = () => apiPost<void>("/api/auth/email-verification");
+export const confirmEmail = (code: string) =>
+  apiPost<void>("/api/auth/email-verification/confirm", { code });
+
 // Self-service phone enrollment for the SMS factor.
 export const requestPhoneCode = (phoneNumber: string) =>
   apiPost<void>("/api/auth/phone-verification", { phoneNumber });

@@ -43,10 +43,11 @@ export function errorMessage(e: unknown): string {
     // line for input/conflict errors — e.g. "invalid CIDR: x" or "zone is referenced by a policy".
     const detail = e.message.startsWith("HTTP ") ? null : e.message;
     switch (e.status) {
-      // The backend localizes 400/409 `detail` by Accept-Language, so prefer it; the rest are our copy.
+      // The backend localizes these `detail` strings by Accept-Language, so prefer them; the rest are our
+      // copy. A bare "Forbidden" hides the one thing a 403 usually needs to say — WHY, and what to do next.
       case 400: return detail ?? i18n.t("badRequest", { ns: "errors" });
       case 401: return i18n.t("unauthorized", { ns: "errors" });
-      case 403: return i18n.t("forbidden", { ns: "errors" });
+      case 403: return detail ?? i18n.t("forbidden", { ns: "errors" });
       case 404: return i18n.t("notFound", { ns: "errors" });
       case 409: return detail ?? i18n.t("conflict", { ns: "errors" });
       default: return i18n.t("failed", { ns: "errors", status: e.status });

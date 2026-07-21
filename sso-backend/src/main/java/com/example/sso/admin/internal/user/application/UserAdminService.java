@@ -172,6 +172,20 @@ public class UserAdminService {
         auditLogger.log(AuditType.USER_MFA_RESET, AuditSubjectType.USER, id.toString(), "user=" + id);
     }
 
+    /**
+     * Re-sends the proof-of-ownership mail for an unverified address. Recovery, not a grant: the code it mails
+     * only flips the verified flag, so it cannot be used to sign in as the user.
+     */
+    @Transactional
+    public void resendEmailVerification(UUID id) {
+        if (userService.findById(id).isEmpty()) {
+            throw new NotFoundException("User not found");
+        }
+        userService.requestEmailVerification(id);
+        auditLogger.log(AuditType.USER_UPDATED, AuditSubjectType.USER, id.toString(),
+                "email verification resent user=" + id);
+    }
+
     @Transactional
     public AdminUserView setUserPermissions(UUID id, Set<String> permissionNames) {
         AdminUserView view = AdminUserView.of(userService.setDirectPermissions(id, permissionNames));

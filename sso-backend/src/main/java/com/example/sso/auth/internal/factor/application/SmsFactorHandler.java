@@ -54,7 +54,7 @@ public class SmsFactorHandler implements FactorHandler {
      */
     private void requireVerifiedPhone(UserAccount user) {
         if (!user.isPhoneVerified() || user.getPhoneNumber() == null) {
-            throw new ForbiddenException("This phone number is not verified. Use another factor.");
+            throw ForbiddenException.of("auth.factor.sms.unverified");
         }
     }
 }

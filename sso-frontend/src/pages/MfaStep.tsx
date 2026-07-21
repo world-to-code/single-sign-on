@@ -28,6 +28,7 @@ export default function MfaStep({ session, onDone }: { session: SessionView; onD
   const {
     factor, setFactor, code, setCode, password, setPassword, codeSent,
     error, setError, busy, setBusy, submitCode, submitPassword, sendCode, fido2, fido2Register,
+    addressUnverified, sendAddressVerification, addressVerificationSent,
   } = useFactorVerification({ initialFactor: preferredFactor(factors, session), onSuccess: onDone });
   const [challenge, setChallenge] = useState<FactorChallenge | null>(null);
 
@@ -101,10 +102,26 @@ export default function MfaStep({ session, onDone }: { session: SessionView; onD
         </form>
       )}
 
-      {(factor === "EMAIL" || factor === "SMS") && !codeSent && (
+      {(factor === "EMAIL" || factor === "SMS") && !codeSent && !addressUnverified && (
         <Button type="button" className="w-full" onClick={sendCode}>
           <Icon /> {t(factor === "SMS" ? "smsMeCode" : "emailMeCode")}
         </Button>
+      )}
+
+      {/* The factor refuses an unproven address, and this screen is as far as such an account can get — so the
+          way back has to be HERE, not on a profile page behind a completed login. The code below only proves
+          the mailbox; it never signs anyone in. */}
+      {addressUnverified && (
+        <Alert variant="info">
+          <AlertDescription className="space-y-3">
+            <p>{addressVerificationSent ? t("mfaEmailVerifySent") : t("mfaEmailVerifyPrompt")}</p>
+            {!addressVerificationSent && (
+              <Button type="button" size="sm" onClick={sendAddressVerification}>
+                {t("mfaEmailVerifySend")}
+              </Button>
+            )}
+          </AlertDescription>
+        </Alert>
       )}
 
       {enrollBlocked && (

@@ -54,7 +54,7 @@ public class EmailFactorHandler implements FactorHandler {
      */
     private void requireVerifiedAddress(UserAccount user) {
         if (!user.isEmailVerified()) {
-            throw new ForbiddenException("This email address is not verified. Use another factor.");
+            throw ForbiddenException.of("auth.factor.email.unverified");
         }
     }
 }

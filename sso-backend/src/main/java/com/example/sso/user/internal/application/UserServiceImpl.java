@@ -19,6 +19,7 @@ import com.example.sso.user.internal.role.domain.RoleRepository;
 import com.example.sso.user.account.LockoutPolicy;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.account.Suggestion;
+import com.example.sso.user.account.EmailVerificationRequiredEvent;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserActorView;
 import com.example.sso.user.account.UserAccessChangedEvent;
@@ -39,6 +40,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -332,8 +334,29 @@ public class UserServiceImpl implements UserService {
         AppUser saved = users.save(new AppUser(username, email, newUser.displayName(), encodedPassword, orgId));
         assignedRoles.forEach(role -> userRoles.save(new UserRole(saved.getId(), role.getId())));
         addToDefaultGroup(saved.getId(), orgId);
+        // An administrator asserting an address is not the owner proving it, so the account starts unverified.
+        // Ask for the proof now rather than leaving the EMAIL factor silently unusable forever.
+        requestEmailVerification(saved);
 
         return hydrator.hydrateUser(saved);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public void requestEmailVerification(UUID id) {
+        requestEmailVerification(require(id));
+    }
+
+    /**
+     * Asks for a proof-of-ownership mail whenever an account carries an address nobody has proven yet. A no-op
+     * for an already-verified address, so an unrelated profile edit does not re-mail anyone.
+     */
+    private void requestEmailVerification(AppUser user) {
+        if (user.isEmailVerified() || !StringUtils.hasText(user.getEmail())) {
+            return;
+        }
+        events.publishEvent(
+                new EmailVerificationRequiredEvent(user.getId(), user.getOrgId(), user.getEmail()));
     }
 
     /**
@@ -369,7 +392,8 @@ public class UserServiceImpl implements UserService {
         AppUser user = require(id);
         requireLocallyOwnedProfile(user, update);
         requireEmailAvailable(user, update.email());
-        user.updateProfile(update.displayName(), update.email());
+        user.updateProfile(update.displayName(), update.email()); // clears emailVerified when the address moved
+        requestEmailVerification(user);
         if (update.enabled()) {
             user.enable();
         } else {
@@ -467,7 +491,8 @@ public class UserServiceImpl implements UserService {
     public void updateProfile(UUID id, String displayName, String email) {
         AppUser user = require(id);
         requireEmailAvailable(user, email);
-        user.updateProfile(displayName, email);
+        user.updateProfile(displayName, email); // clears emailVerified when the address moved
+        requestEmailVerification(user);
     }
 
     @Override

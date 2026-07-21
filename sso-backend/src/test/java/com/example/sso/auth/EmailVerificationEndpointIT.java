@@ -8,6 +8,7 @@ import com.example.sso.user.account.UserService;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -17,6 +18,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -47,6 +49,16 @@ class EmailVerificationEndpointIT extends AbstractIntegrationTest {
 
     private UserAccount account;
 
+    /**
+     * The seeder creates its admin during context refresh, which now mails an ownership challenge of its own.
+     * That lands on the mock before the first test method runs, so forget it — otherwise whichever test ran
+     * first would see an invocation it did not cause.
+     */
+    @BeforeEach
+    void forgetContextStartupChallenges() {
+        clearInvocations(proofs);
+    }
+
     @AfterEach
     void tearDown() {
         if (account != null) {
@@ -58,6 +70,9 @@ class EmailVerificationEndpointIT extends AbstractIntegrationTest {
         String username = "verify-" + UUID.randomUUID().toString().substring(0, 8);
         account = userService.createUser(new NewUser(username, username + "@example.com", "U",
                 "S3cret!pw", Set.of("ROLE_USER")));
+        // Creating the account mails its own proof-of-ownership challenge (see the test below); forget that
+        // one so each case below asserts only what its own request caused.
+        clearInvocations(proofs);
         return account;
     }
 
@@ -70,6 +85,21 @@ class EmailVerificationEndpointIT extends AbstractIntegrationTest {
 
         verify(proofs, never()).challenge(any(), any(), any());
         verify(proofs, never()).redeem(any(), any(), any());
+    }
+
+    /**
+     * An administrator asserting an address is not the owner proving it, so a created account starts
+     * unverified — and the EMAIL one-time-code factor refuses an unverified address. Without this mail the
+     * factor is simply unusable for every account an administrator ever creates, with no way back.
+     */
+    @Test
+    void creatingAnAccountMailsItsOwnershipChallenge() {
+        String username = "created-" + UUID.randomUUID().toString().substring(0, 8);
+
+        account = userService.createUser(new NewUser(username, username + "@example.com", "U",
+                "S3cret!pw", Set.of("ROLE_USER")));
+
+        verify(proofs).challenge(account.getId(), account.getOrgId(), account.getEmail());
     }
 
     @Test

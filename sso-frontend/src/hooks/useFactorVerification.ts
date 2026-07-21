@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Dispatch, FormEvent, SetStateAction } from "react";
-import { ApiError } from "@/api";
+import { ApiError, errorMessage } from "@/api";
 import { prepareFactor, verifyFactor } from "@/auth";
+import { requestEmailCode } from "@/profile";
 import type { SessionView } from "@/auth";
 import { assertFactorCredential, registerFactorCredential } from "@/webauthn";
 
@@ -20,6 +21,11 @@ export interface FactorVerificationState {
   submitCode: (event: FormEvent) => Promise<void>;
   submitPassword: (event: FormEvent) => Promise<void>;
   sendCode: () => Promise<void>;
+  /** The selected code factor refuses to send because the address behind it was never proven. */
+  addressUnverified: boolean;
+  /** Mails a proof-of-ownership code so the owner can unlock the factor without leaving this screen. */
+  sendAddressVerification: () => Promise<void>;
+  addressVerificationSent: boolean;
   fido2: () => Promise<void>;
   fido2Register: () => Promise<void>;
 }
@@ -36,12 +42,15 @@ export function useFactorVerification(
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [codeSent, setCodeSent] = useState(false);
+  const [addressUnverified, setAddressUnverified] = useState(false);
+  const [addressVerificationSent, setAddressVerificationSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   // One set of inputs is reused across factors: clear them whenever the active factor changes.
   useEffect(() => {
     setCode(""); setPassword(""); setCodeSent(false); setError(null); setBusy(false);
+    setAddressUnverified(false); setAddressVerificationSent(false);
   }, [factor]);
 
   const run = useCallback(async (
@@ -83,17 +92,34 @@ export function useFactorVerification(
 
   // Sends a code for the CURRENTLY selected code factor (EMAIL or SMS); the backend prepare texts/emails it.
   const sendCode = useCallback(async () => {
-    setError(null);
+    setError(null); setAddressUnverified(false);
     try {
       await prepareFactor(factor);
       setCodeSent(true);
-    } catch {
-      setError("Could not send the code. Try again.");
+    } catch (e) {
+      // A 403 here is not a failure to send — it is the factor refusing an address nobody has proven. Saying
+      // "could not send, try again" invites the one action that cannot possibly work; surface the server's
+      // (localized) reason and offer the step that actually unblocks it.
+      if (e instanceof ApiError && e.status === 403 && factor === "EMAIL") {
+        setAddressUnverified(true);
+      }
+      setError(errorMessage(e));
     }
   }, [factor]);
+
+  const sendAddressVerification = useCallback(async () => {
+    setError(null);
+    try {
+      await requestEmailCode();
+      setAddressVerificationSent(true);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }, []);
 
   return {
     factor, setFactor, code, setCode, password, setPassword, codeSent,
     error, setError, busy, setBusy, submitCode, submitPassword, sendCode, fido2, fido2Register,
+    addressUnverified, sendAddressVerification, addressVerificationSent,
   };
 }

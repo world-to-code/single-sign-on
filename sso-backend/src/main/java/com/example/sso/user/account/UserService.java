@@ -162,6 +162,13 @@ public interface UserService {
 
     void markEmailVerified(UUID id);
 
+    /**
+     * Re-sends the proof-of-ownership mail for an account whose address is still unproven, so a lost or
+     * undelivered verification does not leave the EMAIL factor permanently unusable. A no-op for an already
+     * verified address.
+     */
+    void requestEmailVerification(UUID id);
+
     /** Records the user's phone number for the SMS factor, UNVERIFIED (ownership is proven separately). */
     void enrollPhone(UUID id, String phoneNumber);
 

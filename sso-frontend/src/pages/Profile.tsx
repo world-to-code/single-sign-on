@@ -16,7 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { DataList, EmptyState } from "../components/states";
 import { useApiData } from "../useApiData";
 import { useDeleteConfirm } from "../hooks/useDeleteConfirm";
-import { confirmPhone, confirmTotp, disableTotp, logoutAppSession, removePhone, requestPhoneCode, revokeSession, setupTotp } from "../profile";
+import { confirmEmail, confirmPhone, confirmTotp, disableTotp, logoutAppSession, removePhone, requestEmailCode, requestPhoneCode, revokeSession, setupTotp } from "../profile";
 import type { AppSession, Profile as ProfileData, SessionDevice, TotpSetup } from "../profile";
 
 /** A single security-factor card: icon + title + status badge + optional detail line + action. */
@@ -184,6 +184,77 @@ function PhoneSetupDialog({ open, onOpenChange, onEnrolled }: { open: boolean; o
   );
 }
 
+/**
+ * Re-proves the account's own email address. There is no address field on purpose: the code goes to whatever
+ * the account currently holds, so this can only prove the mailbox the user already has — never move the
+ * address to one they merely typed.
+ */
+function EmailVerifyDialog({ open, onOpenChange, email, onVerified }: {
+  open: boolean; onOpenChange: (open: boolean) => void; email: string; onVerified: () => void;
+}) {
+  const { t } = useTranslation(["auth"]);
+  const [sent, setSent] = useState(false);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function send(event: React.FormEvent) {
+    event.preventDefault();
+    setError(null); setBusy(true);
+    try {
+      await requestEmailCode();
+      setSent(true); setBusy(false);
+    } catch {
+      setError(t("profileEmailSendFailed"));
+      setBusy(false);
+    }
+  }
+
+  async function verify(event: React.FormEvent) {
+    event.preventDefault();
+    setError(null); setBusy(true);
+    try {
+      await confirmEmail(code);
+      onVerified();
+      onOpenChange(false);
+    } catch (e) {
+      setError(e instanceof ApiError && e.status === 400
+        ? t("profileEmailCodeInvalid") : t("profileEmailSendFailed"));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t("profileEmailDialogTitle")}</DialogTitle>
+          <DialogDescription>{t("profileEmailDialogDesc")}</DialogDescription>
+        </DialogHeader>
+
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        {!sent ? (
+          <form onSubmit={send} className="space-y-3">
+            <p className="text-sm text-muted-foreground">{email}</p>
+            <Button type="submit" className="w-full" disabled={busy}>
+              {busy ? <Loader2 className="animate-spin" /> : <Mail />} {t("emailMeCode")}
+            </Button>
+          </form>
+        ) : (
+          <form onSubmit={verify} className="space-y-3">
+            <p className="text-sm text-muted-foreground">{t("profileEmailCodeSentTo", { email })}</p>
+            <OtpInput value={code} onChange={(e) => setCode(e.target.value)} />
+            <Button type="submit" className="w-full" disabled={busy}>
+              {busy ? <Loader2 className="animate-spin" /> : <Mail />} {t("profileVerifyAndEnable")}
+            </Button>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Profile() {
   const { t } = useTranslation(["auth", "states"]);
   const confirmRevoke = useDeleteConfirm();
@@ -191,6 +262,7 @@ export default function Profile() {
   const confirmAppLogout = useDeleteConfirm();
   const [totpOpen, setTotpOpen] = useState(false);
   const [phoneOpen, setPhoneOpen] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
   const profile = useApiData<ProfileData>("/api/auth/profile");
   const sessions = useApiData<SessionDevice[]>("/api/auth/sessions");
   const appSessions = useApiData<AppSession[]>("/api/portal/app-sessions");
@@ -257,6 +329,9 @@ export default function Profile() {
           badge={profile.data
             ? <Badge variant={profile.data.emailVerified ? "success" : "muted"}>{profile.data.emailVerified ? t("verified") : t("unverified")}</Badge>
             : <Badge variant="muted">…</Badge>}
+          action={profile.data && !profile.data.emailVerified
+            ? <Button size="sm" onClick={() => setEmailOpen(true)}><Mail /> {t("profileEmailVerifyBtn")}</Button>
+            : undefined}
         />
         <FactorCard
           icon={<MessageSquare className="size-5" />}
@@ -292,6 +367,8 @@ export default function Profile() {
       </div>
 
       <TotpSetupDialog open={totpOpen} onOpenChange={setTotpOpen} onEnrolled={profile.reload} />
+      <EmailVerifyDialog open={emailOpen} onOpenChange={setEmailOpen} email={profile.data?.email ?? ""}
+                         onVerified={profile.reload} />
       <PhoneSetupDialog open={phoneOpen} onOpenChange={setPhoneOpen} onEnrolled={profile.reload} />
 
       {profile.data && profile.data.roles.length > 0 && (
