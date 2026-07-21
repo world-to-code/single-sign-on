@@ -55,24 +55,42 @@ class ProfileProvisioningIT extends AbstractIntegrationTest {
         await().until(() -> !profilesOf(orgA).isEmpty());
 
         List<Profile> seeded = profilesOf(orgA);
-        assertThat(seeded).hasSize(1);
-        Profile tenant = seeded.getFirst();
+        Profile tenant = seeded.stream().filter(p -> p.kind() == ProfileKind.TENANT).findFirst().orElseThrow();
         assertThat(tenant.name()).isEqualTo(slug);
         assertThat(tenant.kind()).isEqualTo(ProfileKind.TENANT);
         assertThat(tenant.system()).isTrue();                 // the tenant's own profile is not deletable
         assertThat(tenant.defaultForCreation()).isTrue();     // and it is what user creation uses until told otherwise
     }
 
-    /** The event can be re-delivered and provisioning is meant to be re-runnable to heal a failure. */
+    /**
+     * SCIM pushes to us whether or not anyone configured a connector, so its schema exists from the start —
+     * the first push would otherwise have nothing to map from.
+     */
     @Test
-    void provisioningTwiceLeavesOneProfile() {
+    void creatingAnOrganizationSeedsTheScimSourceProfileToo() {
         String slug = "profile-it-" + UUID.randomUUID().toString().substring(0, 8);
         orgA = org(slug);
-        await().until(() -> !profilesOf(orgA).isEmpty());
+
+        await().until(() -> profilesOf(orgA).stream().anyMatch(p -> p.kind() == ProfileKind.SCIM));
+
+        Profile scim = profilesOf(orgA).stream()
+                .filter(p -> p.kind() == ProfileKind.SCIM).findFirst().orElseThrow();
+        assertThat(scim.connectorId()).isNull();       // nothing to point at; SCIM pushes, we do not dial it
+        assertThat(scim.defaultForCreation()).isFalse(); // a source schema is not something to create users from
+    }
+
+    /** The event can be re-delivered and provisioning is meant to be re-runnable to heal a failure. */
+    @Test
+    void provisioningTwiceLeavesOneProfileOfEachKind() {
+        String slug = "profile-it-" + UUID.randomUUID().toString().substring(0, 8);
+        orgA = org(slug);
+        await().until(() -> profilesOf(orgA).size() >= 2);
+        int before = profilesOf(orgA).size();
 
         profiles.provisionDefault(orgA);
+        profiles.provisionForSource(orgA, ProfileKind.SCIM, "SCIM");
 
-        assertThat(profilesOf(orgA)).hasSize(1);
+        assertThat(profilesOf(orgA)).hasSize(before);
     }
 
     /** A tenant sees only its own profiles — the list is the surface every later screen reads from. */
@@ -84,7 +102,7 @@ class ProfileProvisioningIT extends AbstractIntegrationTest {
         try {
             await().until(() -> !profilesOf(orgA).isEmpty() && !profilesOf(orgB).isEmpty());
 
-            assertThat(profilesOf(orgA)).extracting(Profile::name).containsExactly(slugA);
+            assertThat(profilesOf(orgA)).extracting(Profile::name).contains(slugA);
             assertThat(profilesOf(orgB)).extracting(Profile::name).doesNotContain(slugA);
         } finally {
             organizations.delete(orgB);

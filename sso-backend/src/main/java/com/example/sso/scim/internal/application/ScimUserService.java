@@ -37,6 +37,7 @@ import java.util.UUID;
 public class ScimUserService {
 
     private final UserService userService;
+    private final ScimAttributeSync attributeSync;
     private final OrgContext orgContext;
     private final OrganizationService organizations;
 
@@ -58,6 +59,8 @@ public class ScimUserService {
         UserAccount created = userService.createUser(new NewUser(userName, email, displayName, null,
                 Set.of(Roles.USER)), tokenOrg().orElse(null));
         resource.getExternalId().ifPresent(ext -> userService.assignExternalId(created.getId(), ext));
+        // Whatever else the client sent is the tenant's decision: only mapped attributes are written.
+        attributeSync.apply(created.getId(), resource);
         if (!resource.isActive().orElse(Boolean.TRUE)) {
             userService.disable(created.getId());
         }
@@ -107,6 +110,7 @@ public class ScimUserService {
         String displayName = resource.getDisplayName().orElse(user.getDisplayName());
 
         userService.updateProfile(user.getId(), displayName, email);
+        attributeSync.apply(userId, resource);
         resource.getExternalId().ifPresent(ext -> userService.assignExternalId(user.getId(), ext));
         if (resource.isActive().orElse(Boolean.TRUE)) {
             userService.enable(user.getId());

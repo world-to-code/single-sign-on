@@ -1,6 +1,7 @@
 package com.example.sso.bootstrap.internal;
 
 import com.example.sso.authpolicy.policy.AuthPolicyAdminService;
+import com.example.sso.metadata.ProfileKind;
 import com.example.sso.metadata.ProfileService;
 import com.example.sso.organization.OrganizationCreatedEvent;
 import com.example.sso.session.policy.SessionPolicyService;
@@ -40,6 +41,9 @@ public class TenantBaselineProvisioner {
             authPolicies.provisionDefault(event.orgId());
             // The tenant's own profile: the unit attribute definitions and directory mappings hang off.
             profiles.provisionDefault(event.orgId());
+            // SCIM pushes to us whether or not anyone configured a connector, so the schema describing what it
+            // sends exists from the start — otherwise the first push would have nowhere to map from.
+            profiles.provisionForSource(event.orgId(), ProfileKind.SCIM, "SCIM");
             log.info("Provisioned baseline session + auth policies and profile for organization {}", event.orgId());
         } catch (Exception e) {
             // Never fatal to the (already committed) creation; observable with the affected org. Until the

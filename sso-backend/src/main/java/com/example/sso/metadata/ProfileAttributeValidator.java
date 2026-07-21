@@ -1,5 +1,6 @@
 package com.example.sso.metadata;
 
+import com.example.sso.shared.error.BadRequestException;
 import java.util.Collection;
 import java.util.Map;
 import java.util.UUID;
@@ -17,7 +18,7 @@ public interface ProfileAttributeValidator {
      * @param profileId  the profile the values are being written against
      * @param values     attribute key to its values; a key the profile does not declare is rejected rather
      *                   than silently stored, so a typo does not become invisible data
-     * @throws com.example.sso.shared.error.BadRequestException on a missing required attribute, a value that
+     * @throws BadRequestException on a missing required attribute, a value that
      *                   does not fit its declared type, an undeclared key, or several values for a
      *                   single-valued attribute
      */

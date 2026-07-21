@@ -25,6 +25,12 @@ public interface ProfileService {
      */
     Profile provisionForConnector(UUID connectorId, String name, ProfileKind kind);
 
+    /**
+     * Creates the profile describing a connector-less source (SCIM, CSV) for {@code orgId}, if it has none.
+     * Idempotent, and callable from a provisioning listener where no organization is bound.
+     */
+    Profile provisionForSource(UUID orgId, ProfileKind kind, String name);
+
     /** The connectors behind these profiles, skipping any that describe no connector. */
     Set<UUID> connectorIdsOf(Collection<UUID> profileIds);
 

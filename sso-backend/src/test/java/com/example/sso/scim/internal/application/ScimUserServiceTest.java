@@ -42,6 +42,8 @@ class ScimUserServiceTest {
     private OrgContext orgContext;
     @Mock
     private OrganizationService organizations;
+    @Mock
+    private ScimAttributeSync attributeSync;
 
     @InjectMocks
     private ScimUserService service;

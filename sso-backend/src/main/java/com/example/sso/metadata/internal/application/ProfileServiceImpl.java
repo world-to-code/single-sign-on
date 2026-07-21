@@ -73,6 +73,17 @@ class ProfileServiceImpl implements ProfileService {
                         ProfileEntity.forConnector(org, uniqueName(org, name), kind, connectorId))));
     }
 
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Profile provisionForSource(UUID orgId, ProfileKind kind, String name) {
+        // Bound explicitly rather than read from the ambient context: this runs from the org-created listener,
+        // where nothing is bound, and RLS has to scope both the existence check and the insert's WITH CHECK.
+        return orgContext.callInOrg(orgId, () -> repository.findByOrgIdAndKind(orgId, kind)
+                .map(this::toProfile)
+                .orElseGet(() -> toProfile(repository.saveAndFlush(
+                        ProfileEntity.forSource(orgId, uniqueName(orgId, name), kind)))));
+    }
+
     /** Profile names are unique per organization; a connector's display name may already be taken. */
     private String uniqueName(UUID org, String name) {
         String candidate = name;

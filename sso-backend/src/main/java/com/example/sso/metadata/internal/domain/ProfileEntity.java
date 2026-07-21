@@ -58,6 +58,14 @@ public class ProfileEntity extends AuditedEntity implements OrgOwned {
         return new ProfileEntity(orgId, name, ProfileKind.TENANT, null, true, true);
     }
 
+    /**
+     * A profile describing a source that pushes to us or is uploaded — SCIM, CSV. It has no connector to name
+     * and no connector lifecycle: it lives as long as the organization does.
+     */
+    public static ProfileEntity forSource(UUID orgId, String name, ProfileKind kind) {
+        return new ProfileEntity(orgId, name, kind, null, false, false);
+    }
+
     /** A profile describing one identity source; it lives and dies with the connector it reads. */
     public static ProfileEntity forConnector(UUID orgId, String name, ProfileKind kind, UUID connectorId) {
         return new ProfileEntity(orgId, name, kind, connectorId, false, false);
