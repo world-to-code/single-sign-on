@@ -5,6 +5,7 @@ import com.example.sso.metadata.AttributeDefinition;
 import com.example.sso.metadata.AttributeDefinitionService;
 import com.example.sso.metadata.AttributeDefinitionSpec;
 import com.example.sso.metadata.BaseAttributes;
+import com.example.sso.metadata.AttributeSourceConfigurationChangedEvent;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.metadata.ProfileKind;
 import com.example.sso.metadata.internal.domain.ProfileRepository;
@@ -21,6 +22,7 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -40,6 +42,7 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
     private final AttributeDefinitionRepository repository;
     private final ProfileRepository profiles;
     private final OrgContext orgContext;
+    private final ApplicationEventPublisher events;
 
     @Override
     @Transactional(readOnly = true)
@@ -134,8 +137,10 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
             // as a bare string with no foreign key back here, so it is redefined in place, never re-keyed.
             existing.redefine(spec.displayName().trim(), spec.description(), spec.dataType(), spec.enumValues(),
                     spec.multiValued(), spec.required(), spec.source(), spec.sortOrder());
+            sourcesChanged();
             return toDefinition(existing);
         }
+        sourcesChanged();
         return toDefinition(repository.save(AttributeDefinitionEntity.create(tier, profile, spec.entityKind(),
                 spec.key().trim(), spec.displayName().trim(), spec.description(), spec.dataType(),
                 spec.enumValues(), spec.multiValued(), spec.required(), spec.source(), spec.sortOrder())));
@@ -152,6 +157,15 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
         // Attribute VALUES deliberately survive: a definition is a catalog entry, and deleting it must not
         // silently strip data that mapping rules and policy bindings are still matching on.
         repository.delete(row);
+        sourcesChanged();
+    }
+
+    /**
+     * A definition's {@code source} is what decides whether a key counts as source-filled, so changing one
+     * changes the provenance answer that gates attribute-conditioned policy bindings — and that is cached.
+     */
+    private void sourcesChanged() {
+        events.publishEvent(new AttributeSourceConfigurationChangedEvent(orgContext.currentOrg().orElse(null)));
     }
 
     private Optional<AttributeDefinitionEntity> find(EntityKind kind, String key) {

@@ -60,8 +60,9 @@ class CsvTemplateServiceImpl implements CsvTemplateService {
     }
 
     private List<String> headers(List<AttributeDefinition> columns) {
-        // An attribute key is administrator-chosen, and the key grammar permits a leading '-' — which a
-        // spreadsheet reads as the start of a formula. Neutralise the header too, not just the data.
+        // The key grammar (AttributeDefinitionServiceImpl) already anchors on [A-Za-z0-9], so a key cannot
+        // open with a formula character today. Neutralise the header anyway: that grammar is a validation
+        // rule one commit away from being relaxed, and it is not where this file's safety should live.
         List<String> headers = new ArrayList<>(columns.stream()
                 .map(AttributeDefinition::key).map(CsvCells::neutralise).toList());
         headers.add(GROUPS_COLUMN);
