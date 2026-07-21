@@ -101,7 +101,7 @@ class ProfileMappingIsolationIT extends AbstractIntegrationTest {
         ProfileMapping theirs = orgContext.callInOrg(orgB,
                 () -> mappings.map(theirSource.id(), "department", theirTenant.id(), "team"));
 
-        orgContext.runInOrg(orgA, () -> mappings.unmap(theirs.id()));
+        orgContext.runInOrg(orgA, () -> mappings.unmapFrom(theirs.sourceProfileId(), theirs.id()));
 
         assertThat(orgContext.callInOrg(orgB, () -> mappings.mappingsFrom(theirSource.id()))).hasSize(1);
     }
@@ -123,5 +123,27 @@ class ProfileMappingIsolationIT extends AbstractIntegrationTest {
         List<ProfileMapping> after = orgContext.callInOrg(orgA, () -> mappings.mappingsFrom(source.id()));
         assertThat(after).hasSize(1);
         assertThat(after.getFirst().targetKey()).isEqualTo("division");
+    }
+    /**
+     * The check that used to live in the two callers, spelled out the same way twice — so calling the service
+     * directly went straight past it. A mapping belongs to one source profile, and naming a different one must
+     * not delete it.
+     */
+    @Test
+    void aMappingIsNotDeletableThroughAnotherProfileOfTheSameTenant() {
+        orgA = org();
+        Profile scim = of(orgA, ProfileKind.SCIM);
+        Profile tenant = of(orgA, ProfileKind.TENANT);
+        ProfileMapping mapping = orgContext.callInOrg(orgA,
+                () -> mappings.map(scim.id(), "dept", tenant.id(), "department"));
+
+        // Named through the TENANT profile, which is not the mapping's source.
+        orgContext.runInOrg(orgA, () -> mappings.unmapFrom(tenant.id(), mapping.id()));
+
+        assertThat(orgContext.callInOrg(orgA, () -> mappings.mappingsFrom(scim.id())))
+                .extracting(ProfileMapping::id).contains(mapping.id());
+
+        orgContext.runInOrg(orgA, () -> mappings.unmapFrom(scim.id(), mapping.id()));
+        assertThat(orgContext.callInOrg(orgA, () -> mappings.mappingsFrom(scim.id()))).isEmpty();
     }
 }

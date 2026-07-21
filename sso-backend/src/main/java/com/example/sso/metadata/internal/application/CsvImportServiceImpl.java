@@ -32,6 +32,7 @@ class CsvImportServiceImpl implements CsvImportService {
     private final CsvUploadValidator uploads;
     private final CsvImportPlanner planner;
     private final CsvUserCreator creator;
+    private final CsvFailureText text;
 
     @Override
     @Transactional(readOnly = true)
@@ -65,11 +66,11 @@ class CsvImportServiceImpl implements CsvImportService {
                 // an ApiException, and it used to escape the loop and 500 the request — losing the
                 // partial-failure report this whole design exists to produce. REQUIRES_NEW on the creator is
                 // what makes catching it safe: the poisoned transaction was that row's alone.
-                failures.add(new CsvRowFailure(user.line(), "user.username.duplicate", user.username()));
+                failures.add(text.at(user.line(), "user.username.duplicate", user.username()));
             } catch (ApiException refused) {
                 // The window between confirming and applying is real: someone else can create that account, or
                 // a group can be renamed. Report the row and keep going.
-                failures.add(new CsvRowFailure(user.line(), refused.getMessageKey(), user.username()));
+                failures.add(text.at(user.line(), refused.getMessageKey(), refused.getMessageArgs()));
             }
         }
         return new CsvImportResult(created, plan.existing(), failures);

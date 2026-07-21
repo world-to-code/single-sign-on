@@ -20,7 +20,16 @@ public interface ProfileMappingService {
      */
     ProfileMapping map(UUID sourceProfileId, String sourceKey, UUID targetProfileId, String targetKey);
 
-    void unmap(UUID mappingId);
+    /**
+     * Removes a mapping, but only if it belongs to {@code sourceProfileId}.
+     *
+     * <p>The profile is part of the signature because the mapping id is client-supplied on every route that
+     * reaches here, and "does this mapping belong to the profile the caller named" is the check that stops one
+     * being deleted through a route scoped to a different one. It used to live in the two callers, spelled out
+     * the same way twice — so the plain by-id form was a way past it for anyone who called the service
+     * directly, and there was no signature saying it must not be.
+     */
+    void unmapFrom(UUID sourceProfileId, UUID mappingId);
 
     /**
      * Every mapping that fills one of {@code targetKeys} on the acting tenant's profile. Auto-mapping asks

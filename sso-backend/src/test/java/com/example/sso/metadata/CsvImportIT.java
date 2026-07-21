@@ -181,7 +181,8 @@ class CsvImportIT extends AbstractIntegrationTest {
 
         assertThat(result.created()).isZero();
         assertThat(result.failures()).singleElement()
-                .extracting(CsvRowFailure::reason).isEqualTo("metadata.csv.row.unknownGroup");
+                .extracting(CsvRowFailure::reason).asString()
+                .contains(onlyInB).doesNotContain("metadata.csv"); // resolved text, not a key
         assertThat(orgContext.callInOrg(orgA, () -> users.findByUsernameInOrg(username, orgA))).isEmpty();
     }
 

@@ -20,6 +20,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.springframework.context.MessageSource;
+import org.springframework.context.support.ResourceBundleMessageSource;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.mock.web.MockMultipartFile;
@@ -54,11 +56,18 @@ class CsvImportApplyTest {
     @Mock private CsvImportPlanner planner;
     @Mock private CsvUserCreator creator;
 
+    private static MessageSource bundle() {
+        ResourceBundleMessageSource source = new ResourceBundleMessageSource();
+        source.setBasename("messages");
+        source.setDefaultEncoding("UTF-8");
+        return source;
+    }
+
     private CsvImportServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new CsvImportServiceImpl(profiles, uploads, planner, creator);
+        service = new CsvImportServiceImpl(profiles, uploads, planner, creator, new CsvFailureText(bundle()));
         lenient().when(profiles.findById(PROFILE)).thenReturn(Optional.of(
                 new Profile(PROFILE, "acme", ProfileKind.TENANT, null, true, true)));
         lenient().when(uploads.validateOnly(any(), any())).thenReturn(new CsvUpload("users.csv", "csv"));
@@ -115,14 +124,13 @@ class CsvImportApplyTest {
 
         assertThat(result.created()).isEqualTo(1);
         assertThat(result.failures()).singleElement()
-                .extracting(CsvRowFailure::reason, CsvRowFailure::line)
-                .containsExactly("user.username.duplicate", 7L);
+                .extracting(CsvRowFailure::line).isEqualTo(7L);
     }
 
     /** Rows the plan already refused are carried into the result, not silently dropped. */
     @Test
     void rowsThePlanRefusedStayRefused() {
-        CsvRowFailure refused = new CsvRowFailure(4, "metadata.csv.row.duplicateUsername", "ada");
+        CsvRowFailure refused = new CsvRowFailure(4, "ada appears more than once in the file.");
         plans(List.of(planned("grace")), List.of(), List.of(refused));
 
         assertThat(service.apply(PROFILE, request()).failures()).containsExactly(refused);
@@ -144,8 +152,7 @@ class CsvImportApplyTest {
 
         assertThat(result.created()).isEqualTo(1);
         assertThat(result.failures()).singleElement()
-                .extracting(CsvRowFailure::reason, CsvRowFailure::line)
-                .containsExactly("user.username.taken", 7L);
+                .extracting(CsvRowFailure::line).isEqualTo(7L);
         verify(creator).create(planned("grace"), PROFILE);
     }
 

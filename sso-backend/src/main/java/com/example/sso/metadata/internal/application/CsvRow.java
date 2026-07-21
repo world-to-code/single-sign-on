@@ -1,6 +1,5 @@
 package com.example.sso.metadata.internal.application;
 
-import com.example.sso.metadata.CsvRowFailure;
 import com.example.sso.user.account.BaseUserFields;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -68,9 +67,5 @@ record CsvRow(long line, String username, Map<String, String> attributes, Set<St
     Map<String, String> profileValues() {
         return attributes.entrySet().stream().filter(entry -> !baseKeys.contains(entry.getKey()))
                 .collect(LinkedHashMap::new, (map, e) -> map.put(e.getKey(), e.getValue()), Map::putAll);
-    }
-
-    CsvRowFailure fails(String reason, String detail) {
-        return new CsvRowFailure(line, reason, detail);
     }
 }

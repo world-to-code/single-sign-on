@@ -39,6 +39,28 @@ ext['tomcat.version'] = '11.0.24'          // CVE-2026-55956, CVE-2026-59083
 ext['log4j2.version'] = '2.25.5'           // CVE-2026-49844
 ext['postgresql.version'] = '42.7.12'      // CVE-2026-54291 (channel-binding downgrade)
 
+// Locked so the vulnerability scanner has a file it can actually read. Trivy recognises Java through a
+// pom.xml, a gradle.lockfile or jars it can open — this repo had none of those at scan time, and a Boot fat
+// jar is not something it unpacks, so the dependency gate covered the frontend only while reporting success.
+// The lock also makes a build reproducible, which is the usual reason to want one.
+//
+// Regenerate after any dependency change: ./gradlew resolveAndLockAll --write-locks
+dependencyLocking {
+    lockAllConfigurations()
+}
+
+tasks.register('resolveAndLockAll') {
+    description = 'Rewrites the dependency locks. Run with --write-locks after changing a dependency.'
+    doFirst {
+        if (!gradle.startParameter.writeDependencyLocks) {
+            throw new GradleException('run with --write-locks')
+        }
+    }
+    doLast {
+        configurations.findAll { it.canBeResolved }.each { it.resolve() }
+    }
+}
+
 dependencyManagement {
     imports {
         // Spring Modulith 2.0.x aligns with the Spring Boot 4.0 line.

@@ -111,18 +111,34 @@ jobs:
           echo "${want}  trivy.tgz" | sha256sum -c -
           tar xzf trivy.tgz trivy && sudo install -m 0755 trivy /usr/local/bin/trivy
 
-      # Resolve the backend's real runtime classpath. Trivy reads Gradle's lock/metadata rather than guessing
-      # from build.gradle, so a version pinned transitively is scanned as the version that actually ships.
+      # The backend is scanned through sso-backend/gradle.lockfile, which dependencyLocking keeps in step with
+      # build.gradle. Measured, not assumed: with no lockfile the scan reports Java targets 0 and passes green
+      # on anything; with it, the gradle target appears. A Boot fat jar is NOT an alternative — Trivy does not
+      # unpack BOOT-INF/lib, and loose jars need a java-db this runner may not have.
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
-      - name: Write the resolved runtime classpath
+      - name: The lockfile must match build.gradle
         working-directory: sso-backend
-        run: ./gradlew -q dependencies --configuration runtimeClasspath > ../runtime-classpath.txt
+        run: |
+          ./gradlew resolveAndLockAll --write-locks -q
+          git diff --exit-code gradle.lockfile \
+            || { echo "::error::gradle.lockfile is stale — run ./gradlew resolveAndLockAll --write-locks"; exit 1; }
 
-      - name: Trivy dependency scan (backend + frontend)
-        run: trivy fs --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --no-progress --skip-dirs .git .
+      - name: Trivy dependency scan (backend lockfile + frontend lockfile)
+        run: |
+          trivy fs --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --no-progress \
+            --skip-dirs .git --format table .
+
+      # Prove the scan actually looked at Java. A gate that silently covers nothing is worse than none, and
+      # that is exactly how the first version of this job shipped.
+      - name: Fail if the scan found no Java packages at all
+        run: |
+          trivy fs --scanners vuln --format json --no-progress --skip-dirs .git . > scan.json
+          java=$(python3 -c "import json;d=json.load(open('scan.json'));print(sum(1 for r in (d.get('Results') or []) if r.get('Type') in ('jar','gradle','pom')))")
+          echo "Java targets scanned: ${java}"
+          [ "${java}" -gt 0 ] || { echo "::error::Trivy scanned no Java artifacts — the backend gate is a no-op"; exit 1; }
 
       # A CVE we have assessed as unreachable is recorded in .trivyignore WITH the reason and a review date —
       # never silently, and never as a blanket ignore.

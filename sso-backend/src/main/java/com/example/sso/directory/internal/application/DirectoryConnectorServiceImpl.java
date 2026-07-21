@@ -141,13 +141,11 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
     public void unmapAttribute(String name, UUID mappingId) {
         writableOrg();
         DirectoryConnector connector = require(name);
-        // Scoped to THIS connector's profile: the id is client-supplied, and without this an id belonging to
-        // another connector — or to a mapping no connector owns — would be deleted through this route.
-        UUID source = sourceProfile(connector).map(Profile::id).orElse(null);
-        mappings.mappingsFrom(source).stream()
-                .filter(mapping -> mapping.id().equals(mappingId))
-                .findFirst()
-                .ifPresent(mapping -> mappings.unmap(mapping.id()));
+        // Scoped to THIS connector's profile: the id is client-supplied, and without that an id belonging to
+        // another connector — or to a mapping no connector owns — would be deleted through this route. The
+        // service owns the check now, so this route and the console's cannot drift apart.
+        sourceProfile(connector).map(Profile::id)
+                .ifPresent(source -> mappings.unmapFrom(source, mappingId));
     }
 
     /**

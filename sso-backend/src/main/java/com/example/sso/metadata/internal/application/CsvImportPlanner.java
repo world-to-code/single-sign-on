@@ -46,6 +46,7 @@ class CsvImportPlanner {
 
     private final AttributeDefinitionService definitions;
     private final ProfileAttributeValidator values;
+    private final CsvFailureText text;
     private final CsvExistingUsers existingUsers;
     private final CsvGroups groups;
     private final int maxRows;
@@ -53,12 +54,13 @@ class CsvImportPlanner {
     private final int maxCellLength;
 
     CsvImportPlanner(AttributeDefinitionService definitions, ProfileAttributeValidator values,
-            CsvExistingUsers existingUsers, CsvGroups groups,
+            CsvFailureText text, CsvExistingUsers existingUsers, CsvGroups groups,
             @Value("${sso.metadata.csv-import.max-rows}") int maxRows,
             @Value("${sso.metadata.csv-import.max-columns}") int maxColumns,
             @Value("${sso.metadata.csv-import.max-cell-length}") int maxCellLength) {
         this.definitions = definitions;
         this.values = values;
+        this.text = text;
         this.existingUsers = existingUsers;
         this.groups = groups;
         this.maxRows = maxRows;
@@ -111,37 +113,37 @@ class CsvImportPlanner {
     private CsvRowFailure failureIn(List<AttributeDefinition> profileColumns, CsvRow row, Set<String> seen,
             Set<String> missingGroups) {
         if (row.username().isEmpty()) {
-            return row.fails("metadata.csv.row.missingRequired", BaseUserFields.USERNAME);
+            return text.at(row.line(), "metadata.csv.row.missingRequired", BaseUserFields.USERNAME);
         }
         // app_user.email is NOT NULL, and "" is a value under the per-org unique index — so a file with no
         // address would create exactly one account and report every later row as a duplicate of it. Required
         // here rather than papered over with a synthetic address.
         if (row.attributes().getOrDefault(BaseUserFields.EMAIL, "").isEmpty()) {
-            return row.fails("metadata.csv.row.missingRequired", BaseUserFields.EMAIL);
+            return text.at(row.line(), "metadata.csv.row.missingRequired", BaseUserFields.EMAIL);
         }
         if (seen.contains(row.username())) {
-            return row.fails("metadata.csv.row.duplicateUsername", row.username());
+            return text.at(row.line(), "metadata.csv.row.duplicateUsername", row.username());
         }
         for (Map.Entry<String, String> cell : row.attributes().entrySet()) {
             if (cell.getValue().length() > maxCellLength) {
-                return row.fails("metadata.csv.row.valueTooLong", cell.getKey());
+                return text.at(row.line(), "metadata.csv.row.valueTooLong", cell.getKey());
             }
             // Refused rather than neutralised on the way in: we re-export these values in a template later,
             // and a username or an address that opens like a formula is never legitimate, so refusing costs
             // nothing real and keeps the payload out of the database entirely.
             if (CsvCells.isFormula(cell.getValue())) {
-                return row.fails("metadata.csv.row.formulaValue", cell.getKey());
+                return text.at(row.line(), "metadata.csv.row.formulaValue", cell.getKey());
             }
         }
         String unknownGroup = row.groups().stream().filter(missingGroups::contains).findFirst().orElse(null);
         if (unknownGroup != null) {
-            return row.fails("metadata.csv.row.unknownGroup", unknownGroup);
+            return text.at(row.line(), "metadata.csv.row.unknownGroup", unknownGroup);
         }
         try {
             values.validate(profileColumns, row.profileValues().entrySet().stream()
                     .collect(Collectors.toMap(Map.Entry::getKey, e -> List.of(e.getValue()))));
         } catch (ApiException refused) {
-            return row.fails(refused.getMessageKey(), null);
+            return text.at(row.line(), refused.getMessageKey(), refused.getMessageArgs());
         }
         return null;
     }
@@ -166,8 +168,11 @@ class CsvImportPlanner {
                 rows.add(CsvRow.of(record, parser.getCurrentLineNumber(), header, declared, baseKeys));
             }
             return rows;
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+        } catch (IOException | UncheckedIOException malformed) {
+            // commons-csv reports a syntax error from the record ITERATOR, wrapped in UncheckedIOException —
+            // not as the checked IOException reading a String could never throw anyway. Unwrapped it escaped
+            // every catch and became a 500, which is what an administrator got for one stray quote.
+            throw BadRequestException.of("metadata.csv.malformed");
         }
     }
 

@@ -115,10 +115,7 @@ public class ProfileAdminController {
     @RequirePermission(Permissions.ATTRIBUTE_DEFINITION_WRITE)
     @RequireStepUp
     public ResponseEntity<Void> unmap(@PathVariable UUID id, @PathVariable UUID mappingId) {
-        // Scoped to THIS profile: the id is client-supplied, and a mapping belonging to another one must not
-        // be deletable through this route.
-        mappings.mappingsFrom(id).stream().filter(m -> m.id().equals(mappingId)).findFirst()
-                .ifPresent(m -> mappings.unmap(m.id()));
+        mappings.unmapFrom(id, mappingId);
         return ResponseEntity.noContent().build();
     }
 

@@ -102,9 +102,19 @@ class ProfileMappingServiceImpl implements ProfileMappingService {
 
     @Override
     @Transactional
-    public void unmap(UUID mappingId) {
-        repository.findByIdAndOrgId(mappingId, requireOrg()).ifPresent(repository::delete);
-        sourcesChanged();
+    public void unmapFrom(UUID sourceProfileId, UUID mappingId) {
+        // Both org-scoped: ownProfile refuses another tenant's profile, and the source predicate refuses a
+        // mapping that belongs to a different profile of this tenant's.
+        UUID source = ownProfile(sourceProfileId).orElse(null);
+        if (source == null) {
+            return; // an unknown or foreign profile deletes nothing, and says nothing about which it was
+        }
+        repository.findByIdAndOrgId(mappingId, requireOrg())
+                .filter(row -> row.getSourceProfileId().equals(source))
+                .ifPresent(row -> {
+                    repository.delete(row);
+                    sourcesChanged();
+                });
     }
 
     /** Which source may fill which attribute just changed, and that answer is cached elsewhere. */
