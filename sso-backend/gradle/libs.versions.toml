@@ -1,5 +1,8 @@
 [versions]
-opensaml = "5.1.4"
+# 5.2.2 fixes an unauthenticated parser DoS reported in Shibboleth advisory 2026-05-13a. There is NO CVE for
+# it — Shibboleth publishes only on its own site — so no dependency scanner reports it, and 5.1.6 does NOT
+# contain the fix despite being newer than 5.1.4: it predates the advisory. Subscribe to the advisories.
+opensaml = "5.2.3"
 scim = "1.33.0"
 
 [libraries]

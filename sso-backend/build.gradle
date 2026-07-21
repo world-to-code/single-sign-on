@@ -139,7 +139,43 @@ dependencies {
     testImplementation 'org.testcontainers:testcontainers-postgresql'     // TC 2.x renamed: was :postgresql
 }
 
+// Bring the shared test Postgres/Redis up before the suite runs.
+//
+// Not a convenience: without it the suite silently falls back to Testcontainers and starts a Postgres, a Redis
+// and a reaper PER FORK — which is the thing docker-compose.testinfra.yml exists to prevent, and it is invisible
+// unless you happen to run `docker ps`. A design that depends on somebody remembering to start a stack is a
+// design that runs the expensive path most of the time.
+//
+// Skipped on CI (throwaway runners, where per-fork containers are the intended path) and whenever Docker is not
+// usable — the suite still works there, just the slow way. Opt out with -PskipTestInfra.
+tasks.register('testInfra') {
+    description = 'Starts the shared Postgres/Redis the integration tests attach to.'
+    onlyIf { !System.getenv('CI') && !project.hasProperty('skipTestInfra') }
+    doLast {
+        def compose = file("${rootDir}/../docker-compose.testinfra.yml")
+        if (!compose.exists()) {
+            logger.lifecycle('testInfra: no compose file; each fork will start its own containers')
+            return
+        }
+        try {
+            def process = new ProcessBuilder('docker', 'compose', '-f', compose.absolutePath,
+                    'up', '-d', '--wait').redirectErrorStream(true).start()
+            String output = process.inputStream.text
+            if (!process.waitFor(180, java.util.concurrent.TimeUnit.SECONDS) || process.exitValue() != 0) {
+                process.destroy()
+                logger.warn("testInfra: could not start the shared stack, so each fork will start its own " +
+                        "containers.\n${output}")
+            } else {
+                logger.lifecycle('testInfra: shared Postgres/Redis up on 55432/56379')
+            }
+        } catch (Exception e) {
+            logger.warn("testInfra: docker unavailable (${e.message}); each fork will start its own containers")
+        }
+    }
+}
+
 tasks.named('test') {
+    dependsOn 'testInfra'
     useJUnitPlatform()
     // Run test classes in parallel across JVM forks. Each fork gets its own Spring context and its OWN
     // database inside the shared Postgres (see AbstractIntegrationTest), so forks share a server and never a
