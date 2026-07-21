@@ -26,6 +26,19 @@ repositories {
     maven { url = uri('https://build.shibboleth.net/maven/releases/') }
 }
 
+// Versions the Boot BOM manages that we move ahead of it, each because a published CVE fixes something the
+// BOM has not picked up yet. Kept as overrides rather than a fork of the BOM so the next Boot bump takes them
+// back over automatically when it catches up.
+//
+// Two are deliberately NOT here. `jackson.version` in Boot 4 names the jackson-3 (tools.jackson) coordinates,
+// so setting it to a 2.x number breaks resolution outright — and the jackson advisories were assessed as
+// unreachable (no @JsonView, @JsonUnwrapped, @JsonIgnoreProperties or case-insensitive binding in this
+// codebase). httpcore5's HIGH pair is outbound-only and its BOM property did not take; both are tracked
+// rather than forced, because a pin that silently does not apply is worse than no pin.
+ext['tomcat.version'] = '11.0.24'          // CVE-2026-55956, CVE-2026-59083
+ext['log4j2.version'] = '2.25.5'           // CVE-2026-49844
+ext['postgresql.version'] = '42.7.12'      // CVE-2026-54291 (channel-binding downgrade)
+
 dependencyManagement {
     imports {
         // Spring Modulith 2.0.x aligns with the Spring Boot 4.0 line.

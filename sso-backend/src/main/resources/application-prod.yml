@@ -2,7 +2,12 @@
 # default so the app fails fast if they are missing.
 spring:
   datasource:
-    url: ${DB_URL:jdbc:postgresql://postgres:5432/sso}
+    # sslmode is set explicitly because pgJDBC's default is `prefer`, which falls back to PLAINTEXT without a
+    # word when the server does not offer TLS — and this link carries the encrypted secrets, session records
+    # and every tenant's data, with RLS as the only thing separating them. `require` encrypts but does not
+    # authenticate the server; set DB_SSLMODE=verify-full with DB_SSLROOTCERT wherever the CA is known, which
+    # is the only setting that also stops an on-path attacker impersonating the database.
+    url: ${DB_URL:jdbc:postgresql://postgres:5432/sso}?sslmode=${DB_SSLMODE:require}
     # Runtime connects as a NON-SUPERUSER role so RLS is enforced (sso.tenancy.require-non-superuser-role=true
     # in application.yml fails startup otherwise). Provision this role out of band (owned by nothing, DML only);
     # Flyway migrates as the owner below. DB_APP_USERNAME defaults to the owner only for a single-role dev-like
@@ -13,7 +18,7 @@ spring:
     # Migrations run as the schema owner (keeps DDL); the placeholder names the runtime role V54 grants to.
     # Explicit url (same target as the app datasource): the primary DataSource is the OrgAwareDataSource RLS
     # wrapper, which Flyway cannot derive a migration DataSource from — it needs its own owner connection.
-    url: ${DB_URL:jdbc:postgresql://postgres:5432/sso}
+    url: ${DB_URL:jdbc:postgresql://postgres:5432/sso}?sslmode=${DB_SSLMODE:require}
     user: ${DB_USERNAME:sso}
     password: ${DB_PASSWORD}
     placeholders:

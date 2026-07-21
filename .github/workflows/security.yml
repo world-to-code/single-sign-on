@@ -1,6 +1,7 @@
 name: Security
 
-# Reusable: SOPS secrets verification + a Trivy scan for any committed private key / credential. Called by ci.yml.
+# Reusable: SOPS secrets verification, a Trivy scan for committed credentials, and a dependency
+# vulnerability gate for both stacks. Called by ci.yml.
 on:
   workflow_call:
 
@@ -81,3 +82,62 @@ jobs:
           trivy --version | head -1
       - name: Scan for committed secrets / private keys (age, PEM, tokens, cloud creds)
         run: trivy fs --scanners secret --exit-code 1 --no-progress --skip-dirs .git .
+
+  dependencies:
+    name: Dependency vulnerabilities
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TRIVY_VERSION: '0.72.0'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: sso-frontend/package-lock.json
+
+      # The frontend first: it is the cheap half and fails fast.
+      - name: npm audit (frontend)
+        working-directory: sso-frontend
+        run: npm audit --audit-level=high
+
+      - name: Install Trivy (checksum-verified)
+        run: |
+          base="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"
+          curl -fsSL -o trivy.tgz "$base/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -fsSL -o trivy.checksums "$base/trivy_${TRIVY_VERSION}_checksums.txt"
+          want=$(grep "trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" trivy.checksums | awk '{print $1}')
+          echo "${want}  trivy.tgz" | sha256sum -c -
+          tar xzf trivy.tgz trivy && sudo install -m 0755 trivy /usr/local/bin/trivy
+
+      # Resolve the backend's real runtime classpath. Trivy reads Gradle's lock/metadata rather than guessing
+      # from build.gradle, so a version pinned transitively is scanned as the version that actually ships.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Write the resolved runtime classpath
+        working-directory: sso-backend
+        run: ./gradlew -q dependencies --configuration runtimeClasspath > ../runtime-classpath.txt
+
+      - name: Trivy dependency scan (backend + frontend)
+        run: trivy fs --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --no-progress --skip-dirs .git .
+
+      # A CVE we have assessed as unreachable is recorded in .trivyignore WITH the reason and a review date —
+      # never silently, and never as a blanket ignore.
+      - name: Every suppression must carry a reason
+        run: |
+          if [ -f .trivyignore ]; then
+            grep -vE '^\s*(#|$)' .trivyignore | while read -r line; do
+              grep -B1 "^${line}$" .trivyignore | grep -q '^#' || {
+                echo "::error::${line} is suppressed in .trivyignore with no comment explaining why"; exit 1; }
+            done
+          fi
+
+      # Trivy does not know about advisories that carry no CVE. OpenSAML is the live example: Shibboleth
+      # publishes only on its own site, so 5.1.4's unauthenticated parser DoS is invisible to every scanner.
+      - name: Remind about the advisories no scanner sees
+        if: always()
+        run: |
+          echo "::notice::Scanners cannot see CVE-less advisories. Check https://shibboleth.net/community/advisories/ for OpenSAML."

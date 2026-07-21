@@ -59,6 +59,11 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       # --- datastores ---
       DB_URL: jdbc:postgresql://postgres:5432/sso
+      # The profile defaults to sslmode=require, and this stack's Postgres serves no certificate — it is the
+      # split deployment run LOCALLY, on a private compose network, to exercise the topology. A real deployment
+      # must not carry this line: leave the default, or set verify-full with the CA. Explicit here so the
+      # difference between "we decided plaintext is fine on loopback" and "nobody thought about TLS" is visible.
+      DB_SSLMODE: disable
       DB_USERNAME: sso            # schema owner (Flyway migrates as this)
       DB_PASSWORD: ${DB_PASSWORD:?set via sops exec-env secrets/prod.sops.yaml}
       DB_APP_USERNAME: sso_app    # non-superuser runtime role (RLS enforced)
