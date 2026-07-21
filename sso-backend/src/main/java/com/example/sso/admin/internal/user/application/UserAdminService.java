@@ -118,11 +118,24 @@ public class UserAdminService {
 
     @Transactional
     public AdminUserView createUser(NewUser newUser, Map<String, List<String>> attributeValues) {
+        return createUser(newUser, attributeValues, null);
+    }
+
+    /**
+     * @param chosenProfileId the profile to bind the account to, or null to use the organization's default.
+     *                        A CSV import names one explicitly — the administrator picked it, downloaded its
+     *                        template, and filled it in, so binding the account to the default instead would
+     *                        silently discard every column they were told to provide.
+     */
+    @Transactional
+    public AdminUserView createUser(NewUser newUser, Map<String, List<String>> attributeValues,
+            UUID chosenProfileId) {
         try {
             UUID org = actingOrg();
             // Validate BEFORE creating: a required attribute missing should not leave a half-made account
             // behind, and the profile is what makes those declarations mean anything at all.
-            UUID profileId = org == null ? null : validator.defaultForCreation();
+            UUID profileId = org == null ? null
+                    : (chosenProfileId != null ? chosenProfileId : validator.defaultForCreation());
             if (profileId != null) {
                 validator.validate(profileId, attributeValues);
             }

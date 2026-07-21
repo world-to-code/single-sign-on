@@ -3,6 +3,7 @@ package com.example.sso.metadata.internal.api;
 import com.example.sso.metadata.AttributeDefinition;
 import com.example.sso.metadata.AttributeDefinitionService;
 import com.example.sso.metadata.CsvImportPreview;
+import com.example.sso.metadata.CsvImportResult;
 import com.example.sso.metadata.CsvImportService;
 import com.example.sso.metadata.CsvTemplate;
 import com.example.sso.metadata.CsvTemplateService;
@@ -64,6 +65,17 @@ public class ProfileAdminController {
     @RequireStepUp
     public CsvImportPreview previewCsvImport(@PathVariable UUID id, MultipartRequest request) {
         return imports.preview(id, request);
+    }
+
+    /**
+     * Applies the file. Takes the FILE again rather than the preview: a preview handed back is client input,
+     * and this decides which accounts exist.
+     */
+    @PostMapping("/{id}/csv-import")
+    @RequirePermission(Permissions.USER_CREATE)
+    @RequireStepUp
+    public CsvImportResult importCsv(@PathVariable UUID id, MultipartRequest request) {
+        return imports.apply(id, request);
     }
 
     @GetMapping("/{id}/attributes")

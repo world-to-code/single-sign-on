@@ -54,7 +54,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     // authenticated admin route. Keyed on the principal rather than the IP below: the callers are signed-in
     // administrators, often behind one office address, and an IP key would let one of them exhaust the budget
     // for all of them.
-    private static final String CSV_IMPORT_SUFFIX = "/csv-import/preview";
+    private static final String CSV_IMPORT_SEGMENT = "/csv-import";
 
     private final RateLimiter rateLimiter;
     private final AuditService audit;
@@ -69,7 +69,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         if (isLimited(request.getMethod(), request.getServletPath())) {
             String ip = request.getRemoteAddr();
-            String actorKey = request.getServletPath().endsWith(CSV_IMPORT_SUFFIX) ? principal() : null;
+            String actorKey = request.getServletPath().contains(CSV_IMPORT_SEGMENT) ? principal() : null;
             String key = request.getServletPath() + ":" + (actorKey == null ? ip : actorKey);
             if (!rateLimiter.tryAcquire(key)) {
                 // Attribute it to the principal when there IS one: several limited routes are called by a
@@ -119,6 +119,6 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
                 && (LIMITED_PATHS.contains(path)
                     || path.startsWith(FACTORS_PREFIX)
                     || path.startsWith(REAUTH_PREFIX)
-                    || path.endsWith(CSV_IMPORT_SUFFIX));
+                    || path.contains(CSV_IMPORT_SEGMENT));
     }
 }

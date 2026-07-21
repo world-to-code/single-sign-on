@@ -20,4 +20,16 @@ public interface CsvImportService {
      * accounts that should not exist. The administrator confirms a count first.
      */
     CsvImportPreview preview(UUID profileId, MultipartRequest request);
+
+    /**
+     * Applies the file.
+     *
+     * <p>Takes the FILE again rather than a confirmed preview. A preview the client hands back is client input,
+     * and this one decides which accounts exist — so the file is re-read and re-planned here, and what the
+     * caller confirmed is a number they saw, not an instruction we execute.
+     *
+     * <p>Rows are applied independently: one that fails is reported and the rest still land, because a
+     * five-thousand-line file failing whole on its last row helps nobody.
+     */
+    CsvImportResult apply(UUID profileId, MultipartRequest request);
 }
