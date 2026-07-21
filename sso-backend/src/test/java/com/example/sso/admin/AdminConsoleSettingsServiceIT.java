@@ -59,6 +59,48 @@ class AdminConsoleSettingsServiceIT extends AbstractIntegrationTest {
         return orgContext.callInOrg(orgId, () -> sessionPolicies.listAll().getFirst()).getId();
     }
 
+    /**
+     * A tenant that has never picked a policy is INHERITING the global default. Reporting that inherited id as
+     * though it were the tenant's own selection is what broke the console: the id is not in the tenant's
+     * own-tier list, so the form echoed it back on save and the write guard refused it — taking the elevation
+     * TTL and the IP allowlist down with it, since all three share one transaction.
+     */
+    @Test
+    void aTenantInheritingTheGlobalPolicyReportsNoOwnSelection() {
+        orgA = org();
+        defaultPolicyOf(orgA); // wait for baseline provisioning
+
+        assertThat(orgContext.callInOrg(orgA, () -> portals.ownSessionPolicyId(PortalApps.ADMIN))).isEmpty();
+        // ...while resolution still inherits, so the console remains governed.
+        assertThat(orgContext.callInOrg(orgA, () -> portals.sessionPolicyId(PortalApps.ADMIN))).isPresent();
+    }
+
+    /** The regression itself: changing ONLY the elevation TTL must not require picking a policy first. */
+    @Test
+    void anInheritingTenantCanChangeTheElevationTtlWithoutPickingAPolicy() {
+        orgA = org();
+        defaultPolicyOf(orgA);
+
+        orgContext.runInOrg(orgA, () -> consoleSettings.update(null, 25, "10.0.0.0/8"));
+
+        assertThat(orgContext.callInOrg(orgA, () -> consoleConfig.current()))
+                .isEqualTo(new AdminConsoleConfigView(25, "10.0.0.0/8"));
+        assertThat(orgContext.callInOrg(orgA, () -> portals.ownSessionPolicyId(PortalApps.ADMIN))).isEmpty();
+        assertThat(orgContext.callInOrg(orgA, () -> portals.sessionPolicyId(PortalApps.ADMIN))).isPresent();
+    }
+
+    /** Picking one of the tenant's OWN policies still works, and now reads back as an own selection. */
+    @Test
+    void pickingAnOwnTierPolicyIsReportedAsTheOwnSelection() {
+        orgA = org();
+        UUID policy = defaultPolicyOf(orgA);
+
+        orgContext.runInOrg(orgA, () -> consoleSettings.update(policy, 20, null));
+
+        assertThat(orgContext.callInOrg(orgA, () -> portals.ownSessionPolicyId(PortalApps.ADMIN)))
+                .contains(policy);
+    }
+
     @Test
     void aMalformedCidrRollsBackTheWholeConsoleSettingsUpdate() {
         orgA = org();

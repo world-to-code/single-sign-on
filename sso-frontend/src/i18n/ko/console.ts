@@ -160,6 +160,7 @@ export const console: Record<keyof typeof enConsole, string> = {
   applicationsSessionPolicyLabel: "세션 정책",
   applicationsEachAdminPolicy: "각 관리자 고유 정책",
   applicationsPortalPolicyHint: "이 정책은 민감 작업 스텝업만 관장합니다. 세션의 유휴/절대 수명은 로그인 단위로 유지됩니다. 아래 두 콘솔 전용 항목은 여기서 설정합니다.",
+  applicationsInheritedPolicy: "기본값 상속 ({{name}})",
   applicationsElevationTtl: "승격 토큰 수명 (분)",
   applicationsElevationTtlHint: "재인증이 요구되기 전까지 스텝업 승격 증명이 인정되는 시간입니다.",
   applicationsAdminCidrs: "콘솔 IP 허용 목록",

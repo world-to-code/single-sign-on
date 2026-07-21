@@ -41,6 +41,16 @@ class PortalSessionBindingImpl implements PortalSessionBinding {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public Optional<UUID> ownSessionPolicyId(String appId) {
+        // No global fallback: an administration screen needs "what did I choose", which is exactly what the
+        // write guard below will accept back. Inheritance is reported separately, for display only.
+        // ownRow already treats the GLOBAL row as the platform context's own, which is right: the platform
+        // tier is not inheriting it, it owns it.
+        return ownRow(appId, orgScope.actingOrg()).map(PolicyBinding::getSessionPolicyId);
+    }
+
+    @Override
     @Transactional
     public void setSessionPolicy(String appId, UUID sessionPolicyId) {
         requireSelectableInTier(sessionPolicyId);

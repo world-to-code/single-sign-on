@@ -37,7 +37,7 @@ public class AdminPortalSettingsController {
     @GetMapping
     @RequirePermission(Permissions.PORTAL_SETTINGS_READ)
     public AdminConsoleSettingsView portalSettings() {
-        return consoleView(portalBinding.sessionPolicyId(PortalApps.ADMIN));
+        return consoleView();
     }
 
     @PutMapping
@@ -46,26 +46,39 @@ public class AdminPortalSettingsController {
         // One transaction for both writes: a malformed CIDR must not leave a new session policy applied with a
         // stale allowlist (a half-applied, fail-open network control).
         consoleSettings.update(request.toPolicyId(), request.elevationTokenTtlMinutes(), request.adminAllowedCidrs());
-        return consoleView(portalBinding.sessionPolicyId(PortalApps.ADMIN));
+        return consoleView();
     }
 
     @GetMapping("/user")
     @RequirePermission(Permissions.PORTAL_SETTINGS_READ)
     public AdminPortalSettingsView userPortalSettings() {
-        Optional<UUID> id = portalBinding.sessionPolicyId(PortalApps.USER);
-        return AdminPortalSettingsView.of(id, policyName(id));
+        return userPortalView();
     }
 
     @PutMapping("/user")
     @RequirePermission(Permissions.PORTAL_SETTINGS_UPDATE)
     public AdminPortalSettingsView updateUserPortalSettings(@Valid @RequestBody AdminPortalSettingsRequest request) {
         portalBinding.setSessionPolicy(PortalApps.USER, request.toPolicyId());
-        Optional<UUID> id = portalBinding.sessionPolicyId(PortalApps.USER);
-        return AdminPortalSettingsView.of(id, policyName(id));
+        return userPortalView();
     }
 
-    private AdminConsoleSettingsView consoleView(Optional<UUID> policyId) {
-        return AdminConsoleSettingsView.of(policyId, policyName(policyId), consoleConfig.current());
+    private AdminConsoleSettingsView consoleView() {
+        Optional<UUID> own = portalBinding.ownSessionPolicyId(PortalApps.ADMIN);
+        return AdminConsoleSettingsView.of(own, policyName(own), inheritedName(PortalApps.ADMIN, own),
+                consoleConfig.current());
+    }
+
+    private AdminPortalSettingsView userPortalView() {
+        Optional<UUID> own = portalBinding.ownSessionPolicyId(PortalApps.USER);
+        return AdminPortalSettingsView.of(own, policyName(own), inheritedName(PortalApps.USER, own));
+    }
+
+    /**
+     * What the portal falls back to while nothing of the tenant's own is selected — display only. It is NOT
+     * offered as a selectable value: it belongs to a tier this caller can neither inspect nor edit.
+     */
+    private String inheritedName(String appId, Optional<UUID> own) {
+        return own.isPresent() ? null : policyName(portalBinding.sessionPolicyId(appId));
     }
 
     /** The bound policy's display name — resolved here (own-else-global visible) since it may be a global default. */

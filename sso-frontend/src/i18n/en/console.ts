@@ -160,6 +160,7 @@ export const console = {
   applicationsSessionPolicyLabel: "Session policy",
   applicationsEachAdminPolicy: "Each admin's own policy",
   applicationsPortalPolicyHint: "Only the step-up for sensitive actions follows this policy; the session's idle/absolute lifetime stays per login. The two console-only controls below are set here.",
+  applicationsInheritedPolicy: "Inherit the default ({{name}})",
   applicationsElevationTtl: "Elevation token lifetime (min)",
   applicationsElevationTtlHint: "How long a step-up elevation proof is accepted before re-authentication is required.",
   applicationsAdminCidrs: "Console IP allowlist",

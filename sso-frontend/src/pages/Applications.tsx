@@ -23,7 +23,15 @@ import { searchGroups, searchUsers } from "@/groups";
 interface Application { id: string; type: "OIDC" | "SAML" | "PORTAL"; name: string; launchUrl: string | null; system: boolean; requiredPolicyId: string | null; requiredPolicyName: string | null; }
 // The admin console carries two extra, console-only knobs (elevation TTL + entry IP allowlist); the user
 // portal settings are just the session policy. Both come back from their respective portal-settings endpoint.
-interface PortalSettings { sessionPolicyId: string | null; elevationTokenTtlMinutes?: number; adminAllowedCidrs?: string | null; }
+// `sessionPolicyId` is the tenant's OWN selection; null means it is inheriting, and
+// `inheritedSessionPolicyName` then names what from. The two are distinct because an inherited GLOBAL policy
+// is not selectable here — it belongs to a tier this admin can neither inspect nor save back.
+interface PortalSettings {
+  sessionPolicyId: string | null;
+  inheritedSessionPolicyName?: string | null;
+  elevationTokenTtlMinutes?: number;
+  adminAllowedCidrs?: string | null;
+}
 // Which portal a "Portal settings" dialog governs: the admin console vs the end-user portal (distinct bindings).
 type PortalKind = "admin" | "user";
 const PORTAL_SETTINGS_PATH: Record<PortalKind, string> = {
@@ -257,7 +265,11 @@ export default function Applications() {
                 <Label htmlFor="console-policy">{t("applicationsSessionPolicyLabel")}</Label>
                 <Select id="console-policy" value={settings.sessionPolicyId ?? ""}
                         onChange={(e) => setSettings({ ...settings, sessionPolicyId: e.target.value || null })}>
-                  <option value="">{t(settingsPortal === "user" ? "applicationsEachUserPolicy" : "applicationsEachAdminPolicy")}</option>
+                  <option value="">
+                    {settings.inheritedSessionPolicyName
+                      ? t("applicationsInheritedPolicy", { name: settings.inheritedSessionPolicyName })
+                      : t(settingsPortal === "user" ? "applicationsEachUserPolicy" : "applicationsEachAdminPolicy")}
+                  </option>
                   {sessionPolicies.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
