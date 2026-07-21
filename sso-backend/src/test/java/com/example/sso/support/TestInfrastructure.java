@@ -52,8 +52,8 @@ final class TestInfrastructure {
             // Loud on purpose. This path is correct but expensive — one Postgres, one Redis and one reaper PER
             // FORK — and it used to be taken silently, so a stopped stack looked exactly like a running one.
             System.err.printf("%n[test-infra] %s:%d is not reachable, so this JVM is starting its OWN Postgres "
-                    + "and Redis. Every fork will do the same. Start the shared stack with:%n"
-                    + "    docker compose -f docker-compose.testinfra.yml up -d%n%n", HOST, POSTGRES_PORT);
+                    + "and Redis. Every fork will do the same. The build normally starts a shared pair "
+                    + "(testInfraUp); this means Docker was not usable from it.%n%n", HOST, POSTGRES_PORT);
             POSTGRES.start();
             REDIS.start();
         }

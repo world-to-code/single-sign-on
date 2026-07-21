@@ -30,8 +30,10 @@ services:
       # Creates the non-superuser runtime role the app connects as, so RLS is actually enforced — a superuser
       # bypasses it even under FORCE. The same script Testcontainers uses, so both paths behave identically.
       - ./sso-backend/src/test/resources/testcontainers/create-runtime-role.sql:/docker-entrypoint-initdb.d/10-runtime-role.sql:ro
-    # No volume: the data is worthless by construction, so it lives in RAM and cannot survive to confuse the
-    # next run. Durability settings off for the same reason — fsync buys nothing and costs every write.
+    # In RAM, because the data is worthless by construction and the difference is not marginal: on disk the
+    # suite takes about twice as long. It costs roughly a gigabyte while running — which is affordable only
+    # because the build stops these containers when the test task finishes, so nothing is held between runs.
+    # If that lifecycle ever changes, this line has to go with it.
     tmpfs:
       - /var/lib/postgresql/data
     command:

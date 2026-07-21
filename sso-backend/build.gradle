@@ -139,52 +139,83 @@ dependencies {
     testImplementation 'org.testcontainers:testcontainers-postgresql'     // TC 2.x renamed: was :postgresql
 }
 
-// Bring the shared test Postgres/Redis up before the suite runs.
+// The shared test Postgres/Redis, started before the suite and stopped after it.
 //
-// Not a convenience: without it the suite silently falls back to Testcontainers and starts a Postgres, a Redis
-// and a reaper PER FORK — which is the thing docker-compose.testinfra.yml exists to prevent, and it is invisible
-// unless you happen to run `docker ps`. A design that depends on somebody remembering to start a stack is a
-// design that runs the expensive path most of the time.
+// Testcontainers' model is that a container's lifetime IS the test's, and that is right — but its singleton is
+// per-JVM, and Gradle forks the tests across several, so every fork started its own Postgres, Redis and reaper.
+// Eleven containers for one run. Marking them reusable does not help either: the forks start together, so all
+// of them look for an existing container before any has finished creating one.
 //
-// Skipped on CI (throwaway runners, where per-fork containers are the intended path) and whenever Docker is not
-// usable — the suite still works there, just the slow way. Opt out with -PskipTestInfra.
-tasks.register('testInfra') {
-    description = 'Starts the shared Postgres/Redis the integration tests attach to.'
-    onlyIf { !System.getenv('CI') && !project.hasProperty('skipTestInfra') }
-    doLast {
-        def compose = file("${rootDir}/../docker-compose.testinfra.yml")
-        if (!compose.exists()) {
-            logger.lifecycle('testInfra: no compose file; each fork will start its own containers')
-            return
+// Owning the lifecycle here gets both properties at once — exactly one set, and it dies with the test task.
+// `--wait` blocks until both report healthy, so no fork can race a half-started server. When Docker is not
+// usable the suite starts Testcontainers per fork exactly as before: slower, but never broken.
+def composeFile = { file("${rootDir}/../docker-compose.testinfra.yml") }
+
+def compose = { List<String> args, Logger log ->
+    File file = composeFile()
+    if (!file.exists()) {
+        return false
+    }
+    try {
+        List<String> command = ['docker', 'compose', '-f', file.absolutePath] + args
+        Process process = new ProcessBuilder(command).redirectErrorStream(true).start()
+        String output = process.inputStream.text
+        boolean finished = process.waitFor(180, java.util.concurrent.TimeUnit.SECONDS)
+        if (!finished || process.exitValue() != 0) {
+            process.destroy()
+            log.warn("testInfra: docker compose ${args.first()} did not succeed.\n${output}")
+            return false
         }
-        try {
-            def process = new ProcessBuilder('docker', 'compose', '-f', compose.absolutePath,
-                    'up', '-d', '--wait').redirectErrorStream(true).start()
-            String output = process.inputStream.text
-            if (!process.waitFor(180, java.util.concurrent.TimeUnit.SECONDS) || process.exitValue() != 0) {
-                process.destroy()
-                logger.warn("testInfra: could not start the shared stack, so each fork will start its own " +
-                        "containers.\n${output}")
-            } else {
-                logger.lifecycle('testInfra: shared Postgres/Redis up on 55432/56379')
-            }
-        } catch (Exception e) {
-            logger.warn("testInfra: docker unavailable (${e.message}); each fork will start its own containers")
+        return true
+    } catch (Exception e) {
+        log.warn("testInfra: docker unavailable (${e.message})")
+        return false
+    }
+}
+
+tasks.register('testInfraUp') {
+    description = 'Starts the shared Postgres/Redis the integration tests attach to.'
+    onlyIf { !project.hasProperty('skipTestInfra') }
+    doLast {
+        if (compose(['up', '-d', '--wait'], logger)) {
+            logger.lifecycle('testInfra: shared Postgres/Redis up on 55432/56379')
+        } else {
+            logger.warn('testInfra: unavailable, so each fork will start its own containers')
+        }
+    }
+}
+
+tasks.register('testInfraDown') {
+    description = 'Stops the shared Postgres/Redis. Runs after the test task, whether it passed or failed.'
+    onlyIf { !project.hasProperty('skipTestInfra') && !project.hasProperty('keepTestInfra') }
+    doLast {
+        // -v so the databases go with them: the next run must not inherit this one's rows.
+        if (compose(['down', '-v'], logger)) {
+            logger.lifecycle('testInfra: shared Postgres/Redis stopped')
         }
     }
 }
 
 tasks.named('test') {
-    dependsOn 'testInfra'
+    dependsOn 'testInfraUp'
+    // finalizedBy, not a doLast: the containers must go even when the suite fails, or a red run leaves them
+    // behind and the next one silently inherits its data.
+    finalizedBy 'testInfraDown'
     useJUnitPlatform()
     // Run test classes in parallel across JVM forks. Each fork gets its own Spring context and its OWN
     // database inside the shared Postgres (see AbstractIntegrationTest), so forks share a server and never a
     // schema. Threads instead of forks was measured and does not work: one JVM means one datasource, so the
     // classes collide in a single database — 84 of 2179 tests failed, for no wall-clock gain.
     //
-    // Measured on 12 cores, whole suite: 4x1g 2m25s / 4x512m 2m37s / 4x384m 2m44s / 2x512m 3m15s / 1x1g 5m13s.
-    // 384m is the knee — 62% less heap than the old 1g cap for 13% more wall clock. Override either with
-    // -PtestForks=N -PtestHeap=512m; drop to -PtestForks=2 when the machine is busy with something else.
+    // Measured on 12 cores, whole suite forced (--rerun-tasks), containers included:
+    //   forks=4  4m37s, load ~8.5   <- default (cores/3)
+    //   forks=3  5m08s, load ~7.4
+    //   forks=2  over 10m, load ~5.7
+    // Four is both the fastest and only modestly hotter than three, so lowering the default buys little. The
+    // load is inherent: each fork boots its own Spring context, and context caching is already near-optimal
+    // (6 of 119 integration classes force a distinct context). Override with -PtestForks=N when the machine is
+    // busy — and -PkeepTestInfra to leave the containers up between runs while iterating.
+    // Heap: 384m measured against 1g at 4 forks; 62% less for a few percent of wall clock.
     int cores = Runtime.runtime.availableProcessors()
     int defaultForks = System.getenv('CI') ? 2 : Math.max(1, cores.intdiv(3))
     maxParallelForks = (project.findProperty('testForks') ?: defaultForks) as int
