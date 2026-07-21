@@ -21,14 +21,18 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -71,7 +75,6 @@ class ProfileSwitchBlockingTest {
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         Profile target = new Profile(TARGET, "acme", ProfileKind.TENANT, null, true, true);
         lenient().when(profiles.findById(TARGET)).thenReturn(Optional.of(target));
-        lenient().when(profiles.ownTenantProfile(TARGET)).thenReturn(Optional.of(target));
         // The target declares nothing, so everything the user carries would be removed.
         lenient().when(definitions.definitionsIn(TARGET)).thenReturn(List.of());
         lenient().when(attributes.attributesOfInTier(eq(EntityKind.USER), any()))
@@ -126,11 +129,35 @@ class ProfileSwitchBlockingTest {
         UUID source = UUID.randomUUID();
         when(profiles.findById(source)).thenReturn(Optional.of(
                 new Profile(source, "LDAP", ProfileKind.LDAP, UUID.randomUUID(), false, false)));
-        when(profiles.ownTenantProfile(source)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.switchTo(USER, source)).isInstanceOf(BadRequestException.class);
 
         verify(attributes, never()).removeAll(any(), any(), any());
         verify(users, never()).assignProfile(any(), any());
+    }
+    /**
+     * A destructive, role-retracting move has to name who did it. Recording the person whose attributes were
+     * deleted as the actor reads as "ada deleted ada's attributes" and leaves the administrator out of the
+     * trail entirely — worse than no row, because it looks like one.
+     */
+    @Test
+    void theTrailNamesTheAdministratorAsActorAndTheUserAsSubject() {
+        ownedBy(AttributeSource.LOCAL);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("root", "n/a", List.of()));
+        try {
+            service.switchTo(USER, TARGET);
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+
+        ArgumentCaptor<Object> published = ArgumentCaptor.forClass(Object.class);
+        verify(events, atLeastOnce()).publishEvent(published.capture());
+        ProfileSwitched switched = published.getAllValues().stream()
+                .filter(ProfileSwitched.class::isInstance).map(ProfileSwitched.class::cast)
+                .findFirst().orElseThrow();
+
+        assertThat(switched.actor()).isEqualTo("root");
+        assertThat(switched.subject()).isEqualTo("ada");
     }
 }

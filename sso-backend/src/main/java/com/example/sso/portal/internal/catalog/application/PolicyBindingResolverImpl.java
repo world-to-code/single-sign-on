@@ -9,7 +9,6 @@ import com.example.sso.metadata.AttributeDefinitionService;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.AttributeSourceAuthority;
 import com.example.sso.metadata.EntityKind;
-import com.example.sso.metadata.EntityKind;
 import com.example.sso.portal.application.AppType;
 import com.example.sso.portal.binding.PolicyBindingResolver;
 import com.example.sso.portal.internal.catalog.domain.PolicyBinding;

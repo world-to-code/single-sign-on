@@ -1,6 +1,7 @@
 package com.example.sso.admin.internal.user.application;
 
 import com.example.sso.audit.AuditRecord;
+import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +25,13 @@ class ProfileSwitchAuditor {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onProfileSwitched(ProfileSwitched event) {
-        audit.record(new AuditRecord(AuditType.ATTRIBUTE_CHANGED, event.username(), true,
-                "profile=" + event.profileId() + " removed=" + String.join(",", event.removedKeys()), null));
+        // Actor and subject are different people, and the row has to say which is which — this is a
+        // destructive, role-retracting operation, so a trail naming the victim as the one who did it is worse
+        // than none. The organization is named for a related reason: a username is only unique WITHIN one, and
+        // AuditService otherwise falls back to the ambient context, which holds only while this listener runs
+        // on the committing thread.
+        audit.record(new AuditRecord(AuditType.ATTRIBUTE_CHANGED, event.actor(), true,
+                "profile=" + event.profileId() + " removed=" + String.join(",", event.removedKeys()), null,
+                AuditSubjectType.USER, event.subject(), event.orgId()));
     }
 }
