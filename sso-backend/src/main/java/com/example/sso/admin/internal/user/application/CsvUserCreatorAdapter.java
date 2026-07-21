@@ -8,7 +8,6 @@ import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.BaseUserFields;
 import com.example.sso.user.account.NewUser;
-import com.example.sso.user.account.OwnershipChallenge;
 import com.example.sso.user.group.UserGroupService;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -39,7 +38,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 class CsvUserCreatorAdapter implements CsvUserCreator {
 
-    private final UserAdminService users;
+    private final UserProvisioningService provisioning;
     private final UserGroupService groups;
     private final AdminAccessPolicy accessPolicy;
     private final OrgContext orgContext;
@@ -54,10 +53,10 @@ class CsvUserCreatorAdapter implements CsvUserCreator {
         Map<String, List<String>> values = user.attributes().entrySet().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, e -> List.of(e.getValue())));
         // No password and no roles: a file may say who exists, never what they may do or how they prove it.
-        UUID userId = UUID.fromString(users.createUser(
+        UUID userId = UUID.fromString(provisioning.create(NewUserCommand.fromImport(
                 new NewUser(user.username(), user.base().get(BaseUserFields.EMAIL),
                         blankToNull(user.base().get(BaseUserFields.DISPLAY_NAME)), null, Set.of()),
-                values, profileId, OwnershipChallenge.SUPPRESS).id());
+                values, profileId)).id());
         reachableGroups.keySet().forEach(groupId -> groups.addMember(groupId, userId));
         return userId;
     }

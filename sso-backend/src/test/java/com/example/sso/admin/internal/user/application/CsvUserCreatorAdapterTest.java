@@ -9,6 +9,7 @@ import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.BaseUserFields;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.account.OwnershipChallenge;
+import com.example.sso.user.account.OwnershipChallenge;
 import com.example.sso.user.group.UserGroupService;
 import java.util.List;
 import java.util.Map;
@@ -48,7 +49,7 @@ class CsvUserCreatorAdapterTest {
     private static final UUID REACHABLE = UUID.randomUUID();
     private static final UUID OUT_OF_SCOPE = UUID.randomUUID();
 
-    @Mock private UserAdminService users;
+    @Mock private UserProvisioningService provisioning;
     @Mock private UserGroupService groups;
     @Mock private AdminAccessPolicy accessPolicy;
     @Mock private OrgContext orgContext;
@@ -57,13 +58,13 @@ class CsvUserCreatorAdapterTest {
 
     @BeforeEach
     void setUp() {
-        adapter = new CsvUserCreatorAdapter(users, groups, accessPolicy, orgContext);
+        adapter = new CsvUserCreatorAdapter(provisioning, groups, accessPolicy, orgContext);
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         lenient().when(groups.groupIdsByName(any(), eq(ORG)))
                 .thenReturn(Map.of("platform", REACHABLE, "finance", OUT_OF_SCOPE));
         AdminUserView created = mock(AdminUserView.class);
         lenient().when(created.id()).thenReturn(CREATED.toString());
-        lenient().when(users.createUser(any(), any(), any(), any())).thenReturn(created);
+        lenient().when(provisioning.create(any())).thenReturn(created);
     }
 
     private CsvPlannedUser planned(String... groupNames) {
@@ -121,13 +122,12 @@ class CsvUserCreatorAdapterTest {
     void theAccountGetsNoPasswordAndNoRoles() {
         adapter.create(planned(), PROFILE);
 
-        ArgumentCaptor<NewUser> created = ArgumentCaptor.forClass(NewUser.class);
-        verify(users).createUser(created.capture(), any(), eq(PROFILE), any());
+        NewUser created = command().user();
 
-        assertThat(created.getValue().rawPassword()).isNull();
-        assertThat(created.getValue().roleNames()).isEmpty();
-        assertThat(created.getValue().username()).isEqualTo("ada");
-        assertThat(created.getValue().email()).isEqualTo("ada@example.com");
+        assertThat(created.rawPassword()).isNull();
+        assertThat(created.roleNames()).isEmpty();
+        assertThat(created.username()).isEqualTo("ada");
+        assertThat(created.email()).isEqualTo("ada@example.com");
     }
 
     /**
@@ -138,10 +138,7 @@ class CsvUserCreatorAdapterTest {
     void onlyTheProfilesOwnAttributesReachTheValidator() {
         adapter.create(planned(), PROFILE);
 
-        ArgumentCaptor<Map<String, List<String>>> values = ArgumentCaptor.forClass(Map.class);
-        verify(users).createUser(any(), values.capture(), eq(PROFILE), any());
-
-        assertThat(values.getValue()).containsOnlyKeys("team");
+        assertThat(command().attributeValues()).containsOnlyKeys("team");
     }
 
     /**
@@ -155,19 +152,19 @@ class CsvUserCreatorAdapterTest {
                 Map.of(BaseUserFields.EMAIL, "ada@example.com", BaseUserFields.DISPLAY_NAME, ""),
                 Map.of(), List.of()), PROFILE);
 
-        ArgumentCaptor<NewUser> created = ArgumentCaptor.forClass(NewUser.class);
-        verify(users).createUser(created.capture(), any(), any(), any());
+        NewUser created = command().user();
 
-        assertThat(created.getValue().displayName()).isNull();
-        assertThat(created.getValue().email()).isEqualTo("ada@example.com");
+        assertThat(created.displayName()).isNull();
+        assertThat(created.email()).isEqualTo("ada@example.com");
     }
 
+    /** A file must not become a mail relay: thousands of third-party addresses, one request, tenant identity. */
     /** A file must not become a mail relay: thousands of third-party addresses, one request, tenant identity. */
     @Test
     void noOwnershipChallengeIsMailedForAnImportedAccount() {
         adapter.create(planned(), PROFILE);
 
-        verify(users).createUser(any(), any(), eq(PROFILE), eq(OwnershipChallenge.SUPPRESS));
+        assertThat(command().challenge()).isEqualTo(OwnershipChallenge.SUPPRESS);
     }
 
     /**
@@ -179,6 +176,13 @@ class CsvUserCreatorAdapterTest {
     void theChosenProfileIsWhatTheAccountIsBoundTo() {
         adapter.create(planned(), PROFILE);
 
-        verify(users).createUser(any(), any(), eq(PROFILE), any());
+        assertThat(command().profileId()).isEqualTo(PROFILE);
+    }
+
+    /** The one command the adapter built — every assertion above is about what it says. */
+    private NewUserCommand command() {
+        ArgumentCaptor<NewUserCommand> built = ArgumentCaptor.forClass(NewUserCommand.class);
+        verify(provisioning).create(built.capture());
+        return built.getValue();
     }
 }

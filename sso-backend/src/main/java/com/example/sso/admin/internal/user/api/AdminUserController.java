@@ -9,7 +9,9 @@ import com.example.sso.admin.internal.shared.security.CanSetUserEnabled;
 import com.example.sso.admin.internal.shared.security.CanUpdateUser;
 import com.example.sso.admin.internal.shared.security.CanViewUser;
 import com.example.sso.admin.internal.user.application.AdminUserView;
+import com.example.sso.admin.internal.user.application.NewUserCommand;
 import com.example.sso.admin.internal.user.application.UserAdminService;
+import com.example.sso.admin.internal.user.application.UserProvisioningService;
 import com.example.sso.admin.internal.user.application.UserDetailAdminService;
 import com.example.sso.admin.internal.user.application.UserDetailView;
 import com.example.sso.admin.internal.user.application.UserDevicesView;
@@ -49,6 +51,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminUserController {
 
     private final UserAdminService userAdminService;
+    private final UserProvisioningService provisioning;
     private final UserDetailAdminService userDetailAdminService;
 
     @GetMapping
@@ -116,7 +119,8 @@ public class AdminUserController {
     @CanCreateUser
     @RequireStepUp
     public ResponseEntity<AdminUserView> createUser(@Valid @RequestBody CreateUserRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(userAdminService.createUser(request.toNewUser(), request.attributeValues()));
+        return ResponseEntity.status(HttpStatus.CREATED).body(provisioning.create(
+                NewUserCommand.fromConsole(request.toNewUser(), request.attributeValues())));
     }
 
     @PutMapping("/{id}")

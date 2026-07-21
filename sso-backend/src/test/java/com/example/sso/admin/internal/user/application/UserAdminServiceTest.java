@@ -54,10 +54,7 @@ class UserAdminServiceTest {
     private AdminAccessPolicy accessPolicy;
     private AdminAuditLogger auditLogger;
     private LastAdminGuard lastAdminGuard;
-    private OrgContext orgContext;
-    private OrganizationService organizations;
-    private ProfileAttributeValidator validator;
-    private AttributeService attributes;
+    private ActingAdminTier tier;
 
     private UserAdminService service;
 
@@ -69,12 +66,9 @@ class UserAdminServiceTest {
         accessPolicy = mock(AdminAccessPolicy.class);
         auditLogger = mock(AdminAuditLogger.class);
         lastAdminGuard = mock(LastAdminGuard.class);
-        orgContext = mock(OrgContext.class);
-        organizations = mock(OrganizationService.class);
-        validator = mock(ProfileAttributeValidator.class);
-        attributes = mock(AttributeService.class);
-        service = new UserAdminService(userService, mfaService, userGroups, accessPolicy, auditLogger,
-                lastAdminGuard, validator, attributes, orgContext, organizations);
+        tier = mock(ActingAdminTier.class);
+        service = new UserAdminService(userService, tier, mfaService, userGroups, accessPolicy, auditLogger,
+                lastAdminGuard);
     }
 
     @Test
@@ -82,8 +76,7 @@ class UserAdminServiceTest {
         // Drill-in scoping: a super-admin who has NOT drilled into a tenant (tier null) sees only the global
         // (org-less) users — they drill into a tenant to see ITS users, never all tenants merged.
         UserAccount global = user(UUID.randomUUID());
-        when(accessPolicy.isCurrentActorUnscoped()).thenReturn(true);
-        when(orgContext.currentOrg()).thenReturn(Optional.empty()); // not drilled
+        when(tier.administersWholeTier()).thenReturn(true); // not drilled
         when(userService.findByOrg(null, 0, 20)).thenReturn(new Page<>(1, 0, 20, List.of(global)));
 
         assertThat(service.listUsers(0, 20).items()).hasSize(1);
@@ -94,7 +87,7 @@ class UserAdminServiceTest {
     @Test
     void scopedActorPagesOnlyTheManagedIdsInTheDatabase() {
         UUID managed = UUID.randomUUID();
-        when(accessPolicy.isCurrentActorUnscoped()).thenReturn(false);
+        when(tier.administersWholeTier()).thenReturn(false);
         when(accessPolicy.currentManagedUserIds()).thenReturn(Set.of(managed));
         UserAccount managedUser = user(managed);
         when(userService.findByIds(Set.of(managed), 0, 20)).thenReturn(new Page<>(1, 0, 20, List.of(managedUser)));
@@ -115,131 +108,14 @@ class UserAdminServiceTest {
         verify(auditLogger, never()).log(any(), any(), any(), any());
     }
 
-    /**
-     * The attribute branch of createUser. Every other test here leaves defaultForCreation() returning null,
-     * which skips validation, profile assignment and the attribute writes entirely — so without these the
-     * whole feature could be deleted and the suite would stay green.
-     */
-    @Test
-    void validationRunsBeforeTheAccountIsWritten() {
-        UUID org = UUID.randomUUID();
-        UUID profile = UUID.randomUUID();
-        NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "pw", Set.of(Roles.USER));
-        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
-        when(validator.defaultForCreation()).thenReturn(profile);
-        doThrow(BadRequestException.of("metadata.attribute.required", "Team"))
-                .when(validator).validate(eq(profile), any());
 
-        assertThatThrownBy(() -> service.createUser(newUser, Map.of("team", List.of(""))))
-                .isInstanceOf(BadRequestException.class);
 
-        // The point of validating first: a rejected attribute must not leave a half-made account behind.
-        verify(userService, never()).createUser(any(), any());
-    }
 
-    @Test
-    void aCreatedUserIsBoundToTheCreationProfileAndCarriesItsAttributes() {
-        UUID org = UUID.randomUUID();
-        UUID profile = UUID.randomUUID();
-        UUID userId = UUID.randomUUID();
-        NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "pw", Set.of(Roles.USER));
-        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
-        when(validator.defaultForCreation()).thenReturn(profile);
-        UserAccount created = user(userId); // the helper stubs, so it cannot run inside when(...)
-        when(userService.createUser(eq(newUser), eq(org), any())).thenReturn(created);
 
-        service.createUser(newUser, Map.of("team", List.of("Platform")));
 
-        verify(userService).assignProfile(userId, profile);
-        verify(attributes).add(EntityKind.USER, userId.toString(), "team", "Platform");
-    }
 
-    /** A blank value is "not supplied", not an empty attribute nobody can search for. */
-    @Test
-    void blankAttributeValuesAreNotStored() {
-        UUID org = UUID.randomUUID();
-        UUID profile = UUID.randomUUID();
-        UUID userId = UUID.randomUUID();
-        NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "pw", Set.of(Roles.USER));
-        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
-        when(validator.defaultForCreation()).thenReturn(profile);
-        UserAccount created = user(userId);
-        when(userService.createUser(eq(newUser), eq(org), any())).thenReturn(created);
 
-        service.createUser(newUser, Map.of("team", List.of("  ")));
 
-        verify(attributes, never()).add(any(), any(), any(), any());
-    }
-
-    @Test
-    void createUserInATenantRecordsTheOrgMembership() {
-        // A tenant admin's new user must be an explicit org member (not only carry a home org_id), so the
-        // membership-table checks (e.g. delegating resource admin) recognise it.
-        UUID org = UUID.randomUUID();
-        UUID userId = UUID.randomUUID();
-        NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "pw", Set.of(Roles.USER));
-        UserAccount created = user(userId);
-        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
-        when(userService.createUser(eq(newUser), eq(org), any())).thenReturn(created);
-
-        service.createUser(newUser, java.util.Map.of());
-
-        verify(organizations).addMember(org, userId);
-    }
-
-    @Test
-    void createUserAsAnUnDrilledPlatformAdminAddsNoMembership() {
-        // A global user (no home org) has no org to join; the platform-admin path must not touch memberships.
-        NewUser newUser = new NewUser("root2", "root2@example.com", "Root", "pw", Set.of(Roles.USER));
-        UserAccount created = user(UUID.randomUUID());
-        when(userService.createUser(eq(newUser), any(), any())).thenReturn(created);
-
-        service.createUser(newUser, java.util.Map.of());
-
-        verify(organizations, never()).addMember(any(), any());
-    }
-
-    @Test
-    void createUserSurfacesDomainIllegalArgumentAsConflict() {
-        NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "pw", Set.of());
-        when(userService.createUser(eq(newUser), any(), any())).thenThrow(new IllegalArgumentException("username taken"));
-
-        assertThatThrownBy(() -> service.createUser(newUser, java.util.Map.of())).isInstanceOf(ConflictException.class);
-    }
-
-    @Test
-    void createUserAuditsTheCreation() {
-        NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "pw", Set.of(Roles.USER));
-        UserAccount created = user(UUID.randomUUID());
-        when(userService.createUser(eq(newUser), any(), any())).thenReturn(created);
-
-        service.createUser(newUser, java.util.Map.of());
-
-        verify(auditLogger).log(eq(AuditType.USER_CREATED), eq(AuditSubjectType.USER), any(), any());
-    }
-
-    @Test
-    void createUserWithATemporaryPasswordRequiresAResetOnFirstLogin() {
-        NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "temp-pass", Set.of(Roles.USER));
-        UUID newId = UUID.randomUUID();
-        UserAccount created = user(newId);
-        when(userService.createUser(eq(newUser), any(), any())).thenReturn(created);
-
-        service.createUser(newUser, java.util.Map.of());
-
-        verify(userService).requirePasswordReset(newId);
-    }
-
-    @Test
-    void createUserWithoutAPasswordDoesNotRequireAReset() {
-        NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", null, Set.of(Roles.USER));
-        UserAccount created = user(UUID.randomUUID());
-        when(userService.createUser(eq(newUser), any(), any())).thenReturn(created);
-
-        service.createUser(newUser, java.util.Map.of());
-
-        verify(userService, never()).requirePasswordReset(any());
-    }
 
     @Test
     void deleteUserDelegatesAndAuditsWhenNotTheLastAdmin() {

@@ -141,7 +141,9 @@ class CsvImportPlannerTest {
     /** The template ships a guidance row for the person filling it in; the importer must drop it, not import it. */
     @Test
     void theTemplatesGuidanceRowIsNotAUser() {
-        CsvImportPreview preview = plan("username,email,team\n# required string,string,optional string\nada,a@x.io,platform\n");
+        CsvImportPreview preview = plan("username,email,team\n"
+                + "# required string,string,optional string\n"
+                + "ada,a@x.io,platform\n");
 
         assertThat(preview.rowsRead()).isEqualTo(1);
         assertThat(preview.toCreate()).extracting("username").containsExactly("ada");

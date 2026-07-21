@@ -52,28 +52,19 @@ public class UserAdminService {
     private static final String ADMIN_ROLE = Roles.ADMIN;
 
     private final UserService userService;
+    private final ActingAdminTier tier;
     private final MfaService mfaService;
     private final UserGroupService userGroups;
     private final AdminAccessPolicy accessPolicy;
     private final AdminAuditLogger auditLogger;
     private final LastAdminGuard lastAdminGuard;
-    private final ProfileAttributeValidator validator;
-    private final AttributeService attributes;
-    private final OrgContext orgContext;
-    private final OrganizationService organizations;
-
-    /** The organization (the tenant) a user created by the acting admin belongs to: the org the admin is
-     *  drilled into, else null (a platform super-admin's global user). */
-    private UUID actingOrg() {
-        return orgContext.currentOrg().orElse(null);
-    }
 
     @Transactional(readOnly = true)
     public Page<AdminUserView> listUsers(int page, int size) {
-        Page<UserAccount> users = isTierAdmin()
+        Page<UserAccount> users = tier.administersWholeTier()
                 // Tier-scoped: an un-drilled platform admin (tier null) sees ONLY global users; a super-admin
                 // drilled into a tenant, or a tenant admin, sees THAT org's users — never all tenants merged.
-                ? userService.findByOrg(actingOrg(), page, size)
+                ? userService.findByOrg(tier.actingOrg(), page, size)
                 : userService.findByIds(accessPolicy.currentManagedUserIds(), page, size); // resource delegate
         return users.map(AdminUserView::of);
     }
@@ -82,8 +73,8 @@ public class UserAdminService {
      *  the users they manage). */
     @Transactional(readOnly = true)
     public List<Suggestion> searchUsers(String q, int limit) {
-        if (isTierAdmin()) {
-            return userService.searchUsersInOrg(q, actingOrg(), limit);
+        if (tier.administersWholeTier()) {
+            return userService.searchUsersInOrg(q, tier.actingOrg(), limit);
         }
         Set<UUID> managed = accessPolicy.currentManagedUserIds();
         return userService.searchUsers(q, limit).stream()
@@ -99,9 +90,9 @@ public class UserAdminService {
         }
 
         Set<UUID> visible = new HashSet<>(ids);
-        if (isTierAdmin()) {
-            UUID tier = actingOrg();
-            visible.removeIf(id -> !Objects.equals(userService.orgIdOf(id).orElse(null), tier));
+        if (tier.administersWholeTier()) {
+            UUID actingOrg = tier.actingOrg();
+            visible.removeIf(id -> !Objects.equals(userService.orgIdOf(id).orElse(null), actingOrg));
         } else {
             visible.retainAll(accessPolicy.currentManagedUserIds());
         }
@@ -109,71 +100,6 @@ public class UserAdminService {
         return userService.idNames(visible).stream()
                 .map(idName -> new Suggestion(idName.getId().toString(), idName.getName()))
                 .toList();
-    }
-
-    /** A platform super-admin (drilled or not) OR a tenant admin — both scope to their acting tier
-     *  ({@link #actingOrg()}); everyone else is a resource-subtree delegate. */
-    private boolean isTierAdmin() {
-        return accessPolicy.isCurrentActorUnscoped() || accessPolicy.administersBoundOrg();
-    }
-
-    @Transactional
-    public AdminUserView createUser(NewUser newUser, Map<String, List<String>> attributeValues) {
-        return createUser(newUser, attributeValues, null);
-    }
-
-    /**
-     * @param chosenProfileId the profile to bind the account to, or null to use the organization's default.
-     *                        A CSV import names one explicitly — the administrator picked it, downloaded its
-     *                        template, and filled it in, so binding the account to the default instead would
-     *                        silently discard every column they were told to provide.
-     */
-    @Transactional
-    public AdminUserView createUser(NewUser newUser, Map<String, List<String>> attributeValues,
-            UUID chosenProfileId) {
-        return createUser(newUser, attributeValues, chosenProfileId, OwnershipChallenge.SEND);
-    }
-
-    /**
-     * @param challenge whether to mail the new address a proof-of-ownership request now. A bulk import
-     *                  suppresses it: one file would otherwise send thousands of mails to third-party
-     *                  addresses in a single request, under the tenant's own sending identity.
-     */
-    @Transactional
-    public AdminUserView createUser(NewUser newUser, Map<String, List<String>> attributeValues,
-            UUID chosenProfileId, OwnershipChallenge challenge) {
-        try {
-            UUID org = actingOrg();
-            // Validate BEFORE creating: a required attribute missing should not leave a half-made account
-            // behind, and the profile is what makes those declarations mean anything at all.
-            UUID profileId = org == null ? null
-                    : (chosenProfileId != null ? chosenProfileId : validator.defaultForCreation());
-            if (profileId != null) {
-                validator.validate(profileId, attributeValues);
-            }
-            UserAccount user = userService.createUser(newUser, org, challenge);
-            if (profileId != null) {
-                userService.assignProfile(user.getId(), profileId);
-                attributeValues.forEach((key, values) -> values.stream().filter(v -> v != null && !v.isBlank())
-                        .forEach(value -> attributes.add(EntityKind.USER, user.getId().toString(), key, value)));
-            }
-            // Record the org membership too (SCIM and self-signup already do): a user carries a home org_id AND is
-            // a member of that org, so every isMember-based check (e.g. resource-admin delegation) sees it.
-            if (org != null) {
-                organizations.addMember(org, user.getId());
-            }
-            // An admin-console user is created with a TEMPORARY password the admin chose; require the user to
-            // set their own on first login (login completion refuses to finalize until they do).
-            if (newUser.rawPassword() != null) {
-                userService.requirePasswordReset(user.getId());
-            }
-            AdminUserView created = AdminUserView.of(user);
-            auditLogger.log(AuditType.USER_CREATED, AuditSubjectType.USER, created.id(),
-                    "username=" + created.username() + " roles=" + newUser.roleNames());
-            return created;
-        } catch (IllegalArgumentException e) {
-            throw new ConflictException(e.getMessage());
-        }
     }
 
     @Transactional
