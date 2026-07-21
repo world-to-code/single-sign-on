@@ -8,6 +8,7 @@ import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.BaseUserFields;
 import com.example.sso.user.account.NewUser;
+import com.example.sso.user.account.OwnershipChallenge;
 import com.example.sso.user.group.GroupView;
 import com.example.sso.user.group.UserGroupService;
 import com.example.sso.shared.Page;
@@ -32,9 +33,10 @@ import org.springframework.transaction.annotation.Transactional;
  * accounts its own way would be a second set of rules to keep in step, and the one that drifted would be the
  * bulk one nobody watches.
  *
- * <p>The account is created with NO password. It cannot be used until its owner sets one through the existing
- * reset flow, which is the point: a file cannot hand out credentials, and nothing in it is a secret worth
- * putting in a spreadsheet.
+ * <p>The account is created with NO password and NO ownership-challenge mail. The password is the point — a
+ * file cannot hand out credentials — and the mail is withheld because one file would otherwise send thousands
+ * of them to third-party addresses in a single request, under the tenant's own sending identity. The address
+ * still starts unverified, so the EMAIL factor refuses it; an administrator invites when they mean to.
  */
 @Component
 @RequiredArgsConstructor
@@ -61,7 +63,7 @@ class CsvUserCreatorAdapter implements CsvUserCreator {
         UUID userId = UUID.fromString(users.createUser(
                 new NewUser(user.username(), user.base().get(BaseUserFields.EMAIL),
                         blankToNull(user.base().get(BaseUserFields.DISPLAY_NAME)), null, Set.of()),
-                values, profileId).id());
+                values, profileId, OwnershipChallenge.SUPPRESS).id());
         reachableGroups.keySet().forEach(groupId -> groups.addMember(groupId, userId));
         return userId;
     }

@@ -9,6 +9,7 @@ import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.BaseUserFields;
 import com.example.sso.user.account.NewUser;
+import com.example.sso.user.account.OwnershipChallenge;
 import com.example.sso.user.group.GroupView;
 import com.example.sso.user.group.UserGroupService;
 import java.util.List;
@@ -66,7 +67,7 @@ class CsvUserCreatorAdapterTest {
                 group(REACHABLE, "platform"), group(OUT_OF_SCOPE, "finance"))));
         AdminUserView created = mock(AdminUserView.class);
         lenient().when(created.id()).thenReturn(CREATED.toString());
-        lenient().when(users.createUser(any(), any(), any())).thenReturn(created);
+        lenient().when(users.createUser(any(), any(), any(), any())).thenReturn(created);
     }
 
     private GroupView group(UUID id, String name) {
@@ -129,7 +130,7 @@ class CsvUserCreatorAdapterTest {
         adapter.create(planned(), PROFILE);
 
         ArgumentCaptor<NewUser> created = ArgumentCaptor.forClass(NewUser.class);
-        verify(users).createUser(created.capture(), any(), eq(PROFILE));
+        verify(users).createUser(created.capture(), any(), eq(PROFILE), any());
 
         assertThat(created.getValue().rawPassword()).isNull();
         assertThat(created.getValue().roleNames()).isEmpty();
@@ -146,7 +147,7 @@ class CsvUserCreatorAdapterTest {
         adapter.create(planned(), PROFILE);
 
         ArgumentCaptor<Map<String, List<String>>> values = ArgumentCaptor.forClass(Map.class);
-        verify(users).createUser(any(), values.capture(), eq(PROFILE));
+        verify(users).createUser(any(), values.capture(), eq(PROFILE), any());
 
         assertThat(values.getValue()).containsOnlyKeys("team");
     }
@@ -163,10 +164,18 @@ class CsvUserCreatorAdapterTest {
                 Map.of(), List.of()), PROFILE);
 
         ArgumentCaptor<NewUser> created = ArgumentCaptor.forClass(NewUser.class);
-        verify(users).createUser(created.capture(), any(), any());
+        verify(users).createUser(created.capture(), any(), any(), any());
 
         assertThat(created.getValue().displayName()).isNull();
         assertThat(created.getValue().email()).isEqualTo("ada@example.com");
+    }
+
+    /** A file must not become a mail relay: thousands of third-party addresses, one request, tenant identity. */
+    @Test
+    void noOwnershipChallengeIsMailedForAnImportedAccount() {
+        adapter.create(planned(), PROFILE);
+
+        verify(users).createUser(any(), any(), eq(PROFILE), eq(OwnershipChallenge.SUPPRESS));
     }
 
     /**
@@ -178,6 +187,6 @@ class CsvUserCreatorAdapterTest {
     void theChosenProfileIsWhatTheAccountIsBoundTo() {
         adapter.create(planned(), PROFILE);
 
-        verify(users).createUser(any(), any(), eq(PROFILE));
+        verify(users).createUser(any(), any(), eq(PROFILE), any());
     }
 }

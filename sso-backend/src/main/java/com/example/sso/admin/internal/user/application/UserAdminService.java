@@ -17,6 +17,7 @@ import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.metadata.ProfileAttributeValidator;
 import com.example.sso.user.account.NewUser;
+import com.example.sso.user.account.OwnershipChallenge;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.RoleRef;
 import com.example.sso.user.account.Suggestion;
@@ -130,6 +131,17 @@ public class UserAdminService {
     @Transactional
     public AdminUserView createUser(NewUser newUser, Map<String, List<String>> attributeValues,
             UUID chosenProfileId) {
+        return createUser(newUser, attributeValues, chosenProfileId, OwnershipChallenge.SEND);
+    }
+
+    /**
+     * @param challenge whether to mail the new address a proof-of-ownership request now. A bulk import
+     *                  suppresses it: one file would otherwise send thousands of mails to third-party
+     *                  addresses in a single request, under the tenant's own sending identity.
+     */
+    @Transactional
+    public AdminUserView createUser(NewUser newUser, Map<String, List<String>> attributeValues,
+            UUID chosenProfileId, OwnershipChallenge challenge) {
         try {
             UUID org = actingOrg();
             // Validate BEFORE creating: a required attribute missing should not leave a half-made account
@@ -139,7 +151,7 @@ public class UserAdminService {
             if (profileId != null) {
                 validator.validate(profileId, attributeValues);
             }
-            UserAccount user = userService.createUser(newUser, org);
+            UserAccount user = userService.createUser(newUser, org, challenge);
             if (profileId != null) {
                 userService.assignProfile(user.getId(), profileId);
                 attributeValues.forEach((key, values) -> values.stream().filter(v -> v != null && !v.isBlank())

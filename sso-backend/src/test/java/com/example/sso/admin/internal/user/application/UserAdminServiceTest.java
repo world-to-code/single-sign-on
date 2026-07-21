@@ -146,7 +146,7 @@ class UserAdminServiceTest {
         when(orgContext.currentOrg()).thenReturn(Optional.of(org));
         when(validator.defaultForCreation()).thenReturn(profile);
         UserAccount created = user(userId); // the helper stubs, so it cannot run inside when(...)
-        when(userService.createUser(eq(newUser), eq(org))).thenReturn(created);
+        when(userService.createUser(eq(newUser), eq(org), any())).thenReturn(created);
 
         service.createUser(newUser, Map.of("team", List.of("Platform")));
 
@@ -164,7 +164,7 @@ class UserAdminServiceTest {
         when(orgContext.currentOrg()).thenReturn(Optional.of(org));
         when(validator.defaultForCreation()).thenReturn(profile);
         UserAccount created = user(userId);
-        when(userService.createUser(eq(newUser), eq(org))).thenReturn(created);
+        when(userService.createUser(eq(newUser), eq(org), any())).thenReturn(created);
 
         service.createUser(newUser, Map.of("team", List.of("  ")));
 
@@ -180,7 +180,7 @@ class UserAdminServiceTest {
         NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "pw", Set.of(Roles.USER));
         UserAccount created = user(userId);
         when(orgContext.currentOrg()).thenReturn(Optional.of(org));
-        when(userService.createUser(eq(newUser), eq(org))).thenReturn(created);
+        when(userService.createUser(eq(newUser), eq(org), any())).thenReturn(created);
 
         service.createUser(newUser, java.util.Map.of());
 
@@ -192,7 +192,7 @@ class UserAdminServiceTest {
         // A global user (no home org) has no org to join; the platform-admin path must not touch memberships.
         NewUser newUser = new NewUser("root2", "root2@example.com", "Root", "pw", Set.of(Roles.USER));
         UserAccount created = user(UUID.randomUUID());
-        when(userService.createUser(eq(newUser), any())).thenReturn(created);
+        when(userService.createUser(eq(newUser), any(), any())).thenReturn(created);
 
         service.createUser(newUser, java.util.Map.of());
 
@@ -202,7 +202,7 @@ class UserAdminServiceTest {
     @Test
     void createUserSurfacesDomainIllegalArgumentAsConflict() {
         NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "pw", Set.of());
-        when(userService.createUser(eq(newUser), any())).thenThrow(new IllegalArgumentException("username taken"));
+        when(userService.createUser(eq(newUser), any(), any())).thenThrow(new IllegalArgumentException("username taken"));
 
         assertThatThrownBy(() -> service.createUser(newUser, java.util.Map.of())).isInstanceOf(ConflictException.class);
     }
@@ -211,7 +211,7 @@ class UserAdminServiceTest {
     void createUserAuditsTheCreation() {
         NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "pw", Set.of(Roles.USER));
         UserAccount created = user(UUID.randomUUID());
-        when(userService.createUser(eq(newUser), any())).thenReturn(created);
+        when(userService.createUser(eq(newUser), any(), any())).thenReturn(created);
 
         service.createUser(newUser, java.util.Map.of());
 
@@ -223,7 +223,7 @@ class UserAdminServiceTest {
         NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "temp-pass", Set.of(Roles.USER));
         UUID newId = UUID.randomUUID();
         UserAccount created = user(newId);
-        when(userService.createUser(eq(newUser), any())).thenReturn(created);
+        when(userService.createUser(eq(newUser), any(), any())).thenReturn(created);
 
         service.createUser(newUser, java.util.Map.of());
 
@@ -234,7 +234,7 @@ class UserAdminServiceTest {
     void createUserWithoutAPasswordDoesNotRequireAReset() {
         NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", null, Set.of(Roles.USER));
         UserAccount created = user(UUID.randomUUID());
-        when(userService.createUser(eq(newUser), any())).thenReturn(created);
+        when(userService.createUser(eq(newUser), any(), any())).thenReturn(created);
 
         service.createUser(newUser, java.util.Map.of());
 

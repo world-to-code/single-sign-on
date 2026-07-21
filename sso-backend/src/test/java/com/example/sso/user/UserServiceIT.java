@@ -10,7 +10,11 @@ import com.example.sso.organization.OrganizationService;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
+import com.example.sso.user.account.EmailVerificationRequiredEvent;
+import com.example.sso.user.account.OwnershipChallenge;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 
 import java.util.Set;
 import java.util.UUID;
@@ -22,7 +26,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Verifies the identity core end-to-end against a real PostgreSQL (Flyway migrations +
  * Hibernate {@code validate}), through the public {@link UserService} contract only.
  */
+@RecordApplicationEvents
 class UserServiceIT extends AbstractIntegrationTest {
+
+    @Autowired
+    ApplicationEvents events;
 
     @Autowired
     UserService userService;
@@ -229,5 +237,34 @@ class UserServiceIT extends AbstractIntegrationTest {
     private UUID org() {
         String slug = "o-" + UUID.randomUUID().toString().substring(0, 8);
         return organizations.create(new NewOrganization(slug, slug)).id();
+    }
+    /**
+     * A bulk import must not become a mail relay: one file would otherwise send an ownership challenge to every
+     * third-party address in it, in a single request, under the tenant's own sending identity. The account is
+     * created unverified either way — only the mail is withheld.
+     */
+    @Test
+    void suppressingTheOwnershipChallengeCreatesTheAccountWithoutMailingIt() {
+        String username = "bulk-" + UUID.randomUUID();
+
+        UserAccount created = userService.createUser(
+                new NewUser(username, username + "@example.com", "Bulk", null, Set.of()),
+                null, OwnershipChallenge.SUPPRESS);
+
+        assertThat(created.isEmailVerified()).isFalse();
+        assertThat(events.stream(EmailVerificationRequiredEvent.class)
+                .filter(event -> created.getId().equals(event.userId()))).isEmpty();
+    }
+
+    /** The single-account path still asks, or an administrator-set address leaves EMAIL unusable forever. */
+    @Test
+    void theOrdinaryPathStillAsksForProofOfOwnership() {
+        String username = "single-" + UUID.randomUUID();
+
+        UserAccount created = userService.createUser(
+                new NewUser(username, username + "@example.com", "Single", null, Set.of()), null);
+
+        assertThat(events.stream(EmailVerificationRequiredEvent.class)
+                .filter(event -> created.getId().equals(event.userId()))).isNotEmpty();
     }
 }

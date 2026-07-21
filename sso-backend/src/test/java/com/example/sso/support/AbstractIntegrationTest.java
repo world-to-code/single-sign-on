@@ -4,6 +4,9 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import jakarta.servlet.http.Cookie;
+import java.io.IOException;
+import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -85,6 +88,7 @@ public abstract class AbstractIntegrationTest {
 
     static {
         createWorkerDatabase();
+        flushWorkerRedis();
     }
 
     private static int workerSlot() {
@@ -112,6 +116,26 @@ public abstract class AbstractIntegrationTest {
             statement.execute("CREATE DATABASE " + DATABASE);
         } catch (SQLException e) {
             throw new IllegalStateException("could not provision this fork's database", e);
+        }
+    }
+
+    /**
+     * Empties this fork's Redis database.
+     *
+     * <p>The Postgres database is dropped and recreated per fork; Redis was not, so a shared server carried
+     * sessions from a previous run into the next one — an intermittent failure in the session tests that looks
+     * like flakiness and is actually leftover state. Spoken as raw RESP because pulling a client in to send two
+     * commands would be the heavier thing.
+     */
+    private static void flushWorkerRedis() {
+        try (Socket socket = new Socket(TestInfrastructure.redisHost(), TestInfrastructure.redisPort())) {
+            socket.getOutputStream().write(("SELECT " + REDIS_DATABASE + "\r\nFLUSHDB\r\n")
+                    .getBytes(StandardCharsets.US_ASCII));
+            socket.getOutputStream().flush();
+            byte[] reply = new byte[64];
+            socket.getInputStream().read(reply);
+        } catch (IOException e) {
+            throw new IllegalStateException("could not clear this fork's Redis database", e);
         }
     }
 

@@ -123,7 +123,10 @@ sso:
       max-file-bytes: 2097152
       # Post-parse ceilings. Exceeding one refuses the FILE rather than a row: a file this far outside its
       # shape was not built for this profile, and importing the part we understood is the quiet failure.
-      max-rows: 5000
+      # Each row is its own transaction holding a connection, and the default pool is small — a synchronous
+      # request that creates thousands of accounts is a connection-pool problem before it is anything else.
+      # Low enough that several imports can run at once; raise it only alongside a background-job design.
+      max-rows: 500
       max-columns: 100
       # Matches entity_attribute.attr_value, so a value that would not survive the write is refused where the
       # administrator can still see which row it was.

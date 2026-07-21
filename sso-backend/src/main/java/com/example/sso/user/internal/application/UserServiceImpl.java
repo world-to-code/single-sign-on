@@ -18,6 +18,7 @@ import com.example.sso.user.internal.role.domain.Role;
 import com.example.sso.user.internal.role.domain.RoleRepository;
 import com.example.sso.user.account.LockoutPolicy;
 import com.example.sso.user.account.NewUser;
+import com.example.sso.user.account.OwnershipChallenge;
 import com.example.sso.user.account.Suggestion;
 import com.example.sso.user.account.EmailVerificationRequiredEvent;
 import com.example.sso.user.account.UserAccount;
@@ -323,6 +324,12 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public UserAccount createUser(NewUser newUser, UUID orgId) {
+        return createUser(newUser, orgId, OwnershipChallenge.SEND);
+    }
+
+    @Override
+    @Transactional
+    public UserAccount createUser(NewUser newUser, UUID orgId, OwnershipChallenge challenge) {
         String username = newUser.username();
         String email = newUser.email();
         // Uniqueness is per-organization (the tenant): the same username/email may be a different user in a
@@ -344,8 +351,12 @@ public class UserServiceImpl implements UserService {
         assignedRoles.forEach(role -> userRoles.save(new UserRole(saved.getId(), role.getId())));
         addToDefaultGroup(saved.getId(), orgId);
         // An administrator asserting an address is not the owner proving it, so the account starts unverified.
-        // Ask for the proof now rather than leaving the EMAIL factor silently unusable forever.
-        requestEmailVerification(saved);
+        // Ask for the proof now rather than leaving the EMAIL factor silently unusable forever — unless this is
+        // a bulk creation, where doing so per row turns one request into thousands of mails to third-party
+        // addresses under the tenant's own sending identity.
+        if (challenge == OwnershipChallenge.SEND) {
+            requestEmailVerification(saved);
+        }
 
         return hydrator.hydrateUser(saved);
     }

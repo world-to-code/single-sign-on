@@ -144,6 +144,14 @@ public interface UserService {
      *  email are unique WITHIN that org. {@code null} = a global account (the platform super-admin). */
     UserAccount createUser(NewUser newUser, UUID orgId);
 
+    /**
+     * Creates an account, choosing whether to mail the new address an ownership challenge now.
+     *
+     * <p>A bulk import passes {@link OwnershipChallenge#SUPPRESS}: one file would otherwise send thousands of
+     * mails to third-party addresses in a single request, under the tenant's sending identity.
+     */
+    UserAccount createUser(NewUser newUser, UUID orgId, OwnershipChallenge challenge);
+
     /** Admin full update: profile, enabled state, and (when non-null) the exact role-name set. */
     UserAccount updateUser(UUID id, UserUpdate update);
 
