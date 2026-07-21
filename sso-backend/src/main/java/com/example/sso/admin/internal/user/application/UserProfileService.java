@@ -1,4 +1,4 @@
-package com.example.sso.metadata;
+package com.example.sso.admin.internal.user.application;
 
 import java.util.UUID;
 

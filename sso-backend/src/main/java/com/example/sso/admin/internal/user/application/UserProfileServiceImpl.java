@@ -1,4 +1,4 @@
-package com.example.sso.metadata.internal.application;
+package com.example.sso.admin.internal.user.application;
 
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
@@ -8,12 +8,14 @@ import com.example.sso.metadata.AttributeDefinition;
 import com.example.sso.metadata.AttributeDefinitionService;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityKind;
+import com.example.sso.metadata.Profile;
+import com.example.sso.metadata.ProfileKind;
 import com.example.sso.metadata.ProfileService;
-import com.example.sso.metadata.ProfileSwitchPreview;
-import com.example.sso.metadata.UserProfileService;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.user.account.UserAccessChangedEvent;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
 import java.util.List;
@@ -22,6 +24,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,13 +45,15 @@ class UserProfileServiceImpl implements UserProfileService {
     private final AttributeDefinitionService definitions;
     private final AttributeService attributes;
     private final AuditService audit;
+    private final ApplicationEventPublisher events;
     private final OrgContext orgContext;
 
     @Override
     @Transactional(readOnly = true)
     public ProfileSwitchPreview preview(UUID userId, UUID profileId) {
         UserAccount user = requireUser(userId);
-        return new ProfileSwitchPreview(removedKeys(user, requireProfile(profileId)));
+        List<String> removed = removedKeys(user, requireProfile(profileId));
+        return new ProfileSwitchPreview(removed, directoryOwned(removed));
     }
 
     @Override
@@ -59,11 +64,39 @@ class UserProfileServiceImpl implements UserProfileService {
         requireLocallyManaged(user);
 
         List<String> removed = removedKeys(user, target);
-        removed.forEach(key -> attributes.remove(EntityKind.USER, userId.toString(), key));
+        // Refuse before deleting anything. attributes.remove would throw on the first directory-owned key,
+        // rolling the whole switch back — after preview had already told the administrator those keys would
+        // simply go. Fail up front, naming them, so the two agree.
+        List<String> blocked = directoryOwned(removed);
+        if (!blocked.isEmpty()) {
+            throw ConflictException.of("metadata.profile.switchBlocked", String.join(", ", blocked));
+        }
+        attributes.removeAll(EntityKind.USER, userId.toString(), removed);
         users.assignProfile(userId, target);
         // The deletion can retract a role, so it has to be attributable afterwards — the keys, not the values.
-        audit.record(new AuditRecord(AuditType.ATTRIBUTE_CHANGED, user.getUsername(), true,
-                "profile=" + target + " removed=" + String.join(",", removed), null));
+        // Published rather than recorded inline: AuditService writes REQUIRES_NEW, so an inline record would
+        // commit independently and then assert a deletion that a rollback undid.
+        events.publishEvent(new ProfileSwitched(user.getUsername(), user.getOrgId(), target, removed));
+        // Own the termination rather than leaning on the async mapping re-evaluation the attribute deletions
+        // also trigger. That path covers a key used by a mapping RULE, but not one used only by a policy
+        // binding, and when it fails the retraction waits out the sweep interval — or is lost entirely, since
+        // the sweeper does not re-drive a retraction whose claim row is already gone. A destructive,
+        // privilege-changing operation should not depend on a side effect to take effect.
+        events.publishEvent(new UserAccessChangedEvent(user.getUsername(), user.getOrgId()));
+    }
+
+    /**
+     * The keys a DIRECTORY owns, which an administrator may not delete.
+     *
+     * <p>Ownership resolves through the TENANT profile — the same profile {@code attributes.remove} consults —
+     * not through the move's target, or preview and the write would disagree again.
+     */
+    private List<String> directoryOwned(List<String> keys) {
+        return keys.stream()
+                .filter(key -> definitions.definitionOf(EntityKind.USER, key)
+                        .filter(definition -> !definition.locallyEditable())
+                        .isPresent())
+                .toList();
     }
 
     /** Attributes the user carries that the target profile does not declare. */
@@ -107,8 +140,20 @@ class UserProfileServiceImpl implements UserProfileService {
         return user;
     }
 
+    /**
+     * The target, which must be one of the tenant's OWN profiles.
+     *
+     * <p>A source profile describes what a directory provides, not what a person is, and it dies with its
+     * connector — {@code profile.connector_id} cascades, and {@code app_user.profile_id} is ON DELETE SET
+     * NULL, so deleting a connector would silently reset every bound user's schema with nothing recorded.
+     * The mapping side already refuses a non-tenant target for a related reason.
+     */
     private UUID requireProfile(UUID profileId) {
-        return profiles.findById(profileId)
-                .orElseThrow(() -> NotFoundException.of("metadata.profile.notFound")).id();
+        Profile profile = profiles.findById(profileId)
+                .orElseThrow(() -> NotFoundException.of("metadata.profile.notFound"));
+        if (profile.kind() != ProfileKind.TENANT) {
+            throw BadRequestException.of("metadata.profile.notAssignable");
+        }
+        return profile.id();
     }
 }

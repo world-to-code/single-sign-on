@@ -58,14 +58,17 @@ class ProfileAttributeValidatorTest {
         declares(definition("team", AttributeDataType.STRING, List.of(), false, false));
 
         assertThatThrownBy(() -> validator.validate(PROFILE, Map.of("techam", List.of("Platform"))))
-                .isInstanceOf(BadRequestException.class);
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("metadata.attribute.undeclared");
     }
 
     @Test
     void refusesAMissingRequiredAttribute() {
         declares(definition("team", AttributeDataType.STRING, List.of(), false, true));
 
-        assertThatThrownBy(() -> validator.validate(PROFILE, Map.of())).isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> validator.validate(PROFILE, Map.of()))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("metadata.attribute.required");
         assertThatThrownBy(() -> validator.validate(PROFILE, Map.of("team", List.of("  "))))
                 .isInstanceOf(BadRequestException.class);
     }
@@ -75,7 +78,8 @@ class ProfileAttributeValidatorTest {
         declares(definition("region", AttributeDataType.ENUM, List.of("emea", "apac"), false, false));
 
         assertThatThrownBy(() -> validator.validate(PROFILE, Map.of("region", List.of("latam"))))
-                .isInstanceOf(BadRequestException.class);
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("metadata.attribute.invalid");
         assertThatCode(() -> validator.validate(PROFILE, Map.of("region", List.of("apac"))))
                 .doesNotThrowAnyException();
     }
@@ -96,7 +100,8 @@ class ProfileAttributeValidatorTest {
         declares(definition("team", AttributeDataType.STRING, List.of(), false, false));
 
         assertThatThrownBy(() -> validator.validate(PROFILE, Map.of("team", List.of("A", "B"))))
-                .isInstanceOf(BadRequestException.class);
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("metadata.attribute.singleValued");
     }
 
     /** Built-ins are app_user columns written through their own fields, never as profile attributes. */

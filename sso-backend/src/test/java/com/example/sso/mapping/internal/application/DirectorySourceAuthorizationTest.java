@@ -1,8 +1,8 @@
 package com.example.sso.mapping.internal.application;
 
 import com.example.sso.audit.AuditService;
-import com.example.sso.directory.DirectoryConnectorService;
-import com.example.sso.directory.DirectorySourceAuthors;
+import com.example.sso.metadata.AttributeSourceAuthority;
+import com.example.sso.metadata.AttributeSourceAuthors;
 import com.example.sso.metadata.AttributeOperator;
 import com.example.sso.mapping.MappingCondition;
 import com.example.sso.mapping.MappingTargetAuthority;
@@ -63,7 +63,7 @@ class DirectorySourceAuthorizationTest {
     @Mock private MappingRuleRepository rules;
     @Mock private MappingRuleConditionRepository conditions;
     @Mock private AttributeDefinitionService definitions;
-    @Mock private DirectoryConnectorService connectors;
+    @Mock private AttributeSourceAuthority sources;
     @Mock private MappingRuleMembershipRepository memberships;
     @Mock private AttributeService attributes;
     @Mock private AuditService audit;
@@ -78,7 +78,7 @@ class DirectorySourceAuthorizationTest {
     @BeforeEach
     void setUp() {
         lenient().when(roleApplier.kind()).thenReturn(MappingTargetKind.ROLE);
-        evaluator = new MappingRuleEvaluator(rules, conditions, definitions, connectors, memberships, attributes,
+        evaluator = new MappingRuleEvaluator(rules, conditions, definitions, sources, memberships, attributes,
                 List.of(roleApplier), audit, tierGuard, targetAuthority, userGroups);
         rule = MappingRule.of(MappingTargetKind.ROLE, TARGET_ROLE, ORG, UUID.randomUUID());
         ReflectionTestUtils.setField(rule, "id", UUID.randomUUID());
@@ -103,8 +103,8 @@ class DirectorySourceAuthorizationTest {
     }
 
     private void directoryVouchedForBy(UUID configurator, boolean mayAssign) {
-        when(connectors.authorsFilling(any()))
-                .thenReturn(new DirectorySourceAuthors(Set.of(configurator), true));
+        when(sources.authorsFilling(any()))
+                .thenReturn(new AttributeSourceAuthors(Set.of(configurator), true));
         when(targetAuthority.authorMayAssign(eq(configurator), eq(MappingTargetKind.ROLE), eq(TARGET_ROLE)))
                 .thenReturn(mayAssign);
     }
@@ -139,8 +139,8 @@ class DirectorySourceAuthorizationTest {
      */
     @Test
     void anUnattributableSourceMakesTheAnswerIncompleteEvenAlongsideAGoodConnector() {
-        when(connectors.authorsFilling(any()))
-                .thenReturn(new DirectorySourceAuthors(Set.of(CONFIGURATOR), false));
+        when(sources.authorsFilling(any()))
+                .thenReturn(new AttributeSourceAuthors(Set.of(CONFIGURATOR), false));
         lenient().when(targetAuthority.authorMayAssign(eq(CONFIGURATOR), any(), any())).thenReturn(true);
 
         ReflectionTestUtils.invokeMethod(evaluator, "materialize", rule, USER);
@@ -151,8 +151,8 @@ class DirectorySourceAuthorizationTest {
     /** An unattributed connector vouches for nothing — fail closed rather than guess who aimed it. */
     @Test
     void anUnattributedDirectoryVouchesForNothing() {
-        when(connectors.authorsFilling(any()))
-                .thenReturn(new DirectorySourceAuthors(Set.of(), false));
+        when(sources.authorsFilling(any()))
+                .thenReturn(new AttributeSourceAuthors(Set.of(), false));
 
         ReflectionTestUtils.invokeMethod(evaluator, "materialize", rule, USER);
 
@@ -180,6 +180,6 @@ class DirectorySourceAuthorizationTest {
         ReflectionTestUtils.invokeMethod(evaluator, "materialize", rule, USER);
 
         verify(memberships).insertClaimIfAbsent(rule.getId(), USER, TARGET_ROLE, ORG);
-        verify(connectors, never()).authorsFilling(any());
+        verify(sources, never()).authorsFilling(any());
     }
 }

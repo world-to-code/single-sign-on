@@ -100,9 +100,12 @@ class AttributeServiceImpl implements AttributeService {
     @Transactional(readOnly = true)
     public List<Attribute> attributesOfInTier(EntityKind kind, String entityId) {
         UUID tier = tierGuard.currentTier();
-        return attributes.findByEntityKindAndEntityIdOrderByAttrKey(kind, entityId).stream()
-                .filter(row -> Objects.equals(row.getOrgId(), tier)) // own-tier rows only, no inherited globals
-                .map(row -> new Attribute(row.getAttrKey(), row.getAttrValue())).toList();
+        // Scoped in the QUERY rather than filtered after: every index on this table leads with org_id, so the
+        // kind/id-only finder scans. It is the ABAC hot table and grows with users x attributes.
+        List<EntityAttribute> rows = tier == null
+                ? attributes.findByOrgIdIsNullAndEntityKindAndEntityIdOrderByAttrKey(kind, entityId)
+                : attributes.findByOrgIdAndEntityKindAndEntityIdOrderByAttrKey(tier, kind, entityId);
+        return rows.stream().map(row -> new Attribute(row.getAttrKey(), row.getAttrValue())).toList();
     }
 
     @Override
@@ -157,6 +160,25 @@ class AttributeServiceImpl implements AttributeService {
         if (!rows.isEmpty()) {
             attributes.deleteAll(rows); // all of the key's values in this tier
             events.publishEvent(new EntityAttributeChangedEvent(kind, entityId, tier)); // only when a row changed
+        }
+    }
+
+    @Override
+    @Transactional
+    public void removeAll(EntityKind kind, String entityId, Collection<String> keys) {
+        if (keys == null || keys.isEmpty()) {
+            return;
+        }
+        keys.forEach(key -> requireLocallyOwned(kind, key)); // refuse the whole set before deleting any of it
+        UUID tier = tierGuard.currentTier();
+        List<EntityAttribute> rows = keys.stream()
+                .flatMap(key -> ownRows(kind, entityId, key, tier).stream())
+                .toList();
+        if (!rows.isEmpty()) {
+            attributes.deleteAll(rows);
+            // One event for the whole retirement: the listener re-evaluates every mapping rule for this user,
+            // and doing that once per key would repeat the same work for one logical change.
+            events.publishEvent(new EntityAttributeChangedEvent(kind, entityId, tier));
         }
     }
 

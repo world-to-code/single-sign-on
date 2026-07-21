@@ -14,10 +14,10 @@ import com.example.sso.mapping.internal.domain.MappingRuleMembershipRepository;
 import com.example.sso.mapping.internal.domain.MappingRuleRepository;
 import com.example.sso.metadata.Attribute;
 import com.example.sso.metadata.AttributeService;
-import com.example.sso.directory.DirectoryConnectorService;
 import com.example.sso.mapping.MappingTargetKind;
-import com.example.sso.directory.DirectorySourceAuthors;
 import com.example.sso.metadata.AttributeDefinitionService;
+import com.example.sso.metadata.AttributeSourceAuthority;
+import com.example.sso.metadata.AttributeSourceAuthors;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.group.UserGroupService;
@@ -55,7 +55,7 @@ class MappingRuleEvaluator {
     private final MappingRuleRepository rules;
     private final MappingRuleConditionRepository conditions;
     private final AttributeDefinitionService definitions;
-    private final DirectoryConnectorService connectors;
+    private final AttributeSourceAuthority sources;
     private final MappingRuleMembershipRepository memberships;
     private final AttributeService attributes;
     private final List<MappingTargetApplier> appliers;
@@ -269,8 +269,8 @@ class MappingRuleEvaluator {
         if (directoryKeys.isEmpty()) {
             return true; // no directory decides who matches this rule
         }
-        DirectorySourceAuthors authors = connectors.authorsFilling(directoryKeys);
-        boolean authorized = authors.complete() && !authors.configurators().isEmpty()
+        AttributeSourceAuthors authors = sources.authorsFilling(directoryKeys);
+        boolean authorized = authors.fullyAttributed()
                 && authors.configurators().stream().allMatch(configurator ->
                         targetAuthority.authorMayAssign(configurator, rule.getThenKind(), rule.getTargetId()));
         if (!authorized) {

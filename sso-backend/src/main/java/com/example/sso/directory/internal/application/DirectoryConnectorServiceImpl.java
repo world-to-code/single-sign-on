@@ -5,12 +5,13 @@ import com.example.sso.directory.DirectoryAttributeMappingView;
 import com.example.sso.directory.DirectoryConnectorService;
 import com.example.sso.directory.DirectoryConnectorSpec;
 import com.example.sso.directory.DirectoryConnectorView;
-import com.example.sso.directory.DirectorySourceAuthors;
 import com.example.sso.directory.DirectorySyncRunView;
 import com.example.sso.directory.internal.domain.DirectoryConnector;
 import com.example.sso.directory.internal.domain.DirectoryConnectorRepository;
 import com.example.sso.directory.internal.domain.DirectorySyncRun;
 import com.example.sso.directory.internal.domain.DirectorySyncRunRepository;
+import com.example.sso.metadata.AttributeSourceAuthors;
+import com.example.sso.metadata.AttributeSourceAuthority;
 import com.example.sso.metadata.Profile;
 import com.example.sso.metadata.ProfileKind;
 import com.example.sso.metadata.ProfileMapping;
@@ -49,7 +50,7 @@ import org.springframework.util.StringUtils;
  */
 @Service
 @RequiredArgsConstructor
-class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
+class DirectoryConnectorServiceImpl implements DirectoryConnectorService, AttributeSourceAuthority {
 
     private static final Pattern NAME = Pattern.compile("[a-z0-9][a-z0-9-]{0,62}[a-z0-9]");
     /** Only the IANA LDAP ports; the schema agrees. An arbitrary port aims a bind credential at anything. */
@@ -69,9 +70,9 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
 
     @Override
     @Transactional(readOnly = true)
-    public DirectorySourceAuthors authorsFilling(Collection<String> targetKeys) {
+    public AttributeSourceAuthors authorsFilling(Collection<String> targetKeys) {
         if (targetKeys == null || targetKeys.isEmpty()) {
-            return DirectorySourceAuthors.none();
+            return AttributeSourceAuthors.none();
         }
         // Which directories can fill these attributes: the mappings that target them, then the connectors
         // behind their source profiles. A profile that describes no connector vouches for nothing and is
@@ -94,7 +95,7 @@ class DirectoryConnectorServiceImpl implements DirectoryConnectorService {
                 configurators.add(connector.getConfiguredBy());
             }
         }
-        return new DirectorySourceAuthors(Set.copyOf(configurators), complete && everySourceAttributable);
+        return new AttributeSourceAuthors(Set.copyOf(configurators), complete && everySourceAttributable);
     }
 
     @Override

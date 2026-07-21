@@ -1,7 +1,18 @@
-package com.example.sso.metadata;
+package com.example.sso.admin.internal.user.application;
 
+import com.example.sso.metadata.Attribute;
+import com.example.sso.metadata.AttributeDataType;
+import com.example.sso.metadata.AttributeDefinitionService;
+import com.example.sso.metadata.AttributeDefinitionSpec;
+import com.example.sso.metadata.AttributeService;
+import com.example.sso.metadata.AttributeSource;
+import com.example.sso.metadata.EntityKind;
+import com.example.sso.metadata.Profile;
+import com.example.sso.metadata.ProfileKind;
+import com.example.sso.metadata.ProfileService;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.support.AbstractIntegrationTest;
@@ -59,6 +70,11 @@ class UserProfileSwitchIT extends AbstractIntegrationTest {
     private Profile tenantProfile(UUID orgId) {
         return orgContext.callInOrg(orgId, () -> profiles.list()).stream()
                 .filter(p -> p.kind() == ProfileKind.TENANT).findFirst().orElseThrow();
+    }
+
+    private AttributeDefinitionSpec directorySpec(String key) {
+        return new AttributeDefinitionSpec(EntityKind.USER, key, key, null, AttributeDataType.STRING, null,
+                false, false, AttributeSource.DIRECTORY, 0);
     }
 
     private AttributeDefinitionSpec spec(String key) {

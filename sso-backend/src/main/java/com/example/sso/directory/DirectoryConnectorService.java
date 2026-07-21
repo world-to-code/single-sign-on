@@ -1,6 +1,5 @@
 package com.example.sso.directory;
 
-import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -10,12 +9,6 @@ import java.util.UUID;
  */
 public interface DirectoryConnectorService {
 
-    /**
-     * Who configured the acting tier's connectors that fill any of {@code targetKeys}. Auto-mapping asks this
-     * before letting a directory-sourced attribute drive a role or group grant: whoever aimed the directory
-     * decides who matches, so they must themselves be able to make the grant.
-     */
-    DirectorySourceAuthors authorsFilling(Collection<String> targetKeys);
 
     List<DirectoryConnectorView> list();
 

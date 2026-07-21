@@ -3,7 +3,7 @@ package com.example.sso.directory.internal.application;
 import com.example.sso.crypto.SecretCipher;
 import com.example.sso.directory.DirectoryConnectorKind;
 import com.example.sso.directory.DirectoryConnectorSpec;
-import com.example.sso.directory.DirectorySourceAuthors;
+import com.example.sso.metadata.AttributeSourceAuthors;
 import com.example.sso.metadata.ProfileMapping;
 import com.example.sso.metadata.ProfileMappingService;
 import com.example.sso.metadata.ProfileService;
@@ -257,7 +257,7 @@ class DirectoryConnectorServiceImplTest {
         row.configuredBy(UUID.randomUUID());
         when(connectors.findAllById(any())).thenReturn(List.of(row));
 
-        DirectorySourceAuthors authors = service.authorsFilling(List.of("department"));
+        AttributeSourceAuthors authors = service.authorsFilling(List.of("department"));
 
         assertThat(authors.complete()).isFalse();
     }
@@ -274,7 +274,7 @@ class DirectoryConnectorServiceImplTest {
         row.configuredBy(configurator);
         when(connectors.findAllById(any())).thenReturn(List.of(row));
 
-        DirectorySourceAuthors authors = service.authorsFilling(List.of("department"));
+        AttributeSourceAuthors authors = service.authorsFilling(List.of("department"));
 
         assertThat(authors.complete()).isTrue();
         assertThat(authors.configurators()).containsExactly(configurator);

@@ -13,6 +13,17 @@ public interface EntityAttributeRepository extends JpaRepository<EntityAttribute
 
     List<EntityAttribute> findByEntityKindAndEntityIdOrderByAttrKey(EntityKind entityKind, String entityId);
 
+    /**
+     * The same rows for ONE tier. Named org-first so it matches {@code idx_entity_attribute_entity
+     * (org_id, entity_kind, entity_id)} — the kind/id-only finder above cannot use it, because a btree needs
+     * its leading column, and this is the ABAC hot table.
+     */
+    List<EntityAttribute> findByOrgIdAndEntityKindAndEntityIdOrderByAttrKey(UUID orgId, EntityKind entityKind,
+            String entityId);
+
+    List<EntityAttribute> findByOrgIdIsNullAndEntityKindAndEntityIdOrderByAttrKey(EntityKind entityKind,
+            String entityId);
+
     /** All rows for several entities of one kind in a single query — the fan-in for attribute inheritance. */
     List<EntityAttribute> findByEntityKindAndEntityIdIn(EntityKind entityKind, Collection<String> entityIds);
 

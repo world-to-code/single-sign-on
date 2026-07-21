@@ -57,6 +57,15 @@ public interface AttributeService {
     void remove(EntityKind kind, String entityId, String key);
 
     /**
+     * Removes several keys at once, emitting ONE change event.
+     *
+     * <p>A profile switch retires everything the new profile does not declare, and doing that one key at a
+     * time costs a definition lookup, a row read and a delete per key — plus one re-evaluation of every
+     * mapping rule per key, for a set of deletions that is really a single change.
+     */
+    void removeAll(EntityKind kind, String entityId, Collection<String> keys);
+
+    /**
      * Writes the values a DIRECTORY-owned attribute now holds, replacing whatever was there. The entry point a
      * directory sync uses, and the only one that may touch a directory-owned key.
      *
