@@ -14,4 +14,10 @@ interface CsvExistingUsers {
 
     /** The subset that already exists, in the order given. One query, not one per row. */
     List<String> present(Collection<String> usernames);
+
+    /**
+     * The same for addresses, because {@code uq_app_user_org_email} is enforced alongside the username index.
+     * Consulting only one of them made the preview promise creates that the write then refused.
+     */
+    List<String> emailsPresent(Collection<String> emails);
 }

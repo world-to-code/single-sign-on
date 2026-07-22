@@ -113,6 +113,10 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
     @Query("select u.username from AppUser u where u.orgId = :orgId and u.username in :usernames")
     List<String> findExistingUsernames(@Param("orgId") UUID orgId, @Param("usernames") Collection<String> usernames);
 
+    /** The email half of the same question — uq_app_user_org_email is enforced just as the username one is. */
+    @Query("select u.email from AppUser u where u.orgId = :orgId and u.email in :emails")
+    List<String> findExistingEmails(@Param("orgId") UUID orgId, @Param("emails") Collection<String> emails);
+
     boolean existsByUsernameAndOrgIdIsNull(String username);
 
     boolean existsByEmailAndOrgId(String email, UUID orgId);

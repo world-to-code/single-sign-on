@@ -23,6 +23,7 @@ import org.mockito.Mock;
 import org.springframework.context.MessageSource;
 import org.springframework.context.support.ResourceBundleMessageSource;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.mock.web.MockMultipartHttpServletRequest;
@@ -81,7 +82,9 @@ class CsvImportApplyTest {
     }
 
     private CsvPlannedUser planned(String username, String... groups) {
-        return new CsvPlannedUser(7, username, Map.of("username", username), Map.of(), List.of(groups));
+        return new CsvPlannedUser(7, username,
+                Map.of("username", username, "email", username + "@example.com"),
+                Map.of(), List.of(groups));
     }
 
     private void plans(List<CsvPlannedUser> toCreate, List<String> existing, List<CsvRowFailure> failures) {
@@ -191,5 +194,39 @@ class CsvImportApplyTest {
         service.apply(PROFILE, request());
 
         verify(creator).create(planned("ada", "platform", "oncall"), PROFILE);
+    }
+
+    /**
+     * Which column to change. Both per-org unique indexes sit on the same insert, and naming the username for
+     * an ADDRESS collision sends the administrator to edit the wrong one — they rename, re-upload, and fail
+     * identically. The constraint says which it was.
+     */
+    @Test
+    void anAddressCollisionNamesTheAddressRatherThanTheUsername() {
+        plans(List.of(planned("ada")), List.of(), List.of());
+        doThrow(new DataIntegrityViolationException("insert",
+                new ConstraintViolationException("dup", null, "uq_app_user_org_email")))
+                .when(creator).create(planned("ada"), PROFILE);
+
+        CsvImportResult result = service.apply(PROFILE, request());
+
+        assertThat(result.failures()).singleElement()
+                .extracting(CsvRowFailure::reason).asString()
+                .contains("ada@example.com")
+                .doesNotContain("ada,");   // the address, not the username
+    }
+
+    /** And an unreadable constraint falls back to the username — the commoner case, and the actionable one. */
+    @Test
+    void aCollisionWithNoReadableConstraintStillNamesTheUsername() {
+        plans(List.of(planned("ada")), List.of(), List.of());
+        doThrow(new DataIntegrityViolationException("insert"))
+                .when(creator).create(planned("ada"), PROFILE);
+
+        CsvImportResult result = service.apply(PROFILE, request());
+
+        assertThat(result.failures()).singleElement()
+                .extracting(CsvRowFailure::reason).asString()
+                .doesNotContain("@example.com");   // the username branch, not the address one
     }
 }

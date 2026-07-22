@@ -61,7 +61,7 @@ class CsvRowValidatorTest {
     }
 
     private CsvRowFailure failureIn(CsvRow row) {
-        return validator().failureIn(List.of(), row, Set.of(), Set.of());
+        return validator().failureIn(List.of(), row, CsvFileScan.over(Set.of(), Set.of()));
     }
 
     /**
@@ -145,7 +145,7 @@ class CsvRowValidatorTest {
     @Test
     void aUsernameAlreadyTakenByAnEarlierRowOfTheSameFileIsRefused() {
         CsvRowFailure failure = validator()
-                .failureIn(List.of(), rowOf("ada", "ada@x.io"), Set.of("ada"), Set.of());
+                .failureIn(List.of(), rowOf("ada", "ada@x.io"), scanSeeing(Set.of("ada")));
 
         assertThat(failure.reason()).isEqualTo(reads("metadata.csv.row.duplicateUsername", "ada"));
     }
@@ -158,7 +158,7 @@ class CsvRowValidatorTest {
     void judgingARowDoesNotRecordItAsSeen() {
         Set<String> seen = new LinkedHashSet<>();
 
-        validator().failureIn(List.of(), rowOf("ada", "ada@x.io"), seen, Set.of());
+        validator().failureIn(List.of(), rowOf("ada", "ada@x.io"), scanSeeing(seen));
 
         assertThat(seen).isEmpty();
     }
@@ -242,7 +242,7 @@ class CsvRowValidatorTest {
         CsvRow row = row(Map.of(BaseUserFields.USERNAME, "ada", BaseUserFields.EMAIL, "ada@x.io"),
                 List.of("platform", "secret-ops"), false);
 
-        CsvRowFailure failure = validator().failureIn(List.of(), row, Set.of(), Set.of("secret-ops"));
+        CsvRowFailure failure = validator().failureIn(List.of(), row, CsvFileScan.over(Set.of("secret-ops"), Set.of()));
 
         assertThat(failure.reason()).isEqualTo(reads("metadata.csv.row.unknownGroup", "secret-ops"));
     }
@@ -252,7 +252,8 @@ class CsvRowValidatorTest {
         CsvRow row = row(Map.of(BaseUserFields.USERNAME, "ada", BaseUserFields.EMAIL, "ada@x.io"),
                 List.of("platform"), false);
 
-        assertThat(validator().failureIn(List.of(), row, Set.of(), Set.of("secret-ops"))).isNull();
+        assertThat(validator().failureIn(List.of(), row, CsvFileScan.over(Set.of("secret-ops"), Set.of())))
+                .isNull();
     }
 
     /**
@@ -294,8 +295,59 @@ class CsvRowValidatorTest {
     void theProfileColumnsTheCallerResolvedAreTheOnesValidatedAgainst() {
         List<AttributeDefinition> columns = List.of();
 
-        validator().failureIn(columns, rowWith("team", "platform"), Set.of(), Set.of());
+        validator().failureIn(columns, rowWith("team", "platform"), CsvFileScan.over(Set.of(), Set.of()));
 
         verify(values).validate(columns, Map.of("team", List.of("platform")));
+    }
+
+    /** A scan that has already walked rows claiming those usernames — each with its own distinct address. */
+    private CsvFileScan scanSeeing(Set<String> seen) {
+        CsvFileScan scan = CsvFileScan.over(Set.of(), Set.of());
+        seen.forEach(username -> scan.claim(username, username + "@seen.example"));
+        return scan;
+    }
+
+    /**
+     * The address half of the same uniqueness. uq_app_user_org_email is enforced alongside the username index,
+     * and consulting only one of them let the preview promise a create that the write then refused.
+     */
+    @Test
+    void anAddressAlreadyClaimedByAnEarlierRowOfTheSameFileIsRefused() {
+        CsvFileScan scan = CsvFileScan.over(Set.of(), Set.of());
+        scan.claim("grace", "shared@x.io");
+
+        CsvRowFailure failure = validator().failureIn(List.of(), rowOf("ada", "shared@x.io"), scan);
+
+        assertThat(failure.reason()).isEqualTo(reads("metadata.csv.row.duplicateEmail", "shared@x.io"));
+    }
+
+    @Test
+    void anAddressTheOrganizationAlreadyHasIsRefused() {
+        CsvFileScan scan = CsvFileScan.over(Set.of(), Set.of("taken@x.io"));
+
+        CsvRowFailure failure = validator().failureIn(List.of(), rowOf("ada", "taken@x.io"), scan);
+
+        assertThat(failure.reason()).isEqualTo(reads("metadata.csv.row.emailTaken", "taken@x.io"));
+    }
+
+    /**
+     * A row naming an account the organization ALREADY has is "already there", not a failure — so the address
+     * that same account owns is not a collision with itself. Without this the commonest re-upload of an
+     * unchanged file turns every existing row into an error.
+     */
+    @Test
+    void anAddressOwnedByTheAccountTheRowAlreadyNamesIsNotACollision() {
+        CsvFileScan scan = CsvFileScan.over(Set.of(), Set.of("ada@x.io"), Set.of("ada"));
+
+        assertThat(validator().failureIn(List.of(), rowOf("ada", "ada@x.io"), scan)).isNull();
+    }
+
+    /** A different address is untouched by either check. */
+    @Test
+    void anUnclaimedAddressPasses() {
+        CsvFileScan scan = CsvFileScan.over(Set.of(), Set.of("taken@x.io"));
+        scan.claim("grace", "shared@x.io");
+
+        assertThat(validator().failureIn(List.of(), rowOf("ada", "ada@x.io"), scan)).isNull();
     }
 }

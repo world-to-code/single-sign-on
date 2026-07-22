@@ -112,6 +112,12 @@ public interface UserService {
      */
     List<String> existingUsernamesInOrg(Collection<String> usernames, UUID orgId);
 
+    /**
+     * The same for addresses. {@code uq_app_user_org_email} is enforced alongside the username index, so a
+     * preview that consults only one of them promises creates the write then refuses.
+     */
+    List<String> existingEmailsInOrg(Collection<String> emails, UUID orgId);
+
     boolean hasPassword(UUID id);
 
     /** Whether the user has the named role assigned DIRECTLY (not inherited via a group). */

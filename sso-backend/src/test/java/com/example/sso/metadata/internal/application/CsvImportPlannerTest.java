@@ -143,6 +143,7 @@ class CsvImportPlannerTest {
         plan("username,email,team\nada,a@x.io,platform\n");
 
         verify(existingUsers).present(any());
+        verify(existingUsers).emailsPresent(any());   // the address half of the same uniqueness — also a read
         verify(groups).unusable(any());
         verifyNoMoreInteractions(existingUsers, groups);
     }

@@ -38,8 +38,7 @@ class CsvRowValidator {
      * @param unusableGroups names no group the actor may use stands behind, existence and reach together
      * @return the failure, or null when the row may be applied
      */
-    CsvRowFailure failureIn(List<AttributeDefinition> profileColumns, CsvRow row, Set<String> seen,
-            Set<String> unusableGroups) {
+    CsvRowFailure failureIn(List<AttributeDefinition> profileColumns, CsvRow row, CsvFileScan scan) {
         if (row.username().isEmpty()) {
             return text.at(row.line(), "metadata.csv.row.missingRequired", BaseUserFields.USERNAME);
         }
@@ -48,8 +47,17 @@ class CsvRowValidator {
         if (row.attributes().getOrDefault(BaseUserFields.EMAIL, "").isEmpty()) {
             return text.at(row.line(), "metadata.csv.row.missingRequired", BaseUserFields.EMAIL);
         }
-        if (seen.contains(row.username())) {
+        if (scan.seenUsernames().contains(row.username())) {
             return text.at(row.line(), "metadata.csv.row.duplicateUsername", row.username());
+        }
+        // The address half of the same uniqueness. uq_app_user_org_email is enforced alongside the username
+        // index, and consulting only one of them let the preview promise a create the write then refused.
+        String email = row.attributes().getOrDefault(BaseUserFields.EMAIL, "");
+        if (scan.seenEmails().contains(email)) {
+            return text.at(row.line(), "metadata.csv.row.duplicateEmail", email);
+        }
+        if (!scan.alreadyHere(row.username()) && scan.takenEmails().contains(email)) {
+            return text.at(row.line(), "metadata.csv.row.emailTaken", email);
         }
         if (row.oversizedGroups()) {
             return text.at(row.line(), "metadata.csv.row.valueTooLong", CsvColumns.GROUPS);
@@ -64,7 +72,7 @@ class CsvRowValidator {
                 return text.at(row.line(), "metadata.csv.row.formulaValue", cell.getKey());
             }
         }
-        String unknownGroup = row.groups().stream().filter(unusableGroups::contains).findFirst().orElse(null);
+        String unknownGroup = row.groups().stream().filter(scan.unusableGroups()::contains).findFirst().orElse(null);
         if (unknownGroup != null) {
             return text.at(row.line(), "metadata.csv.row.unknownGroup", unknownGroup);
         }

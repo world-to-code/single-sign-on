@@ -275,6 +275,15 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<String> existingEmailsInOrg(Collection<String> emails, UUID orgId) {
+        if (emails == null || emails.isEmpty() || orgId == null) {
+            return List.of();
+        }
+        return users.findExistingEmails(orgId, emails.stream().distinct().toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public boolean hasPassword(UUID id) {
         return require(id).getPasswordHash() != null;
     }

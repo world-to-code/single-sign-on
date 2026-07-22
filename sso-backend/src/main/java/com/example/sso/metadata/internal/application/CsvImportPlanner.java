@@ -7,6 +7,7 @@ import com.example.sso.metadata.CsvImportPreview;
 import com.example.sso.metadata.CsvPlannedUser;
 import com.example.sso.metadata.CsvRowFailure;
 import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.user.account.BaseUserFields;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -66,17 +67,20 @@ class CsvImportPlanner {
         // "Unusable", not "missing": an unreachable group is refused as a missing one, or the difference
         // becomes an existence oracle.
         Set<String> unusableGroups = Set.copyOf(groups.unusable(namedGroups(rows)));
+        Set<String> takenEmails = Set.copyOf(existingUsers.emailsPresent(
+                rows.stream().map(row -> row.attributes().getOrDefault(BaseUserFields.EMAIL, ""))
+                        .filter(email -> !email.isEmpty()).toList()));
 
         List<CsvPlannedUser> toCreate = new ArrayList<>();
         List<CsvRowFailure> failures = new ArrayList<>();
-        Set<String> seen = new LinkedHashSet<>();
+        CsvFileScan scan = CsvFileScan.over(unusableGroups, takenEmails, Set.copyOf(existing));
         for (CsvRow row : rows) {
-            CsvRowFailure failure = rowValidator.failureIn(profileColumns, row, seen, unusableGroups);
+            CsvRowFailure failure = rowValidator.failureIn(profileColumns, row, scan);
             if (failure != null) {
                 failures.add(failure);
                 continue;
             }
-            seen.add(row.username());
+            scan.claim(row.username(), row.attributes().getOrDefault(BaseUserFields.EMAIL, ""));
             // An account that already exists is neither created nor a failure — an import fills a tenant it
             // does not already have, and saying "already there" is the useful answer, not an error.
             if (!existing.contains(row.username())) {

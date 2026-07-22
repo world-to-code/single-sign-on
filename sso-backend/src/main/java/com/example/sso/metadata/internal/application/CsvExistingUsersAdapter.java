@@ -30,11 +30,24 @@ class CsvExistingUsersAdapter implements CsvExistingUsers {
         if (usernames == null || usernames.isEmpty()) {
             return List.of();
         }
-        // Fail CLOSED. An empty answer here means "none of these exist", which the planner reads as "create
-        // them all" — so an unbound context would mint accounts rather than refuse. Its sibling adapter
-        // already fails closed on the same condition.
-        UUID org = orgContext.currentOrg()
+        return users.existingUsernamesInOrg(usernames, requireOrg());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<String> emailsPresent(Collection<String> emails) {
+        if (emails == null || emails.isEmpty()) {
+            return List.of();
+        }
+        return users.existingEmailsInOrg(emails, requireOrg());
+    }
+
+    /**
+     * Fail CLOSED. An empty answer means "none of these exist", which the planner reads as "create them all" —
+     * so an unbound context would mint accounts rather than refuse. Its sibling adapter does the same.
+     */
+    private UUID requireOrg() {
+        return orgContext.currentOrg()
                 .orElseThrow(() -> ForbiddenException.of("metadata.csv.noOrganization"));
-        return users.existingUsernamesInOrg(usernames, org);
     }
 }
