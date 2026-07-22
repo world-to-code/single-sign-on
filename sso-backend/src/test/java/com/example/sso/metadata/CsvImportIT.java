@@ -8,6 +8,7 @@ import com.example.sso.user.account.NewUser;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
 import com.example.sso.user.group.GroupSpec;
+import com.example.sso.user.group.GroupView;
 import com.example.sso.user.group.UserGroupService;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -300,6 +301,36 @@ class CsvImportIT extends AbstractIntegrationTest {
         assertThat(orgContext.callInOrg(orgA, () -> groups.members(joined, 0, 10).total()))
                 .as("the row naming this org's group actually JOINED it")
                 .isEqualTo(1L);
+    }
+
+
+    /**
+     * A SYSTEM group is not something a file can join — {@code addMember} refuses it outright — and the
+     * preview says so rather than promising a create that apply would then fail.
+     *
+     * <p>A review predicted the opposite (usable at preview, refused at apply) and marked it unconfirmed. It
+     * is already closed upstream: the org-scoped name lookup does not return the group at all. This pins the
+     * behaviour without claiming which guard produces it, so a change to any of them is caught here.
+     */
+    @Test
+    void aSystemGroupIsRefusedAtPreviewRatherThanFailingAtApply() {
+        orgA = org();
+        UUID profile = tenantProfile(orgA);
+        String username = "sys-" + UUID.randomUUID().toString().substring(0, 8);
+        String allUsers = orgContext.callInOrg(orgA, () -> groups.listAll()).stream()
+                .filter(GroupView::system).findFirst().orElseThrow().name();
+
+        // Asserted on the PREVIEW. Apply refuses it either way — addMember throws and the row is reported —
+        // so only the preview distinguishes "refused before the administrator confirmed" from "promised, then
+        // failed", which is the whole difference this closes.
+        CsvImportPreview preview = asSuperAdmin(() -> withRequestContext(() ->
+                orgContext.callInOrg(orgA, () -> imports.preview(profile,
+                        upload("username,email,groups\n"
+                                + username + "," + username + "@example.com," + allUsers + "\n")))));
+
+        assertThat(preview.toCreate()).as("never promised").isEmpty();
+        assertThat(preview.failures()).singleElement()
+                .extracting(CsvRowFailure::reason).asString().contains(allUsers);
     }
 
     /**

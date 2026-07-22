@@ -147,4 +147,25 @@ class CsvFileReaderTest {
     void brokenQuotingIsABadRequestRatherThanAnUnhandledError() {
         refuses("username,email,team\nada,a@x.io,\"unterminated\n", "metadata.csv.malformed");
     }
+
+    /**
+     * The marker is the full "# " the template writes, not a bare hash. Matching the hash alone silently
+     * dropped any row whose first column legitimately began with one — "#1 Sales" is an ordinary department —
+     * with no failure, no count, and nothing in the preview to show the row had gone.
+     */
+    @Test
+    void aFirstColumnThatMerelyStartsWithAHashIsStillARow() {
+        // team FIRST on purpose: isGuidance reads record 0, and the template's column order is the profile's,
+        // so the leading column is whichever attribute it declares first — not necessarily username.
+        List<CsvRow> rows = read("team,username,email\n#1 Sales,ada,a@x.io\n");
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.getFirst().attributes()).containsEntry("team", "#1 Sales");
+    }
+
+    /** And the template's own guidance row is still dropped. */
+    @Test
+    void theTemplatesGuidanceRowIsStillDropped() {
+        assertThat(read("username,email\n# required,# required\nada,a@x.io\n")).hasSize(1);
+    }
 }

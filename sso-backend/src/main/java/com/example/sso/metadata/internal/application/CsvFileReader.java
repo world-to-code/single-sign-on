@@ -30,8 +30,14 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 class CsvFileReader {
 
-    /** Written by the template so a person filling it in has the rules in front of them. Not a user. */
-    private static final String GUIDANCE_MARKER = "#";
+    /**
+     * Written by the template so a person filling it in has the rules in front of them. Not a user.
+     *
+     * <p>The full marker the template emits, space included — matching a bare {@code "#"} silently dropped any
+     * row whose first column legitimately began with one ({@code "#1 Sales"} is an ordinary department), with
+     * no failure, no count, and nothing in the preview to show it had gone.
+     */
+    private static final String GUIDANCE_MARKER = "# ";
 
     private final CsvImportLimits limits;
 
@@ -93,4 +99,5 @@ class CsvFileReader {
     private boolean isGuidance(CSVRecord record) {
         return record.size() > 0 && record.get(0).startsWith(GUIDANCE_MARKER);
     }
+
 }
