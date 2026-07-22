@@ -186,6 +186,31 @@ class CsvImportPlannerTest {
      * against a schema that has since changed. Importing the columns we recognised would create accounts
      * missing exactly the data the administrator thought they were providing.
      */
+    /**
+     * A profile synthesises five base columns and creation carries three. The other two used to be accepted,
+     * previewed as part of an importable row, and then dropped — an administrator who filled the external-id
+     * column believed they had seeded the directory join key. Refused as unknown instead.
+     */
+    @Test
+    void aBaseColumnTheImporterCannotWriteRefusesTheFile() {
+        declares(base(BaseUserFields.USERNAME), base(BaseUserFields.EMAIL),
+                base(BaseUserFields.EXTERNAL_ID), base(BaseUserFields.PHONE_NUMBER));
+
+        refusesFile("username,email,externalId\nada,a@x.io,dir-1\n", "metadata.csv.unknownColumn");
+        refusesFile("username,email,phoneNumber\nada,a@x.io,+15550100\n", "metadata.csv.unknownColumn");
+    }
+
+    @Test
+    void theBaseColumnsAnImportCanWriteAreStillAccepted() {
+        declares(base(BaseUserFields.USERNAME), base(BaseUserFields.EMAIL),
+                base(BaseUserFields.DISPLAY_NAME), base(BaseUserFields.EXTERNAL_ID));
+
+        CsvImportPreview preview = plan("username,email,displayName\nada,a@x.io,Ada L\n");
+
+        assertThat(preview.toCreate()).singleElement()
+                .extracting(user -> user.base().get(BaseUserFields.DISPLAY_NAME)).isEqualTo("Ada L");
+    }
+
     @Test
     void aColumnTheProfileDoesNotDeclareRefusesTheFile() {
         refusesFile("username,salary\nada,100\n", "metadata.csv.unknownColumn");

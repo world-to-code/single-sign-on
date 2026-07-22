@@ -37,7 +37,11 @@ class CsvTemplateServiceImpl implements CsvTemplateService {
     @Transactional(readOnly = true)
     public CsvTemplate templateFor(UUID profileId) {
         Profile profile = requireProfile(profileId);
-        List<AttributeDefinition> columns = definitions.definitionsIn(profileId);
+        // Only the base columns an import can WRITE. The profile synthesises five and creation carries three,
+        // so printing all of them invited an administrator to fill in a column that was then discarded.
+        List<AttributeDefinition> columns = definitions.definitionsIn(profileId).stream()
+                .filter(column -> !column.base() || CsvColumns.WRITABLE_BASE_KEYS.contains(column.key()))
+                .toList();
         StringWriter out = new StringWriter();
         try (CSVPrinter printer = new CSVPrinter(out, CSVFormat.DEFAULT)) {
             printer.printRecord(headers(columns));

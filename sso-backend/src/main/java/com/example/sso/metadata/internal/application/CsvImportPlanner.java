@@ -48,7 +48,7 @@ class CsvImportPlanner {
      */
     @Transactional(readOnly = true)
     public CsvImportPreview plan(UUID profileId, String csv) {
-        List<AttributeDefinition> columns = definitions.definitionsIn(profileId);
+        List<AttributeDefinition> columns = importable(definitions.definitionsIn(profileId));
         Set<String> declared = columns.stream()
                 .map(AttributeDefinition::key).collect(Collectors.toCollection(LinkedHashSet::new));
         // definitionsIn synthesises username/email as BASE definitions: app_user columns, which the profile
@@ -86,6 +86,19 @@ class CsvImportPlanner {
         }
         return new CsvImportPreview(rows.size(), toCreate,
                 existing.stream().filter(name -> !name.isEmpty()).toList(), failures);
+    }
+
+    /**
+     * The profile's columns, minus the base ones an import cannot write.
+     *
+     * <p>Applied here rather than at the reader so a file supplying them is refused as an UNKNOWN COLUMN —
+     * an honest "this importer does not write that" — instead of being accepted, previewed as importable and
+     * then silently discarded. The template omits the same ones, so a file built from it never trips this.
+     */
+    private List<AttributeDefinition> importable(List<AttributeDefinition> columns) {
+        return columns.stream()
+                .filter(column -> !column.base() || CsvColumns.WRITABLE_BASE_KEYS.contains(column.key()))
+                .toList();
     }
 
     /**
