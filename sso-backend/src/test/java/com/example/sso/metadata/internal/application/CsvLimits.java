@@ -28,6 +28,10 @@ final class CsvLimits {
         return new CsvImportLimits(maxFileBytes, ROWS, COLUMNS, CELL_LENGTH, GROUP_NAMES);
     }
 
+    static CsvImportLimits withColumns(int maxColumns) {
+        return new CsvImportLimits(FILE_BYTES, ROWS, maxColumns, CELL_LENGTH, GROUP_NAMES);
+    }
+
     static CsvImportLimits withCellLength(int maxCellLength) {
         return new CsvImportLimits(FILE_BYTES, ROWS, COLUMNS, maxCellLength, GROUP_NAMES);
     }

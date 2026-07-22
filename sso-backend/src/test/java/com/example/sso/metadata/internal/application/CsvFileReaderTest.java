@@ -4,6 +4,8 @@ import com.example.sso.shared.error.ApiException;
 import com.example.sso.user.account.BaseUserFields;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,6 +30,33 @@ class CsvFileReaderTest {
 
     private List<CsvRow> read(String csv) {
         return reader.read(csv, DECLARED, BASE);
+    }
+
+    /**
+     * A header of DISTINCT names, starting with the required username.
+     *
+     * <p>Distinct so the column COUNT is the only shape rule such a header can break, and username-first so it
+     * cannot trip the missing-username rule on the way there.
+     */
+    private String header(int columns) {
+        return IntStream.range(1, columns).mapToObj(i -> "column" + i)
+                .collect(Collectors.joining(",", BaseUserFields.USERNAME + ",", "\n"));
+    }
+
+    private Set<String> declaring(int columns) {
+        return IntStream.range(1, columns).mapToObj(i -> "column" + i)
+                .collect(Collectors.collectingAndThen(Collectors.toSet(), declared -> {
+                    declared.add(BaseUserFields.USERNAME);
+                    return declared;
+                }));
+    }
+
+    /** Exactly at the ceiling is accepted — the boundary the old fixture could not reach. */
+    @Test
+    void exactlyTheColumnCeilingIsAccepted() {
+        CsvFileReader bounded = new CsvFileReader(CsvLimits.withColumns(4));
+
+        assertThat(bounded.read(header(4), declaring(4), BASE)).isEmpty();
     }
 
     private void refuses(String csv, String messageKey) {
@@ -97,11 +126,16 @@ class CsvFileReaderTest {
         refuses(csv.toString(), "metadata.csv.tooManyRows");
     }
 
-    /** Counted on the header, before a single row is read: a wide file costs memory per row. */
+    /**
+     * Counted on the header, before a single row is read: a wide file costs memory per row.
+     *
+     * <p>DISTINCT names, so only the count can be what refuses this. The fixture repeated one name, which also
+     * trips the duplicate-column rule — the file was refused either way and the test could not tell which
+     * check did it.
+     */
     @Test
     void moreColumnsThanWeAcceptRefusesTheFileBeforeAnyRow() {
-        refuses(String.join(",", java.util.Collections.nCopies(21, "username")) + "\n",
-                "metadata.csv.tooManyColumns");
+        refuses(header(21), "metadata.csv.tooManyColumns");
     }
 
     /**
