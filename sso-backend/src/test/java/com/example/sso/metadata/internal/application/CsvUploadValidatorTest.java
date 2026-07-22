@@ -214,4 +214,64 @@ class CsvUploadValidatorTest {
                 .extracting(ApiException::getMessageKey)
                 .isEqualTo("metadata.csv.oneFileOnly");
     }
+
+    // --- the dimensions whose VALUES were unasserted -----------------------------------------------------
+
+    /**
+     * Valid multi-byte UTF-8 is accepted and round-trips. Every other fixture here is ASCII, so narrowing the
+     * decoder to US-ASCII passed the whole suite while rejecting every Korean or accented file in production —
+     * and the malformed-bytes case still failed under ASCII too, so it could not tell the difference.
+     */
+    @Test
+    void multiByteUtf8IsAcceptedAndSurvivesIntact() {
+        String korean = "username,email\n김철수,kim@example.com\n";
+
+        assertThat(validator.validate(csv(korean)).text()).isEqualTo(korean);
+    }
+
+    /**
+     * The ceiling is BYTES, not characters. Measured after decoding, a 1 KiB limit becomes roughly 3 KiB of
+     * heap for a CJK file — and every fixture here is ASCII, where the two are the same number.
+     */
+    @Test
+    void theCeilingCountsBytesNotCharacters() {
+        String justUnderInCharacters = "가".repeat(MAX_BYTES / 2);   // half the chars, three bytes each
+
+        assertThatThrownBy(() -> validator.validate(csv(justUnderInCharacters)))
+                .hasMessageContaining("metadata.csv.tooLarge");
+    }
+
+    /**
+     * The content type arrives with parameters. Browsers and {@code curl -F} both send
+     * {@code text/csv; charset=utf-8}, so dropping the parameter-stripping 400s every real upload — while a
+     * suite whose fixtures all send a bare type stays green.
+     */
+    @Test
+    void aContentTypeCarryingItsCharsetIsStillCsv() {
+        MultipartFile withCharset = upload("users.csv", "text/csv; charset=utf-8",
+                "username,email\nada,a@x.io\n".getBytes(StandardCharsets.UTF_8));
+
+        assertThatCode(() -> validator.validate(withCharset)).doesNotThrowAnyException();
+    }
+
+    /** Windows and Excel hand back USERS.CSV. The extension check lowercases for exactly that reason. */
+    @Test
+    void anUppercaseExtensionIsStillCsv() {
+        MultipartFile shouted = upload("USERS.CSV", "text/csv",
+                "username,email\nada,a@x.io\n".getBytes(StandardCharsets.UTF_8));
+
+        assertThatCode(() -> validator.validate(shouted)).doesNotThrowAnyException();
+    }
+
+    /**
+     * Size is checked FIRST, as the class Javadoc says, because every later check costs memory proportional to
+     * the file. No fixture was both oversized AND non-text, so the order was free to drift.
+     */
+    @Test
+    void anOversizedBinaryIsRefusedForItsSizeNotItsBytes() {
+        byte[] hugeAndBinary = new byte[MAX_BYTES * 2];   // all NUL — fails requireText too, if it gets there
+
+        assertThatThrownBy(() -> validator.validate(upload("users.csv", "text/csv", hugeAndBinary)))
+                .hasMessageContaining("metadata.csv.tooLarge");
+    }
 }
