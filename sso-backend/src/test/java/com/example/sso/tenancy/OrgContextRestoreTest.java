@@ -64,6 +64,9 @@ class OrgContextRestoreTest {
     /**
      * Nothing failed, so a restore that fails is a real one: the connection would otherwise keep the inner
      * organization's scope and serve the outer caller another tenant's rows.
+     *
+     * <p>The trigger is synthetic — real Postgres would not refuse this {@code SET} on a healthy transaction.
+     * What is pinned is the POLICY (surface it, do not swallow), which is the half that guards isolation.
      */
     @Test
     void aFailedRestoreSurfacesWhenTheActionSucceeded() {
@@ -119,5 +122,20 @@ class OrgContextRestoreTest {
                 return binder;
             }
         };
+    }
+
+    /**
+     * The push is inside the try for this: a thread whose scope could not be pushed must still be handed back
+     * on the OUTER organization. A request thread would be rescued by the filters that clear in a finally, but
+     * an {@code @Async} or scheduled thread has none and would keep the inner org bound for its next task.
+     */
+    @Test
+    void aFailedPushDoesNotStrandTheThreadOnTheInnerOrganization() {
+        OrgContext context = contextFailingOn(1);   // the push is the first binder call
+
+        assertThatThrownBy(() -> context.callInOrg(ORG, () -> "unreachable"))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(context.currentOrg()).as("handed back unbound, not bound to the inner org").isEmpty();
     }
 }

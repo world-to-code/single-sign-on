@@ -43,6 +43,13 @@ public class OrgAwareDataSource extends DelegatingDataSource {
         return apply(super.getConnection(username, password));
     }
 
+    /**
+     * Applied on EVERY acquisition, unconditionally — writing empty (fail-closed) when there is no context.
+     * {@code OrgContext.restoreConnection} depends on that: it swallows a failed scope restore under an
+     * in-flight failure, which leaves the connection carrying the inner organization, and the GUC is
+     * session-lifetime. Only this unconditional re-apply keeps that from reaching the next borrower, so an
+     * "only SET when it changed" optimization here would turn that swallow into a cross-tenant read.
+     */
     private Connection apply(Connection connection) throws SQLException {
         boolean platform = orgContext.isPlatform();
         String org = (!platform && orgContext.currentOrg().isPresent())

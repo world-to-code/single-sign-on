@@ -6,6 +6,8 @@ import java.util.UUID;
 import java.util.function.Supplier;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * The active tenant context for the current thread, consulted when a JDBC connection is bound to a
@@ -102,9 +104,12 @@ public class OrgContext {
     private <T> T withState(State state, Supplier<T> action) {
         State previous = holder.get();
         holder.set(state);
-        syncConnection(); // push the scoped context onto a held tx connection (frozen at acquisition otherwise)
         Throwable failure = null;
         try {
+            // Inside the try: a push that throws must still hand the thread back on the OUTER org. A request
+            // thread would be rescued by the filters that clear in a finally, but an @Async or scheduled
+            // thread has none — it would stay bound to the inner org for whatever ran on it next.
+            syncConnection();
             return action.get();
         } catch (RuntimeException | Error thrown) {
             failure = thrown;
@@ -129,19 +134,34 @@ public class OrgContext {
      * reaches the caller as "current transaction is aborted" instead, and every {@code catch} for a specific
      * type silently stops matching. A real race in the CSV import surfaced exactly that way.
      *
-     * <p>Swallowing is safe ONLY under an in-flight failure: an aborted transaction cannot commit, so the
-     * stale GUC left on that connection can never serve a successful read. With no failure in flight a
-     * restore that fails is a genuine one and must surface — leaving the connection carrying the inner
-     * organization's scope would be a cross-tenant read.
+     * <p>Swallowing leaves the connection carrying the INNER organization, and the GUC is session-lifetime
+     * ({@code set_config(..., false)}), so what keeps that from reaching the next borrower is NOT this method.
+     * It is two things elsewhere, named here because a change to either turns this into a cross-tenant read:
+     * a {@code SET} issued inside a transaction is reverted when that transaction rolls back, and
+     * {@link com.example.sso.tenancy.internal.OrgAwareDataSource} re-applies the context UNCONDITIONALLY on
+     * every acquisition — writing empty, which is fail-closed, when there is none. An "only SET when it
+     * changed" optimization there would make a swallowed restore leak.
+     *
+     * <p>With no failure in flight the restore must surface instead: the thread-local then says OUTER while
+     * the connection says INNER, and every tier check reads the thread-local. The transaction is also doomed
+     * so that nobody who catches and carries on can commit work done under a scope we cannot name.
      */
     private void restoreConnection(Throwable failure) {
         try {
             syncConnection();
         } catch (RuntimeException restoreFailed) {
+            doomTransaction();
             if (failure == null) {
                 throw restoreFailed;
             }
             failure.addSuppressed(restoreFailed);
+        }
+    }
+
+    /** The connection's scope is now unknown, so nothing done under it may commit. */
+    private void doomTransaction() {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
         }
     }
 }
