@@ -13,6 +13,7 @@ import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
 import java.util.List;
+import java.util.function.Predicate;
 import java.util.function.ToIntFunction;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -80,11 +81,15 @@ class UserSessionPolicyImpl implements UserSessionPolicy {
 
     @Override
     public EffectiveSessionPolicy effectiveForUser(UserAccount user) {
-        // Resolve in ONE org scope (see resolveForUser for the platform-context rationale). idle/absolute are the
-        // FLOOR across every governing policy; every other field — re-auth cadence/factors and the bindClient/
-        // rotate preferences — comes from the specificity WINNER (element 0): the most-specific (user-direct)
-        // binding governs, a broader policy cannot override it (own-org over global, then priority — the tie-break
-        // policy priorities are unique per org, so this is deterministic).
+        // Resolve in ONE org scope (see resolveForUser for the platform-context rationale). Everything that CAN
+        // be composed toward the stricter answer is: lifetimes and the re-auth interval floor across every
+        // governing policy, and bindClient/rotateOnReauth hold if ANY of them asks for them. A narrow lax policy
+        // must not be able to undo what a broad org-wide one requires — the same reason the lifetimes were
+        // floored, applied to the rest of the fields it left out.
+        //
+        // reauthFactors is the exception and stays the specificity WINNER's. It is an ALLOW-list, checked with
+        // anyMatch (ReauthService.requireAllowedFactor), so the union would LOOSEN it and the intersection can
+        // be empty — leaving a user no acceptable way to re-authenticate at all. Neither is a floor worth having.
         return orgContext.callInOrg(orgContext.currentOrg().orElse(null), () -> {
             List<SessionPolicyDetails> governing =
                     bindings.resolveSessionPolicies(user, AppType.PORTAL, PortalApps.USER);
@@ -95,8 +100,10 @@ class UserSessionPolicyImpl implements UserSessionPolicy {
             return new EffectiveSessionPolicy(
                     floor(governing, SessionPolicyDetails::getIdleTimeoutMinutes),
                     floor(governing, SessionPolicyDetails::getAbsoluteTimeoutMinutes),
-                    winner.getReauthIntervalMinutes(), winner.getReauthFactors(),
-                    winner.isBindClient(), winner.isRotateOnReauth());
+                    floor(governing, SessionPolicyDetails::getReauthIntervalMinutes),
+                    winner.getReauthFactors(),
+                    anyRequires(governing, SessionPolicyDetails::isBindClient),
+                    anyRequires(governing, SessionPolicyDetails::isRotateOnReauth));
         });
     }
 
@@ -110,6 +117,11 @@ class UserSessionPolicyImpl implements UserSessionPolicy {
     /** The smallest value of {@code field} across the governing policies (never empty — Default is the fallback). */
     private int floor(List<SessionPolicyDetails> governing, ToIntFunction<SessionPolicyDetails> field) {
         return governing.stream().mapToInt(field).min().orElseThrow();
+    }
+
+    /** A hardening flag holds when ANY governing policy asks for it — one policy's laxity cannot switch it off. */
+    private boolean anyRequires(List<SessionPolicyDetails> governing, Predicate<SessionPolicyDetails> field) {
+        return governing.stream().anyMatch(field);
     }
 
     /** Every enabled session policy governing the user, most-specific first (element 0 is the specificity winner),

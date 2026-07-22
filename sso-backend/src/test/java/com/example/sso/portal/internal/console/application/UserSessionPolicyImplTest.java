@@ -25,6 +25,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 /**
@@ -73,7 +74,9 @@ class UserSessionPolicyImplTest {
     private SessionPolicyDetails policyWithReauth(int idleMinutes, int absoluteMinutes, int reauthInterval, String factors) {
         SessionPolicyDetails policy = policyWithLifetimes(idleMinutes, absoluteMinutes);
         when(policy.getReauthIntervalMinutes()).thenReturn(reauthInterval);
-        when(policy.getReauthFactors()).thenReturn(factors);
+        // lenient: a policy that does not win the specificity tie never has its factors read, and that a
+        // BROAD policy's factors go unread is the contract one of these tests exists to assert.
+        lenient().when(policy.getReauthFactors()).thenReturn(factors);
         return policy;
     }
 
@@ -182,24 +185,52 @@ class UserSessionPolicyImplTest {
 
     // --- effectiveForUsername: floored idle/absolute + re-auth AND preferences from the specificity WINNER ---
 
+    /**
+     * Everything that can be composed toward the stricter answer is. A narrow lax policy must not be able to
+     * undo what a broad org-wide one requires — the reason the lifetimes were floored in the first place,
+     * now applied to the re-auth interval and the two hardening flags it left out.
+     */
     @Test
-    void effectiveFloorsLifetimesButTakesReauthAndPreferencesFromTheWinner() {
+    void effectiveTakesTheStricterOfEveryFieldItCanCompose() {
         SessionPolicyDetails winner = policyWithReauth(60, 90, 25, "PASSWORD"); // most-specific (user) — element 0
-        when(winner.isBindClient()).thenReturn(true);                          // preference fields come from the winner —
-        when(winner.isRotateOnReauth()).thenReturn(false);                     // DISTINCT values so a field swap is caught
-        SessionPolicyDetails broad = policyWithLifetimes(30, 120);             // broader org policy — floor only
+        when(winner.isBindClient()).thenReturn(false);                         // the lax narrow policy...
+        when(winner.isRotateOnReauth()).thenReturn(false);
+        SessionPolicyDetails broad = policyWithReauth(30, 120, 15, "PASSWORD,TOTP");
+        when(broad.isBindClient()).thenReturn(true);                           // ...cannot switch off what the
+        when(broad.isRotateOnReauth()).thenReturn(true);                       //    broad one requires
         when(users.findByUsername(USER)).thenReturn(Optional.of(user));
         scopeToActingOrg();
         when(bindings.resolveSessionPolicies(user, AppType.PORTAL, PortalApps.USER))
-                .thenReturn(List.of(winner, broad));                          // most-specific first → winner = get(0)
+                .thenReturn(List.of(winner, broad));                           // most-specific first
 
         EffectiveSessionPolicy effective = resolver().effectiveForUsername(USER);
-        assertThat(effective.bindClient()).isTrue();                         // from the winner (get(0))
-        assertThat(effective.rotateOnReauth()).isFalse();                    // from the winner (get(0)), distinct value
-        assertThat(effective.idleTimeoutMinutes()).isEqualTo(30);            // min(60, 30) — floor
-        assertThat(effective.absoluteTimeoutMinutes()).isEqualTo(90);        // min(90, 120) — floor
-        assertThat(effective.reauthIntervalMinutes()).isEqualTo(25);         // from the winner, NOT the broader policy
-        assertThat(effective.reauthFactors()).isEqualTo("PASSWORD");         // from the winner, NOT the broader policy
+
+        assertThat(effective.idleTimeoutMinutes()).isEqualTo(30);              // min(60, 30)
+        assertThat(effective.absoluteTimeoutMinutes()).isEqualTo(90);          // min(90, 120)
+        assertThat(effective.reauthIntervalMinutes()).isEqualTo(15);           // min(25, 15) — re-auth sooner
+        assertThat(effective.bindClient()).isTrue();                           // required by the broader policy
+        assertThat(effective.rotateOnReauth()).isTrue();                       // required by the broader policy
+    }
+
+    /**
+     * reauthFactors is the one field that is NOT composed, and deliberately. It is an allow-list checked with
+     * anyMatch, so the union would loosen it; the intersection can be empty, which would leave the user no
+     * acceptable way to re-authenticate at all. The specificity winner's set stands.
+     */
+    @Test
+    void effectiveTakesTheReauthFactorsOfTheWinnerRatherThanCombiningThem() {
+        SessionPolicyDetails winner = policyWithReauth(60, 90, 25, "PASSWORD");
+        SessionPolicyDetails broad = policyWithReauth(30, 120, 15, "TOTP");   // disjoint on purpose
+        when(users.findByUsername(USER)).thenReturn(Optional.of(user));
+        scopeToActingOrg();
+        when(bindings.resolveSessionPolicies(user, AppType.PORTAL, PortalApps.USER))
+                .thenReturn(List.of(winner, broad));
+
+        EffectiveSessionPolicy effective = resolver().effectiveForUsername(USER);
+
+        assertThat(effective.reauthFactors())
+                .as("not the union (which loosens) and not the intersection (which would be empty)")
+                .isEqualTo("PASSWORD");
     }
 
     @Test
