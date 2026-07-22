@@ -1,6 +1,8 @@
 package com.example.sso.metadata.internal.application;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import java.util.Arrays;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
@@ -72,16 +74,19 @@ class CsvImportLimitsBindingTest {
      * binding failed, and the property is named by the validation error nested under it — in the record
      * component's spelling, not the relaxed one used in the file.
      */
-    @Test
-    void anAbsentCeilingFailsStartupNamingTheProperty() {
-        for (String[] key : new String[][] {
-                {"max-file-bytes", "maxFileBytes"}, {"max-rows", "maxRows"}, {"max-columns", "maxColumns"},
-                {"max-cell-length", "maxCellLength"}, {"max-group-names", "maxGroupNames"}}) {
-            contexts.withPropertyValues(allBut(key[0])).run(context ->
-                    assertThat(context).hasFailed()
-                            .getFailure()
-                            .hasStackTraceContaining(key[1]));
-        }
+    @ParameterizedTest
+    @CsvSource({
+        "max-file-bytes,maxFileBytes",
+        "max-rows,maxRows",
+        "max-columns,maxColumns",
+        "max-cell-length,maxCellLength",
+        "max-group-names,maxGroupNames",
+    })
+    void anAbsentCeilingFailsStartupNamingTheProperty(String key, String property) {
+        contexts.withPropertyValues(allBut(key)).run(context ->
+                assertThat(context).hasFailed()
+                        .getFailure()
+                        .hasStackTraceContaining(property));
     }
 
     /** Zero is the value an absent key would have bound to, so it has to be refused on its own account too. */

@@ -1,10 +1,10 @@
 package com.example.sso.metadata.internal.application;
 
-import com.example.sso.metadata.CsvImportPreview;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartRequest;
 
@@ -48,12 +48,32 @@ class CsvImportTransactionBoundaryTest {
         assertThat(transactional.readOnly()).isTrue();
     }
 
-    /** Public so the proxy is unambiguous, and returns the plan both callers share. */
+    /**
+     * The boundary only exists if Spring proxies the bean that declares it.
+     *
+     * <p>Asserted because the annotation assertions above cannot see this: remove {@code @Component} from the
+     * planner, or construct it with {@code new} instead of injecting it, and they stay green while the
+     * transaction disappears — which is the defect they exist to prevent, restored.
+     */
     @Test
-    void thePlanIsReachableThroughAProxy() throws NoSuchMethodException {
-        Method plan = planMethod();
+    void thePlannerIsASpringBeanSoTheBoundaryIsReallyApplied() throws NoSuchMethodException {
+        assertThat(CsvImportPlanner.class.isAnnotationPresent(Component.class))
+                .as("a plain object has no proxy, so its @Transactional does nothing")
+                .isTrue();
+        assertThat(Modifier.isPublic(planMethod().getModifiers()))
+                .as("Spring's proxying of non-public methods is version-dependent; do not rely on it here")
+                .isTrue();
+    }
 
-        assertThat(Modifier.isPublic(plan.getModifiers())).isTrue();
-        assertThat(plan.getReturnType()).isEqualTo(CsvImportPreview.class);
+    /**
+     * And {@code apply} must NOT be transactional. Wrapping the row loop turns the per-row
+     * DataIntegrityViolationException catch into an UnexpectedRollbackException over the whole import — the
+     * poisoned-transaction failure this repository has already shipped once.
+     */
+    @Test
+    void theImportItselfDeclaresNoTransaction() throws NoSuchMethodException {
+        Method apply = CsvImportServiceImpl.class.getDeclaredMethod("apply", UUID.class, MultipartRequest.class);
+
+        assertThat(apply.isAnnotationPresent(Transactional.class)).isFalse();
     }
 }

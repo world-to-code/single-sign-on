@@ -196,7 +196,28 @@ class CsvGroupDirectoryAdapterTest {
             directory.usableIds(List.of("platform"));
             directory.usableIds(List.of("later-group"));
 
-            verify(groups, times(2)).groupIdsByName(any(), eq(ORG));
+            verify(groups).groupIdsByName(List.of("platform"), ORG);
+            verify(groups).groupIdsByName(List.of("later-group"), ORG);
+        });
+    }
+
+    /**
+     * A later call asks only about what it has NOT decided.
+     *
+     * <p>The saving is in the ARGUMENT, not the call count: re-asking the whole list every time keeps the
+     * count identical while doing all the work again, and every case that passes one name at a time is blind
+     * to the difference — the two lists are equal there.
+     */
+    @Test
+    void aLaterCallAsksOnlyAboutTheNamesItHasNotDecided() {
+        withRequestContext(() -> {
+            when(accessPolicy.canAccessGroup(REACHABLE)).thenReturn(true);
+
+            directory.usableIds(List.of("platform"));
+            directory.usableIds(List.of("platform", "later-group"));
+
+            verify(groups).groupIdsByName(List.of("platform"), ORG);
+            verify(groups).groupIdsByName(List.of("later-group"), ORG);
         });
     }
 

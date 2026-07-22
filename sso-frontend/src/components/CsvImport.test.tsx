@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { ApiError } from "@/api";
 import { CsvImport } from "./CsvImport";
 import {
   applyCsvImport,
   downloadCsvTemplate,
   previewCsvImport,
+  type CsvRowFailure,
   type Profile,
 } from "@/attributeDefinitions";
 
@@ -117,15 +119,22 @@ describe("CsvImport", () => {
    * what the server withheld.
    */
   it("renders only the line and the reason for a failure", async () => {
+    // The fixture carries a field the server does NOT send, cast past the type on purpose: a server that
+    // regrows one is not a compile error here, and the assertion has to fail on rendering it. Without a
+    // hazard in the fixture this test passed even if the component rendered the whole object.
     vi.mocked(previewCsvImport).mockResolvedValue(
-      preview({ failures: [{ line: 3, reason: "email is required." }] }),
+      preview({
+        failures: [
+          { line: 3, reason: "email is required.", detail: "ada@x.io" } as unknown as CsvRowFailure,
+        ],
+      }),
     );
     render(<CsvImport profile={PROFILE} />);
 
     pick(csv());
 
-    const failure = await screen.findByText(/email is required\./);
-    expect(failure.textContent).not.toMatch(/ada@x\.io|ada/);
+    await screen.findByText(/email is required\./);
+    expect(screen.queryByText(/ada@x\.io/)).not.toBeInTheDocument();
   });
 
   /** A partial apply still reports what happened; the result replaces the preview so it cannot be re-confirmed. */
@@ -143,15 +152,45 @@ describe("CsvImport", () => {
     expect(screen.queryByRole("button", { name: /csvImportConfirm/ })).not.toBeInTheDocument();
   });
 
-  /** A refusal from the server is shown, not swallowed — the administrator has to know the file was rejected. */
-  it("surfaces a rejected upload", async () => {
-    vi.mocked(previewCsvImport).mockRejectedValue(new Error("The file has more than 500 rows."));
+  /**
+   * A refusal is shown, not swallowed. Rejected with the ApiError production actually throws — a plain Error
+   * takes errorMessage's final fallback, a branch the real client never reaches, so the test was exercising
+   * the wrong path and could not see the status mapping at all.
+   */
+  it("surfaces a refusal the server explained", async () => {
+    vi.mocked(previewCsvImport).mockRejectedValue(
+      new ApiError(400, "The file has more than 500 rows."),
+    );
     render(<CsvImport profile={PROFILE} />);
 
     pick(csv());
 
     expect(await screen.findByText(/more than 500 rows/)).toBeInTheDocument();
     expect(applyCsvImport).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The container rejects an oversized upload before the application sees it, so there is no explanation to
+   * pass on — the user still has to be told what happened rather than shown a status number.
+   */
+  it("says a file is too large when the container refuses it", async () => {
+    vi.mocked(previewCsvImport).mockRejectedValue(new ApiError(413));
+    render(<CsvImport profile={PROFILE} />);
+
+    pick(csv());
+
+    expect(await screen.findByText(/too large/i)).toBeInTheDocument();
+  });
+
+  /** A failed apply keeps the plan on screen, so the administrator can see what happened and retry. */
+  it("keeps the preview when applying fails", async () => {
+    vi.mocked(applyCsvImport).mockRejectedValue(new ApiError(409, "Someone else changed it."));
+    render(<CsvImport profile={PROFILE} />);
+    pick(csv());
+    fireEvent.click(await screen.findByRole("button", { name: /csvImportConfirm/ }));
+
+    expect(await screen.findByText(/Someone else changed it\./)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /csvImportConfirm/ })).toBeInTheDocument();
   });
 
   /** Cancelling drops the plan, so a later confirm cannot apply a file the administrator backed out of. */

@@ -6,6 +6,7 @@ export const errors: Record<keyof typeof enErrors, string> = {
   forbidden: "이 작업을 수행할 권한이 없습니다.",
   notFound: "찾을 수 없습니다. 이미 삭제되었을 수 있습니다.",
   conflict: "변경사항이 적용되지 않았습니다.",
+  tooLarge: "업로드하기에 파일이 너무 큽니다.",
   failed: "요청을 처리하지 못했습니다 ({{status}}).",
 
   failureNetworkTitle: "서버에 연결하지 못했습니다",

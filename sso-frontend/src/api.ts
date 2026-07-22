@@ -50,6 +50,7 @@ export function errorMessage(e: unknown): string {
       case 403: return detail ?? i18n.t("forbidden", { ns: "errors" });
       case 404: return i18n.t("notFound", { ns: "errors" });
       case 409: return detail ?? i18n.t("conflict", { ns: "errors" });
+      case 413: return i18n.t("tooLarge", { ns: "errors" });
       default: return i18n.t("failed", { ns: "errors", status: e.status });
     }
   }

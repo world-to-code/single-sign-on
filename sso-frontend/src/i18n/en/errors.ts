@@ -6,6 +6,9 @@ export const errors = {
   forbidden: "You don't have permission for this action.",
   notFound: "Not found — it may have been removed.",
   conflict: "Conflict — the change wasn't applied.",
+  // 413 comes from the SERVLET container, which rejects the upload before the application sees it —
+  // so there is no ProblemDetail to prefer, and a bare status line tells the user nothing actionable.
+  tooLarge: "That file is too large to upload.",
   failed: "Request failed ({{status}}).",
 
   // The four load-failure panels (DESIGN.md §5). A 403 discloses nothing about existence; only

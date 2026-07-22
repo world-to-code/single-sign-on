@@ -16,10 +16,23 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import java.util.function.Supplier;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import com.example.sso.user.role.Roles;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.mock.web.MockMultipartHttpServletRequest;
 import org.springframework.web.multipart.MultipartRequest;
 
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -42,7 +55,7 @@ class CsvImportIT extends AbstractIntegrationTest {
     @Autowired ProfileService profiles;
     @Autowired OrganizationService organizations;
     @Autowired UserService users;
-    @Autowired UserGroupService groups;
+    @MockitoSpyBean UserGroupService groups;
     @Autowired OrgContext orgContext;
 
     private UUID orgA;
@@ -77,6 +90,65 @@ class CsvImportIT extends AbstractIntegrationTest {
     private UUID tenantProfile(UUID orgId) {
         return orgContext.callInOrg(orgId, () -> profiles.list()).stream()
                 .filter(profile -> profile.kind() == ProfileKind.TENANT).findFirst().orElseThrow().id();
+    }
+
+    /**
+     * The per-request group memo, exercised against a real database — which nothing did.
+     *
+     * <p>{@link AbstractIntegrationTest} clears the request context and this suite's uploads never bind one,
+     * so {@code CsvGroupDirectoryAdapter} took its no-request branch on every row and resolved afresh: the
+     * memo was covered by unit tests with three stubs, and by nothing that runs the real RLS-scoped query.
+     * What that leaves unproven is the part worth proving — a verdict reached in the planning transaction is
+     * reused by rows that each commit in their OWN {@code REQUIRES_NEW} transaction afterwards.
+     */
+    @Test
+    void theGroupVerdictIsResolvedOnceAndStillHoldsForEveryRowsOwnTransaction() {
+        orgA = org();
+        String team = "team-" + UUID.randomUUID().toString().substring(0, 8);
+        UUID groupId = orgContext.callInOrg(orgA,
+                () -> UUID.fromString(groups.create(new GroupSpec(team, null, null, Set.of())).id()));
+        UUID profile = tenantProfile(orgA);
+
+        String first = "m1-" + UUID.randomUUID().toString().substring(0, 8);
+        String second = "m2-" + UUID.randomUUID().toString().substring(0, 8);
+        String csv = "username,email,groups\n"
+                + first + "," + first + "@example.com," + team + "\n"
+                + second + "," + second + "@example.com," + team + "\n";
+
+        CsvImportResult result = asSuperAdmin(() -> withRequestContext(() ->
+                orgContext.callInOrg(orgA, () -> imports.apply(profile, upload(csv)))));
+
+        assertThat(result.failures()).isEmpty();
+        assertThat(result.created()).isEqualTo(2);
+        // The whole file cost ONE directory resolution, across the plan and both rows. Asserted before any
+        // other lookup here, since this suite's own helpers would otherwise add to the count.
+        verify(groups, times(1)).groupIdsByName(any(), eq(orgA));
+        // Persisted state, not the counters the loop under test computed.
+        assertThat(orgContext.callInOrg(orgA, () -> groups.members(groupId, 0, 10).total())).isEqualTo(2);
+    }
+
+    /**
+     * Group reach is decided against the ACTING admin, and this suite never signed one in — so
+     * {@code canAccessGroup} was fail-closed for every test here and no group was ever successfully joined.
+     * The existing group case only covers the refusal half.
+     */
+    private <T> T asSuperAdmin(Supplier<T> body) {
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                "admin", null, List.of(new SimpleGrantedAuthority(Roles.ADMIN))));
+        try {
+            return body.get();
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+    }
+
+    private <T> T withRequestContext(Supplier<T> body) {
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(new MockHttpServletRequest()));
+        try {
+            return body.get();
+        } finally {
+            RequestContextHolder.resetRequestAttributes();
+        }
     }
 
     private MultipartRequest upload(String csv) {
