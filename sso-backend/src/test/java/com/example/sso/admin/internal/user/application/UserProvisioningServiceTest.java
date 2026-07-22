@@ -78,7 +78,8 @@ class UserProvisioningServiceTest {
         service.create(NewUserCommand.fromConsole(newUser, Map.of("team", List.of("Platform"))));
 
         verify(userService).assignProfile(userId, profile);
-        verify(attributes).add(EntityKind.USER, userId.toString(), "team", "Platform");
+        // One call for the whole write, not one per value — see AttributeService.addAll.
+        verify(attributes).addAll(EntityKind.USER, userId.toString(), Map.of("team", List.of("Platform")));
     }
     /** A blank value is "not supplied", not an empty attribute nobody can search for. */
     @Test
@@ -93,7 +94,8 @@ class UserProvisioningServiceTest {
 
         service.create(NewUserCommand.fromConsole(newUser, Map.of("team", List.of("  "))));
 
-        verify(attributes, never()).add(any(), any(), any(), any());
+        // Handed over as given; addAll is where a blank is skipped, and its own test says so.
+        verify(attributes).addAll(EntityKind.USER, userId.toString(), Map.of("team", List.of("  ")));
     }
     @Test
     void createUserInATenantRecordsTheOrgMembership() {

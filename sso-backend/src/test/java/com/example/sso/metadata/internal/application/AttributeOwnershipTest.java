@@ -12,6 +12,7 @@ import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.tenancy.OrgTierGuard;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -28,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -285,5 +287,46 @@ class AttributeOwnershipTest {
 
         assertThatCode(() -> service.remove(EntityKind.USER, ENTITY, "department"))
                 .doesNotThrowAnyException();
+    }
+
+    // --- bulk write --------------------------------------------------------------------------------------
+
+    /**
+     * One change, one event. The listener re-evaluates every mapping rule for the entity, so a bulk create
+     * publishing per VALUE repeats that work — a 500-row file with three attributes queued 1,500
+     * re-evaluations where 500 would do, enough to saturate the bounded executor and drag the rest back onto
+     * the importing request thread.
+     */
+    @Test
+    void addAllPublishesOneEventForTheWholeWrite() {
+        when(definitions.definitionOf(any(), any())).thenReturn(Optional.empty());
+
+        service.addAll(EntityKind.USER, ENTITY,
+                Map.of("team", List.of("platform"), "level", List.of("senior")));
+
+        verify(attributes, times(2)).save(any());
+        verify(events, times(1)).publishEvent(any(Object.class));
+    }
+
+    /** Nothing written, nothing announced — a listener woken for no change is work for no reason. */
+    @Test
+    void addAllAnnouncesNothingWhenEveryValueIsBlank() {
+        when(definitions.definitionOf(any(), any())).thenReturn(Optional.empty());
+
+        service.addAll(EntityKind.USER, ENTITY, Map.of("team", List.of("", "  ")));
+
+        verify(attributes, never()).save(any());
+        verify(events, never()).publishEvent(any(Object.class));
+    }
+
+    /** The ownership guard still runs, per key, before anything is written. */
+    @Test
+    void addAllRefusesADirectoryOwnedKeyBeforeWritingAnyOfThem() {
+        defined("department", AttributeSource.DIRECTORY);
+
+        assertThatThrownBy(() -> service.addAll(EntityKind.USER, ENTITY, Map.of("department", List.of("x"))))
+                .isInstanceOf(ConflictException.class);
+
+        verify(attributes, never()).save(any());
     }
 }

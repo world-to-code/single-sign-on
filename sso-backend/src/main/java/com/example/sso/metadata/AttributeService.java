@@ -2,6 +2,7 @@ package com.example.sso.metadata;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -49,6 +50,20 @@ public interface AttributeService {
     /** Adds one value under {@code key} in the acting tier, keeping any existing values (idempotent — a no-op if
      *  the entity already carries this exact key/value). */
     void add(EntityKind kind, String entityId, String key, String value);
+
+    /**
+     * Adds every value in {@code values} under its key, as ONE change.
+     *
+     * <p>The mirror of {@link #removeAll}, and for the same reason: the listener re-evaluates every mapping
+     * rule for this entity, so a bulk create doing it once per VALUE repeats the same work for one logical
+     * change. A five-hundred-row file with three attributes each queued fifteen hundred re-evaluations where
+     * five hundred would do — enough to saturate the bounded executor, after which CallerRunsPolicy drags the
+     * rest back onto the importing request thread.
+     *
+     * <p>Blank and null values are skipped: absence and emptiness are different answers, and only absence is
+     * recorded that way.
+     */
+    void addAll(EntityKind kind, String entityId, Map<String, List<String>> values);
 
     /** Removes one value from {@code key} in the acting tier, leaving the key's other values; a no-op if absent. */
     void removeValue(EntityKind kind, String entityId, String key, String value);

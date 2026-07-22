@@ -93,13 +93,7 @@ public class UserProvisioningService {
      * on — so absence and emptiness must not be recorded the same way.
      */
     private void writeAttributes(UUID userId, Map<String, List<String>> attributeValues) {
-        for (Map.Entry<String, List<String>> attribute : attributeValues.entrySet()) {
-            for (String value : attribute.getValue()) {
-                if (value != null && !value.isBlank()) {
-                    attributes.add(EntityKind.USER, userId.toString(), attribute.getKey(), value);
-                }
-            }
-        }
+        attributes.addAll(EntityKind.USER, userId.toString(), attributeValues);
     }
 
     /** The view to return, and the trail that says who was made — the keys of the account, never its values. */

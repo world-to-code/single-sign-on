@@ -157,6 +157,34 @@ class AttributeServiceImpl implements AttributeService {
 
     @Override
     @Transactional
+    public void addAll(EntityKind kind, String entityId, Map<String, List<String>> values) {
+        UUID tier = tierGuard.currentTier();
+        boolean wrote = false;
+        for (Map.Entry<String, List<String>> attribute : values.entrySet()) {
+            requireWritable(kind, attribute.getKey());
+            wrote |= writeValues(kind, entityId, attribute.getKey(), attribute.getValue(), tier);
+        }
+        if (wrote) {
+            // One event for the whole write, for the reason removeAll gives: the listener re-evaluates every
+            // mapping rule for this entity, and once per value repeats that work for one logical change.
+            events.publishEvent(new EntityAttributeChangedEvent(kind, entityId, tier));
+        }
+    }
+
+    /** Every non-blank value under one key; true when any row was actually inserted. */
+    private boolean writeValues(EntityKind kind, String entityId, String key, List<String> values, UUID tier) {
+        boolean wrote = false;
+        for (String value : values) {
+            if (value != null && !value.isBlank() && !ownValueExists(kind, entityId, key, value, tier)) {
+                attributes.save(new EntityAttribute(kind, entityId, key, value, tier));
+                wrote = true;
+            }
+        }
+        return wrote;
+    }
+
+    @Override
+    @Transactional
     public void removeValue(EntityKind kind, String entityId, String key, String value) {
         requireRemovable(kind, key);
         UUID tier = tierGuard.currentTier();
