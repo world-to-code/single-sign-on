@@ -1,6 +1,8 @@
 package com.example.sso.metadata.internal.application;
 
 import com.example.sso.metadata.internal.domain.ProfileAttributeMappingRepository;
+import com.example.sso.metadata.AttributeKeyPolicyGuard;
+import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.metadata.Profile;
 import com.example.sso.metadata.ProfileKind;
 import com.example.sso.metadata.ProfileService;
@@ -9,6 +11,7 @@ import com.example.sso.metadata.internal.domain.ProfileRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.tenancy.OrgContext;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,9 +23,11 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * A mapping reads whatever path it is given out of the source payload, and a source payload carries
@@ -43,12 +48,15 @@ class ProfileMappingCredentialGuardTest {
     @Mock private ProfileService profileService;
     @Mock private OrgContext orgContext;
     @Mock private ApplicationEventPublisher events;
+    @Mock private AttributeKeyPolicyGuard policyGuard;
 
     private ProfileMappingServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new ProfileMappingServiceImpl(repository, profiles, profileService, orgContext, events);
+        service = new ProfileMappingServiceImpl(
+                repository, profiles, profileService, orgContext, events, policyGuard);
+        lenient().when(policyGuard.keysBeyondAuthority(any())).thenReturn(Set.of());
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         lenient().when(profiles.findByIdAndOrgId(SOURCE, ORG)).thenReturn(Optional.of(profile(SOURCE)));
         lenient().when(profiles.findByIdAndOrgId(TARGET, ORG)).thenReturn(Optional.of(profile(TARGET)));
@@ -56,7 +64,7 @@ class ProfileMappingCredentialGuardTest {
                 new Profile(TARGET, "acme", ProfileKind.TENANT, null, true, true)));
         lenient().when(repository.findBySourceProfileIdAndSourceAttrKey(SOURCE, "department"))
                 .thenReturn(Optional.empty());
-        lenient().when(repository.saveAndFlush(org.mockito.ArgumentMatchers.any()))
+        lenient().when(repository.saveAndFlush(any()))
                 .thenAnswer(i -> i.getArgument(0));
     }
 
@@ -87,14 +95,14 @@ class ProfileMappingCredentialGuardTest {
 
         assertThatThrownBy(() -> service.map(SOURCE, "department", otherSource, "team"))
                 .isInstanceOf(BadRequestException.class);
-        verify(repository, never()).saveAndFlush(org.mockito.ArgumentMatchers.any());
+        verify(repository, never()).saveAndFlush(any());
     }
 
     @Test
     void refusesAPasswordAsASourceAttribute() {
         assertThatThrownBy(() -> service.map(SOURCE, "password", TARGET, "notes"))
                 .isInstanceOf(BadRequestException.class);
-        verify(repository, never()).saveAndFlush(org.mockito.ArgumentMatchers.any());
+        verify(repository, never()).saveAndFlush(any());
     }
 
     /** The shape varies by source, so the check is a substring match rather than an exact list. */
@@ -110,5 +118,29 @@ class ProfileMappingCredentialGuardTest {
     @Test
     void anOrdinaryAttributeIsStillMappable() {
         assertThatCode(() -> service.map(SOURCE, "department", TARGET, "team")).doesNotThrowAnyException();
+    }
+
+    /**
+     * Aiming a source at a key a policy binding tests is refused at the WRITE. Refusing later, by declining to
+     * match the binding, would fall back to the organization's default policy — the looser direction — so an
+     * under-authorized administrator would gain a way to downgrade everyone the binding governs.
+     */
+    @Test
+    void refusesToAimASourceAtAKeyAPolicyBindingGoverns() {
+        when(policyGuard.keysBeyondAuthority(Set.of("clearance"))).thenReturn(Set.of("clearance"));
+
+        assertThatThrownBy(() -> service.map(SOURCE, "department", TARGET, "clearance"))
+                .isInstanceOf(ForbiddenException.class);
+
+        verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void allowsTheMappingWhenNoBindingGovernsTheKey() {
+        when(policyGuard.keysBeyondAuthority(Set.of("department"))).thenReturn(Set.of());
+
+        service.map(SOURCE, "department", TARGET, "department");
+
+        verify(repository).saveAndFlush(any());
     }
 }

@@ -4,6 +4,7 @@ import com.example.sso.metadata.AttributeDataType;
 import com.example.sso.metadata.AttributeDefinition;
 import com.example.sso.metadata.AttributeDefinitionService;
 import com.example.sso.metadata.AttributeDefinitionSpec;
+import com.example.sso.metadata.AttributeKeyPolicyGuard;
 import com.example.sso.metadata.BaseAttributes;
 import com.example.sso.metadata.AttributeSourceConfigurationChangedEvent;
 import com.example.sso.metadata.EntityKind;
@@ -18,6 +19,7 @@ import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -43,6 +45,7 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
     private final ProfileRepository profiles;
     private final OrgContext orgContext;
     private final ApplicationEventPublisher events;
+    private final AttributeKeyPolicyGuard policyGuard;
 
     @Override
     @Transactional(readOnly = true)
@@ -126,6 +129,7 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
             throw BadRequestException.of("metadata.definition.userOnly");
         }
         requireNotBase(spec.key());
+        requireMayControl(spec.key().trim());
         validate(spec);
         UUID tier = writableTier();
         UUID profile = requireOwnProfile(profileId)
@@ -154,6 +158,9 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
                 ? repository.findByIdAndOrgIdIsNull(id)
                 : repository.findByIdAndOrgId(id, tier))
                 .orElseThrow(() -> NotFoundException.of("metadata.definition.notFound"));
+        if (row.getEntityKind() == EntityKind.USER) {
+            requireMayControl(row.getAttrKey());
+        }
         // Attribute VALUES deliberately survive: a definition is a catalog entry, and deleting it must not
         // silently strip data that mapping rules and policy bindings are still matching on.
         repository.delete(row);
@@ -248,5 +255,16 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
         return new AttributeDefinition(row.getId(), row.getEntityKind(), row.getAttrKey(), row.getDisplayName(),
                 row.getDescription(), row.getDataType(), values, row.isMultiValued(), row.isRequired(),
                 row.getSource(), row.getSortOrder());
+    }
+
+    /**
+     * A definition's {@code source} decides who may write the key, so redefining or removing one that a policy
+     * binding tests changes which policy that binding can be made to choose. Ask at the write, where refusing
+     * denies the change; refusing at resolution time would instead fall back to the looser default policy.
+     */
+    private void requireMayControl(String key) {
+        if (!policyGuard.keysBeyondAuthority(Set.of(key)).isEmpty()) {
+            throw ForbiddenException.of("metadata.definition.policyGoverned", key);
+        }
     }
 }

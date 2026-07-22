@@ -12,4 +12,10 @@ public interface PolicyBindingConditionRepository extends JpaRepository<PolicyBi
 
     /** The conditions of one binding (the writer builds its current group to diff against the wanted one). */
     List<PolicyBindingCondition> findByBindingId(UUID bindingId);
+
+    /**
+     * Every condition testing one of these keys — the reverse lookup the admission guard needs to answer
+     * "does a policy binding decide anything by this attribute". RLS-scoped.
+     */
+    List<PolicyBindingCondition> findByAttrKeyIn(Collection<String> attrKeys);
 }

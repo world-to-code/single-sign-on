@@ -4,6 +4,7 @@ import com.example.sso.metadata.AttributeDataType;
 import com.example.sso.metadata.AttributeDefinition;
 import com.example.sso.metadata.AttributeDefinitionSpec;
 import com.example.sso.metadata.AttributeSource;
+import com.example.sso.metadata.AttributeKeyPolicyGuard;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.metadata.internal.domain.AttributeDefinitionEntity;
 import com.example.sso.metadata.internal.domain.AttributeDefinitionRepository;
@@ -16,6 +17,7 @@ import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +27,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
@@ -46,13 +49,15 @@ class AttributeDefinitionServiceImplTest {
     @Mock private OrgContext orgContext;
     @Mock private ProfileRepository profiles;
     @Mock private ApplicationEventPublisher events;
+    @Mock private AttributeKeyPolicyGuard policyGuard;
 
     private AttributeDefinitionServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new AttributeDefinitionServiceImpl(repository, profiles, orgContext, events);
+        service = new AttributeDefinitionServiceImpl(repository, profiles, orgContext, events, policyGuard);
         lenient().when(profiles.findByIdAndOrgId(PROFILE, ORG)).thenReturn(Optional.of(profileRow()));
+        lenient().when(policyGuard.keysBeyondAuthority(any())).thenReturn(Set.of());
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         lenient().when(repository.save(any())).thenAnswer(i -> i.getArgument(0));
     }
@@ -235,5 +240,27 @@ class AttributeDefinitionServiceImplTest {
 
         assertThatThrownBy(() -> service.delete(UUID.randomUUID())).isInstanceOf(ForbiddenException.class);
         verify(repository, never()).delete(any());
+    }
+
+    /**
+     * Redefining a key changes its {@code source}, and source is what decides who may write it — so a key a
+     * policy binding tests may only be redefined by someone who could set that policy. Refused at the write:
+     * refusing at resolution time would drop the binding and fall back to the looser default policy.
+     */
+    @Test
+    void refusesToRedefineAKeyAPolicyBindingGoverns() {
+        when(policyGuard.keysBeyondAuthority(Set.of("clearance"))).thenReturn(Set.of("clearance"));
+
+        assertThatThrownBy(() -> service.save(PROFILE, spec("clearance", AttributeDataType.STRING, null, AttributeSource.DIRECTORY)))
+                .isInstanceOf(ForbiddenException.class);
+
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void definesAnUngovernedKeyFreely() {
+        when(policyGuard.keysBeyondAuthority(Set.of("department"))).thenReturn(Set.of());
+
+        assertThatCode(() -> service.save(PROFILE, valid())).doesNotThrowAnyException();
     }
 }

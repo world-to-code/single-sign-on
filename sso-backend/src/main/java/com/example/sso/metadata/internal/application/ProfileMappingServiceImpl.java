@@ -1,5 +1,6 @@
 package com.example.sso.metadata.internal.application;
 
+import com.example.sso.metadata.AttributeKeyPolicyGuard;
 import com.example.sso.metadata.Profile;
 import com.example.sso.metadata.AttributeSourceConfigurationChangedEvent;
 import com.example.sso.metadata.ProfileKind;
@@ -17,6 +18,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -46,6 +48,7 @@ class ProfileMappingServiceImpl implements ProfileMappingService {
     private final ProfileService profileService;
     private final OrgContext orgContext;
     private final ApplicationEventPublisher events;
+    private final AttributeKeyPolicyGuard policyGuard;
 
     @Override
     @Transactional(readOnly = true)
@@ -74,6 +77,7 @@ class ProfileMappingServiceImpl implements ProfileMappingService {
         }
         String from = requireCarryable(requireKey(sourceKey));
         String to = requireKey(targetKey);
+        requireMayControl(to);
         // Re-aiming an existing mapping is an update in place, not delete-then-insert: Hibernate flushes
         // inserts before deletes, so the insert would hit uq_profile_mapping_source while the old row remains.
         sourcesChanged();
@@ -159,6 +163,17 @@ class ProfileMappingServiceImpl implements ProfileMappingService {
             throw BadRequestException.of("metadata.mapping.keyRequired");
         }
         return key.trim();
+    }
+
+    /**
+     * Aiming a source at a key a policy binding tests hands everyone who can write that key the power to
+     * choose the policy. Refuse the mapping unless the administrator could have set that policy themselves —
+     * here, at the write, because refusing to MATCH the binding later would fall back to the looser default.
+     */
+    private void requireMayControl(String targetKey) {
+        if (!policyGuard.keysBeyondAuthority(Set.of(targetKey)).isEmpty()) {
+            throw ForbiddenException.of("metadata.mapping.policyGoverned", targetKey);
+        }
     }
 
     private ProfileMapping toMapping(ProfileAttributeMapping row) {
