@@ -6,7 +6,11 @@ import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.role.Roles;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
@@ -90,13 +94,13 @@ class CsvImportConcurrencyIT extends AbstractIntegrationTest {
         assertThat(result.created()).isEqualTo(1);                     // and the uncontested one still landed
         assertThat(rowsNamed(contested)).as("the index resolved it — one account, not two").isEqualTo(1);
         assertThat(rowsNamed(mine))
-                .as("REQUIRES_NEW: the neighbour's violation did not take this row with it").isEqualTo(1);
+                .as("the neighbour's refusal did not take this row with it").isEqualTo(1);
     }
 
     /**
      * Two real imports at once. The interleaving is not controlled, so this asserts only what holds whichever
-     * way it falls — one account exists and neither call threw. It is the stress companion to the
-     * deterministic case above, not a substitute for it.
+     * way it falls: one account exists, and NEITHER call threw. The second half needs a Future — a bare Thread
+     * swallows its throwable, which left this passing even if the losing import 500'd.
      */
     @Test
     void twoImportsOfOneUsernameNeverProduceTwoAccounts() throws Exception {
@@ -105,12 +109,22 @@ class CsvImportConcurrencyIT extends AbstractIntegrationTest {
         String username = "grace-" + UUID.randomUUID().toString().substring(0, 8);
         String csv = fileFor(profile, username);
 
-        Thread other = new Thread(() -> apply(profile, csv));
-        other.start();
-        apply(profile, csv);
-        other.join();
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        List<CsvImportResult> results;
+        try {
+            List<Future<CsvImportResult>> futures = pool.invokeAll(List.of(
+                    () -> apply(profile, csv), () -> apply(profile, csv)));
+            results = new ArrayList<>();
+            for (Future<CsvImportResult> future : futures) {
+                results.add(future.get());   // an escaped exception fails here, which is half the point
+            }
+        } finally {
+            pool.shutdown();
+        }
 
         assertThat(rowsNamed(username)).isEqualTo(1);
+        assertThat(results.stream().mapToInt(CsvImportResult::created).sum())
+                .as("one wins; the other reports the row rather than throwing").isEqualTo(1);
     }
 
     /** Runs a whole competing import inside the first creator call — after planning, before writing. */
