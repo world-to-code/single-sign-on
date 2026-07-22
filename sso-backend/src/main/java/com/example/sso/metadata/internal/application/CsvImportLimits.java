@@ -17,7 +17,12 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param maxColumns    checked on the header, before a single row is read
  * @param maxCellLength matches {@code entity_attribute.attr_value}, so a value that would not survive the
  *                      write is refused where the administrator can still see which row it was
+ * @param maxGroupNames ceiling on the DISTINCT group names a file may mention across all of its rows. The
+ *                      cell ceiling bounds one cell and nothing bounded the total, so a file at every other
+ *                      limit could still name tens of thousands of groups — one bind parameter and one
+ *                      authorization decision each, on a route that writes nothing
  */
 @ConfigurationProperties("sso.metadata.csv-import")
-public record CsvImportLimits(int maxFileBytes, int maxRows, int maxColumns, int maxCellLength) {
+public record CsvImportLimits(int maxFileBytes, int maxRows, int maxColumns, int maxCellLength,
+                              int maxGroupNames) {
 }

@@ -6,6 +6,7 @@ import com.example.sso.metadata.CsvGroupDirectory;
 import com.example.sso.metadata.CsvImportPreview;
 import com.example.sso.metadata.CsvPlannedUser;
 import com.example.sso.metadata.CsvRowFailure;
+import com.example.sso.shared.error.BadRequestException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -32,6 +33,7 @@ class CsvImportPlanner {
     private final CsvRowValidator rowValidator;
     private final CsvExistingUsers existingUsers;
     private final CsvGroupDirectory groups;
+    private final CsvImportLimits limits;
 
     CsvImportPreview plan(UUID profileId, String csv) {
         List<AttributeDefinition> columns = definitions.definitionsIn(profileId);
@@ -51,8 +53,7 @@ class CsvImportPlanner {
         List<String> existing = existingUsers.present(rows.stream().map(CsvRow::username).toList());
         // "Unusable", not "missing": an unreachable group is refused as a missing one, or the difference
         // becomes an existence oracle.
-        Set<String> unusableGroups = Set.copyOf(groups.unusable(
-                rows.stream().flatMap(row -> row.groups().stream()).distinct().toList()));
+        Set<String> unusableGroups = Set.copyOf(groups.unusable(namedGroups(rows)));
 
         List<CsvPlannedUser> toCreate = new ArrayList<>();
         List<CsvRowFailure> failures = new ArrayList<>();
@@ -73,5 +74,22 @@ class CsvImportPlanner {
         }
         return new CsvImportPreview(rows.size(), toCreate,
                 existing.stream().filter(name -> !name.isEmpty()).toList(), failures);
+    }
+
+    /**
+     * Every distinct group the file mentions, refusing the FILE when there are too many.
+     *
+     * <p>The per-cell ceiling bounds one cell and this list is every row's cells flattened, so a file inside
+     * every other limit could still name tens of thousands of groups — and each one costs a bind parameter
+     * and an authorization decision on a route that writes nothing. Refused whole rather than per row,
+     * matching the other file-shape ceilings: a file this far outside its shape was not built for this
+     * profile.
+     */
+    private List<String> namedGroups(List<CsvRow> rows) {
+        List<String> named = rows.stream().flatMap(row -> row.groups().stream()).distinct().toList();
+        if (named.size() > limits.maxGroupNames()) {
+            throw BadRequestException.of("metadata.csv.tooManyGroups", String.valueOf(limits.maxGroupNames()));
+        }
+        return named;
     }
 }

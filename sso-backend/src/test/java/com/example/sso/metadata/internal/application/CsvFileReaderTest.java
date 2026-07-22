@@ -24,7 +24,7 @@ class CsvFileReaderTest {
     private static final Set<String> DECLARED = Set.of(BaseUserFields.USERNAME, BaseUserFields.EMAIL, "team");
     private static final Set<String> BASE = Set.of(BaseUserFields.USERNAME, BaseUserFields.EMAIL);
 
-    private final CsvFileReader reader = new CsvFileReader(new CsvImportLimits(2_097_152, 100, 20, 255));
+    private final CsvFileReader reader = new CsvFileReader(CsvLimits.generous());
 
     private List<CsvRow> read(String csv) {
         return reader.read(csv, DECLARED, BASE);

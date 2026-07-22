@@ -131,6 +131,11 @@ sso:
       # Matches entity_attribute.attr_value, so a value that would not survive the write is refused where the
       # administrator can still see which row it was.
       max-cell-length: 255
+      # Distinct group names across the WHOLE file. The cell ceiling bounds one cell, so a file inside every
+      # other limit could still name tens of thousands of groups — each one a bind parameter and an
+      # authorization decision, on the preview route, which writes nothing and needs only user:create.
+      # Generous against real use: an import assigning more than a few hundred groups is a directory sync.
+      max-group-names: 200
   portal:
     # A policy binding's attribute conditions are checked against who can fill those attributes. That verdict
     # depends on the tenant's connectors and mappings, not on the user, so it is cached off the session path.

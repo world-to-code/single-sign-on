@@ -57,7 +57,7 @@ class CsvRowValidatorTest {
 
     private CsvRowValidator validator() {
         return new CsvRowValidator(values, new CsvFailureText(bundle()),
-                new CsvImportLimits(2_097_152, 100, 20, MAX_CELL));
+                CsvLimits.withCellLength(MAX_CELL));
     }
 
     private CsvRowFailure failureIn(CsvRow row) {

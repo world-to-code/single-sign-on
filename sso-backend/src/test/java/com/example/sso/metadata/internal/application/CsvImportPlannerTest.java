@@ -74,9 +74,7 @@ class CsvImportPlannerTest {
     void setUp() {
         // The real reader and row validator, not stubs: they are the two halves this class assembles, and a
         // stub of either would leave the assembly asserting only that it called what the test told it to.
-        CsvImportLimits limits = new CsvImportLimits(2_097_152, 100, 20, 255);
-        planner = new CsvImportPlanner(definitions, new CsvFileReader(limits),
-                new CsvRowValidator(values, new CsvFailureText(bundle()), limits), existingUsers, groups);
+        planner = plannerUnder(CsvLimits.generous());
         declares(base(BaseUserFields.USERNAME), base(BaseUserFields.EMAIL), optional("team"));
         lenient().when(existingUsers.present(any())).thenReturn(List.of());
         lenient().when(groups.unusable(any())).thenReturn(List.of());
@@ -122,6 +120,12 @@ class CsvImportPlannerTest {
     }
 
     // --- the happy path, and the promise that nothing was written ---------------------------------
+
+    /** The real reader and validator wired under the given ceilings, so a limit test exercises the assembly. */
+    private CsvImportPlanner plannerUnder(CsvImportLimits limits) {
+        return new CsvImportPlanner(definitions, new CsvFileReader(limits),
+                new CsvRowValidator(values, new CsvFailureText(bundle()), limits), existingUsers, groups, limits);
+    }
 
     @Test
     void everyValidRowBecomesAPlannedUser() {
@@ -207,6 +211,40 @@ class CsvImportPlannerTest {
         String header = String.join(",", Collections.nCopies(21, "username"));
 
         refusesFile(header + "\n", "metadata.csv.tooManyColumns");
+    }
+
+    /**
+     * The cell ceiling bounds ONE cell, and the group names are every row's cell flattened into one list — so a
+     * file inside every other limit could still name tens of thousands of groups, each a bind parameter and an
+     * authorization decision, on the preview route that writes nothing.
+     */
+    @Test
+    void moreDistinctGroupNamesThanWeAcceptRefusesTheFile() {
+        planner = plannerUnder(CsvLimits.withGroupNames(3));
+        String csv = "username,email,groups\n"
+                + "ada,a@x.io,a;b\n"
+                + "grace,g@x.io,c;d\n";
+
+        refusesFile(csv, "metadata.csv.tooManyGroups");
+    }
+
+    /** Counted DISTINCT: the same group on five hundred rows is one name, and must not trip the ceiling. */
+    @Test
+    void theSameGroupRepeatedOnEveryRowCountsOnce() {
+        planner = plannerUnder(CsvLimits.withGroupNames(2));
+        String csv = "username,email,groups\n"
+                + "ada,a@x.io,platform\n"
+                + "grace,g@x.io,platform\n"
+                + "alan,t@x.io,platform\n";
+
+        assertThat(plan(csv).toCreate()).hasSize(3);
+    }
+
+    @Test
+    void exactlyTheGroupNameCeilingIsAccepted() {
+        planner = plannerUnder(CsvLimits.withGroupNames(2));
+
+        assertThat(plan("username,email,groups\nada,a@x.io,a;b\n").toCreate()).hasSize(1);
     }
 
     // --- a row's data: fails alone -----------------------------------------------------------------
