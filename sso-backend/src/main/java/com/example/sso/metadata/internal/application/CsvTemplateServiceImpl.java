@@ -26,9 +26,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 class CsvTemplateServiceImpl implements CsvTemplateService {
 
-    /** Optional, and last so it does not crowd the identity columns. Several groups separated by a semicolon. */
-
-
     private final ProfileService profiles;
     private final AttributeDefinitionService definitions;
     private final CsvGuidanceRow guidance;
@@ -74,9 +71,6 @@ class CsvTemplateServiceImpl implements CsvTemplateService {
         return headers;
     }
 
-
-    // The columns are definitionsIn(profileId): base attributes included and first, because they are the
-    // app_user columns a create needs — leaving them out would make the template useless for its one purpose.
 
     /**
      * The profile users will be created on. A source profile describes what SCIM or a directory SENDS us, so

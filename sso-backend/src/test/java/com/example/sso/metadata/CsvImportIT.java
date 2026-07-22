@@ -180,6 +180,31 @@ class CsvImportIT extends AbstractIntegrationTest {
         assertThat(orgContext.callInOrg(orgA, () -> users.findByUsernameInOrg(username, orgA))).isPresent();
     }
 
+    /**
+     * The template as it actually arrives: header AND the guidance row, uploaded verbatim with a data row
+     * appended. The template tells the administrator to delete that row, and they will not — so the importer
+     * has to drop it. Covered separately on each side (the template marks it, the planner skips a marked row);
+     * this is the one that fails if the marker and the skip ever stop agreeing.
+     */
+    @Test
+    void theTemplateUploadedVerbatimImportsOnlyTheRowsTheAdministratorAdded() {
+        orgA = org();
+        UUID profile = tenantProfile(orgA);
+
+        String template = orgContext.callInOrg(orgA, () -> templates.templateFor(profile).content());
+        String header = template.lines().findFirst().orElseThrow();
+        String username = "lovelace-" + UUID.randomUUID().toString().substring(0, 8);
+        String row = header.replace("username", username).replace("email", username + "@example.com")
+                .replace("groups", "");
+
+        CsvImportResult result = orgContext.callInOrg(orgA,
+                () -> imports.apply(profile, upload(template + row + "\n")));
+
+        assertThat(result.failures()).isEmpty();
+        assertThat(result.created()).isEqualTo(1);          // the guidance row created nothing
+        assertThat(orgContext.callInOrg(orgA, () -> users.findByUsernameInOrg(username, orgA))).isPresent();
+    }
+
     /** Persisted state, not the counter the loop under test computed for itself. */
     @Test
     void theAccountIsCreatedWithNoPasswordAndTheProfileAttributesItWasGiven() {

@@ -50,7 +50,7 @@ class UserProfileServiceImpl implements UserProfileService {
     public ProfileSwitchPreview preview(UUID userId, UUID profileId) {
         UserAccount user = requireUser(userId);
         List<String> removed = removedKeys(user, requireProfile(profileId));
-        return new ProfileSwitchPreview(removed, directoryOwned(removed));
+        return new ProfileSwitchPreview(removed, directoryOwned(removed), user.getExternalId() != null);
     }
 
     @Override

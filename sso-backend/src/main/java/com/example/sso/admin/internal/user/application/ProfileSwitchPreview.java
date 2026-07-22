@@ -11,18 +11,20 @@ import java.util.List;
  * rules and policy bindings, so deleting them can retract roles and change which policy governs the user.
  * The administrator sees this list and confirms before anything is written.
  */
-public record ProfileSwitchPreview(List<String> removedKeys, List<String> blockedKeys) {
+public record ProfileSwitchPreview(List<String> removedKeys, List<String> blockedKeys,
+        boolean externallyManaged) {
 
     public boolean isLossless() {
         return removedKeys.isEmpty();
     }
 
     /**
-     * Whether the move can proceed at all. A directory owns some attributes, and the store refuses to let an
-     * administrator delete one — so if the target profile does not declare it, there is no move to make.
-     * Saying so up front beats a 409 halfway through.
+     * Whether the move can proceed at all, for EITHER reason. A directory owns some attributes and the store
+     * refuses to let an administrator delete one; or the person themselves is externally provisioned, whose
+     * attributes are owned upstream. Both make the move impossible, and preview has to name both — reporting
+     * only the first left the console showing a clean move that the confirm then refused.
      */
     public boolean isBlocked() {
-        return !blockedKeys.isEmpty();
+        return externallyManaged || !blockedKeys.isEmpty();
     }
 }

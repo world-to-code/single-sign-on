@@ -61,11 +61,12 @@ class ProfileSwitchBlockingTest {
     @Mock private OrgContext orgContext;
 
     private UserProfileServiceImpl service;
+    private UserAccount user;
 
     @BeforeEach
     void setUp() {
         service = new UserProfileServiceImpl(users, profiles, definitions, attributes, events, orgContext);
-        UserAccount user = org.mockito.Mockito.mock(UserAccount.class);
+        user = org.mockito.Mockito.mock(UserAccount.class);
         lenient().when(user.getId()).thenReturn(USER);
         lenient().when(user.getUsername()).thenReturn("ada");
         lenient().when(user.getOrgId()).thenReturn(ORG);
@@ -159,5 +160,43 @@ class ProfileSwitchBlockingTest {
 
         assertThat(switched.actor()).isEqualTo("root");
         assertThat(switched.subject()).isEqualTo("ada");
+    }
+
+    /**
+     * The asymmetry this closes. {@code switchTo} refuses an externally-provisioned user outright, but preview
+     * never said so — it reported a clean, unblocked move and the confirm then 409'd. Preview has to name every
+     * reason the move cannot happen, not only the one that happens to be a key.
+     */
+    @Test
+    void previewReportsAnExternallyManagedUserAsBlocked() {
+        when(user.getExternalId()).thenReturn("scim-42");
+        ownedBy(AttributeSource.LOCAL);          // nothing a directory owns — the OTHER blocking reason is absent
+
+        ProfileSwitchPreview preview = service.preview(USER, TARGET);
+
+        assertThat(preview.externallyManaged()).isTrue();
+        assertThat(preview.blockedKeys()).isEmpty();
+        assertThat(preview.isBlocked()).isTrue();
+    }
+
+    @Test
+    void previewLeavesALocallyManagedUserUnblocked() {
+        ownedBy(AttributeSource.LOCAL);
+
+        ProfileSwitchPreview preview = service.preview(USER, TARGET);
+
+        assertThat(preview.externallyManaged()).isFalse();
+        assertThat(preview.isBlocked()).isFalse();
+    }
+
+    /** And the two still agree: what preview calls blocked, switchTo refuses. */
+    @Test
+    void theMoveIsRefusedForAnExternallyManagedUser() {
+        when(user.getExternalId()).thenReturn("scim-42");
+
+        assertThatThrownBy(() -> service.switchTo(USER, TARGET)).isInstanceOf(ConflictException.class);
+
+        verify(attributes, never()).removeAll(any(), any(), any());
+        verify(users, never()).assignProfile(any(), any());
     }
 }
