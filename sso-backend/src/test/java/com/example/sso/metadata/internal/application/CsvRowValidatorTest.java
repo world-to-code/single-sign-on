@@ -169,6 +169,34 @@ class CsvRowValidatorTest {
                 .isEqualTo(reads("metadata.csv.row.valueTooLong", "team"));
     }
 
+    /**
+     * An account COLUMN is narrower than a cell may be, and the row rules only knew the cell ceiling.
+     *
+     * <p>So a 150-character username passed every rule, the preview reported the row as "will be created", and
+     * the insert then failed on string truncation — which the apply path reports as a duplicate username. An
+     * administrator reconciling a large import was told hundreds of names were taken when none were.
+     */
+    @Test
+    void aValueTooLongForTheAccountColumnItLandsInIsRefused() {
+        String tooLong = "u".repeat(BaseUserFields.USERNAME_MAX_LENGTH + 1);
+
+        assertThat(failureIn(rowOf(tooLong, "ada@x.io")).reason())
+                .isEqualTo(reads("metadata.csv.row.valueTooLong", BaseUserFields.USERNAME));
+    }
+
+    @Test
+    void aDisplayNameLongerThanItsColumnIsRefusedEvenThoughItFitsACell() {
+        String tooLong = "d".repeat(BaseUserFields.DISPLAY_NAME_MAX_LENGTH + 1);
+
+        assertThat(failureIn(rowWith(BaseUserFields.DISPLAY_NAME, tooLong)).reason())
+                .isEqualTo(reads("metadata.csv.row.valueTooLong", BaseUserFields.DISPLAY_NAME));
+    }
+
+    @Test
+    void aUsernameOfExactlyItsColumnWidthIsAccepted() {
+        assertThat(failureIn(rowOf("u".repeat(BaseUserFields.USERNAME_MAX_LENGTH), "ada@x.io"))).isNull();
+    }
+
     @Test
     void aCellOfExactlyTheCeilingIsAccepted() {
         assertThat(failureIn(rowWith("team", "x".repeat(MAX_CELL)))).isNull();

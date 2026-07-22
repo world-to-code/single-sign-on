@@ -55,7 +55,7 @@ class CsvRowValidator {
             return text.at(row.line(), "metadata.csv.row.valueTooLong", CsvColumns.GROUPS);
         }
         for (Map.Entry<String, String> cell : row.attributes().entrySet()) {
-            if (cell.getValue().length() > limits.maxCellLength()) {
+            if (cell.getValue().length() > maxLengthOf(cell.getKey())) {
                 return text.at(row.line(), "metadata.csv.row.valueTooLong", cell.getKey());
             }
             // Refused, not neutralised: these values are re-exported later, and a username opening like a
@@ -75,5 +75,23 @@ class CsvRowValidator {
             return text.at(row.line(), refused.getMessageKey(), refused.getMessageArgs());
         }
         return null;
+    }
+
+    /**
+     * How long this column's value may be.
+     *
+     * <p>An ACCOUNT column is narrower than a cell, and knowing only the cell ceiling meant a 150-character
+     * username passed every row rule, was reported as "will be created", and then failed at insert on string
+     * truncation — which the apply path reports as a duplicate username. The administrator was told a name was
+     * taken when it was not. The widths come from {@code BaseUserFields}, which is also what declares the
+     * columns, so the two cannot drift.
+     */
+    private int maxLengthOf(String key) {
+        return switch (key) {
+            case BaseUserFields.USERNAME -> BaseUserFields.USERNAME_MAX_LENGTH;
+            case BaseUserFields.EMAIL -> BaseUserFields.EMAIL_MAX_LENGTH;
+            case BaseUserFields.DISPLAY_NAME -> BaseUserFields.DISPLAY_NAME_MAX_LENGTH;
+            default -> limits.maxCellLength();
+        };
     }
 }

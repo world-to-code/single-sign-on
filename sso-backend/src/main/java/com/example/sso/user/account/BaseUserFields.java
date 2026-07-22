@@ -19,6 +19,18 @@ public final class BaseUserFields {
     public static final String PHONE_NUMBER = "phoneNumber";
     public static final String EXTERNAL_ID = "externalId";
 
+    /**
+     * How long each of those columns actually is.
+     *
+     * <p>Published for the same reason the names are: a bulk writer has to refuse an over-long value where the
+     * administrator can still see which row it came from, and the alternative is a second copy of these numbers
+     * that drifts from the schema. {@code AppUser} declares its columns FROM these constants, so a width can
+     * only change in one place.
+     */
+    public static final int USERNAME_MAX_LENGTH = 100;
+    public static final int EMAIL_MAX_LENGTH = 320;
+    public static final int DISPLAY_NAME_MAX_LENGTH = 200;
+
     private BaseUserFields() {
     }
 }

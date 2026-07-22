@@ -1,5 +1,6 @@
 package com.example.sso.user.internal.account.domain;
 
+import com.example.sso.user.account.BaseUserFields;
 import com.example.sso.user.internal.role.domain.Role;
 import com.example.sso.shared.domain.AuditedEntity;
 import com.example.sso.user.account.LockoutPolicy;
@@ -43,10 +44,10 @@ public class AppUser extends AuditedEntity implements UserAccount {
 
     // Uniqueness is per-organization (partial unique indexes in the schema, org_id + username/email), so it is
     // NOT expressed here — the columns themselves are not globally unique.
-    @Column(nullable = false, length = 100)
+    @Column(nullable = false, length = BaseUserFields.USERNAME_MAX_LENGTH)
     private String username;
 
-    @Column(nullable = false, length = 320)
+    @Column(nullable = false, length = BaseUserFields.EMAIL_MAX_LENGTH)
     private String email;
 
     // The organization (the tenant) that owns this user's identity — the identity boundary after the customer
@@ -55,7 +56,7 @@ public class AppUser extends AuditedEntity implements UserAccount {
     @Column(name = "org_id")
     private UUID orgId;
 
-    @Column(name = "display_name", length = 200)
+    @Column(name = "display_name", length = BaseUserFields.DISPLAY_NAME_MAX_LENGTH)
     private String displayName;
 
     @Column(name = "password_hash", length = 255)
