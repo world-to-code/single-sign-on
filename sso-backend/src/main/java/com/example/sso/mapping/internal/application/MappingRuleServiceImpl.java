@@ -21,7 +21,14 @@ import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
 import com.example.sso.user.role.Roles;
+import com.example.sso.mapping.MappingTarget;
+import com.example.sso.metadata.AttributeOperator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Collection;
 import java.util.List;
+import java.util.function.Predicate;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -200,5 +207,48 @@ class MappingRuleServiceImpl implements MappingRuleService {
         String detail = "%s %s -> %s".formatted(rule.getThenKind(), predicate, rule.getTargetId());
         audit.record(new AuditRecord(type, principal, true, detail, null,
                 AuditSubjectType.NONE, rule.getTargetId().toString(), rule.getOrgId()));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<String, Set<MappingTarget>> privilegeTargetsByKey(Collection<String> attrKeys) {
+        return targetsOf(attrKeys, condition -> true);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<String, Set<MappingTarget>> privilegeTargetsGrantedByAbsence(Collection<String> attrKeys) {
+        return targetsOf(attrKeys, condition -> condition.getAttrOp() == AttributeOperator.NOT_EXISTS
+                || condition.getAttrOp() == AttributeOperator.NOT_EQUALS);
+    }
+
+    private Map<String, Set<MappingTarget>> targetsOf(Collection<String> attrKeys,
+            Predicate<MappingRuleCondition> keep) {
+        if (attrKeys == null || attrKeys.isEmpty()) {
+            return Map.of();
+        }
+        List<MappingRuleCondition> reading = conditions.findByAttrKeyIn(Set.copyOf(attrKeys)).stream()
+                .filter(keep).toList();
+        if (reading.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, MappingTarget> byRule = privilegeTargets(reading);
+        Map<String, Set<MappingTarget>> byKey = new HashMap<>();
+        for (MappingRuleCondition condition : reading) {
+            MappingTarget target = byRule.get(condition.getRuleId());
+            if (target != null) {
+                byKey.computeIfAbsent(condition.getAttrKey(), key -> new HashSet<>()).add(target);
+            }
+        }
+        return byKey;
+    }
+
+    /** The rules behind those conditions, reduced to the ones that actually confer authority. */
+    private Map<UUID, MappingTarget> privilegeTargets(List<MappingRuleCondition> reading) {
+        Set<UUID> ruleIds = reading.stream().map(MappingRuleCondition::getRuleId).collect(Collectors.toSet());
+        return rules.findAllById(ruleIds).stream()
+                .filter(rule -> rule.getThenKind() != MappingTargetKind.RESOURCE_MEMBER)
+                .collect(Collectors.toMap(MappingRule::getId,
+                        rule -> new MappingTarget(rule.getThenKind(), rule.getTargetId())));
     }
 }

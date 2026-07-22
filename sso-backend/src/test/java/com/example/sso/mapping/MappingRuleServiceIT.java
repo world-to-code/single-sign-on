@@ -8,6 +8,7 @@ import com.example.sso.organization.OrganizationService;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.user.role.Roles;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.account.UserService;
 import com.example.sso.user.group.GroupSpec;
@@ -19,7 +20,11 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -63,6 +68,23 @@ class MappingRuleServiceIT extends AbstractIntegrationTest {
         createdGroups.clear();
         createdRoles.clear();
         createdOrgs.clear();
+    }
+
+    /**
+     * These suites write the very attributes their rules read, and that write is now bounded by whether the
+     * actor could confer what the rule grants — so they need a real actor. The platform super-admin is the
+     * honest one here: the subject under test is the mapping mechanics, not the ceiling, which has its own
+     * tests. Without this every write is refused, fail-closed, exactly as an unauthenticated one should be.
+     */
+    @BeforeEach
+    void actAsSuperAdmin() {
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                "admin", null, List.of(new SimpleGrantedAuthority(Roles.ADMIN))));
+    }
+
+    @AfterEach
+    void clearActor() {
+        SecurityContextHolder.clearContext();
     }
 
     @Test

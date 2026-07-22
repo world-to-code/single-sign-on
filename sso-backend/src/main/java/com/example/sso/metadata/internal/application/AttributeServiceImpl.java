@@ -3,11 +3,13 @@ package com.example.sso.metadata.internal.application;
 import com.example.sso.metadata.Attribute;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityAttributeChangedEvent;
+import com.example.sso.metadata.AttributeValueGrantGuard;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.metadata.internal.domain.EntityAttribute;
 import com.example.sso.metadata.internal.domain.EntityAttributeRepository;
 import com.example.sso.metadata.AttributeDefinition;
 import com.example.sso.metadata.AttributeDefinitionService;
+import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.tenancy.OrgTierGuard;
 import java.util.Collection;
@@ -21,6 +23,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +41,16 @@ class AttributeServiceImpl implements AttributeService {
     private final AttributeDefinitionService definitions;
     private final OrgTierGuard tierGuard;
     private final ApplicationEventPublisher events;
+    /**
+     * Lazy, to break a construction cycle: the guard reaches the mapping rules, whose evaluator reads the
+     * attributes this service owns. Resolved on first use, long after construction — the same device
+     * {@code OrgContext} uses for its connection binder.
+     *
+     * <p>{@code getObject()} rather than {@code ifAvailable()}: a missing binder there legitimately means "no
+     * transaction", but a missing guard here would mean the ceiling silently stops being enforced. It throws
+     * instead, which is loud.
+     */
+    private final ObjectProvider<AttributeValueGrantGuard> grantGuard;
 
     @Override
     @Transactional(readOnly = true)
@@ -115,7 +128,7 @@ class AttributeServiceImpl implements AttributeService {
     @Override
     @Transactional
     public void set(EntityKind kind, String entityId, String key, String value) {
-        requireLocallyOwned(kind, key);
+        requireWritable(kind, key);
         UUID tier = tierGuard.currentTier();
         List<EntityAttribute> rows = ownRows(kind, entityId, key, tier);
         List<EntityAttribute> stale = rows.stream().filter(row -> !row.getAttrValue().equals(value)).toList();
@@ -134,7 +147,7 @@ class AttributeServiceImpl implements AttributeService {
     @Override
     @Transactional
     public void add(EntityKind kind, String entityId, String key, String value) {
-        requireLocallyOwned(kind, key);
+        requireWritable(kind, key);
         UUID tier = tierGuard.currentTier();
         if (!ownValueExists(kind, entityId, key, value, tier)) { // idempotent — never a duplicate (key,value)
             attributes.save(new EntityAttribute(kind, entityId, key, value, tier));
@@ -145,7 +158,7 @@ class AttributeServiceImpl implements AttributeService {
     @Override
     @Transactional
     public void removeValue(EntityKind kind, String entityId, String key, String value) {
-        requireLocallyOwned(kind, key);
+        requireRemovable(kind, key);
         UUID tier = tierGuard.currentTier();
         List<EntityAttribute> rows = ownRows(kind, entityId, key, tier).stream()
                 .filter(row -> row.getAttrValue().equals(value)).toList();
@@ -158,7 +171,7 @@ class AttributeServiceImpl implements AttributeService {
     @Override
     @Transactional
     public void remove(EntityKind kind, String entityId, String key) {
-        requireLocallyOwned(kind, key);
+        requireRemovable(kind, key);
         UUID tier = tierGuard.currentTier();
         List<EntityAttribute> rows = ownRows(kind, entityId, key, tier);
         if (!rows.isEmpty()) {
@@ -173,7 +186,7 @@ class AttributeServiceImpl implements AttributeService {
         if (keys == null || keys.isEmpty()) {
             return;
         }
-        keys.forEach(key -> requireLocallyOwned(kind, key)); // refuse the whole set before deleting any of it
+        keys.forEach(key -> requireRemovable(kind, key)); // refuse the whole set before deleting any of it
         UUID tier = tierGuard.currentTier();
         List<String> distinct = keys.stream().distinct().toList();
         // One statement, and it returns the row count. A derived delete would SELECT every row and issue a
@@ -266,6 +279,43 @@ class AttributeServiceImpl implements AttributeService {
      * An administrator may not edit an attribute a directory owns — the next sync would overwrite the edit, and
      * a change that silently disappears hours later is worse than one that is refused now.
      */
+    /**
+     * The two questions a local write has to pass: does a directory own this key, and does writing it decide a
+     * privilege the actor could not confer by hand. Kept together because every write path asks both, and one
+     * of them was added long after the other.
+     */
+    private void requireWritable(EntityKind kind, String key) {
+        requireLocallyOwned(kind, key);
+        requireMayDecideGrants(kind, key, false);
+    }
+
+    /** Removing is bounded only by the rules that confer on a key's ABSENCE — see AttributeValueGrantGuard. */
+    private void requireRemovable(EntityKind kind, String key) {
+        requireLocallyOwned(kind, key);
+        requireMayDecideGrants(kind, key, true);
+    }
+
+    /**
+     * A mapping rule can confer a role on whoever carries a value, so writing the key it reads is a grant by
+     * another route. Group membership works the same way and is already refused unless the actor could confer
+     * the group's roles; this is that rule, for the other route.
+     *
+     * <p>USER and GROUP only: a group tag is unioned into every member's attributes and tested by the same
+     * predicate, so it reaches rules exactly as a user attribute does. Application and resource tags are not.
+     */
+    private void requireMayDecideGrants(EntityKind kind, String key, boolean removing) {
+        if (kind != EntityKind.USER && kind != EntityKind.GROUP) {
+            return;
+        }
+        AttributeValueGrantGuard guard = grantGuard.getObject();
+        Set<String> beyond = removing
+                ? guard.keysBeyondAuthorityToRemove(Set.of(key))
+                : guard.keysBeyondAuthority(Set.of(key));
+        if (!beyond.isEmpty()) {
+            throw ForbiddenException.of("metadata.attribute.grantGoverned", key);
+        }
+    }
+
     private void requireLocallyOwned(EntityKind kind, String key) {
         refuseIfSourceOwned(kind, key);
         if (kind == EntityKind.GROUP) {
