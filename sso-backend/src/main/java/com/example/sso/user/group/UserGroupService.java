@@ -40,14 +40,18 @@ public interface UserGroupService {
     Map<String, UUID> groupIdsByName(Collection<String> names, UUID orgId);
 
     /**
-     * The role names each of these groups delegates to its members, in ONE query.
+     * The role IDS each of these groups delegates to its members, in ONE query.
      *
      * <p>Putting a user in a group GRANTS them the group's roles, so a caller deciding whether an actor may do
      * that has to know which roles that is — the membership grant is otherwise a way to confer a role the
      * actor could not assign directly. A group with no delegated roles is absent from the map rather than
      * present with an empty set.
+     *
+     * <p>Ids rather than names, because the caller authorizes with them: a name resolves org-first with a
+     * global fallback while the delegation points at a stored id, so a by-name check can clear on a benign
+     * local role while membership confers the privileged global one of the same name.
      */
-    Map<UUID, Set<String>> delegatedRoleNames(Collection<UUID> groupIds);
+    Map<UUID, Set<UUID>> delegatedRoleIds(Collection<UUID> groupIds);
 
     GroupView get(UUID id);
 

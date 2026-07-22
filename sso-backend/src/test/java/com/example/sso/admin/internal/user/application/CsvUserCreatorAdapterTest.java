@@ -13,6 +13,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,6 +64,12 @@ class CsvUserCreatorAdapterTest {
         CsvGroupDirectoryAdapter directory = new CsvGroupDirectoryAdapter(groups, accessPolicy, orgContext);
         adapter = new CsvUserCreatorAdapter(provisioning, groups, directory);
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        // The role-conferral ceiling is the policy's decision with its own tests; here it passes everything
+        // through so these cases measure REACH, which is what this class is about.
+        lenient().when(accessPolicy.currentMayConferRolesOf(any())).thenAnswer(call -> {
+            Collection<UUID> asked = call.getArgument(0);
+            return asked == null ? Set.of() : Set.copyOf(asked);
+        });
         // Answers the names it was ASKED for, as the real query does. A stub that returns the whole directory
         // regardless makes the code check groups the row never named, which is not what production does.
         Map<String, UUID> directoryContents = Map.of("platform", REACHABLE, "finance", OUT_OF_SCOPE);

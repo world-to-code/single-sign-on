@@ -25,12 +25,17 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.util.Map;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -181,11 +186,67 @@ class AdminAccessPolicyTest {
     // --- mayAssignTarget: a mapping rule's target authority (GROUP=canAccessGroup, ROLE=grant-by-id) ---
 
     @Test
-    void mayAssignTargetForAGroupDelegatesToCanAccessGroup() {
+    void mayAssignTargetForAGroupRequiresReach() {
         UUID groupId = UUID.randomUUID();
         when(groupAuth.canManage(ACTOR_ID, groupId)).thenReturn(true);
         assertThat(policy.mayAssignTarget(MappingTargetKind.GROUP, groupId)).isTrue();
         assertThat(policy.mayAssignTarget(MappingTargetKind.GROUP, UUID.randomUUID())).isFalse();
+    }
+
+    /**
+     * Reach alone was the whole GROUP branch, and that made a mapping rule a way around the role ceiling:
+     * membership delegates the group's roles, so pointing a rule at a group the actor reaches confers every
+     * role that group carries — including one {@code PUT /groups/{id}/roles} would refuse them.
+     */
+    @Test
+    void mayAssignTargetForAGroupAlsoRequiresTheRolesItConfers() {
+        UUID groupId = UUID.randomUUID();
+        UUID privilegedRoleId = UUID.randomUUID();
+        when(groupAuth.canManage(ACTOR_ID, groupId)).thenReturn(true);
+        when(userGroups.delegatedRoleIds(Set.of(groupId))).thenReturn(Map.of(groupId, Set.of(privilegedRoleId)));
+        when(roleHierarchy.actorMayManageRole(ACTOR_ID, privilegedRoleId)).thenReturn(true);
+        when(roleService.permissionNames(privilegedRoleId)).thenReturn(Set.of(Permissions.ORG_CREATE));
+
+        assertThat(policy.mayAssignTarget(MappingTargetKind.GROUP, groupId)).isFalse();
+    }
+
+    @Test
+    void mayAssignTargetForAGroupAllowsRolesTheActorCouldGrantDirectly() {
+        UUID groupId = UUID.randomUUID();
+        UUID benignRoleId = UUID.randomUUID();
+        when(groupAuth.canManage(ACTOR_ID, groupId)).thenReturn(true);
+        when(userGroups.delegatedRoleIds(Set.of(groupId))).thenReturn(Map.of(groupId, Set.of(benignRoleId)));
+        when(roleHierarchy.actorMayManageRole(ACTOR_ID, benignRoleId)).thenReturn(true);
+        when(roleService.permissionNames(benignRoleId)).thenReturn(Set.of());
+
+        assertThat(policy.mayAssignTarget(MappingTargetKind.GROUP, groupId)).isTrue();
+    }
+
+    /** Asked once for the whole set, and once per DISTINCT role — the callers are bulk. */
+    @Test
+    void conferralIsResolvedOncePerRoleAcrossTheWholeSet() {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        UUID sharedRole = UUID.randomUUID();
+        when(userGroups.delegatedRoleIds(List.of(first, second)))
+                .thenReturn(Map.of(first, Set.of(sharedRole), second, Set.of(sharedRole)));
+        when(roleHierarchy.actorMayManageRole(ACTOR_ID, sharedRole)).thenReturn(true);
+        when(roleService.permissionNames(sharedRole)).thenReturn(Set.of());
+
+        assertThat(policy.currentMayConferRolesOf(List.of(first, second))).containsExactlyInAnyOrder(first, second);
+
+        verify(userGroups, times(1)).delegatedRoleIds(List.of(first, second));
+        verify(roleService, times(1)).permissionNames(sharedRole);
+    }
+
+    /** A group delegating nothing confers nothing, so it clears the ceiling without a role lookup. */
+    @Test
+    void aGroupDelegatingNoRoleClearsTheCeiling() {
+        UUID groupId = UUID.randomUUID();
+        when(userGroups.delegatedRoleIds(List.of(groupId))).thenReturn(Map.of());
+
+        assertThat(policy.currentMayConferRolesOf(List.of(groupId))).containsExactly(groupId);
+        verify(roleService, never()).permissionNames(any());
     }
 
     @Test

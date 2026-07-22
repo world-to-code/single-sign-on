@@ -19,6 +19,9 @@ import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.group.UserGroupService;
 import com.example.sso.user.account.UserService;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -136,13 +139,53 @@ public class AdminAccessPolicy {
      */
     public boolean mayAssignTarget(UUID actorId, Set<String> actorAuthorities, MappingTargetKind kind, UUID targetId) {
         return switch (kind) {
-            case GROUP -> canAccessGroup(actorId, targetId);
-            case ROLE -> isSuper(actorId)
-                    || (roleHierarchy.actorMayManageRole(actorId, targetId)
-                            && !roleCarriesPlatformPermission(targetId)
-                            && actorAuthorities.containsAll(roleService.permissionNames(targetId)));
+            case GROUP -> canAccessGroup(actorId, targetId)
+                    && mayConferRolesOf(actorId, actorAuthorities, Set.of(targetId)).contains(targetId);
+            case ROLE -> isSuper(actorId) || mayGrantRole(actorId, actorAuthorities, targetId);
             case RESOURCE_MEMBER -> resourceAuth.canManage(actorId, targetId); // manages the resource (subtree), by id
         };
+    }
+
+    /**
+     * Which of these groups the actor may put a member into: reach AND the roles the membership would confer.
+     *
+     * <p>Reach alone is "administers the group's org", which is strictly weaker than the ceiling a direct role
+     * grant clears. A group delegates its roles to every member, so putting someone in one is a role grant
+     * wearing a different name — and without this an actor confers, by naming a group, a role that
+     * {@code POST /api/admin/users} would refuse them.
+     *
+     * <p>Resolved BY ID for the reason {@link #mayAssignTarget(MappingTargetKind, UUID)} already documents: a
+     * name resolves org-first with a global fallback while the delegation points at a stored id, so checking a
+     * name lets a tenant clear the ceiling on a benign local role it minted and receive the privileged global
+     * one of the same name.
+     *
+     * <p>Bulk because the callers are bulk. Both the delegation read and each distinct role's verdict happen
+     * ONCE for the whole set — asking per group re-derived the actor from the database every time, which on a
+     * file naming two hundred groups was thousands of queries inside one read-only transaction.
+     */
+    public Set<UUID> mayConferRolesOf(UUID actorId, Set<String> actorAuthorities, Collection<UUID> groupIds) {
+        if (groupIds.isEmpty()) {
+            return Set.of();
+        }
+        Map<UUID, Set<UUID>> delegated = userGroups.delegatedRoleIds(groupIds);
+        Map<UUID, Boolean> verdicts = new HashMap<>();
+        Set<UUID> conferrable = new LinkedHashSet<>();
+        for (UUID groupId : groupIds) {
+            // Absent means the group delegates nothing, so there is no ceiling for it to clear.
+            Set<UUID> roles = delegated.getOrDefault(groupId, Set.of());
+            if (roles.stream().allMatch(roleId -> verdicts.computeIfAbsent(roleId,
+                    id -> mayAssignTarget(actorId, actorAuthorities, MappingTargetKind.ROLE, id)))) {
+                conferrable.add(groupId);
+            }
+        }
+        return conferrable;
+    }
+
+    /** The same decision for the CURRENT actor, resolved once for the whole set. */
+    public Set<UUID> currentMayConferRolesOf(Collection<UUID> groupIds) {
+        return currentUserId()
+                .map(actorId -> mayConferRolesOf(actorId, currentAuthorities(), groupIds))
+                .orElseGet(Set::of);
     }
 
     public boolean mayAssignRoles(Collection<String> roleNames) {
@@ -440,6 +483,21 @@ public class AdminAccessPolicy {
             return false;
         }
         return canAccessUser(userId);
+    }
+
+    /**
+     * The non-super ceiling on granting one role, by id: the actor must dominate it in the hierarchy, it must
+     * carry no platform-only permission, and the actor must already hold everything it grants.
+     *
+     * <p>The role's permissions are read ONCE. Both of the last two terms need them, and asking twice meant a
+     * second query per role — which the bulk callers multiply by every group in a file.
+     */
+    private boolean mayGrantRole(UUID actorId, Set<String> actorAuthorities, UUID roleId) {
+        if (!roleHierarchy.actorMayManageRole(actorId, roleId)) {
+            return false;
+        }
+        Set<String> granted = roleService.permissionNames(roleId);
+        return granted.stream().noneMatch(Permissions::isPlatform) && actorAuthorities.containsAll(granted);
     }
 
     /** Whether the role (by id) carries any platform-only permission — un-grantable by a non-super admin. */

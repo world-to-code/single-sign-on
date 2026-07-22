@@ -123,7 +123,7 @@ class UserGroupMemberOpsIT extends AbstractIntegrationTest {
      * silently returned nothing would open that ceiling rather than close it.
      */
     @Test
-    void delegatedRoleNamesAnswersForEveryGroupInOneCall() {
+    void delegatedRoleIdsAnswerForEveryGroupInOneCall() {
         UUID org = newOrg("mem-roles");
         UUID withRoles = orgContext.callInOrg(org, () -> group());
         UUID alsoWithRoles = orgContext.callInOrg(org, () -> group());
@@ -133,19 +133,38 @@ class UserGroupMemberOpsIT extends AbstractIntegrationTest {
             groups.setRoles(withRoles, Set.of("ROLE_USER"));
             groups.setRoles(alsoWithRoles, Set.of("ROLE_USER", "ROLE_GROUP_ADMIN"));
 
-            Map<UUID, Set<String>> delegated =
-                    groups.delegatedRoleNames(List.of(withRoles, alsoWithRoles, withNone));
+            Map<UUID, Set<UUID>> delegated =
+                    groups.delegatedRoleIds(List.of(withRoles, alsoWithRoles, withNone));
 
-            assertThat(delegated.get(withRoles)).containsExactly("ROLE_USER");
-            assertThat(delegated.get(alsoWithRoles)).containsExactlyInAnyOrder("ROLE_USER", "ROLE_GROUP_ADMIN");
-            // Absent, not an empty set — the caller reads null as "delegates nothing, so no ceiling applies".
+            assertThat(delegated.get(withRoles)).hasSize(1);
+            assertThat(delegated.get(alsoWithRoles)).hasSize(2);
+            // Absent, not an empty set — the caller reads that as "delegates nothing, so no ceiling applies".
             assertThat(delegated).doesNotContainKey(withNone);
         });
     }
 
     @Test
-    void delegatedRoleNamesIsANoOpForAnEmptySet() {
-        assertThat(groups.delegatedRoleNames(List.of())).isEmpty();
+    void delegatedRoleIdsIsANoOpForAnEmptySet() {
+        assertThat(groups.delegatedRoleIds(List.of())).isEmpty();
+    }
+
+    /**
+     * It takes group ids and no organization, so what stops it answering for ANOTHER tenant's group has to be
+     * the database rather than the caller.
+     *
+     * <p>{@code group_role} carries no RLS of its own — only {@code user_group} does — so the query has to
+     * reach the group to be filtered at all. A caller holding an id from elsewhere would otherwise learn which
+     * roles that tenant's group confers, and this is public module API, not something only the import calls.
+     */
+    @Test
+    void delegatedRoleIdsAnswerNothingForAnotherTenantsGroup() {
+        UUID mine = newOrg("mem-x");
+        UUID theirs = newOrg("mem-y");
+        UUID theirGroup = orgContext.callInOrg(theirs, () -> group());
+        orgContext.runInOrg(theirs, () -> groups.setRoles(theirGroup, Set.of("ROLE_USER")));
+
+        orgContext.runInOrg(mine, () ->
+                assertThat(groups.delegatedRoleIds(List.of(theirGroup))).isEmpty());
     }
 
     @Test

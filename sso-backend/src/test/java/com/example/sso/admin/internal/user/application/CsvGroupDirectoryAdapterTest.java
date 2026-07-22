@@ -54,6 +54,12 @@ class CsvGroupDirectoryAdapterTest {
         directory = new CsvGroupDirectoryAdapter(groups, accessPolicy, orgContext);
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         Map<String, UUID> contents = Map.of("platform", REACHABLE, "finance", OUT_OF_SCOPE);
+        // The conferral ceiling is the policy's decision and has its own tests; here it passes everything
+        // through unless a case says otherwise, so these cases measure REACH.
+        lenient().when(accessPolicy.currentMayConferRolesOf(any())).thenAnswer(call -> {
+            Collection<UUID> asked = call.getArgument(0);
+            return asked == null ? Set.of() : Set.copyOf(asked);
+        });
         lenient().when(groups.groupIdsByName(any(), eq(ORG))).thenAnswer(call -> {
             Collection<String> asked = call.getArgument(0);
             return contents.entrySet().stream().filter(entry -> asked.contains(entry.getKey()))
@@ -129,31 +135,31 @@ class CsvGroupDirectoryAdapterTest {
      * which is strictly weaker than the dominance-and-grant-only-what-you-hold rule.
      */
     @Test
-    void aGroupDelegatingARoleTheActorMayNotAssignIsUnusable() {
+    void aGroupWhoseConferredRolesTheActorMayNotAssignIsUnusable() {
         when(accessPolicy.canAccessGroup(REACHABLE)).thenReturn(true);
-        when(groups.delegatedRoleNames(any())).thenReturn(Map.of(REACHABLE, Set.of("ROLE_ADMIN")));
-        when(accessPolicy.mayAssignRoles(Set.of("ROLE_ADMIN"))).thenReturn(false);
+        when(accessPolicy.currentMayConferRolesOf(any())).thenReturn(Set.of());
 
         assertThat(directory.unusable(List.of("platform"))).containsExactly("platform");
     }
 
     @Test
-    void aGroupDelegatingOnlyRolesTheActorMayAssignStaysUsable() {
+    void aGroupWhoseConferredRolesTheActorMayAssignStaysUsable() {
         when(accessPolicy.canAccessGroup(REACHABLE)).thenReturn(true);
-        when(groups.delegatedRoleNames(any())).thenReturn(Map.of(REACHABLE, Set.of("ROLE_USER")));
-        when(accessPolicy.mayAssignRoles(Set.of("ROLE_USER"))).thenReturn(true);
+        when(accessPolicy.currentMayConferRolesOf(any())).thenReturn(Set.of(REACHABLE));
 
         assertThat(directory.unusable(List.of("platform"))).isEmpty();
     }
 
-    /** A group delegating nothing confers nothing, so the ceiling has no work to do and must not refuse it. */
+    /** The ceiling is asked ONCE for the whole set, not per group — it re-derives the actor from the database. */
     @Test
-    void aGroupThatDelegatesNoRoleNeedsNoAssignmentCeiling() {
+    void theConferralCeilingIsAskedOncePerResolution() {
         when(accessPolicy.canAccessGroup(REACHABLE)).thenReturn(true);
-        when(groups.delegatedRoleNames(any())).thenReturn(Map.of());
+        when(accessPolicy.canAccessGroup(OUT_OF_SCOPE)).thenReturn(true);
+        when(accessPolicy.currentMayConferRolesOf(any())).thenReturn(Set.of(REACHABLE, OUT_OF_SCOPE));
 
-        assertThat(directory.unusable(List.of("platform"))).isEmpty();
-        verify(accessPolicy, never()).mayAssignRoles(any());
+        directory.unusable(List.of("platform", "finance"));
+
+        verify(accessPolicy, times(1)).currentMayConferRolesOf(any());
     }
 
     /**

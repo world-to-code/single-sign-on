@@ -112,18 +112,11 @@ class CsvGroupDirectoryAdapter implements CsvGroupDirectory {
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 
         // Reach is not enough: membership CONFERS the group's roles, so the grant has to clear the same
-        // ceiling a direct role grant does. One query for the whole set, not one per group.
-        Map<UUID, Set<String>> delegated = groups.delegatedRoleNames(inReach.values());
+        // ceiling a direct role grant does. Asked of the policy for the whole set at once, and BY ID.
+        Set<UUID> conferrable = accessPolicy.currentMayConferRolesOf(inReach.values());
         return inReach.entrySet().stream()
-                .filter(entry -> mayConfer(delegated.get(entry.getValue())))
+                .filter(entry -> conferrable.contains(entry.getValue()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 
-    /**
-     * A group delegating no role confers nothing, so there is no ceiling for it to clear — absent from the
-     * map, which is how {@code delegatedRoleNames} reports that rather than with an empty set.
-     */
-    private boolean mayConfer(Set<String> delegatedRoles) {
-        return delegatedRoles == null || accessPolicy.mayAssignRoles(delegatedRoles);
-    }
 }

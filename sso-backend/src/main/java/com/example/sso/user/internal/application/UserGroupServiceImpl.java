@@ -2,7 +2,7 @@ package com.example.sso.user.internal.application;
 
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import com.example.sso.user.internal.group.domain.GroupRoleName;
+import com.example.sso.user.internal.group.domain.GroupRoleId;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
@@ -110,14 +110,14 @@ public class UserGroupServiceImpl implements UserGroupService {
 
     @Override
     @Transactional(readOnly = true)
-    public Map<UUID, Set<String>> delegatedRoleNames(Collection<UUID> groupIds) {
+    public Map<UUID, Set<UUID>> delegatedRoleIds(Collection<UUID> groupIds) {
         if (groupIds == null || groupIds.isEmpty()) {
             return Map.of();
         }
-        Map<UUID, Set<String>> byGroup = new LinkedHashMap<>();
-        for (GroupRoleName delegation : groupRoles.findRoleNamesByGroupIds(groupIds.stream().distinct().toList())) {
+        Map<UUID, Set<UUID>> byGroup = new LinkedHashMap<>();
+        for (GroupRoleId delegation : groupRoles.findRoleIdsByGroupIds(groupIds.stream().distinct().toList())) {
             byGroup.computeIfAbsent(delegation.getGroupId(), group -> new LinkedHashSet<>())
-                    .add(delegation.getRoleName());
+                    .add(delegation.getRoleId());
         }
         return byGroup;
     }
