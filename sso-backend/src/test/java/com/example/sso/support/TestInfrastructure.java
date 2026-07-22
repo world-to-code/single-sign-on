@@ -26,6 +26,20 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * <p>Detection is a TCP connect rather than a flag, so nobody has to remember to set one — start the stack and
  * it is used, stop it and the suite still passes. It is deliberately a probe of the TEST ports (55432/56379)
  * and never the dev ones: this class hands out a connection that databases get dropped through.
+ *
+ * <h2>Why not {@code withReuse(true)}</h2>
+ *
+ * <p>Testcontainers has this feature natively — a reusable container outlives the JVM that started it and the
+ * next one attaches by config hash. That is the same idea, and it would keep ONE definition of the containers
+ * and leave Ryuk in charge of them. It was not used for one reason: reuse only takes effect when the developer
+ * has {@code testcontainers.reuse.enable=true} in {@code ~/.testcontainers.properties}, which a repository
+ * cannot set. On a fresh clone it silently does nothing and every fork starts its own pair again — the failure
+ * this whole arrangement exists to prevent, in the form where nobody is told. Testcontainers also documents
+ * reuse as experimental, and concurrent forks can race to create the same container.
+ *
+ * <p>The cost of choosing compose instead, stated so it is not rediscovered: these containers are NOT Ryuk's,
+ * so an abrupt {@code kill -9} of the build leaves them running where Testcontainers would have reaped them.
+ * The Gradle task stops them on success, on failure and on Ctrl-C; only a hard kill escapes it.
  */
 final class TestInfrastructure {
 

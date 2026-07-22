@@ -22,9 +22,15 @@ jobs:
           cache: gradle
       # Testcontainers spins up real Postgres + Redis; the ubuntu runner provides the Docker daemon they need —
       # which is exactly why tests run HERE, in CI, and not inside the image build. ModularityTests run too.
-      - name: ./gradlew test
+      #
+      # -PskipTestInfra deliberately declines the shared compose stack the test task would otherwise start, so
+      # this job takes the TESTCONTAINERS path. Locally that stack exists because a Testcontainers singleton is
+      # per-JVM and every fork would pay for its own; on a throwaway runner at two forks that cost is noise.
+      # Without this flag the fallback would never run anywhere, and an untested fallback is worse than none —
+      # it rots silently and is discovered on the day compose is unavailable.
+      - name: ./gradlew test (Testcontainers path)
         working-directory: sso-backend
-        run: ./gradlew --no-daemon test
+        run: ./gradlew --no-daemon test -PskipTestInfra
       - name: Publish test report
         if: always()
         uses: actions/upload-artifact@v7
