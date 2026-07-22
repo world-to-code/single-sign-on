@@ -196,7 +196,9 @@ public class AdminAccessPolicy {
      * <p>The actor is resolved ONCE for the set, like {@link #mayConferRolesOf}.
      */
     public boolean mayAssignRoleIds(Collection<UUID> roleIds) {
-        if (roleIds.isEmpty()) {
+        // Null-safe because this runs inside SpEL, before any binding validation: an omitted roleIds would
+        // otherwise NPE out of the gate as a 500 rather than a refusal the caller can read.
+        if (roleIds == null || roleIds.isEmpty()) {
             return true;
         }
         Optional<UUID> actor = currentUserId();

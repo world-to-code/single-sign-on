@@ -15,6 +15,7 @@ import com.example.sso.user.group.GroupRequest;
 import com.example.sso.user.group.GroupView;
 import com.example.sso.user.account.Suggestion;
 import com.example.sso.user.group.UserGroupService;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -71,6 +72,7 @@ public class GroupAdminService {
     public GroupView setRoles(UUID id, Set<UUID> requestedRoleIds) {
         requireAccess(id);
         Set<UUID> roleIds = Objects.requireNonNullElseGet(requestedRoleIds, Set::of);
+        requireMayChange(id, roleIds);
         GroupView view = userGroups.setRoles(id, roleIds);
         // The NAMES in the trail, from the view the write returned: an audit line of uuids is unreadable, and
         // the names are now a rendering of what was bound rather than what was asked for.
@@ -137,6 +139,26 @@ public class GroupAdminService {
         Set<UUID> scoped = accessPolicy.currentScopedGroupIds();
         return userGroups.search(query, limit).stream()
                 .filter(suggestion -> scoped.contains(UUID.fromString(suggestion.id()))).toList();
+    }
+
+    /**
+     * The ceiling applies to what is REMOVED as well as what is added.
+     *
+     * <p>This is a full replace, and the endpoint's gate can only see the request — so an empty list passed it
+     * without resolving the actor at all, and a replace that only removed was authorized by nothing. Stripping
+     * a role from a group demotes every member, and accounts that held it through the group stop being
+     * protected by the other-administrator guards, which read effective authorities. Taking away a privilege
+     * one could not have granted is the same act in reverse.
+     *
+     * <p>It lives here rather than in the annotation because the CURRENT delegations are only knowable once the
+     * group is resolved, which the annotation cannot do.
+     */
+    private void requireMayChange(UUID groupId, Set<UUID> desired) {
+        Set<UUID> changing = new HashSet<>(desired);
+        changing.addAll(userGroups.delegatedRoleIds(Set.of(groupId)).getOrDefault(groupId, Set.of()));
+        if (!accessPolicy.mayAssignRoleIds(changing)) {
+            throw ForbiddenException.of("admin.group.roleOutsideCeiling");
+        }
     }
 
     private void requireAccess(UUID groupId) {

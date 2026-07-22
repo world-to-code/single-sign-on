@@ -16,7 +16,8 @@ import org.springframework.web.context.request.RequestContextHolder;
 /**
  * Postgres-graph {@link ResourceScope}: {@code managedResourceIds} runs a recursive CTE over
  * {@code resource_edge} seeded by the actor's ADMIN grants. The managed set is memoized per HTTP
- * request as an IMMUTABLE copy (an authorization decision may consult it several times while
+ * request as an IMMUTABLE copy, as is {@code isUnscoped} (an authorization decision may consult them
+ * several times while
  * listing; sharing a mutable set across authz decisions would invite poisoning). Outside a request
  * (tests, background work) it is computed directly. The memo is intentionally request-scoped-stale:
  * a grant changed mid-request becomes visible on the next request.
@@ -31,6 +32,7 @@ public class ResourceScopeImpl implements ResourceScope {
 
     private static final String MANAGED_KEY = ResourceScopeImpl.class.getName() + ".managed";
     private static final String VIEWABLE_KEY = ResourceScopeImpl.class.getName() + ".viewable";
+    private static final String UNSCOPED_KEY = ResourceScopeImpl.class.getName() + ".unscoped";
 
     private final ResourceRepository resources;
     private final UserService users;
@@ -46,17 +48,17 @@ public class ResourceScopeImpl implements ResourceScope {
         return memoized(VIEWABLE_KEY, actorUserId, () -> Set.copyOf(resources.findViewableResourceIds(actorUserId)));
     }
 
-    // Per-request memo of an IMMUTABLE scope set (an authorization decision may consult it several times while
+    // Per-request memo of an IMMUTABLE answer (an authorization decision may consult it several times while
     // listing; sharing a mutable set would invite poisoning). Outside a request it is computed directly. See the
     // class-level SECURITY INVARIANT on never shrinking-then-rechecking within one request.
-    private Set<UUID> memoized(String keyPrefix, UUID actorUserId, Supplier<Set<UUID>> load) {
+    private <T> T memoized(String keyPrefix, UUID actorUserId, Supplier<T> load) {
         RequestAttributes request = RequestContextHolder.getRequestAttributes();
         if (request == null) {
             return load.get();
         }
         String key = keyPrefix + ":" + actorUserId;
         @SuppressWarnings("unchecked")
-        Set<UUID> cached = (Set<UUID>) request.getAttribute(key, RequestAttributes.SCOPE_REQUEST);
+        T cached = (T) request.getAttribute(key, RequestAttributes.SCOPE_REQUEST);
         if (cached == null) {
             cached = load.get();
             request.setAttribute(key, cached, RequestAttributes.SCOPE_REQUEST);
@@ -71,6 +73,15 @@ public class ResourceScopeImpl implements ResourceScope {
      */
     @Override
     public boolean isUnscoped(UUID actorUserId) {
+        return memoized(UNSCOPED_KEY, actorUserId, () -> loadUnscoped(actorUserId));
+    }
+
+    /**
+     * Memoized like the scope sets, and for a sharper reason: authorization asks this once per object it
+     * judges, and answering it reads the actor's role AND every group they belong to. A bulk admin action over
+     * D groups asked it D times inside one read-only transaction, re-deriving the same actor each time.
+     */
+    private boolean loadUnscoped(UUID actorUserId) {
         return users.hasRole(actorUserId, Roles.ADMIN)
                 || userGroups.membershipsForUser(actorUserId).stream()
                         .flatMap(membership -> membership.roles().stream())

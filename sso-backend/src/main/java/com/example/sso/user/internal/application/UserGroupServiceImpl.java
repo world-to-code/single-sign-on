@@ -294,7 +294,7 @@ public class UserGroupServiceImpl implements UserGroupService {
             throw ConflictException.of("user.group.systemRolesNoEdit", group.getName());
         }
 
-        replaceRoles(id, requireVisibleRoles(roleIds));
+        replaceRoles(id, requireVisibleRoles(group, roleIds));
 
         GroupView view = toView(group);
         // every member's delegated roles just changed
@@ -305,10 +305,32 @@ public class UserGroupServiceImpl implements UserGroupService {
     @Override
     @Transactional(readOnly = true)
     public List<GroupMembership> membershipsForUser(UUID userId) {
-        return repository.findByMember(userId).stream()
+        List<UserGroup> groups = repository.findByMember(userId);
+        if (groups.isEmpty()) {
+            return List.of();
+        }
+        // The delegations for EVERY group at once, then the roles they name at once. Asking per group made
+        // this two queries per group, and it sits under isUnscoped — which authorization asks once per object
+        // it judges, so the cost was multiplied again by the size of whatever was being listed.
+        Map<UUID, Set<UUID>> roleIdsByGroup = delegatedRoleIds(groups.stream().map(UserGroup::getId).toList());
+        Map<UUID, Role> rolesById = hydratedRolesById(roleIdsByGroup);
+
+        return groups.stream()
                 .map(group -> new GroupMembership(group.getId(), group.getName(),
-                        delegatedRoles(group.getId()).stream().map(RoleRef.class::cast).toList()))
+                        roleIdsByGroup.getOrDefault(group.getId(), Set.of()).stream()
+                                .map(rolesById::get).filter(Objects::nonNull)
+                                .map(RoleRef.class::cast).toList()))
                 .toList();
+    }
+
+    /** Every role named by any of the delegations, hydrated once and keyed for the per-group assembly. */
+    private Map<UUID, Role> hydratedRolesById(Map<UUID, Set<UUID>> roleIdsByGroup) {
+        Set<UUID> allRoleIds = roleIdsByGroup.values().stream().flatMap(Set::stream).collect(Collectors.toSet());
+        if (allRoleIds.isEmpty()) {
+            return Map.of();
+        }
+        return hydrator.hydrateRoles(roles.findAllById(allRoleIds)).stream()
+                .collect(Collectors.toMap(Role::getId, role -> role));
     }
 
     @Override
@@ -382,14 +404,25 @@ public class UserGroupServiceImpl implements UserGroupService {
      * role belonging to another tenant is simply not readable, so it fails as unknown rather than as forbidden,
      * which is also what stops this from reporting whether another org holds a given id.
      */
-    private Set<UUID> requireVisibleRoles(Set<UUID> roleIds) {
+    private Set<UUID> requireVisibleRoles(UserGroup group, Set<UUID> roleIds) {
         if (roleIds == null || roleIds.isEmpty()) {
             return Set.of();
         }
-        Set<UUID> visible = roles.findAllById(roleIds).stream().map(Role::getId).collect(Collectors.toSet());
+        List<Role> found = roles.findAllById(roleIds);
+        Set<UUID> visible = found.stream().map(Role::getId).collect(Collectors.toSet());
         roleIds.stream().filter(id -> !visible.contains(id)).findFirst().ifPresent(missing -> {
             throw BadRequestException.of("user.role.unknown", missing.toString());
         });
+        // Same-org, like a member. A GLOBAL role (org_id null) may be delegated anywhere, but one owned by a
+        // DIFFERENT org may not: under a platform context every tenant's roles are readable, so without this a
+        // super admin could bind org A's role into org B's group — a delegation the console it was made from
+        // would then hide, because RLS filters it back out for any tenant-context reader.
+        found.stream()
+                .filter(role -> role.getOrgId() != null && !role.getOrgId().equals(group.getOrgId()))
+                .findFirst()
+                .ifPresent(foreign -> {
+                    throw BadRequestException.of("user.group.crossOrgRole", foreign.getName());
+                });
         return visible;
     }
 

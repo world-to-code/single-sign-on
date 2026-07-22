@@ -230,7 +230,31 @@ class AbacAuthorizationIT extends AbstractIntegrationTest {
         actAsWithAuthorities("shadower-" + suffix, Permissions.GROUP_UPDATE);
 
         assertThat(access.mayAssignRoleIds(Set.of(privileged))).isFalse();
-        assertThat(access.mayAssignRoleIds(Set.of(benign))).isTrue();
+        // Judged from INSIDE the org that owns it. Asserted from outside, this passes because RLS hides the
+        // role and the ceiling's terms go vacuous — a verdict of "allowed" reached by not seeing it.
+        assertThat(orgContext.callInOrg(orgId, () -> access.mayAssignRoleIds(Set.of(benign)))).isTrue();
+    }
+
+    /**
+     * A role the actor cannot see is REFUSED, not waved through.
+     *
+     * <p>The ceiling's terms all pass vacuously on an invisible row: dominance is true because a foreign role
+     * is not an ancestor of the actor's apex, and both permission terms read an empty set because RLS filtered
+     * it. So the gate said yes and only the write's own visibility check stopped the binding — one layer, and
+     * the wrong one, since an authorization decision that cannot see its subject must fail closed.
+     */
+    @Test
+    void aRoleFromAnotherTenantIsRefusedByTheGateNotJustByTheWrite() {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        UUID mine = organizations.create(new NewOrganization("mine-" + suffix, "Mine")).id();
+        UUID theirs = organizations.create(new NewOrganization("theirs-" + suffix, "Theirs")).id();
+
+        UUID theirRole = orgContext.callInOrg(theirs, () -> roles.create("THEIRS_" + suffix, Set.of()).getId());
+
+        create("outsider-" + suffix, Set.of("ROLE_GROUP_ADMIN", "ROLE_USER"));
+        actAsWithAuthorities("outsider-" + suffix, Permissions.GROUP_UPDATE);
+
+        assertThat(orgContext.callInOrg(mine, () -> access.mayAssignRoleIds(Set.of(theirRole)))).isFalse();
     }
 
     /**

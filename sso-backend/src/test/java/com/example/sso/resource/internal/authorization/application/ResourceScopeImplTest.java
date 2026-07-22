@@ -13,8 +13,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -52,6 +56,64 @@ class ResourceScopeImplTest {
         when(userGroups.membershipsForUser(actor)).thenReturn(List.of());
 
         assertThat(scope.isUnscoped(actor)).isFalse();
+    }
+
+    /**
+     * Within one request the answer is computed ONCE.
+     *
+     * <p>{@code isUnscoped} was the only scope question here that was not memoized, and it is the expensive
+     * one: it reads the actor's role and then every group they belong to. Authorization asks it once per
+     * object being judged — a bulk admin action over D groups asked it D times, each re-reading the same
+     * actor, all inside one read-only transaction.
+     */
+    @Test
+    void isUnscopedIsAnsweredOncePerRequest() {
+        withRequestContext(() -> {
+            when(users.hasRole(actor, Roles.ADMIN)).thenReturn(false);
+            when(userGroups.membershipsForUser(actor)).thenReturn(List.of());
+
+            assertThat(scope.isUnscoped(actor)).isFalse();
+            assertThat(scope.isUnscoped(actor)).isFalse();
+            assertThat(scope.isUnscoped(actor)).isFalse();
+
+            verify(users, times(1)).hasRole(actor, Roles.ADMIN);
+            verify(userGroups, times(1)).membershipsForUser(actor);
+        });
+    }
+
+    /** A different actor is a different question — the memo is per actor, not per request. */
+    @Test
+    void eachActorIsJudgedOnTheirOwn() {
+        UUID other = UUID.randomUUID();
+        withRequestContext(() -> {
+            when(users.hasRole(actor, Roles.ADMIN)).thenReturn(true);
+            when(users.hasRole(other, Roles.ADMIN)).thenReturn(false);
+            when(userGroups.membershipsForUser(other)).thenReturn(List.of());
+
+            assertThat(scope.isUnscoped(actor)).isTrue();
+            assertThat(scope.isUnscoped(other)).isFalse();
+        });
+    }
+
+    /** Outside a request there is nowhere to memoize, so every call resolves — the pre-existing behaviour. */
+    @Test
+    void withoutARequestEveryCallResolves() {
+        when(users.hasRole(actor, Roles.ADMIN)).thenReturn(false);
+        when(userGroups.membershipsForUser(actor)).thenReturn(List.of());
+
+        scope.isUnscoped(actor);
+        scope.isUnscoped(actor);
+
+        verify(users, times(2)).hasRole(actor, Roles.ADMIN);
+    }
+
+    private void withRequestContext(Runnable body) {
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(new MockHttpServletRequest()));
+        try {
+            body.run();
+        } finally {
+            RequestContextHolder.resetRequestAttributes();
+        }
     }
 
     @Test

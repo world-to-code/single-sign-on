@@ -12,10 +12,10 @@ export interface Group {
    * The roles delegated to the group, id AND name.
    *
    * The write is BY ID: a role name resolves org-first with a global fallback, so round-tripping names let a
-   * request be authorized against one role and bind another of the same name. `roleNames` remains for display.
+   * request be authorized against one role and bind another of the same name. Names come from here too — the
+   * server sends no separate name-only field.
    */
   roles: { id: string; name: string }[];
-  roleNames: string[];
 }
 
 export interface GroupRequest {

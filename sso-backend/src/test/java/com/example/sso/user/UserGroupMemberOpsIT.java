@@ -8,6 +8,8 @@ import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.account.UserService;
+import com.example.sso.user.group.GroupMembership;
+import com.example.sso.user.role.RoleRef;
 import com.example.sso.user.group.GroupSpec;
 import com.example.sso.user.group.UserGroupService;
 import com.example.sso.user.role.RoleService;
@@ -143,6 +145,71 @@ class UserGroupMemberOpsIT extends AbstractIntegrationTest {
             // Absent, not an empty set — the caller reads that as "delegates nothing, so no ceiling applies".
             assertThat(delegated).doesNotContainKey(withNone);
         });
+    }
+
+    /**
+     * The whole membership list costs a constant number of queries.
+     *
+     * <p>It read each group's roles separately, and it sits under {@code isUnscoped} — which authorization asks
+     * once per object it judges — so the per-group cost was multiplied by whatever was being listed. Asserted
+     * against real rows because the batching is a query shape, not a return value: the result is identical
+     * either way, which is exactly why nothing noticed.
+     */
+    @Test
+    void everyGroupsDelegatedRolesAreReadInOnePass() {
+        UUID org = newOrg("mem-batch-roles");
+        UUID member = orgContext.callInOrg(org, () -> user(org));
+        UUID first = orgContext.callInOrg(org, () -> group());
+        UUID second = orgContext.callInOrg(org, () -> group());
+
+        orgContext.runInOrg(org, () -> {
+            groups.setRoles(first, Set.of(roleId("ROLE_USER")));
+            groups.setRoles(second, Set.of(roleId("ROLE_USER"), roleId("ROLE_GROUP_ADMIN")));
+            groups.addMember(first, member);
+            groups.addMember(second, member);
+
+            // Every org auto-provisions an "All Users" group, so filter to the two this test made.
+            List<GroupMembership> mine = groups.membershipsForUser(member).stream()
+                    .filter(membership -> Set.of(first, second).contains(membership.groupId()))
+                    .toList();
+
+            assertThat(mine).hasSize(2);
+            assertThat(mine).flatExtracting(GroupMembership::roles)
+                    .extracting(RoleRef::getName)
+                    .containsExactlyInAnyOrder("ROLE_USER", "ROLE_USER", "ROLE_GROUP_ADMIN");
+        });
+    }
+
+    /**
+     * A role owned by ANOTHER organization may not be delegated, like a member from one may not join.
+     *
+     * <p>The write used to resolve names global-only, so this could not arise. Taking ids widened it to
+     * anything the RLS context can read — which, under a platform context, is every tenant's roles. The
+     * resulting delegation would then be invisible to the tenant it was made in, since RLS filters the role
+     * back out of the view.
+     */
+    @Test
+    void aRoleFromAnotherOrganizationCannotBeDelegated() {
+        UUID mine = newOrg("role-mine");
+        UUID theirs = newOrg("role-theirs");
+        UUID group = orgContext.callInOrg(mine, () -> group());
+        UUID theirRole = orgContext.callAsPlatform(() ->
+                orgContext.callInOrg(theirs, () -> roleService.create("THEIRS-" + suffix(), Set.of()).getId()));
+
+        orgContext.runAsPlatform(() ->
+                assertThatThrownBy(() -> groups.setRoles(group, Set.of(theirRole)))
+                        .isInstanceOf(BadRequestException.class));
+    }
+
+    /** A GLOBAL role carries no organization, so it stays delegable in any tenant's group. */
+    @Test
+    void aGlobalRoleIsStillDelegable() {
+        UUID org = newOrg("role-global");
+        UUID group = orgContext.callInOrg(org, () -> group());
+
+        orgContext.runInOrg(org, () -> groups.setRoles(group, Set.of(roleId("ROLE_USER"))));
+
+        assertThat(orgContext.callInOrg(org, () -> groups.get(group).roleNames())).containsExactly("ROLE_USER");
     }
 
     @Test

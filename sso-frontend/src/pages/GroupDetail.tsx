@@ -115,7 +115,7 @@ export default function GroupDetail() {
           <button key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)}
                   className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${tab === key ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
             {key === "members" ? `${t("groupDetailTabMembers")}${members ? ` (${members.total})` : ""}`
-              : key === "roles" ? `${t("groupDetailTabRoles")}${group ? ` (${group.roleNames.length})` : ""}`
+              : key === "roles" ? `${t("groupDetailTabRoles")}${group ? ` (${group.roles.length})` : ""}`
               : t("groupDetailTabApps")}
           </button>
         ))}
@@ -149,11 +149,11 @@ export default function GroupDetail() {
               <ShieldCheck className="size-4" /> {t("groupDetailEditRoles")}
             </Button>
           </div>
-          {group.roleNames.length === 0 ? (
+          {group.roles.length === 0 ? (
             <p className="text-sm text-muted-foreground">{t("groupDetailNoRoles")}</p>
           ) : (
             <div className="flex flex-wrap gap-1">
-              {group.roleNames.map((r) => <Badge key={r} variant="secondary">{r}</Badge>)}
+              {group.roles.map((r) => <Badge key={r.id} variant="secondary">{r.name}</Badge>)}
             </div>
           )}
           <div className="border-t pt-4"><MetadataEditor kind="groups" entityId={id} /></div>

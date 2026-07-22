@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -106,9 +107,44 @@ class GroupAdminServiceTest {
         assertThat(service.get(GROUP_ID)).isSameAs(view);
     }
 
+    /**
+     * Clearing a delegation is a privilege CHANGE, and must clear the same ceiling as granting one.
+     *
+     * <p>The endpoint gate judges the roles being ADDED — an empty request passes it without resolving the
+     * actor at all — so a replace that only REMOVES was authorized by nothing. Stripping a group of a role
+     * demotes every member, and the accounts that held it stop being protected by the other-administrator
+     * guards, which read effective authorities. The current delegations are only knowable here, after the
+     * group is resolved, which is why the check cannot live in the annotation.
+     */
+    @Test
+    void clearingARoleTheActorCouldNotHaveGrantedIsRefused() {
+        when(accessPolicy.canAccessGroup(GROUP_ID)).thenReturn(true);
+        when(userGroups.delegatedRoleIds(Set.of(GROUP_ID))).thenReturn(Map.of(GROUP_ID, Set.of(SUPPORT_ROLE)));
+        when(accessPolicy.mayAssignRoleIds(Set.of(SUPPORT_ROLE))).thenReturn(false);
+
+        assertThatThrownBy(() -> service.setRoles(GROUP_ID, Set.of()))
+                .isInstanceOf(ForbiddenException.class);
+        verify(userGroups, never()).setRoles(any(), any());
+    }
+
+    /** Both halves together: what is added AND what is removed have to clear it. */
+    @Test
+    void theCeilingIsAppliedToTheAddedAndTheRemovedRolesTogether() {
+        UUID keeping = UUID.randomUUID();
+        when(accessPolicy.canAccessGroup(GROUP_ID)).thenReturn(true);
+        when(userGroups.delegatedRoleIds(Set.of(GROUP_ID))).thenReturn(Map.of(GROUP_ID, Set.of(SUPPORT_ROLE)));
+        when(accessPolicy.mayAssignRoleIds(Set.of(SUPPORT_ROLE, keeping))).thenReturn(true);
+        when(userGroups.setRoles(eq(GROUP_ID), any())).thenReturn(group(GROUP_ID));
+
+        service.setRoles(GROUP_ID, Set.of(keeping));
+
+        verify(accessPolicy).mayAssignRoleIds(Set.of(SUPPORT_ROLE, keeping));
+    }
+
     @Test
     void setRolesInScopeDelegatesAndAudits() {
         when(accessPolicy.canAccessGroup(GROUP_ID)).thenReturn(true);
+        when(accessPolicy.mayAssignRoleIds(any())).thenReturn(true);
         when(userGroups.setRoles(eq(GROUP_ID), any())).thenReturn(group(GROUP_ID));
 
         service.setRoles(GROUP_ID, Set.of(SUPPORT_ROLE));

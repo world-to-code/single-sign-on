@@ -2,6 +2,7 @@ package com.example.sso.user.internal.application;
 
 import com.example.sso.user.role.RoleHierarchyService;
 import com.example.sso.user.internal.group.domain.UserGroupRepository;
+import com.example.sso.user.internal.role.domain.RoleRepository;
 import com.example.sso.user.internal.role.domain.UserRoleRepository;
 import java.util.HashSet;
 import java.util.Set;
@@ -26,11 +27,18 @@ class RoleHierarchyServiceImpl implements RoleHierarchyService {
     private final UserGroupRepository userGroups;
     private final RoleClosure roleClosure;
     private final RoleTierResolver roleTierResolver;
+    private final RoleRepository roles;
 
     @Override
     @Transactional(readOnly = true)
     public boolean actorMayManageRole(UUID actorUserId, UUID targetRoleId) {
-        return targetRoleId != null && !rolesAboveApex(actorUserId).contains(targetRoleId);
+        // Fail-closed on a role that does not resolve, matching the by-name variant below. "Not above my apex"
+        // is trivially TRUE for an id that names nothing here — a typo, or a role belonging to another tenant
+        // that RLS hides — so without this the dominance term said yes about a role it could not see, and the
+        // permission terms that follow it read an empty set and passed vacuously too.
+        return targetRoleId != null
+                && roles.findById(targetRoleId).isPresent()
+                && !rolesAboveApex(actorUserId).contains(targetRoleId);
     }
 
     @Override
