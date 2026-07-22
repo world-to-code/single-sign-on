@@ -246,31 +246,44 @@ tasks.named('test') {
     // classes collide in a single database — 84 of 2179 tests failed, for no wall-clock gain.
     //
     // Measured on 12 cores, whole suite forced (--rerun-tasks), containers included:
-    //   forks=4  4m37s, load ~8.5   <- default (cores/3)
+    //   forks=4  4m37s, load ~8.5   <- local default (cores/3)
     //   forks=3  5m08s, load ~7.4
     //   forks=2  over 10m, load ~5.7
-    // Four is both the fastest and only modestly hotter than three, so lowering the default buys little. The
-    // load is inherent: each fork boots its own Spring context, and context caching is already near-optimal
-    // (6 of 119 integration classes force a distinct context). Override with -PtestForks=N when the machine is
-    // busy — and -PkeepTestInfra to leave the containers up between runs while iterating.
+    // Four is both the fastest and only modestly hotter than three, so lowering the local default buys little.
+    // The load is inherent: each fork boots its own Spring context, and context caching is already
+    // near-optimal (6 of 119 integration classes force a distinct context).
+    //
+    // CI runs ONE fork. A GitHub runner has two vCPUs, so parallel forks contend for the cores they need to
+    // boot those contexts, and every per-JVM cost this file has had to tune — heap, code cache, context cache
+    // — is paid once per fork. None of that is measurable from a developer machine, which has neither the core
+    // count nor the memory ceiling: the numbers above say nothing about it. One fork is the configuration with
+    // the fewest moving parts there.
+    //
+    // Both knobs read the environment first, so CI tunes them without editing this file:
+    //   SSO_TEST_FORKS / SSO_TEST_HEAP  (env)   ->  -PtestForks / -PtestHeap  (property)  ->  default
     int cores = Runtime.runtime.availableProcessors()
-    int defaultForks = System.getenv('CI') ? 2 : Math.max(1, cores.intdiv(3))
-    maxParallelForks = (project.findProperty('testForks') ?: defaultForks) as int
+    int defaultForks = System.getenv('CI') ? 1 : Math.max(1, cores.intdiv(3))
+    maxParallelForks = (System.getenv('SSO_TEST_FORKS') ?: project.findProperty('testForks')
+            ?: defaultForks) as int
 
     // Heap scales INVERSELY with the fork count, because a fork's peak is set by how many test classes it
-    // runs — total/forks — and Mockito's inline mock maker retains a generated class per mocked type. A flat
-    // 384m was measured at 4 forks and held there, then silently did not hold on CI at 2, where each JVM
-    // carries twice the accumulation: the suite died in InlineBytecodeGenerator with OutOfMemoryError.
-    // Measured, whole suite forced (--rerun-tasks), same machine:
-    //   forks=2 heap=384m   5m08s FAILED (OOM)      forks=2 heap=768m   3m37s green
-    //   forks=4 heap=384m   2m33s green             forks=4 heap=768m   7m47s FAILED
+    // runs — total/forks. Spring's context cache and Mockito's inline mock maker both retain per class, so
+    // halving the forks doubles what one JVM carries. A flat 384m was measured at 4 forks and held there, then
+    // did not hold at 2, where the suite died in InlineBytecodeGenerator with OutOfMemoryError and later in
+    // ConfigurationPropertyName — the same shortage surfacing wherever it happened to land.
+    //   forks=2 heap=384m   FAILED (OOM)      forks=2 heap=768m   3m37s green
+    //   forks=4 heap=384m   2m33s green       forks=4 heap=768m   FAILED
     // The last row is why this is not simply "raise it": four forks at 768m is 3g of heap against containers
     // on a 15g machine, and the pressure broke MethodHandle bootstrap rather than showing up as OOM. The
-    // budget is what stays constant, so derive the per-fork share from it and clamp the ends.
+    // budget is what stays constant, so derive the per-fork share from it and clamp the ends. One fork gets
+    // the ceiling, because it carries every class.
     int heapMb = Math.min(1024, Math.max(384, (int) (1536 / maxParallelForks)))
-    maxHeapSize = (project.findProperty('testHeap') ?: "${heapMb}m") as String
-    // Fast startup for short-lived test forks: C1-only JIT (test code runs ~once, so C2's warmup rarely pays
-    // off) + a predictable parallel GC. Cuts each fork's JVM warmup — which matters when N forks each boot a
-    // Spring context.
-    jvmArgs '-XX:TieredStopAtLevel=1', '-XX:+UseParallelGC'
+    maxHeapSize = (System.getenv('SSO_TEST_HEAP') ?: project.findProperty('testHeap') ?: "${heapMb}m") as String
+    // C1-only JIT for fast fork startup, a predictable parallel GC — and an EXPLICIT code cache, which is the
+    // part that bites. -XX:TieredStopAtLevel=1 silently drops the default ReservedCodeCacheSize from 240m to
+    // 48m, and a fork here is not the short-lived thing that assumption describes: it runs its whole share of
+    // 346 test classes, booting Spring contexts, so C1 emits far more than 48m of code. On CI the cache filled
+    // 48 seconds in and the JVM disabled the compiler permanently ("restarted_count=0") — every test after
+    // that ran interpreted, and a four-minute job took twenty. It fails as a slowdown, never as an error.
+    jvmArgs '-XX:TieredStopAtLevel=1', '-XX:+UseParallelGC', '-XX:ReservedCodeCacheSize=256m'
 }
