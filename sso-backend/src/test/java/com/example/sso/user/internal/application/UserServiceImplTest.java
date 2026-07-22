@@ -92,14 +92,14 @@ class UserServiceImplTest {
         when(users.existsByUsernameInOrg("alice", null)).thenReturn(false);
         when(users.existsByEmailInOrg("alice@example.com", null)).thenReturn(false);
         when(passwordEncoder.encode("pw")).thenReturn("hash");
-        when(users.save(any(AppUser.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(users.saveAndFlush(any(AppUser.class))).thenAnswer(inv -> inv.getArgument(0));
         UserGroup allUsers = mock(UserGroup.class);
         when(allUsers.getId()).thenReturn(UUID.randomUUID());
         when(groups.findByNameAndOrgIdIsNull("All Users")).thenReturn(Optional.of(allUsers));
 
         service.createUser(newUser(Set.of())); // global (org-less) account → the GLOBAL All Users group
 
-        verify(users).save(any(AppUser.class));
+        verify(users).saveAndFlush(any(AppUser.class));
         verify(groups).findByNameAndOrgIdIsNull("All Users");
         verify(userGroupMembers).save(any(UserGroupMember.class));
     }

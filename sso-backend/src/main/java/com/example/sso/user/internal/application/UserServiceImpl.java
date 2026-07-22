@@ -347,7 +347,12 @@ public class UserServiceImpl implements UserService {
 
         String rawPassword = newUser.rawPassword();
         String encodedPassword = rawPassword == null ? null : passwordEncoder.encode(rawPassword);
-        AppUser saved = users.save(new AppUser(username, email, newUser.displayName(), encodedPassword, orgId));
+        // Flushed here on purpose. The per-org unique indexes are what actually resolve a concurrent create,
+        // and deferring the insert lets the violation surface later — inside addToDefaultGroup's callInOrg,
+        // where it arrives as a connection-level error rather than the DataIntegrityViolationException the
+        // callers (bulk import, the global handler's duplicate-key mapping) are written to catch.
+        AppUser saved = users.saveAndFlush(
+                new AppUser(username, email, newUser.displayName(), encodedPassword, orgId));
         assignedRoles.forEach(role -> userRoles.save(new UserRole(saved.getId(), role.getId())));
         addToDefaultGroup(saved.getId(), orgId);
         // An administrator asserting an address is not the owner proving it, so the account starts unverified.

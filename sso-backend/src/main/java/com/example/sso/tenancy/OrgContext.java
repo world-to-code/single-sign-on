@@ -103,15 +103,45 @@ public class OrgContext {
         State previous = holder.get();
         holder.set(state);
         syncConnection(); // push the scoped context onto a held tx connection (frozen at acquisition otherwise)
+        Throwable failure = null;
         try {
             return action.get();
+        } catch (RuntimeException | Error thrown) {
+            failure = thrown;
+            throw thrown;
         } finally {
             if (previous == null) {
                 holder.remove();
             } else {
                 holder.set(previous);
             }
-            syncConnection(); // restore the outer context on the held connection too
+            restoreConnection(failure);
+        }
+    }
+
+    /**
+     * Restores the outer context on the held connection, without letting that restore replace the exception
+     * that made it necessary.
+     *
+     * <p>The usual reason the restore cannot run is that the action's OWN failure aborted the transaction:
+     * Postgres then refuses every command, including this {@code SET}. Thrown from a {@code finally} it
+     * discards the in-flight exception, so a duplicate key — the one thing that said what went wrong —
+     * reaches the caller as "current transaction is aborted" instead, and every {@code catch} for a specific
+     * type silently stops matching. A real race in the CSV import surfaced exactly that way.
+     *
+     * <p>Swallowing is safe ONLY under an in-flight failure: an aborted transaction cannot commit, so the
+     * stale GUC left on that connection can never serve a successful read. With no failure in flight a
+     * restore that fails is a genuine one and must surface — leaving the connection carrying the inner
+     * organization's scope would be a cross-tenant read.
+     */
+    private void restoreConnection(Throwable failure) {
+        try {
+            syncConnection();
+        } catch (RuntimeException restoreFailed) {
+            if (failure == null) {
+                throw restoreFailed;
+            }
+            failure.addSuppressed(restoreFailed);
         }
     }
 }
