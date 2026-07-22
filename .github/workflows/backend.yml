@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   test:
-    name: Tests (Testcontainers)
+    name: Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -20,17 +20,17 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
-      # Testcontainers spins up real Postgres + Redis; the ubuntu runner provides the Docker daemon they need —
-      # which is exactly why tests run HERE, in CI, and not inside the image build. ModularityTests run too.
+      # Real Postgres + Redis; the ubuntu runner provides the Docker daemon they need — which is exactly why
+      # tests run HERE, in CI, and not inside the image build. ModularityTests run too.
       #
-      # -PskipTestInfra deliberately declines the shared compose stack the test task would otherwise start, so
-      # this job takes the TESTCONTAINERS path. Locally that stack exists because a Testcontainers singleton is
-      # per-JVM and every fork would pay for its own; on a throwaway runner at two forks that cost is noise.
-      # Without this flag the fallback would never run anywhere, and an untested fallback is worse than none —
-      # it rots silently and is discovered on the day compose is unavailable.
-      - name: ./gradlew test (Testcontainers path)
+      # The shared compose stack, same as local development. Running this on the Testcontainers path instead
+      # was measured and reverted: each fork starts its own Postgres, and that Postgres is disk-backed with
+      # fsync on where the compose one is tmpfs with fsync off, so the suite took roughly twice as long and
+      # the added per-fork footprint pushed the 384m test heap into OutOfMemoryError inside Mockito's inline
+      # mock maker. The fallback is covered by its own job below, at a size that cannot do either.
+      - name: ./gradlew test
         working-directory: sso-backend
-        run: ./gradlew --no-daemon test -PskipTestInfra
+        run: ./gradlew --no-daemon test
       - name: Publish test report
         if: always()
         uses: actions/upload-artifact@v7
@@ -38,6 +38,29 @@ jobs:
           name: backend-test-results
           path: sso-backend/build/reports/tests/test
           if-no-files-found: ignore
+
+  # TestInfrastructure has a second way to get Postgres and Redis: when the compose stack is unreachable, each
+  # JVM starts its own containers. That branch is what a developer hits when the stack is down and what an
+  # environment without docker compose relies on, and nothing ran it — an untested fallback rots quietly and
+  # is discovered on the day it is needed. A few integration classes are enough to prove it boots, migrates
+  # and connects; running the WHOLE suite this way is what previously doubled the time and exhausted the heap.
+  fallback:
+    name: Testcontainers fallback
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: ./gradlew test -PskipTestInfra (a slice)
+        working-directory: sso-backend
+        run: |
+          ./gradlew --no-daemon test -PskipTestInfra -PtestForks=1 \
+            --tests 'com.example.sso.user.UserGroupMemberOpsIT' \
+            --tests 'com.example.sso.organization.OrganizationRlsIT'
 
   image:
     name: Image build

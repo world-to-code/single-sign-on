@@ -54,7 +54,18 @@ final class TestInfrastructure {
 
     private static final PostgreSQLContainer POSTGRES = EXTERNAL ? null
             : new PostgreSQLContainer("postgres:17")
-                    .withInitScript("testcontainers/create-runtime-role.sql");
+                    .withInitScript("testcontainers/create-runtime-role.sql")
+                    // The same durability trade the compose stack makes, and for the same reason: this data
+                    // is discarded at the end of the run, so paying fsync for it is pure cost. It was missing
+                    // here, so falling back to Testcontainers silently ran the suite about twice as slowly —
+                    // the compose file predicts exactly that, and nothing kept the two in step.
+                    // Not tmpfs, unlike compose: that costs about a gigabyte, and compose pays it ONCE for
+                    // the whole build while this container is per fork.
+                    .withCommand("postgres",
+                            "-c", "fsync=off",
+                            "-c", "full_page_writes=off",
+                            "-c", "synchronous_commit=off",
+                            "-c", "max_connections=300");
 
     private static final GenericContainer<?> REDIS = EXTERNAL ? null
             : new GenericContainer<>("redis:7")

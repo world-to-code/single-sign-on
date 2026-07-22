@@ -253,11 +253,22 @@ tasks.named('test') {
     // load is inherent: each fork boots its own Spring context, and context caching is already near-optimal
     // (6 of 119 integration classes force a distinct context). Override with -PtestForks=N when the machine is
     // busy — and -PkeepTestInfra to leave the containers up between runs while iterating.
-    // Heap: 384m measured against 1g at 4 forks; 62% less for a few percent of wall clock.
     int cores = Runtime.runtime.availableProcessors()
     int defaultForks = System.getenv('CI') ? 2 : Math.max(1, cores.intdiv(3))
     maxParallelForks = (project.findProperty('testForks') ?: defaultForks) as int
-    maxHeapSize = (project.findProperty('testHeap') ?: '384m') as String
+
+    // Heap scales INVERSELY with the fork count, because a fork's peak is set by how many test classes it
+    // runs — total/forks — and Mockito's inline mock maker retains a generated class per mocked type. A flat
+    // 384m was measured at 4 forks and held there, then silently did not hold on CI at 2, where each JVM
+    // carries twice the accumulation: the suite died in InlineBytecodeGenerator with OutOfMemoryError.
+    // Measured, whole suite forced (--rerun-tasks), same machine:
+    //   forks=2 heap=384m   5m08s FAILED (OOM)      forks=2 heap=768m   3m37s green
+    //   forks=4 heap=384m   2m33s green             forks=4 heap=768m   7m47s FAILED
+    // The last row is why this is not simply "raise it": four forks at 768m is 3g of heap against containers
+    // on a 15g machine, and the pressure broke MethodHandle bootstrap rather than showing up as OOM. The
+    // budget is what stays constant, so derive the per-fork share from it and clamp the ends.
+    int heapMb = Math.min(1024, Math.max(384, (int) (1536 / maxParallelForks)))
+    maxHeapSize = (project.findProperty('testHeap') ?: "${heapMb}m") as String
     // Fast startup for short-lived test forks: C1-only JIT (test code runs ~once, so C2's warmup rarely pays
     // off) + a predictable parallel GC. Cuts each fork's JVM warmup — which matters when N forks each boot a
     // Spring context.
