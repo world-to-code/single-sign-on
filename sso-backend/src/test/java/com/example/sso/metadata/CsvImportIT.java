@@ -241,12 +241,15 @@ class CsvImportIT extends AbstractIntegrationTest {
     }
 
     /**
-     * The row that loses the preview-to-apply race is the whole reason each creation holds its own
-     * transaction. A real unique-index violation — not a stubbed exception — must leave the other rows
-     * committed and become one reported failure.
+     * An account already here is reported as EXISTING, not as a failure, and the rest of the file still lands.
+     *
+     * <p>Named for what the fixture does. It used to claim "a real unique-index violation, not a stubbed
+     * exception" — but it creates the account BEFORE the import, so the planner buckets it as existing and no
+     * insert is ever attempted. The genuine violation happens between createUser's existence check and its
+     * insert, and nothing can hold that window open from here; CsvImportConcurrencyIT says so in its own words.
      */
     @Test
-    void aRowCollidingWithAnExistingAccountFailsAloneAndTheOthersPersist() {
+    void anAccountAlreadyHereIsReportedAsExistingAndTheRestOfTheFileLands() {
         orgA = org();
         UUID profile = tenantProfile(orgA);
         String taken = "taken-" + UUID.randomUUID().toString().substring(0, 8);
@@ -259,6 +262,8 @@ class CsvImportIT extends AbstractIntegrationTest {
                         + fresh + "," + fresh + "@example.com\n")));
 
         assertThat(result.created()).isEqualTo(1);
+        assertThat(result.existing()).containsExactly(taken);   // existing, NOT a failure
+        assertThat(result.failures()).isEmpty();
         assertThat(orgContext.callInOrg(orgA, () -> users.findByUsernameInOrg(fresh, orgA))).isPresent();
     }
 
@@ -270,17 +275,31 @@ class CsvImportIT extends AbstractIntegrationTest {
         String onlyInB = "b-only-" + UUID.randomUUID().toString().substring(0, 8);
         orgContext.runInOrg(orgB, () -> groups.create(new GroupSpec(onlyInB, null, null, Set.of())));
 
+        String joinable = "a-only-" + UUID.randomUUID().toString().substring(0, 8);
+        orgContext.runInOrg(orgA, () -> groups.create(new GroupSpec(joinable, null, null, Set.of())));
+
         UUID profile = tenantProfile(orgA);
         String username = "crosser-" + UUID.randomUUID().toString().substring(0, 8);
+        String joiner = "joiner-" + UUID.randomUUID().toString().substring(0, 8);
 
-        CsvImportResult result = orgContext.callInOrg(orgA, () -> imports.apply(profile,
-                upload("username,email,groups\n" + username + "," + username + "@example.com," + onlyInB + "\n")));
+        // Signed in on purpose: canAccessGroup is fail-closed, so without an actor EVERY group is unusable
+        // and the refusal below would prove nothing about which organization owns the name.
+        CsvImportResult result = asSuperAdmin(() -> withRequestContext(() ->
+                orgContext.callInOrg(orgA, () -> imports.apply(profile,
+                        upload("username,email,groups\n"
+                                + joiner + "," + joiner + "@example.com," + joinable + "\n"
+                                + username + "," + username + "@example.com," + onlyInB + "\n")))));
 
-        assertThat(result.created()).isZero();
+        assertThat(result.created()).isEqualTo(1);                      // the row naming THIS org's group
         assertThat(result.failures()).singleElement()
                 .extracting(CsvRowFailure::reason).asString()
-                .contains(onlyInB).doesNotContain("metadata.csv"); // resolved text, not a key
+                .contains(onlyInB).doesNotContain("metadata.csv");      // resolved text, not a key
         assertThat(orgContext.callInOrg(orgA, () -> users.findByUsernameInOrg(username, orgA))).isEmpty();
+        UUID joined = orgContext.callInOrg(orgA, () -> groups.groupIdsByName(List.of(joinable), orgA))
+                .get(joinable);
+        assertThat(orgContext.callInOrg(orgA, () -> groups.members(joined, 0, 10).total()))
+                .as("the row naming this org's group actually JOINED it")
+                .isEqualTo(1L);
     }
 
     /**
