@@ -57,7 +57,7 @@ class RbacDelegationIT extends AbstractIntegrationTest {
                 Set.of("ROLE_USER"))).getId();
         userGroups.create(new GroupSpec("Managers", "app managers", null, Set.of(carol)));
         UUID groupId = UUID.fromString(userGroups.search("Managers", 1).getFirst().id());
-        userGroups.setRoles(groupId, Set.of("APP_MANAGER"));
+        userGroups.setRoles(groupId, Set.of(roleService.findByName("APP_MANAGER").orElseThrow().getId()));
 
         Set<String> authorities = authoritiesOf("carol");
         assertThat(authorities).contains("APP_MANAGER");          // group-delegated role name
@@ -108,7 +108,7 @@ class RbacDelegationIT extends AbstractIntegrationTest {
                 Set.of("ROLE_USER"))).getId();
         userGroups.create(new GroupSpec("Admins", "delegated admins", null, Set.of(dave)));
         UUID groupId = UUID.fromString(userGroups.search("Admins", 1).getFirst().id());
-        userGroups.setRoles(groupId, Set.of("ROLE_ADMIN"));
+        userGroups.setRoles(groupId, Set.of(roleService.findByName("ROLE_ADMIN").orElseThrow().getId()));
 
         assertThat(authoritiesOf("dave")).contains("ROLE_ADMIN");
     }

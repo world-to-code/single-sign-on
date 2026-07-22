@@ -8,6 +8,13 @@ export interface Group {
   memberUserIds: string[];
   memberCount: number;
   system: boolean;
+  /**
+   * The roles delegated to the group, id AND name.
+   *
+   * The write is BY ID: a role name resolves org-first with a global fallback, so round-tripping names let a
+   * request be authorized against one role and bind another of the same name. `roleNames` remains for display.
+   */
+  roles: { id: string; name: string }[];
   roleNames: string[];
 }
 
@@ -44,6 +51,6 @@ export const usersByIds = (ids: string[]): Promise<Suggestion[]> =>
     ? Promise.resolve([])
     : apiGet<Suggestion[]>(`/api/admin/users/by-ids?ids=${ids.map(encodeURIComponent).join(",")}`);
 
-/** Replaces the roles delegated to a group; its members inherit them. */
-export const setGroupRoles = (id: string, roleNames: string[]) =>
-  apiPut<Group>(`/api/admin/groups/${id}/roles`, { roleNames });
+/** Replaces the roles delegated to a group; its members inherit them. Ids, never names — see `Group.roles`. */
+export const setGroupRoles = (id: string, roleIds: string[]) =>
+  apiPut<Group>(`/api/admin/groups/${id}/roles`, { roleIds });

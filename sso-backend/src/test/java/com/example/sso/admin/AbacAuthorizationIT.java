@@ -11,7 +11,12 @@ import com.example.sso.user.group.GroupSpec;
 import com.example.sso.user.group.GroupView;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.rbac.Permissions;
+import com.example.sso.organization.NewOrganization;
+import com.example.sso.organization.OrganizationService;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.group.UserGroupService;
+import com.example.sso.user.role.RoleService;
+import com.example.sso.user.role.Roles;
 import com.example.sso.user.account.UserService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -53,6 +58,12 @@ class AbacAuthorizationIT extends AbstractIntegrationTest {
     AdminGroupController groupController;
     @Autowired
     MetadataAdminController metadataController;
+    @Autowired
+    RoleService roles;
+    @Autowired
+    OrganizationService organizations;
+    @Autowired
+    OrgContext orgContext;
 
     private final List<UUID> created = new ArrayList<>();
 
@@ -68,6 +79,11 @@ class AbacAuthorizationIT extends AbstractIntegrationTest {
         });
         created.clear();
     }
+    /** Roles are delegated BY ID; a fixture resolves the name once rather than the write doing it. */
+    private UUID roleId(String name) {
+        return roles.findByName(name).orElseThrow().getId();
+    }
+
 
     @Test
     void selfProtectionRules() {
@@ -170,18 +186,51 @@ class AbacAuthorizationIT extends AbstractIntegrationTest {
 
         // Positive: a super admin assigning a plain role succeeds — #request.roleNames() bound & evaluated.
         actAsWithAuthorities("admin", Permissions.GROUP_UPDATE);
-        GroupView updated = groupController.setGroupRoles(groupId, new SetGroupRolesRequest(Set.of("ROLE_USER")));
+        GroupView updated = groupController.setGroupRoles(groupId, new SetGroupRolesRequest(Set.of(roleId("ROLE_USER"))));
         assertThat(updated.roleNames()).contains("ROLE_USER");
 
         // Negative: a scoped (non-super) admin assigning a privileged role is denied through the same binding.
         create("annscoped", Set.of("ROLE_GROUP_ADMIN", "ROLE_USER"));
         actAsWithAuthorities("annscoped", Permissions.GROUP_UPDATE);
         assertThatThrownBy(() ->
-                groupController.setGroupRoles(groupId, new SetGroupRolesRequest(Set.of("ROLE_ADMIN"))))
+                groupController.setGroupRoles(groupId, new SetGroupRolesRequest(Set.of(roleId("ROLE_ADMIN")))))
                 .isInstanceOf(AccessDeniedException.class);
 
         actAsWithAuthorities("admin", Permissions.GROUP_UPDATE);
         userGroups.delete(groupId);
+    }
+
+    /**
+     * The escalation the by-name gate allowed, asserted as closed.
+     *
+     * <p>The gate resolved a role NAME org-first while the write bound the GLOBAL role of that name, and two
+     * partial unique indexes let both rows exist — so a tenant admin minted a benign local role of the same
+     * name, cleared the ceiling on THAT, and had the privileged global role delegated to a group whose every
+     * member inherited it. The four system names are reserved, but any ordinary global role is shadowable.
+     *
+     * <p>The request carries ids now, so the two roles cannot be confused for one another: the privileged one
+     * is refused on its own merits, and the benign local one is still allowed — which is what shows the gate
+     * judges the role it was actually handed.
+     */
+    @Test
+    void shadowingAGlobalRolesNameNoLongerLetsItBeDelegated() {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String shared = "AUDITORS_" + suffix;
+        UUID orgId = organizations.create(new NewOrganization("shadow-" + suffix, "Shadow")).id();
+
+        // A super admin's global role carrying a platform-only permission — un-grantable by a tenant. Minting
+        // it needs the super context itself, which is the whole reason such a role is out of a tenant's reach.
+        actAsWithAuthorities("admin", Roles.ADMIN, Permissions.ORG_CREATE);
+        UUID privileged = roles.create(shared, Set.of(Permissions.ORG_CREATE)).getId();
+        // The shadow: same NAME, the actor's own tier, carrying nothing.
+        UUID benign = orgContext.callInOrg(orgId, () -> roles.create(shared, Set.of()).getId());
+        assertThat(benign).isNotEqualTo(privileged);
+
+        create("shadower-" + suffix, Set.of("ROLE_GROUP_ADMIN", "ROLE_USER"));
+        actAsWithAuthorities("shadower-" + suffix, Permissions.GROUP_UPDATE);
+
+        assertThat(access.mayAssignRoleIds(Set.of(privileged))).isFalse();
+        assertThat(access.mayAssignRoleIds(Set.of(benign))).isTrue();
     }
 
     /**

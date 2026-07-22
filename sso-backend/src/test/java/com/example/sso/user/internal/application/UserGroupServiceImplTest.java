@@ -136,17 +136,19 @@ class UserGroupServiceImplTest {
         UUID id = UUID.randomUUID();
         when(repository.findById(id)).thenReturn(Optional.of(systemGroup()));
 
-        assertThatThrownBy(() -> service.setRoles(id, Set.of("ROLE_USER")))
+        assertThatThrownBy(() -> service.setRoles(id, Set.of(UUID.randomUUID())))
                 .isInstanceOf(ConflictException.class);
     }
 
+    /** An id that resolves to nothing — including one belonging to a tenant this caller cannot read. */
     @Test
-    void setRolesRejectsAnUnknownRole() {
+    void setRolesRejectsARoleIdThatResolvesToNothing() {
         UUID id = UUID.randomUUID();
+        UUID ghost = UUID.randomUUID();
         when(repository.findById(id)).thenReturn(Optional.of(new UserGroup("Engineering", "d", null)));
-        when(roles.findByNameAndOrgIdIsNull("ROLE_GHOST")).thenReturn(Optional.empty());
+        when(roles.findAllById(Set.of(ghost))).thenReturn(List.of());
 
-        assertThatThrownBy(() -> service.setRoles(id, Set.of("ROLE_GHOST")))
+        assertThatThrownBy(() -> service.setRoles(id, Set.of(ghost)))
                 .isInstanceOf(BadRequestException.class);
     }
 

@@ -10,6 +10,7 @@ import com.example.sso.user.account.NewUser;
 import com.example.sso.user.account.UserService;
 import com.example.sso.user.group.GroupSpec;
 import com.example.sso.user.group.UserGroupService;
+import com.example.sso.user.role.RoleService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +35,7 @@ class UserGroupMemberOpsIT extends AbstractIntegrationTest {
     @Autowired UserService users;
     @Autowired OrganizationService organizations;
     @Autowired OrgContext orgContext;
+    @Autowired RoleService roleService;
 
     private final List<UUID> createdUsers = new ArrayList<>();
     private final List<UUID> createdGroups = new ArrayList<>();
@@ -130,8 +132,8 @@ class UserGroupMemberOpsIT extends AbstractIntegrationTest {
         UUID withNone = orgContext.callInOrg(org, () -> group());
 
         orgContext.runInOrg(org, () -> {
-            groups.setRoles(withRoles, Set.of("ROLE_USER"));
-            groups.setRoles(alsoWithRoles, Set.of("ROLE_USER", "ROLE_GROUP_ADMIN"));
+            groups.setRoles(withRoles, Set.of(roleId("ROLE_USER")));
+            groups.setRoles(alsoWithRoles, Set.of(roleId("ROLE_USER"), roleId("ROLE_GROUP_ADMIN")));
 
             Map<UUID, Set<UUID>> delegated =
                     groups.delegatedRoleIds(List.of(withRoles, alsoWithRoles, withNone));
@@ -161,7 +163,7 @@ class UserGroupMemberOpsIT extends AbstractIntegrationTest {
         UUID mine = newOrg("mem-x");
         UUID theirs = newOrg("mem-y");
         UUID theirGroup = orgContext.callInOrg(theirs, () -> group());
-        orgContext.runInOrg(theirs, () -> groups.setRoles(theirGroup, Set.of("ROLE_USER")));
+        orgContext.runInOrg(theirs, () -> groups.setRoles(theirGroup, Set.of(roleId("ROLE_USER"))));
 
         orgContext.runInOrg(mine, () ->
                 assertThat(groups.delegatedRoleIds(List.of(theirGroup))).isEmpty());
@@ -173,6 +175,11 @@ class UserGroupMemberOpsIT extends AbstractIntegrationTest {
         UUID group = orgContext.callInOrg(org, () -> group());
         assertThatCode(() -> orgContext.runInOrg(org, () -> groups.addMembers(group, Set.of())))
                 .doesNotThrowAnyException();
+    }
+
+    /** Roles are delegated BY ID now, so a fixture resolves the name once rather than the write doing it. */
+    private UUID roleId(String name) {
+        return roleService.findByName(name).orElseThrow().getId();
     }
 
     private long memberCount(UUID groupId) {

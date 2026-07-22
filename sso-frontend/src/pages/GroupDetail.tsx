@@ -54,11 +54,11 @@ export default function GroupDetail() {
   }, [tab]);
 
   function openRoles() {
-    setRoleSel(group ? [...group.roleNames] : []);
+    setRoleSel(group ? group.roles.map((r) => r.id) : []);
     setRolesOpen(true);
   }
-  function toggleRole(name: string) {
-    setRoleSel((sel) => (sel.includes(name) ? sel.filter((r) => r !== name) : [...sel, name]));
+  function toggleRole(roleId: string) {
+    setRoleSel((sel) => (sel.includes(roleId) ? sel.filter((r) => r !== roleId) : [...sel, roleId]));
   }
   async function saveRoles() {
     try {
@@ -198,10 +198,10 @@ export default function GroupDetail() {
           ) : (
             <div className="grid max-h-72 grid-cols-1 gap-1 overflow-y-auto sm:grid-cols-2">
               {allRoles.map((role) => {
-                const checked = roleSel.includes(role.name);
+                const checked = roleSel.includes(role.id);
                 return (
                   <label key={role.id} className="flex cursor-pointer items-center gap-2.5 rounded-md border p-2.5 text-sm transition-colors hover:bg-muted/60 has-[:checked]:border-primary has-[:checked]:bg-accent">
-                    <Checkbox className="size-4" checked={checked} onCheckedChange={() => toggleRole(role.name)} />
+                    <Checkbox className="size-4" checked={checked} onCheckedChange={() => toggleRole(role.id)} />
                     <span>{role.name}</span>
                   </label>
                 );

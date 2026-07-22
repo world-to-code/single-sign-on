@@ -181,6 +181,33 @@ public class AdminAccessPolicy {
         return conferrable;
     }
 
+    /**
+     * Whether the current actor may delegate ALL of these roles, resolved BY ID.
+     *
+     * <p>The gate for handing roles to a group. It took NAMES, and that was an escalation: a name resolves
+     * org-first with a global fallback while the write bound the global role, so a tenant admin minted a benign
+     * local role of the same name, cleared the ceiling on that one, and delegated the privileged global role to
+     * a group whose every member then inherited it. Two partial unique indexes let both rows exist, and only
+     * four reserved names are refused — so the collision was theirs to create.
+     *
+     * <p>Taking ids deletes the resolution step the trick lived in. All or nothing: a partial delegation is not
+     * something the endpoint can express, so one role the actor may not hand out fails the request.
+     *
+     * <p>The actor is resolved ONCE for the set, like {@link #mayConferRolesOf}.
+     */
+    public boolean mayAssignRoleIds(Collection<UUID> roleIds) {
+        if (roleIds.isEmpty()) {
+            return true;
+        }
+        Optional<UUID> actor = currentUserId();
+        if (actor.isEmpty()) {
+            return false;
+        }
+        Set<String> authorities = currentAuthorities();
+        return roleIds.stream().allMatch(roleId ->
+                mayAssignTarget(actor.get(), authorities, MappingTargetKind.ROLE, roleId));
+    }
+
     /** The same decision for the CURRENT actor, resolved once for the whole set. */
     public Set<UUID> currentMayConferRolesOf(Collection<UUID> groupIds) {
         return currentUserId()

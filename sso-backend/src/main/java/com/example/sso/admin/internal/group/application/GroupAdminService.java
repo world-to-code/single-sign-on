@@ -68,12 +68,14 @@ public class GroupAdminService {
     }
 
     /** Replaces the roles delegated to a group; members inherit them. */
-    public GroupView setRoles(UUID id, Set<String> requestedRoleNames) {
+    public GroupView setRoles(UUID id, Set<UUID> requestedRoleIds) {
         requireAccess(id);
-        Set<String> roleNames = Objects.requireNonNullElseGet(requestedRoleNames, Set::of);
-        GroupView view = userGroups.setRoles(id, roleNames);
+        Set<UUID> roleIds = Objects.requireNonNullElseGet(requestedRoleIds, Set::of);
+        GroupView view = userGroups.setRoles(id, roleIds);
+        // The NAMES in the trail, from the view the write returned: an audit line of uuids is unreadable, and
+        // the names are now a rendering of what was bound rather than what was asked for.
         auditLogger.log(AuditType.GROUP_ROLES_UPDATED, AuditSubjectType.GROUP, id.toString(),
-                "group=" + id + " roles=" + roleNames);
+                "group=" + id + " roles=" + view.roleNames());
         return view;
     }
 

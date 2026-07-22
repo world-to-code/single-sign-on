@@ -89,8 +89,13 @@ public interface UserGroupService {
      */
     void addMembers(UUID groupId, Set<UUID> userIds);
 
-    /** Replaces the roles delegated to the group; every member inherits them. Unknown role → 400. */
-    GroupView setRoles(UUID id, Set<String> roleNames);
+    /**
+     * Replaces the roles delegated to the group; every member inherits them. Unknown role id → 400.
+     *
+     * <p>Ids, not names: a name resolves org-first with a global fallback while the delegation is stored by id,
+     * so a by-name call could be authorized against one role and bind another of the same name.
+     */
+    GroupView setRoles(UUID id, Set<UUID> roleIds);
 
     /** The groups the given user belongs to, each with the roles that group delegates. */
     List<GroupMembership> membershipsForUser(UUID userId);

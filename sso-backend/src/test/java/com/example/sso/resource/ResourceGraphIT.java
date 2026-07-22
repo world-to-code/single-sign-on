@@ -26,6 +26,7 @@ import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.group.GroupSpec;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.group.UserGroupService;
+import com.example.sso.user.role.RoleService;
 import com.example.sso.user.account.UserService;
 import java.util.ArrayList;
 import java.util.List;
@@ -82,6 +83,8 @@ class ResourceGraphIT extends AbstractIntegrationTest {
     ResourceAuthorization resourceAuthz;
     @Autowired
     GroupAuthorization groupAuthz;
+    @Autowired
+    RoleService roles;
     @Autowired
     UserAuthorization userAuthz;
     @Autowired
@@ -143,6 +146,11 @@ class ResourceGraphIT extends AbstractIntegrationTest {
         createdUsers.forEach(userService::delete);
         createdUsers.clear();
     }
+    /** Roles are delegated BY ID; a fixture resolves the name once rather than the write doing it. */
+    private UUID roleId(String name) {
+        return roles.findByName(name).orElseThrow().getId();
+    }
+
 
     @Test
     void managedResourceIdsWalksTheSubtreeAndDedupsTheDiamond() {
@@ -303,7 +311,7 @@ class ResourceGraphIT extends AbstractIntegrationTest {
         // ROLE_ADMIN delegated through a group must make the member an effective super admin here,
         // matching the session authority model (SsoUserDetailsService) — not just a direct role.
         UUID adminsGroup = group("Res-Admins", backendDev);
-        userGroups.setRoles(adminsGroup, Set.of("ROLE_ADMIN"));
+        userGroups.setRoles(adminsGroup, Set.of(roleId("ROLE_ADMIN")));
 
         assertThat(scope.isUnscoped(backendDev)).isTrue();
         assertThat(groupAuthz.canManage(backendDev, frontendGroup)).isTrue();
@@ -314,7 +322,7 @@ class ResourceGraphIT extends AbstractIntegrationTest {
         // The PERSISTED half of the replace semantic: Hibernate must flush the old row's DELETE
         // before the new row's INSERT (same (resource,user,tier) PK, different role_id) — otherwise
         // a duplicate-PK violation. The role id must be real (FK to role).
-        userGroups.setRoles(backendGroup, Set.of("ROLE_USER"));
+        userGroups.setRoles(backendGroup, Set.of(roleId("ROLE_USER")));
         UUID catalogRole = userGroups.membershipsForUser(backendDev).stream()
                 .filter(membership -> membership.groupId().equals(backendGroup)) // skip the seeded "All Users"
                 .flatMap(membership -> membership.roles().stream())

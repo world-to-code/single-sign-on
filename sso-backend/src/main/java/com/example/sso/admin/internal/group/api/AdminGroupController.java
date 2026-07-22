@@ -72,7 +72,7 @@ public class AdminGroupController {
     @CanAssignGroupRoles
     @RequireStepUp
     public GroupView setGroupRoles(@PathVariable UUID id, @RequestBody SetGroupRolesRequest request) {
-        return groups.setRoles(id, request.roleNames());
+        return groups.setRoles(id, request.roleIds());
     }
 
     @GetMapping("/{id}")

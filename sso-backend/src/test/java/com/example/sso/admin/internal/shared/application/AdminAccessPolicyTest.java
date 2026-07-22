@@ -33,6 +33,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -237,6 +238,75 @@ class AdminAccessPolicyTest {
 
         verify(userGroups, times(1)).delegatedRoleIds(List.of(first, second));
         verify(roleService, times(1)).permissionNames(sharedRole);
+    }
+
+    // --- mayAssignRoleIds: delegating roles to a group, resolved BY ID -----------------------------
+
+    /**
+     * The escalation this replaced a by-name gate for.
+     *
+     * <p>A name resolves org-first with a global fallback while the delegation write bound the GLOBAL role, so
+     * a tenant admin minted a benign local role of the same name, cleared the ceiling on THAT, and delegated
+     * the privileged global one to a group whose every member then inherited it. Taking ids removes the
+     * resolution step the trick lived in — there is no longer a name for two roles to share.
+     */
+    @Test
+    void aRoleCarryingAPlatformPermissionMayNotBeDelegated() {
+        UUID privileged = UUID.randomUUID();
+        when(roleHierarchy.actorMayManageRole(ACTOR_ID, privileged)).thenReturn(true);
+        when(roleService.permissionNames(privileged)).thenReturn(Set.of(Permissions.ORG_CREATE));
+
+        assertThat(policy.mayAssignRoleIds(Set.of(privileged))).isFalse();
+    }
+
+    @Test
+    void aRoleTheActorDoesNotDominateMayNotBeDelegated() {
+        UUID above = UUID.randomUUID();
+        when(roleHierarchy.actorMayManageRole(ACTOR_ID, above)).thenReturn(false);
+
+        assertThat(policy.mayAssignRoleIds(Set.of(above))).isFalse();
+    }
+
+    @Test
+    void rolesTheActorDominatesAndFullyHoldsMayBeDelegated() {
+        UUID benign = UUID.randomUUID();
+        when(roleHierarchy.actorMayManageRole(ACTOR_ID, benign)).thenReturn(true);
+        when(roleService.permissionNames(benign)).thenReturn(Set.of());
+
+        assertThat(policy.mayAssignRoleIds(Set.of(benign))).isTrue();
+    }
+
+    /** One bad role fails the whole set — a partial delegation is not a thing the endpoint can express. */
+    @Test
+    void oneRoleTheActorMayNotDelegateFailsTheWholeSet() {
+        UUID benign = UUID.randomUUID();
+        UUID privileged = UUID.randomUUID();
+        lenient().when(roleHierarchy.actorMayManageRole(ACTOR_ID, benign)).thenReturn(true);
+        lenient().when(roleService.permissionNames(benign)).thenReturn(Set.of());
+        lenient().when(roleHierarchy.actorMayManageRole(ACTOR_ID, privileged)).thenReturn(true);
+        lenient().when(roleService.permissionNames(privileged)).thenReturn(Set.of(Permissions.ORG_CREATE));
+
+        assertThat(policy.mayAssignRoleIds(Set.of(benign, privileged))).isFalse();
+    }
+
+    @Test
+    void delegatingNoRolesIsAllowedAndCostsNothing() {
+        assertThat(policy.mayAssignRoleIds(Set.of())).isTrue();
+
+        verify(roleService, never()).permissionNames(any());
+    }
+
+    /** The actor is resolved ONCE for the set, not once per role — the same shape mayConferRolesOf uses. */
+    @Test
+    void everyRoleInTheSetIsJudgedWithoutReResolvingTheActor() {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        when(roleHierarchy.actorMayManageRole(eq(ACTOR_ID), any())).thenReturn(true);
+        when(roleService.permissionNames(any())).thenReturn(Set.of());
+
+        assertThat(policy.mayAssignRoleIds(Set.of(first, second))).isTrue();
+
+        verify(userService, times(1)).findByUsernameInOrg(ACTOR_NAME, null);
     }
 
     /** A group delegating nothing confers nothing, so it clears the ceiling without a role lookup. */

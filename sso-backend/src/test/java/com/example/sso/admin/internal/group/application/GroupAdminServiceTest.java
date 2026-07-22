@@ -41,6 +41,7 @@ import static org.mockito.Mockito.when;
  */
 class GroupAdminServiceTest {
 
+    private static final UUID SUPPORT_ROLE = UUID.randomUUID();
     private static final UUID GROUP_ID = UUID.randomUUID();
 
     private UserGroupService userGroups;
@@ -91,7 +92,7 @@ class GroupAdminServiceTest {
     void setRolesOutsideScopeIsForbiddenAndDoesNotDelegate() {
         when(accessPolicy.canAccessGroup(GROUP_ID)).thenReturn(false);
 
-        assertThatThrownBy(() -> service.setRoles(GROUP_ID, Set.of("ROLE_SUPPORT")))
+        assertThatThrownBy(() -> service.setRoles(GROUP_ID, Set.of(SUPPORT_ROLE)))
                 .isInstanceOf(ForbiddenException.class);
         verify(userGroups, never()).setRoles(any(), any());
     }
@@ -110,9 +111,9 @@ class GroupAdminServiceTest {
         when(accessPolicy.canAccessGroup(GROUP_ID)).thenReturn(true);
         when(userGroups.setRoles(eq(GROUP_ID), any())).thenReturn(group(GROUP_ID));
 
-        service.setRoles(GROUP_ID, Set.of("ROLE_SUPPORT"));
+        service.setRoles(GROUP_ID, Set.of(SUPPORT_ROLE));
 
-        verify(userGroups).setRoles(GROUP_ID, Set.of("ROLE_SUPPORT"));
+        verify(userGroups).setRoles(GROUP_ID, Set.of(SUPPORT_ROLE));
         verify(auditLogger).log(eq(AuditType.GROUP_ROLES_UPDATED), eq(AuditSubjectType.GROUP), any(), any());
     }
 

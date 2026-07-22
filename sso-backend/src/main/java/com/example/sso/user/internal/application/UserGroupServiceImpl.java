@@ -15,6 +15,7 @@ import com.example.sso.user.group.GroupDeletedEvent;
 import com.example.sso.user.group.GroupMembersPage;
 import com.example.sso.user.group.GroupMembership;
 import com.example.sso.user.group.GroupSpec;
+import com.example.sso.user.group.GroupRole;
 import com.example.sso.user.group.GroupView;
 import com.example.sso.user.role.RoleRef;
 import com.example.sso.user.account.Suggestion;
@@ -34,6 +35,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -286,13 +288,13 @@ public class UserGroupServiceImpl implements UserGroupService {
 
     @Override
     @Transactional
-    public GroupView setRoles(UUID id, Set<String> roleNames) {
+    public GroupView setRoles(UUID id, Set<UUID> roleIds) {
         UserGroup group = require(id);
         if (group.isSystem()) {
             throw ConflictException.of("user.group.systemRolesNoEdit", group.getName());
         }
 
-        replaceRoles(id, resolveRoleIds(roleNames));
+        replaceRoles(id, requireVisibleRoles(roleIds));
 
         GroupView view = toView(group);
         // every member's delegated roles just changed
@@ -372,16 +374,23 @@ public class UserGroupServiceImpl implements UserGroupService {
     }
 
     /** Resolves role names to existing global {@link Role} ids; rejects an unknown name (400). */
-    private Set<UUID> resolveRoleIds(Set<String> roleNames) {
-        if (roleNames == null || roleNames.isEmpty()) {
+    /**
+     * The given role ids, confirmed to exist and to be visible in this tier.
+     *
+     * <p>No name is resolved here any more, which is the point: resolving one meant the caller's authorization
+     * could be evaluated against a different role than the one bound. Visibility is the database's answer — a
+     * role belonging to another tenant is simply not readable, so it fails as unknown rather than as forbidden,
+     * which is also what stops this from reporting whether another org holds a given id.
+     */
+    private Set<UUID> requireVisibleRoles(Set<UUID> roleIds) {
+        if (roleIds == null || roleIds.isEmpty()) {
             return Set.of();
         }
-
-        return roleNames.stream()
-                // Groups delegate GLOBAL roles by name; tenant roles are managed per-org by id.
-                .map(name -> roles.findByNameAndOrgIdIsNull(name)
-                        .orElseThrow(() -> BadRequestException.of("user.role.unknown", name)).getId())
-                .collect(Collectors.toSet());
+        Set<UUID> visible = roles.findAllById(roleIds).stream().map(Role::getId).collect(Collectors.toSet());
+        roleIds.stream().filter(id -> !visible.contains(id)).findFirst().ifPresent(missing -> {
+            throw BadRequestException.of("user.role.unknown", missing.toString());
+        });
+        return visible;
     }
 
     /** Keeps only the ids that resolve to an existing user in the group's org (unknown ids are dropped). */
@@ -404,10 +413,12 @@ public class UserGroupServiceImpl implements UserGroupService {
 
     private GroupView toView(UserGroup group) {
         List<String> memberIds = members.findUserIdsByGroupId(group.getId()).stream().map(UUID::toString).toList();
-        List<String> roleNames = roles.findAllById(groupRoles.findRoleIdsByGroupId(group.getId())).stream()
-                .map(Role::getName).sorted().toList();
+        List<GroupRole> delegated = roles.findAllById(groupRoles.findRoleIdsByGroupId(group.getId())).stream()
+                .sorted(Comparator.comparing(Role::getName))
+                .map(role -> new GroupRole(role.getId().toString(), role.getName()))
+                .toList();
 
         return new GroupView(group.getId().toString(), group.getName(), group.getDescription(),
-                group.getExternalId(), memberIds, memberIds.size(), group.isSystem(), roleNames);
+                group.getExternalId(), memberIds, memberIds.size(), group.isSystem(), delegated);
     }
 }
