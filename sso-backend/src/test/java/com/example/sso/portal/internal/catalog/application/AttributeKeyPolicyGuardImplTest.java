@@ -7,9 +7,11 @@ import com.example.sso.portal.internal.catalog.domain.PolicyBinding;
 import com.example.sso.portal.internal.catalog.domain.PolicyBindingCondition;
 import com.example.sso.portal.internal.catalog.domain.PolicyBindingConditionRepository;
 import com.example.sso.portal.internal.catalog.domain.PolicyBindingRepository;
+import com.example.sso.tenancy.OrgContext;
 import com.example.sso.portal.application.AppType;
 import com.example.sso.user.rbac.Permissions;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -49,11 +51,16 @@ class AttributeKeyPolicyGuardImplTest {
 
     @Mock private PolicyBindingConditionRepository conditions;
     @Mock private PolicyBindingRepository bindings;
+    @Mock private OrgContext orgContext;
     @InjectMocks private AttributeKeyPolicyGuardImpl guard;
 
     @AfterEach
     void clearContext() {
         SecurityContextHolder.clearContext();
+    }
+
+    private void actingIn(UUID org) {
+        lenient().when(orgContext.currentOrg()).thenReturn(Optional.ofNullable(org));
     }
 
     private void actorHolds(String... authorities) {
@@ -62,18 +69,31 @@ class AttributeKeyPolicyGuardImplTest {
     }
 
     private void bindingOn(String key, UUID authPolicyId, UUID sessionPolicyId) {
+        bindingOn(key, authPolicyId, sessionPolicyId, ORG);
+    }
+
+    private void bindingOn(String key, UUID authPolicyId, UUID sessionPolicyId, UUID bindingOrg) {
+        lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         lenient().when(conditions.findByAttrKeyIn(any())).thenReturn(List.of(condition(key)));
         lenient().when(bindings.findAllById(Set.of(BINDING)))
-                .thenReturn(List.of(binding(authPolicyId, sessionPolicyId)));
+                .thenReturn(List.of(binding(authPolicyId, sessionPolicyId, bindingOrg)));
     }
 
     private PolicyBindingCondition condition(String key) {
-        return PolicyBindingCondition.of(BINDING,
+        return condition(key, BINDING);
+    }
+
+    private PolicyBindingCondition condition(String key, UUID bindingId) {
+        return PolicyBindingCondition.of(bindingId,
                 new AttributePredicate(key, AttributeOperator.EQUALS, "high", List.of()), ORG);
     }
 
     private PolicyBinding binding(UUID authPolicyId, UUID sessionPolicyId) {
-        PolicyBinding binding = PolicyBinding.forAttributeGroup(AppType.PORTAL, PortalApps.USER, ORG);
+        return binding(authPolicyId, sessionPolicyId, ORG);
+    }
+
+    private PolicyBinding binding(UUID authPolicyId, UUID sessionPolicyId, UUID bindingOrg) {
+        PolicyBinding binding = PolicyBinding.forAttributeGroup(AppType.PORTAL, PortalApps.USER, bindingOrg);
         ReflectionTestUtils.setField(binding, "id", BINDING);
         binding.assignAuthPolicy(authPolicyId);
         binding.assignSessionPolicy(sessionPolicyId);
@@ -136,6 +156,7 @@ class AttributeKeyPolicyGuardImplTest {
     /** Fails closed: a condition naming a binding this reader cannot see is not read as "no binding". */
     @Test
     void aConditionWhoseBindingIsUnreadableIsRefused() {
+        actingIn(ORG);
         lenient().when(conditions.findByAttrKeyIn(any())).thenReturn(List.of(condition(KEY)));
         when(bindings.findAllById(Set.of(BINDING))).thenReturn(List.of());
         actorHolds(Permissions.POLICY_UPDATE, Permissions.SESSION_POLICY_UPDATE);
@@ -156,6 +177,7 @@ class AttributeKeyPolicyGuardImplTest {
      */
     @Test
     void onlyTheGovernedKeyIsReported() {
+        actingIn(ORG);
         when(conditions.findByAttrKeyIn(Set.of(KEY, "department"))).thenReturn(List.of(condition(KEY)));
         when(bindings.findAllById(Set.of(BINDING))).thenReturn(List.of(binding(AUTH_POLICY, null)));
         actorHolds(Permissions.DIRECTORY_CONNECTOR_WRITE);
@@ -169,5 +191,84 @@ class AttributeKeyPolicyGuardImplTest {
         assertThat(guard.keysBeyondAuthority(null)).isEmpty();
 
         verify(conditions, never()).findByAttrKeyIn(any());
+    }
+
+    // --- tier awareness ----------------------------------------------------------------------------------
+
+    /**
+     * The policy permissions are TENANT-GRANTABLE, so an org admin holds the same permission NAME the platform
+     * tier does. RLS still shows them the GLOBAL bindings, and a global binding really does govern their users
+     * — but OrgTierGuard would refuse them that row. Holding the name is not authority over another tier.
+     */
+    @Test
+    void aTenantAdminCannotVouchForAGlobalBindingEvenHoldingBothPermissions() {
+        bindingOn(KEY, AUTH_POLICY, SESSION_POLICY, null);
+        actingIn(ORG);
+        actorHolds(Permissions.POLICY_UPDATE, Permissions.SESSION_POLICY_UPDATE);
+
+        assertThat(guard.keysBeyondAuthority(Set.of(KEY))).containsExactly(KEY);
+    }
+
+    @Test
+    void aPlatformActorVouchesForAGlobalBinding() {
+        bindingOn(KEY, AUTH_POLICY, null, null);
+        actingIn(null);
+        actorHolds(Permissions.POLICY_UPDATE);
+
+        assertThat(guard.keysBeyondAuthority(Set.of(KEY))).isEmpty();
+    }
+
+    /** And the mirror: another tenant's binding is no more vouchable than the platform's. */
+    @Test
+    void aPlatformActorCannotVouchForATenantsBinding() {
+        bindingOn(KEY, AUTH_POLICY, null, ORG);
+        actingIn(null);
+        actorHolds(Permissions.POLICY_UPDATE, Permissions.SESSION_POLICY_UPDATE);
+
+        assertThat(guard.keysBeyondAuthority(Set.of(KEY))).containsExactly(KEY);
+    }
+
+    /**
+     * The mirror of the auth-only case, and it is load-bearing: without it, demanding auth-policy authority
+     * from a binding that sets NO auth policy survives as a mutant, and a tenant admin holding only the
+     * session permission would be refused a key whose binding never involved an auth policy.
+     */
+    @Test
+    void holdingTheSessionPolicyPermissionVouchesForASessionOnlyBinding() {
+        bindingOn(KEY, null, SESSION_POLICY);
+        actorHolds(Permissions.SESSION_POLICY_UPDATE);
+
+        assertThat(guard.keysBeyondAuthority(Set.of(KEY))).isEmpty();
+    }
+
+    @Test
+    void aBindingSettingBothIsNotVouchedForByTheSessionPermissionAlone() {
+        bindingOn(KEY, AUTH_POLICY, SESSION_POLICY);
+        actorHolds(Permissions.SESSION_POLICY_UPDATE);
+
+        assertThat(guard.keysBeyondAuthority(Set.of(KEY))).containsExactly(KEY);
+    }
+
+    /**
+     * One key can be tested by several bindings. Authority over one is not authority over the others — taking
+     * the key steers every binding that reads it, so the quantifier is ALL, not ANY.
+     */
+    @Test
+    void twoBindingsOnOneKeyNeedAuthorityOverBoth() {
+        UUID otherBinding = UUID.randomUUID();
+        PolicyBinding vouched = binding(AUTH_POLICY, null);
+        PolicyBinding notVouched = PolicyBinding.forAttributeGroup(AppType.PORTAL, PortalApps.USER, ORG);
+        ReflectionTestUtils.setField(notVouched, "id", otherBinding);
+        notVouched.assignSessionPolicy(SESSION_POLICY);
+
+        actingIn(ORG);
+        // The vouched-for one LAST on purpose: a guard that let a later "may set" clear an earlier refusal
+        // would still pass with the refusal last, so the order that can expose it is the one to assert.
+        when(conditions.findByAttrKeyIn(Set.of(KEY)))
+                .thenReturn(List.of(condition(KEY, otherBinding), condition(KEY)));
+        when(bindings.findAllById(Set.of(otherBinding, BINDING))).thenReturn(List.of(notVouched, vouched));
+        actorHolds(Permissions.POLICY_UPDATE);
+
+        assertThat(guard.keysBeyondAuthority(Set.of(KEY))).containsExactly(KEY);
     }
 }

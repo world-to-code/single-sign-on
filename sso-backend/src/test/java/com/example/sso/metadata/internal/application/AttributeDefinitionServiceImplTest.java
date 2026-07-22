@@ -249,12 +249,20 @@ class AttributeDefinitionServiceImplTest {
      */
     @Test
     void refusesToRedefineAKeyAPolicyBindingGoverns() {
+        AttributeDefinitionEntity existing = AttributeDefinitionEntity.create(ORG, PROFILE, EntityKind.USER,
+                "clearance", "Clearance", null, AttributeDataType.STRING, null, false, false,
+                AttributeSource.DIRECTORY, 0);
+        lenient().when(repository.findByProfileIdAndAttrKey(PROFILE, "clearance"))
+                .thenReturn(Optional.of(existing));
         when(policyGuard.keysBeyondAuthority(Set.of("clearance"))).thenReturn(Set.of("clearance"));
 
-        assertThatThrownBy(() -> service.save(PROFILE, spec("clearance", AttributeDataType.STRING, null, AttributeSource.DIRECTORY)))
+        assertThatThrownBy(() -> service.save(PROFILE,
+                spec("clearance", AttributeDataType.STRING, null, AttributeSource.LOCAL)))
                 .isInstanceOf(ForbiddenException.class);
 
-        verify(repository, never()).save(any());
+        // Assert the row, not a repository interaction: redefinition is a dirty-checking write on a managed
+        // entity, so `verify(repository, never()).save(...)` would hold even if the flip had happened.
+        assertThat(existing.getSource()).isEqualTo(AttributeSource.DIRECTORY);
     }
 
     @Test
@@ -262,5 +270,39 @@ class AttributeDefinitionServiceImplTest {
         when(policyGuard.keysBeyondAuthority(Set.of("department"))).thenReturn(Set.of());
 
         assertThatCode(() -> service.save(PROFILE, valid())).doesNotThrowAnyException();
+    }
+
+    /**
+     * Deleting the definition is a cleaner takeover than redefining it: with no source-owned definition left,
+     * AttributeSourceProvenance finds nothing to vouch for and reports the condition accounted for, while the
+     * key becomes locally writable. Guarded on the same terms as the redefine.
+     */
+    @Test
+    void refusesToDeleteAKeyAPolicyBindingGoverns() {
+        UUID id = UUID.randomUUID();
+        AttributeDefinitionEntity row = AttributeDefinitionEntity.create(ORG, PROFILE, EntityKind.USER,
+                "clearance", "Clearance", null, AttributeDataType.STRING, null, false, false,
+                AttributeSource.DIRECTORY, 0);
+        when(repository.findByIdAndOrgId(id, ORG)).thenReturn(Optional.of(row));
+        when(policyGuard.keysBeyondAuthority(Set.of("clearance"))).thenReturn(Set.of("clearance"));
+
+        assertThatThrownBy(() -> service.delete(id)).isInstanceOf(ForbiddenException.class);
+
+        verify(repository, never()).delete(any());
+        verify(events, never()).publishEvent(any(Object.class));
+    }
+
+    @Test
+    void deletesAnUngovernedKeyFreely() {
+        UUID id = UUID.randomUUID();
+        AttributeDefinitionEntity row = AttributeDefinitionEntity.create(ORG, PROFILE, EntityKind.USER,
+                "department", "Department", null, AttributeDataType.STRING, null, false, false,
+                AttributeSource.LOCAL, 0);
+        when(repository.findByIdAndOrgId(id, ORG)).thenReturn(Optional.of(row));
+        when(policyGuard.keysBeyondAuthority(Set.of("department"))).thenReturn(Set.of());
+
+        service.delete(id);
+
+        verify(repository).delete(row);
     }
 }
