@@ -98,11 +98,17 @@ export const saveAttributeDefinition = (
 export const deleteAttributeDefinition = (id: string): Promise<void> =>
   apiDelete(`/api/admin/attribute-definitions/${encodeURIComponent(id)}`);
 
-/** One row an import will not apply. `reason` is a message key the server already resolved for us. */
+/**
+ * One row an import will not apply.
+ *
+ * `reason` arrives already resolved in the caller's language, with the offending column interpolated into it.
+ * There is deliberately no field for the cell VALUES: a failure report is read in a console and pasted into
+ * tickets, and the rows that fail are disproportionately the ones holding a typo in somebody's name or
+ * address. The line number is what finds the row in the file the administrator still has.
+ */
 export interface CsvRowFailure {
   line: number;
   reason: string;
-  detail: string | null;
 }
 
 /** An account an import would create. Nothing here has been written yet. */

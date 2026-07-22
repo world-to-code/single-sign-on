@@ -167,9 +167,8 @@ function Failures({ failures }: { failures: CsvRowFailure[] }) {
     <ul className="space-y-1 text-sm">
       {failures.map((failure) => (
         <li key={`${failure.line}-${failure.reason}`} className="text-muted-foreground">
-          {/* The reason arrives already resolved in the caller's language, with its subject interpolated —
-              appending `detail` too printed the group name twice. It stays on the type because a future
-              screen may want to group failures by it. */}
+          {/* Already resolved in the caller's language, with its subject interpolated — appending a
+              separate detail field printed the group name twice, so the server stopped sending one. */}
           <span className="font-medium">{t("csvImportLine", { line: failure.line })}</span> {failure.reason}
         </li>
       ))}
