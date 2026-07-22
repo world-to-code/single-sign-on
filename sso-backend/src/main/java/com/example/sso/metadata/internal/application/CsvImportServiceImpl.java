@@ -34,8 +34,12 @@ class CsvImportServiceImpl implements CsvImportService {
     private final CsvUserCreator creator;
     private final CsvFailureText text;
 
+    /**
+     * NOT transactional, deliberately. {@code apply} reaches this method on the same bean, so a transaction
+     * declared here would be bypassed on exactly the path that matters — see {@code CsvImportPlanner.plan},
+     * which owns the boundary so both callers get it.
+     */
     @Override
-    @Transactional(readOnly = true)
     public CsvImportPreview preview(UUID profileId, MultipartRequest request) {
         // The profile is resolved BEFORE the file is read: an id that is not the caller's, or is a source
         // profile, should cost nothing and reveal nothing, and there is no reason to decode bytes for it.

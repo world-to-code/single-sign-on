@@ -15,6 +15,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -151,6 +154,103 @@ class CsvGroupDirectoryAdapterTest {
 
         assertThat(directory.unusable(List.of("platform"))).isEmpty();
         verify(accessPolicy, never()).mayAssignRoles(any());
+    }
+
+    /**
+     * The apply loop asks per ROW; within one request that must still cost one resolution.
+     *
+     * <p>Five hundred rows naming two groups each was five hundred directory reads and a thousand
+     * authorization decisions, each re-deriving the actor from the database, each inside that row's own
+     * transaction. The planner asks for the whole file first, so every later row is answered from what it
+     * decided.
+     */
+    @Test
+    void aNameIsResolvedOncePerRequestNoMatterHowManyRowsMentionIt() {
+        withRequestContext(() -> {
+            when(accessPolicy.canAccessGroup(REACHABLE)).thenReturn(true);
+            when(accessPolicy.canAccessGroup(OUT_OF_SCOPE)).thenReturn(true);
+
+            directory.unusable(List.of("platform", "finance"));        // the planner, for the whole file
+            directory.usableIds(List.of("platform"));                  // row 1
+            directory.usableIds(List.of("platform"));                  // row 2
+            directory.usableIds(List.of("finance"));                   // row 3
+
+            verify(groups, times(1)).groupIdsByName(any(), eq(ORG));
+            // The policy is consulted once per group too, not once per row that names it.
+            verify(accessPolicy, times(1)).canAccessGroup(REACHABLE);
+        });
+    }
+
+    /** A name the planner never saw is still resolved — the memo answers what it knows, not everything. */
+    @Test
+    void aNameNotDecidedYetIsStillResolved() {
+        withRequestContext(() -> {
+            when(accessPolicy.canAccessGroup(REACHABLE)).thenReturn(true);
+
+            directory.usableIds(List.of("platform"));
+            directory.usableIds(List.of("later-group"));
+
+            verify(groups, times(2)).groupIdsByName(any(), eq(ORG));
+        });
+    }
+
+    /** A refusal is remembered too, or an unusable name re-queries on every row that names it. */
+    @Test
+    void aNameFoundUnusableIsNotAskedAboutAgain() {
+        withRequestContext(() -> {
+            when(accessPolicy.canAccessGroup(OUT_OF_SCOPE)).thenReturn(false);
+
+            assertThat(directory.unusable(List.of("finance"))).containsExactly("finance");
+            assertThat(directory.unusable(List.of("finance"))).containsExactly("finance");
+
+            verify(groups, times(1)).groupIdsByName(any(), eq(ORG));
+        });
+    }
+
+    /**
+     * A verdict belongs to the organization it was reached in.
+     *
+     * <p>The memo is keyed by acting org because a request can cross tenants, and "usable" in one says nothing
+     * about the other — a shared key would hand the second tenant the first one's answer, which is the
+     * cross-tenant leak every other read here is careful to avoid. It fails OPEN, so it has to be pinned.
+     */
+    @Test
+    void aVerdictIsNotReusedAcrossOrganizations() {
+        UUID otherOrg = UUID.randomUUID();
+        UUID theirGroup = UUID.randomUUID();
+        when(accessPolicy.canAccessGroup(REACHABLE)).thenReturn(true);
+        when(groups.groupIdsByName(any(), eq(otherOrg))).thenReturn(Map.of("platform", theirGroup));
+        when(accessPolicy.canAccessGroup(theirGroup)).thenReturn(false);
+
+        withRequestContext(() -> {
+            assertThat(directory.usableIds(List.of("platform"))).containsEntry("platform", REACHABLE);
+
+            when(orgContext.currentOrg()).thenReturn(Optional.of(otherOrg));
+
+            // Same name, different tenant: re-resolved, and refused on ITS OWN reach rather than the first's.
+            assertThat(directory.usableIds(List.of("platform"))).isEmpty();
+            verify(groups, times(1)).groupIdsByName(any(), eq(otherOrg));
+        });
+    }
+
+    /** No request to hang it on — background work and tests resolve every time, as before. */
+    @Test
+    void withoutARequestThereIsNoMemo() {
+        when(accessPolicy.canAccessGroup(REACHABLE)).thenReturn(true);
+
+        directory.usableIds(List.of("platform"));
+        directory.usableIds(List.of("platform"));
+
+        verify(groups, times(2)).groupIdsByName(any(), eq(ORG));
+    }
+
+    private void withRequestContext(Runnable body) {
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(new MockHttpServletRequest()));
+        try {
+            body.run();
+        } finally {
+            RequestContextHolder.resetRequestAttributes();
+        }
     }
 
     /** Fails closed: with no organization bound nothing is usable, so every group-bearing row is refused. */

@@ -15,6 +15,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Works out what an import would do, and does none of it.
@@ -35,7 +36,18 @@ class CsvImportPlanner {
     private final CsvGroupDirectory groups;
     private final CsvImportLimits limits;
 
-    CsvImportPreview plan(UUID profileId, String csv) {
+    /**
+     * Transactional HERE rather than on the caller, and public so the proxy is unambiguous.
+     *
+     * <p>{@code apply} works out its plan by calling {@code preview} on the same bean, which is a self
+     * invocation: the proxy is bypassed, so a {@code @Transactional} up there applied on the preview endpoint
+     * and silently did nothing on the write path. The plan's three reads — the profile's declarations, which
+     * usernames exist, which groups are usable — then ran in three separate transactions, so the file was
+     * judged against a state that could change between them, and any lazy access added later would fail only
+     * on the apply path. On a separate bean the annotation cannot be bypassed by either caller.
+     */
+    @Transactional(readOnly = true)
+    public CsvImportPreview plan(UUID profileId, String csv) {
         List<AttributeDefinition> columns = definitions.definitionsIn(profileId);
         Set<String> declared = columns.stream()
                 .map(AttributeDefinition::key).collect(Collectors.toCollection(LinkedHashSet::new));
