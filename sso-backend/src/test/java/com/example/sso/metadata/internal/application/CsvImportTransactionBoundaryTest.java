@@ -5,6 +5,8 @@ import java.lang.reflect.Modifier;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.stereotype.Component;
+import com.example.sso.metadata.CsvPlannedUser;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartRequest;
 
@@ -75,5 +77,31 @@ class CsvImportTransactionBoundaryTest {
         Method apply = CsvImportServiceImpl.class.getDeclaredMethod("apply", UUID.class, MultipartRequest.class);
 
         assertThat(apply.isAnnotationPresent(Transactional.class)).isFalse();
+    }
+
+    /**
+     * The per-row creator is REQUIRES_NEW, and that propagation is load-bearing rather than decorative.
+     *
+     * <p>A review guessed this was unpinned — that {@code REQUIRED} would pass everything, since {@code apply}
+     * is itself non-transactional so each row already opens a fresh transaction. It said it had not read the
+     * concurrency IT, and that guess is what the IT disproves: its deterministic case runs a competing import
+     * INSIDE the first creator call, so under {@code REQUIRED} the two share one transaction, the violation
+     * rolls both back, and zero accounts survive instead of one. Switching the propagation there fails
+     * {@code CsvImportConcurrencyIT.aUsernameTakenBetweenPlanAndWriteFailsThatRowAlone}.
+     *
+     * <p>This asserts the declaration; that IT asserts the behaviour it produces. Both, because the annotation
+     * is easy to drop and the reason it is there is easy to forget.
+     */
+    @Test
+    void theCreatorRunsEachRowInItsOwnTransaction() throws ReflectiveOperationException {
+        // Loaded by name: the adapter is package-private in the admin module, so it is not on the compile path
+        // here, but the propagation it declares is exactly what this test exists to hold.
+        Class<?> adapter = Class.forName(
+                "com.example.sso.admin.internal.user.application.CsvUserCreatorAdapter");
+        Method create = adapter.getDeclaredMethod("create", CsvPlannedUser.class, UUID.class);
+
+        Transactional tx = create.getAnnotation(Transactional.class);
+        assertThat(tx).isNotNull();
+        assertThat(tx.propagation()).isEqualTo(Propagation.REQUIRES_NEW);
     }
 }
