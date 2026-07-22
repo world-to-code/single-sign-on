@@ -72,11 +72,6 @@ class UserProfileSwitchIT extends AbstractIntegrationTest {
                 .filter(p -> p.kind() == ProfileKind.TENANT).findFirst().orElseThrow();
     }
 
-    private AttributeDefinitionSpec directorySpec(String key) {
-        return new AttributeDefinitionSpec(EntityKind.USER, key, key, null, AttributeDataType.STRING, null,
-                false, false, AttributeSource.DIRECTORY, 0);
-    }
-
     private AttributeDefinitionSpec spec(String key) {
         return new AttributeDefinitionSpec(EntityKind.USER, key, key, null, AttributeDataType.STRING, null,
                 false, false, AttributeSource.LOCAL, 0);
