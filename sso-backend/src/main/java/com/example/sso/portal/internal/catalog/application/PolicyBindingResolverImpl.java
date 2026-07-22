@@ -50,7 +50,6 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
     private final AuthPolicyResolver authPolicies;
     private final SessionPolicyService sessionPolicies;
     private final AttributeService attributes;
-    private final AttributeSourceProvenance provenance;
 
     @Override
     @Transactional(readOnly = true)
@@ -146,26 +145,23 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
     }
 
     /**
-     * Whether every identity source that can fill this binding's condition keys is accounted for.
+     * There is deliberately NO source-attribution term on this path.
      *
-     * <p>An attribute binding decides which auth and session policy governs a user, and the session layer
-     * re-resolves it on every request — so writing an attribute is a way to change someone's live security
-     * posture. Auto-mapping already refuses to let an unattributable source drive a role grant; the same
-     * question belongs here, because the reach is the same: a machine credential that can write a
-     * directory-owned attribute could otherwise relax a live session's re-authentication interval, its
-     * factors, or its client binding.
+     * <p>There used to be one: it asked whether the sources filling a condition's keys could be attributed to
+     * someone, and refused the binding otherwise. The direction was wrong. Refusing here does not withhold
+     * anything — it means the binding stops matching and the user falls back to the organization's DEFAULT
+     * policy. Attribute-conditioned bindings in this system are written to TIGHTEN, so the fallback is always
+     * the looser answer, and anything that could make a source unattributable — deleting a mapping, deleting a
+     * connector — became a way to strip the tightening from everyone the binding governed, org-wide and
+     * immediately.
      *
-     * <p>Note the direction, because it is not the same as auto-mapping's. There, refusing means withholding a
-     * grant, which is closed. Here it means the binding does not match and the user falls back to the
-     * organization's default policy — which is LOOSER than this binding whenever an administrator wrote the
-     * binding to tighten something. We cannot compare two policies for strictness in general, so the failure
-     * is not silent instead: {@link AttributeSourceProvenance} warns when a verdict is negative.
+     * <p>Contrast auto-mapping, which asks the same question and is right to: there refusing withholds a role
+     * grant, which is closed. The shape of the check does not tell you its direction; the fallback does.
+     *
+     * <p>The escalation that term was meant to stop is handled where refusing fails closed instead — at
+     * ADMISSION, by {@link com.example.sso.metadata.AttributeKeyPolicyGuard}: an administrator who could not
+     * set a binding's policies cannot aim a source at, or redefine, the attribute key it tests.
      */
-    private boolean sourcesAccountedFor(AttributePredicateGroup group) {
-        return provenance.accountedFor(group.conditions().stream()
-                .map(AttributePredicate::key).collect(Collectors.toSet()));
-    }
-
     private boolean hasValueOperator(AttributePredicateGroup group) {
         return group != null && group.conditions().stream().anyMatch(c -> c.operator().targetsValue());
     }
@@ -192,7 +188,7 @@ class PolicyBindingResolverImpl implements PolicyBindingResolver {
             case ATTRIBUTE -> {
                 AttributePredicateGroup group = groups.get(b.getId());
                 // a condition-less binding matches nobody
-                yield group != null && group.matches(userAttributes) && sourcesAccountedFor(group);
+                yield group != null && group.matches(userAttributes);
             }
         };
     }

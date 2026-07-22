@@ -140,8 +140,6 @@ sso:
     # A policy binding's attribute conditions are checked against who can fill those attributes. That verdict
     # depends on the tenant's connectors and mappings, not on the user, so it is cached off the session path.
     # The TTL is how stale a verdict may be after a connector or mapping changes.
-    attribute-source-verdict-ttl: 60s
-    attribute-source-verdict-cache-size: 10000
 
   saml:
     entity-id: http://localhost:9000/saml2/idp

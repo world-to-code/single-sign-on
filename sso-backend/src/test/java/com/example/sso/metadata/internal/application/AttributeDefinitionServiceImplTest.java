@@ -23,7 +23,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.springframework.context.ApplicationEventPublisher;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -48,14 +47,13 @@ class AttributeDefinitionServiceImplTest {
     @Mock private AttributeDefinitionRepository repository;
     @Mock private OrgContext orgContext;
     @Mock private ProfileRepository profiles;
-    @Mock private ApplicationEventPublisher events;
     @Mock private AttributeKeyPolicyGuard policyGuard;
 
     private AttributeDefinitionServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new AttributeDefinitionServiceImpl(repository, profiles, orgContext, events, policyGuard);
+        service = new AttributeDefinitionServiceImpl(repository, profiles, orgContext, policyGuard);
         lenient().when(profiles.findByIdAndOrgId(PROFILE, ORG)).thenReturn(Optional.of(profileRow()));
         lenient().when(policyGuard.keysBeyondAuthority(any())).thenReturn(Set.of());
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
@@ -273,9 +271,9 @@ class AttributeDefinitionServiceImplTest {
     }
 
     /**
-     * Deleting the definition is a cleaner takeover than redefining it: with no source-owned definition left,
-     * AttributeSourceProvenance finds nothing to vouch for and reports the condition accounted for, while the
-     * key becomes locally writable. Guarded on the same terms as the redefine.
+     * Deleting the definition is a takeover in its own right, not merely a cleanup: the key stops being
+     * source-owned, so the ownership guard that kept administrators out of it goes quiet and the value becomes
+     * locally writable — while the binding still tests it. Guarded on the same terms as the redefine.
      */
     @Test
     void refusesToDeleteAKeyAPolicyBindingGoverns() {
@@ -289,7 +287,6 @@ class AttributeDefinitionServiceImplTest {
         assertThatThrownBy(() -> service.delete(id)).isInstanceOf(ForbiddenException.class);
 
         verify(repository, never()).delete(any());
-        verify(events, never()).publishEvent(any(Object.class));
     }
 
     @Test

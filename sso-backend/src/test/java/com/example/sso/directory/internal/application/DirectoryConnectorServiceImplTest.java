@@ -22,7 +22,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.springframework.context.ApplicationEventPublisher;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -52,14 +51,13 @@ class DirectoryConnectorServiceImplTest {
     @Mock private OutboundHostValidator hostValidator;
     @Mock private OrgContext orgContext;
     @Mock private UserService users;
-    @Mock private ApplicationEventPublisher events;
 
     private DirectoryConnectorServiceImpl service;
 
     @BeforeEach
     void setUp() {
         service = new DirectoryConnectorServiceImpl(connectors, profiles, mappings, runs, sync, cipher,
-                hostValidator, orgContext, events, users);
+                hostValidator, orgContext, users);
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         lenient().when(cipher.encrypt(any())).thenReturn("encg:cipher");
         lenient().when(connectors.save(any())).thenAnswer(i -> i.getArgument(0));

@@ -17,7 +17,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.springframework.context.ApplicationEventPublisher;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -47,7 +46,6 @@ class ProfileMappingCredentialGuardTest {
     @Mock private ProfileRepository profiles;
     @Mock private ProfileService profileService;
     @Mock private OrgContext orgContext;
-    @Mock private ApplicationEventPublisher events;
     @Mock private AttributeKeyPolicyGuard policyGuard;
 
     private ProfileMappingServiceImpl service;
@@ -55,7 +53,7 @@ class ProfileMappingCredentialGuardTest {
     @BeforeEach
     void setUp() {
         service = new ProfileMappingServiceImpl(
-                repository, profiles, profileService, orgContext, events, policyGuard);
+                repository, profiles, profileService, orgContext, policyGuard);
         lenient().when(policyGuard.keysBeyondAuthority(any())).thenReturn(Set.of());
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         lenient().when(profiles.findByIdAndOrgId(SOURCE, ORG)).thenReturn(Optional.of(profile(SOURCE)));

@@ -2,7 +2,6 @@ package com.example.sso.metadata.internal.application;
 
 import com.example.sso.metadata.AttributeKeyPolicyGuard;
 import com.example.sso.metadata.Profile;
-import com.example.sso.metadata.AttributeSourceConfigurationChangedEvent;
 import com.example.sso.metadata.ProfileKind;
 import com.example.sso.metadata.ProfileMapping;
 import com.example.sso.metadata.ProfileMappingService;
@@ -21,7 +20,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -47,7 +45,6 @@ class ProfileMappingServiceImpl implements ProfileMappingService {
     private final ProfileRepository profiles;
     private final ProfileService profileService;
     private final OrgContext orgContext;
-    private final ApplicationEventPublisher events;
     private final AttributeKeyPolicyGuard policyGuard;
 
     @Override
@@ -80,7 +77,6 @@ class ProfileMappingServiceImpl implements ProfileMappingService {
         requireMayControl(to);
         // Re-aiming an existing mapping is an update in place, not delete-then-insert: Hibernate flushes
         // inserts before deletes, so the insert would hit uq_profile_mapping_source while the old row remains.
-        sourcesChanged();
         return toMapping(repository.findBySourceProfileIdAndSourceAttrKey(source, from)
                 .map(existing -> {
                     existing.retarget(target, to);
@@ -117,14 +113,10 @@ class ProfileMappingServiceImpl implements ProfileMappingService {
                 .filter(row -> row.getSourceProfileId().equals(source))
                 .ifPresent(row -> {
                     repository.delete(row);
-                    sourcesChanged();
                 });
     }
 
     /** Which source may fill which attribute just changed, and that answer is cached elsewhere. */
-    private void sourcesChanged() {
-        events.publishEvent(new AttributeSourceConfigurationChangedEvent(orgContext.currentOrg().orElse(null)));
-    }
 
     private UUID requireOrg() {
         return orgContext.currentOrg()
