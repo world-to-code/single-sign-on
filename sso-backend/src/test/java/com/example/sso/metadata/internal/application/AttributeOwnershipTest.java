@@ -120,4 +120,59 @@ class AttributeOwnershipTest {
                 service.applyFromDirectory(EntityKind.USER, ENTITY, "surprise", List.of("x")))
                 .isInstanceOf(ConflictException.class);
     }
+
+    // --- the group-tag namespace ------------------------------------------------------------------------
+
+    /**
+     * A group tag lands in the SAME predicate namespace as a user attribute — the resolver unions them into
+     * one list and the predicate compares bare keys, no kind. So tagging a group with a directory-owned USER
+     * key would forge that key for every member, and satisfy an attribute-conditioned policy binding on it,
+     * without ever writing the user attribute the ownership guard protects.
+     */
+    @Test
+    void refusesAGroupTagNamedAfterADirectoryOwnedUserKey() {
+        when(definitions.definitionOf(EntityKind.GROUP, "clearance")).thenReturn(Optional.empty());
+        defined("clearance", AttributeSource.DIRECTORY);
+
+        assertThatThrownBy(() -> service.set(EntityKind.GROUP, ENTITY, "clearance", "high"))
+                .isInstanceOf(ConflictException.class);
+
+        verify(attributes, never()).save(any());
+    }
+
+    /** A GROUP definition of its own does not launder the USER key's ownership. */
+    @Test
+    void aLocalGroupDefinitionDoesNotOverrideTheUserKeysOwner() {
+        when(definitions.definitionOf(EntityKind.GROUP, "clearance")).thenReturn(Optional.of(
+                new AttributeDefinition(UUID.randomUUID(), EntityKind.GROUP, "clearance", "Clearance", null,
+                        AttributeDataType.STRING, List.of(), false, false, AttributeSource.LOCAL, 0)));
+        defined("clearance", AttributeSource.DIRECTORY);
+
+        assertThatThrownBy(() -> service.set(EntityKind.GROUP, ENTITY, "clearance", "high"))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    /** An ordinary group tag is untouched — the check only bites on a key the tenant's directory owns. */
+    @Test
+    void anOrdinaryGroupTagIsStillWritable() {
+        when(definitions.definitionOf(EntityKind.GROUP, "team")).thenReturn(Optional.empty());
+        when(definitions.definitionOf(EntityKind.USER, "team")).thenReturn(Optional.empty());
+
+        assertThatCode(() -> service.set(EntityKind.GROUP, ENTITY, "team", "platform"))
+                .doesNotThrowAnyException();
+    }
+
+    /** Other kinds are NOT merged into the user's predicate list, so they keep their own namespace. */
+    @Test
+    void anApplicationTagIsNotConstrainedByAUserKeyOfTheSameName() {
+        when(definitions.definitionOf(EntityKind.APPLICATION, "clearance")).thenReturn(Optional.empty());
+        // The USER key IS directory-owned: without stating that, the case cannot tell a correctly-scoped
+        // check from one that widened to every kind — both would pass on an absent definition.
+        lenient().when(definitions.definitionOf(EntityKind.USER, "clearance")).thenReturn(Optional.of(
+                new AttributeDefinition(UUID.randomUUID(), EntityKind.USER, "clearance", "Clearance", null,
+                        AttributeDataType.STRING, List.of(), false, false, AttributeSource.DIRECTORY, 0)));
+
+        assertThatCode(() -> service.set(EntityKind.APPLICATION, ENTITY, "clearance", "high"))
+                .doesNotThrowAnyException();
+    }
 }

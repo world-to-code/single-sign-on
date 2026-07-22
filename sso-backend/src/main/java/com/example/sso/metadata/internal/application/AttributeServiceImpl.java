@@ -267,6 +267,17 @@ class AttributeServiceImpl implements AttributeService {
      * a change that silently disappears hours later is worse than one that is refused now.
      */
     private void requireLocallyOwned(EntityKind kind, String key) {
+        refuseIfSourceOwned(kind, key);
+        if (kind == EntityKind.GROUP) {
+            // A group tag is unioned into every member's attributes and tested by the SAME predicate, with no
+            // kind in the comparison (PolicyBindingResolverImpl.effectiveAttributes). Tagging a group with a
+            // directory-owned USER key would forge that key for all its members, so the ownership the USER
+            // branch enforces has to hold here too — otherwise it holds on one path and not the other.
+            refuseIfSourceOwned(EntityKind.USER, key);
+        }
+    }
+
+    private void refuseIfSourceOwned(EntityKind kind, String key) {
         definitions.definitionOf(kind, key)
                 .filter(definition -> !definition.locallyEditable())
                 .ifPresent(definition -> {
