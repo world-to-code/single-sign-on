@@ -59,7 +59,9 @@ final class TestInfrastructure {
     private static final GenericContainer<?> REDIS = EXTERNAL ? null
             : new GenericContainer<>("redis:7")
                     .withExposedPorts(6379)
-                    .withCommand("redis-server", "--notify-keyspace-events", "Egx");
+                    // --databases must match the compose stack: AbstractIntegrationTest gives each fork the
+                    // database numbered by its worker id, and the default 16 is below a large machine's forks.
+                    .withCommand("redis-server", "--notify-keyspace-events", "Egx", "--databases", "64");
 
     static {
         if (!EXTERNAL) {

@@ -60,7 +60,9 @@ services:
     # Egx lets an idle session's TTL expiry publish a SessionExpiredEvent. Spring Session also CONFIG SETs this
     # at startup; setting it here means the behaviour does not depend on that having happened yet.
     # `--save ""` disables snapshotting: nothing here is worth writing to disk.
-    command: ["redis-server", "--notify-keyspace-events", "Egx", "--save", ""]
+    # --databases must match TestInfrastructure's Testcontainers command: each fork takes the database numbered
+    # by its Gradle worker id, and redis' default of 16 is below what a large machine's fork count reaches.
+    command: ["redis-server", "--notify-keyspace-events", "Egx", "--save", "", "--databases", "64"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s

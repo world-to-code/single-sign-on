@@ -83,8 +83,28 @@ public abstract class AbstractIntegrationTest {
     /** This fork's own database. Dropped and recreated at fork start, so a shared server starts clean. */
     private static final String DATABASE = "sso_w" + WORKER;
 
-    /** Redis numbers its databases 0-15; SELECT is all the separation session keys need between forks. */
-    private static final int REDIS_DATABASE = WORKER % 16;
+    /**
+     * How many Redis databases the test servers are started with — both the compose stack and the
+     * Testcontainers path pass {@code --databases}. Well above any sane fork count, because the index below is
+     * the worker id itself.
+     */
+    private static final int REDIS_DATABASES = 64;
+
+    /**
+     * This fork's Redis database. SELECT is all the separation session keys need between forks.
+     *
+     * <p>Was {@code % 16}, redis' default database count, and that wrapped in practice: Gradle worker ids are
+     * not {@code 1..forks} but a counter that keeps climbing across builds in one daemon — a measured run at
+     * 18 forks was handed ids 30 to 41. So two LIVE forks landed on one database, overwriting each other's
+     * sessions, which reads as flakiness because it is exactly the leftover state {@link #flushWorkerRedis}
+     * exists to prevent.
+     *
+     * <p>Raising the servers to {@value #REDIS_DATABASES} makes a collision need two live workers whose ids
+     * differ by exactly that, rather than by 16. Not impossible, but a build would have to hold ~64 forks or
+     * span that many worker generations at once. The bound must stay — the id itself cannot be used raw, or a
+     * long-lived daemon eventually exceeds any fixed database count.
+     */
+    private static final int REDIS_DATABASE = WORKER % REDIS_DATABASES;
 
     static {
         createWorkerDatabase();
