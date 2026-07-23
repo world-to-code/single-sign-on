@@ -153,6 +153,10 @@ class AttributeDefinitionServiceImpl implements AttributeDefinitionService {
                 ? repository.findByIdAndOrgIdIsNull(id)
                 : repository.findByIdAndOrgId(id, tier))
                 .orElseThrow(() -> NotFoundException.of("metadata.definition.notFound"));
+        // A base attribute is safe from deletion only because it is synthesised, never stored — there is no
+        // row to resolve. That is the absence of a target, not a guard, so it is stated explicitly here to
+        // match the write path: were a base key ever to acquire a row, the delete would still refuse it.
+        requireNotBase(row.getAttrKey());
         if (row.getEntityKind() == EntityKind.USER) {
             requireMayControl(row.getAttrKey());
         }

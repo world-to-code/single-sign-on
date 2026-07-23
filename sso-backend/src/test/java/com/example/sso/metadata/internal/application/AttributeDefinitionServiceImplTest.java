@@ -12,6 +12,7 @@ import com.example.sso.metadata.internal.domain.ProfileEntity;
 import com.example.sso.metadata.internal.domain.ProfileRepository;
 import com.example.sso.metadata.ProfileKind;
 import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
@@ -301,5 +302,33 @@ class AttributeDefinitionServiceImplTest {
         service.delete(id);
 
         verify(repository).delete(row);
+    }
+
+    /**
+     * A base attribute has no row to delete, so this can only happen if one ever acquired one — but the guard
+     * is explicit rather than relying on that absence, mirroring the write path. Asserted on a base key that
+     * is NOT email, since email was the only base key any test covered.
+     */
+    @Test
+    void refusesToDeleteABaseAttributeEvenIfARowExists() {
+        UUID id = UUID.randomUUID();
+        AttributeDefinitionEntity row = AttributeDefinitionEntity.create(ORG, PROFILE, EntityKind.USER,
+                "username", "Username", null, AttributeDataType.STRING, null, false, false,
+                AttributeSource.LOCAL, 0);
+        when(repository.findByIdAndOrgId(id, ORG)).thenReturn(Optional.of(row));
+
+        assertThatThrownBy(() -> service.delete(id)).isInstanceOf(ConflictException.class);
+
+        verify(repository, never()).delete(any());
+    }
+
+    /** And the write path, on a base key other than email — the base guard is per-key, not email-specific. */
+    @Test
+    void refusesToRedefineABaseAttributeOtherThanEmail() {
+        assertThatThrownBy(() -> service.save(PROFILE,
+                spec("externalId", AttributeDataType.STRING, null, AttributeSource.LOCAL)))
+                .isInstanceOf(ConflictException.class);
+
+        verify(repository, never()).save(any());
     }
 }
