@@ -73,14 +73,19 @@ class CsvUploadValidator {
 
     CsvUpload validate(MultipartFile file) {
         requireCsvName(file);
+        // Before buffering, so the ceiling is checked without reading the whole part into the heap first —
+        // which is the order the class comment claims. getSize() is the part's known length, no read. It is
+        // client-reported, so the authoritative check on the actual bytes stays below; this one keeps an
+        // oversized file from being materialised to be measured. The container caps it harder still.
+        if (file.getSize() > limits.maxFileBytes()) {
+            throw BadRequestException.of("metadata.csv.tooLarge");
+        }
         byte[] content = contentOf(file);
         if (content.length == 0) {
             throw BadRequestException.of("metadata.csv.empty");
         }
         if (content.length > limits.maxFileBytes()) {
-            // Also capped at the container (spring.servlet.multipart.max-file-size), which is what stops the
-            // bytes reaching the heap at all. This one is the honest error for a file that got past that.
-            throw BadRequestException.of("metadata.csv.tooLarge");
+            throw BadRequestException.of("metadata.csv.tooLarge"); // the real bytes, not the declared size
         }
         requireText(content);
         return new CsvUpload(file.getOriginalFilename(), decode(content));

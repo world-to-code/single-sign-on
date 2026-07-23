@@ -3,6 +3,7 @@ package com.example.sso.metadata.internal.application;
 import com.example.sso.shared.error.ApiException;
 import com.example.sso.shared.error.BadRequestException;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
@@ -273,5 +274,31 @@ class CsvUploadValidatorTest {
 
         assertThatThrownBy(() -> validator.validate(upload("users.csv", "text/csv", hugeAndBinary)))
                 .hasMessageContaining("metadata.csv.tooLarge");
+    }
+
+    /**
+     * The ceiling is checked from getSize() BEFORE the bytes are read, so an oversized part is refused
+     * without being materialised to be measured — the order the class comment claims. Modelled with a file
+     * whose declared size is over the limit while its actual bytes would not be read at all.
+     */
+    @Test
+    void anOversizedPartIsRefusedFromItsDeclaredSizeBeforeReading() {
+        AtomicBoolean read = new AtomicBoolean(false);
+        MultipartFile huge = new MockMultipartFile("file", "users.csv", "text/csv",
+                "username,email\nada,a@x.io\n".getBytes(StandardCharsets.UTF_8)) {
+            @Override
+            public long getSize() {
+                return MAX_BYTES + 1;
+            }
+
+            @Override
+            public byte[] getBytes() throws java.io.IOException {
+                read.set(true);
+                return super.getBytes();
+            }
+        };
+
+        assertThatThrownBy(() -> validator.validate(huge)).hasMessageContaining("metadata.csv.tooLarge");
+        assertThat(read).as("refused without buffering the part").isFalse();
     }
 }

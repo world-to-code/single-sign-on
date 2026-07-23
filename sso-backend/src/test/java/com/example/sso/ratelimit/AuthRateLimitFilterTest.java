@@ -14,6 +14,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.mock.web.MockHttpServletResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -161,5 +163,26 @@ class AuthRateLimitFilterTest {
 
         verify(chain).doFilter(request, response);
         verify(rateLimiter, never()).tryAcquire(any());
+    }
+
+    /**
+     * One budget per administrator for the whole import feature. The route carries the profile id and the
+     * preview-vs-apply suffix, so keying on the full path gave a separate budget per profile and per phase —
+     * a person with two profiles, or one who previews then applies, got several where the intent was one.
+     * The bucket segment is fixed and the discriminator is the principal.
+     */
+    @Test
+    void oneCsvImportBudgetPerAdministratorAcrossProfilesAndPhases() throws Exception {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("ada", null, java.util.List.of()));
+        when(rateLimiter.tryAcquire(any())).thenReturn(true);
+        try {
+            pass("POST", "/api/admin/profiles/p-1/csv-import/preview");
+            pass("POST", "/api/admin/profiles/p-2/csv-import");
+
+            verify(rateLimiter, times(2)).tryAcquire("/csv-import:ada"); // same bucket both times
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 }

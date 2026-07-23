@@ -54,6 +54,10 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     // authenticated admin route. Keyed on the principal rather than the IP below: the callers are signed-in
     // administrators, often behind one office address, and an IP key would let one of them exhaust the budget
     // for all of them.
+    //
+    // The KEY drops the variable path. The route is /api/admin/profiles/{id}/csv-import[/preview], so keying
+    // on the full path gave one budget per (profile, preview-vs-apply) pair — an administrator with several
+    // profiles, or one who previews then applies, got several budgets where the intent was one per person.
     private static final String CSV_IMPORT_SEGMENT = "/csv-import";
 
     private final RateLimiter rateLimiter;
@@ -69,8 +73,13 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         if (isLimited(request.getMethod(), request.getServletPath())) {
             String ip = request.getRemoteAddr();
-            String actorKey = request.getServletPath().contains(CSV_IMPORT_SEGMENT) ? principal() : null;
-            String key = request.getServletPath() + ":" + (actorKey == null ? ip : actorKey);
+            String path = request.getServletPath();
+            boolean csvImport = path.contains(CSV_IMPORT_SEGMENT);
+            String actorKey = csvImport ? principal() : null;
+            // One budget per administrator for the whole import feature, not per profile or per phase: the
+            // bucket segment is fixed, the discriminator is the principal.
+            String bucket = csvImport ? CSV_IMPORT_SEGMENT : path;
+            String key = bucket + ":" + (actorKey == null ? ip : actorKey);
             if (!rateLimiter.tryAcquire(key)) {
                 // Attribute it to the principal when there IS one: several limited routes are called by a
                 // signed-in user, and an audit row carrying only an IP is unattributable — and invisible in
