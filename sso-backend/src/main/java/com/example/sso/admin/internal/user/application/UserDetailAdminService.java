@@ -97,9 +97,11 @@ public class UserDetailAdminService {
     }
 
     /**
-     * All permissions the user effectively holds: role + group-role + direct, with wildcard tokens expanded to
-     * their members and each mutating perm implying its read — the SAME {@link Permissions#expandGrants}
-     * assembly the login principal uses, so the console's "effective permissions" match what the user carries.
+     * The permissions GRANTED to the user — role + group-role + direct, with wildcard tokens expanded to their
+     * members and each mutating perm implying its read. NOTE: this is the granted set; it does NOT yet apply
+     * negative permissions (deny), so once denies are authored it may list a permission the user's resolved
+     * login authorities have removed. Making it deny-aware (sourcing from the resolver / effective authorities)
+     * lands with the deny write path.
      */
     private List<String> effectivePermissions(UserAccount user, List<GroupMembership> memberships) {
         Set<String> permissions = new HashSet<>();

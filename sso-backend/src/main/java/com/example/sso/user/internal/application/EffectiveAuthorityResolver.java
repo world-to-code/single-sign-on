@@ -63,8 +63,7 @@ class EffectiveAuthorityResolver {
         Set<UUID> groupIds = new HashSet<>(groups.findGroupIdsByMember(user.getId()));
         DenyRows denies = denyReader.read(user.getId(), roleDenySubjects, groupIds, user.getOrgId());
 
-        return denyResolver.effectiveAuthorities(new DenyInputs(userAllow, roleAllow, roleNames,
-                denies.user(), denies.role(), denies.group(), denies.org(), denies.platform()));
+        return denyResolver.effectiveAuthorities(new DenyInputs(userAllow, roleAllow, roleNames, denies));
     }
 
     /** Roles delegated to the user via any (RLS-visible) group they belong to, with permission names hydrated. */

@@ -32,13 +32,14 @@ class DenyResolver {
             return union(Permissions.expandGrants(union(in.userAllow(), in.roleAllow())), in.roleNames());
         }
 
+        DenyRows denies = in.denies();
         Set<String> userAllow = Permissions.expandWildcards(in.userAllow());
         Set<String> roleAllow = Permissions.expandWildcards(in.roleAllow());
-        Set<String> userDeny = Permissions.expandWildcards(in.userDeny());
-        Set<String> roleDeny = Permissions.expandWildcards(in.roleDeny());
-        Set<String> groupDeny = Permissions.expandWildcards(in.groupDeny());
-        Set<String> orgDeny = Permissions.expandWildcards(in.orgDeny());
-        Set<String> platformDeny = Permissions.expandWildcards(in.platformDeny());
+        Set<String> userDeny = Permissions.expandWildcards(denies.user());
+        Set<String> roleDeny = Permissions.expandWildcards(denies.role());
+        Set<String> groupDeny = Permissions.expandWildcards(denies.group());
+        Set<String> orgDeny = Permissions.expandWildcards(denies.org());
+        Set<String> platformDeny = Permissions.expandWildcards(denies.platform());
 
         Set<String> allowed = new HashSet<>();
         Set<String> denied = new HashSet<>();

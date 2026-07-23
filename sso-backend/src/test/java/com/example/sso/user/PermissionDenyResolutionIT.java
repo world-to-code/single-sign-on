@@ -94,15 +94,64 @@ class PermissionDenyResolutionIT extends AbstractIntegrationTest {
                 .doesNotContain("role:delete@a");                   // NEVER tenant A's deny
     }
 
+    /** The non-null-org tier read: a TENANT user loses an ORG-tier deny, driven through effectiveAuthorities. */
+    @Test
+    void anOrgTierDenySubtractsForATenantScopedUser() {
+        UUID org = newOrg("deny-orgtier");
+        UUID userId = newUserInOrg("deny-orgt", org);
+        UUID roleId = createGlobalRole("ROLE_ORGT_" + shortId());
+        grantRolePermission(roleId, Permissions.USER_UPDATE); // implies user:read
+        assignRole(userId, roleId);
+        orgDeny(org, Permissions.USER_READ);                  // org-tier deny bites the IMPLIED read
+
+        Set<String> authorities = userService.effectiveAuthorities(userId);
+
+        assertThat(authorities).contains(Permissions.USER_UPDATE).doesNotContain(Permissions.USER_READ);
+    }
+
+    /** Wildcard grant × deny, end-to-end from a stored token: a denied member drops the token AND the member. */
+    @Test
+    void aStoredWildcardGrantLosesItsTokenAndMemberWhenAMemberIsDenied() {
+        UUID userId = newUser("deny-wild");
+        UUID roleId = createGlobalRole("ROLE_WILD_" + shortId());
+        grantRolePermission(roleId, "user:*"); // the wildcard TOKEN is stored as the role's grant
+        assignRole(userId, roleId);
+        userDeny(userId, Permissions.USER_DELETE);
+
+        Set<String> authorities = userService.effectiveAuthorities(userId);
+
+        assertThat(authorities)
+                .contains(Permissions.USER_READ, Permissions.USER_CREATE, Permissions.USER_UPDATE)
+                .doesNotContain("user:*", Permissions.USER_DELETE);
+    }
+
+    /** GROUP-subject deny read path, end-to-end: a deny on a group the user belongs to subtracts (never carved). */
+    @Test
+    void aGroupSubjectDenySubtractsForAMember() {
+        UUID userId = newUser("deny-grp");
+        UUID roleId = createGlobalRole("ROLE_GRP_" + shortId());
+        grantRolePermission(roleId, Permissions.USER_READ);
+        assignRole(userId, roleId);
+        UUID groupId = createGlobalGroup("group-deny-" + shortId());
+        addGroupMember(groupId, userId);
+        seedGroupDeny(groupId, Permissions.USER_READ); // principal deny, subject_type=GROUP
+
+        Set<String> authorities = userService.effectiveAuthorities(userId);
+
+        assertThat(authorities).doesNotContain(Permissions.USER_READ);
+    }
+
     /**
      * The apex carve-out fix: a ROLE-subject deny is read for the holder's APEX roles only, so a deny on a role
      * that IS the user's apex (a base holder) now BITES — under the previous "apex grants the permission"
      * carve-out this exact deny was inert, since the denied role is always in its own holder's apex closure.
+     * Also pins that a SYSTEM/global role contributes its NAME to the authority set (never denied).
      */
     @Test
     void aRoleSubjectDenyOnTheHoldersApexRoleIsApplied() {
         UUID userId = newUser("deny-apex");
-        UUID roleId = createGlobalRole("ROLE_DENYTEST_" + shortId());
+        String roleName = "ROLE_DENYTEST_" + shortId();
+        UUID roleId = createGlobalRole(roleName);
         grantRolePermission(roleId, Permissions.USER_READ);
         grantRolePermission(roleId, Permissions.USER_UPDATE);
         assignRole(userId, roleId);
@@ -110,7 +159,8 @@ class PermissionDenyResolutionIT extends AbstractIntegrationTest {
 
         Set<String> authorities = userService.effectiveAuthorities(userId);
 
-        assertThat(authorities).contains(Permissions.USER_UPDATE).doesNotContain(Permissions.USER_READ);
+        // The permission is denied; the global role's NAME is carried through untouched (never subject to deny).
+        assertThat(authorities).contains(Permissions.USER_UPDATE, roleName).doesNotContain(Permissions.USER_READ);
     }
 
     /**
@@ -194,6 +244,38 @@ class PermissionDenyResolutionIT extends AbstractIntegrationTest {
 
     private void assignRole(UUID userId, UUID roleId) {
         ownerJdbc().update("insert into app_user_role (user_id, role_id) values (?, ?)", userId, roleId);
+    }
+
+    private UUID newUserInOrg(String prefix, UUID orgId) {
+        UUID id = UUID.randomUUID();
+        String name = prefix + "-" + id.toString().substring(0, 8);
+        ownerJdbc().update("insert into app_user (id, username, email, org_id) values (?, ?, ?, ?)",
+                id, name, name + "@example.com", orgId);
+        cleanups.add(() -> ownerJdbc().update("delete from app_user where id = ?", id));
+        return id;
+    }
+
+    private void orgDeny(UUID orgId, String pattern) {
+        ownerJdbc().update("insert into org_permission_deny (id, org_id, pattern) "
+                + "values (gen_random_uuid(), ?, ?)", orgId, pattern);
+        cleanups.add(() -> ownerJdbc().update("delete from org_permission_deny where pattern = ?", pattern));
+    }
+
+    private UUID createGlobalGroup(String name) {
+        UUID id = UUID.randomUUID();
+        ownerJdbc().update("insert into user_group (id, name) values (?, ?)", id, name); // org_id NULL = global
+        cleanups.add(() -> ownerJdbc().update("delete from user_group where id = ?", id)); // cascades members
+        return id;
+    }
+
+    private void addGroupMember(UUID groupId, UUID userId) {
+        ownerJdbc().update("insert into user_group_member (group_id, user_id) values (?, ?)", groupId, userId);
+    }
+
+    private void seedGroupDeny(UUID groupId, String pattern) {
+        ownerJdbc().update("insert into principal_permission_deny (id, subject_type, subject_id, org_id, pattern) "
+                + "values (gen_random_uuid(), 'GROUP', ?, null, ?)", groupId, pattern);
+        cleanups.add(() -> ownerJdbc().update("delete from principal_permission_deny where subject_id = ?", groupId));
     }
 
     private void linkRoles(UUID parentRoleId, UUID childRoleId) {

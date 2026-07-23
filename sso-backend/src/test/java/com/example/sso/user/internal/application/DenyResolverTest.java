@@ -39,7 +39,7 @@ class DenyResolverTest {
 
         private DenyInputs build() {
             return new DenyInputs(userAllow, roleAllow, roleNames,
-                    userDeny, roleDeny, groupDeny, orgDeny, platformDeny);
+                    new DenyRows(userDeny, roleDeny, groupDeny, orgDeny, platformDeny));
         }
     }
 
