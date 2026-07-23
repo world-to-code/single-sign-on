@@ -126,7 +126,24 @@ class IdentityProviderAdminControllerTest {
 
     private IdentityProviderView view() {
         return new IdentityProviderView("google", "Google", "https://accounts.google.com", "client-123",
-                "openid email", true, false, true);
+                "openid email", true, false, true, "google");
+    }
+
+    /** The vendor tag rides the request through to the spec, so a card-created provider records its preset. */
+    @Test
+    void thePresetIdIsCarriedThroughToTheSpec() throws Exception {
+        when(service.get("google")).thenReturn(view());
+
+        mvc.perform(put("/api/admin/identity-providers/google").contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"Google","issuerUri":"https://accounts.google.com","clientId":"c",\
+                                "clientSecret":"s","scopes":"openid","allowJitProvisioning":true,"enabled":true,\
+                                "presetId":"google"}"""))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<IdentityProviderSpec> spec = ArgumentCaptor.forClass(IdentityProviderSpec.class);
+        verify(service).save(spec.capture());
+        assertThat(spec.getValue().presetId()).isEqualTo("google");
     }
 
     private String permissionOf(String method, Class<?>... params) throws Exception {

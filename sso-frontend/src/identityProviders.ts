@@ -13,6 +13,7 @@ export interface IdentityProvider {
   allowJitProvisioning: boolean;
   linkByVerifiedEmail: boolean;
   enabled: boolean;
+  presetId: string | null; // the vendor this was created from, or null for a custom OIDC connection
 }
 
 /**
@@ -30,6 +31,7 @@ export interface IdentityProviderInput {
   allowJitProvisioning: boolean;
   linkByVerifiedEmail: boolean;
   enabled: boolean;
+  presetId: string | null; // the vendor card this was created from, or null for custom
 }
 
 /** One extra input a preset's issuer template needs (e.g. Entra's directory id); {@link key} names the
@@ -63,29 +65,13 @@ export const listIdentityProviderPresets = (): Promise<IdentityProviderPreset[]>
 export const resolvePresetIssuer = (template: string, fieldValues: Record<string, string>): string =>
   template.replace(/\{(\w+)\}/g, (_, key: string) => (fieldValues[key] ?? "").trim());
 
-/**
- * The preset whose issuer template matches this issuer — for the list's vendor badge only (display, never a
- * security decision). A template's {key} placeholders match any non-empty segment; everything else is literal.
- *
- * <p>A preset whose HOST is entirely a placeholder (e.g. Okta's {@code https://{domain}}) is skipped: its
- * pattern would be {@code ^https://.+$} and badge every provider as that vendor. Such a template is
- * unidentifiable by issuer — a badge is best-effort, so those providers simply read as custom.
- */
-export const matchPreset = (
-  issuerUri: string,
+/** The preset a provider was created from, by its stored id — for the list's vendor badge. Null for a custom
+ *  connection, or when the id names a preset this deployment no longer configures. */
+export const presetById = (
+  presetId: string | null,
   presets: IdentityProviderPreset[],
-): IdentityProviderPreset | null => {
-  const escaped = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const hostLiteral = (template: string) =>
-    (template.match(/^[a-z][a-z0-9+.-]*:\/\/([^/]*)/i)?.[1] ?? "").replace(/\{\w+\}/g, "");
-  return (
-    presets.find((preset) => {
-      if (!hostLiteral(preset.issuerTemplate).includes(".")) return false; // bare-host template — unidentifiable
-      const pattern = "^" + escaped(preset.issuerTemplate).replace(/\\\{\w+\\\}/g, ".+") + "$";
-      return new RegExp(pattern).test(issuerUri.trim());
-    }) ?? null
-  );
-};
+): IdentityProviderPreset | null =>
+  presetId ? (presets.find((preset) => preset.id === presetId) ?? null) : null;
 
 /** Upsert by alias (the backend keys on the {alias} path; a blank secret keeps the stored one). */
 export const saveIdentityProvider = (alias: string, body: IdentityProviderInput): Promise<IdentityProvider> =>

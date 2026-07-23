@@ -67,27 +67,45 @@ public class IdentityProvider extends AuditedEntity implements OrgOwned {
     @Column(nullable = false)
     private boolean enabled;
 
-    /** Owning tenant, or {@code null} for a platform-tier provider. */
+    /**
+     * The preset (vendor) this provider was created from — a {@code sso.federation.presets} id, or {@code null}
+     * for a custom OIDC connection. Display metadata only: the login path never reads it; it lets the console
+     * badge the vendor authoritatively instead of guessing from the issuer.
+     */
+    @Column(name = "preset_id", length = 32)
+    private String presetId;
+
+    /** A custom (preset-less) provider. Owning tenant, or {@code null} for a platform-tier provider. */
     public static IdentityProvider create(UUID orgId, String alias, String displayName, String issuerUri,
             String clientId, String clientSecretEncrypted, String scopes, boolean allowJitProvisioning,
             boolean linkByVerifiedEmail, boolean enabled) {
+        return create(orgId, alias, displayName, issuerUri, clientId, clientSecretEncrypted, scopes,
+                allowJitProvisioning, linkByVerifiedEmail, enabled, null);
+    }
+
+    /** Owning tenant, or {@code null} for a platform-tier provider; {@code presetId} tags the source vendor. */
+    public static IdentityProvider create(UUID orgId, String alias, String displayName, String issuerUri,
+            String clientId, String clientSecretEncrypted, String scopes, boolean allowJitProvisioning,
+            boolean linkByVerifiedEmail, boolean enabled, String presetId) {
         IdentityProvider provider = new IdentityProvider();
         provider.orgId = orgId;
         provider.alias = alias;
         provider.apply(displayName, issuerUri, clientId, clientSecretEncrypted, scopes, allowJitProvisioning,
-                linkByVerifiedEmail, enabled);
+                linkByVerifiedEmail, enabled, presetId);
         return provider;
     }
 
     /** Repoint this provider (intent-revealing mutation, not a JavaBean setter); the alias is immutable. */
     public void reconfigure(String displayName, String issuerUri, String clientId, String clientSecretEncrypted,
-            String scopes, boolean allowJitProvisioning, boolean linkByVerifiedEmail, boolean enabled) {
+            String scopes, boolean allowJitProvisioning, boolean linkByVerifiedEmail, boolean enabled,
+            String presetId) {
         apply(displayName, issuerUri, clientId, clientSecretEncrypted, scopes, allowJitProvisioning,
-                linkByVerifiedEmail, enabled);
+                linkByVerifiedEmail, enabled, presetId);
     }
 
     private void apply(String displayName, String issuerUri, String clientId, String clientSecretEncrypted,
-            String scopes, boolean allowJitProvisioning, boolean linkByVerifiedEmail, boolean enabled) {
+            String scopes, boolean allowJitProvisioning, boolean linkByVerifiedEmail, boolean enabled,
+            String presetId) {
         this.displayName = displayName;
         this.issuerUri = issuerUri;
         this.clientId = clientId;
@@ -96,5 +114,6 @@ public class IdentityProvider extends AuditedEntity implements OrgOwned {
         this.allowJitProvisioning = allowJitProvisioning;
         this.linkByVerifiedEmail = linkByVerifiedEmail;
         this.enabled = enabled;
+        this.presetId = presetId;
     }
 }

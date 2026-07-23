@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Pencil, Plus, Save, Trash2 } from "lucide-react";
 import {
-  matchPreset, resolvePresetIssuer, saveIdentityProvider,
+  presetById, resolvePresetIssuer, saveIdentityProvider,
   type IdentityProvider, type IdentityProviderPreset,
 } from "@/identityProviders";
 import { PageHeader } from "@/components/PageHeader";
@@ -30,6 +30,7 @@ interface Editor {
   clientId: string;
   clientSecret: string;
   scopes: string;
+  presetId: string | null; // the vendor card this was created from, sent back so the badge stays authoritative
   fieldValues: Record<string, string>; // extra preset inputs (e.g. { tenant }) that build the issuer
   allowJitProvisioning: boolean;
   linkByVerifiedEmail: boolean;
@@ -38,7 +39,7 @@ interface Editor {
 
 const blank: Editor = {
   id: null, alias: "", displayName: "", issuerUri: "", clientId: "", clientSecret: "",
-  scopes: "openid email profile", fieldValues: {},
+  scopes: "openid email profile", presetId: null, fieldValues: {},
   allowJitProvisioning: false, linkByVerifiedEmail: false, enabled: true,
 };
 
@@ -64,6 +65,7 @@ export default function IdentityProviders() {
       clientId: e.clientId.trim(),
       clientSecret: e.clientSecret, // blank on edit → backend keeps the stored secret
       scopes: e.scopes.trim(),
+      presetId: e.presetId,
       allowJitProvisioning: e.allowJitProvisioning,
       linkByVerifiedEmail: e.linkByVerifiedEmail,
       enabled: e.enabled,
@@ -78,7 +80,7 @@ export default function IdentityProviders() {
   const startPreset = (preset: IdentityProviderPreset) => {
     setActivePreset(preset);
     openEdit({
-      ...blank, id: null, alias: preset.id, displayName: preset.displayName,
+      ...blank, id: null, alias: preset.id, displayName: preset.displayName, presetId: preset.id,
       scopes: preset.defaultScopes,
       issuerUri: preset.fields.length === 0 ? preset.issuerTemplate : "",
       fieldValues: {},
@@ -91,8 +93,8 @@ export default function IdentityProviders() {
     setActivePreset(null);
     openEdit({
       id: p.alias, alias: p.alias, displayName: p.displayName, issuerUri: p.issuerUri, clientId: p.clientId,
-      clientSecret: "", scopes: p.scopes, fieldValues: {}, allowJitProvisioning: p.allowJitProvisioning,
-      linkByVerifiedEmail: p.linkByVerifiedEmail, enabled: p.enabled,
+      clientSecret: "", scopes: p.scopes, presetId: p.presetId, fieldValues: {},
+      allowJitProvisioning: p.allowJitProvisioning, linkByVerifiedEmail: p.linkByVerifiedEmail, enabled: p.enabled,
     });
   };
 
@@ -104,7 +106,7 @@ export default function IdentityProviders() {
   };
 
   const vendorOf = (p: IdentityProvider) =>
-    matchPreset(p.issuerUri, presets.data ?? [])?.displayName ?? t("idpVendorCustom");
+    presetById(p.presetId, presets.data ?? [])?.displayName ?? t("idpVendorCustom");
 
   const remove = (p: IdentityProvider) => {
     setActionError(null);

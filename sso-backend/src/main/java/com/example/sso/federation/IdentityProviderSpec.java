@@ -8,5 +8,13 @@ package com.example.sso.federation;
  */
 public record IdentityProviderSpec(String alias, String displayName, String issuerUri, String clientId,
                                    String clientSecret, String scopes, boolean allowJitProvisioning,
-                                   boolean linkByVerifiedEmail, boolean enabled) {
+                                   boolean linkByVerifiedEmail, boolean enabled, String presetId) {
+
+    /** A custom (preset-less) provider — {@code presetId} defaults to {@code null}. */
+    public IdentityProviderSpec(String alias, String displayName, String issuerUri, String clientId,
+                                String clientSecret, String scopes, boolean allowJitProvisioning,
+                                boolean linkByVerifiedEmail, boolean enabled) {
+        this(alias, displayName, issuerUri, clientId, clientSecret, scopes, allowJitProvisioning,
+                linkByVerifiedEmail, enabled, null);
+    }
 }

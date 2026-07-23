@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchPreset, resolvePresetIssuer, type IdentityProviderPreset } from "./identityProviders";
+import { presetById, resolvePresetIssuer, type IdentityProviderPreset } from "./identityProviders";
 
 const preset = (over: Partial<IdentityProviderPreset>): IdentityProviderPreset => ({
   id: "x", displayName: "X", issuerTemplate: "https://x", defaultScopes: "openid", fields: [], ...over,
@@ -32,24 +32,19 @@ describe("resolvePresetIssuer", () => {
   });
 });
 
-describe("matchPreset", () => {
+describe("presetById", () => {
   const presets = [GOOGLE, ENTRA, OKTA];
 
-  it("matches a fixed issuer exactly", () => {
-    expect(matchPreset("https://accounts.google.com", presets)).toBe(GOOGLE);
+  it("resolves the vendor by its stored id — including a bare-host one like Okta that issuer-matching could not", () => {
+    expect(presetById("google", presets)).toBe(GOOGLE);
+    expect(presetById("okta", presets)).toBe(OKTA);
   });
 
-  it("matches a templated issuer on its literal parts, regardless of the placeholder segment", () => {
-    expect(matchPreset("https://login.microsoftonline.com/any-tenant-guid/v2.0", presets)).toBe(ENTRA);
+  it("is null for a custom connection (no preset id)", () => {
+    expect(presetById(null, presets)).toBeNull();
   });
 
-  it("does not badge a bare-host template (Okta), which is unidentifiable by issuer", () => {
-    // https://{domain} would otherwise compile to ^https://.+$ and match every provider — so it matches none.
-    expect(matchPreset("https://dev-12345.okta.com", presets)).toBeNull();
-    expect(matchPreset("https://idp.acme.example", presets)).toBeNull();
-  });
-
-  it("anchors the match, so a look-alike host is not a Google provider", () => {
-    expect(matchPreset("https://accounts.google.com.evil.example", presets)).toBeNull();
+  it("is null when the stored id names a preset this deployment no longer configures", () => {
+    expect(presetById("onelogin", presets)).toBeNull();
   });
 });

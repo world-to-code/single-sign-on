@@ -15,10 +15,10 @@ import jakarta.validation.constraints.NotBlank;
 public record IdentityProviderRequest(@NotBlank String displayName, @NotBlank String issuerUri,
                                       @NotBlank String clientId, String clientSecret, String scopes,
                                       boolean allowJitProvisioning, Boolean linkByVerifiedEmail,
-                                      boolean enabled) {
+                                      boolean enabled, String presetId) {
 
     public IdentityProviderSpec toSpec(String alias) {
         return new IdentityProviderSpec(alias, displayName, issuerUri, clientId, clientSecret, scopes,
-                allowJitProvisioning, Boolean.TRUE.equals(linkByVerifiedEmail), enabled);
+                allowJitProvisioning, Boolean.TRUE.equals(linkByVerifiedEmail), enabled, presetId);
     }
 }

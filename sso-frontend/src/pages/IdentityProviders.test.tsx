@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import IdentityProviders from "./IdentityProviders";
 import { ConfirmProvider } from "@/components/ConfirmProvider";
 import { apiGet } from "@/api";
-import type { IdentityProvider, IdentityProviderPreset } from "@/identityProviders";
+import { saveIdentityProvider, type IdentityProvider, type IdentityProviderPreset } from "@/identityProviders";
 
 vi.mock("react-i18next", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react-i18next")>()),
@@ -37,12 +37,12 @@ const PRESETS: IdentityProviderPreset[] = [
 
 const provider = (over: Partial<IdentityProvider>): IdentityProvider => ({
   alias: "a", displayName: "A", issuerUri: "https://idp.acme.example", clientId: "c", scopes: "openid",
-  allowJitProvisioning: false, linkByVerifiedEmail: false, enabled: true, ...over,
+  allowJitProvisioning: false, linkByVerifiedEmail: false, enabled: true, presetId: null, ...over,
 });
 
 const PROVIDERS: IdentityProvider[] = [
-  provider({ alias: "corp-google", displayName: "Corp Google", issuerUri: "https://accounts.google.com" }),
-  provider({ alias: "legacy", displayName: "Legacy", issuerUri: "https://sso.legacy.example" }),
+  provider({ alias: "corp-google", displayName: "Corp Google", issuerUri: "https://accounts.google.com", presetId: "google" }),
+  provider({ alias: "legacy", displayName: "Legacy", issuerUri: "https://sso.legacy.example", presetId: null }),
 ];
 
 const renderPage = () => render(<ConfirmProvider><IdentityProviders /></ConfirmProvider>);
@@ -105,14 +105,30 @@ describe("IdentityProviders", () => {
     expect(issuer).not.toHaveAttribute("readonly");
   });
 
-  it("badges each provider with the vendor its issuer matches", async () => {
+  it("badges each provider with the vendor its stored preset id names", async () => {
     renderPage();
     await waitFor(() => expect(screen.getByText("Corp Google")).toBeInTheDocument());
 
     const googleRow = screen.getAllByRole("row").find((r) => r.textContent?.includes("Corp Google"))!;
-    expect(googleRow.textContent).toContain("Google"); // matched preset's display name
+    expect(googleRow.textContent).toContain("Google"); // presetId "google" → catalog display name
 
     const legacyRow = screen.getAllByRole("row").find((r) => r.textContent?.includes("Legacy"))!;
-    expect(legacyRow.textContent).toContain("idpVendorCustom"); // no preset matches → custom
+    expect(legacyRow.textContent).toContain("idpVendorCustom"); // presetId null → custom
+  });
+
+  it("sends the preset id when creating from a vendor card", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("button", { name: /Google/ })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: /Google/ }));
+    await waitFor(() => expect(screen.getByLabelText("idpClientIdLabel")).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("idpClientIdLabel"), { target: { value: "client-1" } });
+    fireEvent.change(screen.getByLabelText("idpClientSecretLabel"), { target: { value: "s3cret" } });
+    fireEvent.click(screen.getByRole("button", { name: /idpCreate/ }));
+
+    await waitFor(() => expect(saveIdentityProvider).toHaveBeenCalled());
+    const body = vi.mocked(saveIdentityProvider).mock.calls[0][1];
+    expect(body.presetId).toBe("google");
+    expect(body.issuerUri).toBe("https://accounts.google.com"); // prefilled from the fixed-issuer preset
   });
 });

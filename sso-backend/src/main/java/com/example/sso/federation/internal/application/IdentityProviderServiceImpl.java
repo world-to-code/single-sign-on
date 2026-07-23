@@ -48,6 +48,7 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
     private final ApplicationEventPublisher events;
     private final OutboundHostValidator hostValidator;
     private final OrgContext orgContext;
+    private final FederationPresetCatalog presets;
 
     @Override
     @Transactional(readOnly = true)
@@ -69,6 +70,7 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
         String alias = normalizeAlias(spec.alias());
         validate(spec);
         String scopes = normalizeScopes(spec.scopes());
+        String presetId = normalizePreset(spec.presetId());
         Optional<IdentityProvider> existing = ownProvider(alias);
         String encrypted = resolveSecret(spec, existing.orElse(null));
         existing.ifPresentOrElse(
@@ -78,11 +80,12 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
                     // inherit the account they resolve to.
                     retireLinksIfUpstreamChanged(org, alias, row, spec);
                     row.reconfigure(spec.displayName().trim(), spec.issuerUri().trim(), spec.clientId().trim(),
-                            encrypted, scopes, spec.allowJitProvisioning(), spec.linkByVerifiedEmail(), spec.enabled());
+                            encrypted, scopes, spec.allowJitProvisioning(), spec.linkByVerifiedEmail(),
+                            spec.enabled(), presetId);
                 },
                 () -> repository.save(IdentityProvider.create(org, alias, spec.displayName().trim(),
                         spec.issuerUri().trim(), spec.clientId().trim(), encrypted, scopes,
-                        spec.allowJitProvisioning(), spec.linkByVerifiedEmail(), spec.enabled())));
+                        spec.allowJitProvisioning(), spec.linkByVerifiedEmail(), spec.enabled(), presetId)));
     }
 
     @Override
@@ -175,6 +178,23 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
         hostValidator.validate(uri.getHost()); // SSRF: reject internal/metadata targets
     }
 
+    /**
+     * The preset (vendor) tag to store: {@code null} for a custom provider, otherwise a preset id the catalog
+     * knows. Validated against the catalog so a client cannot plant an arbitrary vendor label — the badge it
+     * drives is only display, but an unbounded string is still input we do not need to keep.
+     */
+    private String normalizePreset(String presetId) {
+        if (!StringUtils.hasText(presetId)) {
+            return null;
+        }
+        String trimmed = presetId.trim();
+        boolean known = presets.list().stream().anyMatch(preset -> preset.id().equals(trimmed));
+        if (!known) {
+            throw BadRequestException.of("federation.provider.presetUnknown", trimmed);
+        }
+        return trimmed;
+    }
+
     private String normalizeAlias(String alias) {
         String trimmed = alias == null ? "" : alias.trim().toLowerCase();
         if (!ALIAS.matcher(trimmed).matches()) {
@@ -198,7 +218,7 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
 
     private IdentityProviderView toView(IdentityProvider p) {
         return new IdentityProviderView(p.getAlias(), p.getDisplayName(), p.getIssuerUri(), p.getClientId(),
-                p.getScopes(), p.isAllowJitProvisioning(), p.isLinkByVerifiedEmail(), p.isEnabled());
+                p.getScopes(), p.isAllowJitProvisioning(), p.isLinkByVerifiedEmail(), p.isEnabled(), p.getPresetId());
     }
 
     /**

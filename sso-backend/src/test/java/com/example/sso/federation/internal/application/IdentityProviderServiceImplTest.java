@@ -60,12 +60,15 @@ class IdentityProviderServiceImplTest {
     @Mock
     OrgContext orgContext;
 
+    private final FederationPresetCatalog presets = new FederationPresetCatalog(new FederationPresetProperties(
+            List.of(new FederationPresetView("google", "Google", ISSUER, "openid email profile", List.of()))));
+
     private IdentityProviderServiceImpl service;
 
     @BeforeEach
     void setUp() {
         service = new IdentityProviderServiceImpl(repository, cipher, links, users, events, hostValidator,
-                orgContext);
+                orgContext, presets);
     }
 
     private IdentityProvider row(UUID orgId, String encryptedSecret) {
@@ -96,6 +99,37 @@ class IdentityProviderServiceImplTest {
     }
 
     @Test
+    void saveStoresAKnownPresetIdAndRejectsAnUnknownOne() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.empty());
+        when(cipher.encrypt(any())).thenReturn("encg:cipher");
+
+        service.save(new IdentityProviderSpec(ALIAS, "Google", ISSUER, "c", "s", "openid", true, false, true, "google"));
+
+        ArgumentCaptor<IdentityProvider> saved = ArgumentCaptor.captor();
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getPresetId()).isEqualTo("google");
+
+        // An unknown preset is refused rather than stored as an unbounded vendor label.
+        assertThatThrownBy(() -> service.save(
+                new IdentityProviderSpec(ALIAS, "Google", ISSUER, "c", "s", "openid", true, false, true, "evil")))
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void saveTreatsABlankPresetIdAsCustom() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.empty());
+        when(cipher.encrypt(any())).thenReturn("encg:cipher");
+
+        service.save(new IdentityProviderSpec(ALIAS, "Google", ISSUER, "c", "s", "openid", true, false, true, "  "));
+
+        ArgumentCaptor<IdentityProvider> saved = ArgumentCaptor.captor();
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getPresetId()).isNull(); // a custom connection carries no vendor tag
+    }
+
+    @Test
     void savePersistsBothBooleansDistinctlyAndDoesNotSwapThem() {
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.empty());
@@ -114,7 +148,7 @@ class IdentityProviderServiceImplTest {
     void theViewCarriesEveryFieldExceptTheSecretWithBooleansUnswapped() {
         // Asymmetric booleans (allowJit=false, enabled=true) catch a swap in toView's two adjacent boolean args.
         IdentityProvider stored = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123", "encg:cipher",
-                "openid email", false, true, true);
+                "openid email", false, true, true, "google");
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(stored));
 
@@ -125,6 +159,7 @@ class IdentityProviderServiceImplTest {
         assertThat(view.issuerUri()).isEqualTo(ISSUER);
         assertThat(view.clientId()).isEqualTo("client-123");
         assertThat(view.scopes()).isEqualTo("openid email");
+        assertThat(view.presetId()).isEqualTo("google"); // the vendor tag flows entity → view
         // All three adjacent booleans asserted, and the fixture gives them DIFFERENT values — two sharing one
         // would make a swap between them undetectable, which is the whole point of checking them here.
         assertThat(view.allowJitProvisioning()).isFalse();

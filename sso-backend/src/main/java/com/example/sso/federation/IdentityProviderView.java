@@ -6,5 +6,5 @@ package com.example.sso.federation;
  */
 public record IdentityProviderView(String alias, String displayName, String issuerUri, String clientId,
                                    String scopes, boolean allowJitProvisioning, boolean linkByVerifiedEmail,
-                                   boolean enabled) {
+                                   boolean enabled, String presetId) {
 }
