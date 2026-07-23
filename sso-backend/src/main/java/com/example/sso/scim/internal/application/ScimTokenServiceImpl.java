@@ -19,6 +19,15 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import com.example.sso.metadata.AttributeValueGrantGuard;
+import com.example.sso.metadata.Profile;
+import com.example.sso.metadata.ProfileKind;
+import com.example.sso.metadata.ProfileMapping;
+import com.example.sso.metadata.ProfileMappingService;
+import com.example.sso.metadata.ProfileService;
+import com.example.sso.shared.error.ForbiddenException;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
@@ -39,10 +48,23 @@ public class ScimTokenServiceImpl implements ScimTokenService {
     private final ScimTokenRepository tokens;
     private final OrgContext orgContext;
     private final UserService users;
+    private final ProfileService profiles;
+    private final ProfileMappingService mappings;
+    private final AttributeValueGrantGuard grantGuard;
 
     @Override
     @Transactional
     public String issue(String description, Duration ttl) {
+        // A SCIM token is a standing licence to write every attribute the SCIM profile maps onto the tenant.
+        // If one of those attributes decides a grant a mapping rule confers, holding scim:manage would become
+        // a way to move that grant onto any user provisioned through the token — the same escalation a direct
+        // attribute write is now refused for. Refuse the TOKEN when it would license a key beyond the issuer's
+        // authority, at issue time, where the failure is a write that does not happen. The set is the whole
+        // SCIM profile's mapped keys because a token is not scoped to one of them.
+        Set<String> governed = grantGuard.keysBeyondAuthority(scimMappedKeys());
+        if (!governed.isEmpty()) {
+            throw ForbiddenException.of("scim.token.grantGoverned", String.join(", ", governed));
+        }
         String raw = randomToken();
         Instant expiresAt = ttl == null ? null : Instant.now().plus(ttl);
         // Owned by the acting tenant (bound org), or global when a platform admin issues with none bound.
@@ -53,6 +75,18 @@ public class ScimTokenServiceImpl implements ScimTokenService {
                 resolveIssuer()));
 
         return raw;
+    }
+
+    /** Every tenant key the SCIM profile feeds — the attributes this token would license writes to. */
+    private Set<String> scimMappedKeys() {
+        UUID scimProfile = profiles.list().stream()
+                .filter(profile -> profile.kind() == ProfileKind.SCIM)
+                .map(Profile::id).findFirst().orElse(null);
+        if (scimProfile == null) {
+            return Set.of();
+        }
+        return mappings.mappingsFrom(scimProfile).stream()
+                .map(ProfileMapping::targetKey).collect(Collectors.toSet());
     }
 
     @Override
