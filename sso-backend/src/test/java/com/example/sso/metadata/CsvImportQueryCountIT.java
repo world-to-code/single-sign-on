@@ -50,14 +50,19 @@ class CsvImportQueryCountIT extends AbstractIntegrationTest {
     private static final int ROWS = 10;
 
     /**
-     * Measured at 18.9 per row when this was written (189 statements for ten rows). The ceiling sits above
-     * that with room for ordinary variation — it catches the cost GROWING, it is not a target to tune against.
+     * Measured at 18.9 per row when this was written (189 statements for ten rows). The ceiling sits just above
+     * that — real (non-integer) division, so a regression adding roughly one query on every row trips it. It
+     * catches the cost GROWING, it is not a target to tune against.
+     *
+     * <p>The earlier form divided as integers ({@code 189 / 10 == 18}) against a ceiling of 25, so it took
+     * about eight extra queries PER ROW to trip — the docstring's "just above" was fiction. Real division and a
+     * ceiling one query-per-row above the measurement fix both.
      *
      * <p>Worth recording what the measurement settled: a review put this at "roughly thirty round trips" from
      * reading the call chain, and said plainly it had not instrumented anything. The traced figure was high by
      * about a third, because the group memo already removes one of the per-row lookups it counted.
      */
-    private static final long MAX_QUERIES_PER_ROW = 25;
+    private static final double MAX_QUERIES_PER_ROW = 20.0;
 
     @Autowired CsvImportService imports;
     @Autowired CsvTemplateService templates;
@@ -90,7 +95,7 @@ class CsvImportQueryCountIT extends AbstractIntegrationTest {
         long queries = statistics.getPrepareStatementCount();
 
         assertThat(result.created()).isEqualTo(ROWS);
-        assertThat(queries / ROWS)
+        assertThat((double) queries / ROWS)
                 .as("%d statements for %d rows — the per-row cost has grown past its ceiling", queries, ROWS)
                 .isLessThanOrEqualTo(MAX_QUERIES_PER_ROW);
     }
