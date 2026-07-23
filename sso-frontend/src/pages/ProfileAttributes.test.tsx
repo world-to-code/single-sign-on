@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ProfileAttributes from "./ProfileAttributes";
 import { ConfirmProvider } from "@/components/ConfirmProvider";
-import { listProfiles } from "@/attributeDefinitions";
+import { listProfiles, deleteAttributeDefinition, type AttributeDefinition } from "@/attributeDefinitions";
 import { apiGet } from "@/api";
 
 vi.mock("react-i18next", async (importOriginal) => ({
@@ -16,6 +16,7 @@ vi.mock("react-i18next", async (importOriginal) => ({
 vi.mock("@/attributeDefinitions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/attributeDefinitions")>()),
   listProfiles: vi.fn(),
+  deleteAttributeDefinition: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/api", async (importOriginal) => ({
@@ -67,5 +68,54 @@ describe("ProfileAttributes", () => {
 
     await waitFor(() =>
       expect(apiGet).toHaveBeenCalledWith(`/api/admin/profiles/${LDAP}/attributes`));
+  });
+
+  const attr = (over: Partial<AttributeDefinition>): AttributeDefinition => ({
+    id: "a-1", entityKind: "USER", key: "custom", displayName: "Custom", description: "",
+    dataType: "STRING", enumValues: [], multiValued: false, required: false, source: "LOCAL",
+    sortOrder: 0, base: false, ...over,
+  });
+
+  /** A base attribute is an app_user column shown for context; there is no declaration to edit or delete. */
+  it("shows no edit or delete on a base attribute", async () => {
+    vi.mocked(apiGet).mockResolvedValue([
+      attr({ id: null as never, key: "email", displayName: "Email", base: true }),
+    ] as never);
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText("Email")).toBeInTheDocument());
+    // The action cell is empty for a base row — the only buttons on the page are the picker and "add".
+    expect(screen.queryByRole("button", { name: /pencil|edit/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("row").filter((r) => r.textContent?.includes("Email"))[0]
+      .querySelectorAll("button")).toHaveLength(0);
+  });
+
+  /** A custom attribute opens the editor with its key locked, since the key is the identity and cannot change. */
+  it("edits a custom attribute with the key field locked", async () => {
+    vi.mocked(apiGet).mockResolvedValue([attr({ key: "clearance", displayName: "Clearance" })] as never);
+    renderPage();
+    await waitFor(() => expect(screen.getByText("Clearance")).toBeInTheDocument());
+
+    const row = screen.getAllByRole("row").find((r) => r.textContent?.includes("Clearance"))!;
+    fireEvent.click(row.querySelectorAll("button")[0]);
+
+    await waitFor(() => expect(screen.getByLabelText("profileAttrKeyLabel")).toBeInTheDocument());
+    expect(screen.getByLabelText("profileAttrKeyLabel")).toBeDisabled();
+    expect(screen.getByLabelText("profileAttrKeyLabel")).toHaveValue("clearance");
+  });
+
+  /** Deleting a custom attribute goes through the confirm dialog to deleteAttributeDefinition by id. */
+  it("deletes a custom attribute by id", async () => {
+    vi.mocked(apiGet).mockResolvedValue([attr({ id: "a-9", key: "team", displayName: "Team" })] as never);
+    renderPage();
+    await waitFor(() => expect(screen.getByText("Team")).toBeInTheDocument());
+
+    const row = screen.getAllByRole("row").find((r) => r.textContent?.includes("Team"))!;
+    fireEvent.click(row.querySelectorAll("button")[1]);
+
+    await waitFor(() => expect(screen.getByText("profileAttrDeleteTitle")).toBeInTheDocument());
+    fireEvent.click(document.querySelector("[data-confirm]") as HTMLElement);
+
+    await waitFor(() => expect(deleteAttributeDefinition).toHaveBeenCalledWith("a-9"));
   });
 });
