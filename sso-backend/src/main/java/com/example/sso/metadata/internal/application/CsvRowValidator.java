@@ -1,7 +1,6 @@
 package com.example.sso.metadata.internal.application;
 
 import com.example.sso.metadata.AttributeDefinition;
-import com.example.sso.metadata.CsvRowFailure;
 import com.example.sso.metadata.ProfileAttributeValidator;
 import com.example.sso.shared.error.ApiException;
 import com.example.sso.user.account.BaseUserFields;

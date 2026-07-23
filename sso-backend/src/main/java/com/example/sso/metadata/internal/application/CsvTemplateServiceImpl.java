@@ -2,8 +2,6 @@ package com.example.sso.metadata.internal.application;
 
 import com.example.sso.metadata.AttributeDefinition;
 import com.example.sso.metadata.AttributeDefinitionService;
-import com.example.sso.metadata.CsvTemplate;
-import com.example.sso.metadata.CsvTemplateService;
 import com.example.sso.metadata.Profile;
 import com.example.sso.metadata.ProfileService;
 import com.example.sso.shared.error.BadRequestException;

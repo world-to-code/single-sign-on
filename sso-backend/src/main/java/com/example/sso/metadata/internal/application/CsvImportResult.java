@@ -1,5 +1,6 @@
-package com.example.sso.metadata;
+package com.example.sso.metadata.internal.application;
 
+import com.example.sso.metadata.CsvPlannedUser;
 import java.util.List;
 
 /**

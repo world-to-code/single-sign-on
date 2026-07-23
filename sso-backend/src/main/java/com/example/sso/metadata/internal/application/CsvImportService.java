@@ -1,4 +1,4 @@
-package com.example.sso.metadata;
+package com.example.sso.metadata.internal.application;
 
 import java.util.UUID;
 import org.springframework.web.multipart.MultipartRequest;

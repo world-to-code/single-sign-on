@@ -1,6 +1,5 @@
 package com.example.sso.metadata.internal.application;
 
-import com.example.sso.metadata.CsvRowFailure;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;

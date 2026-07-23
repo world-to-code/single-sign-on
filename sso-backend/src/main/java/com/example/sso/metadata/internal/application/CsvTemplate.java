@@ -1,4 +1,4 @@
-package com.example.sso.metadata;
+package com.example.sso.metadata.internal.application;
 
 /**
  * A generated CSV template: what to call the file and what is in it.

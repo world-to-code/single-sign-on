@@ -1,4 +1,4 @@
-package com.example.sso.metadata;
+package com.example.sso.metadata.internal.application;
 
 /**
  * One row an import will not apply.
