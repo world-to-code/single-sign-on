@@ -6,8 +6,6 @@ import com.example.sso.federation.IdentityProviderSpec;
 import com.example.sso.federation.IdentityProviderView;
 import com.example.sso.federation.internal.domain.IdentityProvider;
 import com.example.sso.federation.internal.domain.IdentityProviderRepository;
-import com.example.sso.metadata.ProfileKind;
-import com.example.sso.metadata.ProfileService;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
@@ -56,10 +54,7 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
     private final OutboundHostValidator hostValidator;
     private final OrgContext orgContext;
     private final FederationPresetCatalog presets;
-    private final ProfileService profiles;
-
-    /** Display name of the single, connector-less OIDC source profile a tenant's federated logins feed. */
-    private static final String OIDC_SOURCE_PROFILE = "OIDC";
+    private final FederationSourceSeeder sourceSeeder;
 
     @Override
     @Transactional(readOnly = true)
@@ -104,9 +99,10 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
                     repository.save(row);
                 });
         // A tenant's federated logins fill attributes through ONE connector-less OIDC source profile (like
-        // SCIM). Provision it idempotently on any tenant write; a platform-tier provider (org null) owns none.
+        // SCIM), which carries the standard claim attributes. Ensured idempotently on any tenant write; a
+        // platform-tier provider (org null) owns none.
         if (org != null) {
-            profiles.provisionForSource(org, ProfileKind.OIDC, OIDC_SOURCE_PROFILE);
+            sourceSeeder.ensureOidcSource(org);
         }
     }
 

@@ -5,8 +5,6 @@ import com.example.sso.federation.IdentityProviderSpec;
 import com.example.sso.federation.IdentityProviderView;
 import com.example.sso.federation.internal.domain.IdentityProvider;
 import com.example.sso.federation.internal.domain.IdentityProviderRepository;
-import com.example.sso.metadata.ProfileKind;
-import com.example.sso.metadata.ProfileService;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
@@ -66,7 +64,7 @@ class IdentityProviderServiceImplTest {
     @Mock
     OrgContext orgContext;
     @Mock
-    ProfileService profiles;
+    FederationSourceSeeder sourceSeeder;
 
     private final FederationPresetCatalog presets = new FederationPresetCatalog(new FederationPresetProperties(
             List.of(new FederationPresetView("google", "Google", ISSUER, "openid email profile", List.of()))));
@@ -76,7 +74,7 @@ class IdentityProviderServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new IdentityProviderServiceImpl(repository, cipher, links, users, events, hostValidator,
-                orgContext, presets, profiles);
+                orgContext, presets, sourceSeeder);
     }
 
     private IdentityProvider row(UUID orgId, String encryptedSecret) {
@@ -132,8 +130,8 @@ class IdentityProviderServiceImplTest {
 
         service.save(spec("s3cret", "openid"));
 
-        // One connector-less OIDC source profile per tenant, provisioned idempotently on the write.
-        verify(profiles).provisionForSource(ORG, ProfileKind.OIDC, "OIDC");
+        // The tenant's OIDC source (profile + seeded claim attributes) is ensured idempotently on the write.
+        verify(sourceSeeder).ensureOidcSource(ORG);
     }
 
     @Test
@@ -147,7 +145,7 @@ class IdentityProviderServiceImplTest {
 
         service.save(spec("s3cret", "openid"));
 
-        verify(profiles, never()).provisionForSource(any(), any(), any());
+        verify(sourceSeeder, never()).ensureOidcSource(any());
     }
 
     @Test
