@@ -281,6 +281,23 @@ public final class Permissions {
     }
 
     /**
+     * Expands wildcard tokens to their concrete members WITHOUT keeping the token and WITHOUT read-implication —
+     * the plain permission set a deny/allow LEVEL asserts, over which the resolver makes per-permission decisions
+     * before implication runs. A non-wildcard name passes through unchanged; an invalid token is left verbatim.
+     */
+    public static Set<String> expandWildcards(Collection<String> names) {
+        Set<String> result = new HashSet<>();
+        for (String name : names) {
+            if (PermissionPattern.isValid(name)) {
+                result.addAll(PermissionPattern.of(name).expand());
+            } else {
+                result.add(name);
+            }
+        }
+        return result;
+    }
+
+    /**
      * The tenant-safe {@code <resource>:*} wildcards — one per multi-action tenant resource, none reaching a
      * platform permission or the super token. Seeded to {@code ROLE_ORG_ADMIN} so a tenant admin HOLDS the
      * wildcards it may grant. Built by iterating concrete resource prefixes (never the synthetic {@code *:*})

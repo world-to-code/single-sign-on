@@ -4,7 +4,7 @@ import com.example.sso.user.internal.account.domain.AppUser;
 import com.example.sso.user.internal.group.domain.UserGroupRepository;
 import com.example.sso.user.internal.role.domain.Role;
 import com.example.sso.user.internal.role.domain.RoleRepository;
-import com.example.sso.user.rbac.Permissions;
+import com.example.sso.user.role.RoleHierarchyService;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -17,11 +17,14 @@ import org.springframework.stereotype.Component;
 
 /**
  * Assembles a user's full effective authority set — role names (ROLE_*) for global/system roles plus every
- * permission name, with the role-hierarchy's inherited permissions and the mutating⇒read implications folded
- * in. This is the SINGLE source of the assembly so the two callers can never drift: the login principal
- * ({@link SsoUserDetailsService}) and the id-addressable re-validation of a mapping rule's author
- * ({@code UserService.effectiveAuthorities}). Reads are RLS-scoped to the caller's context, so an author is
- * re-checked in the rule's own tier — the same scope in which they were authorized.
+ * effective permission, with the role-hierarchy's inherited permissions, wildcard expansion, mutating⇒read
+ * implication AND negative permissions (deny) folded in. This is the SINGLE source of the assembly so the two
+ * callers can never drift: the login principal ({@link SsoUserDetailsService}) and the id-addressable
+ * re-validation of a mapping rule's author ({@code UserService.effectiveAuthorities}).
+ *
+ * <p>Grants are RLS-scoped to the caller's context (an author is re-checked in the rule's own tier); denies are
+ * read AS PLATFORM ({@link PermissionDenyReader}) so a deny the caller's scope cannot see still applies. The
+ * per-level subtraction itself is pure ({@link DenyResolver}).
  */
 @Component
 @RequiredArgsConstructor
@@ -31,31 +34,32 @@ class EffectiveAuthorityResolver {
     private final RoleRepository roles;
     private final RbacHydrator hydrator;
     private final RoleInheritanceResolver inheritanceResolver;
+    private final RoleHierarchyService roleHierarchy;
+    private final PermissionDenyReader denyReader;
+    private final DenyResolver denyResolver;
 
     /** The effective authority strings for {@code user} (hydrated in place). Must run inside a transaction. */
     Set<String> authoritiesOf(AppUser user) {
-        // RBAC: role names (ROLE_*) from roles assigned directly AND delegated via the user's groups.
-        // PBAC: permissions carried by those roles AND granted directly, PLUS the permissions of every role
-        // those roles INHERIT down the DAG (permission names ONLY, never an inherited role's name). Finally
-        // each mutating resource:action implies resource:read (Permissions.expandImplied). Every read is explicit.
-        // Wildcard grants ({@code <resource>:*}, {@code *:*}) contribute their concrete members here (the token
-        // is kept so a grant-ceiling check still sees it); each mutating perm then implies its read.
         hydrator.hydrateUser(user);
         List<Role> groupRoles = groupDelegatedRoles(user.getId());
-
         Set<UUID> heldRoleIds = Stream.concat(user.getRoles().stream(), groupRoles.stream())
                 .map(Role::getId).collect(Collectors.toSet());
 
-        Stream<String> directRoleAuthorities = roleAuthorities(user.getRoles());
-        Stream<String> groupRoleAuthorities = roleAuthorities(groupRoles);
-        Stream<String> directPermissions = user.getDirectPermissionNames().stream();
-        Stream<String> inheritedPermissions = inheritanceResolver.effectivePermissionNames(heldRoleIds).stream();
+        // ALLOW, split by specificity level so a more specific grant can out-rank a less specific deny:
+        // USER = direct permissions; ROLE/GROUP = the held roles' + delegated roles' + inherited permissions;
+        // apex = the permissions the user's TOP roles grant (a role-level deny cannot cut these). Role NAMES are
+        // carried separately — a deny never removes a role name (only permissions).
+        Set<String> roleNames = roleNames(user.getRoles(), groupRoles);
+        Set<String> userAllow = new HashSet<>(user.getDirectPermissionNames());
+        Set<String> roleAllow = rolePermissions(user.getRoles(), groupRoles, heldRoleIds);
+        Set<String> apexAllow = inheritanceResolver.effectivePermissionNames(roleHierarchy.apexRolesOf(user.getId()));
 
-        Set<String> granted = Stream.of(directRoleAuthorities, groupRoleAuthorities,
-                        directPermissions, inheritedPermissions)
-                .flatMap(s -> s)
-                .collect(Collectors.toSet());
-        return Permissions.expandGrants(granted);
+        // DENY, read across tiers so an RLS-invisible deny still applies.
+        Set<UUID> groupIds = new HashSet<>(groups.findGroupIdsByMember(user.getId()));
+        DenyRows denies = denyReader.read(user.getId(), heldRoleIds, groupIds, user.getOrgId());
+
+        return denyResolver.effectiveAuthorities(new DenyInputs(userAllow, roleAllow, apexAllow, roleNames,
+                denies.user(), denies.role(), denies.group(), denies.org(), denies.platform()));
     }
 
     /** Roles delegated to the user via any (RLS-visible) group they belong to, with permission names hydrated. */
@@ -65,14 +69,22 @@ class EffectiveAuthorityResolver {
     }
 
     /**
-     * A role's authorities: its permission names always, plus its name (ROLE_*) for a GLOBAL role or an org's
-     * provisioned SYSTEM role (the well-known name authorization and console-entry assignment key on). A
-     * tenant's CUSTOM role contributes only its permissions, so an org role named e.g. {@code ROLE_ADMIN}
-     * cannot escalate. Org-scoped roles resolve here only when this runs in that org's context.
+     * The role NAMES (ROLE_*) a user carries: a GLOBAL role or an org's provisioned SYSTEM role contributes its
+     * name (the well-known name authorization and console-entry assignment key on); a tenant's CUSTOM role
+     * contributes only its permissions, so an org role named e.g. {@code ROLE_ADMIN} cannot escalate.
      */
-    private Stream<String> roleAuthorities(Collection<Role> roles) {
-        return roles.stream().flatMap(role -> Stream.concat(
-                role.getOrgId() == null || role.isSystem() ? Stream.of(role.getName()) : Stream.empty(),
-                role.getPermissionNames().stream()));
+    private Set<String> roleNames(Collection<Role> direct, Collection<Role> delegated) {
+        return Stream.concat(direct.stream(), delegated.stream())
+                .filter(role -> role.getOrgId() == null || role.isSystem())
+                .map(Role::getName)
+                .collect(Collectors.toSet());
+    }
+
+    /** Every permission the held + delegated roles carry, plus everything they inherit down the DAG. */
+    private Set<String> rolePermissions(Collection<Role> direct, Collection<Role> delegated, Set<UUID> heldRoleIds) {
+        Set<String> permissions = new HashSet<>(inheritanceResolver.effectivePermissionNames(heldRoleIds));
+        Stream.concat(direct.stream(), delegated.stream())
+                .forEach(role -> permissions.addAll(role.getPermissionNames()));
+        return permissions;
     }
 }
