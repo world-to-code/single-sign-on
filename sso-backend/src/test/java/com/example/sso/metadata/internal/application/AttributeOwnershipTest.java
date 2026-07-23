@@ -3,6 +3,7 @@ package com.example.sso.metadata.internal.application;
 import com.example.sso.metadata.AttributeDataType;
 import com.example.sso.metadata.AttributeDefinition;
 import com.example.sso.metadata.AttributeDefinitionService;
+import com.example.sso.metadata.AttributeKeyPolicyGuard;
 import com.example.sso.metadata.AttributeSource;
 import com.example.sso.metadata.AttributeValueGrantGuard;
 import com.example.sso.metadata.EntityKind;
@@ -52,14 +53,16 @@ class AttributeOwnershipTest {
     @Mock private OrgTierGuard tierGuard;
     @Mock private ApplicationEventPublisher events;
     @Mock private AttributeValueGrantGuard grantGuard;
+    @Mock private AttributeKeyPolicyGuard policyGuard;
 
     private AttributeServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new AttributeServiceImpl(attributes, definitions, tierGuard, events, providerOf(grantGuard));
+        service = new AttributeServiceImpl(
+                attributes, definitions, tierGuard, events, providerOf(grantGuard), policyGuard);
         lenient().when(grantGuard.keysBeyondAuthority(any())).thenReturn(Set.of());
-        lenient().when(grantGuard.keysBeyondAuthorityToRemove(any())).thenReturn(Set.of());
+        lenient().when(policyGuard.keysBeyondAuthority(any())).thenReturn(Set.of());
         lenient().when(tierGuard.currentTier()).thenReturn(ORG);
         lenient().when(attributes.findByEntityKindAndEntityIdAndAttrKeyAndOrgId(any(), any(), any(), any()))
                 .thenReturn(List.of());
@@ -203,19 +206,6 @@ class AttributeOwnershipTest {
         verify(attributes, never()).save(any());
     }
 
-    /**
-     * Removal counts. NOT_EXISTS and NOT_EQUALS are real operators, so taking a value away can make a user
-     * match a rule they did not match before — the same grant, reached by deleting instead of writing.
-     */
-    @Test
-    void refusesToRemoveAKeyWhoseAbsenceDecidesAGrant() {
-        when(grantGuard.keysBeyondAuthorityToRemove(Set.of("department"))).thenReturn(Set.of("department"));
-        lenient().when(definitions.definitionOf(EntityKind.USER, "department")).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> service.remove(EntityKind.USER, ENTITY, "department"))
-                .isInstanceOf(ForbiddenException.class);
-    }
-
     /** A group tag reaches those rules too — it is unioned into every member's attributes. */
     @Test
     void refusesAGroupTagWhoseValueDecidesAGrant() {
@@ -248,6 +238,62 @@ class AttributeOwnershipTest {
                 .doesNotThrowAnyException();
     }
 
+    // --- values that decide a POLICY ---------------------------------------------------------------------
+
+    /**
+     * A policy binding tests an attribute to pick a login/session policy, re-read every request. Writing the
+     * value it reads moves the target's posture, so it needs the authority to set that policy — the opposite
+     * failure the grant guard covers, gated the same way.
+     */
+    @Test
+    void refusesWritingAKeyWhosePolicyTheActorCannotSet() {
+        when(policyGuard.keysBeyondAuthority(Set.of("clearance"))).thenReturn(Set.of("clearance"));
+        lenient().when(definitions.definitionOf(EntityKind.USER, "clearance")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.set(EntityKind.USER, ENTITY, "clearance", "secret"))
+                .isInstanceOf(ForbiddenException.class);
+
+        verify(attributes, never()).save(any());
+    }
+
+    /**
+     * The sharper edge, and the reason removal is guarded at all. A binding tightens on PRESENCE, so REMOVING
+     * the value it reads drops the target back to the org's looser default — a posture DOWNGRADE. An admin who
+     * cannot set that policy must not be able to reach it by deleting an attribute either.
+     */
+    @Test
+    void refusesRemovingAKeyWhosePolicyTheActorCannotSet() {
+        when(policyGuard.keysBeyondAuthority(Set.of("clearance"))).thenReturn(Set.of("clearance"));
+        lenient().when(definitions.definitionOf(EntityKind.USER, "clearance")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.remove(EntityKind.USER, ENTITY, "clearance"))
+                .isInstanceOf(ForbiddenException.class);
+
+        verify(attributes, never()).deleteAll(any());
+    }
+
+    /** A group tag is unioned into every member's attributes, so a binding reads it too — same ceiling. */
+    @Test
+    void refusesAGroupTagWhosePolicyTheActorCannotSet() {
+        when(policyGuard.keysBeyondAuthority(Set.of("clearance"))).thenReturn(Set.of("clearance"));
+        lenient().when(definitions.definitionOf(EntityKind.GROUP, "clearance")).thenReturn(Optional.empty());
+        lenient().when(definitions.definitionOf(EntityKind.USER, "clearance")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.set(EntityKind.GROUP, ENTITY, "clearance", "secret"))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    /** An application tag is not merged into any subject's predicate list, so no binding reads it. */
+    @Test
+    void anApplicationTagIsNotPolicyGoverned() {
+        when(definitions.definitionOf(EntityKind.APPLICATION, "clearance")).thenReturn(Optional.empty());
+
+        assertThatCode(() -> service.set(EntityKind.APPLICATION, ENTITY, "clearance", "secret"))
+                .doesNotThrowAnyException();
+
+        verify(policyGuard, never()).keysBeyondAuthority(any());
+    }
+
     /** The service resolves the guard lazily to break a construction cycle; the test supplies it directly. */
     private ObjectProvider<AttributeValueGrantGuard> providerOf(AttributeValueGrantGuard guard) {
         return new ObjectProvider<>() {
@@ -274,19 +320,23 @@ class AttributeOwnershipTest {
     }
 
     /**
-     * And the direction that must stay open. Taking away the value that GRANTED a role retracts it, so an
+     * The direction that must stay open. Taking away the value that GRANTED a role retracts it, so an
      * administrator who could not have granted that role must still be able to remove it — a guard that locks
-     * out de-escalation is its own incident. Only a negative operator makes a removal a grant, and only that
-     * is asked here.
+     * out de-escalation is its own incident. Removal is never bounded by the write ceiling: even a key whose
+     * WRITE the actor may not decide (its {@code keysBeyondAuthority} names it) is still removable. Removal can
+     * only be a grant through a negative operator, which mapping rules reject at creation, so it never is.
      */
     @Test
-    void removingAKeyThatMerelyGrantedARoleIsStillAllowed() {
-        when(grantGuard.keysBeyondAuthorityToRemove(Set.of("department"))).thenReturn(Set.of());
-        lenient().when(grantGuard.keysBeyondAuthority(Set.of("department"))).thenReturn(Set.of("department"));
+    void removingAKeyWhoseWriteIsGrantGovernedIsStillAllowed() {
+        // The write ceiling would name this key, yet removal must proceed — so it must not consult the ceiling
+        // at all. The setUp default (empty) is left in place; the verify below proves removal never asks.
         when(definitions.definitionOf(EntityKind.USER, "department")).thenReturn(Optional.empty());
 
         assertThatCode(() -> service.remove(EntityKind.USER, ENTITY, "department"))
                 .doesNotThrowAnyException();
+
+        // Removal must not even consult the write ceiling, or a grant-governed key becomes un-retractable.
+        verify(grantGuard, never()).keysBeyondAuthority(any());
     }
 
     // --- bulk write --------------------------------------------------------------------------------------
@@ -328,5 +378,19 @@ class AttributeOwnershipTest {
                 .isInstanceOf(ConflictException.class);
 
         verify(attributes, never()).save(any());
+    }
+
+    /**
+     * The grant ceiling is asked ONCE for the whole key set, not per key. The guard reaches the mapping rules,
+     * so a per-key call re-ran that lookup for every attribute a bulk import names — the N+1 this batches away.
+     */
+    @Test
+    void addAllAsksTheGrantCeilingOnceForAllKeys() {
+        when(definitions.definitionOf(any(), any())).thenReturn(Optional.empty());
+
+        service.addAll(EntityKind.USER, ENTITY,
+                Map.of("team", List.of("platform"), "level", List.of("senior")));
+
+        verify(grantGuard, times(1)).keysBeyondAuthority(Set.of("team", "level"));
     }
 }

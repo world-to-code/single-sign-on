@@ -1,6 +1,7 @@
 package com.example.sso.metadata.internal.application;
 
 import com.example.sso.metadata.Attribute;
+import com.example.sso.metadata.AttributeKeyPolicyGuard;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityAttributeChangedEvent;
 import com.example.sso.metadata.AttributeValueGrantGuard;
@@ -51,6 +52,14 @@ class AttributeServiceImpl implements AttributeService {
      * instead, which is loud.
      */
     private final ObjectProvider<AttributeValueGrantGuard> grantGuard;
+    /**
+     * The policy-binding twin of {@link #grantGuard}. A binding tests an attribute to pick a stricter auth or
+     * session policy, re-read on every request, so writing OR removing the value it reads moves a live session's
+     * posture — and removal is the sharper edge: dropping the value falls the target back to the looser org
+     * default. Whoever moves posture must hold the authority to set that policy. Injected directly, not lazily:
+     * the portal impl reads only the bindings, never back into this service, so there is no construction cycle.
+     */
+    private final AttributeKeyPolicyGuard policyGuard;
 
     @Override
     @Transactional(readOnly = true)
@@ -158,10 +167,15 @@ class AttributeServiceImpl implements AttributeService {
     @Override
     @Transactional
     public void addAll(EntityKind kind, String entityId, Map<String, List<String>> values) {
+        // Ownership is per key (a group tag re-checks the USER key too); the grant ceiling is asked ONCE over
+        // the whole key set. The guard reaches the mapping rules, so asking it per key re-ran that lookup for
+        // every attribute of a bulk write — a bulk import names many keys at once.
+        values.keySet().forEach(key -> requireLocallyOwned(kind, key));
+        requireMayDecideGrants(kind, values.keySet());
+        requireMayDecidePolicy(kind, values.keySet());
         UUID tier = tierGuard.currentTier();
         boolean wrote = false;
         for (Map.Entry<String, List<String>> attribute : values.entrySet()) {
-            requireWritable(kind, attribute.getKey());
             wrote |= writeValues(kind, entityId, attribute.getKey(), attribute.getValue(), tier);
         }
         if (wrote) {
@@ -214,9 +228,12 @@ class AttributeServiceImpl implements AttributeService {
         if (keys == null || keys.isEmpty()) {
             return;
         }
-        keys.forEach(key -> requireRemovable(kind, key)); // refuse the whole set before deleting any of it
-        UUID tier = tierGuard.currentTier();
+        // Refuse the whole set before deleting any of it: ownership per key, the policy ceiling once for all of
+        // them (a binding removal loosens posture just as a single remove does).
+        keys.forEach(key -> requireLocallyOwned(kind, key));
         List<String> distinct = keys.stream().distinct().toList();
+        requireMayDecidePolicy(kind, distinct);
+        UUID tier = tierGuard.currentTier();
         // One statement, and it returns the row count. A derived delete would SELECT every row and issue a
         // DELETE each; the count is what matters more, because this retirement can retract an ABAC-granted
         // role and a delete that matched nothing must not look like one that worked.
@@ -314,33 +331,60 @@ class AttributeServiceImpl implements AttributeService {
      */
     private void requireWritable(EntityKind kind, String key) {
         requireLocallyOwned(kind, key);
-        requireMayDecideGrants(kind, key, false);
+        requireMayDecideGrants(kind, Set.of(key));
+        requireMayDecidePolicy(kind, Set.of(key));
     }
 
-    /** Removing is bounded only by the rules that confer on a key's ABSENCE — see AttributeValueGrantGuard. */
+    /**
+     * Removal carries no mapping-rule GRANT ceiling: a grant is on the PRESENCE of a value (operators are
+     * positive-only — {@link com.example.sso.mapping.MappingRuleService} rejects {@code NOT_EXISTS}/
+     * {@code NOT_EQUALS} at creation), so taking a value away can only retract a grant, never make one, and an
+     * administrator must always be able to retract. But a policy binding is the OPPOSITE polarity: it tightens
+     * on presence, so removing the value it reads drops the target back to the looser org default — a posture
+     * move that needs the same policy authority a write does. So removal keeps the policy ceiling, not the grant one.
+     */
     private void requireRemovable(EntityKind kind, String key) {
         requireLocallyOwned(kind, key);
-        requireMayDecideGrants(kind, key, true);
+        requireMayDecidePolicy(kind, Set.of(key));
     }
 
     /**
      * A mapping rule can confer a role on whoever carries a value, so writing the key it reads is a grant by
      * another route. Group membership works the same way and is already refused unless the actor could confer
-     * the group's roles; this is that rule, for the other route.
+     * the group's roles; this is that rule, for the other route. The ceiling is asked over the whole key set in
+     * one call — the guard reaches the mapping rules, so a per-key call re-ran that lookup for every key.
      *
      * <p>USER and GROUP only: a group tag is unioned into every member's attributes and tested by the same
      * predicate, so it reaches rules exactly as a user attribute does. Application and resource tags are not.
      */
-    private void requireMayDecideGrants(EntityKind kind, String key, boolean removing) {
+    private void requireMayDecideGrants(EntityKind kind, Collection<String> keys) {
         if (kind != EntityKind.USER && kind != EntityKind.GROUP) {
             return;
         }
-        AttributeValueGrantGuard guard = grantGuard.getObject();
-        Set<String> beyond = removing
-                ? guard.keysBeyondAuthorityToRemove(Set.of(key))
-                : guard.keysBeyondAuthority(Set.of(key));
+        Set<String> beyond = grantGuard.getObject().keysBeyondAuthority(keys);
         if (!beyond.isEmpty()) {
-            throw ForbiddenException.of("metadata.attribute.grantGoverned", key);
+            throw ForbiddenException.of("metadata.attribute.grantGoverned", beyond.iterator().next());
+        }
+    }
+
+    /**
+     * A policy binding decides a live session's auth/session policy by testing an attribute, re-read every
+     * request, so writing OR removing the value it reads moves the target's posture. Whoever moves it must hold
+     * the authority to set that policy themselves — the same ceiling {@code AttributeKeyPolicyGuard} enforces
+     * when a source is aimed at the key. Asked over the whole key set in one call, for the reason
+     * {@link #requireMayDecideGrants} gives.
+     *
+     * <p>USER and GROUP only, and the key NAME is enough for both: a binding condition carries only the key, and
+     * a group tag is unioned into every member's attributes, so a binding reading the key matches whether it was
+     * set on a user or on a group they belong to.
+     */
+    private void requireMayDecidePolicy(EntityKind kind, Collection<String> keys) {
+        if (kind != EntityKind.USER && kind != EntityKind.GROUP) {
+            return;
+        }
+        Set<String> beyond = policyGuard.keysBeyondAuthority(keys);
+        if (!beyond.isEmpty()) {
+            throw ForbiddenException.of("metadata.attribute.policyGoverned", beyond.iterator().next());
         }
     }
 

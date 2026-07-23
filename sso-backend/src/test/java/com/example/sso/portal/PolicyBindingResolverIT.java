@@ -383,8 +383,10 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
                 () -> organizations.create(new NewOrganization("pbt-attr-b-" + suffix(), "B")).id());
         createdOrgs.add(orgA);
         createdOrgs.add(orgB);
-        orgContext.runAsPlatform(() -> bindings.saveAndFlush(attrSession(app, "dept", "eng", sess5, 10)));
+        // Seed the attribute before the binding exists: writing a value a binding reads now needs policy
+        // authority (AttributeKeyPolicyGuard), which this resolver-focused test has no actor for.
         orgContext.runInOrg(orgA, () -> attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "eng"));
+        orgContext.runAsPlatform(() -> bindings.saveAndFlush(attrSession(app, "dept", "eng", sess5, 10)));
 
         assertThat(orgContext.callInOrg(orgA, () -> resolver.resolveSessionPolicy(kim, APP, app)))
                 .map(SessionPolicyDetails::getId).contains(sess5);
@@ -474,8 +476,9 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
                 () -> organizations.create(new NewOrganization("pbt-inh-b-" + suffix(), "B")).id());
         createdOrgs.add(orgA);
         createdOrgs.add(orgB);
-        orgContext.runAsPlatform(() -> bindings.saveAndFlush(attrSession(app, "dept", "eng", sess5, 10)));
+        // Attribute before binding: writing a binding-read key otherwise needs policy authority this test lacks.
         orgContext.runInOrg(orgA, () -> attributes.set(EntityKind.GROUP, marketingGroupId.toString(), "dept", "eng"));
+        orgContext.runAsPlatform(() -> bindings.saveAndFlush(attrSession(app, "dept", "eng", sess5, 10)));
 
         assertThat(orgContext.callInOrg(orgA, () -> resolver.resolveSessionPolicy(kim, APP, app)))
                 .map(SessionPolicyDetails::getId).contains(sess5);
@@ -661,13 +664,16 @@ class PolicyBindingResolverIT extends AbstractIntegrationTest {
         UUID org = orgContext.callAsPlatform(
                 () -> organizations.create(new NewOrganization("pbt-tvc-" + suffix(), "PBT")).id());
         createdOrgs.add(org);
-        orgContext.runAsPlatform(() -> attrSessionGroupIn(app, List.of(AttributePredicate.equals("dept", "eng"),
-                AttributePredicate.equals("level", "senior")), sess15, 99, null));           // global, 2 conditions
+        // Seed kim's attributes before any binding reads them: a binding-read key otherwise needs policy
+        // authority this resolver test has no actor for.
         orgContext.runInOrg(org, () -> {
             attributes.set(EntityKind.USER, kim.getId().toString(), "dept", "eng");
             attributes.set(EntityKind.USER, kim.getId().toString(), "level", "senior");
-            attrSessionGroupIn(app, List.of(AttributePredicate.equals("dept", "eng")), sess5, 1, org); // tenant, 1
         });
+        orgContext.runAsPlatform(() -> attrSessionGroupIn(app, List.of(AttributePredicate.equals("dept", "eng"),
+                AttributePredicate.equals("level", "senior")), sess15, 99, null));           // global, 2 conditions
+        orgContext.runInOrg(org,
+                () -> attrSessionGroupIn(app, List.of(AttributePredicate.equals("dept", "eng")), sess5, 1, org)); // tenant, 1
         assertThat(orgContext.callInOrg(org, () -> resolver.resolveSessionPolicy(kim, APP, app)))
                 .map(SessionPolicyDetails::getId).contains(sess5);
     }

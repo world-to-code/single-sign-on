@@ -16,10 +16,10 @@ import java.util.Set;
  * which users satisfy the rule — without ever needing authority over its target". For a locally-editable key
  * that person is whoever writes the value, and its branch returned true unconditionally.
  *
- * <p>Removal is asked SEPARATELY, and deliberately. Most removal de-escalates — taking away the value that
- * granted a role retracts it — and an administrator must always be able to do that even when they could not
- * have granted the role, or the guard becomes a lock on remediation. Only a negative operator
- * ({@code NOT_EXISTS}, {@code NOT_EQUALS}) turns a removal into a grant, so only those bound it.
+ * <p>Only WRITES are bounded. Removal de-escalates — taking away the value that granted a role retracts it —
+ * and because mapping-rule operators are positive-only ({@code NOT_EXISTS}/{@code NOT_EQUALS} are rejected at
+ * rule creation), removal can never make a grant, so an administrator may always retract. Adding a negative
+ * operator later would make removal a grant vector and would need a symmetric ceiling here.
  *
  * <p>Declared here and implemented in {@code admin}, which already reaches both the rules and the grant
  * ceiling; metadata depends on neither, and the reverse edge would be a cycle.
@@ -33,10 +33,4 @@ public interface AttributeValueGrantGuard {
      * <p>Fails CLOSED: an unresolved actor may write none of them.
      */
     Set<String> keysBeyondAuthority(Collection<String> attrKeys);
-
-    /**
-     * The same, for REMOVING these keys: only the rules that confer on their ABSENCE bound it. Empty means the
-     * removal may proceed.
-     */
-    Set<String> keysBeyondAuthorityToRemove(Collection<String> attrKeys);
 }

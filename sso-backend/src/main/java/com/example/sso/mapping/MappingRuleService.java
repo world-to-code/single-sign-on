@@ -41,14 +41,4 @@ public interface MappingRuleService {
      * <p>Keys nothing reads are absent from the result rather than mapped to an empty set.
      */
     Map<String, Set<MappingTarget>> privilegeTargetsByKey(Collection<String> attrKeys);
-
-    /**
-     * The same question for REMOVAL: the privilege-granting targets of rules that confer on the ABSENCE of
-     * these keys — those reading them through a negative operator ({@code NOT_EXISTS}, {@code NOT_EQUALS}).
-     *
-     * <p>Removal is asked separately because most of it de-escalates: taking away the value that granted a
-     * role retracts it, and an administrator must always be able to do that even when they could not have
-     * granted it. Only a negative operator turns a removal into a grant.
-     */
-    Map<String, Set<MappingTarget>> privilegeTargetsGrantedByAbsence(Collection<String> attrKeys);
 }

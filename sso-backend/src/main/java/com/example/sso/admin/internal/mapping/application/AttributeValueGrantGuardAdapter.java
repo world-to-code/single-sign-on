@@ -34,11 +34,6 @@ class AttributeValueGrantGuardAdapter implements AttributeValueGrantGuard {
         return beyond(rules.privilegeTargetsByKey(attrKeys));
     }
 
-    @Override
-    public Set<String> keysBeyondAuthorityToRemove(Collection<String> attrKeys) {
-        return beyond(rules.privilegeTargetsGrantedByAbsence(attrKeys));
-    }
-
     private Set<String> beyond(Map<String, Set<MappingTarget>> decided) {
         if (decided.isEmpty()) {
             return Set.of();
