@@ -262,6 +262,30 @@ sso:
     log-code: true                                   # DEV: LoggingSmsSender prints the code (prod overrides to false)
   federation:
     http-timeout: PT10S                              # connect/read timeout for upstream OIDC discovery + token calls
+    # One-click provider presets the admin console offers as cards. Data, not code: a new vendor is an entry
+    # here. issuer-template may carry {key} placeholders the console fills from the matching field; the server
+    # re-validates the resolved issuer on write regardless, so a preset only pre-fills the form.
+    presets:
+      - id: google
+        display-name: Google
+        issuer-template: https://accounts.google.com
+        default-scopes: openid email profile
+      - id: entra
+        display-name: Microsoft Entra ID
+        issuer-template: https://login.microsoftonline.com/{tenant}/v2.0
+        default-scopes: openid email profile
+        fields:
+          - key: tenant
+            label: Directory (tenant) ID
+            placeholder: contoso.onmicrosoft.com or a directory GUID
+      - id: okta
+        display-name: Okta
+        issuer-template: https://{domain}
+        default-scopes: openid email profile
+        fields:
+          - key: domain
+            label: Okta domain
+            placeholder: dev-12345.okta.com
   onboarding:
     min-password-length: 8                           # minimum length an invitee's chosen password must meet
     invitation-ttl: 72h                              # how long a set-password invitation stays redeemable

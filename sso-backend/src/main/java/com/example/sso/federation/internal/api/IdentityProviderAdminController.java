@@ -2,6 +2,8 @@ package com.example.sso.federation.internal.api;
 
 import com.example.sso.federation.IdentityProviderService;
 import com.example.sso.federation.IdentityProviderView;
+import com.example.sso.federation.internal.application.FederationPresetCatalog;
+import com.example.sso.federation.internal.application.FederationPresetView;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.rbac.Permissions;
@@ -28,11 +30,23 @@ import org.springframework.web.bind.annotation.RestController;
 public class IdentityProviderAdminController {
 
     private final IdentityProviderService service;
+    private final FederationPresetCatalog presetCatalog;
 
     @GetMapping
     @RequirePermission(Permissions.IDENTITY_PROVIDER_READ)
     public List<IdentityProviderView> list() {
         return service.list();
+    }
+
+    /**
+     * The one-click provider presets (Google, Entra, …) the console offers as cards. A literal path, so it
+     * binds ahead of the {@code /{alias}} pattern. Read-gated like the rest of the surface — the presets carry
+     * no secrets, but the whole identity-provider config is admin-only.
+     */
+    @GetMapping("/presets")
+    @RequirePermission(Permissions.IDENTITY_PROVIDER_READ)
+    public List<FederationPresetView> presets() {
+        return presetCatalog.list();
     }
 
     @GetMapping("/{alias}")

@@ -2,9 +2,14 @@ package com.example.sso.federation.internal.api;
 
 import com.example.sso.federation.IdentityProviderService;
 import com.example.sso.federation.IdentityProviderView;
+import com.example.sso.federation.internal.application.FederationPresetCatalog;
+import com.example.sso.federation.internal.application.FederationPresetField;
+import com.example.sso.federation.internal.application.FederationPresetProperties;
+import com.example.sso.federation.internal.application.FederationPresetView;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.rbac.Permissions;
+import java.util.List;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,7 +22,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -33,11 +40,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class IdentityProviderAdminControllerTest {
 
     private final IdentityProviderService service = mock(IdentityProviderService.class);
+    private final FederationPresetCatalog presetCatalog = new FederationPresetCatalog(
+            new FederationPresetProperties(List.of(
+                    new FederationPresetView("google", "Google", "https://accounts.google.com",
+                            "openid email profile", List.of()),
+                    new FederationPresetView("entra", "Microsoft Entra ID",
+                            "https://login.microsoftonline.com/{tenant}/v2.0", "openid email profile",
+                            List.of(new FederationPresetField("tenant", "Directory (tenant) ID", "a GUID"))))));
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
-        mvc = MockMvcBuilders.standaloneSetup(new IdentityProviderAdminController(service)).build();
+        mvc = MockMvcBuilders.standaloneSetup(
+                new IdentityProviderAdminController(service, presetCatalog)).build();
     }
 
     private String body(String displayName, String issuer, String clientId) {
@@ -85,10 +100,28 @@ class IdentityProviderAdminControllerTest {
         assertThat(permissionOf("delete", String.class)).isEqualTo(Permissions.IDENTITY_PROVIDER_WRITE);
         assertThat(permissionOf("list")).isEqualTo(Permissions.IDENTITY_PROVIDER_READ);
         assertThat(permissionOf("get", String.class)).isEqualTo(Permissions.IDENTITY_PROVIDER_READ);
+        assertThat(permissionOf("presets")).isEqualTo(Permissions.IDENTITY_PROVIDER_READ);
 
         assertThat(isStepUpGated("save", String.class, IdentityProviderRequest.class))
                 .as("save is step-up gated").isTrue();
         assertThat(isStepUpGated("delete", String.class)).as("delete is step-up gated").isTrue();
+    }
+
+    /**
+     * The card catalog: {@code GET /presets} returns the configured presets with their issuer templates and
+     * extra fields. The literal {@code /presets} must bind ahead of the {@code /{alias}} pattern — otherwise it
+     * would resolve as {@code get("presets")} and hit the provider service instead of the catalog.
+     */
+    @Test
+    void presetsReturnsTheCardCatalogAndBindsAheadOfTheAliasPattern() throws Exception {
+        mvc.perform(get("/api/admin/identity-providers/presets"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value("google"))
+                .andExpect(jsonPath("$[0].issuerTemplate").value("https://accounts.google.com"))
+                .andExpect(jsonPath("$[1].id").value("entra"))
+                .andExpect(jsonPath("$[1].fields[0].key").value("tenant"));
+
+        verify(service, never()).get("presets"); // not misrouted to the {alias} handler
     }
 
     private IdentityProviderView view() {
