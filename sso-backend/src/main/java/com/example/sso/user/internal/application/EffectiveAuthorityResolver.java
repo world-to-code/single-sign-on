@@ -38,6 +38,8 @@ class EffectiveAuthorityResolver {
         // PBAC: permissions carried by those roles AND granted directly, PLUS the permissions of every role
         // those roles INHERIT down the DAG (permission names ONLY, never an inherited role's name). Finally
         // each mutating resource:action implies resource:read (Permissions.expandImplied). Every read is explicit.
+        // Wildcard grants ({@code <resource>:*}, {@code *:*}) contribute their concrete members here (the token
+        // is kept so a grant-ceiling check still sees it); each mutating perm then implies its read.
         hydrator.hydrateUser(user);
         List<Role> groupRoles = groupDelegatedRoles(user.getId());
 
@@ -53,7 +55,7 @@ class EffectiveAuthorityResolver {
                         directPermissions, inheritedPermissions)
                 .flatMap(s -> s)
                 .collect(Collectors.toSet());
-        return Permissions.expandImplied(granted);
+        return Permissions.expandGrants(granted);
     }
 
     /** Roles delegated to the user via any (RLS-visible) group they belong to, with permission names hydrated. */

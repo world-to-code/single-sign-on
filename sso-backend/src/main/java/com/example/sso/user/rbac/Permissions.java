@@ -4,6 +4,7 @@ import com.example.sso.user.role.Roles;
 
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -227,6 +228,78 @@ public final class Permissions {
     /** The catalog a tenant (org) admin may see and grant — the full catalog minus {@link #PLATFORM}. */
     public static List<String> tenantGrantable() {
         return ALL.stream().filter(perm -> !PLATFORM.contains(perm)).toList();
+    }
+
+    /** Catalog permissions of the form {@code <resource>:<action>} for {@code resource} (exactly one colon). */
+    public static Set<String> actionsOf(String resource) {
+        Set<String> members = new LinkedHashSet<>();
+        for (String permission : ALL) {
+            int colon = permission.indexOf(':');
+            if (colon > 0 && permission.indexOf(':', colon + 1) == -1
+                    && permission.substring(0, colon).equals(resource)) {
+                members.add(permission);
+            }
+        }
+        return members;
+    }
+
+    /** Whether {@code resource} carries a finer three-segment sub-scope (e.g. {@code audit:read:pii}). */
+    public static boolean hasSubScopes(String resource) {
+        String prefix = resource + ":";
+        return ALL.stream().anyMatch(permission ->
+                permission.startsWith(prefix) && permission.indexOf(':', prefix.length()) != -1);
+    }
+
+    /** A grantable NAME is a catalog permission OR a valid wildcard ({@code <resource>:*} / {@code *:*}). */
+    public static boolean isGrantableName(String name) {
+        return CATALOG.contains(name) || PermissionPattern.isValid(name);
+    }
+
+    /**
+     * Whether granting {@code name} reaches the PLATFORM tier: a platform-only permission, or the super wildcard
+     * {@code *:*} (whose expansion includes the platform catalog). A valid {@code <resource>:*} is never platform
+     * — its resource has no platform member — so only these two forms are platform-tier grants.
+     */
+    public static boolean isPlatformGrant(String name) {
+        return isPlatform(name) || PermissionPattern.SUPER.equals(name);
+    }
+
+    /**
+     * Expands a holder's granted names into effective authorities: each wildcard token contributes its concrete
+     * members (the TOKEN is kept, so the grant-ceiling "hold what you hand out" check can still see it), then
+     * every mutating perm implies its read. Wildcards expand FIRST, then {@link #expandImplied}. Tolerant of an
+     * invalid stored token (left as-is), which the write path prevents but resolution must never throw on.
+     */
+    public static Set<String> expandGrants(Collection<String> granted) {
+        Set<String> result = new HashSet<>(granted);
+        for (String name : granted) {
+            if (PermissionPattern.isValid(name)) {
+                result.addAll(PermissionPattern.of(name).expand());
+            }
+        }
+        return expandImplied(result);
+    }
+
+    /**
+     * The tenant-safe {@code <resource>:*} wildcards — one per multi-action tenant resource, none reaching a
+     * platform permission or the super token. Seeded to {@code ROLE_ORG_ADMIN} so a tenant admin HOLDS the
+     * wildcards it may grant. Built by iterating concrete resource prefixes (never the synthetic {@code *:*})
+     * and keeping only valid ones, so a platform-reaching wildcard can never enter a tenant-seedable set.
+     */
+    public static List<String> tenantWildcards() {
+        return tenantGrantable().stream()
+                .map(Permissions::resourceOf)
+                .distinct()
+                .filter(resource -> actionsOf(resource).size() >= 2)
+                .map(PermissionPattern::resourceWildcard)
+                .filter(PermissionPattern::isValid)
+                .toList();
+    }
+
+    /** The resource segment (before the first colon) of a permission name. */
+    private static String resourceOf(String permission) {
+        int colon = permission.indexOf(':');
+        return colon > 0 ? permission.substring(0, colon) : permission;
     }
 
     private Permissions() {

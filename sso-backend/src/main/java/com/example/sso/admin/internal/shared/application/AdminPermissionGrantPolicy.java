@@ -30,7 +30,7 @@ public class AdminPermissionGrantPolicy implements PermissionGrantPolicy {
 
     @Override
     public boolean mayGrant(String permission) {
-        return !Permissions.isPlatform(permission) || accessPolicy.isCurrentActorUnscoped();
+        return !Permissions.isPlatformGrant(permission) || accessPolicy.isCurrentActorUnscoped();
     }
 
     @Override

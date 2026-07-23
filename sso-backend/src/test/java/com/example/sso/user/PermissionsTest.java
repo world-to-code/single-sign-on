@@ -1,5 +1,6 @@
 package com.example.sso.user;
 
+import com.example.sso.user.rbac.PermissionPattern;
 import com.example.sso.user.rbac.Permissions;
 
 import org.junit.jupiter.api.Test;
@@ -202,6 +203,74 @@ class PermissionsTest {
         for (String perm : Permissions.tenantGrantable()) {
             assertThat(Permissions.expandImplied(Set.of(perm)))
                     .noneMatch(Permissions::isPlatform);
+        }
+    }
+
+    // --- wildcard support (increment 1) ---
+
+    @Test
+    void actionsOfReturnsTheTwoSegmentMembersOfAResource() {
+        assertThat(Permissions.actionsOf("user")).containsExactlyInAnyOrder(
+                Permissions.USER_READ, Permissions.USER_CREATE, Permissions.USER_UPDATE, Permissions.USER_DELETE);
+        // A finer three-segment sub-scope (audit:read:pii) is NOT a two-segment action of audit.
+        assertThat(Permissions.actionsOf("audit")).containsExactly(Permissions.AUDIT_READ);
+        assertThat(Permissions.actionsOf("nonesuch")).isEmpty();
+    }
+
+    @Test
+    void hasSubScopesIsTrueOnlyForAResourceCarryingThreeSegmentPerms() {
+        assertThat(Permissions.hasSubScopes("audit")).isTrue();
+        assertThat(Permissions.hasSubScopes("user")).isFalse();
+    }
+
+    @Test
+    void isGrantableNameAcceptsCatalogPermsAndValidWildcards() {
+        assertThat(Permissions.isGrantableName(Permissions.USER_READ)).isTrue();
+        assertThat(Permissions.isGrantableName("user:*")).isTrue();
+        assertThat(Permissions.isGrantableName(PermissionPattern.SUPER)).isTrue();
+        assertThat(Permissions.isGrantableName("organization:*")).isFalse(); // reaches platform members
+        assertThat(Permissions.isGrantableName("audit:*")).isFalse();        // finer sub-scopes
+        assertThat(Permissions.isGrantableName("bogus:read")).isFalse();
+    }
+
+    @Test
+    void isPlatformGrantFlagsPlatformPermsAndTheSuperTokenOnly() {
+        assertThat(Permissions.isPlatformGrant(PermissionPattern.SUPER)).isTrue();
+        assertThat(Permissions.isPlatformGrant(Permissions.ORG_CREATE)).isTrue();
+        assertThat(Permissions.isPlatformGrant("user:*")).isFalse(); // a resource wildcard is never platform
+        assertThat(Permissions.isPlatformGrant(Permissions.USER_READ)).isFalse();
+    }
+
+    @Test
+    void expandGrantsKeepsTheWildcardTokenAndAddsItsConcreteMembers() {
+        // The TOKEN survives (the grant ceiling checks it) AND the concrete members appear (endpoint
+        // hasAuthority is exact-match). A mutating member still implies its read.
+        assertThat(Permissions.expandGrants(Set.of("user:*")))
+                .contains("user:*", Permissions.USER_READ, Permissions.USER_CREATE,
+                        Permissions.USER_UPDATE, Permissions.USER_DELETE);
+        assertThat(Permissions.expandGrants(Set.of(Permissions.USER_UPDATE)))
+                .contains(Permissions.USER_UPDATE, Permissions.USER_READ);
+    }
+
+    @Test
+    void expandGrantsOfTheSuperTokenIsTheWholeCatalog() {
+        assertThat(Permissions.expandGrants(Set.of(PermissionPattern.SUPER)))
+                .contains(PermissionPattern.SUPER)
+                .containsAll(Permissions.ALL);
+    }
+
+    @Test
+    void tenantWildcardsAreValidTenantSafeAndNeverTheSuperToken() {
+        // SECURITY: the set seeded to ROLE_ORG_ADMIN must never carry the super token nor a wildcard whose
+        // expansion reaches a platform permission — else a tenant admin would hold a cross-tenant capability.
+        List<String> wildcards = Permissions.tenantWildcards();
+        assertThat(wildcards).isNotEmpty()
+                .contains("user:*", "role:*", "resource:*", "portal-settings:*")
+                .doesNotContain(PermissionPattern.SUPER, "organization:*", "audit:*");
+        for (String token : wildcards) {
+            assertThat(PermissionPattern.isValid(token)).isTrue();
+            assertThat(PermissionPattern.of(token).isSuper()).isFalse();
+            assertThat(PermissionPattern.of(token).expand()).noneMatch(Permissions::isPlatform);
         }
     }
 }

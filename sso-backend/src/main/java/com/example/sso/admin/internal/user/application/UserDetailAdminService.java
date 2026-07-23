@@ -96,7 +96,11 @@ public class UserDetailAdminService {
         return assignments;
     }
 
-    /** All permissions the user effectively holds: role + group-role + direct, read-implication expanded. */
+    /**
+     * All permissions the user effectively holds: role + group-role + direct, with wildcard tokens expanded to
+     * their members and each mutating perm implying its read — the SAME {@link Permissions#expandGrants}
+     * assembly the login principal uses, so the console's "effective permissions" match what the user carries.
+     */
     private List<String> effectivePermissions(UserAccount user, List<GroupMembership> memberships) {
         Set<String> permissions = new HashSet<>();
         addPermissionsOf(user.getRoles(), permissions);
@@ -105,7 +109,7 @@ public class UserDetailAdminService {
         }
         permissions.addAll(user.getDirectPermissionNames());
 
-        return Permissions.expandImplied(permissions).stream().sorted().toList();
+        return Permissions.expandGrants(permissions).stream().sorted().toList();
     }
 
     private void addPermissionsOf(Collection<? extends RoleRef> roles, Set<String> permissions) {

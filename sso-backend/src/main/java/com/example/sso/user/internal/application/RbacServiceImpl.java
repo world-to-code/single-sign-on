@@ -3,6 +3,7 @@ package com.example.sso.user.internal.application;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.role.Roles;
 import com.example.sso.user.internal.rbac.domain.Permission;
+import com.example.sso.user.rbac.PermissionPattern;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.rbac.RbacService;
 import com.example.sso.user.internal.role.domain.Role;
@@ -21,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 /** Default {@link RbacService}: manages the permission catalog (PBAC) and its assignment to roles. */
 @Service
@@ -30,6 +32,10 @@ public class RbacServiceImpl implements RbacService {
 
     /** The fine-grained permissions used by method-level {@code @PreAuthorize} policies (see {@link Permissions}). */
     private static final List<String> ALL_PERMISSIONS = Permissions.ALL;
+
+    // ROLE_ADMIN (the platform super) holds the SUPER wildcard: its effective authorities expand to the whole
+    // catalog (platform included) AND it self-heals as new permissions are added — no re-seed per catalog change.
+    private static final List<String> ADMIN_PERMISSIONS = List.of(PermissionPattern.SUPER);
 
     // Baseline permissions for the scoped ROLE_GROUP_ADMIN: read/update/delete the users they manage.
     // Deliberately excludes user:create (super-only, see AdminAccessPolicy.canCreateUser) and group:read
@@ -44,8 +50,11 @@ public class RbacServiceImpl implements RbacService {
     // app-assignment/resource), by host-org scoping (oidc-client via OrgScopedRegisteredClientRepository), or by
     // an app-layer org check (user:* — app_user has no RLS, scoped in AdminAccessPolicy/UserAdminService). The
     // PLATFORM permissions (organization registry, portal-settings, cross-tenant audit) are excluded. Sourced
-    // from Permissions.tenantGrantable() so it self-maintains as the PLATFORM classification evolves.
-    private static final List<String> ORG_ADMIN_PERMISSIONS = Permissions.tenantGrantable();
+    // from Permissions.tenantGrantable() so it self-maintains as the PLATFORM classification evolves; the
+    // tenant-safe <resource>:* wildcards are ADDED so ORG_ADMIN can also GRANT wildcards (must-hold-to-grant),
+    // with its effective authority unchanged (each wildcard expands back to members it already holds).
+    private static final List<String> ORG_ADMIN_PERMISSIONS = Stream.concat(
+            Permissions.tenantGrantable().stream(), Permissions.tenantWildcards().stream()).toList();
 
     // The per-org baseline: each tenant owns its OWN copies of these system roles (provisioned at org
     // creation), so its admin console manages real, org-owned roles instead of an empty tier-scoped list.
@@ -66,7 +75,7 @@ public class RbacServiceImpl implements RbacService {
         Role admin = roles.findByNameAndOrgIdIsNull(Roles.ADMIN)
                 .orElseThrow(() -> new IllegalStateException("ROLE_ADMIN must exist before granting permissions"));
 
-        grantEach(admin.getId(), ALL_PERMISSIONS);
+        grantEach(admin.getId(), ADMIN_PERMISSIONS);
     }
 
     @Override

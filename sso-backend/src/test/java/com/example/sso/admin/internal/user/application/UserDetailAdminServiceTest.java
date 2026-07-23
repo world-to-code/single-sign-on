@@ -190,6 +190,20 @@ class UserDetailAdminServiceTest {
                 .containsExactlyInAnyOrder(Permissions.GROUP_UPDATE, Permissions.GROUP_READ);
     }
 
+    /**
+     * A wildcard grant is expanded to its concrete members in the roll-up, matching what the login principal
+     * actually carries — the console must not report a wildcard holder as merely holding the bare token
+     * (which unlocks no endpoint by itself) while omitting the actions it truly confers.
+     */
+    @Test
+    void aWildcardGrantIsExpandedToItsMembers() {
+        UserDetailView detail = detailOf(
+                account(Set.of(role("ROLE_ORG_ADMIN", "user:*")), Set.of()), List.of());
+
+        assertThat(detail.effectivePermissions()).containsExactlyInAnyOrder("user:*",
+                Permissions.USER_READ, Permissions.USER_CREATE, Permissions.USER_UPDATE, Permissions.USER_DELETE);
+    }
+
     // --- the two filters that are the point of these methods -------------------------------------
 
     private UserAccount targetUser() {

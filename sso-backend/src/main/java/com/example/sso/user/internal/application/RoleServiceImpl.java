@@ -54,7 +54,6 @@ public class RoleServiceImpl implements RoleService {
 
     /** ROLE_ADMIN's permissions are self-healed to the full catalog and thus not editable here. */
     private static final String ADMIN_ROLE = Roles.ADMIN;
-    private static final Set<String> CATALOG = Set.copyOf(Permissions.ALL);
 
     // A role's name is emitted verbatim as a granted authority (see SsoUserDetailsService), so it shares
     // the authority namespace with MFA/factor/permission authorities. Reject any name that would mint a
@@ -343,10 +342,10 @@ public class RoleServiceImpl implements RoleService {
         }
 
         return names.stream().map(name -> {
-            if (!CATALOG.contains(name)) {
+            if (!Permissions.isGrantableName(name)) {
                 throw BadRequestException.of("user.permission.unknown", name);
             }
-            boolean permitted = roleOrg != null ? !Permissions.isPlatform(name) : grantPolicy.mayGrant(name);
+            boolean permitted = roleOrg != null ? !Permissions.isPlatformGrant(name) : grantPolicy.mayGrant(name);
             if (!permitted) {
                 throw ForbiddenException.of("user.permission.notGrantable", name);
             }

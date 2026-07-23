@@ -1,5 +1,6 @@
 package com.example.sso.user.internal.application;
 
+import com.example.sso.user.rbac.PermissionPattern;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.Roles;
 import com.example.sso.user.internal.rbac.domain.Permission;
@@ -48,13 +49,16 @@ class RbacServiceImplTest {
     }
 
     @Test
-    void grantAllPermissionsToAdminInsertsARowForTheEntireCatalog() {
+    void grantAllPermissionsToAdminGrantsTheSuperWildcard() {
         when(roles.findByNameAndOrgIdIsNull(Roles.ADMIN)).thenReturn(Optional.of(new Role(Roles.ADMIN)));
         permissionsAreGetOrCreated();
 
         service.grantAllPermissionsToAdmin();
 
-        verify(rolePermissions, times(Permissions.ALL.size())).save(any(RolePermission.class));
+        // ROLE_ADMIN holds ONE row — the super wildcard *:* — whose expansion is the whole catalog (platform
+        // included) and which self-heals as the catalog grows; no per-catalog-change re-seed.
+        assertThat(grantedPermissionNames()).containsExactly(PermissionPattern.SUPER);
+        verify(rolePermissions, times(1)).save(any(RolePermission.class));
     }
 
     @Test
@@ -84,11 +88,10 @@ class RbacServiceImplTest {
     }
 
     @Test
-    void grantOrgAdminPermissionsGrantsTheWholeTenantGrantableCatalog() {
-        // A tenant admin manages their whole org: the grant is exactly the tenant-grantable catalog
-        // (= ALL minus PLATFORM), so it INCLUDES user/role/policy/app/resource management and EXCLUDES every
-        // PLATFORM permission (the registry, portal-settings, cross-tenant audit) — granting one would cross
-        // the tenant boundary.
+    void grantOrgAdminPermissionsGrantsTheTenantCatalogPlusTenantWildcards() {
+        // A tenant admin manages their whole org: the grant is the tenant-grantable catalog (= ALL minus
+        // PLATFORM) PLUS the tenant-safe <resource>:* wildcards so ORG_ADMIN can also GRANT wildcards. It still
+        // EXCLUDES every PLATFORM permission and the super token *:* — those would cross the tenant boundary.
         when(roles.findByNameAndOrgIdIsNull(Roles.ORG_ADMIN))
                 .thenReturn(Optional.of(new Role(Roles.ORG_ADMIN)));
         permissionsAreGetOrCreated();
@@ -96,13 +99,16 @@ class RbacServiceImplTest {
         service.grantOrgAdminPermissions();
 
         assertThat(grantedPermissionNames())
-                .containsExactlyInAnyOrderElementsOf(Permissions.tenantGrantable())
+                .containsAll(Permissions.tenantGrantable())
+                .containsAll(Permissions.tenantWildcards())
                 .contains(Permissions.USER_CREATE, Permissions.ROLE_CREATE, Permissions.POLICY_CREATE,
                         Permissions.APP_ASSIGNMENT_ASSIGN, Permissions.RESOURCE_CREATE, Permissions.CLIENT_CREATE,
                         Permissions.SESSION_POLICY_READ, Permissions.NETWORK_ZONE_READ,
                         Permissions.PORTAL_SETTINGS_UPDATE, // per-tenant admin-console elevation policy
-                        Permissions.AUDIT_READ) // org-scoped audit log read
-                .doesNotContain(Permissions.ORG_CREATE, Permissions.ORG_DELETE);
+                        Permissions.AUDIT_READ, // org-scoped audit log read
+                        "user:*", "role:*", "resource:*") // tenant wildcards it now HOLDS (so it may grant them)
+                .doesNotContain(Permissions.ORG_CREATE, Permissions.ORG_DELETE,
+                        PermissionPattern.SUPER, "organization:*"); // never the super token / a platform-reaching wildcard
     }
 
     @Test

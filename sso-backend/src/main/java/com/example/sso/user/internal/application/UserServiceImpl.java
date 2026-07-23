@@ -644,7 +644,7 @@ public class UserServiceImpl implements UserService {
      * either, so the tier split is enforced on every write path, not only via roles.
      */
     private Permission getOrCreatePermission(String name) {
-        if (!Permissions.ALL.contains(name)) {
+        if (!Permissions.isGrantableName(name)) {
             throw BadRequestException.of("user.permission.unknown", name);
         }
         // Direct grants also honour grant-only-what-you-hold, so the invariant does not live in the

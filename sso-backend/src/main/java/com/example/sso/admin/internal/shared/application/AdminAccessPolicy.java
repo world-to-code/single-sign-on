@@ -54,8 +54,6 @@ public class AdminAccessPolicy {
 
     static final String ADMIN_ROLE = Roles.ADMIN;
 
-    /** The permission catalog — a granted name must be one of these, never a role name or session marker. */
-    private static final Set<String> CATALOG = Set.copyOf(Permissions.ALL);
 
     private final UserService userService;
     private final RoleService roleService;
@@ -446,8 +444,8 @@ public class AdminAccessPolicy {
         if (permissions == null) {
             return true;
         }
-        return CATALOG.containsAll(permissions)
-                && permissions.stream().noneMatch(Permissions::isPlatform)
+        return permissions.stream().allMatch(Permissions::isGrantableName)
+                && permissions.stream().noneMatch(Permissions::isPlatformGrant)
                 && currentAuthorities().containsAll(permissions);
     }
 
@@ -526,12 +524,12 @@ public class AdminAccessPolicy {
             return false;
         }
         Set<String> granted = roleService.permissionNames(roleId);
-        return granted.stream().noneMatch(Permissions::isPlatform) && actorAuthorities.containsAll(granted);
+        return granted.stream().noneMatch(Permissions::isPlatformGrant) && actorAuthorities.containsAll(granted);
     }
 
     /** Whether the role (by id) carries any platform-only permission — un-grantable by a non-super admin. */
     private boolean roleCarriesPlatformPermission(UUID roleId) {
-        return roleService.permissionNames(roleId).stream().anyMatch(Permissions::isPlatform);
+        return roleService.permissionNames(roleId).stream().anyMatch(Permissions::isPlatformGrant);
     }
 
     /**
