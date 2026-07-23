@@ -4,6 +4,7 @@ import com.example.sso.ratelimit.internal.RateLimiter;
 import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
+import com.example.sso.authpolicy.factor.Factors;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -55,9 +57,13 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     // administrators, often behind one office address, and an IP key would let one of them exhaust the budget
     // for all of them.
     //
-    // The KEY drops the variable path. The route is /api/admin/profiles/{id}/csv-import[/preview], so keying
-    // on the full path gave one budget per (profile, preview-vs-apply) pair — an administrator with several
-    // profiles, or one who previews then applies, got several budgets where the intent was one per person.
+    // The KEY drops the variable path but MUST keep the tenant: the route is
+    // /api/admin/profiles/{id}/csv-import[/preview], and the profile id was the only thing scoping the bucket to
+    // an org. The principal is the per-org username (unique only within a tenant — tenant = organization), so
+    // "csv-import:{principal}" alone would collide two same-named admins across tenants, letting a busy admin in
+    // one tenant starve the same-named admin in another. The discriminator is (tenant, principal): one budget
+    // per administrator, isolated per tenant. The tenant comes from the SESSION's ORG_ marker, not the request
+    // host — the host is caller-supplied (spoofable to another tenant's subdomain), the session marker is not.
     private static final String CSV_IMPORT_SEGMENT = "/csv-import";
 
     private final RateLimiter rateLimiter;
@@ -75,11 +81,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             String ip = request.getRemoteAddr();
             String path = request.getServletPath();
             boolean csvImport = path.contains(CSV_IMPORT_SEGMENT);
-            String actorKey = csvImport ? principal() : null;
-            // One budget per administrator for the whole import feature, not per profile or per phase: the
-            // bucket segment is fixed, the discriminator is the principal.
-            String bucket = csvImport ? CSV_IMPORT_SEGMENT : path;
-            String key = bucket + ":" + (actorKey == null ? ip : actorKey);
+            String key = csvImport ? csvImportKey(ip) : path + ":" + ip;
             if (!rateLimiter.tryAcquire(key)) {
                 // Attribute it to the principal when there IS one: several limited routes are called by a
                 // signed-in user, and an audit row carrying only an IP is unattributable — and invisible in
@@ -97,6 +99,34 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         }
 
         chain.doFilter(request, response);
+    }
+
+    /**
+     * One bucket per (tenant, administrator) for the whole import feature — fixed segment, tenant from the
+     * session's {@code ORG_} marker, principal as the actor. The org discriminator keeps two same-named tenant
+     * admins apart; a super carries no marker (they are global, cross-org) and their globally-unique username
+     * stands alone. Falls back to the IP only for the unauthenticated impossible-case, so a bucket always exists.
+     */
+    private String csvImportKey(String ip) {
+        String actor = principal();
+        return CSV_IMPORT_SEGMENT + ":" + sessionOrg() + ":" + (actor == null ? ip : actor);
+    }
+
+    /**
+     * The org the caller logged into, taken from the session's {@code ORG_} marker authority (verbatim — the
+     * whole marker is a stable per-tenant string). Unlike the request host, this is server-issued at
+     * authentication and cannot be spoofed to another tenant. Empty for a super (no marker) and for any
+     * unauthenticated caller.
+     */
+    private String sessionOrg() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return "";
+        }
+        return authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .filter(authority -> authority.startsWith(Factors.ORG_PREFIX))
+                .findFirst().orElse("");
     }
 
     /** The authenticated caller, or null — several limited routes are reachable only while signed in. */

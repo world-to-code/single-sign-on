@@ -5,7 +5,10 @@ import com.example.sso.ratelimit.internal.RateLimiter;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
+import com.example.sso.authpolicy.factor.Factors;
 import jakarta.servlet.FilterChain;
+import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,6 +17,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -62,6 +66,36 @@ class AuthRateLimitFilterTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
         filter.doFilter(request(method, path), response, chain);
         return response;
+    }
+
+    /**
+     * A CSV-import request from an admin whose SESSION is bound to the given org (its {@code ORG_} marker) — the
+     * tenant a real login carries, not anything the request host claims. A null org models a super (no marker).
+     */
+    private void csvImport(UUID org, String principal, String path) throws Exception {
+        csvImportFromHost(org, principal, path, null);
+    }
+
+    /** As above, but with an explicit request host, to prove the host does NOT decide the bucket. */
+    private void csvImportFromHost(UUID org, String principal, String path, String host) throws Exception {
+        List<SimpleGrantedAuthority> authorities = org == null ? List.of()
+                : List.of(new SimpleGrantedAuthority(Factors.ORG_PREFIX + org));
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(principal, null, authorities));
+        try {
+            MockHttpServletRequest request = request("POST", path);
+            if (host != null) {
+                request.setServerName(host);
+            }
+            filter.doFilter(request, new MockHttpServletResponse(), chain);
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+    }
+
+    /** The session's ORG_ marker, verbatim — the whole marker is the tenant discriminator in the bucket key. */
+    private String orgKey(UUID org) {
+        return Factors.ORG_PREFIX + org;
     }
 
     @Test
@@ -165,24 +199,53 @@ class AuthRateLimitFilterTest {
         verify(rateLimiter, never()).tryAcquire(any());
     }
 
+    private static final UUID ACME = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final UUID GLOBEX = UUID.fromString("22222222-2222-2222-2222-222222222222");
+
     /**
      * One budget per administrator for the whole import feature. The route carries the profile id and the
      * preview-vs-apply suffix, so keying on the full path gave a separate budget per profile and per phase —
-     * a person with two profiles, or one who previews then applies, got several where the intent was one.
-     * The bucket segment is fixed and the discriminator is the principal.
+     * a person with two profiles, or one who previews then applies, got several where the intent was one. The
+     * bucket segment is fixed; the discriminator is (tenant, principal) — here one tenant, one admin, one bucket.
      */
     @Test
     void oneCsvImportBudgetPerAdministratorAcrossProfilesAndPhases() throws Exception {
-        SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken("ada", null, java.util.List.of()));
         when(rateLimiter.tryAcquire(any())).thenReturn(true);
-        try {
-            pass("POST", "/api/admin/profiles/p-1/csv-import/preview");
-            pass("POST", "/api/admin/profiles/p-2/csv-import");
 
-            verify(rateLimiter, times(2)).tryAcquire("/csv-import:ada"); // same bucket both times
-        } finally {
-            SecurityContextHolder.clearContext();
-        }
+        csvImport(ACME, "ada", "/api/admin/profiles/p-1/csv-import/preview");
+        csvImport(ACME, "ada", "/api/admin/profiles/p-2/csv-import");
+
+        verify(rateLimiter, times(2)).tryAcquire("/csv-import:" + orgKey(ACME) + ":ada"); // same bucket both times
+    }
+
+    /**
+     * The regression this fix exists for. The principal is the per-org username (tenant = organization), so it
+     * is unique only WITHIN a tenant: two tenants can each have an admin named "ada". Keying on the principal
+     * alone put them in one bucket, letting a busy admin in one tenant starve the other. The tenant, from the
+     * session's ORG_ marker, must keep them apart.
+     */
+    @Test
+    void sameNamedAdminsInDifferentTenantsDoNotShareABudget() throws Exception {
+        when(rateLimiter.tryAcquire(any())).thenReturn(true);
+
+        csvImport(ACME, "ada", "/api/admin/profiles/p-1/csv-import");
+        csvImport(GLOBEX, "ada", "/api/admin/profiles/p-9/csv-import");
+
+        verify(rateLimiter).tryAcquire("/csv-import:" + orgKey(ACME) + ":ada");
+        verify(rateLimiter).tryAcquire("/csv-import:" + orgKey(GLOBEX) + ":ada"); // a distinct bucket, not the same one
+    }
+
+    /**
+     * The tenant comes from the SESSION, never the request host. An acme admin who spoofs a globex Host must not
+     * be charged to (and so cannot starve) globex's bucket — the key stays keyed to their own ORG_ marker.
+     */
+    @Test
+    void aSpoofedHostDoesNotChargeAnotherTenantsBucket() throws Exception {
+        when(rateLimiter.tryAcquire(any())).thenReturn(true);
+
+        csvImportFromHost(ACME, "ada", "/api/admin/profiles/p-1/csv-import", "globex.sso.example");
+
+        verify(rateLimiter).tryAcquire("/csv-import:" + orgKey(ACME) + ":ada"); // acme's session, not globex's host
+        verify(rateLimiter, never()).tryAcquire("/csv-import:" + orgKey(GLOBEX) + ":ada");
     }
 }
