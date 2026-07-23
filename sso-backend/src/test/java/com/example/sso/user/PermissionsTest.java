@@ -71,6 +71,15 @@ class PermissionsTest {
     }
 
     @Test
+    void resourceAdminDelegationIsTenantGrantable() {
+        // A tenant ORG_ADMIN delegates subtree-admin to its own members within its own tree — this is NOT a
+        // platform-super-only act (ResourceAdminService.assignAdmin gates on requireManage/requireInTier, which a
+        // tenant tier-admin passes). The permission stays tenant-grantable; the resource itself is the tenant's.
+        assertThat(Permissions.isPlatform(Permissions.RESOURCE_ASSIGN_ADMIN)).isFalse();
+        assertThat(Permissions.tenantGrantable()).contains(Permissions.RESOURCE_ASSIGN_ADMIN);
+    }
+
+    @Test
     void auditReadMacroExpandsToEveryCategoryAndPii() {
         assertThat(Permissions.expandImplied(Set.of(Permissions.AUDIT_READ)))
                 .contains(Permissions.AUDIT_READ,

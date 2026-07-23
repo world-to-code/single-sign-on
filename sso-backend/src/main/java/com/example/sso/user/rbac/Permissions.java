@@ -169,8 +169,11 @@ public final class Permissions {
      * {@code oidc-client:*} (both relying-party types are org-scoped — SAML by {@code org_id}+RLS, OIDC by
      * host-org via {@code OrgScopedRegisteredClientRepository} — so a tenant manages only its own apps),
      * {@code app-assignment:*} (org-scoped portal assignments), {@code resource:*} (the org-scoped resource
-     * DAG — a tenant admin manages its own tree STRUCTURE; the GLOBAL resource-type vocabulary and delegating
-     * resource-admin to a user stay platform-super-gated in the service), {@code key:rotate} (per-tenant OIDC
+     * DAG — a tenant admin manages its OWN tree: its structure, its own resource types (V82 org-scoped the
+     * type vocabulary; only the shared GLOBAL types stay platform, enforced by RLS {@code WITH CHECK}, not by
+     * withholding {@code resource:create-type}), and delegating subtree-admin to its own members within that
+     * subtree ({@code resource:assign-admin} via {@code ResourceAdminService.assignAdmin}'s tier/subtree
+     * checks)), {@code key:rotate} (per-tenant OIDC
      * and SAML signing keys), {@code scim:manage} (org-scoped SCIM tokens that provision INTO its own org and
      * see only its members on {@code /Users}; {@code /Groups} is platform-only, so a tenant token is refused
      * there), plus {@code organization:read}/{@code member-manage} (their own org). {@code portal-settings:*}
