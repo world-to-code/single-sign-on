@@ -26,10 +26,15 @@ class PermissionDenyReader {
     private final OrgPermissionDenyRepository orgDenies;
     private final OrgContext orgContext;
 
-    DenyRows read(UUID userId, Set<UUID> roleIds, Set<UUID> groupIds, UUID orgId) {
+    /**
+     * {@code apexRoleIds} are the user's TOP roles only — passing the apex (not every held role) IS the ROLE-
+     * subject deny carve-out: a deny on a role dominated by a higher held role is never read, so a subordinate's
+     * deny cannot cut a superior. GROUP denies use every membership (groups are not dominated).
+     */
+    DenyRows read(UUID userId, Set<UUID> apexRoleIds, Set<UUID> groupIds, UUID orgId) {
         return orgContext.callAsPlatform(() -> new DenyRows(
                 userDenies.findPatternsByUser(userId),
-                patternsFor(DenySubjectType.ROLE, roleIds, orgId),
+                patternsFor(DenySubjectType.ROLE, apexRoleIds, orgId),
                 patternsFor(DenySubjectType.GROUP, groupIds, orgId),
                 orgId == null ? Set.of() : orgDenies.findPatternsByOrg(orgId),
                 orgDenies.findPlatformPatterns()));

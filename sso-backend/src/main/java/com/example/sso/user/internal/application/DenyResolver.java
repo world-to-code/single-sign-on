@@ -13,15 +13,13 @@ import org.springframework.stereotype.Component;
  * deny still applies) and the user's grants/apex, packs them into {@link DenyInputs}, and this decides.
  *
  * <p>Semantics (per the deny plan): assignments UNION, deny SUBTRACTS. A more specific level wins
- * (USER &gt; GROUP = ROLE &gt; ORG); within a level deny beats allow. A ROLE-subject deny is CARVED OUT of any
- * permission the user's apex role grants, so a subordinate cannot cut a superior who shares the role. NOTE the
- * consequence: for a user whose apex role IS the denied role (a base holder), the carve-out makes that
- * role-subject deny inert — so to exclude one permission from a specific user or group, author a USER- or
- * GROUP-subject deny (neither is carved out), not a role-subject one. (A tighter "denied role strictly below the
- * apex" test would let a role-subject deny trim base holders too; deferred with the write path, which is where
- * role identity is threaded.) The platform veto ({@code org_id} NULL) is absolute — it removes a permission even
- * a USER allow granted. A {@code ROLE_ADMIN} holder is EXEMPT from every deny. Read-implication runs BEFORE
- * subtraction, so a macro (e.g. {@code audit:read}) cannot resurrect a denied finer scope.
+ * (USER &gt; GROUP = ROLE &gt; ORG); within a level deny beats allow. The ROLE-subject apex carve-out is applied
+ * UPSTREAM — {@link EffectiveAuthorityResolver} reads ROLE-subject denies only for the user's APEX (top) roles,
+ * so a deny on a role dominated by another role the user holds never reaches this resolver. Effect: a base
+ * holder's own role deny bites, but a subordinate cannot cut a superior who holds a higher role. GROUP-subject
+ * and USER denies are never carved. The platform veto ({@code org_id} NULL) is absolute — it removes a
+ * permission even a USER allow granted. A {@code ROLE_ADMIN} holder is EXEMPT from every deny. Read-implication
+ * runs BEFORE subtraction, so a macro (e.g. {@code audit:read}) cannot resurrect a denied finer scope.
  */
 @Component
 class DenyResolver {
@@ -36,7 +34,6 @@ class DenyResolver {
 
         Set<String> userAllow = Permissions.expandWildcards(in.userAllow());
         Set<String> roleAllow = Permissions.expandWildcards(in.roleAllow());
-        Set<String> apexAllow = Permissions.expandWildcards(in.apexAllow());
         Set<String> userDeny = Permissions.expandWildcards(in.userDeny());
         Set<String> roleDeny = Permissions.expandWildcards(in.roleDeny());
         Set<String> groupDeny = Permissions.expandWildcards(in.groupDeny());
@@ -47,7 +44,7 @@ class DenyResolver {
         Set<String> denied = new HashSet<>();
         for (String permission : Permissions.ALL) {
             PermissionDecision decision =
-                    decide(permission, userAllow, roleAllow, apexAllow, userDeny, roleDeny, groupDeny, orgDeny);
+                    decide(permission, userAllow, roleAllow, userDeny, roleDeny, groupDeny, orgDeny);
             if (decision == PermissionDecision.ALLOW) {
                 allowed.add(permission);
             } else if (decision == PermissionDecision.DENY) {
@@ -68,16 +65,17 @@ class DenyResolver {
 
     /** One permission's decision, most-specific level first, deny before allow at each level. */
     private PermissionDecision decide(String permission, Set<String> userAllow, Set<String> roleAllow,
-            Set<String> apexAllow, Set<String> userDeny, Set<String> roleDeny, Set<String> groupDeny,
-            Set<String> orgDeny) {
+            Set<String> userDeny, Set<String> roleDeny, Set<String> groupDeny, Set<String> orgDeny) {
         if (userDeny.contains(permission)) {
-            return PermissionDecision.DENY; // USER level — most specific, no carve-out
+            return PermissionDecision.DENY; // USER level — most specific
         }
         if (userAllow.contains(permission)) {
             return PermissionDecision.ALLOW;
         }
-        // ROLE/GROUP level: a ROLE-subject deny is carved out by an apex-role grant; a GROUP-subject deny is not.
-        if ((roleDeny.contains(permission) && !apexAllow.contains(permission)) || groupDeny.contains(permission)) {
+        // ROLE/GROUP level. The apex carve-out is applied UPSTREAM (roleDeny carries only denies on the user's
+        // APEX roles — a deny on a role dominated by another held role never reaches here), so a subordinate's
+        // deny cannot cut a superior who holds a higher role, while a base holder's own role deny does bite.
+        if (roleDeny.contains(permission) || groupDeny.contains(permission)) {
             return PermissionDecision.DENY;
         }
         if (roleAllow.contains(permission)) {

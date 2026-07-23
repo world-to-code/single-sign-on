@@ -94,6 +94,46 @@ class PermissionDenyResolutionIT extends AbstractIntegrationTest {
                 .doesNotContain("role:delete@a");                   // NEVER tenant A's deny
     }
 
+    /**
+     * The apex carve-out fix: a ROLE-subject deny is read for the holder's APEX roles only, so a deny on a role
+     * that IS the user's apex (a base holder) now BITES — under the previous "apex grants the permission"
+     * carve-out this exact deny was inert, since the denied role is always in its own holder's apex closure.
+     */
+    @Test
+    void aRoleSubjectDenyOnTheHoldersApexRoleIsApplied() {
+        UUID userId = newUser("deny-apex");
+        UUID roleId = createGlobalRole("ROLE_DENYTEST_" + shortId());
+        grantRolePermission(roleId, Permissions.USER_READ);
+        grantRolePermission(roleId, Permissions.USER_UPDATE);
+        assignRole(userId, roleId);
+        seedPrincipalDeny(roleId, null, Permissions.USER_READ); // platform-tier deny reaches the global user
+
+        Set<String> authorities = userService.effectiveAuthorities(userId);
+
+        assertThat(authorities).contains(Permissions.USER_UPDATE).doesNotContain(Permissions.USER_READ);
+    }
+
+    /**
+     * The dominance-protection half: a user holding a role ABOVE the denied role is a superior, and a deny on
+     * the subordinate role must not cut them — the ROLE deny is read for apex roles only, and the subordinate
+     * is not this user's apex.
+     */
+    @Test
+    void aRoleSubjectDenyOnASubordinateRoleDoesNotCutASuperior() {
+        UUID userId = newUser("deny-superior");
+        UUID roleAbove = createGlobalRole("ROLE_ABOVE_" + shortId());
+        UUID roleBelow = createGlobalRole("ROLE_BELOW_" + shortId());
+        grantRolePermission(roleBelow, Permissions.USER_READ);
+        linkRoles(roleAbove, roleBelow);   // the parent inherits the child → roleAbove dominates roleBelow
+        assignRole(userId, roleAbove);
+        assignRole(userId, roleBelow);      // holds both, so roleBelow is dominated and NOT the apex
+        seedPrincipalDeny(roleBelow, null, Permissions.USER_READ);
+
+        Set<String> authorities = userService.effectiveAuthorities(userId);
+
+        assertThat(authorities).contains(Permissions.USER_READ); // the subordinate-role deny never reaches them
+    }
+
     @Test
     void aRoleAdminIsExemptFromThePlatformVetoAtResolution() {
         UUID userId = newUser("deny-super");
@@ -136,6 +176,32 @@ class PermissionDenyResolutionIT extends AbstractIntegrationTest {
     private void assignGlobalRole(UUID userId, String roleName) {
         ownerJdbc().update("insert into app_user_role (user_id, role_id) "
                 + "select ?, id from role where name = ? and org_id is null", userId, roleName);
+    }
+
+    private UUID createGlobalRole(String name) {
+        UUID id = UUID.randomUUID();
+        ownerJdbc().update("insert into role (id, name) values (?, ?)", id, name); // org_id NULL, system false
+        cleanups.add(() -> ownerJdbc().update("delete from role where id = ?", id)); // cascades role_permission + app_user_role
+        return id;
+    }
+
+    private void grantRolePermission(UUID roleId, String permission) {
+        ownerJdbc().update("insert into permission (id, name) values (gen_random_uuid(), ?) "
+                + "on conflict (name) do nothing", permission);
+        ownerJdbc().update("insert into role_permission (role_id, permission_id) "
+                + "select ?, id from permission where name = ?", roleId, permission);
+    }
+
+    private void assignRole(UUID userId, UUID roleId) {
+        ownerJdbc().update("insert into app_user_role (user_id, role_id) values (?, ?)", userId, roleId);
+    }
+
+    private void linkRoles(UUID parentRoleId, UUID childRoleId) {
+        ownerJdbc().update("insert into role_hierarchy (parent_role_id, child_role_id, org_id) "
+                + "values (?, ?, null)", parentRoleId, childRoleId);
+        cleanups.add(() -> ownerJdbc().update(
+                "delete from role_hierarchy where parent_role_id = ? and child_role_id = ?",
+                parentRoleId, childRoleId));
     }
 
     private void userDeny(UUID userId, String pattern) {

@@ -21,7 +21,6 @@ class DenyResolverTest {
     private static final class In {
         private Set<String> userAllow = Set.of();
         private Set<String> roleAllow = Set.of();
-        private Set<String> apexAllow = Set.of();
         private Set<String> roleNames = Set.of();
         private Set<String> userDeny = Set.of();
         private Set<String> roleDeny = Set.of();
@@ -31,7 +30,6 @@ class DenyResolverTest {
 
         private In userAllow(String... p) { this.userAllow = Set.of(p); return this; }
         private In roleAllow(String... p) { this.roleAllow = Set.of(p); return this; }
-        private In apexAllow(String... p) { this.apexAllow = Set.of(p); return this; }
         private In roleNames(String... p) { this.roleNames = Set.of(p); return this; }
         private In userDeny(String... p) { this.userDeny = Set.of(p); return this; }
         private In roleDeny(String... p) { this.roleDeny = Set.of(p); return this; }
@@ -40,7 +38,7 @@ class DenyResolverTest {
         private In platformDeny(String... p) { this.platformDeny = Set.of(p); return this; }
 
         private DenyInputs build() {
-            return new DenyInputs(userAllow, roleAllow, apexAllow, roleNames,
+            return new DenyInputs(userAllow, roleAllow, roleNames,
                     userDeny, roleDeny, groupDeny, orgDeny, platformDeny);
         }
     }
@@ -96,34 +94,15 @@ class DenyResolverTest {
         assertThat(effective).doesNotContain(Permissions.USER_READ);
     }
 
-    // --- apex carve-out: role-level only ---
+    // --- the ROLE/GROUP level (the apex carve-out that DECIDES which role denies reach here is applied
+    //     upstream in EffectiveAuthorityResolver — read denies for apex roles only — and is covered end-to-end
+    //     in PermissionDenyResolutionIT; here roleDeny/groupDeny are the already-carved inputs) ---
 
     @Test
-    void aRoleDenyIsCarvedOutByAnApexGrant() {
+    void aGroupDenyRemovesAGrant() {
         Set<String> effective = resolve(new In()
                 .roleAllow(Permissions.USER_READ)
-                .roleDeny(Permissions.USER_READ)
-                .apexAllow(Permissions.USER_READ)); // the apex role grants it → a role deny cannot cut it
-
-        assertThat(effective).contains(Permissions.USER_READ);
-    }
-
-    @Test
-    void aGroupDenyIsNotCarvedOutByApex() {
-        Set<String> effective = resolve(new In()
-                .roleAllow(Permissions.USER_READ)
-                .groupDeny(Permissions.USER_READ)
-                .apexAllow(Permissions.USER_READ)); // apex does NOT protect against a GROUP-subject deny
-
-        assertThat(effective).doesNotContain(Permissions.USER_READ);
-    }
-
-    @Test
-    void aUserDenyIsNotCarvedOutByApex() {
-        Set<String> effective = resolve(new In()
-                .roleAllow(Permissions.USER_READ)
-                .userDeny(Permissions.USER_READ)
-                .apexAllow(Permissions.USER_READ)); // apex does NOT protect against a USER deny
+                .groupDeny(Permissions.USER_READ)); // a GROUP-subject deny beats the role allow at its level
 
         assertThat(effective).doesNotContain(Permissions.USER_READ);
     }

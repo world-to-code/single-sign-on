@@ -46,19 +46,24 @@ class EffectiveAuthorityResolver {
                 .map(Role::getId).collect(Collectors.toSet());
 
         // ALLOW, split by specificity level so a more specific grant can out-rank a less specific deny:
-        // USER = direct permissions; ROLE/GROUP = the held roles' + delegated roles' + inherited permissions;
-        // apex = the permissions the user's TOP roles grant (a role-level deny cannot cut these). Role NAMES are
-        // carried separately — a deny never removes a role name (only permissions).
+        // USER = direct permissions; ROLE/GROUP = the held roles' + delegated roles' + inherited permissions.
+        // Role NAMES are carried separately — a deny never removes a role name (only permissions).
         Set<String> roleNames = roleNames(user.getRoles(), groupRoles);
         Set<String> userAllow = new HashSet<>(user.getDirectPermissionNames());
         Set<String> roleAllow = rolePermissions(user.getRoles(), groupRoles, heldRoleIds);
-        Set<String> apexAllow = inheritanceResolver.effectivePermissionNames(roleHierarchy.apexRolesOf(user.getId()));
 
-        // DENY, read across tiers so an RLS-invisible deny still applies.
+        // DENY, read across tiers so an RLS-invisible deny still applies. The ROLE-subject apex carve-out is
+        // applied HERE: only denies on the user's APEX (top) roles are read, so a deny on a role dominated by a
+        // higher role the user holds is ignored — a subordinate cannot cut a superior, a base holder is cut.
+        // Fail CLOSED on a corrupt hierarchy: an EMPTY apex from a NON-empty held set can only mean a cycle (an
+        // acyclic non-empty DAG always has a top); rather than read NO role denies (dropping every deny), fall
+        // back to every held role so a deny still applies. A genuinely role-less user keeps an empty set.
+        Set<UUID> apexRoleIds = roleHierarchy.apexRolesOf(user.getId());
+        Set<UUID> roleDenySubjects = apexRoleIds.isEmpty() && !heldRoleIds.isEmpty() ? heldRoleIds : apexRoleIds;
         Set<UUID> groupIds = new HashSet<>(groups.findGroupIdsByMember(user.getId()));
-        DenyRows denies = denyReader.read(user.getId(), heldRoleIds, groupIds, user.getOrgId());
+        DenyRows denies = denyReader.read(user.getId(), roleDenySubjects, groupIds, user.getOrgId());
 
-        return denyResolver.effectiveAuthorities(new DenyInputs(userAllow, roleAllow, apexAllow, roleNames,
+        return denyResolver.effectiveAuthorities(new DenyInputs(userAllow, roleAllow, roleNames,
                 denies.user(), denies.role(), denies.group(), denies.org(), denies.platform()));
     }
 
