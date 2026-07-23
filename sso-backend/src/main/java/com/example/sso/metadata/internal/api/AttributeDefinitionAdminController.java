@@ -6,6 +6,7 @@ import com.example.sso.metadata.EntityKind;
 import com.example.sso.audit.AuditType;
 import com.example.sso.audit.Audited;
 import com.example.sso.shared.security.RequirePermission;
+import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.rbac.Permissions;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -22,8 +23,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * The acting tenant's profile schema. Not step-up gated: a definition carries no credential, and the values it
- * governs are already protected by their own per-entity gates. Tier scoping is enforced in the service, which
+ * The acting tenant's profile schema. Deleting a definition is step-up gated, per the step-up rule's "all
+ * *:delete operations": it destroys a catalog entry that mapping rules and policy bindings match on, so it
+ * destroys data even though the definition itself carries no credential. Create/redefine are not gated —
+ * they are not in the rule's list and expand no authority. Tier scoping is enforced in the service, which
  * fails closed for a bound-but-orgless caller.
  */
 @RestController
@@ -50,6 +53,7 @@ public class AttributeDefinitionAdminController {
     @Audited(value = AuditType.ATTRIBUTE_DEFINITION_CHANGED)
     @DeleteMapping("/{id}")
     @RequirePermission(Permissions.ATTRIBUTE_DEFINITION_WRITE)
+    @RequireStepUp
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(id);
         return ResponseEntity.noContent().build();
