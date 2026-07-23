@@ -8,6 +8,7 @@ import com.example.sso.auth.internal.login.application.PreAuthFederationSession.
 import com.example.sso.federation.FederatedIdentity;
 import com.example.sso.federation.FederatedIdentityLinks;
 import com.example.sso.federation.FederationAuthorization;
+import com.example.sso.federation.FederationClaimSync;
 import com.example.sso.federation.FederationLoginService;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.organization.OrganizationService;
@@ -56,6 +57,7 @@ public class FederatedAuthenticationService {
 
     private final CompletedSessionGuard completedSession;
     private final FederationLoginService federation;
+    private final FederationClaimSync federationClaimSync;
     private final FederatedIdentityLinks links;
     private final PreAuthOrgSession preAuthOrg;
     private final PreAuthFederationSession preAuthFederation;
@@ -99,6 +101,13 @@ public class FederatedAuthenticationService {
         FederatedIdentity identity = federation.completeLogin(orgId, alias, code, pending.redirectUri(),
                 pending.nonce(), pending.codeVerifier());
         UserAccount user = resolveOrProvision(identity, orgId, ClientIp.of(request));
+        // Carry the login's verified claims onto the account's attributes (best-effort, non-fatal), through the
+        // tenant's OIDC mappings — a re-sync on every sign-in, like a directory sync. KNOWN INTERACTION: if a
+        // synced claim also drives an authz mapping rule and its value CHANGED this login, the async access-change
+        // reconcile can terminate this user's sessions — including the one about to be established — so the user
+        // re-authenticates into the new posture. One-shot (an unchanged re-sync publishes nothing) and self-
+        // healing on retry; accepted, since the alternative is to not propagate an access change the login caused.
+        federationClaimSync.applyClaims(orgId, user.getId().toString(), identity.claims());
 
         // The FEDERATED marker rides along from the start: it is what lets a downstream RP tell an upstream
         // sign-in from a password this IdP checked. Not a factor — factors are granted below.

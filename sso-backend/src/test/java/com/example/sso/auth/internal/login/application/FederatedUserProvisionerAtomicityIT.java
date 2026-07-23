@@ -6,6 +6,7 @@ import com.example.sso.organization.OrganizationService;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserService;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,7 +46,7 @@ class FederatedUserProvisionerAtomicityIT extends AbstractIntegrationTest {
         UUID orgId = organizations.create(new NewOrganization("jit-atomic-" + suffix(), "JIT atomic")).id();
         String email = "orphan-" + suffix() + "@example.test";
         FederatedIdentity identity = new FederatedIdentity("okta", "https://okta.test", "sub-" + suffix(),
-                email, true, "Orphan", true, false);
+                email, true, "Orphan", true, false, Map.of());
 
         doThrow(new IllegalStateException("membership write failed"))
                 .when(organizations).addMember(any(), any());

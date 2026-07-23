@@ -5,6 +5,7 @@ import com.example.sso.organization.OrganizationService;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,7 +36,7 @@ class FederatedUserProvisionerTest {
 
     private FederatedIdentity identity(String name) {
         return new FederatedIdentity("google", "https://accounts.google.test", "sub-1", "ada@example.com",
-                true, name, true, false);
+                true, name, true, false, Map.of());
     }
 
     private UserAccount created(UUID id) {

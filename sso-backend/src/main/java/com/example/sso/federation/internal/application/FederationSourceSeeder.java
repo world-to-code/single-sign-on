@@ -35,11 +35,6 @@ class FederationSourceSeeder {
     /** Display name of the tenant's single OIDC source profile. */
     private static final String OIDC_SOURCE_PROFILE = "OIDC";
 
-    private static final List<ClaimAttribute> CLAIMS = List.of(
-            new ClaimAttribute("given_name", "First name"),
-            new ClaimAttribute("family_name", "Last name"),
-            new ClaimAttribute("picture", "Picture URL"));
-
     private final ProfileService profiles;
     private final AttributeDefinitionService definitions;
     private final ProfileMappingService mappings;
@@ -62,15 +57,12 @@ class FederationSourceSeeder {
         }
         UUID tenantId = tenant.get().id();
         int order = 0;
-        for (ClaimAttribute claim : CLAIMS) {
-            definitions.save(tenantId, new AttributeDefinitionSpec(EntityKind.USER, claim.key(),
+        for (FederationClaim claim : FederationClaims.STANDARD) {
+            definitions.save(tenantId, new AttributeDefinitionSpec(EntityKind.USER, claim.name(),
                     claim.displayName(), null, AttributeDataType.STRING, List.of(), false, false,
                     AttributeSource.DIRECTORY, order));
-            mappings.map(source.id(), claim.key(), tenantId, claim.key());
+            mappings.map(source.id(), claim.name(), tenantId, claim.name());
             order += 10;
         }
-    }
-
-    private record ClaimAttribute(String key, String displayName) {
     }
 }

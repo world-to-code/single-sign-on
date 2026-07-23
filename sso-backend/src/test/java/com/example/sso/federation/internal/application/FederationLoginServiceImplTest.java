@@ -6,6 +6,7 @@ import com.example.sso.tenancy.OrgContext;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Base64;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
@@ -81,7 +82,7 @@ class FederationLoginServiceImplTest {
         when(upstream.exchangeCodeForIdToken(METADATA, "client-123", "s3cret", "code-1", REDIRECT, "verifier-1"))
                 .thenReturn("id-token");
         when(verifier.verify(METADATA, "client-123", "id-token", "nonce-1"))
-                .thenReturn(new VerifiedIdToken("sub-9", "ada@example.com", true, "Ada"));
+                .thenReturn(new VerifiedIdToken("sub-9", "ada@example.com", true, "Ada", Map.of("given_name", "Ada")));
 
         FederatedIdentity identity = service.completeLogin(ORG, ALIAS, "code-1", REDIRECT, "nonce-1", "verifier-1");
 
@@ -89,6 +90,7 @@ class FederationLoginServiceImplTest {
         assertThat(identity.email()).isEqualTo("ada@example.com");
         assertThat(identity.emailVerified()).isTrue();
         assertThat(identity.jitProvisioningAllowed()).isTrue(); // carried from the resolved provider config
+        assertThat(identity.claims()).containsEntry("given_name", "Ada"); // profile claims threaded to the auth layer
     }
 
     private String s256(String verifier) {
@@ -109,7 +111,7 @@ class FederationLoginServiceImplTest {
         when(upstream.exchangeCodeForIdToken(METADATA, "client-123", "s3cret", "code-1", REDIRECT, "verifier-1"))
                 .thenReturn("id-token");
         when(verifier.verify(METADATA, "client-123", "id-token", "nonce-1"))
-                .thenReturn(new VerifiedIdToken("sub-9", "ada@example.com", true, "Ada"));
+                .thenReturn(new VerifiedIdToken("sub-9", "ada@example.com", true, "Ada", Map.of("given_name", "Ada")));
 
         FederatedIdentity identity = service.completeLogin(ORG, ALIAS, "code-1", REDIRECT, "nonce-1", "verifier-1");
 

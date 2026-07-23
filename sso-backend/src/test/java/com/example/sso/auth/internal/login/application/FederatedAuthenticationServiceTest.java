@@ -5,6 +5,7 @@ import com.example.sso.auth.internal.login.application.PreAuthFederationSession.
 import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.federation.FederatedIdentity;
 import com.example.sso.federation.FederatedIdentityLinks;
+import com.example.sso.federation.FederationClaimSync;
 import com.example.sso.federation.FederationLoginService;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.organization.OrganizationService;
@@ -20,6 +21,7 @@ import com.example.sso.user.role.Roles;
 import java.util.Set;
 import com.example.sso.shared.error.BadRequestException;
 import java.util.List;
+import java.util.Map;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -66,6 +68,7 @@ class FederatedAuthenticationServiceTest {
 
     @Mock private CompletedSessionGuard completedSession;
     @Mock private FederationLoginService federation;
+    @Mock private FederationClaimSync federationClaimSync;
     @Mock private FederatedIdentityLinks links;
     @Mock private PreAuthOrgSession preAuthOrg;
     @Mock private PreAuthFederationSession preAuthFederation;
@@ -83,8 +86,8 @@ class FederatedAuthenticationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new FederatedAuthenticationService(completedSession, federation, links, preAuthOrg,
-                preAuthFederation,
+        service = new FederatedAuthenticationService(completedSession, federation, federationClaimSync, links,
+                preAuthOrg, preAuthFederation,
                 provisioner, factorAuth, completionService, users, organizations, orgContext, audit);
         // Unlinked by default: each test that exercises the link path stubs it explicitly.
         lenient().when(links.findLinkedUser(any(), any(), any())).thenReturn(Optional.empty());
@@ -110,7 +113,7 @@ class FederatedAuthenticationServiceTest {
      *  exercise that branch; the opt-in itself is covered by its own tests. */
     private FederatedIdentity identity(boolean emailVerified, boolean jitAllowed, boolean linkByEmail) {
         return new FederatedIdentity(ALIAS, ISSUER, "sub-1", "ada@example.com", emailVerified, "Ada",
-                jitAllowed, linkByEmail);
+                jitAllowed, linkByEmail, Map.of("given_name", "Ada"));
     }
 
     /** An org-owned, enabled, unlocked, UNPRIVILEGED member of ORG — the happy-path account state. */
@@ -146,6 +149,8 @@ class FederatedAuthenticationServiceTest {
         verify(factorAuth).grantFactor(request, response, Factors.PASSWORD); // federation satisfies the primary factor
         verify(completionService).completeIfSatisfied(request, response);
         verify(preAuthFederation).clear(request); // single use
+        // The login's claims are carried onto the resolved account through the tenant's OIDC mappings.
+        verify(federationClaimSync).applyClaims(ORG, userId.toString(), Map.of("given_name", "Ada"));
     }
 
     @Test
@@ -232,7 +237,7 @@ class FederatedAuthenticationServiceTest {
 
     @Test
     void aVerifiedButBlankEmailIsRefusedWithoutLookup() {
-        completeLoginReturns(new FederatedIdentity(ALIAS, ISSUER, "sub-1", "  ", true, "Ada", true, false));
+        completeLoginReturns(new FederatedIdentity(ALIAS, ISSUER, "sub-1", "  ", true, "Ada", true, false, Map.of()));
 
         assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
                 .isInstanceOf(UnauthorizedException.class);
@@ -291,7 +296,7 @@ class FederatedAuthenticationServiceTest {
     void aLinkedSubjectResolvesTheSameUserAfterTheUpstreamEmailChanged() {
         UUID userId = UUID.randomUUID();
         UserAccount member = user(userId);
-        completeLoginReturns(new FederatedIdentity(ALIAS, ISSUER, "sub-1", "ada.lovelace@example.com", true, "Ada", true, false));
+        completeLoginReturns(new FederatedIdentity(ALIAS, ISSUER, "sub-1", "ada.lovelace@example.com", true, "Ada", true, false, Map.of()));
         when(links.findLinkedUser(ORG, ISSUER, "sub-1")).thenReturn(Optional.of(userId));
         when(users.findById(userId)).thenReturn(Optional.of(member));
         when(organizations.isMember(ORG, userId)).thenReturn(true);

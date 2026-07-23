@@ -4,7 +4,9 @@ import com.example.sso.shared.error.UnauthorizedException;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -67,7 +69,20 @@ class IdTokenVerifier {
 
         Boolean emailVerified = jwt.getClaimAsBoolean("email_verified");
         return new VerifiedIdToken(subject, jwt.getClaimAsString("email"),
-                emailVerified != null && emailVerified, jwt.getClaimAsString("name"));
+                emailVerified != null && emailVerified, jwt.getClaimAsString("name"), profileClaims(jwt));
+    }
+
+    /** The standard profile claims present on the token, keyed by claim name — the ones a login can carry onto
+     *  the user's attributes. Only non-blank string values; the token is already signature-verified. */
+    private Map<String, String> profileClaims(Jwt jwt) {
+        Map<String, String> claims = new LinkedHashMap<>();
+        for (FederationClaim claim : FederationClaims.STANDARD) {
+            String value = jwt.getClaimAsString(claim.name());
+            if (StringUtils.hasText(value)) {
+                claims.put(claim.name(), value);
+            }
+        }
+        return claims;
     }
 
     private Jwt decode(OidcMetadata metadata, String idToken) {
