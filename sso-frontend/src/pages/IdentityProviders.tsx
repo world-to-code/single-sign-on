@@ -1,11 +1,15 @@
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Pencil, Plus, Save, Trash2 } from "lucide-react";
-import { saveIdentityProvider, type IdentityProvider } from "@/identityProviders";
+import {
+  matchPreset, resolvePresetIssuer, saveIdentityProvider,
+  type IdentityProvider, type IdentityProviderPreset,
+} from "@/identityProviders";
 import { PageHeader } from "@/components/PageHeader";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -26,6 +30,7 @@ interface Editor {
   clientId: string;
   clientSecret: string;
   scopes: string;
+  fieldValues: Record<string, string>; // extra preset inputs (e.g. { tenant }) that build the issuer
   allowJitProvisioning: boolean;
   linkByVerifiedEmail: boolean;
   enabled: boolean;
@@ -33,19 +38,25 @@ interface Editor {
 
 const blank: Editor = {
   id: null, alias: "", displayName: "", issuerUri: "", clientId: "", clientSecret: "",
-  scopes: "openid email profile", allowJitProvisioning: false, linkByVerifiedEmail: false, enabled: true,
+  scopes: "openid email profile", fieldValues: {},
+  allowJitProvisioning: false, linkByVerifiedEmail: false, enabled: true,
 };
 
 /** Per-tenant upstream OIDC providers users can sign in through ("Sign in with …" on the login screen). */
 export default function IdentityProviders() {
   const { t } = useTranslation(["console", "states"]);
   const providers = useApiData<IdentityProvider[]>("/api/admin/identity-providers");
+  const presets = useApiData<IdentityProviderPreset[]>("/api/admin/identity-providers/presets");
   const confirmDelete = useDeleteConfirm();
   const [actionError, setActionError] = useState<string | null>(null);
+  // Which preset card opened the dialog — drives the extra-field inputs and the resolved-issuer preview.
+  // Null for a custom connection or when editing an existing provider (its origin preset is not stored).
+  const [activePreset, setActivePreset] = useState<IdentityProviderPreset | null>(null);
 
   const { editor, set, open, setOpen, error: formError, openCreate, openEdit, save } = useEditorForm<Editor>({
     blank,
     // The alias rides in the body so create() can address the {alias} path; the backend ignores it there.
+    // fieldValues is client-only: the issuer it built is already in issuerUri, which is what the server stores.
     toRequest: (e) => ({
       alias: e.alias.trim().toLowerCase(),
       displayName: e.displayName.trim(),
@@ -62,12 +73,38 @@ export default function IdentityProviders() {
     onSaved: providers.reload,
   });
 
-  const edit = (p: IdentityProvider) =>
+  /** A vendor card: open the create dialog pre-filled from the preset. A templated issuer starts empty and is
+   *  built from the extra fields; a fixed one (Google) is filled straight away. */
+  const startPreset = (preset: IdentityProviderPreset) => {
+    setActivePreset(preset);
+    openEdit({
+      ...blank, id: null, alias: preset.id, displayName: preset.displayName,
+      scopes: preset.defaultScopes,
+      issuerUri: preset.fields.length === 0 ? preset.issuerTemplate : "",
+      fieldValues: {},
+    });
+  };
+
+  const startCustom = () => { setActivePreset(null); openCreate(); };
+
+  const edit = (p: IdentityProvider) => {
+    setActivePreset(null);
     openEdit({
       id: p.alias, alias: p.alias, displayName: p.displayName, issuerUri: p.issuerUri, clientId: p.clientId,
-      clientSecret: "", scopes: p.scopes, allowJitProvisioning: p.allowJitProvisioning,
+      clientSecret: "", scopes: p.scopes, fieldValues: {}, allowJitProvisioning: p.allowJitProvisioning,
       linkByVerifiedEmail: p.linkByVerifiedEmail, enabled: p.enabled,
     });
+  };
+
+  /** Update one preset field and rebuild the issuer from the template, so the saved issuer stays in sync. */
+  const setField = (key: string, value: string) => {
+    if (!activePreset) return;
+    const fieldValues = { ...editor.fieldValues, [key]: value };
+    set({ fieldValues, issuerUri: resolvePresetIssuer(activePreset.issuerTemplate, fieldValues) });
+  };
+
+  const vendorOf = (p: IdentityProvider) =>
+    matchPreset(p.issuerUri, presets.data ?? [])?.displayName ?? t("idpVendorCustom");
 
   const remove = (p: IdentityProvider) => {
     setActionError(null);
@@ -82,11 +119,7 @@ export default function IdentityProviders() {
 
   return (
     <>
-      <PageHeader
-        title={t("idpTitle")}
-        description={t("idpDescription")}
-        actions={<Button onClick={openCreate}><Plus /> {t("idpNew")}</Button>}
-      />
+      <PageHeader title={t("idpTitle")} description={t("idpDescription")} />
 
       <Alert variant="info" className="mb-4">
         <AlertDescription>
@@ -95,6 +128,30 @@ export default function IdentityProviders() {
       </Alert>
 
       {actionError && <Alert variant="destructive" className="mb-4"><AlertDescription>{actionError}</AlertDescription></Alert>}
+
+      {/* Card grid: one-click vendor cards + a dashed "custom" area for any OIDC provider. */}
+      <section className="mb-6" aria-label={t("idpChooseTitle")}>
+        <h2 className="text-sm font-medium">{t("idpChooseTitle")}</h2>
+        <p className="mb-3 text-xs text-muted-foreground">{t("idpChooseHint")}</p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {(presets.data ?? []).map((preset) => (
+            <Card key={preset.id} role="button" tabIndex={0}
+                  className="cursor-pointer p-4 transition-colors hover:border-primary hover:bg-accent"
+                  onClick={() => startPreset(preset)}
+                  onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && startPreset(preset)}>
+              <p className="font-medium">{preset.displayName}</p>
+              <p className="text-xs text-muted-foreground">{t("idpPresetCardHint")}</p>
+            </Card>
+          ))}
+          <Card role="button" tabIndex={0}
+                className="flex cursor-pointer flex-col justify-center border-dashed p-4 text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+                onClick={startCustom}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && startCustom()}>
+            <p className="flex items-center gap-1.5 font-medium"><Plus className="size-4" /> {t("idpCustomCard")}</p>
+            <p className="text-xs">{t("idpCustomCardHint")}</p>
+          </Card>
+        </div>
+      </section>
 
       <DataList
         data={providers.data}
@@ -116,7 +173,12 @@ export default function IdentityProviders() {
             <TableBody>
               {rows.map((p) => (
                 <TableRow key={p.alias}>
-                  <TableCell className="font-medium">{p.displayName}</TableCell>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      {p.displayName}
+                      <Badge variant="muted">{vendorOf(p)}</Badge>
+                    </div>
+                  </TableCell>
                   <TableCell><Badge variant="muted" className="font-mono">{p.alias}</Badge></TableCell>
                   <TableCell className="max-w-xs truncate text-muted-foreground">{p.issuerUri}</TableCell>
                   <TableCell>
@@ -143,7 +205,11 @@ export default function IdentityProviders() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editor.id ? t("idpDialogEdit", { name: editor.displayName }) : t("idpDialogCreate")}</DialogTitle>
+            <DialogTitle>
+              {editor.id
+                ? t("idpDialogEdit", { name: editor.displayName })
+                : activePreset ? t("idpDialogCreatePreset", { name: activePreset.displayName }) : t("idpDialogCreate")}
+            </DialogTitle>
             <DialogDescription>{t("idpDialogDescription")}</DialogDescription>
           </DialogHeader>
 
@@ -162,11 +228,31 @@ export default function IdentityProviders() {
                        onChange={(e) => set({ displayName: e.target.value })} required />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="idp-issuer">{t("idpIssuerLabel")}</Label>
-              <Input id="idp-issuer" value={editor.issuerUri} placeholder="https://accounts.google.com"
-                     onChange={(e) => set({ issuerUri: e.target.value })} required />
-            </div>
+
+            {activePreset && activePreset.fields.length > 0 ? (
+              <>
+                {activePreset.fields.map((field) => (
+                  <div key={field.key} className="space-y-2">
+                    <Label htmlFor={`idp-field-${field.key}`}>{field.label}</Label>
+                    <Input id={`idp-field-${field.key}`} value={editor.fieldValues[field.key] ?? ""}
+                           placeholder={field.placeholder}
+                           onChange={(e) => setField(field.key, e.target.value)} required />
+                  </div>
+                ))}
+                <div className="space-y-2">
+                  <Label htmlFor="idp-issuer-resolved">{t("idpIssuerLabel")}</Label>
+                  <Input id="idp-issuer-resolved" className="font-mono" value={editor.issuerUri} readOnly />
+                  <p className="text-xs text-muted-foreground">{t("idpResolvedIssuerHint")}</p>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="idp-issuer">{t("idpIssuerLabel")}</Label>
+                <Input id="idp-issuer" value={editor.issuerUri} placeholder="https://accounts.google.com"
+                       onChange={(e) => set({ issuerUri: e.target.value })} required />
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="idp-client-id">{t("idpClientIdLabel")}</Label>
               <Input id="idp-client-id" value={editor.clientId} onChange={(e) => set({ clientId: e.target.value })} required />
