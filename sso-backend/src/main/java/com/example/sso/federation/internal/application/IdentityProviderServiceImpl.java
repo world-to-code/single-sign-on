@@ -6,6 +6,8 @@ import com.example.sso.federation.IdentityProviderSpec;
 import com.example.sso.federation.IdentityProviderView;
 import com.example.sso.federation.internal.domain.IdentityProvider;
 import com.example.sso.federation.internal.domain.IdentityProviderRepository;
+import com.example.sso.metadata.ProfileKind;
+import com.example.sso.metadata.ProfileService;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
@@ -21,9 +23,14 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.core.oidc.OidcScopes;
 import com.example.sso.user.account.UserAccessChangedEvent;
+import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
+import com.example.sso.user.role.Roles;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,6 +56,10 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
     private final OutboundHostValidator hostValidator;
     private final OrgContext orgContext;
     private final FederationPresetCatalog presets;
+    private final ProfileService profiles;
+
+    /** Display name of the single, connector-less OIDC source profile a tenant's federated logins feed. */
+    private static final String OIDC_SOURCE_PROFILE = "OIDC";
 
     @Override
     @Transactional(readOnly = true)
@@ -73,6 +84,7 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
         String presetId = normalizePreset(spec.presetId());
         Optional<IdentityProvider> existing = ownProvider(alias);
         String encrypted = resolveSecret(spec, existing.orElse(null));
+        UUID configurator = resolveConfigurator();
         existing.ifPresentOrElse(
                 row -> {
                     // Repointing the alias at a DIFFERENT upstream retires the identities the old one minted:
@@ -82,10 +94,20 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
                     row.reconfigure(spec.displayName().trim(), spec.issuerUri().trim(), spec.clientId().trim(),
                             encrypted, scopes, spec.allowJitProvisioning(), spec.linkByVerifiedEmail(),
                             spec.enabled(), presetId);
+                    row.configuredBy(configurator);
                 },
-                () -> repository.save(IdentityProvider.create(org, alias, spec.displayName().trim(),
-                        spec.issuerUri().trim(), spec.clientId().trim(), encrypted, scopes,
-                        spec.allowJitProvisioning(), spec.linkByVerifiedEmail(), spec.enabled(), presetId)));
+                () -> {
+                    IdentityProvider row = IdentityProvider.create(org, alias, spec.displayName().trim(),
+                            spec.issuerUri().trim(), spec.clientId().trim(), encrypted, scopes,
+                            spec.allowJitProvisioning(), spec.linkByVerifiedEmail(), spec.enabled(), presetId);
+                    row.configuredBy(configurator);
+                    repository.save(row);
+                });
+        // A tenant's federated logins fill attributes through ONE connector-less OIDC source profile (like
+        // SCIM). Provision it idempotently on any tenant write; a platform-tier provider (org null) owns none.
+        if (org != null) {
+            profiles.provisionForSource(org, ProfileKind.OIDC, OIDC_SOURCE_PROFILE);
+        }
     }
 
     @Override
@@ -193,6 +215,26 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
             throw BadRequestException.of("federation.provider.presetUnknown", trimmed);
         }
         return trimmed;
+    }
+
+    /**
+     * The administrator behind this request, resolved the way a mapping rule resolves its author: a platform
+     * super-admin is a global account, anyone else is looked up in their own tier. Null when there is no
+     * authenticated principal (a seeder or a test), which the provenance guard reads as unattributed — never
+     * as "nobody", so it fails closed rather than vouching for an unknown author. Mirrors
+     * {@code DirectoryConnectorServiceImpl.resolveConfigurator}.
+     */
+    private UUID resolveConfigurator() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return null;
+        }
+        boolean platformAdmin = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority).anyMatch(Roles.ADMIN::equals);
+        return (platformAdmin
+                ? users.findByUsernameInOrg(authentication.getName(), null)
+                : users.findByUsername(authentication.getName()))
+                .map(UserAccount::getId).orElse(null);
     }
 
     private String normalizeAlias(String alias) {

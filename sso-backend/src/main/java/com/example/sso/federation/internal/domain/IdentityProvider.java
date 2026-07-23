@@ -75,6 +75,14 @@ public class IdentityProvider extends AuditedEntity implements OrgOwned {
     @Column(name = "preset_id", length = 32)
     private String presetId;
 
+    /**
+     * The administrator who last configured this provider, so the attributes its federated logins fill are
+     * attributable (the federation twin of {@code DirectoryConnector.configuredBy}). Null = unattributed (a
+     * seeder/test, or a row predating the column). Recorded via {@link #configuredBy(UUID)} on every write.
+     */
+    @Column(name = "configured_by")
+    private UUID configuredBy;
+
     /** A custom (preset-less) provider. Owning tenant, or {@code null} for a platform-tier provider. */
     public static IdentityProvider create(UUID orgId, String alias, String displayName, String issuerUri,
             String clientId, String clientSecretEncrypted, String scopes, boolean allowJitProvisioning,
@@ -93,6 +101,11 @@ public class IdentityProvider extends AuditedEntity implements OrgOwned {
         provider.apply(displayName, issuerUri, clientId, clientSecretEncrypted, scopes, allowJitProvisioning,
                 linkByVerifiedEmail, enabled, presetId);
         return provider;
+    }
+
+    /** Record the administrator accountable for this provider (intent-revealing, not a JavaBean setter). */
+    public void configuredBy(UUID configuredBy) {
+        this.configuredBy = configuredBy;
     }
 
     /** Repoint this provider (intent-revealing mutation, not a JavaBean setter); the alias is immutable. */

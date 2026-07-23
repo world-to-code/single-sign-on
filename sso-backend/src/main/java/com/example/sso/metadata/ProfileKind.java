@@ -16,7 +16,12 @@ public enum ProfileKind {
      *  lands it must claim {@link SourceConfigurators}, or its attributes will be unattributable. */
     CSV,
     GOOGLE_WORKSPACE,
-    ENTRA_ID;
+    ENTRA_ID,
+    /** Upstream OIDC logins. Connector-less and ONE per tenant (like {@link #SCIM}): every OIDC provider a
+     *  tenant registers feeds this single source, so a claim maps once instead of colliding per provider.
+     *  Accountability is per-tenant — the {@code federation} module's {@link SourceConfigurators} answers with
+     *  the administrators who configured the tenant's providers. */
+    OIDC;
 
     /** Whether a profile of this kind describes an identity source rather than the tenant itself. */
     public boolean isSource() {

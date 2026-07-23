@@ -5,6 +5,8 @@ import com.example.sso.federation.IdentityProviderSpec;
 import com.example.sso.federation.IdentityProviderView;
 import com.example.sso.federation.internal.domain.IdentityProvider;
 import com.example.sso.federation.internal.domain.IdentityProviderRepository;
+import com.example.sso.metadata.ProfileKind;
+import com.example.sso.metadata.ProfileService;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
@@ -12,7 +14,10 @@ import com.example.sso.shared.net.OutboundHostValidator;
 import com.example.sso.tenancy.OrgContext;
 import java.util.List;
 import com.example.sso.user.account.UserAccessChangedEvent;
+import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.context.ApplicationEventPublisher;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,6 +33,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -59,6 +65,8 @@ class IdentityProviderServiceImplTest {
     OutboundHostValidator hostValidator;
     @Mock
     OrgContext orgContext;
+    @Mock
+    ProfileService profiles;
 
     private final FederationPresetCatalog presets = new FederationPresetCatalog(new FederationPresetProperties(
             List.of(new FederationPresetView("google", "Google", ISSUER, "openid email profile", List.of()))));
@@ -68,7 +76,7 @@ class IdentityProviderServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new IdentityProviderServiceImpl(repository, cipher, links, users, events, hostValidator,
-                orgContext, presets);
+                orgContext, presets, profiles);
     }
 
     private IdentityProvider row(UUID orgId, String encryptedSecret) {
@@ -114,6 +122,54 @@ class IdentityProviderServiceImplTest {
         assertThatThrownBy(() -> service.save(
                 new IdentityProviderSpec(ALIAS, "Google", ISSUER, "c", "s", "openid", true, false, true, "evil")))
                 .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void saveProvisionsTheTenantsOidcSourceProfile() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.empty());
+        when(cipher.encrypt(any())).thenReturn("encg:cipher");
+
+        service.save(spec("s3cret", "openid"));
+
+        // One connector-less OIDC source profile per tenant, provisioned idempotently on the write.
+        verify(profiles).provisionForSource(ORG, ProfileKind.OIDC, "OIDC");
+    }
+
+    @Test
+    void aPlatformTierProviderProvisionsNoSourceProfile() {
+        // A platform-global provider mints no per-tenant link and feeds no tenant's source, so there is no
+        // org-scoped profile to create — provisioning it would be a nonsense global-tier row.
+        when(orgContext.currentOrg()).thenReturn(Optional.empty());
+        when(orgContext.isPlatform()).thenReturn(true);
+        when(repository.findByOrgIdIsNullAndAlias(ALIAS)).thenReturn(Optional.empty());
+        when(cipher.encrypt(any())).thenReturn("encg:cipher");
+
+        service.save(spec("s3cret", "openid"));
+
+        verify(profiles, never()).provisionForSource(any(), any(), any());
+    }
+
+    @Test
+    void saveRecordsTheConfiguringAdministrator() {
+        UUID adminId = UUID.randomUUID();
+        UserAccount actor = mock(UserAccount.class);
+        when(actor.getId()).thenReturn(adminId);
+        when(users.findByUsername("ada")).thenReturn(Optional.of(actor));
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.empty());
+        when(cipher.encrypt(any())).thenReturn("encg:cipher");
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("ada", null, List.of()));
+        try {
+            service.save(spec("s3cret", "openid"));
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+
+        ArgumentCaptor<IdentityProvider> saved = ArgumentCaptor.captor();
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getConfiguredBy()).isEqualTo(adminId); // attributable to who configured it
     }
 
     @Test
