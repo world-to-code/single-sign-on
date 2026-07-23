@@ -3,6 +3,8 @@ package com.example.sso.metadata.internal.api;
 import com.example.sso.metadata.AttributeDefinition;
 import com.example.sso.metadata.AttributeDefinitionService;
 import com.example.sso.metadata.EntityKind;
+import com.example.sso.audit.AuditType;
+import com.example.sso.audit.Audited;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.user.rbac.Permissions;
 import jakarta.validation.Valid;
@@ -38,12 +40,14 @@ public class AttributeDefinitionAdminController {
     }
 
     /** Upsert by (kind, key): the key is the identity, so re-declaring one redefines it in place. */
+    @Audited(value = AuditType.ATTRIBUTE_DEFINITION_CHANGED)
     @PostMapping
     @RequirePermission(Permissions.ATTRIBUTE_DEFINITION_WRITE)
     public AttributeDefinition save(@Valid @RequestBody AttributeDefinitionRequest request) {
         return service.save(request.toSpec());
     }
 
+    @Audited(value = AuditType.ATTRIBUTE_DEFINITION_CHANGED)
     @DeleteMapping("/{id}")
     @RequirePermission(Permissions.ATTRIBUTE_DEFINITION_WRITE)
     public ResponseEntity<Void> delete(@PathVariable UUID id) {

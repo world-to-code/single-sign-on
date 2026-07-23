@@ -87,6 +87,10 @@ public enum AuditType {
     // Administrative configuration changes recorded by the @Audited interceptor (the request method+path
     // distinguishes create vs delete for the coarse *_CHANGED kinds)
     ATTRIBUTE_CHANGED(AuditCategory.ADMIN),
+    // The attribute SCHEMA — declaring, redefining or removing a profile attribute definition. Distinct from
+    // ATTRIBUTE_CHANGED, which is a VALUE written onto one entity; this is the catalog every entity's values
+    // are shaped by, so an unlogged change to it is an unlogged change to what the directory may carry.
+    ATTRIBUTE_DEFINITION_CHANGED(AuditCategory.ADMIN),
     AUTH_POLICY_CREATED(AuditCategory.AUTHORIZATION),
     AUTH_POLICY_UPDATED(AuditCategory.AUTHORIZATION),
     AUTH_POLICY_DELETED(AuditCategory.AUTHORIZATION),

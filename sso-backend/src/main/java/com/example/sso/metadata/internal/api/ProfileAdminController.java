@@ -12,6 +12,8 @@ import com.example.sso.metadata.ProfileMapping;
 import com.example.sso.metadata.ProfileMappingService;
 import com.example.sso.metadata.ProfileService;
 
+import com.example.sso.audit.AuditType;
+import com.example.sso.audit.Audited;
 import com.example.sso.shared.security.CanImportUsers;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
@@ -120,6 +122,7 @@ public class ProfileAdminController {
     }
 
     /** Upsert by key: the key is the identity within a profile, so re-declaring one redefines it in place. */
+    @Audited(value = AuditType.ATTRIBUTE_DEFINITION_CHANGED)
     @PostMapping("/{id}/attributes")
     @RequirePermission(Permissions.ATTRIBUTE_DEFINITION_WRITE)
     public AttributeDefinition saveAttribute(@PathVariable UUID id,
