@@ -40,4 +40,11 @@ public interface RoleHierarchyService {
      * would grow that role's effective permissions for its OTHER holders).
      */
     Set<UUID> apexRolesOf(UUID actorUserId);
+
+    /**
+     * The apex of an ALREADY-KNOWN held-role set — the held roles minus any another held role dominates. For a
+     * caller (like the login authority assembly) that has already read the held roles, this skips re-reading
+     * them; {@link #apexRolesOf} is the read-it-yourself variant. The input set is not modified.
+     */
+    Set<UUID> apexOf(Set<UUID> heldRoleIds);
 }

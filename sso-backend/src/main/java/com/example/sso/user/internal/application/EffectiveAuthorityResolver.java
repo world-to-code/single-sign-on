@@ -58,7 +58,7 @@ class EffectiveAuthorityResolver {
         // Fail CLOSED on a corrupt hierarchy: an EMPTY apex from a NON-empty held set can only mean a cycle (an
         // acyclic non-empty DAG always has a top); rather than read NO role denies (dropping every deny), fall
         // back to every held role so a deny still applies. A genuinely role-less user keeps an empty set.
-        Set<UUID> apexRoleIds = roleHierarchy.apexRolesOf(user.getId());
+        Set<UUID> apexRoleIds = roleHierarchy.apexOf(heldRoleIds); // reuse the held set — no re-read
         Set<UUID> roleDenySubjects = apexRoleIds.isEmpty() && !heldRoleIds.isEmpty() ? heldRoleIds : apexRoleIds;
         Set<UUID> groupIds = new HashSet<>(groups.findGroupIdsByMember(user.getId()));
         DenyRows denies = denyReader.read(user.getId(), roleDenySubjects, groupIds, user.getOrgId());

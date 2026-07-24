@@ -61,6 +61,14 @@ class RoleHierarchyServiceImpl implements RoleHierarchyService {
         return apexRoleIds(actorUserId);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Set<UUID> apexOf(Set<UUID> heldRoleIds) {
+        Set<UUID> apex = new HashSet<>(heldRoleIds); // copy — never mutate the caller's held set
+        apex.removeAll(roleClosure.descendants(heldRoleIds));
+        return apex;
+    }
+
     /**
      * The roles strictly ABOVE the actor: the ancestors of the actor's APEX (highest-held) roles. Reducing to
      * the apex first is what makes this correct when an actor holds a role REDUNDANTLY — e.g. ROLE_USER
@@ -75,9 +83,7 @@ class RoleHierarchyServiceImpl implements RoleHierarchyService {
 
     /** The actor's APEX roles: their held roles minus any that another held role already dominates. */
     private Set<UUID> apexRoleIds(UUID actorUserId) {
-        Set<UUID> held = heldRoleIds(actorUserId);
-        held.removeAll(roleClosure.descendants(held));
-        return held;
+        return apexOf(heldRoleIds(actorUserId));
     }
 
     private Set<UUID> heldRoleIds(UUID actorUserId) {
