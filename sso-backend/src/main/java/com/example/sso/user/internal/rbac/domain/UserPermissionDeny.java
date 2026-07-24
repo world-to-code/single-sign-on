@@ -30,13 +30,23 @@ public class UserPermissionDeny extends AbstractEntity {
     @Column(nullable = false, length = 64)
     private String pattern;
 
-    private UserPermissionDeny(UUID userId, UUID orgId, String pattern) {
+    /** Who authored the deny + their apex role at the time — read by the lift guard (a peer can't lift a peer's). */
+    @Column(name = "created_by")
+    private UUID createdBy;
+
+    @Column(name = "writer_apex_role_id")
+    private UUID writerApexRoleId;
+
+    private UserPermissionDeny(UUID userId, UUID orgId, String pattern, UUID createdBy, UUID writerApexRoleId) {
         this.userId = userId;
         this.orgId = orgId;
         this.pattern = pattern;
+        this.createdBy = createdBy;
+        this.writerApexRoleId = writerApexRoleId;
     }
 
-    public static UserPermissionDeny of(UUID userId, UUID orgId, String pattern) {
-        return new UserPermissionDeny(userId, orgId, pattern);
+    public static UserPermissionDeny of(UUID userId, UUID orgId, String pattern, UUID createdBy,
+            UUID writerApexRoleId) {
+        return new UserPermissionDeny(userId, orgId, pattern, createdBy, writerApexRoleId);
     }
 }

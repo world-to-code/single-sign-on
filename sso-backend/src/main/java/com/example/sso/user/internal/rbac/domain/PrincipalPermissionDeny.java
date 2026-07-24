@@ -35,14 +35,25 @@ public class PrincipalPermissionDeny extends AbstractEntity {
     @Column(nullable = false, length = 64)
     private String pattern;
 
-    private PrincipalPermissionDeny(DenySubjectType subjectType, UUID subjectId, UUID orgId, String pattern) {
+    /** Author + their apex role at write time — read by the lift guard. */
+    @Column(name = "created_by")
+    private UUID createdBy;
+
+    @Column(name = "writer_apex_role_id")
+    private UUID writerApexRoleId;
+
+    private PrincipalPermissionDeny(DenySubjectType subjectType, UUID subjectId, UUID orgId, String pattern,
+            UUID createdBy, UUID writerApexRoleId) {
         this.subjectType = subjectType;
         this.subjectId = subjectId;
         this.orgId = orgId;
         this.pattern = pattern;
+        this.createdBy = createdBy;
+        this.writerApexRoleId = writerApexRoleId;
     }
 
-    public static PrincipalPermissionDeny of(DenySubjectType subjectType, UUID subjectId, UUID orgId, String pattern) {
-        return new PrincipalPermissionDeny(subjectType, subjectId, orgId, pattern);
+    public static PrincipalPermissionDeny of(DenySubjectType subjectType, UUID subjectId, UUID orgId, String pattern,
+            UUID createdBy, UUID writerApexRoleId) {
+        return new PrincipalPermissionDeny(subjectType, subjectId, orgId, pattern, createdBy, writerApexRoleId);
     }
 }

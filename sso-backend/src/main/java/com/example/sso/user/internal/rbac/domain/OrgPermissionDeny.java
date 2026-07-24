@@ -26,12 +26,21 @@ public class OrgPermissionDeny extends AbstractEntity {
     @Column(nullable = false, length = 64)
     private String pattern;
 
-    private OrgPermissionDeny(UUID orgId, String pattern) {
+    /** Author + their apex role at write time — read by the lift guard. */
+    @Column(name = "created_by")
+    private UUID createdBy;
+
+    @Column(name = "writer_apex_role_id")
+    private UUID writerApexRoleId;
+
+    private OrgPermissionDeny(UUID orgId, String pattern, UUID createdBy, UUID writerApexRoleId) {
         this.orgId = orgId;
         this.pattern = pattern;
+        this.createdBy = createdBy;
+        this.writerApexRoleId = writerApexRoleId;
     }
 
-    public static OrgPermissionDeny of(UUID orgId, String pattern) {
-        return new OrgPermissionDeny(orgId, pattern);
+    public static OrgPermissionDeny of(UUID orgId, String pattern, UUID createdBy, UUID writerApexRoleId) {
+        return new OrgPermissionDeny(orgId, pattern, createdBy, writerApexRoleId);
     }
 }
