@@ -12,8 +12,10 @@ import com.example.sso.user.deny.DenySubjectKind;
 import com.example.sso.user.internal.rbac.domain.DenySubjectType;
 import com.example.sso.user.internal.rbac.domain.OrgPermissionDenyRepository;
 import com.example.sso.user.internal.rbac.domain.PrincipalPermissionDenyRepository;
+import com.example.sso.user.internal.rbac.domain.UserPermissionDeny;
 import com.example.sso.user.internal.rbac.domain.UserPermissionDenyRepository;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,6 +45,8 @@ class DenyServiceImplTest {
     @Mock private OrgPermissionDenyRepository orgDenies;
     @Mock private UserService users;
     @Mock private OrgContext orgContext;
+    @Mock private DenyAffectedUsers affectedUsers;
+    @Mock private AccessChangePublisher accessChanges;
 
     @InjectMocks private DenyServiceImpl service;
 
@@ -84,6 +88,77 @@ class DenyServiceImplTest {
 
         service.create(new DenySpec(DenySubjectKind.ORG, orgId, "user:read"));
         verify(orgDenies).insertIfAbsent(orgId, "user:read", actorId, apexId);
+    }
+
+    @Test
+    void aNewUserDenyTerminatesTheTargetUsersSessions() {
+        UUID userId = UUID.randomUUID();
+        UUID userOrg = UUID.randomUUID();
+        authorize(DenySubjectKind.USER, userId, "user:read");
+        UserAccount target = mock(UserAccount.class);
+        when(target.getOrgId()).thenReturn(userOrg);
+        when(users.findById(userId)).thenReturn(Optional.of(target));
+        when(userDenies.insertIfAbsent(userId, userOrg, "user:read", actorId, apexId)).thenReturn(1);
+        when(userDenies.findId(userId, "user:read")).thenReturn(Optional.of(UUID.randomUUID()));
+        when(affectedUsers.forSubject(DenySubjectKind.USER, userId, userOrg)).thenReturn(Set.of(userId));
+
+        service.create(new DenySpec(DenySubjectKind.USER, userId, "user:read"));
+        verify(accessChanges).forUserIds(Set.of(userId));
+    }
+
+    @Test
+    void anIdempotentReCreateChangesNothingSoTerminatesNoOne() {
+        UUID userId = UUID.randomUUID();
+        UUID userOrg = UUID.randomUUID();
+        authorize(DenySubjectKind.USER, userId, "user:read");
+        UserAccount target = mock(UserAccount.class);
+        when(target.getOrgId()).thenReturn(userOrg);
+        when(users.findById(userId)).thenReturn(Optional.of(target));
+        when(userDenies.insertIfAbsent(userId, userOrg, "user:read", actorId, apexId)).thenReturn(0); // ON CONFLICT
+        when(userDenies.findId(userId, "user:read")).thenReturn(Optional.of(UUID.randomUUID()));
+
+        service.create(new DenySpec(DenySubjectKind.USER, userId, "user:read"));
+        verify(accessChanges, never()).forUserIds(any());
+    }
+
+    @Test
+    void liftingAUserDenyTerminatesTheTargetUsersSessions() {
+        UUID denyId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID userOrg = UUID.randomUUID();
+        UUID createdBy = UUID.randomUUID();
+        UUID writerApex = UUID.randomUUID();
+        UserPermissionDeny deny = mock(UserPermissionDeny.class);
+        when(deny.getUserId()).thenReturn(userId);
+        when(deny.getOrgId()).thenReturn(userOrg);
+        when(deny.getPattern()).thenReturn("user:read");
+        when(deny.getCreatedBy()).thenReturn(createdBy);
+        when(deny.getWriterApexRoleId()).thenReturn(writerApex);
+        when(userDenies.findById(denyId)).thenReturn(Optional.of(deny));
+        when(denyAuthority.mayLift(DenySubjectKind.USER, userId, "user:read", createdBy, writerApex)).thenReturn(true);
+        when(affectedUsers.forSubject(DenySubjectKind.USER, userId, userOrg)).thenReturn(Set.of(userId));
+
+        service.lift(denyId, DenySubjectKind.USER);
+        verify(userDenies).deleteById(denyId);
+        verify(accessChanges).forUserIds(Set.of(userId));
+    }
+
+    @Test
+    void aRefusedLiftNeitherDeletesNorTerminates() {
+        UUID denyId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UserPermissionDeny deny = mock(UserPermissionDeny.class);
+        when(deny.getUserId()).thenReturn(userId);
+        when(deny.getPattern()).thenReturn("user:read");
+        when(deny.getCreatedBy()).thenReturn(UUID.randomUUID());
+        when(deny.getWriterApexRoleId()).thenReturn(UUID.randomUUID());
+        when(userDenies.findById(denyId)).thenReturn(Optional.of(deny));
+        when(denyAuthority.mayLift(any(), any(), any(), any(), any())).thenReturn(false);
+
+        assertThatThrownBy(() -> service.lift(denyId, DenySubjectKind.USER))
+                .isInstanceOf(ForbiddenException.class);
+        verify(userDenies, never()).deleteById(any());
+        verify(accessChanges, never()).forUserIds(any());
     }
 
     @Test

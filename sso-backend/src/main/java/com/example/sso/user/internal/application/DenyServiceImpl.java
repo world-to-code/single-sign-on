@@ -36,6 +36,8 @@ class DenyServiceImpl implements DenyService {
     private final OrgPermissionDenyRepository orgDenies;
     private final UserService users;
     private final OrgContext orgContext;
+    private final DenyAffectedUsers affectedUsers;
+    private final AccessChangePublisher accessChanges;
 
     @Override
     @Transactional
@@ -51,14 +53,21 @@ class DenyServiceImpl implements DenyService {
         UUID orgId = denyOrgId(spec.kind(), spec.subjectId());
         return switch (spec.kind()) {
             case USER -> {
-                userDenies.insertIfAbsent(spec.subjectId(), orgId, spec.pattern(), author.id(), author.apexRoleId());
-                yield userDenies.findId(spec.subjectId(), spec.pattern()).orElseThrow();
+                boolean created =
+                        userDenies.insertIfAbsent(spec.subjectId(), orgId, spec.pattern(), author.id(),
+                                author.apexRoleId()) == 1;
+                UUID denyId = userDenies.findId(spec.subjectId(), spec.pattern()).orElseThrow();
+                terminateIfChanged(created, spec.kind(), spec.subjectId(), orgId);
+                yield denyId;
             }
-            case ROLE -> createPrincipal(DenySubjectType.ROLE, spec.subjectId(), orgId, spec.pattern(), author);
-            case GROUP -> createPrincipal(DenySubjectType.GROUP, spec.subjectId(), orgId, spec.pattern(), author);
+            case ROLE -> createPrincipal(DenySubjectType.ROLE, spec, orgId, author);
+            case GROUP -> createPrincipal(DenySubjectType.GROUP, spec, orgId, author);
             case ORG -> {
-                orgDenies.insertIfAbsent(orgId, spec.pattern(), author.id(), author.apexRoleId());
-                yield orgDenies.findId(orgId, spec.pattern()).orElseThrow();
+                boolean created =
+                        orgDenies.insertIfAbsent(orgId, spec.pattern(), author.id(), author.apexRoleId()) == 1;
+                UUID denyId = orgDenies.findId(orgId, spec.pattern()).orElseThrow();
+                terminateIfChanged(created, spec.kind(), spec.subjectId(), orgId);
+                yield denyId;
             }
         };
     }
@@ -68,28 +77,43 @@ class DenyServiceImpl implements DenyService {
     public void lift(UUID denyId, DenySubjectKind kind) {
         switch (kind) {
             case USER -> userDenies.findById(denyId).ifPresent(d ->
-                    liftIfPermitted(DenySubjectKind.USER, d.getUserId(), d.getPattern(), d.getCreatedBy(),
-                            d.getWriterApexRoleId(), () -> userDenies.deleteById(denyId)));
+                    liftIfPermitted(DenySubjectKind.USER, d.getUserId(), d.getOrgId(), d.getPattern(),
+                            d.getCreatedBy(), d.getWriterApexRoleId(), () -> userDenies.deleteById(denyId)));
             case ROLE, GROUP -> principalDenies.findById(denyId).ifPresent(d ->
-                    liftIfPermitted(kindOf(d), d.getSubjectId(), d.getPattern(), d.getCreatedBy(),
-                            d.getWriterApexRoleId(), () -> principalDenies.deleteById(denyId)));
+                    liftIfPermitted(kindOf(d), d.getSubjectId(), d.getOrgId(), d.getPattern(),
+                            d.getCreatedBy(), d.getWriterApexRoleId(), () -> principalDenies.deleteById(denyId)));
             case ORG -> orgDenies.findById(denyId).ifPresent(d ->
-                    liftIfPermitted(DenySubjectKind.ORG, d.getOrgId(), d.getPattern(), d.getCreatedBy(),
-                            d.getWriterApexRoleId(), () -> orgDenies.deleteById(denyId)));
+                    liftIfPermitted(DenySubjectKind.ORG, d.getOrgId(), d.getOrgId(), d.getPattern(),
+                            d.getCreatedBy(), d.getWriterApexRoleId(), () -> orgDenies.deleteById(denyId)));
         }
     }
 
-    private UUID createPrincipal(DenySubjectType type, UUID subjectId, UUID orgId, String pattern, DenyAuthor author) {
-        principalDenies.insertIfAbsent(type.name(), subjectId, orgId, pattern, author.id(), author.apexRoleId());
-        return principalDenies.findId(type, subjectId, pattern).orElseThrow();
+    private UUID createPrincipal(DenySubjectType type, DenySpec spec, UUID orgId, DenyAuthor author) {
+        boolean created = principalDenies.insertIfAbsent(type.name(), spec.subjectId(), orgId, spec.pattern(),
+                author.id(), author.apexRoleId()) == 1;
+        UUID denyId = principalDenies.findId(type, spec.subjectId(), spec.pattern()).orElseThrow();
+        terminateIfChanged(created, spec.kind(), spec.subjectId(), orgId);
+        return denyId;
     }
 
-    private void liftIfPermitted(DenySubjectKind kind, UUID subjectId, String pattern, UUID createdBy,
+    private void liftIfPermitted(DenySubjectKind kind, UUID subjectId, UUID orgId, String pattern, UUID createdBy,
             UUID writerApexRoleId, Runnable delete) {
         if (!denyAuthority.mayLift(kind, subjectId, pattern, createdBy, writerApexRoleId)) {
             throw ForbiddenException.of("user.deny.notPermitted");
         }
         delete.run();
+        // Lifting a deny widens access; its former subjects' live sessions must re-resolve. On create we
+        // terminate only when the row is new (an idempotent re-author changed nothing) — a lift always did.
+        terminateIfChanged(true, kind, subjectId, orgId);
+    }
+
+    /** A deny write that actually changed the stored set must end the affected users' sessions, so their
+     *  authority re-resolves from the new state rather than the one frozen into a live session. The deny's
+     *  {@code orgId} scopes the fan-out to the tenant it actually affects (null = platform-wide veto). */
+    private void terminateIfChanged(boolean changed, DenySubjectKind kind, UUID subjectId, UUID orgId) {
+        if (changed) {
+            accessChanges.forUserIds(affectedUsers.forSubject(kind, subjectId, orgId));
+        }
     }
 
     /** The tier the deny row is stamped with: the target user's own org (composite-FK checked); the actor's

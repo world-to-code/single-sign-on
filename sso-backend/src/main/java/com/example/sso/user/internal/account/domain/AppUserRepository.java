@@ -13,6 +13,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
@@ -20,6 +21,14 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
     /** (id, username) for the given users — batch name lookup without loading roles/groups. */
     @Query("select u.id as id, u.username as name from AppUser u where u.id in :ids")
     List<IdName> findIdNames(Collection<UUID> ids);
+
+    /** Ids of every user in one org (app_user is org-owned) — scopes a deny's session fan-out to its tenant. */
+    @Query("select u.id from AppUser u where u.orgId = :orgId")
+    Set<UUID> findIdsByOrgId(@Param("orgId") UUID orgId);
+
+    /** Ids of every user across all tenants — the fan-out of an absolute (null-org) platform veto. */
+    @Query("select u.id from AppUser u")
+    Set<UUID> findAllIds();
 
     /** Typeahead search by username (case-insensitive). */
     @Query("select u.id as id, u.username as name from AppUser u "
