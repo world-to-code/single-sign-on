@@ -152,9 +152,13 @@ public class ScimUserService {
         });
     }
 
-    /** Admin-bearing accounts can't be deleted/disabled via SCIM (machine credentials must not lock out admins). */
+    /** Admin-bearing accounts can't be deleted/disabled via SCIM (machine credentials must not lock out admins).
+     *  Covers the PLATFORM super ({@code ROLE_ADMIN}) and a TENANT admin ({@code ROLE_ORG_ADMIN}) alike — SCIM
+     *  bypasses the console's last-admin guard, so deactivating an org's sole admin here would brick the tenant.
+     *  Directly-held roles only (a group-delegated admin via SCIM is the same residual as SCIM group membership). */
     private void ensureNotPrivileged(UserAccount user, String action) {
-        boolean admin = user.getRoles().stream().anyMatch(r -> Roles.ADMIN.equals(r.getName()));
+        boolean admin = user.getRoles().stream()
+                .anyMatch(r -> Roles.ADMIN.equals(r.getName()) || Roles.ORG_ADMIN.equals(r.getName()));
         if (admin) {
             throw new BadRequestException("a privileged (admin) account cannot be " + action + " via SCIM");
         }

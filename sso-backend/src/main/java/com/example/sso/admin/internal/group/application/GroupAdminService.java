@@ -3,6 +3,7 @@ package com.example.sso.admin.internal.group.application;
 import com.example.sso.admin.internal.shared.application.ActingAdminTier;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
+import com.example.sso.admin.internal.shared.application.LastAdminGuard;
 import com.example.sso.admin.internal.user.application.UserDetailAdminService;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
@@ -23,6 +24,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Presentation-facing adapter for the group admin API: delegates to {@link UserGroupService} (each
@@ -44,6 +46,7 @@ public class GroupAdminService {
     private final AdminAuditLogger auditLogger;
     private final UserDetailAdminService userDetail;
     private final ActingAdminTier tier;
+    private final LastAdminGuard lastAdminGuard;
 
     public Page<GroupView> list(int page, int size) {
         // Tier-scoped: an un-drilled platform admin (tier null) sees ONLY the global/system groups; a super-admin
@@ -68,12 +71,16 @@ public class GroupAdminService {
         userGroups.delete(id);
     }
 
-    /** Replaces the roles delegated to a group; members inherit them. */
+    /** Replaces the roles delegated to a group; members inherit them. Transactional so the admin-invariant
+     *  recount runs in the mutation's tx: dropping a group's {@code ROLE_ORG_ADMIN} delegation strips the
+     *  admin capability from its group-delegated admins, which could brick the group's org. */
+    @Transactional
     public GroupView setRoles(UUID id, Set<UUID> requestedRoleIds) {
         requireAccess(id);
         Set<UUID> roleIds = Objects.requireNonNullElseGet(requestedRoleIds, Set::of);
         requireMayChange(id, roleIds);
         GroupView view = userGroups.setRoles(id, roleIds);
+        lastAdminGuard.ensureTierRetainsAdmin(userGroups.orgIdOf(id).orElse(null));
         // The NAMES in the trail, from the view the write returned: an audit line of uuids is unreadable, and
         // the names are now a rendering of what was bound rather than what was asked for.
         auditLogger.log(AuditType.GROUP_ROLES_UPDATED, AuditSubjectType.GROUP, id.toString(),

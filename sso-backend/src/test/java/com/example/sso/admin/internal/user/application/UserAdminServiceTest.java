@@ -20,6 +20,7 @@ import com.example.sso.user.account.NewUser;
 import com.example.sso.user.role.Roles;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
+import com.example.sso.user.account.UserUpdate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -94,16 +95,18 @@ class UserAdminServiceTest {
     @Test
     void deletingTheLastAdminIsRejectedWith409() {
         UUID targetId = UUID.randomUUID();
+        UUID orgId = UUID.randomUUID();
+        UserAccount target = mock(UserAccount.class);
+        when(target.getOrgId()).thenReturn(orgId);
+        when(userService.findById(targetId)).thenReturn(Optional.of(target));
         doThrow(new ConflictException("cannot remove the last administrator"))
-                .when(lastAdminGuard).ensureNotLastAdmin(targetId, false);
+                .when(lastAdminGuard).ensureTierRetainsAdmin(orgId);
 
         assertThatThrownBy(() -> service.deleteUser(targetId)).isInstanceOf(ConflictException.class);
-        verify(userService, never()).delete(any());
+        // Mutate-then-guard: the delete is issued, then the 409 rolls the transaction back (proven in the IT).
+        verify(userService).delete(targetId);
         verify(auditLogger, never()).log(any(), any(), any(), any());
     }
-
-
-
 
 
 
@@ -114,12 +117,42 @@ class UserAdminServiceTest {
     @Test
     void deleteUserDelegatesAndAuditsWhenNotTheLastAdmin() {
         UUID targetId = UUID.randomUUID();
+        UUID orgId = UUID.randomUUID();
+        UserAccount target = mock(UserAccount.class);
+        when(target.getOrgId()).thenReturn(orgId);
+        when(userService.findById(targetId)).thenReturn(Optional.of(target));
 
         service.deleteUser(targetId);
 
-        verify(lastAdminGuard).ensureNotLastAdmin(targetId, false);
+        verify(lastAdminGuard).ensureTierRetainsAdmin(orgId);
         verify(userService).delete(targetId);
         verify(auditLogger).log(eq(AuditType.USER_DELETED), eq(AuditSubjectType.USER), any(), any());
+    }
+
+    @Test
+    void updatingAUserRecountsThatUsersTierAfterTheChange() {
+        UUID id = UUID.randomUUID();
+        UUID orgId = UUID.randomUUID();
+        UserAccount updated = user(id);
+        when(updated.getOrgId()).thenReturn(orgId);
+        when(userService.updateUser(eq(id), any())).thenReturn(updated);
+
+        service.updateUser(id, new UserUpdate("New Name", "e@example.com", true, Set.of()));
+
+        verify(lastAdminGuard).ensureTierRetainsAdmin(orgId); // a role/enabled change may strip the last admin
+    }
+
+    @Test
+    void disablingAUserRecountsThatUsersTierAfterTheChange() {
+        UUID id = UUID.randomUUID();
+        UUID orgId = UUID.randomUUID();
+        UserAccount updated = user(id);
+        when(updated.getOrgId()).thenReturn(orgId);
+        when(userService.setEnabled(id, false)).thenReturn(updated);
+
+        service.setEnabled(id, false);
+
+        verify(lastAdminGuard).ensureTierRetainsAdmin(orgId);
     }
 
     private UserAccount user(UUID id) {

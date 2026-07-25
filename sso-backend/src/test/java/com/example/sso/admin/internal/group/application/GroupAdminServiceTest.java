@@ -2,6 +2,7 @@ package com.example.sso.admin.internal.group.application;
 
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
+import com.example.sso.admin.internal.shared.application.LastAdminGuard;
 import com.example.sso.admin.internal.user.application.UserDetailAdminService;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
@@ -51,6 +52,7 @@ class GroupAdminServiceTest {
     private AdminAuditLogger auditLogger;
     private UserDetailAdminService userDetail;
     private OrgContext orgContext;
+    private LastAdminGuard lastAdminGuard;
     private GroupAdminService service;
 
     @BeforeEach
@@ -61,8 +63,10 @@ class GroupAdminServiceTest {
         auditLogger = mock(AdminAuditLogger.class);
         userDetail = mock(UserDetailAdminService.class);
         orgContext = mock(OrgContext.class);
+        lastAdminGuard = mock(LastAdminGuard.class);
+        when(userGroups.orgIdOf(any())).thenReturn(Optional.empty()); // setRoles recounts the group's org tier
         service = new GroupAdminService(userGroups, applications, accessPolicy, auditLogger, userDetail,
-                new ActingAdminTier(accessPolicy, orgContext));
+                new ActingAdminTier(accessPolicy, orgContext), lastAdminGuard);
     }
 
     @Test
@@ -143,13 +147,17 @@ class GroupAdminServiceTest {
 
     @Test
     void setRolesInScopeDelegatesAndAudits() {
+        UUID groupOrg = UUID.randomUUID();
         when(accessPolicy.canAccessGroup(GROUP_ID)).thenReturn(true);
         when(accessPolicy.mayAssignRoleIds(any())).thenReturn(true);
         when(userGroups.setRoles(eq(GROUP_ID), any())).thenReturn(group(GROUP_ID));
+        when(userGroups.orgIdOf(GROUP_ID)).thenReturn(Optional.of(groupOrg));
 
         service.setRoles(GROUP_ID, Set.of(SUPPORT_ROLE));
 
         verify(userGroups).setRoles(GROUP_ID, Set.of(SUPPORT_ROLE));
+        // Dropping a group's ROLE_ORG_ADMIN delegation can strip group-delegated admins → recount the group's org.
+        verify(lastAdminGuard).ensureTierRetainsAdmin(groupOrg);
         verify(auditLogger).log(eq(AuditType.GROUP_ROLES_UPDATED), eq(AuditSubjectType.GROUP), any(), any());
     }
 

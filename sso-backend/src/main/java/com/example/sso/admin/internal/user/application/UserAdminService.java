@@ -7,7 +7,6 @@ import com.example.sso.admin.internal.shared.application.LastAdminGuard;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.shared.Page;
-import com.example.sso.user.role.Roles;
 import com.example.sso.user.account.Suggestion;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
@@ -32,8 +31,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class UserAdminService {
-
-    private static final String ADMIN_ROLE = Roles.ADMIN;
 
     private final UserService userService;
     private final ActingAdminTier tier;
@@ -86,28 +83,29 @@ public class UserAdminService {
 
     @Transactional
     public AdminUserView updateUser(UUID id, UserUpdate update) {
-        boolean remainsEnabledAdmin = update.enabled()
-                && update.roleNames() != null && update.roleNames().contains(ADMIN_ROLE);
-        lastAdminGuard.ensureNotLastAdmin(id, remainsEnabledAdmin);
-        AdminUserView updated = AdminUserView.of(userService.updateUser(id, update));
+        // Recount AFTER the change (which may disable the user or strip the admin role) rather than predict it.
+        UserAccount updated = userService.updateUser(id, update);
+        lastAdminGuard.ensureTierRetainsAdmin(updated.getOrgId());
         auditLogger.log(AuditType.USER_UPDATED, AuditSubjectType.USER, id.toString(),
                 "user=" + id + " enabled=" + update.enabled() + " roles=" + update.roleNames());
-        return updated;
+        return AdminUserView.of(updated);
     }
 
     @Transactional
     public AdminUserView setEnabled(UUID id, boolean enabled) {
-        lastAdminGuard.ensureNotLastAdmin(id, enabled);
-        AdminUserView view = AdminUserView.of(userService.setEnabled(id, enabled));
+        UserAccount updated = userService.setEnabled(id, enabled);
+        lastAdminGuard.ensureTierRetainsAdmin(updated.getOrgId());
         auditLogger.log(enabled ? AuditType.USER_ENABLED : AuditType.USER_DISABLED,
                 AuditSubjectType.USER, id.toString(), "user=" + id);
-        return view;
+        return AdminUserView.of(updated);
     }
 
     @Transactional
     public void deleteUser(UUID id) {
-        lastAdminGuard.ensureNotLastAdmin(id, false);
+        // Capture the tier before the row is gone, delete, then recount that tier's surviving admins.
+        UUID orgId = userService.findById(id).map(UserAccount::getOrgId).orElse(null);
         userService.delete(id);
+        lastAdminGuard.ensureTierRetainsAdmin(orgId);
         auditLogger.log(AuditType.USER_DELETED, AuditSubjectType.USER, id.toString(), "user=" + id);
     }
 

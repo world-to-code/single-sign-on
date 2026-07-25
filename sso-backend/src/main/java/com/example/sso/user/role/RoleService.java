@@ -111,8 +111,12 @@ public interface RoleService {
     /** A page of roles (SCIM 1-based startIndex). */
     List<RoleRef> page(long startIndex, int count);
 
-    /** The users assigned this role. */
+    /** The users assigned this role DIRECTLY (a direct user→role grant only, NOT group-delegated). */
     List<UserAccount> members(UUID roleId);
+
+    /** Every user this role EFFECTIVELY reaches — assigned directly OR via a GROUP that delegates it. The true
+     *  holder set, unlike {@link #members} (direct grants only); use this wherever group-delegated holders count. */
+    List<UserAccount> effectiveHolders(UUID roleId);
 
     /** Members of several roles at once (one query) — for SCIM group listing. */
     Map<UUID, List<UserAccount>> membersByRoleIds(Set<UUID> roleIds);

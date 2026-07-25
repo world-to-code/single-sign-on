@@ -36,8 +36,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class RoleAdminService {
 
-    private static final String ADMIN_ROLE = Roles.ADMIN;
-
     private final RoleService roleService;
     private final RbacService rbacService;
     private final AdminAccessPolicy accessPolicy;
@@ -180,6 +178,7 @@ public class RoleAdminService {
             // 4xx, not a 500 — a caller chose a child that (transitively, or itself) already inherits this role.
             throw BadRequestException.of("admin.role.inheritanceCycle");
         }
+        guardTierOfRole(id); // dropping an inherited child may have stripped the admin capability from the tier
         auditLogger.log(AuditType.ROLE_UPDATED, "role=" + id + " inheritsFrom=" + childRoleIds);
         return roleDetail(id);
     }
@@ -195,6 +194,7 @@ public class RoleAdminService {
             throw ForbiddenException.of("admin.role.notPermitted");
         }
         RoleView view = RoleView.of(roleService.updateRole(id, name, permissions));
+        guardTierOfRole(id); // a perm change may have stripped the admin capability from the tier's admins
         auditLogger.log(AuditType.ROLE_UPDATED, "role=" + id + " name=" + name + " permissions=" + permissions);
         return view;
     }
@@ -258,19 +258,33 @@ public class RoleAdminService {
                 "grant role=" + roleId + " to user=" + userId);
     }
 
-    /** Revokes a role from a user; keeps the last-administrator invariant when the role is {@code ROLE_ADMIN}. */
+    /** Revokes a role from a user; keeps the administrator invariant when the role is an admin-bearing role. */
     @Transactional
     public void removeRoleMember(UUID roleId, UUID userId) {
-        if (isAdminRole(roleId)) {
-            lastAdminGuard.ensureNotLastAdmin(userId, false);
-        }
         roleService.removeMember(roleId, userId);
+        guardAdminInvariantFor(roleId);
         auditLogger.log(AuditType.USER_UPDATED, AuditSubjectType.USER, userId.toString(),
                 "revoke role=" + roleId + " from user=" + userId);
     }
 
+    /** After a change to an admin-bearing role's MEMBERSHIP, re-assert that the role's tier keeps an enabled
+     *  effective admin. Membership change on a non-admin role cannot reduce admin capability, so it is skipped. */
+    private void guardAdminInvariantFor(UUID roleId) {
+        if (isAdminRole(roleId)) {
+            guardTierOfRole(roleId);
+        }
+    }
+
+    /** After a change to a role's PERMISSIONS or INHERITANCE, recount its tier's admins: the edited role may be
+     *  the tier's {@code ROLE_ORG_ADMIN} or a role it inherits, so the change can strip the admin capability. */
+    private void guardTierOfRole(UUID roleId) {
+        lastAdminGuard.ensureTierRetainsAdmin(roleService.orgIdOf(roleId).orElse(null));
+    }
+
     private boolean isAdminRole(UUID roleId) {
-        return roleService.findById(roleId).map(role -> ADMIN_ROLE.equals(role.getName())).orElse(false);
+        return roleService.findById(roleId)
+                .map(role -> Roles.ADMIN.equals(role.getName()) || Roles.ORG_ADMIN.equals(role.getName()))
+                .orElse(false);
     }
 
     /**

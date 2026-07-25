@@ -131,7 +131,7 @@ class RoleAdminServiceTest {
 
         service.removeRoleMember(roleId, userId);
 
-        verify(lastAdminGuard, never()).ensureNotLastAdmin(any(), eq(false));
+        verify(lastAdminGuard, never()).ensureTierRetainsAdmin(any());
         verify(roleService).removeMember(roleId, userId);
         verify(auditLogger).log(eq(AuditType.USER_UPDATED), eq(AuditSubjectType.USER), eq(userId.toString()), any());
     }
@@ -143,12 +143,31 @@ class RoleAdminServiceTest {
         RoleRef adminRole = mock(RoleRef.class);
         when(adminRole.getName()).thenReturn(Roles.ADMIN);
         when(roleService.findById(adminRoleId)).thenReturn(Optional.of(adminRole));
+        when(roleService.orgIdOf(adminRoleId)).thenReturn(Optional.empty()); // global ROLE_ADMIN -> platform tier
         doThrow(new ConflictException("cannot remove the last administrator"))
-                .when(lastAdminGuard).ensureNotLastAdmin(userId, false);
+                .when(lastAdminGuard).ensureTierRetainsAdmin(null);
 
         assertThatThrownBy(() -> service.removeRoleMember(adminRoleId, userId))
                 .isInstanceOf(ConflictException.class);
-        verify(roleService, never()).removeMember(any(), any());
+        // Mutate-then-guard: the remove is issued, then the 409 rolls the transaction back (proven in the IT).
+        verify(roleService).removeMember(adminRoleId, userId);
+    }
+
+    @Test
+    void revokingTheOrgAdminRoleFromTheLastTenantAdminIsRejectedWith409() {
+        UUID userId = UUID.randomUUID();
+        UUID orgAdminRoleId = UUID.randomUUID();
+        UUID orgId = UUID.randomUUID();
+        RoleRef orgAdminRole = mock(RoleRef.class);
+        when(orgAdminRole.getName()).thenReturn(Roles.ORG_ADMIN); // a tenant's own admin role, not the platform one
+        when(roleService.findById(orgAdminRoleId)).thenReturn(Optional.of(orgAdminRole));
+        when(roleService.orgIdOf(orgAdminRoleId)).thenReturn(Optional.of(orgId)); // recount runs on the tenant tier
+        doThrow(new ConflictException("cannot remove the last administrator"))
+                .when(lastAdminGuard).ensureTierRetainsAdmin(orgId);
+
+        assertThatThrownBy(() -> service.removeRoleMember(orgAdminRoleId, userId))
+                .isInstanceOf(ConflictException.class);
+        verify(roleService).removeMember(orgAdminRoleId, userId);
     }
 
     @Test
@@ -226,6 +245,7 @@ class RoleAdminServiceTest {
 
         assertThat(view.id()).isEqualTo(roleId.toString());
         verify(roleService).updateRole(eq(roleId), eq("ROLE_SUPPORT"), any());
+        verify(lastAdminGuard).ensureTierRetainsAdmin(org); // a perm edit recounts the role's tier
         verify(auditLogger).log(eq(AuditType.ROLE_UPDATED), any());
     }
 
@@ -612,6 +632,7 @@ class RoleAdminServiceTest {
         RoleDetailView view = service.setInheritance(id, Set.of(child));
 
         verify(roleService).setInheritsFrom(id, Set.of(child));
+        verify(lastAdminGuard).ensureTierRetainsAdmin(tier); // an inheritance edit recounts the role's tier
         verify(auditLogger).log(eq(AuditType.ROLE_UPDATED), any());
         // The A-holder now effectively carries the inherited permission (e.g. user:delete via the child).
         assertThat(view.effectivePermissions()).contains("user:delete");
