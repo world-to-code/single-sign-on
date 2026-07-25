@@ -5,6 +5,8 @@ import com.example.sso.resource.authorization.ApplicationAuthorization;
 import com.example.sso.resource.authorization.GroupAuthorization;
 import com.example.sso.resource.authorization.ResourceAuthorization;
 import com.example.sso.mapping.MappingTargetKind;
+import com.example.sso.user.deny.DenyAuthor;
+import com.example.sso.user.deny.DenySubjectKind;
 import com.example.sso.organization.OrganizationAuthorization;
 import com.example.sso.portal.application.ApplicationService;
 import com.example.sso.portal.application.ApplicationView;
@@ -447,6 +449,70 @@ public class AdminAccessPolicy {
         return permissions.stream().allMatch(Permissions::isGrantableName)
                 && permissions.stream().noneMatch(Permissions::isPlatformGrant)
                 && currentAuthorities().containsAll(permissions);
+    }
+
+    /**
+     * Whether the actor may AUTHOR a deny of {@code pattern} on the subject, and who the author is (id + single
+     * apex role) for stamping. Deny is grant-symmetric — the actor's LIVE authority must let them GRANT the
+     * pattern (a self-lowered grant power counts at once, unlike the session-frozen {@link #mayGrantPermissions})
+     * — they must administer the subject, and they must hold a single unambiguous role position (else refused).
+     */
+    public Optional<DenyAuthor> authorizeDenyAuthor(DenySubjectKind kind, UUID subjectId, String pattern) {
+        return currentUserId().flatMap(actorId -> {
+            if (!mayGrantLive(userService.effectiveAuthorities(actorId), pattern)
+                    || !mayReachDenySubject(kind, subjectId)) {
+                return Optional.empty();
+            }
+            Set<UUID> apex = roleHierarchy.apexRolesOf(actorId);
+            return apex.size() == 1 ? Optional.of(new DenyAuthor(actorId, apex.iterator().next())) : Optional.empty();
+        });
+    }
+
+    /**
+     * Whether the actor may LIFT a stored deny. Lifting restores authority, so it is a GRANT act: the actor
+     * must (LIVE) be able to grant the pattern and administer the subject, must not be lifting a deny on their
+     * OWN account, and must either have authored it or STRICTLY dominate the author's stamped apex — a peer
+     * cannot lift a peer's deny.
+     */
+    public boolean mayLiftDeny(DenySubjectKind kind, UUID subjectId, String pattern, UUID createdBy,
+            UUID writerApexRoleId) {
+        return currentUserId().map(actorId -> {
+            if (kind == DenySubjectKind.USER && actorId.equals(subjectId)) {
+                return false; // never re-grant yourself by lifting a deny on your own account
+            }
+            if (!mayGrantLive(userService.effectiveAuthorities(actorId), pattern)
+                    || !mayReachDenySubject(kind, subjectId)) {
+                return false;
+            }
+            return actorId.equals(createdBy) || strictlyDominates(actorId, writerApexRoleId);
+        }).orElse(false);
+    }
+
+    /** LIVE grant-only-what-you-hold for ONE name: a super grants anything; else a grantable, non-platform name
+     *  the actor's live authorities actually hold (the wildcard token or the concrete permission). */
+    private boolean mayGrantLive(Set<String> authorities, String pattern) {
+        return authorities.contains(ADMIN_ROLE)
+                || (Permissions.isGrantableName(pattern) && !Permissions.isPlatformGrant(pattern)
+                        && authorities.contains(pattern));
+    }
+
+    /** The actor administers the deny's subject — the SAME access the grant path demands, per subject kind. */
+    private boolean mayReachDenySubject(DenySubjectKind kind, UUID subjectId) {
+        return switch (kind) {
+            case USER -> canAccessUser(subjectId);
+            case ROLE -> mayAssignTarget(MappingTargetKind.ROLE, subjectId);
+            case GROUP -> canAccessGroup(subjectId);
+            // A platform super may author for any org (or the org-null platform veto); a tenant only its own.
+            case ORG -> isCurrentActorUnscoped()
+                    || (subjectId != null && administersBoundOrg() && subjectId.equals(actingOrg()));
+        };
+    }
+
+    /** The actor is strictly above the author's frozen apex: may manage that role AND it is not at their level. */
+    private boolean strictlyDominates(UUID actorId, UUID writerApexRoleId) {
+        return writerApexRoleId != null
+                && roleHierarchy.actorMayManageRole(actorId, writerApexRoleId)
+                && !roleHierarchy.apexRolesOf(actorId).contains(writerApexRoleId);
     }
 
     /**

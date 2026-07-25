@@ -10,6 +10,8 @@ import com.example.sso.portal.application.ApplicationService;
 import com.example.sso.portal.application.ApplicationView;
 import com.example.sso.resource.authorization.UserAuthorization;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.user.deny.DenyAuthor;
+import com.example.sso.user.deny.DenySubjectKind;
 import com.example.sso.user.rbac.PermissionPattern;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.RoleHierarchyService;
@@ -700,6 +702,82 @@ class AdminAccessPolicyTest {
         assertThat(policy.mayGrantPermissions(Set.of("organization:*"))).isFalse(); // reaches platform members
         assertThat(policy.mayGrantPermissions(Set.of("audit:*"))).isFalse();        // finer sub-scopes
         assertThat(policy.mayGrantPermissions(Set.of("bogus:*"))).isFalse();        // unknown resource
+    }
+
+    // --- deny authoring / lifting (P0: grant-symmetric, single-apex, dominance-gated, LIVE) ---
+
+    @Test
+    void authorizingADenyReturnsTheAuthorWhenGrantSymmetricSubjectAccessedAndSingleApex() {
+        UUID apex = UUID.randomUUID();
+        signInWith(Permissions.USER_READ);
+        when(userService.effectiveAuthorities(ACTOR_ID)).thenReturn(Set.of(Permissions.USER_READ)); // LIVE
+        when(userAuth.canManage(ACTOR_ID, OTHER_ID)).thenReturn(true);                               // subject access
+        when(roleHierarchy.apexRolesOf(ACTOR_ID)).thenReturn(Set.of(apex));                          // single position
+
+        assertThat(policy.authorizeDenyAuthor(DenySubjectKind.USER, OTHER_ID, Permissions.USER_READ))
+                .contains(new DenyAuthor(ACTOR_ID, apex));
+    }
+
+    @Test
+    void authorizingADenyRefusesAPatternTheActorCouldNotGrantLive() {
+        signInWith(Permissions.USER_READ);
+        when(userService.effectiveAuthorities(ACTOR_ID)).thenReturn(Set.of(Permissions.USER_READ)); // no user:delete
+        lenient().when(userAuth.canManage(ACTOR_ID, OTHER_ID)).thenReturn(true);
+
+        assertThat(policy.authorizeDenyAuthor(DenySubjectKind.USER, OTHER_ID, Permissions.USER_DELETE)).isEmpty();
+    }
+
+    @Test
+    void authorizingADenyRefusesWhenTheActorsPositionIsAmbiguous() {
+        signInWith(Permissions.USER_READ);
+        when(userService.effectiveAuthorities(ACTOR_ID)).thenReturn(Set.of(Permissions.USER_READ));
+        when(userAuth.canManage(ACTOR_ID, OTHER_ID)).thenReturn(true);
+        when(roleHierarchy.apexRolesOf(ACTOR_ID)).thenReturn(Set.of(UUID.randomUUID(), UUID.randomUUID())); // 2 apexes
+
+        assertThat(policy.authorizeDenyAuthor(DenySubjectKind.USER, OTHER_ID, Permissions.USER_READ)).isEmpty();
+    }
+
+    @Test
+    void liftingIsAllowedForTheAuthor() {
+        signInWith(Permissions.USER_READ);
+        when(userService.effectiveAuthorities(ACTOR_ID)).thenReturn(Set.of(Permissions.USER_READ));
+        when(userAuth.canManage(ACTOR_ID, OTHER_ID)).thenReturn(true);
+
+        assertThat(policy.mayLiftDeny(DenySubjectKind.USER, OTHER_ID, Permissions.USER_READ,
+                ACTOR_ID, UUID.randomUUID())).isTrue(); // createdBy == actor
+    }
+
+    @Test
+    void liftingIsRefusedForAPeerWhoSharesTheAuthorsApex() {
+        UUID sharedApex = UUID.randomUUID();
+        signInWith(Permissions.USER_READ);
+        when(userService.effectiveAuthorities(ACTOR_ID)).thenReturn(Set.of(Permissions.USER_READ));
+        when(userAuth.canManage(ACTOR_ID, OTHER_ID)).thenReturn(true);
+        when(roleHierarchy.actorMayManageRole(ACTOR_ID, sharedApex)).thenReturn(true);
+        when(roleHierarchy.apexRolesOf(ACTOR_ID)).thenReturn(Set.of(sharedApex)); // the author's apex IS at my level
+
+        assertThat(policy.mayLiftDeny(DenySubjectKind.USER, OTHER_ID, Permissions.USER_READ,
+                UUID.randomUUID(), sharedApex)).isFalse(); // peer, not author, not strictly above
+    }
+
+    @Test
+    void liftingIsAllowedForAStrictSuperiorOfTheAuthor() {
+        UUID authorApex = UUID.randomUUID();
+        signInWith(Permissions.USER_READ);
+        when(userService.effectiveAuthorities(ACTOR_ID)).thenReturn(Set.of(Permissions.USER_READ));
+        when(userAuth.canManage(ACTOR_ID, OTHER_ID)).thenReturn(true);
+        when(roleHierarchy.actorMayManageRole(ACTOR_ID, authorApex)).thenReturn(true);
+        when(roleHierarchy.apexRolesOf(ACTOR_ID)).thenReturn(Set.of(UUID.randomUUID())); // author's apex is below me
+
+        assertThat(policy.mayLiftDeny(DenySubjectKind.USER, OTHER_ID, Permissions.USER_READ,
+                UUID.randomUUID(), authorApex)).isTrue();
+    }
+
+    @Test
+    void liftingADenyOnYourOwnAccountIsRefused() {
+        signInWith(Permissions.USER_READ);
+        assertThat(policy.mayLiftDeny(DenySubjectKind.USER, ACTOR_ID, Permissions.USER_READ,
+                ACTOR_ID, UUID.randomUUID())).isFalse(); // subject == actor
     }
 
     @Test

@@ -1,9 +1,11 @@
 package com.example.sso.user.internal.rbac.domain;
 
 import java.util.Collection;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -22,4 +24,18 @@ public interface PrincipalPermissionDenyRepository extends JpaRepository<Princip
             + "and (d.orgId is null or d.orgId = :userOrg)")
     Set<String> findPatterns(@Param("subjectType") DenySubjectType subjectType,
             @Param("subjectIds") Collection<UUID> subjectIds, @Param("userOrg") UUID userOrg);
+
+    @Modifying
+    @Query(nativeQuery = true, value = "insert into principal_permission_deny "
+            + "(id, subject_type, subject_id, org_id, pattern, created_by, writer_apex_role_id) "
+            + "values (gen_random_uuid(), :subjectType, :subjectId, :orgId, :pattern, :createdBy, :apexRoleId) "
+            + "on conflict do nothing")
+    int insertIfAbsent(@Param("subjectType") String subjectType, @Param("subjectId") UUID subjectId,
+            @Param("orgId") UUID orgId, @Param("pattern") String pattern, @Param("createdBy") UUID createdBy,
+            @Param("apexRoleId") UUID apexRoleId);
+
+    @Query("select d.id from PrincipalPermissionDeny d "
+            + "where d.subjectType = :subjectType and d.subjectId = :subjectId and d.pattern = :pattern")
+    Optional<UUID> findId(@Param("subjectType") DenySubjectType subjectType, @Param("subjectId") UUID subjectId,
+            @Param("pattern") String pattern);
 }
