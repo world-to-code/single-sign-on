@@ -27,6 +27,7 @@ import { FederatedIdentities } from "@/components/FederatedIdentities";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { EffectivePermissionList } from "@/components/EffectivePermissionList";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -278,13 +279,7 @@ export default function UserDetail({ session }: { session: SessionView }) {
               <CardDescription>{t("userDetailEffectivePermsDesc")}</CardDescription>
             </CardHeader>
             <CardContent>
-              {user.effectivePermissions.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{t("none")}</p>
-              ) : (
-                <div className="flex flex-wrap gap-1">
-                  {user.effectivePermissions.map((p) => <Badge key={p} variant="muted" className="font-mono text-xs">{p}</Badge>)}
-                </div>
-              )}
+              <EffectivePermissionList effective={user.effectivePermissions} denied={user.deniedPermissions} />
             </CardContent>
           </Card>
 

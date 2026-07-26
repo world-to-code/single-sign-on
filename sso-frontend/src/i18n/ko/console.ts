@@ -563,6 +563,8 @@ export const console: Record<keyof typeof enConsole, string> = {
   userDetailNoDirectPerms: "직접 권한이 없습니다.",
   userDetailEffectivePerms: "유효 권한",
   userDetailEffectivePermsDesc: "역할·그룹·직접 부여에서 적용되는 모든 권한(읽기 함의 확장 포함).",
+  userDetailDeniedPerms: "거부로 제거됨",
+  userDetailDeniedPermsHint: "역할·그룹·직접 부여로 받았으나 부정 권한(deny)으로 보류된 권한.",
   userDetailAssignedApps: "할당된 애플리케이션",
   userDetailAssignedAppsDesc: "이 사용자가 포털에서 실행할 수 있는 애플리케이션.",
   userDetailNoApps: "할당된 애플리케이션이 없습니다.",

@@ -563,6 +563,8 @@ export const console = {
   userDetailNoDirectPerms: "No direct permissions.",
   userDetailEffectivePerms: "Effective permissions",
   userDetailEffectivePermsDesc: "All permissions in effect — from roles, groups and direct grants (read-implication expanded).",
+  userDetailDeniedPerms: "Removed by a deny",
+  userDetailDeniedPermsHint: "Granted by a role, group or direct grant, but withheld by a negative permission (deny).",
   userDetailAssignedApps: "Assigned applications",
   userDetailAssignedAppsDesc: "Applications this user can launch from the portal.",
   userDetailNoApps: "No applications assigned.",

@@ -32,6 +32,7 @@ export interface UserDetail {
   roleAssignments: RoleAssignment[];
   directPermissions: string[];
   effectivePermissions: string[];
+  deniedPermissions: string[];
 }
 
 export interface CreateUserRequest {
