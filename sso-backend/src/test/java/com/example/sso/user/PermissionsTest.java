@@ -1,6 +1,6 @@
 package com.example.sso.user;
 
-import com.example.sso.user.rbac.PermissionPattern;
+import com.example.sso.user.internal.rbac.PermissionPattern;
 import com.example.sso.user.rbac.Permissions;
 
 import org.junit.jupiter.api.Test;
@@ -227,7 +227,7 @@ class PermissionsTest {
     void isGrantableNameAcceptsCatalogPermsAndValidWildcards() {
         assertThat(Permissions.isGrantableName(Permissions.USER_READ)).isTrue();
         assertThat(Permissions.isGrantableName("user:*")).isTrue();
-        assertThat(Permissions.isGrantableName(PermissionPattern.SUPER)).isTrue();
+        assertThat(Permissions.isGrantableName(Permissions.SUPER)).isTrue();
         assertThat(Permissions.isGrantableName("organization:*")).isFalse(); // reaches platform members
         assertThat(Permissions.isGrantableName("audit:*")).isFalse();        // finer sub-scopes
         assertThat(Permissions.isGrantableName("bogus:read")).isFalse();
@@ -235,7 +235,7 @@ class PermissionsTest {
 
     @Test
     void isPlatformGrantFlagsPlatformPermsAndTheSuperTokenOnly() {
-        assertThat(Permissions.isPlatformGrant(PermissionPattern.SUPER)).isTrue();
+        assertThat(Permissions.isPlatformGrant(Permissions.SUPER)).isTrue();
         assertThat(Permissions.isPlatformGrant(Permissions.ORG_CREATE)).isTrue();
         assertThat(Permissions.isPlatformGrant("user:*")).isFalse(); // a resource wildcard is never platform
         assertThat(Permissions.isPlatformGrant(Permissions.USER_READ)).isFalse();
@@ -245,17 +245,17 @@ class PermissionsTest {
     void expandGrantsKeepsTheWildcardTokenAndAddsItsConcreteMembers() {
         // The TOKEN survives (the grant ceiling checks it) AND the concrete members appear (endpoint
         // hasAuthority is exact-match). A mutating member still implies its read.
-        assertThat(Permissions.expandGrants(Set.of("user:*")))
+        assertThat(Permissions.expandGrantedAuthorities(Set.of("user:*")))
                 .contains("user:*", Permissions.USER_READ, Permissions.USER_CREATE,
                         Permissions.USER_UPDATE, Permissions.USER_DELETE);
-        assertThat(Permissions.expandGrants(Set.of(Permissions.USER_UPDATE)))
+        assertThat(Permissions.expandGrantedAuthorities(Set.of(Permissions.USER_UPDATE)))
                 .contains(Permissions.USER_UPDATE, Permissions.USER_READ);
     }
 
     @Test
     void expandGrantsOfTheSuperTokenIsTheWholeCatalog() {
-        assertThat(Permissions.expandGrants(Set.of(PermissionPattern.SUPER)))
-                .contains(PermissionPattern.SUPER)
+        assertThat(Permissions.expandGrantedAuthorities(Set.of(Permissions.SUPER)))
+                .contains(Permissions.SUPER)
                 .containsAll(Permissions.ALL);
     }
 
@@ -266,7 +266,7 @@ class PermissionsTest {
         List<String> wildcards = Permissions.tenantWildcards();
         assertThat(wildcards).isNotEmpty()
                 .contains("user:*", "role:*", "resource:*", "portal-settings:*")
-                .doesNotContain(PermissionPattern.SUPER, "organization:*", "audit:*");
+                .doesNotContain(Permissions.SUPER, "organization:*", "audit:*");
         for (String token : wildcards) {
             assertThat(PermissionPattern.isValid(token)).isTrue();
             assertThat(PermissionPattern.of(token).isSuper()).isFalse();

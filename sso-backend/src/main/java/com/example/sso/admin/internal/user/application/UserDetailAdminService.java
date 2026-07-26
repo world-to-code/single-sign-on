@@ -118,7 +118,7 @@ public class UserDetailAdminService {
         }
         permissions.addAll(user.getDirectPermissionNames());
 
-        return Permissions.expandGrants(permissions);
+        return Permissions.expandGrantedAuthorities(permissions);
     }
 
     /**

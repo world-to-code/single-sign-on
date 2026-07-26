@@ -1,6 +1,7 @@
-package com.example.sso.user.rbac;
+package com.example.sso.user.internal.rbac;
 
 import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.user.rbac.Permissions;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -18,13 +19,10 @@ import java.util.Set;
  * </ul>
  *
  * <p>A wildcard is stored as its token; a holder's EFFECTIVE authorities carry the token AND its expansion
- * ({@link Permissions#expandGrants}), so an exact-match {@code hasAuthority(...)} endpoint check is satisfied by
+ * ({@link Permissions#expandGrantedAuthorities}), so an exact-match {@code hasAuthority(...)} endpoint check is satisfied by
  * the expansion while the grant-ceiling "must hold what you hand out" check still sees the token.
  */
 public final class PermissionPattern {
-
-    /** The super token: expands to the whole catalog, platform included. */
-    public static final String SUPER = "*:*";
 
     private static final String WILDCARD_ACTION = "*";
 
@@ -52,7 +50,7 @@ public final class PermissionPattern {
         if (!isWildcardToken(name)) {
             return false;
         }
-        if (SUPER.equals(name)) {
+        if (Permissions.SUPER.equals(name)) {
             return true;
         }
         // Catalog-shape questions belong to the catalog: a resource wildcard is valid only when the resource has
@@ -70,7 +68,7 @@ public final class PermissionPattern {
         if (!isValid(token)) {
             throw BadRequestException.of("user.permission.wildcardInvalid", token);
         }
-        Set<String> expansion = SUPER.equals(token)
+        Set<String> expansion = Permissions.SUPER.equals(token)
                 ? new LinkedHashSet<>(Permissions.ALL)
                 : Permissions.actionsOf(token.substring(0, token.indexOf(':')));
         return new PermissionPattern(token, expansion);
@@ -83,7 +81,7 @@ public final class PermissionPattern {
 
     /** The super token grants everything; a resource wildcard grants only its own resource. */
     public boolean isSuper() {
-        return SUPER.equals(token);
+        return Permissions.SUPER.equals(token);
     }
 
     /** The concrete catalog permissions this wildcard stands for (unmodifiable). */

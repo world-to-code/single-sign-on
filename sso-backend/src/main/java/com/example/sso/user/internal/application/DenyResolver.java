@@ -1,6 +1,6 @@
 package com.example.sso.user.internal.application;
 
-import com.example.sso.user.rbac.PermissionPattern;
+import com.example.sso.user.internal.rbac.PermissionPattern;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.Roles;
 import java.util.HashSet;
@@ -29,17 +29,17 @@ class DenyResolver {
         // Super is exempt from every deny — a platform ROLE_ADMIN cannot be vetoed. Its authorities are the
         // plain grant expansion (tokens + members + implied reads), exactly the no-deny path.
         if (in.roleNames().contains(Roles.ADMIN)) {
-            return union(Permissions.expandGrants(union(in.userAllow(), in.roleAllow())), in.roleNames());
+            return union(Permissions.expandGrantedAuthorities(union(in.userAllow(), in.roleAllow())), in.roleNames());
         }
 
         DenyRows denies = in.denies();
-        Set<String> userAllow = Permissions.expandWildcards(in.userAllow());
-        Set<String> roleAllow = Permissions.expandWildcards(in.roleAllow());
-        Set<String> userDeny = Permissions.expandWildcards(denies.user());
-        Set<String> roleDeny = Permissions.expandWildcards(denies.role());
-        Set<String> groupDeny = Permissions.expandWildcards(denies.group());
-        Set<String> orgDeny = Permissions.expandWildcards(denies.org());
-        Set<String> platformDeny = Permissions.expandWildcards(denies.platform());
+        Set<String> userAllow = Permissions.expandWildcardMembers(in.userAllow());
+        Set<String> roleAllow = Permissions.expandWildcardMembers(in.roleAllow());
+        Set<String> userDeny = Permissions.expandWildcardMembers(denies.user());
+        Set<String> roleDeny = Permissions.expandWildcardMembers(denies.role());
+        Set<String> groupDeny = Permissions.expandWildcardMembers(denies.group());
+        Set<String> orgDeny = Permissions.expandWildcardMembers(denies.org());
+        Set<String> platformDeny = Permissions.expandWildcardMembers(denies.platform());
 
         Set<String> allowed = new HashSet<>();
         Set<String> denied = new HashSet<>();

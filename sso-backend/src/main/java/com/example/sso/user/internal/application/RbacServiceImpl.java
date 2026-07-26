@@ -3,7 +3,6 @@ package com.example.sso.user.internal.application;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.role.Roles;
 import com.example.sso.user.internal.rbac.domain.Permission;
-import com.example.sso.user.rbac.PermissionPattern;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.rbac.RbacService;
 import com.example.sso.user.internal.role.domain.Role;
@@ -35,7 +34,7 @@ public class RbacServiceImpl implements RbacService {
 
     // ROLE_ADMIN (the platform super) holds the SUPER wildcard: its effective authorities expand to the whole
     // catalog (platform included) AND it self-heals as new permissions are added — no re-seed per catalog change.
-    private static final List<String> ADMIN_PERMISSIONS = List.of(PermissionPattern.SUPER);
+    private static final List<String> ADMIN_PERMISSIONS = List.of(Permissions.SUPER);
 
     // Baseline permissions for the scoped ROLE_GROUP_ADMIN: read/update/delete the users they manage.
     // Deliberately excludes user:create (super-only, see AdminAccessPolicy.canCreateUser) and group:read

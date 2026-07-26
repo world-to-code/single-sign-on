@@ -1,6 +1,7 @@
-package com.example.sso.user.rbac;
+package com.example.sso.user.internal.rbac;
 
 import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.user.rbac.Permissions;
 import org.junit.jupiter.api.Test;
 
 import java.util.Set;
@@ -21,7 +22,7 @@ class PermissionPatternTest {
     @Test
     void aResourceWildcardAndTheSuperTokenAreWildcardTokens() {
         assertThat(PermissionPattern.isWildcardToken("user:*")).isTrue();
-        assertThat(PermissionPattern.isWildcardToken(PermissionPattern.SUPER)).isTrue();
+        assertThat(PermissionPattern.isWildcardToken(Permissions.SUPER)).isTrue();
     }
 
     @Test
@@ -123,9 +124,9 @@ class PermissionPatternTest {
 
     @Test
     void theSuperTokenIsValidAndExpandsToTheWholeCatalogPlatformIncluded() {
-        assertThat(PermissionPattern.isValid(PermissionPattern.SUPER)).isTrue();
-        assertThat(PermissionPattern.of(PermissionPattern.SUPER).isSuper()).isTrue();
-        Set<String> everything = PermissionPattern.of(PermissionPattern.SUPER).expand();
+        assertThat(PermissionPattern.isValid(Permissions.SUPER)).isTrue();
+        assertThat(PermissionPattern.of(Permissions.SUPER).isSuper()).isTrue();
+        Set<String> everything = PermissionPattern.of(Permissions.SUPER).expand();
         assertThat(everything)
                 .containsExactlyInAnyOrderElementsOf(Permissions.ALL)
                 .contains(Permissions.ORG_CREATE, Permissions.AUDIT_READ_PII); // platform + a finer sub-scope

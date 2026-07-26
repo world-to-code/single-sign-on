@@ -1,5 +1,6 @@
 package com.example.sso.user.rbac;
 
+import com.example.sso.user.internal.rbac.PermissionPattern;
 import com.example.sso.user.role.Roles;
 
 import java.util.Collection;
@@ -17,6 +18,11 @@ import java.util.Set;
  * {@code oidc-client:read}.
  */
 public final class Permissions {
+
+    /** The super wildcard: EVERY permission, platform included. Held by {@code ROLE_ADMIN}, a platform-tier grant
+     *  ({@link #isPlatformGrant}) a tenant may never hold or grant. The public face of the wildcard grammar (the
+     *  parsing/validation lives in the module-internal {@code PermissionPattern}). */
+    public static final String SUPER = "*:*";
 
     // Users
     public static final String USER_READ = "user:read";
@@ -261,7 +267,7 @@ public final class Permissions {
      * — its resource has no platform member — so only these two forms are platform-tier grants.
      */
     public static boolean isPlatformGrant(String name) {
-        return isPlatform(name) || PermissionPattern.SUPER.equals(name);
+        return isPlatform(name) || SUPER.equals(name);
     }
 
     /**
@@ -270,7 +276,7 @@ public final class Permissions {
      * every mutating perm implies its read. Wildcards expand FIRST, then {@link #expandImplied}. Tolerant of an
      * invalid stored token (left as-is), which the write path prevents but resolution must never throw on.
      */
-    public static Set<String> expandGrants(Collection<String> granted) {
+    public static Set<String> expandGrantedAuthorities(Collection<String> granted) {
         Set<String> result = new HashSet<>(granted);
         for (String name : granted) {
             if (PermissionPattern.isValid(name)) {
@@ -285,7 +291,7 @@ public final class Permissions {
      * the plain permission set a deny/allow LEVEL asserts, over which the resolver makes per-permission decisions
      * before implication runs. A non-wildcard name passes through unchanged; an invalid token is left verbatim.
      */
-    public static Set<String> expandWildcards(Collection<String> names) {
+    public static Set<String> expandWildcardMembers(Collection<String> names) {
         Set<String> result = new HashSet<>();
         for (String name : names) {
             if (PermissionPattern.isValid(name)) {

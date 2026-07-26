@@ -1,6 +1,5 @@
 package com.example.sso.user.internal.application;
 
-import com.example.sso.user.rbac.PermissionPattern;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.Roles;
 import com.example.sso.user.internal.rbac.domain.Permission;
@@ -57,7 +56,7 @@ class RbacServiceImplTest {
 
         // ROLE_ADMIN holds ONE row — the super wildcard *:* — whose expansion is the whole catalog (platform
         // included) and which self-heals as the catalog grows; no per-catalog-change re-seed.
-        assertThat(grantedPermissionNames()).containsExactly(PermissionPattern.SUPER);
+        assertThat(grantedPermissionNames()).containsExactly(Permissions.SUPER);
         verify(rolePermissions, times(1)).save(any(RolePermission.class));
     }
 
@@ -108,7 +107,7 @@ class RbacServiceImplTest {
                         Permissions.AUDIT_READ, // org-scoped audit log read
                         "user:*", "role:*", "resource:*") // tenant wildcards it now HOLDS (so it may grant them)
                 .doesNotContain(Permissions.ORG_CREATE, Permissions.ORG_DELETE,
-                        PermissionPattern.SUPER, "organization:*"); // never the super token / a platform-reaching wildcard
+                        Permissions.SUPER, "organization:*"); // never the super token / a platform-reaching wildcard
     }
 
     @Test

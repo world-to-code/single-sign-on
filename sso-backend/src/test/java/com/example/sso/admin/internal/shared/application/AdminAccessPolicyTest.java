@@ -12,7 +12,6 @@ import com.example.sso.resource.authorization.UserAuthorization;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.deny.DenyAuthor;
 import com.example.sso.user.deny.DenySubjectKind;
-import com.example.sso.user.rbac.PermissionPattern;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.RoleHierarchyService;
 import com.example.sso.user.role.RoleRef;
@@ -676,7 +675,7 @@ class AdminAccessPolicyTest {
     @Test
     void aNonSuperHoldingAWildcardMayGrantItAndItsMembers() {
         // A wildcard holder's effective authorities carry the TOKEN and its expanded members (see
-        // Permissions.expandGrants), so both the wildcard and any single action pass the ceiling.
+        // Permissions.expandGrantedAuthorities), so both the wildcard and any single action pass the ceiling.
         signInWith("user:*", Permissions.USER_READ, Permissions.USER_CREATE,
                 Permissions.USER_UPDATE, Permissions.USER_DELETE);
         assertThat(policy.mayGrantPermissions(Set.of("user:*"))).isTrue();
@@ -686,14 +685,14 @@ class AdminAccessPolicyTest {
     @Test
     void aNonSuperMayNeverGrantTheSuperWildcard() {
         // *:* is a platform-tier grant; even a tenant admin whose session somehow carries it may not hand it out.
-        signInWith(PermissionPattern.SUPER);
-        assertThat(policy.mayGrantPermissions(Set.of(PermissionPattern.SUPER))).isFalse();
+        signInWith(Permissions.SUPER);
+        assertThat(policy.mayGrantPermissions(Set.of(Permissions.SUPER))).isFalse();
     }
 
     @Test
     void aSuperAdminMayGrantTheSuperWildcard() {
         makeActorSuper();
-        assertThat(policy.mayGrantPermissions(Set.of(PermissionPattern.SUPER))).isTrue();
+        assertThat(policy.mayGrantPermissions(Set.of(Permissions.SUPER))).isTrue();
     }
 
     @Test
