@@ -55,6 +55,8 @@ public enum AuditType {
     // Access-control decisions and administration
     AUTHORIZATION_DENIED(AuditCategory.AUTHORIZATION),
     USER_PERMISSIONS_UPDATED(AuditCategory.AUTHORIZATION),
+    PERMISSION_DENY_CREATED(AuditCategory.AUTHORIZATION),
+    PERMISSION_DENY_LIFTED(AuditCategory.AUTHORIZATION),
     ROLE_CREATED(AuditCategory.AUTHORIZATION),
     ROLE_UPDATED(AuditCategory.AUTHORIZATION),
     ROLE_DELETED(AuditCategory.AUTHORIZATION),

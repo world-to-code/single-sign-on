@@ -1,6 +1,7 @@
 package com.example.sso.user.internal.application;
 
 import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserAccount;
@@ -9,6 +10,7 @@ import com.example.sso.user.deny.DenyAuthor;
 import com.example.sso.user.deny.DenyAuthority;
 import com.example.sso.user.deny.DenySpec;
 import com.example.sso.user.deny.DenySubjectKind;
+import com.example.sso.user.deny.LastAdminInvariant;
 import com.example.sso.user.internal.rbac.domain.DenySubjectType;
 import com.example.sso.user.internal.rbac.domain.OrgPermissionDenyRepository;
 import com.example.sso.user.internal.rbac.domain.PrincipalPermissionDenyRepository;
@@ -26,6 +28,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -47,6 +50,7 @@ class DenyServiceImplTest {
     @Mock private OrgContext orgContext;
     @Mock private DenyAffectedUsers affectedUsers;
     @Mock private AccessChangePublisher accessChanges;
+    @Mock private LastAdminInvariant lastAdminInvariant;
 
     @InjectMocks private DenyServiceImpl service;
 
@@ -103,7 +107,25 @@ class DenyServiceImplTest {
         when(affectedUsers.forSubject(DenySubjectKind.USER, userId, userOrg)).thenReturn(Set.of(userId));
 
         service.create(new DenySpec(DenySubjectKind.USER, userId, "user:read"));
+        verify(lastAdminInvariant).ensureTierRetainsAdmin(userOrg); // a new deny recounts the tier's admins
         verify(accessChanges).forUserIds(Set.of(userId));
+    }
+
+    @Test
+    void aNewDenyThatWouldStripTheTiersLastAdminIsRefusedBeforeAnySessionTermination() {
+        UUID userId = UUID.randomUUID();
+        UUID userOrg = UUID.randomUUID();
+        authorize(DenySubjectKind.USER, userId, "user:update");
+        UserAccount target = mock(UserAccount.class);
+        when(target.getOrgId()).thenReturn(userOrg);
+        when(users.findById(userId)).thenReturn(Optional.of(target));
+        when(userDenies.insertIfAbsent(userId, userOrg, "user:update", actorId, apexId)).thenReturn(1);
+        when(userDenies.findId(userId, "user:update")).thenReturn(Optional.of(UUID.randomUUID()));
+        doThrow(new ConflictException("admin.lastAdmin")).when(lastAdminInvariant).ensureTierRetainsAdmin(userOrg);
+
+        assertThatThrownBy(() -> service.create(new DenySpec(DenySubjectKind.USER, userId, "user:update")))
+                .isInstanceOf(ConflictException.class);
+        verify(accessChanges, never()).forUserIds(any()); // the guard runs BEFORE termination — no side effects
     }
 
     @Test
@@ -118,6 +140,18 @@ class DenyServiceImplTest {
         when(userDenies.findId(userId, "user:read")).thenReturn(Optional.of(UUID.randomUUID()));
 
         service.create(new DenySpec(DenySubjectKind.USER, userId, "user:read"));
+        verify(accessChanges, never()).forUserIds(any());
+        verify(lastAdminInvariant, never()).ensureTierRetainsAdmin(any()); // a no-op re-create recounts nothing
+    }
+
+    @Test
+    void liftingAnUnknownDenyIdIsASilentNoOp() {
+        UUID denyId = UUID.randomUUID();
+        when(userDenies.findById(denyId)).thenReturn(Optional.empty());
+
+        service.lift(denyId, DenySubjectKind.USER);
+
+        verify(userDenies, never()).deleteById(any());
         verify(accessChanges, never()).forUserIds(any());
     }
 
@@ -141,6 +175,7 @@ class DenyServiceImplTest {
         service.lift(denyId, DenySubjectKind.USER);
         verify(userDenies).deleteById(denyId);
         verify(accessChanges).forUserIds(Set.of(userId));
+        verify(lastAdminInvariant, never()).ensureTierRetainsAdmin(any()); // lifting widens access, never bricks
     }
 
     @Test

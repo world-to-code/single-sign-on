@@ -10,6 +10,7 @@ import com.example.sso.user.deny.DenyAuthority;
 import com.example.sso.user.deny.DenyService;
 import com.example.sso.user.deny.DenySpec;
 import com.example.sso.user.deny.DenySubjectKind;
+import com.example.sso.user.deny.LastAdminInvariant;
 import com.example.sso.user.internal.rbac.domain.DenySubjectType;
 import com.example.sso.user.internal.rbac.domain.OrgPermissionDenyRepository;
 import com.example.sso.user.internal.rbac.domain.PrincipalPermissionDeny;
@@ -38,6 +39,7 @@ class DenyServiceImpl implements DenyService {
     private final OrgContext orgContext;
     private final DenyAffectedUsers affectedUsers;
     private final AccessChangePublisher accessChanges;
+    private final LastAdminInvariant lastAdminInvariant;
 
     @Override
     @Transactional
@@ -57,7 +59,7 @@ class DenyServiceImpl implements DenyService {
                         userDenies.insertIfAbsent(spec.subjectId(), orgId, spec.pattern(), author.id(),
                                 author.apexRoleId()) == 1;
                 UUID denyId = userDenies.findId(spec.subjectId(), spec.pattern()).orElseThrow();
-                terminateIfChanged(created, spec.kind(), spec.subjectId(), orgId);
+                afterCreate(created, spec.kind(), spec.subjectId(), orgId);
                 yield denyId;
             }
             case ROLE -> createPrincipal(DenySubjectType.ROLE, spec, orgId, author);
@@ -66,7 +68,7 @@ class DenyServiceImpl implements DenyService {
                 boolean created =
                         orgDenies.insertIfAbsent(orgId, spec.pattern(), author.id(), author.apexRoleId()) == 1;
                 UUID denyId = orgDenies.findId(orgId, spec.pattern()).orElseThrow();
-                terminateIfChanged(created, spec.kind(), spec.subjectId(), orgId);
+                afterCreate(created, spec.kind(), spec.subjectId(), orgId);
                 yield denyId;
             }
         };
@@ -92,8 +94,26 @@ class DenyServiceImpl implements DenyService {
         boolean created = principalDenies.insertIfAbsent(type.name(), spec.subjectId(), orgId, spec.pattern(),
                 author.id(), author.apexRoleId()) == 1;
         UUID denyId = principalDenies.findId(type, spec.subjectId(), spec.pattern()).orElseThrow();
-        terminateIfChanged(created, spec.kind(), spec.subjectId(), orgId);
+        afterCreate(created, spec.kind(), spec.subjectId(), orgId);
         return denyId;
+    }
+
+    /** After a NEW deny row: first refuse it if it stripped the tier's last administrator (rolls the write back),
+     *  then terminate the affected subjects' sessions. Order matters — a rejected deny must not fire a
+     *  session-termination event (it would be discarded on rollback anyway, but the intent is: no brick, no
+     *  side effects). An idempotent re-create changed nothing, so it neither guards nor terminates.
+     *
+     *  <p>Limitation (super-only, accepted): the guard checks the deny's stamped {@code orgId}. For every actor
+     *  the console reaches, that IS the affected tier (a tenant admin, or a super drilled into an org, is org-
+     *  bound). Only an UN-DRILLED super authoring a ROLE/GROUP deny stamps {@code orgId == null} (a platform-wide
+     *  veto) while the deny may in fact brick a specific tenant's holders — the platform-tier recount passes and
+     *  that tenant is not re-checked. Recoverable (a super re-appoints / lifts). A precise fix recounts every
+     *  tier the deny actually reaches; deferred.  */
+    private void afterCreate(boolean created, DenySubjectKind kind, UUID subjectId, UUID orgId) {
+        if (created) {
+            lastAdminInvariant.ensureTierRetainsAdmin(orgId);
+        }
+        terminateIfChanged(created, kind, subjectId, orgId);
     }
 
     private void liftIfPermitted(DenySubjectKind kind, UUID subjectId, UUID orgId, String pattern, UUID createdBy,

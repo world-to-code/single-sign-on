@@ -155,6 +155,19 @@ class UserAdminServiceTest {
         verify(lastAdminGuard).ensureTierRetainsAdmin(orgId);
     }
 
+    @Test
+    void settingUserPermissionsRecountsThatUsersTierAfterTheChange() {
+        UUID id = UUID.randomUUID();
+        UUID orgId = UUID.randomUUID();
+        UserAccount updated = user(id);
+        when(updated.getOrgId()).thenReturn(orgId);
+        when(userService.setDirectPermissions(eq(id), any())).thenReturn(updated);
+
+        service.setUserPermissions(id, Set.of("user:read"));
+
+        verify(lastAdminGuard).ensureTierRetainsAdmin(orgId); // a direct-perm edit can strip a denied admin's user:update
+    }
+
     private UserAccount user(UUID id) {
         UserAccount account = mock(UserAccount.class);
         when(account.getId()).thenReturn(id);

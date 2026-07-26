@@ -18,6 +18,7 @@ import org.hamcrest.Matchers;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.util.Set;
+import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -133,6 +134,31 @@ class AdminAccessRejectionIT extends AbstractIntegrationTest {
         mvc.perform(get(ADMIN_URI).cookie(session).with(servletPath(ADMIN_URI))
                         .header("Authorization", "Bearer not-a-real-jwt"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // --- deny endpoints (@CanManageDenies + step-up wiring, per-endpoint) --------------------------------
+
+    private static final String DENIES_URI = "/api/admin/denies";
+    private static final String DENY_BODY =
+            "{\"kind\":\"USER\",\"subjectId\":\"" + UUID.randomUUID() + "\",\"pattern\":\"user:read\"}";
+
+    @Test
+    void anonymousDenyAuthoringMustAuthenticate() throws Exception {
+        mvc.perform(post(DENIES_URI).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(DENY_BODY))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void authoringADenyWithoutElevationGetsTheStepUpChallenge() throws Exception {
+        // @RequireStepUp (preHandle) runs BEFORE method security, so an un-elevated caller is gated by step-up —
+        // proving the annotation is wired even though @CanManageDenies would also reject a perm-less body.
+        Cookie session = mfaSession("deny-unelevated");
+
+        mvc.perform(post(DENIES_URI).cookie(session).with(csrf()).with(servletPath(DENIES_URI))
+                        .contentType(MediaType.APPLICATION_JSON).content(DENY_BODY))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("WWW-Authenticate",
+                        Matchers.containsString("insufficient_user_authentication")));
     }
 
     // --- session builders (real login + MFA flow) ---

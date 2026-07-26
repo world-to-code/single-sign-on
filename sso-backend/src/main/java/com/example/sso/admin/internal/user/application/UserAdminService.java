@@ -111,9 +111,11 @@ public class UserAdminService {
 
     @Transactional
     public AdminUserView setUserPermissions(UUID id, Set<String> permissionNames) {
-        AdminUserView view = AdminUserView.of(userService.setDirectPermissions(id, permissionNames));
+        UserAccount updated = userService.setDirectPermissions(id, permissionNames);
+        // A direct-permission change can strip user:update from an admin whose role-derived copy was denied away.
+        lastAdminGuard.ensureTierRetainsAdmin(updated.getOrgId());
         auditLogger.log(AuditType.USER_PERMISSIONS_UPDATED, AuditSubjectType.USER, id.toString(),
                 "user=" + id + " permissions=" + permissionNames);
-        return view;
+        return AdminUserView.of(updated);
     }
 }

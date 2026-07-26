@@ -7,10 +7,16 @@ import com.example.sso.shared.error.ConflictException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserAccount;
+import com.example.sso.user.account.UserService;
+import com.example.sso.user.deny.DenyService;
+import com.example.sso.user.deny.DenySpec;
+import com.example.sso.user.deny.DenySubjectKind;
+import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.RoleService;
 import com.example.sso.user.role.Roles;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
@@ -20,6 +26,9 @@ import java.util.concurrent.Future;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -45,12 +54,17 @@ class LastAdminGuardIT extends AbstractIntegrationTest {
     @Autowired
     OrgContext orgContext;
     @Autowired
+    DenyService denyService;
+    @Autowired
+    UserService users;
+    @Autowired
     PlatformTransactionManager txManager;
 
     private final List<Runnable> cleanups = new ArrayList<>();
 
     @AfterEach
     void cleanup() {
+        SecurityContextHolder.clearContext();
         for (int i = cleanups.size() - 1; i >= 0; i--) {
             cleanups.get(i).run();
         }
@@ -167,7 +181,69 @@ class LastAdminGuardIT extends AbstractIntegrationTest {
         };
     }
 
+    // --- the deny write path enforces the same invariant (via the LastAdminInvariant port) -----------
+
+    @Test
+    void authoringADenyThatStripsTheLastAdminsUserUpdateIsRefusedAndRolledBack() {
+        Seeded org = seedOrgWithAdmins(1);
+        asSuperAdmin(); // the seeded global ROLE_ADMIN may author any deny; the last-admin guard still constrains it
+
+        // A ROLE deny of user:update on the org's own ROLE_ORG_ADMIN strips its sole admin's appoint capability.
+        assertThatThrownBy(() -> transactionTemplate().executeWithoutResult(status ->
+                orgContext.runInOrg(org.orgId, () -> denyService.create(
+                        new DenySpec(DenySubjectKind.ROLE, org.orgAdminRoleId, Permissions.USER_UPDATE)))))
+                .isInstanceOf(ConflictException.class);
+
+        // rolled back by the 409: no deny row persisted for that role/pattern
+        Integer persisted = ownerJdbc().queryForObject(
+                "select count(*) from principal_permission_deny where subject_id = ? and pattern = ?",
+                Integer.class, org.orgAdminRoleId, Permissions.USER_UPDATE);
+        assertThat(persisted).isZero();
+    }
+
+    @Test
+    void removingAnAdminsLastDirectUserUpdateGrantIsRefusedAndRolledBack() {
+        Seeded org = seedOrgWithAdmins(1);
+        UUID admin = org.adminIds.get(0);
+        // Deny user:update on the org's ROLE_ORG_ADMIN so the admin's role-derived copy is gone, then grant it
+        // DIRECTLY on the admin — a USER-specificity grant beats the ROLE deny, so user:update survives ONLY here.
+        seedRoleDeny(org.orgAdminRoleId, org.orgId, Permissions.USER_UPDATE);
+        grantDirect(admin, Permissions.USER_UPDATE);
+
+        // Dropping that direct grant (setDirectPermissions, a JPA save/delete — a different write shape than the
+        // deny path) leaves the admin with no effective user:update. The guard's recount must SEE that write.
+        assertThatThrownBy(() -> transactionTemplate().executeWithoutResult(status ->
+                orgContext.runInOrg(org.orgId, () -> {
+                    users.setDirectPermissions(admin, Set.of());
+                    guard.ensureTierRetainsAdmin(org.orgId);
+                }))).isInstanceOf(ConflictException.class);
+
+        // rolled back: the admin still holds the direct user:update grant
+        Integer grants = ownerJdbc().queryForObject(
+                "select count(*) from app_user_permission ap join permission p on p.id = ap.permission_id "
+                        + "where ap.user_id = ? and p.name = ?", Integer.class, admin, Permissions.USER_UPDATE);
+        assertThat(grants).isEqualTo(1);
+    }
+
     // --- fixtures ------------------------------------------------------------------------------------
+
+    private void seedRoleDeny(UUID roleId, UUID orgId, String pattern) {
+        ownerJdbc().update("insert into principal_permission_deny (id, subject_type, subject_id, org_id, pattern) "
+                + "values (gen_random_uuid(), 'ROLE', ?, ?, ?)", roleId, orgId, pattern);
+        cleanups.add(() -> ownerJdbc().update("delete from principal_permission_deny where subject_id = ?", roleId));
+    }
+
+    private void grantDirect(UUID userId, String permission) {
+        ownerJdbc().update("insert into permission (id, name) values (gen_random_uuid(), ?) "
+                + "on conflict (name) do nothing", permission);
+        ownerJdbc().update("insert into app_user_permission (user_id, permission_id) "
+                + "select ?, id from permission where name = ?", userId, permission); // cascades on the app_user delete
+    }
+
+    private void asSuperAdmin() {
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                "admin", null, List.of(new SimpleGrantedAuthority(Roles.ADMIN)))); // the DataSeeder super account
+    }
 
     /** A provisioned org plus {@code count} enabled users assigned its own ROLE_ORG_ADMIN (which grants
      *  {@code user:update}), so each is an effective admin. Committed (not in a test tx) so concurrent

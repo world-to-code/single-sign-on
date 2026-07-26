@@ -1,6 +1,10 @@
 package com.example.sso.admin;
 
+import com.example.sso.admin.internal.deny.api.AdminDenyController;
+import com.example.sso.admin.internal.deny.api.DenyRequest;
 import com.example.sso.admin.internal.group.api.AdminGroupController;
+import com.example.sso.shared.error.ForbiddenException;
+import com.example.sso.user.deny.DenySubjectKind;
 import com.example.sso.admin.internal.group.application.GroupSessionTermination;
 import com.example.sso.admin.internal.group.api.SetGroupRolesRequest;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
@@ -56,6 +60,8 @@ class AbacAuthorizationIT extends AbstractIntegrationTest {
     UserGroupService userGroups;
     @Autowired
     AdminGroupController groupController;
+    @Autowired
+    AdminDenyController denyController;
     @Autowired
     MetadataAdminController metadataController;
     @Autowired
@@ -360,6 +366,27 @@ class AbacAuthorizationIT extends AbstractIntegrationTest {
     private void actAs(String username) {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(username, null, List.of()));
+    }
+
+    /**
+     * The deny endpoint's coarse URL gate ({@code @CanManageDenies} = user:update OR role:update) binds via the
+     * method-security proxy. Negative: an actor with neither is blocked at the gate ({@link AccessDeniedException}).
+     * Positive discriminator: holding user:update passes the gate, so the call reaches the deny service, which then
+     * refuses on its OWN per-subject authorization ({@link ForbiddenException}, NOT an access-denied) — proving the
+     * gate admitted it rather than the annotation being a blanket allow/deny.
+     */
+    @Test
+    void manageDeniesAnnotationGatesTheDenyEndpoint() {
+        UUID target = create("deny-target", Set.of("ROLE_USER"));
+        DenyRequest request = new DenyRequest(DenySubjectKind.USER, target, Permissions.USER_READ);
+
+        create("deny-permless", Set.of("ROLE_USER"));
+        actAsWithAuthorities("deny-permless", Permissions.USER_READ); // neither user:update nor role:update
+        assertThatThrownBy(() -> denyController.create(request)).isInstanceOf(AccessDeniedException.class);
+
+        create("deny-mgr", Set.of("ROLE_USER"));
+        actAsWithAuthorities("deny-mgr", Permissions.USER_UPDATE); // passes the gate; service refuses the subject
+        assertThatThrownBy(() -> denyController.create(request)).isInstanceOf(ForbiddenException.class);
     }
 
     private void actAsWithAuthorities(String username, String... authorities) {
