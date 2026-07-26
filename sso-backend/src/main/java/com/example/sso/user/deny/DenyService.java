@@ -23,4 +23,8 @@ public interface DenyService {
 
     /** The denies authored directly on this ROLE or GROUP (id + pattern) — for the console to list and lift. */
     List<DenyRow> principalDenies(DenySubjectKind kind, UUID subjectId);
+
+    /** The org's OWN denies (id + pattern) — org-wide withholdings the console lists and lifts. Excludes the
+     *  platform veto (org-null), which is managed at the platform tier, not on a tenant. */
+    List<DenyRow> orgDenies(UUID orgId);
 }

@@ -68,6 +68,7 @@ export default function GroupDetail() {
     try {
       const updated = await setGroupRoles(id, roleSel);
       setGroup(updated);
+      loadDenies(); // the deny candidates are the group's roles' perms — refresh them after a role change
       setRolesOpen(false);
     } catch (e) {
       setError(errorMessage(e));

@@ -156,6 +156,17 @@ class DenyServiceImplTest {
     }
 
     @Test
+    void liftingAnUnknownOrgDenyIdIsASilentNoOp() {
+        UUID denyId = UUID.randomUUID();
+        when(orgDenies.findById(denyId)).thenReturn(Optional.empty());
+
+        service.lift(denyId, DenySubjectKind.ORG);
+
+        verify(orgDenies, never()).deleteById(any());
+        verify(accessChanges, never()).forUserIds(any());
+    }
+
+    @Test
     void liftingAUserDenyTerminatesTheTargetUsersSessions() {
         UUID denyId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();

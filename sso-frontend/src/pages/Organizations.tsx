@@ -1,10 +1,12 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { BarChart3, Building2, LogIn, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import {
-  createOrganization, updateOrganization, updatePasswordlessLogin,
-  type Organization, type OrganizationStatus,
+  createOrganization, getOrgDenies, updateOrganization, updatePasswordlessLogin,
+  type Organization, type OrganizationStatus, type OrgDenyState,
 } from "@/organizations";
+import { DenyControls } from "@/components/DenyControls";
 import { setDrillIn } from "@/drillIn";
 import { usePaginated } from "@/usePaginated";
 import { errorMessage } from "@/api";
@@ -48,6 +50,7 @@ export default function Organizations() {
   const { items: orgs, total, page, setPage, size, error: listError, reload } =
     usePaginated<Organization>("/api/admin/organizations");
 
+  const [orgDenies, setOrgDenies] = useState<OrgDenyState | null>(null);
   const {
     editor, set, setEditor, open, setOpen, error, openCreate, openEdit, save,
   } = useEditorForm<Editor>({
@@ -62,6 +65,15 @@ export default function Organizations() {
     },
     onSaved: reload,
   });
+
+  const loadOrgDenies = () => {
+    if (editor.id) getOrgDenies(editor.id).then(setOrgDenies).catch(() => undefined);
+  };
+  useEffect(() => {
+    if (open && editor.id) loadOrgDenies();
+    else setOrgDenies(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editor.id]);
 
   async function toggleStatus(org: Organization) {
     const next: OrganizationStatus = org.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
@@ -205,6 +217,13 @@ export default function Organizations() {
               <Button type="submit">{editor.id ? t("saveChanges") : t("organizationsCreateOrg")}</Button>
             </DialogFooter>
           </form>
+
+          {editor.id && orgDenies && (
+            <div className="border-t pt-4">
+              <DenyControls kind="ORG" subjectId={editor.id} candidates={orgDenies.candidates}
+                            denies={orgDenies.denies} onChanged={loadOrgDenies} />
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </>

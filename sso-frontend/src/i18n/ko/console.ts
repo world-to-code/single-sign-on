@@ -565,7 +565,7 @@ export const console: Record<keyof typeof enConsole, string> = {
   userDetailEffectivePermsDesc: "역할·그룹·직접 부여에서 적용되는 모든 권한(읽기 함의 확장 포함).",
   userDetailDeniedPerms: "거부로 제거됨",
   userDetailDeniedPermsHint: "역할·그룹·직접 부여로 받았으나 부정 권한(deny)으로 보류된 권한.",
-  userDetailDenyManage: "이 사용자에게 권한 거부",
+  userDetailDenyManage: "권한 거부",
   userDetailDenyPick: "권한 선택…",
   userDetailDenyAdd: "거부",
   userDetailDenyLift: "복원",

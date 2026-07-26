@@ -210,6 +210,25 @@ class PermissionDenyResolutionIT extends AbstractIntegrationTest {
                 .extracting(DenyRow::pattern).containsExactly(Permissions.USER_READ);
     }
 
+    /** The console read: an org's OWN deny rows are listed — and the absolute platform veto (org-null) is NOT,
+     *  it is managed at the platform tier. Read as platform, as the super console does. */
+    @Test
+    void orgDeniesListsAnOrgsOwnDenyRowsButNotThePlatformVeto() {
+        UUID org = newOrg("pd-orgdeny");
+        orgDeny(org, Permissions.USER_READ);
+        platformDeny(Permissions.USER_UPDATE); // an org-null absolute veto — must NOT appear under the org
+
+        assertThat(orgContext.callAsPlatform(() -> denyService.orgDenies(org)))
+                .extracting(DenyRow::pattern).containsExactly(Permissions.USER_READ);
+    }
+
+    @Test
+    void orgDeniesIsEmptyForAnOrgWithNoDenies() {
+        UUID org = newOrg("pd-nodeny");
+
+        assertThat(orgContext.callAsPlatform(() -> denyService.orgDenies(org))).isEmpty();
+    }
+
     // --- owner-connection fixtures --------------------------------------------------------------------
 
     private UUID newOrg(String prefix) {

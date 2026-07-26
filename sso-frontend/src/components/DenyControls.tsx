@@ -42,6 +42,11 @@ export function DenyControls({ kind, subjectId, candidates, denies, onChanged }:
     }
   }
 
+  // Nothing to withhold and nothing withheld — a subject with no permissions shows no deny UI at all.
+  if (candidates.length === 0 && denies.length === 0) {
+    return null;
+  }
+
   return (
     <div className="mt-4 space-y-2 border-t border-border pt-3">
       <p className="text-xs font-medium text-muted-foreground">{t("userDetailDenyManage")}</p>

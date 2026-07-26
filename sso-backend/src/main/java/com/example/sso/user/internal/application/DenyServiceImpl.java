@@ -107,6 +107,13 @@ class DenyServiceImpl implements DenyService {
                 .map(deny -> new DenyRow(deny.getId(), deny.getPattern())).toList();
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<DenyRow> orgDenies(UUID orgId) {
+        return orgDenies.findByOrgId(orgId).stream()
+                .map(deny -> new DenyRow(deny.getId(), deny.getPattern())).toList();
+    }
+
     private UUID createPrincipal(DenySubjectType type, DenySpec spec, UUID orgId, DenyAuthor author) {
         boolean created = principalDenies.insertIfAbsent(type.name(), spec.subjectId(), orgId, spec.pattern(),
                 author.id(), author.apexRoleId()) == 1;

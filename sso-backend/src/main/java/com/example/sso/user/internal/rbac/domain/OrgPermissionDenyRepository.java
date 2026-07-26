@@ -1,5 +1,6 @@
 package com.example.sso.user.internal.rbac.domain;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -13,6 +14,9 @@ public interface OrgPermissionDenyRepository extends JpaRepository<OrgPermission
 
     @Query("select d.pattern from OrgPermissionDeny d where d.orgId = :orgId")
     Set<String> findPatternsByOrg(@Param("orgId") UUID orgId);
+
+    /** An org's OWN deny rows (id + pattern), for the console to list and lift. Excludes the platform veto. */
+    List<OrgPermissionDeny> findByOrgId(UUID orgId);
 
     /** The PLATFORM veto: denies with no org, absolute across every tenant. */
     @Query("select d.pattern from OrgPermissionDeny d where d.orgId is null")

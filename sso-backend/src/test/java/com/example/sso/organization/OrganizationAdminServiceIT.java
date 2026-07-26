@@ -1,8 +1,13 @@
 package com.example.sso.organization;
 
+import com.example.sso.admin.internal.organization.application.OrgDenyView;
 import com.example.sso.admin.internal.organization.application.OrganizationAdminService;
 import com.example.sso.shared.error.ConflictException;
+import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.support.AbstractIntegrationTest;
+import com.example.sso.tenancy.OrgContext;
+import com.example.sso.user.deny.DenyRow;
+import com.example.sso.user.rbac.Permissions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -23,6 +28,8 @@ class OrganizationAdminServiceIT extends AbstractIntegrationTest {
 
     @Autowired
     OrganizationAdminService organizations;
+    @Autowired
+    OrgContext orgContext;
 
     private final List<Runnable> cleanups = new ArrayList<>();
 
@@ -66,6 +73,28 @@ class OrganizationAdminServiceIT extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> organizations.create(new NewOrganization(slug, "Dup Two")))
                 .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void deniesOffersTheTenantGrantableCatalogAndTheOrgsOwnDenies() {
+        String slug = "deny-" + suffix();
+        OrganizationView created = organizations.create(new NewOrganization(slug, "Deny Co"));
+        cleanups.add(() -> organizations.delete(created.id()));
+        UUID orgId = created.id();
+        ownerJdbc().update("insert into org_permission_deny (id, org_id, pattern) values (gen_random_uuid(), ?, ?)",
+                orgId, Permissions.USER_READ);
+
+        OrgDenyView view = orgContext.callAsPlatform(() -> organizations.denies(orgId)); // super console context
+
+        // Candidates are EXACTLY the tenant-grantable catalog — a widening to the full (platform-including)
+        // catalog, which would present un-withholdable platform perms, is caught here.
+        assertThat(view.candidates()).containsExactlyInAnyOrderElementsOf(Permissions.tenantGrantable());
+        assertThat(view.denies()).extracting(DenyRow::pattern).containsExactly(Permissions.USER_READ);
+    }
+
+    @Test
+    void deniesForAnUnknownOrgIsNotFound() {
+        assertThatThrownBy(() -> organizations.denies(UUID.randomUUID())).isInstanceOf(NotFoundException.class);
     }
 
     private static String suffix() {

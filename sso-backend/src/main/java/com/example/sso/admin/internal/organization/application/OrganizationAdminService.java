@@ -6,6 +6,9 @@ import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
+import com.example.sso.user.deny.DenyService;
+import com.example.sso.user.rbac.Permissions;
+import org.springframework.transaction.annotation.Transactional;
 import com.example.sso.organization.OrganizationStatus;
 import com.example.sso.organization.OrganizationView;
 import com.example.sso.shared.Page;
@@ -27,6 +30,7 @@ public class OrganizationAdminService {
     private final OrganizationService organizations;
     private final AdminAccessPolicy access;
     private final AdminAuditLogger audit;
+    private final DenyService denyService;
 
     public Page<OrganizationView> list(int page, int size) {
         List<OrganizationView> all = organizations.listAll();
@@ -39,6 +43,14 @@ public class OrganizationAdminService {
 
     public OrganizationView get(UUID id) {
         return organizations.findView(id).orElseThrow(() -> NotFoundException.of("organization.notFound"));
+    }
+
+    /** The org's deny-management state: the tenant-grantable catalog (candidates to withhold org-wide) and the
+     *  org's own denies. Server-authoritative authz stays in the deny service; this is read-only. */
+    @Transactional(readOnly = true)
+    public OrgDenyView denies(UUID id) {
+        organizations.findView(id).orElseThrow(() -> NotFoundException.of("organization.notFound"));
+        return new OrgDenyView(Permissions.tenantGrantable(), denyService.orgDenies(id));
     }
 
     public OrganizationView create(NewOrganization command) {

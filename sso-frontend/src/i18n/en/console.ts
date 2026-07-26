@@ -565,7 +565,7 @@ export const console = {
   userDetailEffectivePermsDesc: "All permissions in effect — from roles, groups and direct grants (read-implication expanded).",
   userDetailDeniedPerms: "Removed by a deny",
   userDetailDeniedPermsHint: "Granted by a role, group or direct grant, but withheld by a negative permission (deny).",
-  userDetailDenyManage: "Deny a permission for this user",
+  userDetailDenyManage: "Deny a permission",
   userDetailDenyPick: "Choose a permission…",
   userDetailDenyAdd: "Deny",
   userDetailDenyLift: "Restore",

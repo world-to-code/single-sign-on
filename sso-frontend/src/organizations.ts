@@ -1,4 +1,13 @@
-import { apiPost, apiPut, apiDelete } from "@/api";
+import { apiGet, apiPost, apiPut, apiDelete } from "@/api";
+import type { DenyRow } from "@/denies";
+
+export interface OrgDenyState {
+  candidates: string[];
+  denies: DenyRow[];
+}
+
+export const getOrgDenies = (id: string) =>
+  apiGet<OrgDenyState>(`/api/admin/organizations/${id}/denies`);
 
 export type OrganizationStatus = "ACTIVE" | "SUSPENDED";
 

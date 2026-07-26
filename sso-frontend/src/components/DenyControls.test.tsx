@@ -42,6 +42,13 @@ describe("DenyControls", () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
+  it("renders nothing for a subject with no permissions and no denies", () => {
+    const { container } = render(
+      <DenyControls kind="ROLE" subjectId="r1" candidates={[]} denies={[]} onChanged={vi.fn()} />);
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it("lifts a deny when its restore control is clicked", async () => {
     const onChanged = vi.fn();
     render(<DenyControls kind="USER" subjectId="u1" candidates={[]} denies={[{ id: "d9", pattern: "user:read" }]}

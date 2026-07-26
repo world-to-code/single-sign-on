@@ -149,6 +149,12 @@ class AdminAccessRejectionIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void anonymousOrgDeniesReadMustAuthenticate() throws Exception {
+        mvc.perform(get("/api/admin/organizations/" + UUID.randomUUID() + "/denies"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void authoringADenyWithoutElevationGetsTheStepUpChallenge() throws Exception {
         // @RequireStepUp (preHandle) runs BEFORE method security, so an un-elevated caller is gated by step-up —
         // proving the annotation is wired even though @CanManageDenies would also reject a perm-less body.

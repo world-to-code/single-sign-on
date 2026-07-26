@@ -1,6 +1,7 @@
 package com.example.sso.admin.internal.organization.api;
 
 import com.example.sso.admin.internal.organization.application.OrganizationAdminService;
+import com.example.sso.admin.internal.organization.application.OrgDenyView;
 import com.example.sso.admin.internal.shared.security.CanManageOrgMembers;
 import com.example.sso.admin.internal.shared.security.CanViewOrg;
 import com.example.sso.organization.OrganizationView;
@@ -42,6 +43,12 @@ public class AdminOrganizationController {
     @CanViewOrg
     public OrganizationView organization(@PathVariable UUID id) {
         return organizations.get(id);
+    }
+
+    @GetMapping("/{id}/denies")
+    @CanViewOrg
+    public OrgDenyView organizationDenies(@PathVariable UUID id) {
+        return organizations.denies(id);
     }
 
     @PostMapping
