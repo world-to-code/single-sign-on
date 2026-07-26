@@ -5,6 +5,9 @@ import com.example.sso.organization.OrganizationService;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserService;
+import com.example.sso.user.deny.DenyRow;
+import com.example.sso.user.deny.DenyService;
+import com.example.sso.user.deny.DenySubjectKind;
 import com.example.sso.user.internal.rbac.domain.DenySubjectType;
 import com.example.sso.user.internal.rbac.domain.PrincipalPermissionDenyRepository;
 import com.example.sso.user.rbac.Permissions;
@@ -28,6 +31,8 @@ class PermissionDenyResolutionIT extends AbstractIntegrationTest {
 
     @Autowired
     UserService userService;
+    @Autowired
+    DenyService denyService;
     @Autowired
     PrincipalPermissionDenyRepository principalDenies;
     @Autowired
@@ -193,6 +198,16 @@ class PermissionDenyResolutionIT extends AbstractIntegrationTest {
         Set<String> authorities = userService.effectiveAuthorities(userId);
 
         assertThat(authorities).contains(Permissions.USER_READ); // the veto does not touch a platform super
+    }
+
+    /** The console read: a role's OWN deny rows (id + pattern) are listed so an admin can see and lift them. */
+    @Test
+    void principalDeniesListsARolesOwnDenyRows() {
+        UUID roleId = createGlobalRole("ROLE_PD_" + shortId());
+        seedPrincipalDeny(roleId, null, Permissions.USER_READ);
+
+        assertThat(denyService.principalDenies(DenySubjectKind.ROLE, roleId))
+                .extracting(DenyRow::pattern).containsExactly(Permissions.USER_READ);
     }
 
     // --- owner-connection fixtures --------------------------------------------------------------------

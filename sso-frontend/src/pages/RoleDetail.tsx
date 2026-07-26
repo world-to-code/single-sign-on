@@ -14,6 +14,7 @@ import { PermissionPicker } from "@/components/PermissionPicker";
 import { SearchSelect } from "@/components/SearchSelect";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { DenyControls } from "@/components/DenyControls";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -164,6 +165,11 @@ export default function RoleDetail() {
                 ))}
               </div>
             </div>
+          )}
+
+          {!editor.editing && (
+            <DenyControls kind="ROLE" subjectId={role.id} candidates={role.effectivePermissions}
+                          denies={role.denies} onChanged={load} />
           )}
         </div>
       )}

@@ -2,8 +2,8 @@ import { apiDelete, apiPost } from "@/api";
 
 export type DenySubjectKind = "USER" | "ROLE" | "GROUP" | "ORG";
 
-/** A USER-level deny row shown against a user — its id (to lift) and the withheld permission pattern. */
-export interface UserDenyRow {
+/** One deny row shown against a subject — its id (to lift) and the withheld permission pattern. */
+export interface DenyRow {
   id: string;
   pattern: string;
 }

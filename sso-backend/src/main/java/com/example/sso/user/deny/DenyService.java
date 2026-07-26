@@ -19,5 +19,8 @@ public interface DenyService {
 
     /** The USER-level denies on this user (id + pattern) — the ones the console lists against the user and can
      *  lift. Role/group/org denies that also affect the user are NOT here; they are managed on their subject. */
-    List<UserDeny> userDenies(UUID userId);
+    List<DenyRow> userDenies(UUID userId);
+
+    /** The denies authored directly on this ROLE or GROUP (id + pattern) — for the console to list and lift. */
+    List<DenyRow> principalDenies(DenySubjectKind kind, UUID subjectId);
 }

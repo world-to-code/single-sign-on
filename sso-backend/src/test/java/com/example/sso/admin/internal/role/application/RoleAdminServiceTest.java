@@ -15,6 +15,8 @@ import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.rbac.RbacService;
 import com.example.sso.user.role.RoleRef;
+import com.example.sso.user.deny.DenyService;
+import com.example.sso.user.deny.DenySubjectKind;
 import com.example.sso.user.role.RoleService;
 import com.example.sso.user.role.Roles;
 import com.example.sso.user.account.UserAccount;
@@ -46,6 +48,7 @@ import static org.mockito.Mockito.when;
 class RoleAdminServiceTest {
 
     private RoleService roleService;
+    private DenyService denyService;
     private RbacService rbacService;
     private AdminAccessPolicy accessPolicy;
     private AdminAuditLogger auditLogger;
@@ -57,14 +60,16 @@ class RoleAdminServiceTest {
     @BeforeEach
     void setUp() {
         roleService = mock(RoleService.class);
+        denyService = mock(DenyService.class);
         rbacService = mock(RbacService.class);
         accessPolicy = mock(AdminAccessPolicy.class);
         auditLogger = mock(AdminAuditLogger.class);
         lastAdminGuard = mock(LastAdminGuard.class);
         orgContext = mock(OrgContext.class);
         tierGuard = new OrgTierGuard(orgContext);
+        when(denyService.principalDenies(any(DenySubjectKind.class), any())).thenReturn(List.of());
         service = new RoleAdminService(
-                roleService, rbacService, accessPolicy, auditLogger, lastAdminGuard,
+                roleService, denyService, rbacService, accessPolicy, auditLogger, lastAdminGuard,
                 new ActingAdminTier(accessPolicy, orgContext), tierGuard);
     }
 

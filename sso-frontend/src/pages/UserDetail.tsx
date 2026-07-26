@@ -281,7 +281,7 @@ export default function UserDetail({ session }: { session: SessionView }) {
             </CardHeader>
             <CardContent>
               <EffectivePermissionList effective={user.effectivePermissions} denied={user.deniedPermissions} />
-              <DenyControls userId={id} candidates={user.effectivePermissions} userDenies={user.userDenies} onChanged={load} />
+              <DenyControls kind="USER" subjectId={id} candidates={user.effectivePermissions} denies={user.userDenies} onChanged={load} />
             </CardContent>
           </Card>
 

@@ -1,6 +1,7 @@
 package com.example.sso.admin.internal.role.application;
 
 import com.example.sso.shared.IdName;
+import com.example.sso.user.deny.DenyRow;
 import com.example.sso.user.role.RoleRef;
 import java.util.List;
 import java.util.Set;
@@ -15,12 +16,12 @@ import java.util.Set;
  */
 public record RoleDetailView(String id, String name, List<String> permissions, boolean system,
                              List<IdName> inheritsFrom, List<IdName> inheritedBy,
-                             List<String> effectivePermissions) {
+                             List<String> effectivePermissions, List<DenyRow> denies) {
 
     public static RoleDetailView of(RoleRef role, List<IdName> inheritsFrom, List<IdName> inheritedBy,
-                                    Set<String> effectivePermissions) {
+                                    Set<String> effectivePermissions, List<DenyRow> denies) {
         return new RoleDetailView(role.getId().toString(), role.getName(),
                 role.getPermissionNames().stream().sorted().toList(), role.isSystem(),
-                inheritsFrom, inheritedBy, effectivePermissions.stream().sorted().toList());
+                inheritsFrom, inheritedBy, effectivePermissions.stream().sorted().toList(), denies);
     }
 }

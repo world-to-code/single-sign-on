@@ -23,8 +23,8 @@ describe("DenyControls", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("only offers permissions that are not already denied", () => {
-    render(<DenyControls userId="u1" candidates={["user:read", "user:update"]}
-                         userDenies={[{ id: "d1", pattern: "user:read" }]} onChanged={vi.fn()} />);
+    render(<DenyControls kind="USER" subjectId="u1" candidates={["user:read", "user:update"]}
+                         denies={[{ id: "d1", pattern: "user:read" }]} onChanged={vi.fn()} />);
 
     // user:read is already denied (a badge), so it is not an option; user:update is
     expect(screen.getByRole("option", { name: "user:update" })).toBeInTheDocument();
@@ -33,7 +33,7 @@ describe("DenyControls", () => {
 
   it("authors a deny for the chosen permission and reloads", async () => {
     const onChanged = vi.fn();
-    render(<DenyControls userId="u1" candidates={["user:update"]} userDenies={[]} onChanged={onChanged} />);
+    render(<DenyControls kind="USER" subjectId="u1" candidates={["user:update"]} denies={[]} onChanged={onChanged} />);
 
     fireEvent.change(screen.getByLabelText("userDetailDenyPick"), { target: { value: "user:update" } });
     fireEvent.click(screen.getByRole("button", { name: "userDetailDenyAdd" }));
@@ -44,7 +44,7 @@ describe("DenyControls", () => {
 
   it("lifts a deny when its restore control is clicked", async () => {
     const onChanged = vi.fn();
-    render(<DenyControls userId="u1" candidates={[]} userDenies={[{ id: "d9", pattern: "user:read" }]}
+    render(<DenyControls kind="USER" subjectId="u1" candidates={[]} denies={[{ id: "d9", pattern: "user:read" }]}
                          onChanged={onChanged} />);
 
     fireEvent.click(screen.getByLabelText("userDetailDenyLift user:read"));

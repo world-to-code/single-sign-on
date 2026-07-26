@@ -1,5 +1,5 @@
 import { apiGet, apiPost, apiPut } from "@/api";
-import type { UserDenyRow } from "@/denies";
+import type { DenyRow } from "@/denies";
 
 export interface AdminUser {
   id: string;
@@ -34,7 +34,7 @@ export interface UserDetail {
   directPermissions: string[];
   effectivePermissions: string[];
   deniedPermissions: string[];
-  userDenies: UserDenyRow[];
+  userDenies: DenyRow[];
 }
 
 export interface CreateUserRequest {

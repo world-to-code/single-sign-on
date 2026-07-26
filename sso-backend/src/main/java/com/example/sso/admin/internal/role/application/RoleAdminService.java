@@ -14,6 +14,8 @@ import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.rbac.RbacService;
 import com.example.sso.user.role.RoleRef;
+import com.example.sso.user.deny.DenyService;
+import com.example.sso.user.deny.DenySubjectKind;
 import com.example.sso.user.role.RoleService;
 import com.example.sso.user.role.Roles;
 import com.example.sso.user.account.UserAccount;
@@ -37,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class RoleAdminService {
 
     private final RoleService roleService;
+    private final DenyService denyService;
     private final RbacService rbacService;
     private final AdminAccessPolicy accessPolicy;
     private final AdminAuditLogger auditLogger;
@@ -103,7 +106,8 @@ public class RoleAdminService {
         RoleRef role = roleService.findById(id).orElseThrow(() -> NotFoundException.of("user.role.notFound"));
         List<IdName> inheritsFrom = roleService.idNames(roleService.childRoleIds(id));
         List<IdName> inheritedBy = roleService.idNames(visibleRoleIds(meaningfulParents(id)));
-        return RoleDetailView.of(role, inheritsFrom, inheritedBy, roleService.effectivePermissionNames(Set.of(id)));
+        return RoleDetailView.of(role, inheritsFrom, inheritedBy, roleService.effectivePermissionNames(Set.of(id)),
+                denyService.principalDenies(DenySubjectKind.ROLE, id));
     }
 
     /**

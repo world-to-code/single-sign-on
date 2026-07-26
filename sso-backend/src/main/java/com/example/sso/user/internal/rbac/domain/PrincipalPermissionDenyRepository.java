@@ -1,6 +1,7 @@
 package com.example.sso.user.internal.rbac.domain;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -24,6 +25,9 @@ public interface PrincipalPermissionDenyRepository extends JpaRepository<Princip
             + "and (d.orgId is null or d.orgId = :userOrg)")
     Set<String> findPatterns(@Param("subjectType") DenySubjectType subjectType,
             @Param("subjectIds") Collection<UUID> subjectIds, @Param("userOrg") UUID userOrg);
+
+    /** The deny rows (id + pattern) authored on ONE role/group subject, for the console to list and lift. */
+    List<PrincipalPermissionDeny> findBySubjectTypeAndSubjectId(DenySubjectType subjectType, UUID subjectId);
 
     @Modifying
     @Query(nativeQuery = true, value = "insert into principal_permission_deny "

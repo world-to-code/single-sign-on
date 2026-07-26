@@ -7,18 +7,18 @@ import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
 import com.example.sso.user.deny.DenyAuthor;
 import com.example.sso.user.deny.DenyAuthority;
+import com.example.sso.user.deny.DenyRow;
 import com.example.sso.user.deny.DenyService;
 import com.example.sso.user.deny.DenySpec;
 import com.example.sso.user.deny.DenySubjectKind;
 import com.example.sso.user.deny.LastAdminInvariant;
-import com.example.sso.user.deny.UserDeny;
-import java.util.List;
 import com.example.sso.user.internal.rbac.domain.DenySubjectType;
 import com.example.sso.user.internal.rbac.domain.OrgPermissionDenyRepository;
 import com.example.sso.user.internal.rbac.domain.PrincipalPermissionDeny;
 import com.example.sso.user.internal.rbac.domain.PrincipalPermissionDenyRepository;
 import com.example.sso.user.internal.rbac.domain.UserPermissionDenyRepository;
 import com.example.sso.user.rbac.Permissions;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -94,9 +94,17 @@ class DenyServiceImpl implements DenyService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserDeny> userDenies(UUID userId) {
+    public List<DenyRow> userDenies(UUID userId) {
         return userDenies.findByUserId(userId).stream()
-                .map(deny -> new UserDeny(deny.getId(), deny.getPattern())).toList();
+                .map(deny -> new DenyRow(deny.getId(), deny.getPattern())).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DenyRow> principalDenies(DenySubjectKind kind, UUID subjectId) {
+        DenySubjectType type = kind == DenySubjectKind.ROLE ? DenySubjectType.ROLE : DenySubjectType.GROUP;
+        return principalDenies.findBySubjectTypeAndSubjectId(type, subjectId).stream()
+                .map(deny -> new DenyRow(deny.getId(), deny.getPattern())).toList();
     }
 
     private UUID createPrincipal(DenySubjectType type, DenySpec spec, UUID orgId, DenyAuthor author) {

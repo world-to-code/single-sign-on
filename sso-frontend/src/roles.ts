@@ -1,4 +1,5 @@
 import { apiGet, apiPost, apiPut, apiDelete } from "@/api";
+import type { DenyRow } from "@/denies";
 
 export interface Role {
   id: string;
@@ -28,6 +29,7 @@ export interface RoleDetail {
   inheritsFrom: { id: string; name: string }[];
   inheritedBy: { id: string; name: string }[];
   effectivePermissions: string[];
+  denies: DenyRow[];
 }
 
 export const ADMIN_ROLE = "ROLE_ADMIN";
