@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -66,9 +67,15 @@ public class UserDetailAdminService {
         UserAccount user = userService.findById(id).orElseThrow(() -> NotFoundException.of("user.notFound"));
         List<GroupMembership> memberships = userGroups.membershipsForUser(id);
 
+        // GRANTED = what role+group+direct hand out; EFFECTIVE = the deny-applied resolved authorities. A
+        // permission granted but missing from effective was removed by a deny — the "why absent" answer.
+        Set<String> granted = grantedPermissions(user, memberships);
+        Set<String> effective = effectivePermissions(id);
+        List<String> denied = granted.stream().filter(permission -> !effective.contains(permission)).sorted().toList();
+
         return UserDetailView.of(user, roleAssignments(user, memberships),
                 user.getDirectPermissionNames().stream().sorted().toList(),
-                effectivePermissions(user, memberships));
+                effective.stream().sorted().toList(), denied);
     }
 
     /** Merges the user's direct roles with roles delegated via groups, tracking each role's source. */
@@ -98,12 +105,10 @@ public class UserDetailAdminService {
 
     /**
      * The permissions GRANTED to the user — role + group-role + direct, with wildcard tokens expanded to their
-     * members and each mutating perm implying its read. NOTE: this is the granted set; it does NOT yet apply
-     * negative permissions (deny), so once denies are authored it may list a permission the user's resolved
-     * login authorities have removed. Making it deny-aware (sourcing from the resolver / effective authorities)
-     * lands with the deny write path.
+     * members and each mutating perm implying its read. This is the pre-deny set; the caller subtracts the
+     * deny-applied effective set from it to surface which grants a deny removed.
      */
-    private List<String> effectivePermissions(UserAccount user, List<GroupMembership> memberships) {
+    private Set<String> grantedPermissions(UserAccount user, List<GroupMembership> memberships) {
         Set<String> permissions = new HashSet<>();
         addPermissionsOf(user.getRoles(), permissions);
         for (GroupMembership membership : memberships) {
@@ -111,7 +116,18 @@ public class UserDetailAdminService {
         }
         permissions.addAll(user.getDirectPermissionNames());
 
-        return Permissions.expandGrants(permissions).stream().sorted().toList();
+        return Permissions.expandGrants(permissions);
+    }
+
+    /**
+     * The user's EFFECTIVE permissions: the resolved login authorities (deny already applied, wildcards
+     * expanded, role NAMES excluded — an authority is a permission iff it is {@code resource:action} shaped).
+     * Sourced from the one resolution chokepoint so the console shows exactly what the user can do.
+     */
+    private Set<String> effectivePermissions(UUID userId) {
+        return userService.effectiveAuthorities(userId).stream()
+                .filter(authority -> authority.indexOf(':') >= 0) // drop ROLE_ names; keep perms + wildcard tokens
+                .collect(Collectors.toSet());
     }
 
     private void addPermissionsOf(Collection<? extends RoleRef> roles, Set<String> permissions) {

@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -29,6 +30,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -38,12 +40,12 @@ import static org.mockito.Mockito.when;
 /**
  * What the console reports a user as HOLDING, and where each of it came from.
  *
- * <p>Untested until now, on both halves. {@code roleAssignments} merges the roles assigned to the account with
- * the ones its groups delegate and stamps each with its source, and {@code effectivePermissions} unions three
- * sources and expands read-implication over them. Neither is a lookup — they are the answer an administrator
- * reads before deciding whether someone is over-privileged, so getting the SOURCE wrong is worse than showing
- * nothing: a role inherited from a group, reported as directly assigned, is one an admin would try to revoke
- * on the user and find still there.
+ * <p>{@code roleAssignments} merges the roles assigned to the account with the ones its groups delegate and
+ * stamps each with its source; {@code effectivePermissions} is the deny-applied resolved authorities (role
+ * NAMES filtered out) and {@code deniedPermissions} is what a grant hands out but a deny removed. Neither is a
+ * lookup — they are the answer an administrator reads before deciding whether someone is over-privileged, so
+ * getting the SOURCE wrong is worse than showing nothing: a role inherited from a group, reported as directly
+ * assigned, is one an admin would try to revoke on the user and find still there.
  */
 @ExtendWith(MockitoExtension.class)
 class UserDetailAdminServiceTest {
@@ -60,6 +62,12 @@ class UserDetailAdminServiceTest {
     @Mock private AuditService audit;
     @Mock private AuditAccessPolicy auditAccessPolicy;
     @InjectMocks private UserDetailAdminService service;
+
+    @BeforeEach
+    void defaultResolvedAuthorities() {
+        // Default so getUser never NPEs on the deny-aware effective set; the permission tests override per-user.
+        lenient().when(userService.effectiveAuthorities(any())).thenReturn(Set.of());
+    }
 
     private RoleRef role(String name, String... permissions) {
         RoleRef ref = mock(RoleRef.class);
@@ -161,42 +169,56 @@ class UserDetailAdminServiceTest {
                 .containsExactly("ROLE_ADMIN", "ROLE_group_admin", "ROLE_USER");
     }
 
-    /** Effective permissions union all three sources: the account's roles, its groups' roles, and its own. */
+    /** Effective permissions are the deny-applied RESOLVED authorities, with role NAMES filtered out (only
+     *  {@code resource:action}-shaped authorities are permissions). */
     @Test
-    void effectivePermissionsUnionRolesGroupRolesAndDirectGrants() {
-        GroupMembership platform = new GroupMembership(UUID.randomUUID(), "platform",
-                List.of(role("ROLE_GROUP_ADMIN", Permissions.GROUP_UPDATE)));
+    void effectivePermissionsAreTheResolvedAuthoritiesMinusRoleNames() {
+        when(userService.effectiveAuthorities(USER)).thenReturn(Set.of("ROLE_USER",
+                Permissions.USER_READ, Permissions.GROUP_UPDATE, Permissions.GROUP_READ));
 
         UserDetailView detail = detailOf(
-                account(Set.of(role("ROLE_USER", Permissions.USER_READ)), Set.of(Permissions.CLIENT_READ)),
-                List.of(platform));
+                account(Set.of(role("ROLE_USER", Permissions.USER_READ)), Set.of()), List.of());
 
         // Exactly, not contains: this list answers "is this person over-privileged", so the failure direction
-        // that matters is it being too LARGE — a subset assertion is blind to exactly that.
+        // that matters is it being too LARGE — a subset assertion is blind to exactly that. The ROLE_ name drops.
         assertThat(detail.effectivePermissions()).containsExactlyInAnyOrder(
-                Permissions.USER_READ, Permissions.GROUP_UPDATE, Permissions.GROUP_READ, Permissions.CLIENT_READ);
+                Permissions.USER_READ, Permissions.GROUP_UPDATE, Permissions.GROUP_READ);
     }
 
     /**
-     * Read-implication is applied to the roll-up, not just to the login authorities: a mutating permission
-     * grants the matching read, so the console must not report someone as unable to list what they may edit.
+     * The "why is this permission absent" answer: a permission the grants (role/group/direct) hand out but the
+     * resolved authorities no longer carry was removed by a deny — it lands in {@code deniedPermissions}, while
+     * {@code effectivePermissions} shows only what survives. Here the role grants user:update (implying
+     * user:read), but the resolver returns only user:update — user:read was denied.
      */
     @Test
-    void aMutatingPermissionAlsoReportsTheReadItImplies() {
+    void aGrantRemovedByADenyIsReportedAsDenied() {
+        when(userService.effectiveAuthorities(USER)).thenReturn(Set.of(Permissions.USER_UPDATE));
+
         UserDetailView detail = detailOf(
-                account(Set.of(role("ROLE_GROUP_ADMIN", Permissions.GROUP_UPDATE)), Set.of()), List.of());
+                account(Set.of(role("ROLE_X", Permissions.USER_UPDATE)), Set.of()), List.of());
 
-        assertThat(detail.effectivePermissions())
-                .containsExactlyInAnyOrder(Permissions.GROUP_UPDATE, Permissions.GROUP_READ);
+        assertThat(detail.effectivePermissions()).containsExactly(Permissions.USER_UPDATE);
+        assertThat(detail.deniedPermissions()).containsExactly(Permissions.USER_READ); // granted-then-denied
     }
 
-    /**
-     * A wildcard grant is expanded to its concrete members in the roll-up, matching what the login principal
-     * actually carries — the console must not report a wildcard holder as merely holding the bare token
-     * (which unlocks no endpoint by itself) while omitting the actions it truly confers.
-     */
+    /** With no deny the effective set carries every grant, so nothing is reported as denied. */
     @Test
-    void aWildcardGrantIsExpandedToItsMembers() {
+    void withNoDenyNothingIsReportedAsDenied() {
+        when(userService.effectiveAuthorities(USER)).thenReturn(Set.of(Permissions.USER_READ, Permissions.USER_UPDATE));
+
+        UserDetailView detail = detailOf(
+                account(Set.of(role("ROLE_X", Permissions.USER_UPDATE)), Set.of()), List.of());
+
+        assertThat(detail.deniedPermissions()).isEmpty();
+    }
+
+    /** A surviving wildcard grant is shown with its concrete members, matching what the login principal carries. */
+    @Test
+    void aWildcardEffectiveAuthorityIsShownWithItsMembers() {
+        when(userService.effectiveAuthorities(USER)).thenReturn(Set.of("user:*",
+                Permissions.USER_READ, Permissions.USER_CREATE, Permissions.USER_UPDATE, Permissions.USER_DELETE));
+
         UserDetailView detail = detailOf(
                 account(Set.of(role("ROLE_ORG_ADMIN", "user:*")), Set.of()), List.of());
 
