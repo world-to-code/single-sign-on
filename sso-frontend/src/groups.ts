@@ -1,4 +1,5 @@
 import { apiGet, apiPost, apiPut, apiDelete } from "@/api";
+import type { DenyRow } from "@/denies";
 
 export interface Group {
   id: string;
@@ -36,7 +37,13 @@ export const deleteGroup = (id: string) => apiDelete(`/api/admin/groups/${id}`);
 /** Admin force-expiry of ALL the group's members' sessions (also logs them out of their OIDC/SAML apps). */
 export const revokeGroupSessions = (id: string) => apiDelete(`/api/admin/groups/${id}/sessions`);
 
+export interface GroupDenyState {
+  candidates: string[];
+  denies: DenyRow[];
+}
+
 export const getGroup = (id: string) => apiGet<Group>(`/api/admin/groups/${id}`);
+export const getGroupDenies = (id: string) => apiGet<GroupDenyState>(`/api/admin/groups/${id}/denies`);
 export const getGroupMembers = (id: string, page: number, size = 20) =>
   apiGet<GroupMembersPage>(`/api/admin/groups/${id}/members?page=${page}&size=${size}`);
 export const getGroupApplications = (id: string) =>

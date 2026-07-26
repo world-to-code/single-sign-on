@@ -1,6 +1,7 @@
 package com.example.sso.admin.internal.group.api;
 
 import com.example.sso.admin.internal.group.application.GroupAdminService;
+import com.example.sso.admin.internal.group.application.GroupDenyView;
 import com.example.sso.admin.internal.group.application.GroupSessionTermination;
 import com.example.sso.admin.internal.shared.security.CanAssignGroupRoles;
 import com.example.sso.admin.internal.shared.security.CanRevokeGroupSessions;
@@ -79,6 +80,12 @@ public class AdminGroupController {
     @RequirePermission(Permissions.GROUP_READ)
     public GroupView group(@PathVariable UUID id) {
         return groups.get(id);
+    }
+
+    @GetMapping("/{id}/denies")
+    @RequirePermission(Permissions.GROUP_READ)
+    public GroupDenyView groupDenies(@PathVariable UUID id) {
+        return groups.denies(id);
     }
 
     @GetMapping("/{id}/members")

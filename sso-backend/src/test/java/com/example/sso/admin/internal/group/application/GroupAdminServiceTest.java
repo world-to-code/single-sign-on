@@ -13,7 +13,11 @@ import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.admin.internal.shared.application.ActingAdminTier;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.group.GroupView;
+import com.example.sso.user.deny.DenyRow;
+import com.example.sso.user.deny.DenyService;
+import com.example.sso.user.deny.DenySubjectKind;
 import com.example.sso.user.group.UserGroupService;
+import com.example.sso.user.role.RoleService;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -53,6 +57,8 @@ class GroupAdminServiceTest {
     private UserDetailAdminService userDetail;
     private OrgContext orgContext;
     private LastAdminGuard lastAdminGuard;
+    private RoleService roleService;
+    private DenyService denyService;
     private GroupAdminService service;
 
     @BeforeEach
@@ -64,9 +70,11 @@ class GroupAdminServiceTest {
         userDetail = mock(UserDetailAdminService.class);
         orgContext = mock(OrgContext.class);
         lastAdminGuard = mock(LastAdminGuard.class);
+        roleService = mock(RoleService.class);
+        denyService = mock(DenyService.class);
         when(userGroups.orgIdOf(any())).thenReturn(Optional.empty()); // setRoles recounts the group's org tier
         service = new GroupAdminService(userGroups, applications, accessPolicy, auditLogger, userDetail,
-                new ActingAdminTier(accessPolicy, orgContext), lastAdminGuard);
+                new ActingAdminTier(accessPolicy, orgContext), lastAdminGuard, roleService, denyService);
     }
 
     @Test
@@ -159,6 +167,20 @@ class GroupAdminServiceTest {
         // Dropping a group's ROLE_ORG_ADMIN delegation can strip group-delegated admins → recount the group's org.
         verify(lastAdminGuard).ensureTierRetainsAdmin(groupOrg);
         verify(auditLogger).log(eq(AuditType.GROUP_ROLES_UPDATED), eq(AuditSubjectType.GROUP), any(), any());
+    }
+
+    @Test
+    void deniesOffersTheGroupsRolePermissionsAsCandidatesAndListsItsDenies() {
+        when(accessPolicy.canAccessGroup(GROUP_ID)).thenReturn(true);
+        when(userGroups.delegatedRoleIds(Set.of(GROUP_ID))).thenReturn(Map.of(GROUP_ID, Set.of(SUPPORT_ROLE)));
+        when(roleService.effectivePermissionNames(Set.of(SUPPORT_ROLE))).thenReturn(Set.of("user:read"));
+        when(denyService.principalDenies(DenySubjectKind.GROUP, GROUP_ID))
+                .thenReturn(List.of(new DenyRow(UUID.randomUUID(), "user:update")));
+
+        GroupDenyView view = service.denies(GROUP_ID);
+
+        assertThat(view.candidates()).containsExactly("user:read");
+        assertThat(view.denies()).extracting(DenyRow::pattern).containsExactly("user:update");
     }
 
     @Test

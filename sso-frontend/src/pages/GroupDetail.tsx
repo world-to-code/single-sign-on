@@ -3,10 +3,11 @@ import { Trans, useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 import { AppWindow, ArrowLeft, Lock, LogOut, ShieldCheck } from "lucide-react";
 import {
-  getGroup, getGroupApplications, getGroupMembers, revokeGroupSessions, setGroupRoles,
-  type Group, type GroupApp, type GroupMembersPage,
+  getGroup, getGroupApplications, getGroupDenies, getGroupMembers, revokeGroupSessions, setGroupRoles,
+  type Group, type GroupApp, type GroupDenyState, type GroupMembersPage,
 } from "@/groups";
 import { errorMessage } from "@/api";
+import { DenyControls } from "@/components/DenyControls";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { useToast } from "@/components/ToastProvider";
 import { listRoles, type Role } from "@/roles";
@@ -41,8 +42,11 @@ export default function GroupDetail() {
   const [roleSel, setRoleSel] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  const [denyState, setDenyState] = useState<GroupDenyState | null>(null);
   function loadGroup() { getGroup(id).then(setGroup).catch((e) => setError(errorMessage(e))); }
+  function loadDenies() { getGroupDenies(id).then(setDenyState).catch(() => undefined); }
   useEffect(loadGroup, [id]);
+  useEffect(loadDenies, [id]);
   useEffect(() => {
     if (tab === "members") getGroupMembers(id, page, SIZE).then(setMembers).catch((e) => setError(errorMessage(e)));
   }, [id, tab, page]);
@@ -154,6 +158,12 @@ export default function GroupDetail() {
           ) : (
             <div className="flex flex-wrap gap-1">
               {group.roles.map((r) => <Badge key={r.id} variant="secondary">{r.name}</Badge>)}
+            </div>
+          )}
+          {denyState && (
+            <div className="border-t pt-4">
+              <DenyControls kind="GROUP" subjectId={id} candidates={denyState.candidates}
+                            denies={denyState.denies} onChanged={loadDenies} />
             </div>
           )}
           <div className="border-t pt-4"><MetadataEditor kind="groups" entityId={id} /></div>

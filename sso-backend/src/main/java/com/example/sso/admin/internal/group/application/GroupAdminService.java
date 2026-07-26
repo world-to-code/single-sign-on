@@ -15,7 +15,10 @@ import com.example.sso.user.group.GroupMembersPage;
 import com.example.sso.user.group.GroupRequest;
 import com.example.sso.user.group.GroupView;
 import com.example.sso.user.account.Suggestion;
+import com.example.sso.user.deny.DenyService;
+import com.example.sso.user.deny.DenySubjectKind;
 import com.example.sso.user.group.UserGroupService;
+import com.example.sso.user.role.RoleService;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -47,6 +50,8 @@ public class GroupAdminService {
     private final UserDetailAdminService userDetail;
     private final ActingAdminTier tier;
     private final LastAdminGuard lastAdminGuard;
+    private final RoleService roleService;
+    private final DenyService denyService;
 
     public Page<GroupView> list(int page, int size) {
         // Tier-scoped: an un-drilled platform admin (tier null) sees ONLY the global/system groups; a super-admin
@@ -91,6 +96,17 @@ public class GroupAdminService {
     public GroupView get(UUID id) {
         requireAccess(id);
         return userGroups.get(id);
+    }
+
+    /** The group's deny-management state: the permissions its delegated roles hand to members (the candidates an
+     *  admin may withhold) and the denies already on the group. Server-authoritative authz stays in the deny
+     *  service; the read is tier-scoped by {@link #requireAccess} + the deny table's RLS. */
+    @Transactional(readOnly = true)
+    public GroupDenyView denies(UUID id) {
+        requireAccess(id);
+        Set<UUID> roleIds = userGroups.delegatedRoleIds(Set.of(id)).getOrDefault(id, Set.of());
+        List<String> candidates = roleService.effectivePermissionNames(roleIds).stream().sorted().toList();
+        return new GroupDenyView(candidates, denyService.principalDenies(DenySubjectKind.GROUP, id));
     }
 
     public GroupMembersPage members(UUID id, int page, int size) {
