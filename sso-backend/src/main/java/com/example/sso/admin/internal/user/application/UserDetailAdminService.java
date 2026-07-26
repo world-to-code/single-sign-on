@@ -14,6 +14,7 @@ import com.example.sso.shared.Page;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
+import com.example.sso.user.deny.DenyService;
 import com.example.sso.user.group.GroupMembership;
 import com.example.sso.user.group.UserGroupService;
 import com.example.sso.user.rbac.Permissions;
@@ -46,6 +47,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserDetailAdminService {
 
     private final UserService userService;
+    private final DenyService denyService;
     private final UserGroupService userGroups;
     private final ApplicationService applications;
     private final PasskeyService passkeys;
@@ -75,7 +77,7 @@ public class UserDetailAdminService {
 
         return UserDetailView.of(user, roleAssignments(user, memberships),
                 user.getDirectPermissionNames().stream().sorted().toList(),
-                effective.stream().sorted().toList(), denied);
+                effective.stream().sorted().toList(), denied, denyService.userDenies(id));
     }
 
     /** Merges the user's direct roles with roles delegated via groups, tracking each role's source. */

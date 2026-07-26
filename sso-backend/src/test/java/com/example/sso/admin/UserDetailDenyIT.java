@@ -3,6 +3,7 @@ package com.example.sso.admin;
 import com.example.sso.admin.internal.user.application.UserDetailAdminService;
 import com.example.sso.admin.internal.user.application.UserDetailView;
 import com.example.sso.support.AbstractIntegrationTest;
+import com.example.sso.user.deny.UserDeny;
 import com.example.sso.user.rbac.Permissions;
 import java.util.ArrayList;
 import java.util.List;
@@ -44,6 +45,8 @@ class UserDetailDenyIT extends AbstractIntegrationTest {
         assertThat(detail.deniedPermissions()).contains(Permissions.USER_READ);
         assertThat(detail.effectivePermissions()).doesNotContain(Permissions.USER_READ);
         assertThat(detail.directPermissions()).contains(Permissions.USER_READ); // still granted, just denied
+        // the USER-level deny is listed with an id so the console can lift it
+        assertThat(detail.userDenies()).extracting(UserDeny::pattern).containsExactly(Permissions.USER_READ);
     }
 
     private UUID newGlobalUser() {

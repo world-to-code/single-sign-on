@@ -28,6 +28,7 @@ import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { EffectivePermissionList } from "@/components/EffectivePermissionList";
+import { DenyControls } from "@/components/DenyControls";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -280,6 +281,7 @@ export default function UserDetail({ session }: { session: SessionView }) {
             </CardHeader>
             <CardContent>
               <EffectivePermissionList effective={user.effectivePermissions} denied={user.deniedPermissions} />
+              <DenyControls userId={id} candidates={user.effectivePermissions} userDenies={user.userDenies} onChanged={load} />
             </CardContent>
           </Card>
 

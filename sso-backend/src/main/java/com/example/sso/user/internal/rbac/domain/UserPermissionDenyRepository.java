@@ -1,5 +1,6 @@
 package com.example.sso.user.internal.rbac.domain;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -13,6 +14,9 @@ public interface UserPermissionDenyRepository extends JpaRepository<UserPermissi
 
     @Query("select d.pattern from UserPermissionDeny d where d.userId = :userId")
     Set<String> findPatternsByUser(@Param("userId") UUID userId);
+
+    /** The user's USER-level deny rows (id + pattern), so the console can list and lift them. */
+    List<UserPermissionDeny> findByUserId(UUID userId);
 
     /** Race-proof author: a duplicate (same user+pattern) is a no-op, so a concurrent double-create can't throw. */
     @Modifying

@@ -1,6 +1,7 @@
 package com.example.sso.admin.internal.user.application;
 
 import com.example.sso.user.account.UserAccount;
+import com.example.sso.user.deny.UserDeny;
 import java.time.Instant;
 import java.util.List;
 
@@ -14,15 +15,18 @@ public record UserDetailView(String id, String username, String email, String di
                              boolean enabled, boolean emailVerified, String phoneNumber, boolean phoneVerified,
                              boolean accountNonLocked, String externalId, Instant createdAt, Instant updatedAt,
                              List<RoleAssignmentView> roleAssignments, List<String> directPermissions,
-                             List<String> effectivePermissions, List<String> deniedPermissions) {
+                             List<String> effectivePermissions, List<String> deniedPermissions,
+                             List<UserDeny> userDenies) {
 
-    /** Projects the user plus its pre-computed role/permission roll-ups to the detail view. */
+    /** Projects the user plus its pre-computed role/permission roll-ups to the detail view. {@code userDenies}
+     *  are the USER-level deny rows the console can lift (a subset of what {@code deniedPermissions} explains). */
     public static UserDetailView of(UserAccount user, List<RoleAssignmentView> roleAssignments,
                                     List<String> directPermissions, List<String> effectivePermissions,
-                                    List<String> deniedPermissions) {
+                                    List<String> deniedPermissions, List<UserDeny> userDenies) {
         return new UserDetailView(user.getId().toString(), user.getUsername(), user.getEmail(),
                 user.getDisplayName(), user.isEnabled(), user.isEmailVerified(), user.getPhoneNumber(),
                 user.isPhoneVerified(), user.isAccountNonLocked(), user.getExternalId(), user.getCreatedAt(),
-                user.getUpdatedAt(), roleAssignments, directPermissions, effectivePermissions, deniedPermissions);
+                user.getUpdatedAt(), roleAssignments, directPermissions, effectivePermissions, deniedPermissions,
+                userDenies);
     }
 }

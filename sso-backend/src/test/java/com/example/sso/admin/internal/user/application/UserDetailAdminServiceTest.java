@@ -13,6 +13,7 @@ import java.time.Instant;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
+import com.example.sso.user.deny.DenyService;
 import com.example.sso.user.group.GroupMembership;
 import com.example.sso.user.group.UserGroupService;
 import com.example.sso.user.rbac.Permissions;
@@ -56,6 +57,7 @@ class UserDetailAdminServiceTest {
     private static final UUID ORG = UUID.randomUUID();
 
     @Mock private UserService userService;
+    @Mock private DenyService denyService;
     @Mock private UserGroupService userGroups;
     @Mock private SessionMetadataStore sessionMetadata;
     @Mock private UserSessions userSessions;
@@ -64,9 +66,10 @@ class UserDetailAdminServiceTest {
     @InjectMocks private UserDetailAdminService service;
 
     @BeforeEach
-    void defaultResolvedAuthorities() {
-        // Default so getUser never NPEs on the deny-aware effective set; the permission tests override per-user.
+    void defaults() {
+        // Defaults so getUser never NPEs; the permission tests override the resolved authorities per-user.
         lenient().when(userService.effectiveAuthorities(any())).thenReturn(Set.of());
+        lenient().when(denyService.userDenies(any())).thenReturn(List.of());
     }
 
     private RoleRef role(String name, String... permissions) {
