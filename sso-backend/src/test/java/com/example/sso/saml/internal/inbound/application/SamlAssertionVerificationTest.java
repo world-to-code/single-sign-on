@@ -6,6 +6,7 @@ import com.example.sso.saml.internal.core.application.SamlBindingCodec;
 import com.example.sso.saml.internal.core.application.SamlObjects;
 import com.example.sso.shared.error.UnauthorizedException;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.cert.X509Certificate;
@@ -27,6 +28,8 @@ import org.junit.jupiter.api.Test;
 import org.opensaml.core.config.InitializationService;
 import org.opensaml.core.xml.config.XMLObjectProviderRegistrySupport;
 import org.opensaml.saml.common.SAMLVersion;
+import org.opensaml.saml.common.xml.SAMLConstants;
+import org.opensaml.saml.saml2.core.Advice;
 import org.opensaml.saml.saml2.core.Assertion;
 import org.opensaml.saml.saml2.core.Audience;
 import org.opensaml.saml.saml2.core.AudienceRestriction;
@@ -45,6 +48,7 @@ import org.opensaml.xmlsec.signature.Signature;
 import org.opensaml.xmlsec.signature.support.SignatureConstants;
 import org.opensaml.xmlsec.signature.support.Signer;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -67,6 +71,9 @@ class SamlAssertionVerificationTest {
     private static final String REQUEST_ID = "_e1e2b0e0-0000-4000-8000-000000000001";
     private static final String NAME_ID = "persistent-opaque-subject-42";
     private static final Instant NOW = Instant.parse("2026-07-27T10:00:00Z");
+    // Aliased rather than used inline: the library names push the DOM calls below past 120 columns.
+    private static final String SAML_NS = SAMLConstants.SAML20_NS;
+    private static final String SIGNATURE_NS = SignatureConstants.XMLSIG_NS;
 
     private static KeyPair idpKeys;
     private static X509Certificate idpCertificate;
@@ -130,13 +137,33 @@ class SamlAssertionVerificationTest {
     }
 
     @Test
-    void aSignedEnvelopeAroundASecondUnsignedAssertionIsRefused() {
-        // Signature wrapping: sign one assertion, smuggle another. We verify the assertion we READ, and refuse
-        // a response carrying more than one, so there is no "which one did it cover?" to get wrong.
+    void aResponseCarryingMoreThanOneAssertionIsRefused() {
+        // Not a wrapping test — onlyAssertion refuses on the COUNT before any signature work. Kept because it
+        // is what kills the "allow multiple assertions" mutant; the real wrapping fixture is below.
         String document = signedResponse(response -> response.getAssertions().add(assertion(a -> {
             a.getSubject().getNameID().setValue("smuggled-subject");
             a.setID("_smuggled");
         })));
+
+        assertThatThrownBy(() -> verifier().verify(document, expectations()))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void anAssertionWearingAnotherAssertionsSignatureIsRefused() {
+        // THE signature-wrapping attack. The Response carries exactly ONE assertion, so the count check does
+        // not fire; that assertion claims the victim and is unsigned, but wears the ds:Signature lifted from a
+        // genuine assertion the attacker obtained for themselves, relocated into its <Advice> so the Reference
+        // URI still resolves. A naive verifier resolves the reference to the RELOCATED bytes, finds them
+        // genuinely signed by the pinned key, and then reads the victim's NameID from an element it never
+        // verified.
+        //
+        // WHICH layer refuses it, measured rather than assumed: deleting SAMLSignatureProfileValidator leaves
+        // this test GREEN, so what actually catches this shape is Santuario's own secureValidation
+        // (protectAgainstWrappingAttack on the fragment resolver). The profile validator is defence in depth
+        // for the reference tricks Santuario does not cover — multiple References, a foreign Transform, a
+        // ds:Object child — and NOTHING here pins it. Do not read this test as covering it.
+        String document = wrappedResponse();
 
         assertThatThrownBy(() -> verifier().verify(document, expectations()))
                 .isInstanceOf(UnauthorizedException.class);
@@ -302,9 +329,6 @@ class SamlAssertionVerificationTest {
         Response response = buildResponse(tweak);
         try {
             for (Assertion assertion : response.getAssertions()) {
-                if (assertion.getID().equals("_smuggled")) {
-                    continue; // the wrapping fixture: deliberately left unsigned
-                }
                 Signature signature = SamlObjects.build(Signature.DEFAULT_ELEMENT_NAME);
                 signature.setSigningCredential(new BasicX509Credential(certificate, keys.getPrivate()));
                 signature.setSignatureAlgorithm(SignatureConstants.ALGO_ID_SIGNATURE_RSA_SHA256);
@@ -317,6 +341,50 @@ class SamlAssertionVerificationTest {
             return encode(response);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to sign the test assertion", e);
+        }
+    }
+
+    /**
+     * Builds the wrapping document by DOM surgery, because it cannot be expressed through the object model:
+     * sign a genuine assertion for the ATTACKER, then hand its signature to a second, unsigned assertion that
+     * claims the VICTIM, hiding the signed original inside that assertion's Advice so the signature's
+     * Reference URI still resolves to it.
+     */
+    private String wrappedResponse() {
+        try {
+            Assertion genuine = assertion(a -> {
+                a.setID("_genuine");
+                a.getSubject().getNameID().setValue("attacker-own-subject");
+            });
+            Signature signature = SamlObjects.build(Signature.DEFAULT_ELEMENT_NAME);
+            signature.setSigningCredential(new BasicX509Credential(idpCertificate, idpKeys.getPrivate()));
+            signature.setSignatureAlgorithm(SignatureConstants.ALGO_ID_SIGNATURE_RSA_SHA256);
+            signature.setCanonicalizationAlgorithm(SignatureConstants.ALGO_ID_C14N_EXCL_OMIT_COMMENTS);
+            genuine.setSignature(signature);
+            XMLObjectProviderRegistrySupport.getMarshallerFactory().getMarshaller(genuine).marshall(genuine);
+            Signer.signObject(signature);
+            Element genuineDom = genuine.getDOM();
+
+            Response response = buildResponse(r -> { });
+            response.getAssertions().get(0).setID("_victim-claim");
+            Element responseDom = XMLObjectProviderRegistrySupport.getMarshallerFactory()
+                    .getMarshaller(response).marshall(response);
+            Document doc = responseDom.getOwnerDocument();
+
+            Element victim = (Element) responseDom.getElementsByTagNameNS(SAML_NS, Assertion.DEFAULT_ELEMENT_LOCAL_NAME).item(0);
+            Element lifted = (Element) genuineDom.getElementsByTagNameNS(SIGNATURE_NS, Signature.DEFAULT_ELEMENT_LOCAL_NAME).item(0);
+            Element advice = doc.createElementNS(SAML_NS,
+                    SAMLConstants.SAML20_PREFIX + ":" + Advice.DEFAULT_ELEMENT_LOCAL_NAME);
+            advice.appendChild(doc.importNode(genuineDom, true));
+
+            // The signature becomes the victim-claiming assertion's own child, and the element it actually
+            // covers is tucked inside that assertion's Advice.
+            victim.insertBefore(doc.importNode(lifted, true), victim.getFirstChild().getNextSibling());
+            victim.appendChild(advice);
+
+            return Base64.getEncoder().encodeToString(SerializeSupport.nodeToString(responseDom).getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to build the wrapping fixture", e);
         }
     }
 
