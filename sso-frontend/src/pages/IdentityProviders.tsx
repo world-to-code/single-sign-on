@@ -2,8 +2,8 @@ import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Pencil, Plus, Save, Trash2 } from "lucide-react";
 import {
-  presetById, resolvePresetIssuer, saveIdentityProvider,
-  type IdentityProvider, type IdentityProviderPreset,
+  PERSISTENT_NAME_ID, presetById, resolvePresetIssuer, samlMetadataUrl, saveIdentityProvider,
+  type FederationProtocol, type IdentityProvider, type IdentityProviderPreset,
 } from "@/identityProviders";
 import { PageHeader } from "@/components/PageHeader";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -16,6 +16,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DataList, EmptyState } from "@/components/states";
 import { useApiData } from "@/useApiData";
@@ -26,10 +27,14 @@ interface Editor {
   id: string | null; // the alias when editing an existing provider, null when creating
   alias: string;
   displayName: string;
+  protocol: FederationProtocol; // fixed once created — the server refuses a protocol change on an alias
   issuerUri: string;
   clientId: string;
   clientSecret: string;
   scopes: string;
+  idpEntityId: string;
+  ssoUrl: string;
+  signingCertificate: string;
   presetId: string | null; // the vendor card this was created from, sent back so the badge stays authoritative
   fieldValues: Record<string, string>; // extra preset inputs (e.g. { tenant }) that build the issuer
   allowJitProvisioning: boolean;
@@ -38,8 +43,9 @@ interface Editor {
 }
 
 const blank: Editor = {
-  id: null, alias: "", displayName: "", issuerUri: "", clientId: "", clientSecret: "",
-  scopes: "openid email profile", presetId: null, fieldValues: {},
+  id: null, alias: "", displayName: "", protocol: "OIDC", issuerUri: "", clientId: "", clientSecret: "",
+  scopes: "openid email profile", idpEntityId: "", ssoUrl: "", signingCertificate: "",
+  presetId: null, fieldValues: {},
   allowJitProvisioning: false, linkByVerifiedEmail: false, enabled: true,
 };
 
@@ -61,10 +67,17 @@ export default function IdentityProviders() {
     toRequest: (e) => ({
       alias: e.alias.trim().toLowerCase(),
       displayName: e.displayName.trim(),
+      protocol: e.protocol,
       issuerUri: e.issuerUri.trim(),
       clientId: e.clientId.trim(),
       clientSecret: e.clientSecret, // blank on edit → backend keeps the stored secret
       scopes: e.scopes.trim(),
+      idpEntityId: e.idpEntityId.trim(),
+      ssoUrl: e.ssoUrl.trim(),
+      signingCertificate: e.signingCertificate.trim(),
+      // Not offered as a choice: the server accepts only the persistent format, because it is the one SAML
+      // guarantees is a stable per-SP identifier and a link may be keyed on nothing weaker.
+      nameIdFormat: PERSISTENT_NAME_ID,
       presetId: e.presetId,
       allowJitProvisioning: e.allowJitProvisioning,
       linkByVerifiedEmail: e.linkByVerifiedEmail,
@@ -87,13 +100,23 @@ export default function IdentityProviders() {
     });
   };
 
-  const startCustom = () => { setActivePreset(null); openCreate(); };
+  const startCustomOidc = () => { setActivePreset(null); openCreate(); };
+
+  /** SAML has no vendor presets: an upstream's EntityID, endpoint and certificate are per-deployment, so
+   *  there is nothing a card could pre-fill. */
+  const startCustomSaml = () => {
+    setActivePreset(null);
+    openEdit({ ...blank, id: null, protocol: "SAML", scopes: "" });
+  };
 
   const edit = (p: IdentityProvider) => {
     setActivePreset(null);
     openEdit({
-      id: p.alias, alias: p.alias, displayName: p.displayName, issuerUri: p.issuerUri, clientId: p.clientId,
-      clientSecret: "", scopes: p.scopes, presetId: p.presetId, fieldValues: {},
+      id: p.alias, alias: p.alias, displayName: p.displayName, protocol: p.protocol,
+      issuerUri: p.issuerUri ?? "", clientId: p.clientId ?? "", clientSecret: "", scopes: p.scopes ?? "",
+      idpEntityId: p.idpEntityId ?? "", ssoUrl: p.ssoUrl ?? "",
+      signingCertificate: p.signingCertificate ?? "",
+      presetId: p.presetId, fieldValues: {},
       allowJitProvisioning: p.allowJitProvisioning, linkByVerifiedEmail: p.linkByVerifiedEmail, enabled: p.enabled,
     });
   };
@@ -147,10 +170,17 @@ export default function IdentityProviders() {
           ))}
           <Card role="button" tabIndex={0}
                 className="flex cursor-pointer flex-col justify-center border-dashed p-4 text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
-                onClick={startCustom}
-                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && startCustom()}>
+                onClick={startCustomOidc}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && startCustomOidc()}>
             <p className="flex items-center gap-1.5 font-medium"><Plus className="size-4" /> {t("idpCustomCard")}</p>
             <p className="text-xs">{t("idpCustomCardHint")}</p>
+          </Card>
+          <Card role="button" tabIndex={0}
+                className="flex cursor-pointer flex-col justify-center border-dashed p-4 text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+                onClick={startCustomSaml}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && startCustomSaml()}>
+            <p className="flex items-center gap-1.5 font-medium"><Plus className="size-4" /> {t("idpSamlCard")}</p>
+            <p className="text-xs">{t("idpSamlCardHint")}</p>
           </Card>
         </div>
       </section>
@@ -167,7 +197,7 @@ export default function IdentityProviders() {
               <TableRow>
                 <TableHead>{t("idpColName")}</TableHead>
                 <TableHead>{t("idpColAlias")}</TableHead>
-                <TableHead>{t("idpColIssuer")}</TableHead>
+                <TableHead>{t("idpColUpstream")}</TableHead>
                 <TableHead>{t("idpColStatus")}</TableHead>
                 <TableHead className="w-0" />
               </TableRow>
@@ -178,11 +208,12 @@ export default function IdentityProviders() {
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
                       {p.displayName}
-                      <Badge variant="muted">{vendorOf(p)}</Badge>
+                      <Badge variant="muted">{p.protocol}</Badge>
+                      {p.protocol === "OIDC" && <Badge variant="muted">{vendorOf(p)}</Badge>}
                     </div>
                   </TableCell>
                   <TableCell><Badge variant="muted" className="font-mono">{p.alias}</Badge></TableCell>
-                  <TableCell className="max-w-xs truncate text-muted-foreground">{p.issuerUri}</TableCell>
+                  <TableCell className="max-w-xs truncate text-muted-foreground">{p.issuerUri ?? p.idpEntityId}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">
                       <Badge variant={p.enabled ? "success" : "muted"}>{p.enabled ? t("idpEnabled") : t("idpDisabled")}</Badge>
@@ -231,46 +262,84 @@ export default function IdentityProviders() {
               </div>
             </div>
 
-            {activePreset && activePreset.fields.length > 0 ? (
+            {editor.protocol === "SAML" ? (
               <>
-                {activePreset.fields.map((field) => (
-                  <div key={field.key} className="space-y-2">
-                    <Label htmlFor={`idp-field-${field.key}`}>{field.label}</Label>
-                    <Input id={`idp-field-${field.key}`} value={editor.fieldValues[field.key] ?? ""}
-                           placeholder={field.placeholder}
-                           onChange={(e) => setField(field.key, e.target.value)} required />
-                  </div>
-                ))}
                 <div className="space-y-2">
-                  <Label htmlFor="idp-issuer-resolved">{t("idpIssuerLabel")}</Label>
-                  <Input id="idp-issuer-resolved" className="font-mono" value={editor.issuerUri} readOnly />
-                  <p className="text-xs text-muted-foreground">{t("idpResolvedIssuerHint")}</p>
+                  <Label htmlFor="idp-entity-id">{t("idpEntityIdLabel")}</Label>
+                  <Input id="idp-entity-id" className="font-mono" value={editor.idpEntityId}
+                         placeholder="https://sts.corp.example/entity"
+                         onChange={(e) => set({ idpEntityId: e.target.value })} required />
+                  <p className="text-xs text-muted-foreground">{t("idpEntityIdHint")}</p>
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="idp-sso-url">{t("idpSsoUrlLabel")}</Label>
+                  <Input id="idp-sso-url" value={editor.ssoUrl} placeholder="https://sts.corp.example/sso"
+                         onChange={(e) => set({ ssoUrl: e.target.value })} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="idp-certificate">{t("idpCertificateLabel")}</Label>
+                  <Textarea id="idp-certificate" className="h-32 font-mono text-xs" value={editor.signingCertificate}
+                            placeholder="-----BEGIN CERTIFICATE-----"
+                            onChange={(e) => set({ signingCertificate: e.target.value })} required />
+                  <p className="text-xs text-muted-foreground">{t("idpCertificateHint")}</p>
+                </div>
+                {editor.id && (
+                  <Alert variant="info">
+                    <AlertDescription>
+                      <Trans t={t} i18nKey="idpSpMetadataHint" components={[
+                        <a key="0" className="font-medium underline"
+                           href={samlMetadataUrl(editor.alias)}
+                           target="_blank" rel="noreferrer" />,
+                      ]} />
+                    </AlertDescription>
+                  </Alert>
+                )}
               </>
             ) : (
+              <>
+                {activePreset && activePreset.fields.length > 0 ? (
+                  <>
+                    {activePreset.fields.map((field) => (
+                      <div key={field.key} className="space-y-2">
+                        <Label htmlFor={`idp-field-${field.key}`}>{field.label}</Label>
+                        <Input id={`idp-field-${field.key}`} value={editor.fieldValues[field.key] ?? ""}
+                               placeholder={field.placeholder}
+                               onChange={(e) => setField(field.key, e.target.value)} required />
+                      </div>
+                    ))}
+                    <div className="space-y-2">
+                      <Label htmlFor="idp-issuer-resolved">{t("idpIssuerLabel")}</Label>
+                      <Input id="idp-issuer-resolved" className="font-mono" value={editor.issuerUri} readOnly />
+                      <p className="text-xs text-muted-foreground">{t("idpResolvedIssuerHint")}</p>
+                    </div>
+                </>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="idp-issuer">{t("idpIssuerLabel")}</Label>
+                  <Input id="idp-issuer" value={editor.issuerUri} placeholder="https://accounts.google.com"
+                         onChange={(e) => set({ issuerUri: e.target.value })} required />
+                </div>
+              )}
+
               <div className="space-y-2">
-                <Label htmlFor="idp-issuer">{t("idpIssuerLabel")}</Label>
-                <Input id="idp-issuer" value={editor.issuerUri} placeholder="https://accounts.google.com"
-                       onChange={(e) => set({ issuerUri: e.target.value })} required />
+                <Label htmlFor="idp-client-id">{t("idpClientIdLabel")}</Label>
+                <Input id="idp-client-id" value={editor.clientId} onChange={(e) => set({ clientId: e.target.value })} required />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="idp-secret">{t("idpClientSecretLabel")}</Label>
+                <Input id="idp-secret" type="password" value={editor.clientSecret} autoComplete="new-password"
+                       placeholder={editor.id ? t("idpClientSecretKeep") : undefined}
+                       onChange={(e) => set({ clientSecret: e.target.value })} required={!editor.id} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="idp-scopes">{t("idpScopesLabel")}</Label>
+                <Input id="idp-scopes" className="font-mono" value={editor.scopes}
+                       onChange={(e) => set({ scopes: e.target.value })} />
+                <p className="text-xs text-muted-foreground">{t("idpScopesHint")}</p>
+              </div>
+              </>
             )}
 
-            <div className="space-y-2">
-              <Label htmlFor="idp-client-id">{t("idpClientIdLabel")}</Label>
-              <Input id="idp-client-id" value={editor.clientId} onChange={(e) => set({ clientId: e.target.value })} required />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="idp-secret">{t("idpClientSecretLabel")}</Label>
-              <Input id="idp-secret" type="password" value={editor.clientSecret} autoComplete="new-password"
-                     placeholder={editor.id ? t("idpClientSecretKeep") : undefined}
-                     onChange={(e) => set({ clientSecret: e.target.value })} required={!editor.id} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="idp-scopes">{t("idpScopesLabel")}</Label>
-              <Input id="idp-scopes" className="font-mono" value={editor.scopes}
-                     onChange={(e) => set({ scopes: e.target.value })} />
-              <p className="text-xs text-muted-foreground">{t("idpScopesHint")}</p>
-            </div>
             <div className="flex items-center justify-between rounded-lg border p-3">
               <div>
                 <p className="text-sm font-medium">{t("idpJitLabel")}</p>

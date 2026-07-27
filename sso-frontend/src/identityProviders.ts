@@ -1,15 +1,27 @@
 import { apiDelete, apiGet, apiPut } from "./api";
 
+/** Which protocol a connection speaks. Each starts a login differently, so the form and the badge branch on it. */
+export type FederationProtocol = "OIDC" | "SAML";
+
 /**
- * A tenant's upstream OIDC provider as returned by the admin API. The client secret is WRITE-ONLY and never
- * travels back — the view carries only the non-secret configuration.
+ * A tenant's upstream provider as returned by the admin API. The client secret is WRITE-ONLY and never travels
+ * back — the view carries only the non-secret configuration. The per-protocol fields are null for the other
+ * protocol; branch on {@link protocol}, never on which fields happen to be filled.
+ *
+ * The SAML signing certificate IS returned: it is a public key, and an administrator has to be able to read
+ * back which key the connection trusts.
  */
 export interface IdentityProvider {
   alias: string;
   displayName: string;
-  issuerUri: string;
-  clientId: string;
-  scopes: string;
+  protocol: FederationProtocol;
+  issuerUri: string | null;
+  clientId: string | null;
+  scopes: string | null;
+  idpEntityId: string | null;
+  ssoUrl: string | null;
+  signingCertificate: string | null;
+  nameIdFormat: string | null;
   allowJitProvisioning: boolean;
   linkByVerifiedEmail: boolean;
   enabled: boolean;
@@ -24,10 +36,15 @@ export interface IdentityProvider {
 export interface IdentityProviderInput {
   alias: string;
   displayName: string;
+  protocol: FederationProtocol;
   issuerUri: string;
   clientId: string;
   clientSecret: string;
   scopes: string;
+  idpEntityId: string;
+  ssoUrl: string;
+  signingCertificate: string;
+  nameIdFormat: string;
   allowJitProvisioning: boolean;
   linkByVerifiedEmail: boolean;
   enabled: boolean;
@@ -54,6 +71,14 @@ export interface IdentityProviderPreset {
   defaultScopes: string;
   fields: IdentityProviderPresetField[];
 }
+
+/** The only NameID format the server accepts — the one SAML guarantees is a stable, opaque per-SP identifier.
+ *  An address is reassignable and a transient one changes every login, so neither may key a link. */
+export const PERSISTENT_NAME_ID = "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent";
+
+/** Where an administrator downloads this connection's SP metadata to hand to the upstream's operators. */
+export const samlMetadataUrl = (alias: string): string =>
+  `/api/admin/identity-providers/${encodeURIComponent(alias)}/saml/metadata`;
 
 export const listIdentityProviders = (): Promise<IdentityProvider[]> =>
   apiGet<IdentityProvider[]>("/api/admin/identity-providers");

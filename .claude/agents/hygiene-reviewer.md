@@ -46,7 +46,7 @@ written.
 
 ## The checks
 
-### 1. Inline fully-qualified names — the headline
+### 1. Inline fully-qualified names — the headline (JAVA ONLY)
 
 Rule: `.claude/rules/backend/imports.md`. Every type is referenced through an `import`; a
 `com.example.sso.…​.SomeType` written inline is a violation.
@@ -89,26 +89,30 @@ importing its own module's `internal` is normal and only adds noise:
 DIFFERENT module is an entity/visibility leak — hand that to `module-boundary-reviewer`, do not
 adjudicate it here.
 
-### 2. Immutability and the Lombok whitelist
+### 2. Immutability and the Lombok whitelist — JAVA ONLY
 
 Rule: `.claude/rules/backend/immutability.md`. `rg "@Setter|@Data\b|public void set[A-Z]"`.
 Allowed Lombok: `@Getter`, `@RequiredArgsConstructor`, `@Slf4j`, `@Builder`. A `setX` method is a
 violation even hand-written — state changes go through intention-revealing methods.
 
-### 3. Gratuitous `private static`
+### 3. Gratuitous `private static` — JAVA ONLY
 
 Rule: `.claude/rules/backend/file-layout.md`. `rg -P "private static (?!final)"`. A helper that only
 reads instance fields is an instance method. `private static final` constants are fine.
 
-### 4. One public type per file
+### 4. One public type per file — JAVA ONLY
 
 Same rule file. Mechanise the count, then read the hits:
 `rg -c '^(public )?(class|interface|enum|record) ' <file>` — more than one wants an explanation. Also
-flag nested classes that exist to dodge module visibility (that part is a read, not a grep).
+flag nested classes that exist to dodge module visibility (that part is a read, not a grep). Do NOT apply
+this to a TS module: several exported types in one cohesive module is the normal TS shape.
 
-### 5. Magic strings and numbers
+### 5. Magic strings and numbers — a READ, and the rule is BACKEND-scoped
 
-Rule: `.claude/rules/backend/no-magic-values.md`. Protocol values (claim/scope/header names, grant
+Rule: `.claude/rules/backend/no-magic-values.md` (there is no frontend rule tree; only
+`.claude/rules/readability.md` carries a `paths:` that includes `sso-frontend/**/*.ts{,x}`). For frontend
+code, judge by the same spirit — an endpoint path or a protocol URN belongs in the API-client module
+beside its siblings, not inline in a page. Protocol values (claim/scope/header names, grant
 types, URNs) belong in an enum or shared constant — and the EXISTING one must be reused before a new
 one is minted (`OidcScopes`, `HttpMethod`, OpenSAML's `NameIDType`, Spring Security's constants).
 Tunables (timeouts, limits, windows, TTLs) belong in `application.yml`, never in code and never as an
@@ -122,9 +126,14 @@ search misses it. Read it rather than trusting this summary; it also carries
 `ij_java_imports_layout` (import ORDER, which a hand-inserted import routinely breaks and which shows
 up as diff noise the next time anyone reformats) and `[*.md] trim_trailing_whitespace = false`.
 
-UTF-8, LF, final newline, no trailing whitespace; Java 4-space and ≤120 columns, TS/JSON/CSS 2-space.
+UTF-8, LF, final newline, no trailing whitespace apply everywhere. Indent is Java 4-space, TS/JSON/CSS
+2-space. **`max_line_length = 120` sits inside the `[*.java]` section only — it does NOT apply to TS/TSX**,
+and hundreds of frontend lines already exceed it, so reporting them as violations is noise. Report a long
+TS line only as INFO, and only if asked.
 
-Long lines, restricted to the lines this diff ADDED:
+Long lines in JAVA, restricted to the lines this diff ADDED. Note the byte/character trap: `length` in awk
+counts BYTES, which over-reports any non-ASCII line (Hangul roughly 2×) — re-measure a flagged non-ASCII
+line as characters before reporting it:
 
 ```
 git diff HEAD -U0 -- '*.java' | awk '
@@ -153,9 +162,14 @@ Group by check, most mechanical first. For each finding:
   → import com.example.sso.shared.IdName; and write `IdName owner = …`
 ```
 
-Mark a finding `[BLOCKS CI]` only when the Hygiene workflow would actually fail on it — that is check
-1 today. Everything else is `[RULE]` (a house rule with no CI gate) or `[INFO]` (a judgement call,
-like a tolerated-but-questionable reflective load).
+Mark a finding `[BLOCKS CI]` only when the Hygiene workflow would actually fail on it — that is check 1
+today, and its sweep reads `sso-backend/src` with `--include='*.java'`, so a FRONTEND-ONLY diff can never
+block CI. Everything else is `[RULE]` (a house rule with no CI gate) or `[INFO]` (a judgement call, like a
+tolerated-but-questionable reflective load).
+
+**A check with nothing to look at is NOT clean — it is "not run".** Checks 1-3 are Java-only; on a
+frontend diff say so explicitly rather than reporting three clean sweeps that never executed. Likewise
+name which checks were a READ rather than a command (4, 5, and comment/dead-code staleness).
 
 End with one line per check: `clean` or the count. If everything passes, say so plainly and name the
 checks you ran — a silent pass is indistinguishable from a reviewer that did not run. Say explicitly
@@ -164,6 +178,14 @@ which checks were a READ rather than a command (4 and the nested-class half, 5),
 
 If any command misbehaved, report that too, and say what you ran instead. A reviewer that quietly
 worked around a broken instruction leaves the next run to rediscover it.
+
+### 7. Comment staleness and dead references
+
+Root `CLAUDE.md` ("No dead code") and `.claude/rules/readability.md` ("a comment that is no longer true is
+worse than none") both apply, and `readability.md` is one of the few rules scoped to the frontend too. Ask
+of every changed file: is a comment now FALSE because of this change, and did anything become
+unreferenced? For i18n specifically, a key the code stopped using is dead in BOTH bundles — check by
+searching for the key name outside `i18n/**`.
 
 ## What you do NOT do
 

@@ -3,7 +3,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import IdentityProviders from "./IdentityProviders";
 import { ConfirmProvider } from "@/components/ConfirmProvider";
 import { apiGet } from "@/api";
-import { saveIdentityProvider, type IdentityProvider, type IdentityProviderPreset } from "@/identityProviders";
+import {
+  PERSISTENT_NAME_ID, saveIdentityProvider, type IdentityProvider, type IdentityProviderPreset,
+} from "@/identityProviders";
 
 vi.mock("react-i18next", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react-i18next")>()),
@@ -36,7 +38,8 @@ const PRESETS: IdentityProviderPreset[] = [
 ];
 
 const provider = (over: Partial<IdentityProvider>): IdentityProvider => ({
-  alias: "a", displayName: "A", issuerUri: "https://idp.acme.example", clientId: "c", scopes: "openid",
+  alias: "a", displayName: "A", protocol: "OIDC", issuerUri: "https://idp.acme.example", clientId: "c",
+  scopes: "openid", idpEntityId: null, ssoUrl: null, signingCertificate: null, nameIdFormat: null,
   allowJitProvisioning: false, linkByVerifiedEmail: false, enabled: true, presetId: null, ...over,
 });
 
@@ -130,5 +133,60 @@ describe("IdentityProviders", () => {
     const body = vi.mocked(saveIdentityProvider).mock.calls[0][1];
     expect(body.presetId).toBe("google");
     expect(body.issuerUri).toBe("https://accounts.google.com"); // prefilled from the fixed-issuer preset
+  });
+
+  it("offers a SAML entry beside the OIDC vendor cards", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("button", { name: /idpCustomCard/ })).toBeInTheDocument());
+
+    expect(screen.getByRole("button", { name: /idpSamlCard/ })).toBeInTheDocument();
+  });
+
+  it("submits a SAML connection with its own fields and never the OIDC ones", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("button", { name: /idpSamlCard/ })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: /idpSamlCard/ }));
+    await waitFor(() => expect(screen.getByLabelText("idpEntityIdLabel")).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("idpAliasLabel"), { target: { value: "corp" } });
+    fireEvent.change(screen.getByLabelText("idpNameLabel"), { target: { value: "Corp SSO" } });
+    fireEvent.change(screen.getByLabelText("idpEntityIdLabel"), { target: { value: "https://sts.corp.example/entity" } });
+    fireEvent.change(screen.getByLabelText("idpSsoUrlLabel"), { target: { value: "https://sts.corp.example/sso" } });
+    fireEvent.change(screen.getByLabelText("idpCertificateLabel"), { target: { value: "-----BEGIN CERTIFICATE-----" } });
+    fireEvent.click(screen.getByRole("button", { name: /idpCreate/ }));
+
+    await waitFor(() => expect(saveIdentityProvider).toHaveBeenCalled());
+    const body = vi.mocked(saveIdentityProvider).mock.calls[0][1];
+    expect(body.protocol).toBe("SAML");
+    expect(body.idpEntityId).toBe("https://sts.corp.example/entity");
+    expect(body.ssoUrl).toBe("https://sts.corp.example/sso");
+    // Never offered as a choice: only the persistent format may key a link, so the client always sends it.
+    expect(body.nameIdFormat).toBe(PERSISTENT_NAME_ID);
+    expect(body.clientId).toBe("");
+  });
+
+  it("shows the SAML fields when editing a SAML connection", async () => {
+    // The protocol has to come from the ROW, not from which fields happen to be filled: losing it would submit
+    // a SAML connection as OIDC, which the server refuses because a protocol is immutable once created.
+    vi.mocked(apiGet).mockImplementation((url: string) =>
+      Promise.resolve(url.endsWith("/presets") ? PRESETS : [provider({
+        alias: "corp", displayName: "Corp SSO", protocol: "SAML", issuerUri: null, clientId: null, scopes: null,
+        idpEntityId: "https://sts.corp.example/entity", ssoUrl: "https://sts.corp.example/sso",
+        signingCertificate: "-----BEGIN CERTIFICATE-----", nameIdFormat: PERSISTENT_NAME_ID,
+      })]) as never);
+    renderPage();
+    await waitFor(() => expect(screen.getByText("Corp SSO")).toBeInTheDocument());
+
+    fireEvent.click(screen.getAllByRole("button").find((b) => b.querySelector("svg.lucide-pencil"))!);
+
+    await waitFor(() => expect(screen.getByLabelText("idpEntityIdLabel")).toBeInTheDocument());
+    expect(screen.getByLabelText("idpEntityIdLabel")).toHaveValue("https://sts.corp.example/entity");
+    expect(screen.queryByLabelText("idpClientIdLabel")).not.toBeInTheDocument();
+  });
+
+  it("badges each row with its protocol", async () => {
+    renderPage();
+
+    await waitFor(() => expect(screen.getAllByText("OIDC").length).toBeGreaterThan(0));
   });
 });
