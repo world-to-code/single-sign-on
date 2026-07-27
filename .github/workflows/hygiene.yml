@@ -19,8 +19,10 @@ jobs:
         run: |
           # Match a FQN that references a TYPE (…​.Uppercase) so a lowercase string literal like
           # "com.example.sso.trace.id" is not a false positive; skip import/package lines and javadoc refs.
+          # The (?<!") also skips a QUOTED FQN: a name inside a string is data, not a type reference, and an
+          # import cannot express it — Class.forName of a package-private class in another module is the case.
           hits=$(grep -rnP --include='*.java' \
-                   '^(?!\s*(import|package)\b).*\bcom\.example\.sso\.[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*\.[A-Z]' \
+                   '^(?!\s*(import|package)\b).*(?<!")\bcom\.example\.sso\.[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*\.[A-Z]' \
                    sso-backend/src \
                  | grep -vP '\{@(link|code)' || true)
           if [ -n "$hits" ]; then

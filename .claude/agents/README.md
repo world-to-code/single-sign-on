@@ -17,6 +17,7 @@ each agent's own frontmatter.
 | [`god-class-reviewer`](god-class-reviewer.md) | Whole-class responsibility overload: cohesion clusters, dependency fan-out, change-axis history → verdict + executable decomposition plan | An already-large class grows again, a constructor passes ~5 deps, one class appears in unrelated commits, or a test mocks the world |
 | [`module-boundary-reviewer`](module-boundary-reviewer.md) | Spring Modulith boundaries: entity/repository leaks (incl. latent), cross-module write bypasses, event hygiene, cycles, public-surface growth | Any cross-module call, module-root / named-interface change, new event, or entity/repo visibility change |
 | [`test-quality-reviewer`](test-quality-reviewer.md) | TDD enforcement: case-matrix completeness, principal-matrix coverage, tx-context honesty, mutation resistance, weakened/flaky tests | Any feature/bugfix diff before commit; urgently when tests changed alongside the code they cover, or a bugfix lands without a regression test |
+| [`hygiene-reviewer`](hygiene-reviewer.md) | Mechanical house rules a grep can decide — inline FQNs (**fails CI**), Lombok whitelist / no setters, gratuitous `private static`, magic values, one-public-type-per-file, `.editorconfig` limits | Every diff that touches Java, as the LAST gate before commit — it catches what the Hygiene workflow would otherwise fail on |
 
 ## Overlap rules (who owns what)
 
