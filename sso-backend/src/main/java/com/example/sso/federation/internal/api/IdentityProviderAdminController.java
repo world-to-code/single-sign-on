@@ -1,5 +1,7 @@
 package com.example.sso.federation.internal.api;
 
+import com.example.sso.audit.AuditType;
+import com.example.sso.audit.Audited;
 import com.example.sso.federation.IdentityProviderService;
 import com.example.sso.federation.IdentityProviderView;
 import com.example.sso.federation.internal.application.FederationPresetCatalog;
@@ -58,6 +60,7 @@ public class IdentityProviderAdminController {
     @PutMapping("/{alias}")
     @RequirePermission(Permissions.IDENTITY_PROVIDER_WRITE)
     @RequireStepUp
+    @Audited(AuditType.IDENTITY_PROVIDER_CHANGED)
     public IdentityProviderView save(@PathVariable String alias, @Valid @RequestBody IdentityProviderRequest request) {
         service.save(request.toSpec(alias));
         return service.get(alias);
@@ -66,6 +69,7 @@ public class IdentityProviderAdminController {
     @DeleteMapping("/{alias}")
     @RequirePermission(Permissions.IDENTITY_PROVIDER_WRITE)
     @RequireStepUp
+    @Audited(AuditType.IDENTITY_PROVIDER_CHANGED)
     public ResponseEntity<Void> delete(@PathVariable String alias) {
         service.delete(alias);
         return ResponseEntity.noContent().build();

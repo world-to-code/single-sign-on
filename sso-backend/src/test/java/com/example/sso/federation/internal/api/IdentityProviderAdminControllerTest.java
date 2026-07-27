@@ -1,6 +1,7 @@
 package com.example.sso.federation.internal.api;
 
 import com.example.sso.federation.IdentityProviderService;
+import com.example.sso.federation.FederationProtocol;
 import com.example.sso.federation.IdentityProviderView;
 import com.example.sso.federation.internal.application.FederationPresetCatalog;
 import com.example.sso.federation.internal.application.FederationPresetField;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import com.example.sso.federation.IdentityProviderSpec;
+import com.example.sso.federation.SamlConfig;
 import org.mockito.ArgumentCaptor;
 import static org.mockito.Mockito.verify;
 import org.springframework.test.web.servlet.MockMvc;
@@ -74,10 +76,52 @@ class IdentityProviderAdminControllerTest {
     }
 
     @Test
-    void aBlankDisplayNameIssuerOrClientIdIsRejected() throws Exception {
+    void aBlankDisplayNameIsRejected() throws Exception {
+        // displayName is the only unconditional field left. Which of issuerUri / idpEntityId is required depends
+        // on the protocol, which a field-level annotation cannot express — those are enforced (and localized) in
+        // IdentityProviderServiceImpl.validate and covered by IdentityProviderServiceImplTest.
         expectPutStatus(body("", "https://accounts.google.com", "client-123"), 400);
-        expectPutStatus(body("Google", "", "client-123"), 400);
-        expectPutStatus(body("Google", "https://accounts.google.com", ""), 400);
+    }
+
+    @Test
+    void aSamlBodyMapsToASamlSpecFieldForField() throws Exception {
+        when(service.get("corp")).thenReturn(view());
+
+        mvc.perform(put("/api/admin/identity-providers/corp").contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"Corp SSO","protocol":"SAML",\
+                                "idpEntityId":"https://idp.corp.example/entity",\
+                                "ssoUrl":"https://idp.corp.example/sso",\
+                                "signingCertificate":"-----BEGIN CERTIFICATE-----\\nMIIB\\n-----END CERTIFICATE-----",\
+                                "nameIdFormat":"urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",\
+                                "allowJitProvisioning":true,"enabled":true}"""))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<IdentityProviderSpec> spec = ArgumentCaptor.forClass(IdentityProviderSpec.class);
+        verify(service).save(spec.capture());
+        assertThat(spec.getValue().protocol()).isEqualTo(FederationProtocol.SAML);
+        assertThat(spec.getValue().config()).isInstanceOf(SamlConfig.class);
+        SamlConfig config = (SamlConfig) spec.getValue().config();
+        // All FOUR adjacent String parameters, each with a distinct value: toSpec passes them positionally, so
+        // asserting only two would let a swap of the other pair through (a certificate landing in nameIdFormat).
+        assertThat(config.idpEntityId()).isEqualTo("https://idp.corp.example/entity");
+        assertThat(config.ssoUrl()).isEqualTo("https://idp.corp.example/sso");
+        assertThat(config.signingCertificate()).contains("BEGIN CERTIFICATE");
+        assertThat(config.nameIdFormat()).isEqualTo("urn:oasis:names:tc:SAML:2.0:nameid-format:persistent");
+    }
+
+    @Test
+    void anAbsentProtocolStillMeansOidc() throws Exception {
+        // A client predating the protocol field must keep working — the OIDC body above carries no protocol.
+        when(service.get("google")).thenReturn(view());
+
+        mvc.perform(put("/api/admin/identity-providers/google").contentType(MediaType.APPLICATION_JSON)
+                        .content(body("Google", "https://accounts.google.com", "client-123")))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<IdentityProviderSpec> spec = ArgumentCaptor.forClass(IdentityProviderSpec.class);
+        verify(service).save(spec.capture());
+        assertThat(spec.getValue().protocol()).isEqualTo(FederationProtocol.OIDC);
     }
 
     @Test
@@ -125,8 +169,9 @@ class IdentityProviderAdminControllerTest {
     }
 
     private IdentityProviderView view() {
-        return new IdentityProviderView("google", "Google", "https://accounts.google.com", "client-123",
-                "openid email", true, false, true, "google");
+        return new IdentityProviderView("google", "Google", FederationProtocol.OIDC,
+                "https://accounts.google.com", "client-123", "openid email", null, null, null, null,
+                true, false, true, "google");
     }
 
     /** The vendor tag rides the request through to the spec, so a card-created provider records its preset. */

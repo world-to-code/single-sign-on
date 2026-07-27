@@ -1,6 +1,7 @@
 package com.example.sso.federation.internal.application;
 
 import com.example.sso.crypto.SecretCipher;
+import com.example.sso.federation.FederationProtocol;
 import com.example.sso.federation.FederationProvider;
 import com.example.sso.federation.internal.domain.IdentityProvider;
 import com.example.sso.federation.internal.domain.IdentityProviderRepository;
@@ -30,6 +31,7 @@ class FederationConfigStore {
     ResolvedProvider resolveEnabled(UUID orgId, String alias) {
         IdentityProvider p = repository.findByOrgIdAndAlias(orgId, normalize(alias))
                 .filter(IdentityProvider::isEnabled)
+                .filter(FederationConfigStore::hasLoginPath)
                 .orElseThrow(() -> NotFoundException.of("federation.provider.unknown"));
         return new ResolvedProvider(p.getAlias(), p.getIssuerUri(), p.getClientId(),
                 cipher.decrypt(p.getClientSecretEncrypted()), p.getScopes(), p.isAllowJitProvisioning(),
@@ -40,8 +42,18 @@ class FederationConfigStore {
     List<FederationProvider> enabled(UUID orgId) {
         return repository.findByOrgIdOrderByAlias(orgId).stream()
                 .filter(IdentityProvider::isEnabled)
+                .filter(FederationConfigStore::hasLoginPath)
                 .map(p -> new FederationProvider(p.getAlias(), p.getDisplayName()))
                 .toList();
+    }
+
+    /**
+     * Whether a login can actually be driven through this provider. A SAML provider is registrable before its
+     * login path exists, so it must not be offered on the sign-in screen (a button that 500s) nor accepted by
+     * {@code /start} — this narrows to the protocols implemented today rather than trusting {@code enabled}.
+     */
+    private static boolean hasLoginPath(IdentityProvider provider) {
+        return provider.getProtocol() == FederationProtocol.OIDC;
     }
 
     private String normalize(String alias) {

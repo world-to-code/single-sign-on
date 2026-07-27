@@ -1,10 +1,12 @@
 package com.example.sso.federation.internal.application;
 
+import com.example.sso.federation.FederationProtocol;
 import com.example.sso.federation.IdentityProviderService;
 import com.example.sso.federation.IdentityProviderSpec;
 import com.example.sso.federation.IdentityProviderView;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.support.AbstractIntegrationTest;
@@ -13,6 +15,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.opensaml.saml.saml2.core.NameIDType;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -52,13 +56,149 @@ class IdentityProviderTenantScopeIT extends AbstractIntegrationTest {
         }
     }
 
+    // --- SAML rows: invariants only the real schema can hold ------------------------------------------
+
+    private static final String IDP_ENTITY_ID = "https://idp.corp.example/entity";
+    private static final String SSO_URL = "https://idp.corp.example/sso";
+    private static final String CERT = """
+            -----BEGIN CERTIFICATE-----
+            MIIDFzCCAf+gAwIBAgIUJfPDNVgTXzIHND2TQIMTY5ai5EswDQYJKoZIhvcNAQEL
+            BQAwGzEZMBcGA1UEAwwQaWRwLmNvcnAuZXhhbXBsZTAeFw0yNjA3MjcwMTQxNTJa
+            Fw0zNjA3MjQwMTQxNTJaMBsxGTAXBgNVBAMMEGlkcC5jb3JwLmV4YW1wbGUwggEi
+            MA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDPOyilKLZgvL12y53Jdb7D7dRe
+            RhBh0fo0OePW8leM0sGIxk+NCKWKwDzaIWBE5OL2UQhYu+u/cy7cCSSL4UWeVsSl
+            5SmmAWA/LdOgKp9RzCPWePcGsX4/Yx0bZn2uOspHvpw/E5g+bCvuWhP9lo41v5h2
+            mHdK6THB3umbe4NhurwfetISdGaBwaxAZZZqevQawxSkJtFbQmRW4EAPqa+jsuHY
+            9KUR3OLwRiNx5LE5COwnIy4dzmQLox5kvJbPP+m/9ke1QIOFPgmAVmTMDrnN14GM
+            54SvCAkSa/OaGV0w6MF5LjdvoiLHdUU7OsOtNoZgsIjEBY0eDt4MgpF3WXWvAgMB
+            AAGjUzBRMB0GA1UdDgQWBBRus0qNBcW5I5AvEHR6R+HgyYX4eDAfBgNVHSMEGDAW
+            gBRus0qNBcW5I5AvEHR6R+HgyYX4eDAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3
+            DQEBCwUAA4IBAQCBywwkKK5uRCH/qslQeNwO7l2PQ19a3SEQ+u7WQ+1ZvDghRj5U
+            eyTraD9oGcnzGGzampg558/+jPfHJd/V4fKy0b82ps6ydM5UtK4GZZQYTTQpcnbB
+            TT9OkKXliYhcKPHgUW0w1/I1RnWsnlaR5roHbwJlNM8oIos/VIjl6sEBFZub74XO
+            /pQpQY2R2vpeiYkTTFnnFvSg8+4SjWqFLNlatJD51Km8dSY56agHPJFum21svLnd
+            eiM1VI6d28FuptnrAialquL+/Mw8FgHtL+bD5a/TGv5Ibku5QdL2gujByrBARb6Q
+            hfHZeZhlXCU9WihWBVmsxW/0qn/Z3iLQGwgZ
+            -----END CERTIFICATE-----
+        """;
+
+    @Test
+    void aSamlProviderRoundTripsThroughTheRealSchema() {
+        // Proves the entity mapping matches V138 and that the protocol-config CHECK ACCEPTS a well-formed SAML
+        // row — a mocked repository would store anything.
+        orgA = org("saml-rt");
+        orgContext.runInOrg(orgA, () -> providers.save(IdentityProviderSpec.saml("corp", "Corp SSO",
+                IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.PERSISTENT, true, false, true, null)));
+
+        IdentityProviderView view = orgContext.callInOrg(orgA, () -> providers.get("corp"));
+        assertThat(view.protocol()).isEqualTo(FederationProtocol.SAML);
+        assertThat(view.idpEntityId()).isEqualTo(IDP_ENTITY_ID);
+        assertThat(view.ssoUrl()).isEqualTo(SSO_URL);
+        assertThat(view.nameIdFormat()).isEqualTo(NameIDType.PERSISTENT);
+        // The certificate is deliberately returned (a public key an admin must be able to read back). Asserting
+        // it also pins the field ORDER: idpEntityId/ssoUrl/signingCertificate/nameIdFormat are four adjacent
+        // Strings in the view, and a swap of any pair would otherwise be invisible.
+        assertThat(view.signingCertificate()).contains("BEGIN CERTIFICATE");
+        assertThat(view.issuerUri()).isNull();
+        assertThat(view.clientId()).isNull();
+    }
+
+    @Test
+    void twoAliasesInOneTenantCannotPointAtTheSameUpstream() {
+        // federated_identity is keyed (org_id, issuer, subject), so two aliases sharing an EntityID would share
+        // links and each could resolve the other's identities. Enforced by a partial unique index, not by code:
+        // a check-then-act in the service has no decision under two concurrent writes.
+        orgA = org("saml-dup");
+        orgContext.runInOrg(orgA, () -> providers.save(IdentityProviderSpec.saml("corp-a", "Corp A",
+                IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.PERSISTENT, true, false, true, null)));
+
+        assertThatThrownBy(() -> orgContext.runInOrg(orgA, () -> providers.save(IdentityProviderSpec.saml(
+                "corp-b", "Corp B", IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.PERSISTENT, true, false, true,
+                null)))).isInstanceOf(BadRequestException.class)
+                .hasMessage("federation.provider.entityIdAlreadyRegistered");
+
+        // ...and the INDEX is what actually holds it: the service check has no decision under two concurrent
+        // writes, so prove the constraint exists by going around the service entirely.
+        assertThatThrownBy(() -> ownerJdbc().update(
+                "insert into identity_provider (id, org_id, alias, display_name, protocol, idp_entity_id,"
+                        + " sso_url, signing_certificate, name_id_format, allow_jit_provisioning,"
+                        + " link_by_verified_email, enabled)"
+                        + " values (gen_random_uuid(), ?, 'corp-c', 'Corp C', 'SAML', ?, ?, ?, ?, true, false, true)",
+                orgA, IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.PERSISTENT))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("uq_identity_provider_saml_entity_org");
+    }
+
+    @Test
+    void anotherTenantMayRegisterTheSameUpstream() {
+        // The uniqueness is per TIER: two customers federating to the same corporate IdP is legitimate, and
+        // their links stay separate because federated_identity is keyed on org_id too.
+        orgA = org("saml-tier-a");
+        orgB = org("saml-tier-b");
+        orgContext.runInOrg(orgA, () -> providers.save(IdentityProviderSpec.saml("corp", "Corp SSO",
+                IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.PERSISTENT, true, false, true, null)));
+
+        orgContext.runInOrg(orgB, () -> providers.save(IdentityProviderSpec.saml("corp", "Corp SSO",
+                IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.PERSISTENT, true, false, true, null)));
+
+        assertThat(orgContext.callInOrg(orgB, () -> providers.get("corp")).idpEntityId())
+                .isEqualTo(IDP_ENTITY_ID);
+    }
+
+    @Test
+    void theSchemaRefusesAHybridRowCarryingBothProtocolsConfig() {
+        // The CHECK is the last line of defence behind the service: a row with both an issuer and an EntityID
+        // would be a provider whose login path is ambiguous. Written through the OWNER connection precisely to
+        // bypass the service and prove the DATABASE refuses it.
+        orgA = org("saml-hybrid");
+
+        assertThatThrownBy(() -> ownerJdbc().update(
+                "insert into identity_provider (id, org_id, alias, display_name, protocol, issuer_uri, client_id,"
+                        + " client_secret_encrypted, scopes, idp_entity_id, sso_url, signing_certificate,"
+                        + " allow_jit_provisioning, link_by_verified_email, enabled)"
+                        + " values (gen_random_uuid(), ?, 'hybrid', 'Hybrid', 'SAML', ?, 'c', 'enc', 'openid',"
+                        + " ?, ?, ?, true, false, true)",
+                orgA, "https://issuer.example", IDP_ENTITY_ID, SSO_URL, CERT))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("identity_provider_protocol_config");
+    }
+
+    @Test
+    void theSchemaRefusesASamlRowWithNoSigningCertificate() {
+        // A SAML provider with no pinned key would be a connection with nothing to verify an assertion against.
+        orgA = org("saml-nocert");
+
+        assertThatThrownBy(() -> ownerJdbc().update(
+                "insert into identity_provider (id, org_id, alias, display_name, protocol, idp_entity_id,"
+                        + " sso_url, allow_jit_provisioning, link_by_verified_email, enabled)"
+                        + " values (gen_random_uuid(), ?, 'nocert', 'No cert', 'SAML', ?, ?, true, false, true)",
+                orgA, IDP_ENTITY_ID, SSO_URL))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("identity_provider_protocol_config");
+    }
+
+    @Test
+    void theSchemaStillRequiresTheOidcConfigAfterTheColumnsBecameNullable() {
+        // V138 dropped four NOT NULLs and claims the CHECK re-imposes them. If the OIDC arm were mistyped, an
+        // OIDC row with no client secret becomes insertable — and the login path would cipher.decrypt(null).
+        orgA = org("oidc-arm");
+
+        assertThatThrownBy(() -> ownerJdbc().update(
+                "insert into identity_provider (id, org_id, alias, display_name, protocol, issuer_uri,"
+                        + " allow_jit_provisioning, link_by_verified_email, enabled)"
+                        + " values (gen_random_uuid(), ?, 'halfoidc', 'Half OIDC', 'OIDC', ?, true, false, true)",
+                orgA, "https://issuer.example"))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("identity_provider_protocol_config");
+    }
+
     private UUID org(String prefix) {
         String slug = prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
         return organizations.create(new NewOrganization(slug, slug)).id();
     }
 
     private IdentityProviderSpec spec(String alias, String issuer, String secret) {
-        return new IdentityProviderSpec(alias, "Corp IdP", issuer, "client-id", secret, "openid email", true, false, true);
+        return IdentityProviderSpec.oidc(alias, "Corp IdP", issuer, "client-id", secret, "openid email", true, false, true);
     }
 
     @Test
@@ -106,7 +246,7 @@ class IdentityProviderTenantScopeIT extends AbstractIntegrationTest {
         // Scopes WITHOUT openid + asymmetric booleans: proves openid-injection, scope preservation, and that the
         // two adjacent booleans survive spec→DB→view without a swap or a forced value.
         orgContext.runInOrg(orgA, () -> providers.save(
-                new IdentityProviderSpec("google", "Google", ISSUER_A, "client-id", "a-secret", "email profile",
+                IdentityProviderSpec.oidc("google", "Google", ISSUER_A, "client-id", "a-secret", "email profile",
                         false, false, false)));
 
         IdentityProviderView view = orgContext.callInOrg(orgA, () -> providers.get("google"));
@@ -139,7 +279,7 @@ class IdentityProviderTenantScopeIT extends AbstractIntegrationTest {
     @Test
     void theEmailLinkingOptInSurvivesTheRoundTripAndKeepsItsOwnValue() {
         UUID org = org("idp-optin-" + java.util.UUID.randomUUID().toString().substring(0, 8));
-        orgContext.runInOrg(org, () -> providers.save(new IdentityProviderSpec("okta", "Okta", ISSUER_A,
+        orgContext.runInOrg(org, () -> providers.save(IdentityProviderSpec.oidc("okta", "Okta", ISSUER_A,
                 "client-id", "a-secret", "openid email", true, true, false)));
 
         IdentityProviderView view = orgContext.callInOrg(org, () -> providers.get("okta"));

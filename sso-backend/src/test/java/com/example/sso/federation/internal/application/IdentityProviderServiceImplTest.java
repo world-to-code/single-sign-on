@@ -1,9 +1,11 @@
 package com.example.sso.federation.internal.application;
 
 import com.example.sso.crypto.SecretCipher;
+import com.example.sso.federation.FederationProtocol;
 import com.example.sso.federation.IdentityProviderSpec;
 import com.example.sso.federation.IdentityProviderView;
 import com.example.sso.federation.internal.domain.IdentityProvider;
+import com.example.sso.federation.internal.domain.ProviderFlags;
 import com.example.sso.federation.internal.domain.IdentityProviderRepository;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
@@ -25,8 +27,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.opensaml.saml.saml2.core.NameIDType;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
@@ -78,13 +82,338 @@ class IdentityProviderServiceImplTest {
     }
 
     private IdentityProvider row(UUID orgId, String encryptedSecret) {
-        return IdentityProvider.create(orgId, ALIAS, "Google", ISSUER, "client-123", encryptedSecret,
-                "openid email profile", true, false, true);
+        return IdentityProvider.createOidc(orgId, ALIAS, "Google", ISSUER, "client-123", encryptedSecret,
+                "openid email profile", new ProviderFlags(true, false, true, null));
     }
 
     private IdentityProviderSpec spec(String secret, String scopes) {
         // Three adjacent booleans, all DIFFERENT: two sharing a value makes a swap between them invisible.
-        return new IdentityProviderSpec(ALIAS, "Google", ISSUER, "client-123", secret, scopes, true, false, true);
+        return IdentityProviderSpec.oidc(ALIAS, "Google", ISSUER, "client-123", secret, scopes, true, false, true);
+    }
+
+    // --- SAML providers: the second protocol shares the registry, not the config -----------------------
+
+    private static final String SAML_ALIAS = "corp";
+    private static final String IDP_ENTITY_ID = "https://idp.corp.example/entity";
+    private static final String SSO_URL = "https://idp.corp.example/sso";
+    private static final String PERSISTENT = NameIDType.PERSISTENT;
+    /** A DIFFERENT trust anchor, so a certificate swap is distinguishable from a no-op re-save. */
+    private static final String OTHER_CERT = """
+            -----BEGIN CERTIFICATE-----
+            MIIDHzCCAgegAwIBAgIUVCzS33MSI2ssdp4EoG0ETA1EsSEwDQYJKoZIhvcNAQEL
+            BQAwHzEdMBsGA1UEAwwUcm90YXRlZC5jb3JwLmV4YW1wbGUwHhcNMjYwNzI3MDIy
+            OTQwWhcNMzYwNzI0MDIyOTQwWjAfMR0wGwYDVQQDDBRyb3RhdGVkLmNvcnAuZXhh
+            bXBsZTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALEDYt2EHyH5eHbq
+            pnJGJxoC3hvXxFpWLBxNwwCxxiStm83xqI+fDZCReSi+L+TokrWxeddOVZFQOtTX
+            GgAKEtqMbyt/eEZZo/WOx2LYjYLbwidlCVJedcGkEGMRlBsHdt7TbQWxaWKzGoNa
+            poOxVlgbg5/p518zc/k9ivUusuBrLcNdKlWiydz0rMRoNwHtkQBWupcs1sRTIzG9
+            tPTCWixAacO79OsSSuH/5lcVXrQ1pdZVi4vFxokNYbrqJWsgBFdM3jzFjxz25S9O
+            IEWGyfzPrsC6vUojOOUCURvt0/oWqkFHSFVnC7h8snZkskcOYzbaMXZbDUg4P/Hq
+            kIvk2zsCAwEAAaNTMFEwHQYDVR0OBBYEFKuSSQjIZUBf6BJOUE/nI0euqg3QMB8G
+            A1UdIwQYMBaAFKuSSQjIZUBf6BJOUE/nI0euqg3QMA8GA1UdEwEB/wQFMAMBAf8w
+            DQYJKoZIhvcNAQELBQADggEBAKtF+8JESpcL4upwUUZS7gScqTjeNNhKJXdVl6Bk
+            hys/SitWE4HvvnxEanS+WvBluCo0Ipz9Qy2ck+APhcnq4exbj01NzloLcLMYuNBy
+            JZZuVn1S5U7TC1SXLbQX9+6DYL+V88QS4jat9eifCHwjZ7eBnr6XaxCKO/C/OTDQ
+            vuqxhKaXf+cs8TES2HC7IkdDZhG5F3ZGq85Up0po1HoJecV5wd73JldxPggggGkC
+            bkJd/bVzdGgSJezq7bep7wZIjbhxzxdT3KIHBIz/PwfvHvjErsv2vBcNYlH9MB38
+            W1I5mgoVm7C1egC3yEitwXrs74Yj/rr85+AI0mV+Wy4pabI=
+            -----END CERTIFICATE-----
+            """;
+    /** The link namespace is QUALIFIED so a SAML EntityID can never collide with an OIDC issuer. */
+    private static final String SAML_LINK = "saml:" + IDP_ENTITY_ID;
+    private static final String CERT = """
+                    -----BEGIN CERTIFICATE-----
+                    MIIDFzCCAf+gAwIBAgIUJfPDNVgTXzIHND2TQIMTY5ai5EswDQYJKoZIhvcNAQEL
+                    BQAwGzEZMBcGA1UEAwwQaWRwLmNvcnAuZXhhbXBsZTAeFw0yNjA3MjcwMTQxNTJa
+                    Fw0zNjA3MjQwMTQxNTJaMBsxGTAXBgNVBAMMEGlkcC5jb3JwLmV4YW1wbGUwggEi
+                    MA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDPOyilKLZgvL12y53Jdb7D7dRe
+                    RhBh0fo0OePW8leM0sGIxk+NCKWKwDzaIWBE5OL2UQhYu+u/cy7cCSSL4UWeVsSl
+                    5SmmAWA/LdOgKp9RzCPWePcGsX4/Yx0bZn2uOspHvpw/E5g+bCvuWhP9lo41v5h2
+                    mHdK6THB3umbe4NhurwfetISdGaBwaxAZZZqevQawxSkJtFbQmRW4EAPqa+jsuHY
+                    9KUR3OLwRiNx5LE5COwnIy4dzmQLox5kvJbPP+m/9ke1QIOFPgmAVmTMDrnN14GM
+                    54SvCAkSa/OaGV0w6MF5LjdvoiLHdUU7OsOtNoZgsIjEBY0eDt4MgpF3WXWvAgMB
+                    AAGjUzBRMB0GA1UdDgQWBBRus0qNBcW5I5AvEHR6R+HgyYX4eDAfBgNVHSMEGDAW
+                    gBRus0qNBcW5I5AvEHR6R+HgyYX4eDAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3
+                    DQEBCwUAA4IBAQCBywwkKK5uRCH/qslQeNwO7l2PQ19a3SEQ+u7WQ+1ZvDghRj5U
+                    eyTraD9oGcnzGGzampg558/+jPfHJd/V4fKy0b82ps6ydM5UtK4GZZQYTTQpcnbB
+                    TT9OkKXliYhcKPHgUW0w1/I1RnWsnlaR5roHbwJlNM8oIos/VIjl6sEBFZub74XO
+                    /pQpQY2R2vpeiYkTTFnnFvSg8+4SjWqFLNlatJD51Km8dSY56agHPJFum21svLnd
+                    eiM1VI6d28FuptnrAialquL+/Mw8FgHtL+bD5a/TGv5Ibku5QdL2gujByrBARb6Q
+                    hfHZeZhlXCU9WihWBVmsxW/0qn/Z3iLQGwgZ
+                    -----END CERTIFICATE-----
+            """;
+
+    private IdentityProviderSpec samlSpec(String entityId, String ssoUrl, String cert, String nameIdFormat) {
+        return IdentityProviderSpec.saml(SAML_ALIAS, "Corp SSO", entityId, ssoUrl, cert, nameIdFormat,
+                true, false, true, null);
+    }
+
+    /** A stored row, built the way the service stores one — trimmed — so a re-save is not mistaken for an edit. */
+    private IdentityProvider samlRow(String entityId) {
+        return IdentityProvider.createSaml(ORG, SAML_ALIAS, "Corp SSO", entityId, SSO_URL, CERT.trim(),
+                PERSISTENT, new ProviderFlags(true, false, true, null));
+    }
+
+    private void actingIn(UUID org, String alias, IdentityProvider existing) {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(org));
+        when(repository.findByOrgIdAndAlias(org, alias)).thenReturn(Optional.ofNullable(existing));
+    }
+
+    @Test
+    void aSamlProviderIsStoredWithItsUpstreamConfigAndNoOidcColumns() {
+        actingIn(ORG, SAML_ALIAS, null);
+
+        service.save(samlSpec(IDP_ENTITY_ID, SSO_URL, CERT, PERSISTENT));
+
+        ArgumentCaptor<IdentityProvider> saved = ArgumentCaptor.captor();
+        verify(repository).save(saved.capture());
+        IdentityProvider row = saved.getValue();
+        assertThat(row.getProtocol()).isEqualTo(FederationProtocol.SAML);
+        assertThat(row.getIdpEntityId()).isEqualTo(IDP_ENTITY_ID);
+        assertThat(row.getSsoUrl()).isEqualTo(SSO_URL);
+        assertThat(row.getNameIdFormat()).isEqualTo(NameIDType.PERSISTENT);
+        // The OIDC half must be absent, not merely unused: the protocol-config CHECK constraint refuses a row
+        // carrying both, so a SAML provider that kept them would fail to insert at all.
+        assertThat(row.getIssuerUri()).isNull();
+        assertThat(row.getClientId()).isNull();
+        assertThat(row.getClientSecretEncrypted()).isNull();
+        assertThat(row.getScopes()).isNull();
+    }
+
+    @Test
+    void aSamlProviderWithoutAnEntityIdIsRefused() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        assertThatThrownBy(() -> service.save(samlSpec("  ", SSO_URL, CERT, PERSISTENT)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("federation.provider.entityIdRequired");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void aSamlSsoUrlMustBeAbsoluteHttps() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        assertThatThrownBy(() -> service.save(samlSpec(IDP_ENTITY_ID, "http://idp.corp.example/sso", CERT, PERSISTENT)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("federation.provider.ssoUrlNotHttps");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void aSamlSsoUrlIsNotSsrfValidatedBecauseTheServerNeverFetchesIt() {
+        // Deliberate asymmetry with the OIDC issuer (which this server DOES fetch for discovery/JWKS). Running
+        // OutboundHostValidator here would buy nothing and would lock out an on-prem IdP behind split-horizon
+        // DNS. If a future slice fetches SAML metadata server-side, that fetch must validate at fetch time.
+        actingIn(ORG, SAML_ALIAS, null);
+
+        service.save(samlSpec(IDP_ENTITY_ID, "https://sts.internal.corp/sso", CERT, PERSISTENT));
+
+        verify(repository).save(any());
+        verify(hostValidator, never()).validate(any());
+    }
+
+    @Test
+    void aSigningCertificateThatDoesNotParseIsRefused() {
+        // A provider whose pinned key is unusable must not exist: the ACS would have nothing to verify against.
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        assertThatThrownBy(() -> service.save(samlSpec(IDP_ENTITY_ID, SSO_URL, "not-a-certificate", PERSISTENT)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("federation.provider.certificateMalformed");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void aTransientNameIdFormatIsRefused() {
+        // A transient NameID is a fresh pseudonym per login, so it can never resolve to an existing link — every
+        // sign-in would JIT-provision a duplicate account. Refuse the configuration rather than the 100th login.
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        assertThatThrownBy(() -> service.save(samlSpec(IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.TRANSIENT)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("federation.provider.nameIdFormatUnsupported");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void anUnknownNameIdFormatIsRefused() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        assertThatThrownBy(() -> service.save(samlSpec(IDP_ENTITY_ID, SSO_URL, CERT, "urn:made:up")))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("federation.provider.nameIdFormatUnsupported");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void repointingASamlProviderAtAnotherUpstreamRetiresTheIdentitiesTheOldOneMinted() {
+        // The EntityID is the namespace a NameID is resolved in, so a colliding NameID at the new upstream must
+        // not inherit the account the old one's identities resolve to.
+        actingIn(ORG, SAML_ALIAS, samlRow("https://old-idp.example/entity"));
+        when(links.unlinkAll(ORG, "saml:https://old-idp.example/entity", SAML_ALIAS)).thenReturn(List.of());
+
+        service.save(samlSpec(IDP_ENTITY_ID, SSO_URL, CERT, PERSISTENT));
+
+        verify(links).unlinkAll(ORG, "saml:https://old-idp.example/entity", SAML_ALIAS);
+    }
+
+    @Test
+    void reconfiguringASamlProviderAtTheSameUpstreamKeepsItsIdentitiesAndStillApplies() {
+        IdentityProvider row = samlRow(IDP_ENTITY_ID);
+        actingIn(ORG, SAML_ALIAS, row);
+
+        service.save(samlSpec(IDP_ENTITY_ID, "https://idp.corp.example/sso2", CERT, PERSISTENT));
+
+        verify(links, never()).unlinkAll(any(), any(), any());
+        // ...and the edit is not silently discarded: a branch that skipped reconfigureSaml would drop an
+        // admin's rotated certificate or moved SSO endpoint while reporting success.
+        assertThat(row.getSsoUrl()).isEqualTo("https://idp.corp.example/sso2");
+        assertThat(row.getNameIdFormat()).isEqualTo(NameIDType.PERSISTENT);
+        assertThat(row.getIdpEntityId()).isEqualTo(IDP_ENTITY_ID);
+    }
+
+    @Test
+    void anAliasMayNotSwitchProtocol() {
+        // Switching would repoint a live connection at a different upstream shape, and the identities minted
+        // under the old protocol would be retired against an identifier the new config no longer carries.
+        actingIn(ORG, ALIAS, row(ORG, "encg:cipher"));
+
+        assertThatThrownBy(() -> service.save(IdentityProviderSpec.saml(ALIAS, "Corp SSO", IDP_ENTITY_ID,
+                SSO_URL, CERT, PERSISTENT, true, false, true, null)))
+                .isInstanceOf(BadRequestException.class);
+        verify(links, never()).unlinkAll(any(), any(), any());
+    }
+
+    @Test
+    void aSamlProviderWithoutAnSsoUrlIsRefused() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        assertThatThrownBy(() -> service.save(samlSpec(IDP_ENTITY_ID, null, CERT, PERSISTENT)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("federation.provider.ssoUrlRequired");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void aMalformedSamlSsoUrlIsRefusedAsMalformedNotAsNonHttps() {
+        // The two axes carry different message keys; a validator that collapsed them would name the wrong fault.
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        assertThatThrownBy(() -> service.save(samlSpec(IDP_ENTITY_ID, "https://[bad", CERT, PERSISTENT)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("federation.provider.ssoUrlMalformed");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void aSamlProviderWithoutASigningCertificateIsRefused() {
+        // Distinct from an unparsable one: absent must not reach CertificateFactory, whose behaviour on an
+        // empty stream is provider-dependent.
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        assertThatThrownBy(() -> service.save(samlSpec(IDP_ENTITY_ID, SSO_URL, null, PERSISTENT)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("federation.provider.certificateRequired");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void aSecondAliasClaimingAnUpstreamThisTierAlreadyFederatesToIsRefused() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgIdAndAlias(ORG, "corp-b")).thenReturn(Optional.empty());
+        when(repository.findByOrgIdOrderByAlias(ORG)).thenReturn(List.of(samlRow(IDP_ENTITY_ID)));
+
+        assertThatThrownBy(() -> service.save(IdentityProviderSpec.saml("corp-b", "Corp B", IDP_ENTITY_ID,
+                SSO_URL, CERT, PERSISTENT, true, false, true, null)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("federation.provider.entityIdAlreadyRegistered");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void deletingASamlProviderRetiresTheIdentitiesKeyedOnItsEntityId() {
+        // The SAML twin of deletingAProviderRetiresItsIdentities. Retiring against the OIDC issuer column here
+        // would pass null and match no rows: the links would outlive the provider, and re-registering the alias
+        // against an attacker-controlled EntityID would resolve them back to their old accounts.
+        actingIn(ORG, SAML_ALIAS, samlRow(IDP_ENTITY_ID));
+        when(links.unlinkAll(ORG, SAML_LINK, SAML_ALIAS)).thenReturn(List.of());
+
+        service.delete(SAML_ALIAS);
+
+        verify(links).unlinkAll(ORG, SAML_LINK, SAML_ALIAS);
+        verify(repository).delete(any());
+    }
+
+    @Test
+    void aSamlWriteDoesNotSeedTheOidcAttributeSource() {
+        // The OIDC source profile carries the standard OIDC claim attributes; a SAML assertion fills none of
+        // them, so seeding it would leave a tenant with a profile and three attributes nothing ever writes.
+        actingIn(ORG, SAML_ALIAS, null);
+
+        service.save(samlSpec(IDP_ENTITY_ID, SSO_URL, CERT, PERSISTENT));
+
+        verify(sourceSeeder, never()).ensureOidcSource(any());
+    }
+
+    @Test
+    void anOidcWriteStillSeedsTheOidcAttributeSource() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.empty());
+        when(cipher.encrypt("s3cret")).thenReturn("encg:cipher");
+
+        service.save(spec("s3cret", "email profile"));
+
+        verify(sourceSeeder).ensureOidcSource(ORG);
+    }
+
+    @Test
+    void aSamlProviderWithoutANameIdFormatIsRefused() {
+        // The guard has to sit on the DEFAULT: an unset format does not mean "no opinion", it means the upstream
+        // chooses — including a transient pseudonym that JIT-provisions a duplicate account on every sign-in.
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        assertThatThrownBy(() -> service.save(samlSpec(IDP_ENTITY_ID, SSO_URL, CERT, null)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("federation.provider.nameIdFormatRequired");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void anEmailAddressNameIdFormatIsRefused() {
+        // Joining on an address violates identity-binding: a recycled corporate address would inherit the
+        // previous holder's account through an AUTHORITATIVE link, bypassing every safeguard the opt-in
+        // linkByVerifiedEmail path carries (first-binding-only, never a privileged target).
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        assertThatThrownBy(() -> service.save(samlSpec(IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.EMAIL)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("federation.provider.nameIdFormatUnsupported");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void replacingASamlSigningCertificateRetiresTheIdentitiesItVouchedFor() {
+        // The certificate IS the trust anchor, and unlike OIDC (whose keys come from the issuer's own JWKS) an
+        // administrator supplies it. Swapping it repoints who may speak for this upstream just as surely as
+        // changing the EntityID, so the links it vouched for must not survive.
+        actingIn(ORG, SAML_ALIAS, samlRow(IDP_ENTITY_ID));
+        when(links.unlinkAll(ORG, SAML_LINK, SAML_ALIAS)).thenReturn(List.of());
+
+        service.save(samlSpec(IDP_ENTITY_ID, SSO_URL, OTHER_CERT, PERSISTENT));
+
+        verify(links).unlinkAll(ORG, SAML_LINK, SAML_ALIAS);
+    }
+
+    @Test
+    void anOverlongEntityIdIsRefused() {
+        // Unbounded, it overflows the btree key of the tier-aware unique index — a 500 instead of a 400.
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        assertThatThrownBy(() -> service.save(samlSpec("https://" + "x".repeat(1024), SSO_URL, CERT, PERSISTENT)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("federation.provider.entityIdTooLong");
+        verify(repository, never()).save(any());
     }
 
     @Test
@@ -110,7 +439,7 @@ class IdentityProviderServiceImplTest {
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.empty());
         when(cipher.encrypt(any())).thenReturn("encg:cipher");
 
-        service.save(new IdentityProviderSpec(ALIAS, "Google", ISSUER, "c", "s", "openid", true, false, true, "google"));
+        service.save(IdentityProviderSpec.oidc(ALIAS, "Google", ISSUER, "c", "s", "openid", true, false, true, "google"));
 
         ArgumentCaptor<IdentityProvider> saved = ArgumentCaptor.captor();
         verify(repository).save(saved.capture());
@@ -118,7 +447,7 @@ class IdentityProviderServiceImplTest {
 
         // An unknown preset is refused rather than stored as an unbounded vendor label.
         assertThatThrownBy(() -> service.save(
-                new IdentityProviderSpec(ALIAS, "Google", ISSUER, "c", "s", "openid", true, false, true, "evil")))
+                IdentityProviderSpec.oidc(ALIAS, "Google", ISSUER, "c", "s", "openid", true, false, true, "evil")))
                 .isInstanceOf(BadRequestException.class);
     }
 
@@ -176,7 +505,7 @@ class IdentityProviderServiceImplTest {
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.empty());
         when(cipher.encrypt(any())).thenReturn("encg:cipher");
 
-        service.save(new IdentityProviderSpec(ALIAS, "Google", ISSUER, "c", "s", "openid", true, false, true, "  "));
+        service.save(IdentityProviderSpec.oidc(ALIAS, "Google", ISSUER, "c", "s", "openid", true, false, true, "  "));
 
         ArgumentCaptor<IdentityProvider> saved = ArgumentCaptor.captor();
         verify(repository).save(saved.capture());
@@ -190,7 +519,7 @@ class IdentityProviderServiceImplTest {
         when(cipher.encrypt(any())).thenReturn("encg:cipher");
 
         // Asymmetric values catch a swap of the two adjacent booleans anywhere in spec→create→entity→view.
-        service.save(new IdentityProviderSpec(ALIAS, "Google", ISSUER, "client-123", "s", "openid", false, false, true));
+        service.save(IdentityProviderSpec.oidc(ALIAS, "Google", ISSUER, "client-123", "s", "openid", false, false, true));
 
         ArgumentCaptor<IdentityProvider> saved = ArgumentCaptor.captor();
         verify(repository).save(saved.capture());
@@ -201,8 +530,7 @@ class IdentityProviderServiceImplTest {
     @Test
     void theViewCarriesEveryFieldExceptTheSecretWithBooleansUnswapped() {
         // Asymmetric booleans (allowJit=false, enabled=true) catch a swap in toView's two adjacent boolean args.
-        IdentityProvider stored = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123", "encg:cipher",
-                "openid email", false, true, true, "google");
+        IdentityProvider stored = IdentityProvider.createOidc(ORG, ALIAS, "Google", ISSUER, "client-123", "encg:cipher", "openid email", new ProviderFlags(false, true, true, "google"));
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(stored));
 
@@ -272,10 +600,10 @@ class IdentityProviderServiceImplTest {
         lenient().when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.save(
-                new IdentityProviderSpec(ALIAS, "G", "http://accounts.google.com", "c", "s", "openid", false, false, true)))
+                IdentityProviderSpec.oidc(ALIAS, "G", "http://accounts.google.com", "c", "s", "openid", false, false, true)))
                 .isInstanceOf(BadRequestException.class); // not https
         assertThatThrownBy(() -> service.save(
-                new IdentityProviderSpec(ALIAS, "G", "not a url", "c", "s", "openid", false, false, true)))
+                IdentityProviderSpec.oidc(ALIAS, "G", "not a url", "c", "s", "openid", false, false, true)))
                 .isInstanceOf(BadRequestException.class); // malformed
         verify(repository, never()).save(any());
     }
@@ -287,7 +615,7 @@ class IdentityProviderServiceImplTest {
         doThrow(new BadRequestException("internal address")).when(hostValidator).validate("169.254.169.254");
 
         assertThatThrownBy(() -> service.save(
-                new IdentityProviderSpec(ALIAS, "G", "https://169.254.169.254", "c", "s", "openid", false, false, true)))
+                IdentityProviderSpec.oidc(ALIAS, "G", "https://169.254.169.254", "c", "s", "openid", false, false, true)))
                 .isInstanceOf(BadRequestException.class);
         verify(repository, never()).save(any());
     }
@@ -297,7 +625,7 @@ class IdentityProviderServiceImplTest {
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
 
         assertThatThrownBy(() -> service.save(
-                new IdentityProviderSpec("bad_alias", "G", ISSUER, "c", "s", "openid", false, false, true)))
+                IdentityProviderSpec.oidc("bad_alias", "G", ISSUER, "c", "s", "openid", false, false, true)))
                 .isInstanceOf(BadRequestException.class); // underscore is not URL-safe
         verify(repository, never()).save(any());
     }
@@ -308,11 +636,11 @@ class IdentityProviderServiceImplTest {
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         lenient().when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.save(new IdentityProviderSpec(ALIAS, "  ", ISSUER, "c", "s", "openid", false, false, true)))
+        assertThatThrownBy(() -> service.save(IdentityProviderSpec.oidc(ALIAS, "  ", ISSUER, "c", "s", "openid", false, false, true)))
                 .isInstanceOf(BadRequestException.class);
-        assertThatThrownBy(() -> service.save(new IdentityProviderSpec(ALIAS, "G", ISSUER, "  ", "s", "openid", false, false, true)))
+        assertThatThrownBy(() -> service.save(IdentityProviderSpec.oidc(ALIAS, "G", ISSUER, "  ", "s", "openid", false, false, true)))
                 .isInstanceOf(BadRequestException.class);
-        assertThatThrownBy(() -> service.save(new IdentityProviderSpec(ALIAS, "G", "  ", "c", "s", "openid", false, false, true)))
+        assertThatThrownBy(() -> service.save(IdentityProviderSpec.oidc(ALIAS, "G", "  ", "c", "s", "openid", false, false, true)))
                 .isInstanceOf(BadRequestException.class);
         verify(repository, never()).save(any());
     }
@@ -384,12 +712,11 @@ class IdentityProviderServiceImplTest {
      *  would otherwise inherit whichever account the old one had linked. */
     @Test
     void repointingAProviderAtAnotherUpstreamRetiresItsIdentities() {
-        IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
-                "encg:cipher", "openid", true, false, true);
+        IdentityProvider existing = IdentityProvider.createOidc(ORG, ALIAS, "Google", ISSUER, "client-123", "encg:cipher", "openid", new ProviderFlags(true, false, true, null));
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
 
-        service.save(new IdentityProviderSpec(ALIAS, "Google", "https://login.microsoftonline.test", "client-123",
+        service.save(IdentityProviderSpec.oidc(ALIAS, "Google", "https://login.microsoftonline.test", "client-123",
                 "s3cret", "openid", true, false, true));
 
         verify(links).unlinkAll(ORG, ISSUER, ALIAS); // the OLD issuer's identities, not the new one's
@@ -399,13 +726,12 @@ class IdentityProviderServiceImplTest {
      *  would strand the whole tenant on the login path's fail-closed guard. */
     @Test
     void rotatingTheClientIdRetiresTheIdentitiesToo() {
-        IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
-                "encg:cipher", "openid", true, false, true);
+        IdentityProvider existing = IdentityProvider.createOidc(ORG, ALIAS, "Google", ISSUER, "client-123", "encg:cipher", "openid", new ProviderFlags(true, false, true, null));
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
         when(links.unlinkAll(ORG, ISSUER, ALIAS)).thenReturn(List.of());
 
-        service.save(new IdentityProviderSpec(ALIAS, "Google", ISSUER, "client-999", "s3cret", "openid",
+        service.save(IdentityProviderSpec.oidc(ALIAS, "Google", ISSUER, "client-999", "s3cret", "openid",
                 true, false, true));
 
         verify(links).unlinkAll(ORG, ISSUER, ALIAS);
@@ -414,12 +740,11 @@ class IdentityProviderServiceImplTest {
 
     @Test
     void editingAProviderWithoutChangingItsUpstreamKeepsItsIdentities() {
-        IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
-                "encg:cipher", "openid", true, false, true);
+        IdentityProvider existing = IdentityProvider.createOidc(ORG, ALIAS, "Google", ISSUER, "client-123", "encg:cipher", "openid", new ProviderFlags(true, false, true, null));
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
 
-        service.save(new IdentityProviderSpec(ALIAS, "Google Workspace", ISSUER, "client-123", "s3cret",
+        service.save(IdentityProviderSpec.oidc(ALIAS, "Google Workspace", ISSUER, "client-123", "s3cret",
                 "openid email", true, false, true));
 
         verify(links, never()).unlinkAll(any(), any(), any());
@@ -432,8 +757,7 @@ class IdentityProviderServiceImplTest {
      */
     @Test
     void retiringIdentitiesTerminatesTheSessionsTheyAuthenticated() {
-        IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
-                "encg:cipher", "openid", true, false, true);
+        IdentityProvider existing = IdentityProvider.createOidc(ORG, ALIAS, "Google", ISSUER, "client-123", "encg:cipher", "openid", new ProviderFlags(true, false, true, null));
         UUID retired = UUID.randomUUID();
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
@@ -447,8 +771,7 @@ class IdentityProviderServiceImplTest {
 
     @Test
     void retiringNothingTerminatesNothing() {
-        IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
-                "encg:cipher", "openid", true, false, true);
+        IdentityProvider existing = IdentityProvider.createOidc(ORG, ALIAS, "Google", ISSUER, "client-123", "encg:cipher", "openid", new ProviderFlags(true, false, true, null));
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
         when(links.unlinkAll(ORG, ISSUER, ALIAS)).thenReturn(List.of());
@@ -460,8 +783,7 @@ class IdentityProviderServiceImplTest {
 
     @Test
     void deletingAProviderRetiresItsIdentities() {
-        IdentityProvider existing = IdentityProvider.create(ORG, ALIAS, "Google", ISSUER, "client-123",
-                "encg:cipher", "openid", true, false, true);
+        IdentityProvider existing = IdentityProvider.createOidc(ORG, ALIAS, "Google", ISSUER, "client-123", "encg:cipher", "openid", new ProviderFlags(true, false, true, null));
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.of(existing));
 

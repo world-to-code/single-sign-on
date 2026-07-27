@@ -1,18 +1,26 @@
 package com.example.sso.federation.internal.application;
 
 import com.example.sso.crypto.SecretCipher;
+import com.example.sso.federation.FederationProtocol;
 import com.example.sso.federation.IdentityProviderService;
 import com.example.sso.federation.IdentityProviderSpec;
 import com.example.sso.federation.IdentityProviderView;
+import com.example.sso.federation.OidcConfig;
+import com.example.sso.federation.SamlConfig;
 import com.example.sso.federation.internal.domain.IdentityProvider;
 import com.example.sso.federation.internal.domain.IdentityProviderRepository;
+import com.example.sso.federation.internal.domain.ProviderFlags;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.shared.net.OutboundHostValidator;
 import com.example.sso.tenancy.OrgContext;
+import java.io.ByteArrayInputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateFactory;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -24,6 +32,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.opensaml.saml.saml2.core.NameIDType;
 import org.springframework.security.oauth2.core.oidc.OidcScopes;
 import com.example.sso.user.account.UserAccessChangedEvent;
 import com.example.sso.user.account.UserAccount;
@@ -43,6 +52,25 @@ import org.springframework.util.StringUtils;
 @Service
 @RequiredArgsConstructor
 public class IdentityProviderServiceImpl implements IdentityProviderService {
+
+    /** Qualifies a SAML EntityID before it is used as a link namespace — see {@link #upstreamIssuerOf}. */
+    private static final String SAML_LINK_NAMESPACE = "saml:";
+
+    /**
+     * The only NameID format a connection may use. PERSISTENT is the one format the SAML spec guarantees is a
+     * stable, opaque, per-SP identifier — which is exactly what {@code identity-binding.md} requires of a join
+     * key. EMAIL is refused because an address is reassignable (a recycled corporate address would inherit the
+     * previous holder's account through an authoritative link, bypassing every safeguard the opt-in
+     * {@code linkByVerifiedEmail} path carries); UNSPECIFIED because it promises nothing at all, so the upstream
+     * may send either of the above or a transient pseudonym. Widening this needs the same first-binding-only and
+     * privileged-account bars that {@code linkByVerifiedEmail} has, not just another entry here.
+     */
+    private static final Set<String> SUPPORTED_NAME_ID_FORMATS = Set.of(NameIDType.PERSISTENT);
+
+    /** SAML 2.0 bounds an EntityID at 1024 characters; an unbounded value would also overflow a btree key. */
+    private static final int MAX_ENTITY_ID_LENGTH = 1024;
+
+    private static final int MAX_CERTIFICATE_LENGTH = 16_384;
 
     private static final Pattern ALIAS = Pattern.compile("^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$");
 
@@ -75,34 +103,15 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
         UUID org = writableOrg();
         String alias = normalizeAlias(spec.alias());
         validate(spec);
-        String scopes = normalizeScopes(spec.scopes());
-        String presetId = normalizePreset(spec.presetId());
         Optional<IdentityProvider> existing = ownProvider(alias);
-        String encrypted = resolveSecret(spec, existing.orElse(null));
-        UUID configurator = resolveConfigurator();
-        existing.ifPresentOrElse(
-                row -> {
-                    // Repointing the alias at a DIFFERENT upstream retires the identities the old one minted:
-                    // they were proven against that issuer, and a colliding `sub` at the new one must not
-                    // inherit the account they resolve to.
-                    retireLinksIfUpstreamChanged(org, alias, row, spec);
-                    row.reconfigure(spec.displayName().trim(), spec.issuerUri().trim(), spec.clientId().trim(),
-                            encrypted, scopes, spec.allowJitProvisioning(), spec.linkByVerifiedEmail(),
-                            spec.enabled(), presetId);
-                    row.configuredBy(configurator);
-                },
-                () -> {
-                    IdentityProvider row = IdentityProvider.create(org, alias, spec.displayName().trim(),
-                            spec.issuerUri().trim(), spec.clientId().trim(), encrypted, scopes,
-                            spec.allowJitProvisioning(), spec.linkByVerifiedEmail(), spec.enabled(), presetId);
-                    row.configuredBy(configurator);
-                    repository.save(row);
-                });
-        // A tenant's federated logins fill attributes through ONE connector-less OIDC source profile (like
-        // SCIM), which carries the standard claim attributes. Ensured idempotently on any tenant write; a
-        // platform-tier provider (org null) owns none.
-        if (org != null) {
-            sourceSeeder.ensureOidcSource(org);
+        existing.ifPresent(row -> requireSameProtocol(row, spec));
+        ProviderFlags flags = new ProviderFlags(spec.allowJitProvisioning(), spec.linkByVerifiedEmail(),
+                spec.enabled(), normalizePreset(spec.presetId()));
+        switch (spec.config()) {
+            case OidcConfig oidc -> saveOidc(org, alias, spec.displayName().trim(), oidc, existing.orElse(null),
+                    flags);
+            case SamlConfig saml -> saveSaml(org, alias, spec.displayName().trim(), saml, existing.orElse(null),
+                    flags);
         }
     }
 
@@ -113,24 +122,100 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
         ownProvider(alias).ifPresent(provider -> { // ownProvider normalizes + validates the alias
             // Links outlive the provider row unless dropped here: a re-created alias pointing at an attacker's
             // issuer would otherwise resolve the retired identities to their old accounts.
-            retireLinks(org, provider.getAlias(), provider.getIssuerUri());
+            retireLinks(org, provider.getAlias(), upstreamIssuerOf(provider));
             repository.delete(provider);
         });
     }
 
-    /**
-     * Retires this provider's identities when the upstream it authenticates against changes. Both halves of
-     * the identifier matter: the issuer obviously, and the CLIENT ID because under pairwise subject
-     * identifiers (Azure AD app-scoped ids, Apple, anything using a sector identifier) the subject namespace
-     * is per-client — rotating the app registration gives every user a new {@code sub}, and links left behind
-     * would strand the whole tenant on the login path's fail-closed guard.
-     */
-    private void retireLinksIfUpstreamChanged(UUID org, String alias, IdentityProvider row,
-            IdentityProviderSpec spec) {
-        boolean sameUpstream = row.getIssuerUri().equals(spec.issuerUri().trim())
-                && row.getClientId().equals(spec.clientId().trim());
+    private void saveOidc(UUID org, String alias, String displayName, OidcConfig config, IdentityProvider existing,
+            ProviderFlags flags) {
+        String scopes = normalizeScopes(config.scopes());
+        String encrypted = resolveSecret(config, existing);
+        if (existing == null) {
+            IdentityProvider row = IdentityProvider.createOidc(org, alias, displayName,
+                    config.issuerUri().trim(), config.clientId().trim(), encrypted, scopes, flags);
+            row.configuredBy(resolveConfigurator());
+            repository.save(row);
+            seedOidcSource(org);
+            return;
+        }
+        // Repointing the alias at a DIFFERENT upstream retires the identities the old one minted: they were
+        // proven against that issuer, and a colliding `sub` at the new one must not inherit the account they
+        // resolve to. The CLIENT ID counts as the upstream too — under pairwise subject identifiers (Entra
+        // app-scoped ids, Apple, any sector identifier) the subject namespace is per-client, so rotating the
+        // app registration gives every user a new `sub` and links left behind would strand the whole tenant.
+        boolean sameUpstream = config.issuerUri().trim().equals(existing.getIssuerUri())
+                && config.clientId().trim().equals(existing.getClientId());
         if (!sameUpstream) {
-            retireLinks(org, alias, row.getIssuerUri());
+            retireLinks(org, alias, existing.getIssuerUri());
+        }
+        existing.reconfigureOidc(displayName, config.issuerUri().trim(), config.clientId().trim(), encrypted,
+                scopes, flags);
+        existing.configuredBy(resolveConfigurator());
+        seedOidcSource(org);
+    }
+
+    /**
+     * A tenant's OIDC logins fill attributes through ONE connector-less OIDC source profile (like SCIM), which
+     * carries the standard claim attributes. Ensured idempotently on any OIDC tenant write — NOT on a SAML one,
+     * whose assertion attributes are not OIDC claims and would leave a profile nothing ever fills. A
+     * platform-tier provider (org null) owns none.
+     */
+    private void seedOidcSource(UUID org) {
+        if (org != null) {
+            sourceSeeder.ensureOidcSource(org);
+        }
+    }
+
+    private void saveSaml(UUID org, String alias, String displayName, SamlConfig config, IdentityProvider existing,
+            ProviderFlags flags) {
+        String entityId = config.idpEntityId().trim();
+        requireUnclaimedUpstream(alias, entityId);
+        if (existing == null) {
+            IdentityProvider row = IdentityProvider.createSaml(org, alias, displayName, entityId,
+                    config.ssoUrl().trim(), config.signingCertificate().trim(),
+                    requireStableNameIdFormat(config.nameIdFormat()), flags);
+            row.configuredBy(resolveConfigurator());
+            repository.save(row);
+            return;
+        }
+        // The SAML twin of the OIDC rule above, with one addition that has no OIDC analogue: the SIGNING
+        // CERTIFICATE is the trust anchor, and unlike OIDC (whose keys come from the issuer's own JWKS) an
+        // administrator supplies it. Replacing it repoints who may speak for this upstream just as surely as
+        // changing the EntityID does — leaving the links in place would let a new key assert the old identities.
+        // Rotation therefore costs a re-link; overlapping certificates would need a multi-certificate column.
+        boolean sameUpstream = entityId.equals(existing.getIdpEntityId())
+                && config.signingCertificate().trim().equals(existing.getSigningCertificate());
+        if (!sameUpstream) {
+            retireLinks(org, alias, upstreamIssuerOf(existing));
+        }
+        existing.reconfigureSaml(displayName, entityId, config.ssoUrl().trim(),
+                config.signingCertificate().trim(), requireStableNameIdFormat(config.nameIdFormat()), flags);
+        existing.configuredBy(resolveConfigurator());
+    }
+
+    /**
+     * Refuses a second alias pointing at an upstream this tier already federates to. The partial unique index is
+     * what actually holds the invariant — this check has no decision under two concurrent writes — but without it
+     * the admin sees the generic "a concurrent write lost the race" 409 for what is really a duplicate.
+     */
+    private void requireUnclaimedUpstream(String alias, String entityId) {
+        boolean claimedByAnother = ownProviders().stream()
+                .filter(p -> p.getProtocol() == FederationProtocol.SAML)
+                .anyMatch(p -> entityId.equals(p.getIdpEntityId()) && !alias.equals(p.getAlias()));
+        if (claimedByAnother) {
+            throw BadRequestException.of("federation.provider.entityIdAlreadyRegistered");
+        }
+    }
+
+    /**
+     * An alias may not change protocol. The alias is the login route and the link retirement key, so switching
+     * it would silently repoint a live connection at a different upstream shape — and the identities minted
+     * under the old protocol would be retired against an identifier the new config no longer carries.
+     */
+    private void requireSameProtocol(IdentityProvider existing, IdentityProviderSpec spec) {
+        if (existing.getProtocol() != spec.protocol()) {
+            throw BadRequestException.of("federation.provider.protocolImmutable");
         }
     }
 
@@ -159,9 +244,9 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
      * stored ciphertext — the write-only secret is never echoed back, so an edit of other fields must not wipe
      * it. A brand-new provider MUST carry a secret.
      */
-    private String resolveSecret(IdentityProviderSpec spec, IdentityProvider existing) {
-        if (StringUtils.hasText(spec.clientSecret())) {
-            return cipher.encrypt(spec.clientSecret().trim());
+    private String resolveSecret(OidcConfig config, IdentityProvider existing) {
+        if (StringUtils.hasText(config.clientSecret())) {
+            return cipher.encrypt(config.clientSecret().trim());
         }
         if (existing != null) {
             return existing.getClientSecretEncrypted();
@@ -169,31 +254,108 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
         throw BadRequestException.of("federation.provider.clientSecretRequired");
     }
 
+    /**
+     * The namespace this provider's federated identities are keyed in.
+     *
+     * <p>SAML EntityIDs are QUALIFIED, and that qualifier is load-bearing. An OIDC issuer is self-authenticating
+     * — the server fetches the JWKS from that very host, so an admin cannot claim someone else's issuer — while a
+     * SAML EntityID is a free-form string whose trust anchor is a certificate the same admin supplies. Sharing one
+     * namespace would therefore let an actor holding only {@code identity-provider:write} register a SAML provider
+     * whose EntityID equals a live OIDC issuer, sign an assertion with their own key, and have a forged NameID
+     * resolve that connection's EXISTING links — which are authoritative and skip the privileged-account bar.
+     * OIDC keeps the bare issuer: its links predate the qualifier, and its namespace is already self-authenticating.
+     */
+    private String upstreamIssuerOf(IdentityProvider provider) {
+        return provider.getProtocol() == FederationProtocol.SAML
+                ? SAML_LINK_NAMESPACE + provider.getIdpEntityId() : provider.getIssuerUri();
+    }
+
     private void validate(IdentityProviderSpec spec) {
         if (!StringUtils.hasText(spec.displayName())) {
             throw BadRequestException.of("federation.provider.displayNameRequired");
         }
-        if (!StringUtils.hasText(spec.clientId())) {
-            throw BadRequestException.of("federation.provider.clientIdRequired");
+        switch (spec.config()) {
+            case OidcConfig oidc -> validateOidc(oidc);
+            case SamlConfig saml -> validateSaml(saml);
         }
-        validateIssuer(spec.issuerUri());
     }
 
-    /** The issuer must be an absolute https URL, and its host must not resolve to an internal/metadata target. */
-    private void validateIssuer(String issuerUri) {
-        if (!StringUtils.hasText(issuerUri)) {
-            throw BadRequestException.of("federation.provider.issuerRequired");
+    private void validateOidc(OidcConfig config) {
+        if (!StringUtils.hasText(config.clientId())) {
+            throw BadRequestException.of("federation.provider.clientIdRequired");
+        }
+        // The issuer IS fetched by this server (discovery, JWKS), so its host is SSRF-validated.
+        String host = requireAbsoluteHttps(config.issuerUri(), "federation.provider.issuerRequired",
+                "federation.provider.issuerMalformed", "federation.provider.issuerNotHttps");
+        hostValidator.validate(host);
+    }
+
+    private void validateSaml(SamlConfig config) {
+        if (!StringUtils.hasText(config.idpEntityId())) {
+            throw BadRequestException.of("federation.provider.entityIdRequired");
+        }
+        if (config.idpEntityId().trim().length() > MAX_ENTITY_ID_LENGTH) {
+            throw BadRequestException.of("federation.provider.entityIdTooLong");
+        }
+        // The SSO URL is dereferenced by the BROWSER, never by this server, so OutboundHostValidator does not
+        // apply: running it here would buy nothing and would reject a perfectly reachable on-prem IdP behind
+        // split-horizon DNS. Any future SERVER-side fetch (SAML metadata retrieval) must validate at fetch time.
+        requireAbsoluteHttps(config.ssoUrl(), "federation.provider.ssoUrlRequired",
+                "federation.provider.ssoUrlMalformed", "federation.provider.ssoUrlNotHttps");
+        requireParsableCertificate(config.signingCertificate());
+        requireStableNameIdFormat(config.nameIdFormat());
+    }
+
+    /** An upstream endpoint must be an absolute https URL. Returns its host so a caller can validate further. */
+    private String requireAbsoluteHttps(String value, String requiredKey, String malformedKey, String notHttpsKey) {
+        if (!StringUtils.hasText(value)) {
+            throw BadRequestException.of(requiredKey);
         }
         URI uri;
         try {
-            uri = new URI(issuerUri.trim());
+            uri = new URI(value.trim());
         } catch (URISyntaxException e) {
-            throw BadRequestException.of("federation.provider.issuerMalformed");
+            throw BadRequestException.of(malformedKey);
         }
         if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null) {
-            throw BadRequestException.of("federation.provider.issuerNotHttps");
+            throw BadRequestException.of(notHttpsKey);
         }
-        hostValidator.validate(uri.getHost()); // SSRF: reject internal/metadata targets
+        return uri.getHost();
+    }
+
+    /**
+     * The pinned signing certificate must actually parse — a provider whose certificate is unusable would fail
+     * open at the ACS if the verifier ever treated "no usable key" as "nothing to check". Refuse at the write.
+     */
+    private void requireParsableCertificate(String pem) {
+        if (!StringUtils.hasText(pem)) {
+            throw BadRequestException.of("federation.provider.certificateRequired");
+        }
+        if (pem.trim().length() > MAX_CERTIFICATE_LENGTH) {
+            throw BadRequestException.of("federation.provider.certificateTooLong");
+        }
+        try {
+            CertificateFactory factory = CertificateFactory.getInstance("X.509");
+            factory.generateCertificate(new ByteArrayInputStream(pem.trim().getBytes(StandardCharsets.UTF_8)));
+        } catch (CertificateException malformed) {
+            throw BadRequestException.of("federation.provider.certificateMalformed");
+        }
+    }
+
+    /**
+     * The NameID format, which is REQUIRED. Leaving it unset would not mean "no opinion" — it would mean the
+     * upstream picks, and a transient pseudonym resolves to no link on every sign-in, JIT-provisioning a
+     * duplicate account each time. The guard has to sit on the default, not only on the value an admin types.
+     */
+    private String requireStableNameIdFormat(String nameIdFormat) {
+        if (!StringUtils.hasText(nameIdFormat)) {
+            throw BadRequestException.of("federation.provider.nameIdFormatRequired");
+        }
+        String trimmed = nameIdFormat.trim();
+        if (!SUPPORTED_NAME_ID_FORMATS.contains(trimmed)) {
+            throw BadRequestException.of("federation.provider.nameIdFormatUnsupported");
+        }
+        return trimmed;
     }
 
     /**
@@ -255,8 +417,10 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
     }
 
     private IdentityProviderView toView(IdentityProvider p) {
-        return new IdentityProviderView(p.getAlias(), p.getDisplayName(), p.getIssuerUri(), p.getClientId(),
-                p.getScopes(), p.isAllowJitProvisioning(), p.isLinkByVerifiedEmail(), p.isEnabled(), p.getPresetId());
+        return new IdentityProviderView(p.getAlias(), p.getDisplayName(), p.getProtocol(), p.getIssuerUri(),
+                p.getClientId(), p.getScopes(), p.getIdpEntityId(), p.getSsoUrl(), p.getSigningCertificate(),
+                p.getNameIdFormat(), p.isAllowJitProvisioning(), p.isLinkByVerifiedEmail(), p.isEnabled(),
+                p.getPresetId());
     }
 
     /**

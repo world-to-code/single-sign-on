@@ -114,6 +114,7 @@ public enum AuditType {
     // turn into role and group grants. Reconfiguring one, re-aiming its mappings or running a sync are
     // therefore privilege-relevant, and each has to be attributable to an administrator after the fact.
     DIRECTORY_CONNECTOR_CHANGED(AuditCategory.ADMIN),
+    IDENTITY_PROVIDER_CHANGED(AuditCategory.ADMIN),
     DIRECTORY_SYNC_RUN(AuditCategory.ADMIN),
     // A rule whose conditions read a directory-owned attribute was skipped: nobody who aimed that directory
     // could have made the grant by hand, so the directory must not be able to make it for them.

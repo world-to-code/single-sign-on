@@ -1,6 +1,8 @@
 package com.example.sso.federation.internal.application;
 
+import com.example.sso.federation.FederationProtocol;
 import com.example.sso.federation.internal.domain.IdentityProvider;
+import com.example.sso.federation.internal.domain.ProviderFlags;
 import com.example.sso.federation.internal.domain.IdentityProviderRepository;
 import com.example.sso.metadata.AttributeSourceAuthors;
 import com.example.sso.metadata.ProfileKind;
@@ -15,6 +17,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -36,8 +41,7 @@ class FederationSourceConfiguratorsTest {
     }
 
     private IdentityProvider provider(String alias, UUID configuredBy) {
-        IdentityProvider provider = IdentityProvider.create(ORG, alias, "A", "https://idp.example", "c", "enc",
-                "openid", true, false, true);
+        IdentityProvider provider = IdentityProvider.createOidc(ORG, alias, "A", "https://idp.example", "c", "enc", "openid", new ProviderFlags(true, false, true, null));
         provider.configuredBy(configuredBy);
         return provider;
     }
@@ -55,7 +59,7 @@ class FederationSourceConfiguratorsTest {
         UUID ada = UUID.randomUUID();
         UUID ben = UUID.randomUUID();
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
-        when(providers.findByOrgIdOrderByAlias(ORG))
+        when(providers.findByOrgIdAndProtocolOrderByAlias(ORG, FederationProtocol.OIDC))
                 .thenReturn(List.of(provider("google", ada), provider("okta", ben)));
 
         AttributeSourceAuthors authors = configurators().configuratorsOf(Set.of(PROFILE));
@@ -68,7 +72,7 @@ class FederationSourceConfiguratorsTest {
     void anUnattributedProviderMakesTheAnswerIncomplete() {
         UUID ada = UUID.randomUUID();
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
-        when(providers.findByOrgIdOrderByAlias(ORG))
+        when(providers.findByOrgIdAndProtocolOrderByAlias(ORG, FederationProtocol.OIDC))
                 .thenReturn(List.of(provider("google", ada), provider("legacy", null))); // legacy: nobody on record
 
         AttributeSourceAuthors authors = configurators().configuratorsOf(Set.of(PROFILE));
@@ -80,11 +84,26 @@ class FederationSourceConfiguratorsTest {
     @Test
     void noProviderMeansNothingToVouchFor() {
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
-        when(providers.findByOrgIdOrderByAlias(ORG)).thenReturn(List.of());
+        when(providers.findByOrgIdAndProtocolOrderByAlias(ORG, FederationProtocol.OIDC)).thenReturn(List.of());
 
         AttributeSourceAuthors authors = configurators().configuratorsOf(Set.of(PROFILE));
 
         assertThat(authors).isEqualTo(AttributeSourceAuthors.none()); // definitively empty, not "we failed to look"
+    }
+
+    @Test
+    void aSamlProviderIsNotCountedAsAnAuthorOfTheOidcSource() {
+        // This bean answers for the OIDC source profile, whose attributes a SAML assertion never fills. Counting
+        // a SAML provider would either inject an unrelated administrator into the authority set or — when it
+        // carries no configuredBy — mark the answer INCOMPLETE, silently refusing every OIDC-driven mapping
+        // grant in the tenant. The protocol filter belongs in the query, which is what this pins.
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(providers.findByOrgIdAndProtocolOrderByAlias(ORG, FederationProtocol.OIDC)).thenReturn(List.of());
+
+        AttributeSourceAuthors authors = configurators().configuratorsOf(Set.of(UUID.randomUUID()));
+
+        assertThat(authors).isEqualTo(AttributeSourceAuthors.none());
+        verify(providers, never()).findByOrgIdOrderByAlias(any());
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.example.sso.federation.internal.application;
 
+import com.example.sso.federation.FederationProtocol;
 import com.example.sso.federation.internal.domain.IdentityProvider;
 import com.example.sso.federation.internal.domain.IdentityProviderRepository;
 import com.example.sso.metadata.AttributeSourceAuthors;
@@ -50,7 +51,11 @@ class FederationSourceConfigurators implements SourceConfigurators {
             // accountable, we failed to look — and the caller must tell those apart.
             return new AttributeSourceAuthors(Set.of(), false);
         }
-        List<IdentityProvider> tenantProviders = providers.findByOrgIdOrderByAlias(org);
+        // OIDC only: this bean answers for the OIDC source profile, and a SAML provider feeds none of its
+        // attributes. Counting one would either inject an unrelated administrator into the authority set or —
+        // if it carries no configuredBy — mark the answer incomplete, silently refusing OIDC-driven grants.
+        List<IdentityProvider> tenantProviders =
+                providers.findByOrgIdAndProtocolOrderByAlias(org, FederationProtocol.OIDC);
         if (tenantProviders.isEmpty()) {
             // No provider can feed the OIDC source, so there is nothing to vouch for.
             return AttributeSourceAuthors.none();

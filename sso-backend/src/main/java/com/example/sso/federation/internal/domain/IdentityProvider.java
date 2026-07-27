@@ -1,9 +1,12 @@
 package com.example.sso.federation.internal.domain;
 
+import com.example.sso.federation.FederationProtocol;
 import com.example.sso.shared.domain.AuditedEntity;
 import com.example.sso.tenancy.OrgOwned;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import java.util.UUID;
 import lombok.AccessLevel;
@@ -11,11 +14,12 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * An upstream OIDC identity provider a tenant's users can sign in through (Google, Okta, Azure AD, any OIDC
+ * An upstream identity provider a tenant's users can sign in through (Google, Okta, Entra, any OIDC or SAML
  * IdP). A {@code null} {@link #orgId} is a platform-tier provider (the super-admin's own login); a non-null one
  * belongs to that tenant. {@code alias} is the URL-safe handle in the login route
- * ({@code /api/auth/federation/{alias}/start}) and is unique within the tier. {@code clientSecretEncrypted} is
- * SecretCipher ciphertext — the plaintext is never stored, logged, audited, or returned; the login flow
+ * ({@code /api/auth/federation/{alias}/start}) and is unique within the tier — which is why both protocols
+ * share this table rather than living in siblings that could mint the same alias. {@code clientSecretEncrypted}
+ * is SecretCipher ciphertext — the plaintext is never stored, logged, audited, or returned; the login flow
  * decrypts it only to exchange the authorization code.
  */
 @Entity
@@ -35,21 +39,51 @@ public class IdentityProvider extends AuditedEntity implements OrgOwned {
     @Column(name = "display_name", nullable = false)
     private String displayName;
 
-    /** The OIDC issuer; discovery ({@code {issuer}/.well-known/openid-configuration}) drives the endpoints. */
-    @Column(name = "issuer_uri", nullable = false)
+    /**
+     * The wire protocol. The columns below are per-protocol and null for the other one; which set must be
+     * present is enforced by the {@code identity_provider_protocol_config} CHECK constraint (V138), not by
+     * nullability, so a half-configured provider cannot exist even if a caller bypasses the service.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private FederationProtocol protocol;
+
+    /** OIDC: the issuer; discovery ({@code {issuer}/.well-known/openid-configuration}) drives the endpoints. */
+    @Column(name = "issuer_uri")
     private String issuerUri;
 
-    @Column(name = "client_id", nullable = false)
+    /** OIDC: the OAuth client id registered at the upstream. */
+    @Column(name = "client_id")
     private String clientId;
 
-    /** SecretCipher ciphertext of the OAuth client secret; never the plaintext. Required — the token exchange
-     *  decrypts it, so a provider always carries one (the service enforces it on write). */
-    @Column(name = "client_secret_encrypted", columnDefinition = "text", nullable = false)
+    /** OIDC: SecretCipher ciphertext of the OAuth client secret; never the plaintext. The token exchange
+     *  decrypts it, so an OIDC provider always carries one (the service enforces it on write). */
+    @Column(name = "client_secret_encrypted", columnDefinition = "text")
     private String clientSecretEncrypted;
 
-    /** Space-separated OAuth scopes requested at the upstream; {@code openid} is always required. */
-    @Column(nullable = false)
+    /** OIDC: space-separated scopes requested at the upstream; {@code openid} is always required. */
+    @Column
     private String scopes;
+
+    /** SAML: the upstream's EntityID. The link namespace derives from it (qualified, so it cannot collide with
+     *  an OIDC issuer) — repointing it, or replacing the certificate that vouches for it, retires the identities
+     *  the old upstream minted. */
+    @Column(name = "idp_entity_id", length = 1024)
+    private String idpEntityId;
+
+    /** SAML: the upstream's SSO endpoint, where the AuthnRequest is sent. */
+    @Column(name = "sso_url")
+    private String ssoUrl;
+
+    /** SAML: the PEM X.509 certificate an assertion MUST verify against — a PINNED key, deliberately not a
+     *  trust store resolved from whatever metadata advertises. */
+    @Column(name = "signing_certificate", columnDefinition = "text")
+    private String signingCertificate;
+
+    /** SAML: the NameID format, required and restricted to {@code persistent} — the only format guaranteed to
+     *  be a stable identifier, which is what a link may be keyed on. */
+    @Column(name = "name_id_format", length = 128)
+    private String nameIdFormat;
 
     /** Whether a first-time federated user with no local account is provisioned just-in-time (else denied). */
     @Column(name = "allow_jit_provisioning", nullable = false)
@@ -83,23 +117,23 @@ public class IdentityProvider extends AuditedEntity implements OrgOwned {
     @Column(name = "configured_by")
     private UUID configuredBy;
 
-    /** A custom (preset-less) provider. Owning tenant, or {@code null} for a platform-tier provider. */
-    public static IdentityProvider create(UUID orgId, String alias, String displayName, String issuerUri,
-            String clientId, String clientSecretEncrypted, String scopes, boolean allowJitProvisioning,
-            boolean linkByVerifiedEmail, boolean enabled) {
-        return create(orgId, alias, displayName, issuerUri, clientId, clientSecretEncrypted, scopes,
-                allowJitProvisioning, linkByVerifiedEmail, enabled, null);
-    }
-
-    /** Owning tenant, or {@code null} for a platform-tier provider; {@code presetId} tags the source vendor. */
-    public static IdentityProvider create(UUID orgId, String alias, String displayName, String issuerUri,
-            String clientId, String clientSecretEncrypted, String scopes, boolean allowJitProvisioning,
-            boolean linkByVerifiedEmail, boolean enabled, String presetId) {
+    /** An OIDC provider. Owning tenant, or {@code null} for a platform-tier provider. */
+    public static IdentityProvider createOidc(UUID orgId, String alias, String displayName, String issuerUri,
+            String clientId, String clientSecretEncrypted, String scopes, ProviderFlags flags) {
         IdentityProvider provider = new IdentityProvider();
         provider.orgId = orgId;
         provider.alias = alias;
-        provider.apply(displayName, issuerUri, clientId, clientSecretEncrypted, scopes, allowJitProvisioning,
-                linkByVerifiedEmail, enabled, presetId);
+        provider.reconfigureOidc(displayName, issuerUri, clientId, clientSecretEncrypted, scopes, flags);
+        return provider;
+    }
+
+    /** A SAML provider. Owning tenant, or {@code null} for a platform-tier provider. */
+    public static IdentityProvider createSaml(UUID orgId, String alias, String displayName, String idpEntityId,
+            String ssoUrl, String signingCertificate, String nameIdFormat, ProviderFlags flags) {
+        IdentityProvider provider = new IdentityProvider();
+        provider.orgId = orgId;
+        provider.alias = alias;
+        provider.reconfigureSaml(displayName, idpEntityId, ssoUrl, signingCertificate, nameIdFormat, flags);
         return provider;
     }
 
@@ -108,25 +142,39 @@ public class IdentityProvider extends AuditedEntity implements OrgOwned {
         this.configuredBy = configuredBy;
     }
 
-    /** Repoint this provider (intent-revealing mutation, not a JavaBean setter); the alias is immutable. */
-    public void reconfigure(String displayName, String issuerUri, String clientId, String clientSecretEncrypted,
-            String scopes, boolean allowJitProvisioning, boolean linkByVerifiedEmail, boolean enabled,
-            String presetId) {
-        apply(displayName, issuerUri, clientId, clientSecretEncrypted, scopes, allowJitProvisioning,
-                linkByVerifiedEmail, enabled, presetId);
-    }
-
-    private void apply(String displayName, String issuerUri, String clientId, String clientSecretEncrypted,
-            String scopes, boolean allowJitProvisioning, boolean linkByVerifiedEmail, boolean enabled,
-            String presetId) {
-        this.displayName = displayName;
+    /**
+     * Repoint this OIDC provider; the alias is immutable. The SAML columns are left alone rather than defensively
+     * cleared: a provider's protocol never changes (the service refuses it, because switching would repoint a
+     * live connection at a different upstream shape), so this row has none — and if that guard were ever lost,
+     * the {@code identity_provider_protocol_config} CHECK refuses the write rather than storing a hybrid.
+     */
+    public void reconfigureOidc(String displayName, String issuerUri, String clientId,
+            String clientSecretEncrypted, String scopes, ProviderFlags flags) {
+        this.protocol = FederationProtocol.OIDC;
         this.issuerUri = issuerUri;
         this.clientId = clientId;
         this.clientSecretEncrypted = clientSecretEncrypted;
         this.scopes = scopes;
-        this.allowJitProvisioning = allowJitProvisioning;
-        this.linkByVerifiedEmail = linkByVerifiedEmail;
-        this.enabled = enabled;
-        this.presetId = presetId;
+        apply(displayName, flags);
+    }
+
+    /** Repoint this SAML provider; the alias is immutable. See {@link #reconfigureOidc} on the other protocol's
+     *  columns. */
+    public void reconfigureSaml(String displayName, String idpEntityId, String ssoUrl, String signingCertificate,
+            String nameIdFormat, ProviderFlags flags) {
+        this.protocol = FederationProtocol.SAML;
+        this.idpEntityId = idpEntityId;
+        this.ssoUrl = ssoUrl;
+        this.signingCertificate = signingCertificate;
+        this.nameIdFormat = nameIdFormat;
+        apply(displayName, flags);
+    }
+
+    private void apply(String displayName, ProviderFlags flags) {
+        this.displayName = displayName;
+        this.allowJitProvisioning = flags.allowJitProvisioning();
+        this.linkByVerifiedEmail = flags.linkByVerifiedEmail();
+        this.enabled = flags.enabled();
+        this.presetId = flags.presetId();
     }
 }
