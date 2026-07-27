@@ -37,6 +37,17 @@ public class AdminAuditLogger {
         audit.record(new AuditRecord(type, AuditActor.of(), true, withActingOrg(detail), null, subjectType, subjectId));
     }
 
+    /**
+     * Logs a REFUSED admin action — the attempt happened, the change did not. {@code reason} is the domain
+     * exception's message key (a stable outcome code, never user-supplied text), so refusals are greppable.
+     *
+     * <p>Safe to call while the caller's transaction is already doomed: the audit write commits in its own
+     * {@code REQUIRES_NEW} transaction, so the trail survives the rollback that the refusal causes.
+     */
+    public void logFailure(AuditType type, String detail, String reason) {
+        audit.record(new AuditRecord(type, AuditActor.of(), false, withActingOrg(detail), null).withReason(reason));
+    }
+
     /** Appends the acting org (the drilled-into tenant, or a tenant admin's own org) to the detail. */
     private String withActingOrg(String detail) {
         return orgContext.currentOrg().map(org -> detail + " actingOrg=" + org).orElse(detail);
