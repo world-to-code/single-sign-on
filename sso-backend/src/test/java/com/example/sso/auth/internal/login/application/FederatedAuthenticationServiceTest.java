@@ -7,6 +7,9 @@ import com.example.sso.federation.FederatedIdentity;
 import com.example.sso.federation.FederatedIdentityLinks;
 import com.example.sso.federation.FederationClaimSync;
 import com.example.sso.federation.FederationLoginService;
+import com.example.sso.federation.SamlFederationLogin;
+import com.example.sso.federation.SamlLoginResult;
+import com.example.sso.saml.inbound.SamlSpIdentity;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.shared.error.ForbiddenException;
@@ -68,6 +71,9 @@ class FederatedAuthenticationServiceTest {
 
     @Mock private CompletedSessionGuard completedSession;
     @Mock private FederationLoginService federation;
+    @Mock private SamlFederationLogin samlLogin;
+    @Mock private SamlSpIdentity spIdentity;
+    @Mock private SamlLoginBrowserCookie browserCookie;
     @Mock private FederationClaimSync federationClaimSync;
     @Mock private FederatedIdentityLinks links;
     @Mock private PreAuthOrgSession preAuthOrg;
@@ -86,8 +92,8 @@ class FederatedAuthenticationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new FederatedAuthenticationService(completedSession, federation, federationClaimSync, links,
-                preAuthOrg, preAuthFederation,
+        service = new FederatedAuthenticationService(completedSession, federation, samlLogin, spIdentity,
+                browserCookie, federationClaimSync, links, preAuthOrg, preAuthFederation,
                 provisioner, factorAuth, completionService, users, organizations, orgContext, audit);
         // Unlinked by default: each test that exercises the link path stubs it explicitly.
         lenient().when(links.findLinkedUser(any(), any(), any())).thenReturn(Optional.empty());
@@ -147,7 +153,7 @@ class FederatedAuthenticationServiceTest {
 
         verify(factorAuth).establish(eq(request), eq(response), any());
         verify(factorAuth).grantFactor(request, response, Factors.PASSWORD); // federation satisfies the primary factor
-        verify(completionService).completeIfSatisfied(request, response);
+        verify(completionService).completeIfSatisfied(request, response, ORG);
         verify(preAuthFederation).clear(request); // single use
         // The login's claims are carried onto the resolved account through the tenant's OIDC mappings.
         verify(federationClaimSync).applyClaims(ORG, userId.toString(), Map.of("given_name", "Ada"));
@@ -656,11 +662,55 @@ class FederatedAuthenticationServiceTest {
         doThrow(BadRequestException.of("auth.signin.inProgress"))
                 .when(completedSession).refuseIfAlreadySignedIn();
 
-        assertThatThrownBy(() -> service.start(ALIAS, request)).isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.start(ALIAS, request, response)).isInstanceOf(BadRequestException.class);
         assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
                 .isInstanceOf(BadRequestException.class);
+        // The SAML entry point needs the same guard: it is CSRF-exempt and cookie-less, so re-entry there is
+        // what displaces a signed-in victim's session and orphans its back-channel-logout participants.
+        assertThatThrownBy(() -> service.completeSaml(ALIAS, "b64", "rs", request, response))
+                .isInstanceOf(BadRequestException.class);
         verify(federation, never()).beginLogin(any(), any(), any());
+        verify(samlLogin, never()).completeLogin(any(), any(), any(), any());
         verify(factorAuth, never()).establish(any(), any(), any());
+    }
+
+    // --- the SAML entry point: cookie-less, so the org can only come from what the ACS was told --------
+
+    private void samlLoginResolves(UserAccount user) {
+        UUID userId = user.getId(); // read the mock BEFORE stubbing — a call inside when(...) is unfinished stubbing
+        when(samlLogin.completeLogin(eq(ALIAS), eq("b64"), eq("rs"), any())).thenReturn(new SamlLoginResult(ORG,
+                new FederatedIdentity(ALIAS, "saml:https://idp.corp.example/entity", "persistent-subject-42",
+                        null, false, null, true, false, Map.of())));
+        when(links.findLinkedUser(ORG, "saml:https://idp.corp.example/entity", "persistent-subject-42"))
+                .thenReturn(Optional.of(userId));
+        when(users.findById(userId)).thenReturn(Optional.of(user));
+        when(organizations.isMember(ORG, userId)).thenReturn(true);
+    }
+
+    @Test
+    void completingASamlLoginPassesThePROVENOrgIntoCompletion() {
+        // THE regression this pins: the ACS is a cross-site POST, so a SameSite=Lax session cookie is not sent.
+        // Completion that re-derived the org from the request would find none — skipping the promotion entirely
+        // for an ordinary tenant user, or, for a username that also exists globally, resolving the PLATFORM
+        // super-admin instead of this tenant's account.
+        UserAccount user = user(UUID.randomUUID());
+        samlLoginResolves(user);
+
+        service.completeSaml(ALIAS, "b64", "rs", request, response);
+
+        verify(completionService).completeIfSatisfied(request, response, ORG);
+        verify(factorAuth).establish(any(), any(), any());
+    }
+
+    @Test
+    void aSamlLoginSyncsItsClaimsAndAuditsUnderTheProvenOrg() {
+        UserAccount user = user(UUID.randomUUID());
+        String userId = user.getId().toString();
+        samlLoginResolves(user);
+
+        service.completeSaml(ALIAS, "b64", "rs", request, response);
+
+        verify(federationClaimSync).applyClaims(eq(ORG), eq(userId), any());
     }
 
     /**

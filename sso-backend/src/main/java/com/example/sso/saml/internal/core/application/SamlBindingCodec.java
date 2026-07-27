@@ -58,6 +58,13 @@ public class SamlBindingCodec {
     }
 
     /** Decodes an inbound {@code LogoutRequest} over the HTTP-Redirect binding. */
+    /** A SAML Response from the HTTP-POST binding — the inbound SP path. Inherits this codec's XXE-hardened
+     *  parser pool and its inflated/base64 size ceiling, which is why inbound decoding belongs here rather than
+     *  in a hand-rolled parser beside the verifier. */
+    public Response decodeResponsePost(String samlResponse) {
+        return (Response) parsePost(samlResponse);
+    }
+
     public LogoutRequest decodeLogoutRedirect(String samlRequest) {
         return (LogoutRequest) parseRedirect(samlRequest);
     }

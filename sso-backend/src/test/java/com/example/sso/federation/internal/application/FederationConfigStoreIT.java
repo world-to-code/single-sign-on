@@ -1,5 +1,6 @@
 package com.example.sso.federation.internal.application;
 
+import com.example.sso.federation.FederationProtocol;
 import com.example.sso.federation.FederationProvider;
 import com.example.sso.federation.IdentityProviderService;
 import com.example.sso.federation.IdentityProviderSpec;
@@ -19,12 +20,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * What the LOGIN path may see, against a real database. A provider is registrable before its protocol has a
- * login implementation, so {@link FederationConfigStore} narrows both of its reads to the protocols that can
- * actually drive a sign-in — and that narrowing is the only thing standing between a registered SAML provider
- * and a button on the sign-in screen that resolves a row whose OIDC columns are all null.
+ * What the LOGIN path may see, against a real database. Each protocol has its own resolver returning its own
+ * shape, and neither may answer for the other: resolving across them would hand a login path a row whose columns
+ * for that protocol are all null.
  *
- * <p>Asserted in BOTH directions on purpose. A predicate that wrongly excluded OIDC would take every tenant's
+ * <p>Asserted in BOTH directions on purpose. A filter that wrongly excluded OIDC would take every tenant's
  * inbound federation offline, and a mocked collaborator cannot see either mistake: the store's only other test
  * subject, {@code FederationLoginServiceImplTest}, stubs this class out entirely.
  */
@@ -85,23 +85,53 @@ class FederationConfigStoreIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void theSignInScreenOffersTheOidcProviderButNotTheSamlOne() {
+    void theSignInScreenOffersBothProtocolsTaggedWithWhichTheyAre() {
+        // Now that SAML has a login path, both are offered — and each carries its protocol, because that is what
+        // /start branches on to decide whether to build a discovery redirect or sign an AuthnRequest.
         seedBothProtocols();
 
         List<FederationProvider> offered = orgContext.callInOrg(org, () -> store.enabled(org));
 
-        assertThat(offered).extracting(FederationProvider::alias).containsExactly(OIDC_ALIAS);
+        assertThat(offered).extracting(FederationProvider::alias)
+                .containsExactlyInAnyOrder(OIDC_ALIAS, SAML_ALIAS);
+        assertThat(offered).filteredOn(p -> p.alias().equals(SAML_ALIAS))
+                .singleElement().extracting(FederationProvider::protocol).isEqualTo(FederationProtocol.SAML);
+        assertThat(offered).filteredOn(p -> p.alias().equals(OIDC_ALIAS))
+                .singleElement().extracting(FederationProvider::protocol).isEqualTo(FederationProtocol.OIDC);
     }
 
     @Test
-    void startingALoginThroughTheSamlProviderIsRefusedExactlyLikeAnUnknownAlias() {
-        // Not merely "does not work": the same NotFoundException as a nonexistent alias, so the refusal is not
-        // an oracle for which providers a tenant has registered.
+    void aSamlProviderResolvesItsPinnedUpstreamForTheLoginPath() {
         seedBothProtocols();
 
+        ResolvedSamlProvider resolved = orgContext.callInOrg(org, () -> store.resolveEnabledSaml(org, SAML_ALIAS));
+
+        assertThat(resolved.upstream().entityId()).isEqualTo("https://idp.corp.example/entity");
+        assertThat(resolved.upstream().ssoUrl()).isEqualTo("https://idp.corp.example/sso");
+        assertThat(resolved.upstream().signingCertificate()).contains("BEGIN CERTIFICATE");
+        assertThat(resolved.upstream().nameIdFormat()).isEqualTo(NameIDType.PERSISTENT);
+    }
+
+    @Test
+    void eachProtocolsResolverRefusesTheOtherProtocolsAlias() {
+        // The two resolvers hand back different shapes; resolving across them would mean a login path reading
+        // columns that are null for that row.
+        seedBothProtocols();
+
+        assertThatThrownBy(() -> orgContext.callInOrg(org, () -> store.resolveEnabledSaml(org, OIDC_ALIAS)))
+                .isInstanceOf(NotFoundException.class);
         assertThatThrownBy(() -> orgContext.callInOrg(org, () -> store.resolveEnabled(org, SAML_ALIAS)))
                 .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void anUnknownAliasIsRefusedTheSameWayAsAKnownOneOfTheWrongProtocol() {
+        // The refusal must not be an oracle for which providers a tenant has registered.
+        seedBothProtocols();
+
         assertThatThrownBy(() -> orgContext.callInOrg(org, () -> store.resolveEnabled(org, "no-such-alias")))
+                .isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> orgContext.callInOrg(org, () -> store.resolveEnabledSaml(org, "no-such-alias")))
                 .isInstanceOf(NotFoundException.class);
     }
 
@@ -119,12 +149,13 @@ class FederationConfigStoreIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void aDisabledOidcProviderIsNeitherOfferedNorStartable() {
+    void aDisabledProviderIsNeitherOfferedNorStartable() {
         seedBothProtocols();
         orgContext.runInOrg(org, () -> providers.save(IdentityProviderSpec.oidc(OIDC_ALIAS, "Google", ISSUER,
                 "client-123", "", "openid email", true, false, false)));
 
-        assertThat(orgContext.callInOrg(org, () -> store.enabled(org))).isEmpty();
+        assertThat(orgContext.callInOrg(org, () -> store.enabled(org)))
+                .extracting(FederationProvider::alias).containsExactly(SAML_ALIAS);
         assertThatThrownBy(() -> orgContext.callInOrg(org, () -> store.resolveEnabled(org, OIDC_ALIAS)))
                 .isInstanceOf(NotFoundException.class);
     }

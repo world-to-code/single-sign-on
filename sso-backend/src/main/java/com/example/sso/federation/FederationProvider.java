@@ -1,8 +1,9 @@
 package com.example.sso.federation;
 
 /**
- * A tenant's enabled upstream OIDC provider as offered on the login screen — just the {@code alias} (the login
- * route segment) and the button label. Carries no configuration or secret.
+ * A provider offered on the sign-in screen. Carries the protocol because the two start in different ways — an
+ * OIDC redirect the server builds from discovery, a SAML AuthnRequest it signs — and because the console shows
+ * which kind a connection is. No configuration and no secret: this is what an unauthenticated visitor may see.
  */
-public record FederationProvider(String alias, String displayName) {
+public record FederationProvider(String alias, String displayName, FederationProtocol protocol) {
 }

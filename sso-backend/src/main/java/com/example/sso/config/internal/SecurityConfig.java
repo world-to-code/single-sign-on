@@ -206,7 +206,12 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(csrfRequestHandler)
-                        .ignoringRequestMatchers("/saml2/idp/sso", "/saml2/idp/slo"))
+                        .ignoringRequestMatchers("/saml2/idp/sso", "/saml2/idp/slo",
+                                // The inbound assertion consumer: the upstream IdP makes the browser POST
+                                // here cross-site, so no CSRF token can ride along. What binds the post to
+                                // a login this product started is the single-use RelayState correlation
+                                // plus the assertion's InResponseTo, both checked before anything is acted on.
+                                "/api/auth/federation/*/acs"))
                 .addFilterBefore(authRateLimitFilter, CsrfFilter.class)
                 .addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class)
                 // Bind the request's tenant context (org / platform) FIRST, so the session-policy consumers

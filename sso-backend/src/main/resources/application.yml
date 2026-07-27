@@ -143,6 +143,14 @@ sso:
 
   saml:
     entity-id: http://localhost:9000/saml2/idp
+    inbound:
+      # SP role (federating TO an upstream IdP). The skew is tolerance for clock drift between this
+      # product and the upstream, applied to both ends of an assertion's validity window.
+      clock-skew: PT1M
+      signature-algorithm: RSA_SHA256
+      # How long a started SAML login may take to come back. Also bounds how long the correlation
+      # record — the only thing that survives the cookie-less cross-site ACS POST — is kept.
+      request-ttl: PT5M
     keystore-path: data/saml-idp.p12
     keystore-password: changeit  # dev only
     key-size: 2048                       # self-signed IdP signing key size (bits)

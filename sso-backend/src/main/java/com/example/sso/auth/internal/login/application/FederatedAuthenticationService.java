@@ -6,6 +6,11 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.auth.internal.login.application.PreAuthFederationSession.PendingFederation;
 import com.example.sso.federation.FederatedIdentity;
+import com.example.sso.federation.FederationProtocol;
+import com.example.sso.federation.FederationProvider;
+import com.example.sso.federation.SamlFederationLogin;
+import com.example.sso.federation.SamlLoginResult;
+import com.example.sso.saml.inbound.SamlSpIdentity;
 import com.example.sso.federation.FederatedIdentityLinks;
 import com.example.sso.federation.FederationAuthorization;
 import com.example.sso.federation.FederationClaimSync;
@@ -57,6 +62,9 @@ public class FederatedAuthenticationService {
 
     private final CompletedSessionGuard completedSession;
     private final FederationLoginService federation;
+    private final SamlFederationLogin samlLogin;
+    private final SamlSpIdentity spIdentity;
+    private final SamlLoginBrowserCookie browserCookie;
     private final FederationClaimSync federationClaimSync;
     private final FederatedIdentityLinks links;
     private final PreAuthOrgSession preAuthOrg;
@@ -69,11 +77,32 @@ public class FederatedAuthenticationService {
     private final OrgContext orgContext;
     private final AuditService audit;
 
+    /**
+     * The protocol of an OFFERED provider. Resolved from the same list the sign-in screen renders, so /start can
+     * only ever reach a connection a visitor could have clicked — a disabled or unknown alias falls through to
+     * the OIDC path, whose own resolution refuses it exactly as before.
+     */
+    private FederationProtocol protocolOf(UUID orgId, String alias) {
+        return federation.enabledProviders(orgId).stream()
+                .filter(provider -> provider.alias().equals(alias))
+                .map(FederationProvider::protocol)
+                .findFirst()
+                .orElse(FederationProtocol.OIDC);
+    }
+
     /** Begins federation for {@code alias}: returns the upstream authorization URI to redirect the browser to. */
-    public String start(String alias, HttpServletRequest request) {
+    public String start(String alias, HttpServletRequest request, HttpServletResponse response) {
         completedSession.refuseIfAlreadySignedIn();
         UUID orgId = preAuthOrg.orgId(request)
                 .orElseThrow(() -> BadRequestException.of("auth.org.selectFirst"));
+        if (protocolOf(orgId, alias) == FederationProtocol.SAML) {
+            // SAML carries its correlation in the RelayState, not the session: the answer comes back as a
+            // cross-site POST, which a SameSite=Lax cookie is not sent on.
+            String browserHandle = browserCookie.mint();
+            browserCookie.issue(response, browserHandle);
+            return samlLogin.beginLogin(orgId, alias, spIdentity.entityId(request, alias),
+                    spIdentity.acsUrl(request, alias), browserHandle);
+        }
         String redirectUri = ServletUriComponentsBuilder.fromContextPath(request)
                 .path(CALLBACK_TEMPLATE).buildAndExpand(alias).toUriString();
         FederationAuthorization authorization = federation.beginLogin(orgId, alias, redirectUri);
@@ -100,6 +129,30 @@ public class FederatedAuthenticationService {
 
         FederatedIdentity identity = federation.completeLogin(orgId, alias, code, pending.redirectUri(),
                 pending.nonce(), pending.codeVerifier());
+        establishFederatedSession(identity, orgId, request, response);
+    }
+
+    /**
+     * Completes a SAML login. The tenant is NOT read from the request: the ACS is a cross-site POST with no
+     * session cookie, so the org arrives from the correlation record the login's start wrote — which is also
+     * what makes the RelayState single-use record load-bearing rather than a convenience.
+     */
+    public void completeSaml(String alias, String samlResponse, String relayState, HttpServletRequest request,
+            HttpServletResponse response) {
+        completedSession.refuseIfAlreadySignedIn();
+        SamlLoginResult result;
+        try {
+            result = samlLogin.completeLogin(alias, samlResponse, relayState,
+                    handle -> browserCookie.matches(request, handle));
+        } finally {
+            browserCookie.clear(response); // single use, whether the assertion was accepted or refused
+        }
+        establishFederatedSession(result.identity(), result.orgId(), request, response);
+    }
+
+    /** Everything both protocols do once an identity is PROVEN — kept in one place so they cannot diverge. */
+    private void establishFederatedSession(FederatedIdentity identity, UUID orgId, HttpServletRequest request,
+            HttpServletResponse response) {
         UserAccount user = resolveOrProvision(identity, orgId, ClientIp.of(request));
         // Carry the login's verified claims onto the account's attributes (best-effort, non-fatal), through the
         // tenant's OIDC mappings — a re-sync on every sign-in, like a directory sync. KNOWN INTERACTION: if a
@@ -117,7 +170,10 @@ public class FederatedAuthenticationService {
         factorAuth.grantFactor(request, response, Factors.PASSWORD); // federation satisfies the primary factor
         audit.record(new AuditRecord(AuditType.AUTH_SUCCESS, user.getUsername(), true, null,
                 ClientIp.of(request), orgId));
-        completionService.completeIfSatisfied(request, response);
+        // The org is passed, not re-derived: the SAML ACS has no session to read it from, and completion that
+        // fell back to "no org" would either skip the promotion entirely or resolve a global namesake instead
+        // of this tenant's account.
+        completionService.completeIfSatisfied(request, response, orgId);
     }
 
     /**

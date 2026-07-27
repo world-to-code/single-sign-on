@@ -38,7 +38,7 @@ class FederationControllerTest {
 
     @Test
     void startRedirectsToTheUpstreamAuthorizationUri() throws Exception {
-        when(service.start(eq("google"), any())).thenReturn("https://accounts.example.com/authorize?x=1");
+        when(service.start(eq("google"), any(), any())).thenReturn("https://accounts.example.com/authorize?x=1");
 
         mvc.perform(get("/api/auth/federation/google/start"))
                 .andExpect(status().isFound())

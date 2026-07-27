@@ -4,6 +4,7 @@ import com.example.sso.crypto.SecretCipher;
 import com.example.sso.federation.FederationProtocol;
 import com.example.sso.federation.FederationProvider;
 import com.example.sso.federation.internal.domain.IdentityProvider;
+import com.example.sso.saml.inbound.UpstreamIdp;
 import com.example.sso.federation.internal.domain.IdentityProviderRepository;
 import com.example.sso.shared.error.NotFoundException;
 import java.util.List;
@@ -31,29 +32,31 @@ class FederationConfigStore {
     ResolvedProvider resolveEnabled(UUID orgId, String alias) {
         IdentityProvider p = repository.findByOrgIdAndAlias(orgId, normalize(alias))
                 .filter(IdentityProvider::isEnabled)
-                .filter(FederationConfigStore::hasLoginPath)
+                .filter(provider -> provider.getProtocol() == FederationProtocol.OIDC)
                 .orElseThrow(() -> NotFoundException.of("federation.provider.unknown"));
         return new ResolvedProvider(p.getAlias(), p.getIssuerUri(), p.getClientId(),
                 cipher.decrypt(p.getClientSecretEncrypted()), p.getScopes(), p.isAllowJitProvisioning(),
                 p.isLinkByVerifiedEmail());
     }
 
+    /** The SAML twin of {@link #resolveEnabled}: same tier scoping and same enabled/protocol narrowing. */
+    @Transactional(readOnly = true)
+    ResolvedSamlProvider resolveEnabledSaml(UUID orgId, String alias) {
+        IdentityProvider p = repository.findByOrgIdAndAlias(orgId, normalize(alias))
+                .filter(IdentityProvider::isEnabled)
+                .filter(provider -> provider.getProtocol() == FederationProtocol.SAML)
+                .orElseThrow(() -> NotFoundException.of("federation.provider.unknown"));
+        return new ResolvedSamlProvider(p.getAlias(),
+                new UpstreamIdp(p.getIdpEntityId(), p.getSsoUrl(), p.getSigningCertificate(), p.getNameIdFormat()),
+                p.isAllowJitProvisioning(), p.isLinkByVerifiedEmail());
+    }
+
     @Transactional(readOnly = true)
     List<FederationProvider> enabled(UUID orgId) {
         return repository.findByOrgIdOrderByAlias(orgId).stream()
                 .filter(IdentityProvider::isEnabled)
-                .filter(FederationConfigStore::hasLoginPath)
-                .map(p -> new FederationProvider(p.getAlias(), p.getDisplayName()))
+                .map(p -> new FederationProvider(p.getAlias(), p.getDisplayName(), p.getProtocol()))
                 .toList();
-    }
-
-    /**
-     * Whether a login can actually be driven through this provider. A SAML provider is registrable before its
-     * login path exists, so it must not be offered on the sign-in screen (a button that 500s) nor accepted by
-     * {@code /start} — this narrows to the protocols implemented today rather than trusting {@code enabled}.
-     */
-    private static boolean hasLoginPath(IdentityProvider provider) {
-        return provider.getProtocol() == FederationProtocol.OIDC;
     }
 
     private String normalize(String alias) {

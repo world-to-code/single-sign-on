@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -36,8 +37,9 @@ public class FederationController {
 
     /** Starts federation: 302 to the upstream authorization endpoint (state/nonce/PKCE stashed server-side). */
     @GetMapping("/{alias}/start")
-    public ResponseEntity<Void> start(@PathVariable String alias, HttpServletRequest request) {
-        return redirect(URI.create(federatedAuth.start(alias, request)));
+    public ResponseEntity<Void> start(@PathVariable String alias, HttpServletRequest request,
+            HttpServletResponse response) {
+        return redirect(URI.create(federatedAuth.start(alias, request, response)));
     }
 
     /**
@@ -62,6 +64,31 @@ public class FederationController {
             // non-revealing either way.
             log.info("Federated login callback rejected for alias={}: {}", alias, e.getClass().getSimpleName());
             log.debug("Federated login callback failure detail", e); // detail stays at DEBUG, off the default log
+            return redirect(FAILURE);
+        }
+    }
+
+    /**
+     * The assertion consumer service: where the upstream IdP makes the BROWSER post its signed assertion. Three
+     * things follow from it being a cross-site POST rather than a redirect back: it carries no session cookie
+     * (SameSite=Lax), so the tenant comes from the RelayState correlation; it cannot carry a CSRF token, so the
+     * path is exempt and the single-use RelayState plus the assertion's InResponseTo are what bind it to a login
+     * this product started; and it renders as an SPA redirect either way, never as JSON in the address bar.
+     */
+    @PostMapping("/{alias}/acs")
+    public ResponseEntity<Void> acs(@PathVariable String alias,
+            @RequestParam(name = "SAMLResponse", required = false) String samlResponse,
+            @RequestParam(name = "RelayState", required = false) String relayState,
+            HttpServletRequest request, HttpServletResponse response) {
+        if (!StringUtils.hasText(samlResponse)) {
+            return redirect(FAILURE);
+        }
+        try {
+            federatedAuth.completeSaml(alias, samlResponse, relayState, request, response);
+            return redirect(SUCCESS);
+        } catch (RuntimeException e) {
+            log.info("SAML assertion rejected for alias={}: {}", alias, e.getClass().getSimpleName());
+            log.debug("SAML assertion rejection detail", e); // detail stays at DEBUG, off the default log
             return redirect(FAILURE);
         }
     }

@@ -7,6 +7,8 @@ import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.session.lifecycle.SessionLifecycle;
 import com.example.sso.user.account.LoginResolutionScope;
 import org.junit.jupiter.api.AfterEach;
+import com.example.sso.shared.error.UnauthorizedException;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -36,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -111,6 +114,44 @@ class AuthenticationCompletionServiceTest {
         verify(factorAuth).establish(eq(request), eq(response), any());
         verify(sessions).registerAndEnforceLimit(request, "alice");
         verify(audit).record(any(AuditRecord.class));
+    }
+
+    // --- the login org: an explicit input for callers that have no session to read it from ------------
+
+    @Test
+    void aProvenOrgIsUsedWhenTheRequestCarriesNone() {
+        // The inbound SAML ACS is a cross-site POST, so a SameSite=Lax session cookie is not sent and every
+        // session-derived value here is empty. Falling back to "no org" would skip the promotion entirely for a
+        // tenant account — or resolve a GLOBAL namesake, handing out the platform super-admin's authorities.
+        UUID provenOrg = UUID.randomUUID();
+        signIn(Factors.PASSWORD, Factors.TOTP);
+        when(preAuthOrg.orgId(request)).thenReturn(Optional.empty());
+        when(authState.isPolicySatisfied(any(), eq(provenOrg))).thenReturn(true);
+        when(orgContext.callInOrg(eq(provenOrg), any())).thenAnswer(invocation ->
+                invocation.<java.util.function.Supplier<?>>getArgument(1).get());
+        when(userDetailsService.loadUserByUsername("alice"))
+                .thenReturn(new User("alice", "", List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+        when(authState.describe(any(), any(), any())).thenReturn(AuthSessionView.organizationPending(true));
+
+        service.completeIfSatisfied(request, response, provenOrg);
+
+        ArgumentCaptor<Authentication> promoted = ArgumentCaptor.captor();
+        verify(factorAuth).establish(eq(request), eq(response), promoted.capture());
+        assertThat(promoted.getValue().getAuthorities()).extracting(GrantedAuthority::getAuthority)
+                .contains(Factors.ORG_PREFIX + provenOrg); // the session IS tenant-bound, so it is revocable
+    }
+
+    @Test
+    void aRequestOrgThatDisagreesWithTheProvenOrgIsRefused() {
+        // A login started for one tenant must not be completed under another by re-selecting the organization
+        // in a second tab mid-flow — the pin the OIDC callback gets from comparing its stashed org.
+        UUID provenOrg = UUID.randomUUID();
+        signIn(Factors.PASSWORD, Factors.TOTP);
+        when(preAuthOrg.orgId(request)).thenReturn(Optional.of(UUID.randomUUID()));
+
+        assertThatThrownBy(() -> service.completeIfSatisfied(request, response, provenOrg))
+                .isInstanceOf(UnauthorizedException.class);
+        verify(factorAuth, never()).establish(any(), any(), any());
     }
 
     @Test
