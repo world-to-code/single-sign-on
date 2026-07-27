@@ -83,6 +83,7 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
     private final OrgContext orgContext;
     private final FederationPresetCatalog presets;
     private final FederationSourceSeeder sourceSeeder;
+    private final FederationSourceGrantCeiling grantCeiling;
 
     @Override
     @Transactional(readOnly = true)
@@ -105,6 +106,11 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
         validate(spec);
         Optional<IdentityProvider> existing = ownProvider(alias);
         existing.ifPresent(row -> requireSameProtocol(row, spec));
+        // Registering (or re-saving) a provider makes the actor an author of that protocol's attribute source,
+        // and the mapping evaluator requires EVERY author to be able to assign what the source's values confer.
+        // Refuse here rather than let a restricted admin silently freeze the tenant's grants — including on an
+        // update, which re-stamps configuredBy and so adds the same author.
+        grantCeiling.requireAuthorityOverSource(spec.protocol());
         ProviderFlags flags = new ProviderFlags(spec.allowJitProvisioning(), spec.linkByVerifiedEmail(),
                 spec.enabled(), normalizePreset(spec.presetId()));
         switch (spec.config()) {

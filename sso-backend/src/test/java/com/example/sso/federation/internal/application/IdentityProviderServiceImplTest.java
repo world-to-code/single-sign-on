@@ -69,6 +69,8 @@ class IdentityProviderServiceImplTest {
     OrgContext orgContext;
     @Mock
     FederationSourceSeeder sourceSeeder;
+    @Mock
+    FederationSourceGrantCeiling grantCeiling;
 
     private final FederationPresetCatalog presets = new FederationPresetCatalog(new FederationPresetProperties(
             List.of(new FederationPresetView("google", "Google", ISSUER, "openid email profile", List.of()))));
@@ -78,7 +80,7 @@ class IdentityProviderServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new IdentityProviderServiceImpl(repository, cipher, links, users, events, hostValidator,
-                orgContext, presets, sourceSeeder);
+                orgContext, presets, sourceSeeder, grantCeiling);
     }
 
     private IdentityProvider row(UUID orgId, String encryptedSecret) {
@@ -416,6 +418,47 @@ class IdentityProviderServiceImplTest {
                 .isInstanceOf(BadRequestException.class)
                 .hasMessage("federation.provider.entityIdTooLong");
         verify(repository, never()).save(any());
+    }
+
+    // --- the registration ceiling: a provider is a standing licence to write its source's keys -------
+
+    @Test
+    void registeringAProviderIsRefusedWhenItsSourceFeedsAGrantTheActorCannotMake() {
+        // Not an escalation but a FREEZE: the actor would become an author of that source, and the mapping
+        // evaluator needs EVERY author to be able to assign what the source's values confer — so the tenant
+        // would silently stop making those grants for everyone. Refuse the write instead.
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        doThrow(ForbiddenException.of("federation.provider.grantGoverned", "department"))
+                .when(grantCeiling).requireAuthorityOverSource(FederationProtocol.OIDC);
+
+        assertThatThrownBy(() -> service.save(spec("s3cret", "email")))
+                .isInstanceOf(ForbiddenException.class)
+                .hasMessage("federation.provider.grantGoverned");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void theCeilingIsAskedAboutTheProtocolBeingRegistered() {
+        // Asking about the wrong protocol would gate an OIDC registration on the SAML source's keys and vice
+        // versa — refusing writes that reach nothing, and permitting the ones that do.
+        actingIn(ORG, SAML_ALIAS, null);
+
+        service.save(samlSpec(IDP_ENTITY_ID, SSO_URL, CERT, PERSISTENT));
+
+        verify(grantCeiling).requireAuthorityOverSource(FederationProtocol.SAML);
+        verify(grantCeiling, never()).requireAuthorityOverSource(FederationProtocol.OIDC);
+    }
+
+    @Test
+    void updatingAnExistingProviderIsHeldToTheSameCeiling() {
+        // An update re-stamps configuredBy, so it adds the actor as an author exactly as a create does.
+        actingIn(ORG, ALIAS, row(ORG, "encg:cipher"));
+        doThrow(ForbiddenException.of("federation.provider.grantGoverned", "department"))
+                .when(grantCeiling).requireAuthorityOverSource(FederationProtocol.OIDC);
+
+        assertThatThrownBy(() -> service.save(spec("", "email")))
+                .isInstanceOf(ForbiddenException.class);
+        verify(links, never()).unlinkAll(any(), any(), any()); // refused before any side effect
     }
 
     @Test
