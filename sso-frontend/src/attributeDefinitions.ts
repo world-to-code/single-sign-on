@@ -46,7 +46,7 @@ export interface AttributeDefinitionInput {
 export interface Profile {
   id: string;
   name: string;
-  kind: "TENANT" | "LDAP" | "SCIM" | "CSV" | "GOOGLE_WORKSPACE" | "ENTRA_ID";
+  kind: "TENANT" | "LDAP" | "SCIM" | "CSV" | "GOOGLE_WORKSPACE" | "ENTRA_ID" | "OIDC" | "SAML";
   connectorId: string | null;
   system: boolean;
   defaultForCreation: boolean;

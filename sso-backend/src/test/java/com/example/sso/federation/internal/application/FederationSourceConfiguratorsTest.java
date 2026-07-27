@@ -5,7 +5,9 @@ import com.example.sso.federation.internal.domain.IdentityProvider;
 import com.example.sso.federation.internal.domain.ProviderFlags;
 import com.example.sso.federation.internal.domain.IdentityProviderRepository;
 import com.example.sso.metadata.AttributeSourceAuthors;
+import com.example.sso.metadata.Profile;
 import com.example.sso.metadata.ProfileKind;
+import com.example.sso.metadata.ProfileService;
 import com.example.sso.tenancy.OrgContext;
 import java.util.List;
 import java.util.Optional;
@@ -18,6 +20,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -34,10 +38,20 @@ class FederationSourceConfiguratorsTest {
     private static final UUID PROFILE = UUID.randomUUID();
 
     @Mock IdentityProviderRepository providers;
+    @Mock ProfileService profiles;
     @Mock OrgContext orgContext;
 
+    /** The bean now answers per the KIND of the profiles asked about, so the lookup has to be stubbed. */
+    private void askingAboutOidcSource() {
+        Profile source = mock(Profile.class);
+        lenient().when(source.id()).thenReturn(PROFILE);
+        lenient().when(source.kind()).thenReturn(ProfileKind.OIDC);
+        lenient().when(profiles.list()).thenReturn(List.of(source));
+    }
+
     private FederationSourceConfigurators configurators() {
-        return new FederationSourceConfigurators(providers, orgContext);
+        askingAboutOidcSource();
+        return new FederationSourceConfigurators(providers, profiles, orgContext);
     }
 
     private IdentityProvider provider(String alias, UUID configuredBy) {
@@ -93,6 +107,9 @@ class FederationSourceConfiguratorsTest {
 
     @Test
     void aSamlProviderIsNotCountedAsAnAuthorOfTheOidcSource() {
+        // Asking about the OIDC source must never reach the SAML providers: their attribute names are chosen by
+        // the upstream, so counting one would either inject an unrelated administrator into the authority set
+        // or — carrying no configuredBy — mark the answer incomplete and silently refuse OIDC-driven grants.
         // This bean answers for the OIDC source profile, whose attributes a SAML assertion never fills. Counting
         // a SAML provider would either inject an unrelated administrator into the authority set or — when it
         // carries no configuredBy — mark the answer INCOMPLETE, silently refusing every OIDC-driven mapping
@@ -100,10 +117,10 @@ class FederationSourceConfiguratorsTest {
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(providers.findByOrgIdAndProtocolOrderByAlias(ORG, FederationProtocol.OIDC)).thenReturn(List.of());
 
-        AttributeSourceAuthors authors = configurators().configuratorsOf(Set.of(UUID.randomUUID()));
+        AttributeSourceAuthors authors = configurators().configuratorsOf(Set.of(PROFILE));
 
         assertThat(authors).isEqualTo(AttributeSourceAuthors.none());
-        verify(providers, never()).findByOrgIdOrderByAlias(any());
+        verify(providers, never()).findByOrgIdAndProtocolOrderByAlias(ORG, FederationProtocol.SAML);
     }
 
     @Test
@@ -113,6 +130,40 @@ class FederationSourceConfiguratorsTest {
         AttributeSourceAuthors authors = configurators().configuratorsOf(Set.of(PROFILE));
 
         assertThat(authors.complete()).isFalse();        // failed to look ≠ nobody accountable
+        assertThat(authors.configurators()).isEmpty();
+    }
+
+    @Test
+    void askingAboutTheSamlSourceCountsOnlySamlProviders() {
+        UUID samlProfile = UUID.randomUUID();
+        Profile source = mock(Profile.class);
+        lenient().when(source.id()).thenReturn(samlProfile);
+        lenient().when(source.kind()).thenReturn(ProfileKind.SAML);
+        when(profiles.list()).thenReturn(List.of(source));
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        UUID admin = UUID.randomUUID();
+        when(providers.findByOrgIdAndProtocolOrderByAlias(ORG, FederationProtocol.SAML))
+                .thenReturn(List.of(provider("corp", admin)));
+
+        AttributeSourceAuthors authors = new FederationSourceConfigurators(providers, profiles, orgContext)
+                .configuratorsOf(Set.of(samlProfile));
+
+        assertThat(authors.configurators()).containsExactly(admin);
+        verify(providers, never()).findByOrgIdAndProtocolOrderByAlias(ORG, FederationProtocol.OIDC);
+    }
+
+    @Test
+    void anIdWeCannotPlaceIsIncompleteNotAttributedToNobody() {
+        // "We could not tell" and "nobody is accountable" must not look alike: a key ALSO fed by an attributed
+        // source would otherwise read as fully attributed on that source's strength, erasing this one from the
+        // set the grant check walks.
+        when(profiles.list()).thenReturn(List.of());
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        AttributeSourceAuthors authors = new FederationSourceConfigurators(providers, profiles, orgContext)
+                .configuratorsOf(Set.of(UUID.randomUUID()));
+
+        assertThat(authors.complete()).isFalse();
         assertThat(authors.configurators()).isEmpty();
     }
 }

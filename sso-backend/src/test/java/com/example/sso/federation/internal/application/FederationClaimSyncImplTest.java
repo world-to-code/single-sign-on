@@ -1,5 +1,6 @@
 package com.example.sso.federation.internal.application;
 
+import com.example.sso.federation.FederationProtocol;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.metadata.Profile;
@@ -39,6 +40,7 @@ class FederationClaimSyncImplTest {
     private static final UUID ORG = UUID.randomUUID();
     private static final UUID TENANT = UUID.randomUUID();
     private static final UUID OIDC = UUID.randomUUID();
+    private static final UUID SAML = UUID.randomUUID();
     private static final String USER = UUID.randomUUID().toString();
 
     @Mock ProfileService profiles;
@@ -62,11 +64,41 @@ class FederationClaimSyncImplTest {
                 .thenReturn(Optional.of(new Profile(TENANT, "acme", ProfileKind.TENANT, null, true, true)));
         lenient().when(profiles.list()).thenReturn(List.of(
                 new Profile(TENANT, "acme", ProfileKind.TENANT, null, true, true),
-                new Profile(OIDC, "OIDC", ProfileKind.OIDC, null, false, false)));
+                new Profile(OIDC, "OIDC", ProfileKind.OIDC, null, false, false),
+                new Profile(SAML, "SAML", ProfileKind.SAML, null, false, false)));
     }
 
     private ProfileMapping mapping(String key) {
         return new ProfileMapping(UUID.randomUUID(), OIDC, key, TENANT, key);
+    }
+
+    @Test
+    void aSamlLoginIsRecordedUnderTheSamlSourceNeverTheOidcOne() {
+        // THE separation this source split exists for. SAML attribute NAMES are chosen entirely by the upstream,
+        // so if an assertion were recorded through the OIDC source a rogue connection could name its attributes
+        // to match that source's mappings and write values carrying a provenance the tenant granted to a
+        // different upstream — which attribute-driven role mapping then acts on.
+        inlineOrg();
+        profilesResolve();
+        when(mappings.mappingsFrom(SAML))
+                .thenReturn(List.of(new ProfileMapping(UUID.randomUUID(), SAML, "dept", TENANT, "department")));
+
+        sync().applyClaims(ORG, FederationProtocol.SAML, USER, Map.of("dept", "engineering"));
+
+        verify(attributes).applyFromDirectory(EntityKind.USER, USER, "department", List.of("engineering"));
+        verify(mappings, never()).mappingsFrom(OIDC);
+    }
+
+    @Test
+    void anOidcLoginIsRecordedUnderTheOidcSourceNeverTheSamlOne() {
+        inlineOrg();
+        profilesResolve();
+        when(mappings.mappingsFrom(OIDC)).thenReturn(List.of(mapping("given_name")));
+
+        sync().applyClaims(ORG, FederationProtocol.OIDC, USER, Map.of("given_name", "Ada"));
+
+        verify(attributes).applyFromDirectory(EntityKind.USER, USER, "given_name", List.of("Ada"));
+        verify(mappings, never()).mappingsFrom(SAML);
     }
 
     @Test
@@ -75,7 +107,7 @@ class FederationClaimSyncImplTest {
         profilesResolve();
         when(mappings.mappingsFrom(OIDC)).thenReturn(List.of(mapping("given_name")));
 
-        sync().applyClaims(ORG, USER, Map.of("given_name", "Ada"));
+        sync().applyClaims(ORG, FederationProtocol.OIDC, USER, Map.of("given_name", "Ada"));
 
         verify(attributes).applyFromDirectory(EntityKind.USER, USER, "given_name", List.of("Ada"));
     }
@@ -86,7 +118,8 @@ class FederationClaimSyncImplTest {
         profilesResolve();
         when(mappings.mappingsFrom(OIDC)).thenReturn(List.of(mapping("family_name")));
 
-        sync().applyClaims(ORG, USER, Map.of("given_name", "Ada")); // family_name absent from the token
+        // family_name absent from the token
+        sync().applyClaims(ORG, FederationProtocol.OIDC, USER, Map.of("given_name", "Ada"));
 
         verify(attributes, never()).applyFromDirectory(any(), any(), any(), any());
     }
@@ -97,7 +130,8 @@ class FederationClaimSyncImplTest {
         profilesResolve();
         when(mappings.mappingsFrom(OIDC)).thenReturn(List.of(mapping("picture")));
 
-        sync().applyClaims(ORG, USER, Map.of("picture", "x".repeat(256))); // attr_value is varchar(255)
+        // attr_value is varchar(255)
+        sync().applyClaims(ORG, FederationProtocol.OIDC, USER, Map.of("picture", "x".repeat(256)));
 
         verify(attributes, never()).applyFromDirectory(any(), any(), any(), any());
     }
@@ -109,7 +143,7 @@ class FederationClaimSyncImplTest {
                 .thenReturn(Optional.of(new Profile(TENANT, "acme", ProfileKind.TENANT, null, true, true)));
         when(profiles.list()).thenReturn(List.of(new Profile(TENANT, "acme", ProfileKind.TENANT, null, true, true)));
 
-        sync().applyClaims(ORG, USER, Map.of("given_name", "Ada"));
+        sync().applyClaims(ORG, FederationProtocol.OIDC, USER, Map.of("given_name", "Ada"));
 
         verify(attributes, never()).applyFromDirectory(any(), any(), any(), any());
     }
@@ -122,7 +156,7 @@ class FederationClaimSyncImplTest {
         doThrow(ConflictException.of("attribute.locallyOwned", "given_name"))
                 .when(attributes).applyFromDirectory(any(), any(), any(), any());
 
-        assertThatCode(() -> sync().applyClaims(ORG, USER, Map.of("given_name", "Ada")))
+        assertThatCode(() -> sync().applyClaims(ORG, FederationProtocol.OIDC, USER, Map.of("given_name", "Ada")))
                 .doesNotThrowAnyException(); // a refused claim must not fail the sign-in
     }
 
@@ -136,13 +170,13 @@ class FederationClaimSyncImplTest {
         doThrow(new IllegalStateException("db blip"))
                 .when(attributes).applyFromDirectory(any(), any(), any(), any());
 
-        assertThatCode(() -> sync().applyClaims(ORG, USER, Map.of("given_name", "Ada")))
+        assertThatCode(() -> sync().applyClaims(ORG, FederationProtocol.OIDC, USER, Map.of("given_name", "Ada")))
                 .doesNotThrowAnyException();
     }
 
     @Test
     void doesNotBindAContextForAnEmptyClaimSet() {
-        sync().applyClaims(ORG, USER, Map.of());
+        sync().applyClaims(ORG, FederationProtocol.OIDC, USER, Map.of());
 
         verify(orgContext, never()).runInOrg(any(), any());
     }

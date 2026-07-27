@@ -12,7 +12,6 @@ import com.example.sso.shared.error.UnauthorizedException;
 import com.example.sso.tenancy.OrgContext;
 import java.security.SecureRandom;
 import java.util.Base64;
-import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -99,15 +98,14 @@ public class SamlFederationLoginImpl implements SamlFederationLogin {
      * verified address: the upstream asserting an address is not proof it was verified, and treating it as such
      * would hand the email-matching path an unearned input.
      *
-     * <p>Claims are EMPTY on purpose until SAML has its own attribute source. The claim sync writes through the
-     * tenant's OIDC source profile, and SAML attribute names are entirely upstream-chosen — so forwarding them
-     * would let a rogue SAML IdP name its attributes to match the tenant's OIDC mappings and write values
-     * recorded as OIDC-provenance, which attribute-driven role mapping can then act on.
+     * <p>The assertion's attributes ride along and are recorded under the tenant's SAML source — never the OIDC
+     * one. That separation is what stops a connection whose attribute names it fully controls from writing
+     * values carrying a provenance the tenant granted to a different upstream.
      */
     private FederatedIdentity identityOf(ResolvedSamlProvider provider, VerifiedAssertion assertion) {
         return new FederatedIdentity(provider.alias(), LINK_NAMESPACE + provider.upstream().entityId(),
                 assertion.nameId(), null, false, null, provider.jitProvisioningAllowed(),
-                provider.linkByVerifiedEmail(), Map.of());
+                provider.linkByVerifiedEmail(), assertion.attributes());
     }
 
     private String randomToken() {

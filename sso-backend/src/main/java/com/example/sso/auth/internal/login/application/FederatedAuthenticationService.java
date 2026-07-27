@@ -129,7 +129,7 @@ public class FederatedAuthenticationService {
 
         FederatedIdentity identity = federation.completeLogin(orgId, alias, code, pending.redirectUri(),
                 pending.nonce(), pending.codeVerifier());
-        establishFederatedSession(identity, orgId, request, response);
+        establishFederatedSession(identity, orgId, FederationProtocol.OIDC, request, response);
     }
 
     /**
@@ -147,12 +147,13 @@ public class FederatedAuthenticationService {
         } finally {
             browserCookie.clear(response); // single use, whether the assertion was accepted or refused
         }
-        establishFederatedSession(result.identity(), result.orgId(), request, response);
+        establishFederatedSession(result.identity(), result.orgId(), FederationProtocol.SAML, request,
+                response);
     }
 
     /** Everything both protocols do once an identity is PROVEN — kept in one place so they cannot diverge. */
-    private void establishFederatedSession(FederatedIdentity identity, UUID orgId, HttpServletRequest request,
-            HttpServletResponse response) {
+    private void establishFederatedSession(FederatedIdentity identity, UUID orgId,
+            FederationProtocol protocol, HttpServletRequest request, HttpServletResponse response) {
         UserAccount user = resolveOrProvision(identity, orgId, ClientIp.of(request));
         // Carry the login's verified claims onto the account's attributes (best-effort, non-fatal), through the
         // tenant's OIDC mappings — a re-sync on every sign-in, like a directory sync. KNOWN INTERACTION: if a
@@ -160,7 +161,7 @@ public class FederatedAuthenticationService {
         // reconcile can terminate this user's sessions — including the one about to be established — so the user
         // re-authenticates into the new posture. One-shot (an unchanged re-sync publishes nothing) and self-
         // healing on retry; accepted, since the alternative is to not propagate an access change the login caused.
-        federationClaimSync.applyClaims(orgId, user.getId().toString(), identity.claims());
+        federationClaimSync.applyClaims(orgId, protocol, user.getId().toString(), identity.claims());
 
         // The FEDERATED marker rides along from the start: it is what lets a downstream RP tell an upstream
         // sign-in from a password this IdP checked. Not a factor — factors are granted below.

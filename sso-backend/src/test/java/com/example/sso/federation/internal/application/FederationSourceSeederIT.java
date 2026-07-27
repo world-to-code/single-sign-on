@@ -1,5 +1,6 @@
 package com.example.sso.federation.internal.application;
 
+import com.example.sso.federation.FederationProtocol;
 import com.example.sso.metadata.AttributeDefinition;
 import com.example.sso.metadata.AttributeDefinitionService;
 import com.example.sso.metadata.AttributeSource;
@@ -37,8 +38,9 @@ class FederationSourceSeederIT extends AbstractIntegrationTest {
     void seedsTheClaimAttributesOnceAndIsIdempotent() {
         UUID org = newOrg();
 
-        orgContext.runInOrg(org, () -> seeder.ensureOidcSource(org));
-        orgContext.runInOrg(org, () -> seeder.ensureOidcSource(org)); // second run must add nothing
+        orgContext.runInOrg(org, () -> seeder.ensureSource(org, FederationProtocol.OIDC));
+        // second run must add nothing
+        orgContext.runInOrg(org, () -> seeder.ensureSource(org, FederationProtocol.OIDC));
 
         orgContext.runInOrg(org, () -> {
             UUID tenant = profiles.tenantProfile().orElseThrow().id();

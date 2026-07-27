@@ -346,25 +346,27 @@ class IdentityProviderServiceImplTest {
     }
 
     @Test
-    void aSamlWriteDoesNotSeedTheOidcAttributeSource() {
-        // The OIDC source profile carries the standard OIDC claim attributes; a SAML assertion fills none of
-        // them, so seeding it would leave a tenant with a profile and three attributes nothing ever writes.
+    void aSamlWriteSeedsTheSamlSourceAndNeverTheOidcOne() {
+        // Each protocol gets its OWN source: an assertion's attributes must not be recorded under the OIDC
+        // source, whose provenance the tenant granted to a different upstream.
         actingIn(ORG, SAML_ALIAS, null);
 
         service.save(samlSpec(IDP_ENTITY_ID, SSO_URL, CERT, PERSISTENT));
 
-        verify(sourceSeeder, never()).ensureOidcSource(any());
+        verify(sourceSeeder).ensureSource(ORG, FederationProtocol.SAML);
+        verify(sourceSeeder, never()).ensureSource(ORG, FederationProtocol.OIDC);
     }
 
     @Test
-    void anOidcWriteStillSeedsTheOidcAttributeSource() {
+    void anOidcWriteSeedsTheOidcSourceAndNeverTheSamlOne() {
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgIdAndAlias(ORG, ALIAS)).thenReturn(Optional.empty());
         when(cipher.encrypt("s3cret")).thenReturn("encg:cipher");
 
         service.save(spec("s3cret", "email profile"));
 
-        verify(sourceSeeder).ensureOidcSource(ORG);
+        verify(sourceSeeder).ensureSource(ORG, FederationProtocol.OIDC);
+        verify(sourceSeeder, never()).ensureSource(ORG, FederationProtocol.SAML);
     }
 
     @Test
@@ -460,7 +462,7 @@ class IdentityProviderServiceImplTest {
         service.save(spec("s3cret", "openid"));
 
         // The tenant's OIDC source (profile + seeded claim attributes) is ensured idempotently on the write.
-        verify(sourceSeeder).ensureOidcSource(ORG);
+        verify(sourceSeeder).ensureSource(ORG, FederationProtocol.OIDC);
     }
 
     @Test
@@ -474,7 +476,7 @@ class IdentityProviderServiceImplTest {
 
         service.save(spec("s3cret", "openid"));
 
-        verify(sourceSeeder, never()).ensureOidcSource(any());
+        verify(sourceSeeder, never()).ensureSource(any(), any());
     }
 
     @Test

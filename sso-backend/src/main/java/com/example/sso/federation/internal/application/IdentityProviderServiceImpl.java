@@ -136,7 +136,7 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
                     config.issuerUri().trim(), config.clientId().trim(), encrypted, scopes, flags);
             row.configuredBy(resolveConfigurator());
             repository.save(row);
-            seedOidcSource(org);
+            seedSource(org, FederationProtocol.OIDC);
             return;
         }
         // Repointing the alias at a DIFFERENT upstream retires the identities the old one minted: they were
@@ -152,18 +152,18 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
         existing.reconfigureOidc(displayName, config.issuerUri().trim(), config.clientId().trim(), encrypted,
                 scopes, flags);
         existing.configuredBy(resolveConfigurator());
-        seedOidcSource(org);
+        seedSource(org, FederationProtocol.OIDC);
     }
 
     /**
-     * A tenant's OIDC logins fill attributes through ONE connector-less OIDC source profile (like SCIM), which
-     * carries the standard claim attributes. Ensured idempotently on any OIDC tenant write — NOT on a SAML one,
-     * whose assertion attributes are not OIDC claims and would leave a profile nothing ever fills. A
-     * platform-tier provider (org null) owns none.
+     * A tenant's federated logins fill attributes through ONE connector-less source profile PER PROTOCOL (like
+     * SCIM), so an OIDC claim and a SAML attribute of the same name stay distinguishable — provenance is what
+     * the attribute-write guard reads. Ensured idempotently on any tenant write; a platform-tier provider
+     * (org null) owns none.
      */
-    private void seedOidcSource(UUID org) {
+    private void seedSource(UUID org, FederationProtocol protocol) {
         if (org != null) {
-            sourceSeeder.ensureOidcSource(org);
+            sourceSeeder.ensureSource(org, protocol);
         }
     }
 
@@ -177,6 +177,7 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
                     requireStableNameIdFormat(config.nameIdFormat()), flags);
             row.configuredBy(resolveConfigurator());
             repository.save(row);
+            seedSource(org, FederationProtocol.SAML);
             return;
         }
         // The SAML twin of the OIDC rule above, with one addition that has no OIDC analogue: the SIGNING
@@ -192,6 +193,7 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
         existing.reconfigureSaml(displayName, entityId, config.ssoUrl().trim(),
                 config.signingCertificate().trim(), requireStableNameIdFormat(config.nameIdFormat()), flags);
         existing.configuredBy(resolveConfigurator());
+        seedSource(org, FederationProtocol.SAML);
     }
 
     /**

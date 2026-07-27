@@ -149,10 +149,9 @@ class SamlFederationLoginImplTest {
 
         assertThat(result.identity().email()).isNull();
         assertThat(result.identity().emailVerified()).isFalse();
-        // Claims are withheld until SAML has its own attribute source: the sync writes through the tenant's
-        // OIDC profile, and upstream-chosen attribute names could otherwise forge OIDC-provenance values that
-        // attribute-driven role mapping acts on.
-        assertThat(result.identity().claims()).isEmpty();
+        // The attributes DO ride along — they are recorded under the tenant's own SAML source, so an
+        // upstream-chosen name cannot forge a value carrying the OIDC source's provenance.
+        assertThat(result.identity().claims()).containsEntry("dept", "engineering");
     }
 
     @Test

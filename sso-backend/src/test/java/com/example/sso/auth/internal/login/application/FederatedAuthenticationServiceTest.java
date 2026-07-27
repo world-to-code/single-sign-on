@@ -7,6 +7,7 @@ import com.example.sso.federation.FederatedIdentity;
 import com.example.sso.federation.FederatedIdentityLinks;
 import com.example.sso.federation.FederationClaimSync;
 import com.example.sso.federation.FederationLoginService;
+import com.example.sso.federation.FederationProtocol;
 import com.example.sso.federation.SamlFederationLogin;
 import com.example.sso.federation.SamlLoginResult;
 import com.example.sso.saml.inbound.SamlSpIdentity;
@@ -156,7 +157,8 @@ class FederatedAuthenticationServiceTest {
         verify(completionService).completeIfSatisfied(request, response, ORG);
         verify(preAuthFederation).clear(request); // single use
         // The login's claims are carried onto the resolved account through the tenant's OIDC mappings.
-        verify(federationClaimSync).applyClaims(ORG, userId.toString(), Map.of("given_name", "Ada"));
+        verify(federationClaimSync)
+                .applyClaims(ORG, FederationProtocol.OIDC, userId.toString(), Map.of("given_name", "Ada"));
     }
 
     @Test
@@ -710,7 +712,7 @@ class FederatedAuthenticationServiceTest {
 
         service.completeSaml(ALIAS, "b64", "rs", request, response);
 
-        verify(federationClaimSync).applyClaims(eq(ORG), eq(userId), any());
+        verify(federationClaimSync).applyClaims(eq(ORG), eq(FederationProtocol.SAML), eq(userId), any());
     }
 
     /**

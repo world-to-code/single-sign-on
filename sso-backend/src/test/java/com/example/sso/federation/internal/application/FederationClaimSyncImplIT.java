@@ -1,6 +1,7 @@
 package com.example.sso.federation.internal.application;
 
 import com.example.sso.federation.FederationClaimSync;
+import com.example.sso.federation.FederationProtocol;
 import com.example.sso.metadata.Attribute;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityKind;
@@ -36,10 +37,11 @@ class FederationClaimSyncImplIT extends AbstractIntegrationTest {
     @Test
     void carriesMappedClaimsOntoTheUserAndIgnoresUnmappedOnes() {
         UUID org = newOrg();
-        orgContext.runInOrg(org, () -> seeder.ensureOidcSource(org)); // plants given_name/family_name/picture + mappings
+        // plants given_name/family_name/picture + mappings
+        orgContext.runInOrg(org, () -> seeder.ensureSource(org, FederationProtocol.OIDC));
         String user = UUID.randomUUID().toString();
 
-        claimSync.applyClaims(org, user,
+        claimSync.applyClaims(org, FederationProtocol.OIDC, user,
                 Map.of("given_name", "Ada", "family_name", "Lovelace", "unmapped", "ignore-me"));
 
         List<Attribute> attrs = orgContext.callInOrg(org, () -> attributes.attributesOf(EntityKind.USER, user));

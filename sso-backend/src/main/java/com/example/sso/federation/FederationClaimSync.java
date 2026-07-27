@@ -15,5 +15,5 @@ import java.util.UUID;
 public interface FederationClaimSync {
 
     /** Apply the given claims (keyed by claim name) for {@code userId} in {@code orgId}. Runs in that tenant's context. */
-    void applyClaims(UUID orgId, String userId, Map<String, String> claims);
+    void applyClaims(UUID orgId, FederationProtocol protocol, String userId, Map<String, String> claims);
 }

@@ -21,7 +21,13 @@ public enum ProfileKind {
      *  tenant registers feeds this single source, so a claim maps once instead of colliding per provider.
      *  Accountability is per-tenant — the {@code federation} module's {@link SourceConfigurators} answers with
      *  the administrators who configured the tenant's providers. */
-    OIDC;
+    OIDC,
+    /** Upstream SAML logins. Connector-less and ONE per tenant, like {@link #OIDC} — but a SEPARATE source,
+     *  because SAML attribute names are chosen by the upstream IdP rather than by a specification. Sharing the
+     *  OIDC source would let a connection name its attributes to match that source's mappings and write values
+     *  recorded under a provenance it did not earn. Seeded with no mappings for the same reason: there is no
+     *  standard name to guess, so the tenant declares what its upstream actually sends. */
+    SAML;
 
     /** Whether a profile of this kind describes an identity source rather than the tenant itself. */
     public boolean isSource() {

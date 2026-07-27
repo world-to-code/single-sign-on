@@ -4,7 +4,9 @@ import com.example.sso.federation.FederationProtocol;
 import com.example.sso.federation.internal.domain.IdentityProvider;
 import com.example.sso.federation.internal.domain.IdentityProviderRepository;
 import com.example.sso.metadata.AttributeSourceAuthors;
+import com.example.sso.metadata.Profile;
 import com.example.sso.metadata.ProfileKind;
+import com.example.sso.metadata.ProfileService;
 import com.example.sso.metadata.SourceConfigurators;
 import com.example.sso.tenancy.OrgContext;
 import java.util.Collection;
@@ -28,18 +30,19 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Unlike SCIM this counts only the TENANT's OWN providers, never the platform-global ones: a global provider
  * mints no per-tenant link (login resolves providers strictly per tenant), so it can never feed a tenant's
- * OIDC source — counting it would report an accountability the source does not actually carry.
+ * tenant's source — counting it would report an accountability the source does not actually carry.
  */
 @Component
 @RequiredArgsConstructor
 class FederationSourceConfigurators implements SourceConfigurators {
 
     private final IdentityProviderRepository providers;
+    private final ProfileService profiles;
     private final OrgContext orgContext;
 
     @Override
     public boolean handles(ProfileKind kind) {
-        return kind == ProfileKind.OIDC;
+        return kind == ProfileKind.OIDC || kind == ProfileKind.SAML;
     }
 
     @Override
@@ -51,13 +54,22 @@ class FederationSourceConfigurators implements SourceConfigurators {
             // accountable, we failed to look — and the caller must tell those apart.
             return new AttributeSourceAuthors(Set.of(), false);
         }
-        // OIDC only: this bean answers for the OIDC source profile, and a SAML provider feeds none of its
-        // attributes. Counting one would either inject an unrelated administrator into the authority set or —
-        // if it carries no configuredBy — mark the answer incomplete, silently refusing OIDC-driven grants.
-        List<IdentityProvider> tenantProviders =
-                providers.findByOrgIdAndProtocolOrderByAlias(org, FederationProtocol.OIDC);
+        // Answer for the PROTOCOLS the asked-about profiles actually describe. Counting a provider of the
+        // other protocol would either inject an unrelated administrator into the authority set or — if it
+        // carries no configuredBy — mark the answer incomplete, silently refusing that source's grants. This
+        // bean handles two kinds now, so the narrowing has to follow the ids, not a hardcoded protocol.
+        Set<FederationProtocol> asked = protocolsOf(sourceProfileIds);
+        if (asked.isEmpty()) {
+            // We could not place these ids, which is NOT "attributed to nobody" — the caller has to be able to
+            // tell those apart, or a key also fed by an attributed source would read as fully attributed on
+            // that source's strength alone, erasing this one from the set the grant check walks.
+            return new AttributeSourceAuthors(Set.of(), false);
+        }
+        List<IdentityProvider> tenantProviders = asked.stream()
+                .flatMap(protocol -> providers.findByOrgIdAndProtocolOrderByAlias(org, protocol).stream())
+                .toList();
         if (tenantProviders.isEmpty()) {
-            // No provider can feed the OIDC source, so there is nothing to vouch for.
+            // No provider of those protocols exists, so there is nothing to vouch for.
             return AttributeSourceAuthors.none();
         }
         Set<UUID> configurators = new HashSet<>();
@@ -70,5 +82,21 @@ class FederationSourceConfigurators implements SourceConfigurators {
             }
         }
         return new AttributeSourceAuthors(Set.copyOf(configurators), complete);
+    }
+
+    /** The federation protocols the given source profiles stand for; a profile of any other kind is not ours. */
+    private Set<FederationProtocol> protocolsOf(Collection<UUID> sourceProfileIds) {
+        Set<FederationProtocol> protocols = new HashSet<>();
+        for (Profile profile : profiles.list()) {
+            if (!sourceProfileIds.contains(profile.id())) {
+                continue;
+            }
+            if (profile.kind() == ProfileKind.OIDC) {
+                protocols.add(FederationProtocol.OIDC);
+            } else if (profile.kind() == ProfileKind.SAML) {
+                protocols.add(FederationProtocol.SAML);
+            }
+        }
+        return protocols;
     }
 }

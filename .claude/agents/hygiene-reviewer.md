@@ -29,6 +29,21 @@ written.
 2. Run each check below over that file list.
 3. Report. Every finding needs `file:line`, the offending text, and the exact replacement.
 
+**Shell hazards that have already produced a false `clean` here — do not skip these.**
+
+- **Always pipe the file list through `xargs`, never interpolate it into the command.** The shell is
+  zsh, which does NOT word-split an unquoted variable, so `grep … $FILES` passes the whole list as one
+  filename: grep fails, exits non-zero, and the pipeline looks exactly like "no violations". Write
+  `git diff --name-only HEAD -- '*.java' | xargs /usr/bin/grep -nP …` instead.
+- **Call `/usr/bin/grep` by absolute path.** `grep` on this machine has resolved to `ugrep`, whose `-P`
+  and BRE behaviour differ from GNU grep's.
+- **A check that ERRORS must never be reported as clean.** If a command fails, say so and fix the
+  invocation before drawing a conclusion. A silent zero-hit is the failure mode this reviewer exists
+  to prevent, so treat an unexplained empty result as suspicious and re-run it against a line you know
+  violates the rule.
+- **Scope line-based checks to the DIFF's own lines**, not whole files, or the diff's problems drown in
+  pre-existing ones. Recover the added-line numbers from `git diff HEAD -U0` and filter to those.
+
 ## The checks
 
 ### 1. Inline fully-qualified names — the headline
@@ -39,9 +54,16 @@ Rule: `.claude/rules/backend/imports.md`. Every type is referenced through an `i
 This is the CI command, so run exactly it and you will agree with the build:
 
 ```
-grep -rnP --include='*.java' \
+git diff --name-only HEAD -- '*.java' | xargs /usr/bin/grep -nP \
   '^(?!\s*(import|package)\b).*(?<!")\bcom\.example\.sso\.[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*\.[A-Z]' \
-  <files> | grep -vP '\{@(link|code)'
+  | /usr/bin/grep -vP '\{@(link|code)'
+```
+
+Sanity-check the invocation before trusting a clean result — this must print a hit:
+
+```
+printf 'class X { com.example.sso.shared.IdName n; }\n' > /tmp/fqn-probe.java
+/usr/bin/grep -nP '(?<!")\bcom\.example\.sso\.[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*\.[A-Z]' /tmp/fqn-probe.java
 ```
 
 Understand what the pattern already tolerates, so you neither re-flag it nor assume a new case is
@@ -61,9 +83,11 @@ Two things the grep cannot decide, which are yours:
 - **A genuine same-file name collision** — the one case the rule allows an inline FQN for. Prefer
   renaming; if the FQN stays, it needs a comment saying which two types collide.
 
-Also check the two sweeps the rule file names, since they catch what the FQN grep does not:
-`rg -n 'import com\.example\.sso\.\w+\.internal\.'` (a hit whose file is in a DIFFERENT module is an
-entity/visibility leak — hand that to `module-boundary-reviewer`, do not adjudicate it here).
+Also run the sweep the rule file names, scoped to MAIN sources as `entity-hiding.md` scopes it — a test
+importing its own module's `internal` is normal and only adds noise:
+`rg -n 'import com\.example\.sso\.\w+\.internal\.' sso-backend/src/main/java`. A hit whose file is in a
+DIFFERENT module is an entity/visibility leak — hand that to `module-boundary-reviewer`, do not
+adjudicate it here.
 
 ### 2. Immutability and the Lombok whitelist
 
@@ -78,8 +102,9 @@ reads instance fields is an instance method. `private static final` constants ar
 
 ### 4. One public type per file
 
-Same rule file. Flag a second top-level type, and nested classes that exist to dodge module
-visibility.
+Same rule file. Mechanise the count, then read the hits:
+`rg -c '^(public )?(class|interface|enum|record) ' <file>` — more than one wants an explanation. Also
+flag nested classes that exist to dodge module visibility (that part is a read, not a grep).
 
 ### 5. Magic strings and numbers
 
@@ -92,12 +117,28 @@ twice is already a constant waiting to be named.
 
 ### 6. `.editorconfig` conformance
 
+The file is at **`.idea/.editorconfig`** — NOT the repo root, and `.idea` is ignored so a root-only
+search misses it. Read it rather than trusting this summary; it also carries
+`ij_java_imports_layout` (import ORDER, which a hand-inserted import routinely breaks and which shows
+up as diff noise the next time anyone reformats) and `[*.md] trim_trailing_whitespace = false`.
+
 UTF-8, LF, final newline, no trailing whitespace; Java 4-space and ≤120 columns, TS/JSON/CSS 2-space.
-Check the diff's own lines:
+
+Long lines, restricted to the lines this diff ADDED:
 
 ```
-awk 'length > 120 {print FILENAME":"FNR": "length" cols"}' <java files>
-grep -rn ' $' <files>
+git diff HEAD -U0 -- '*.java' | awk '
+  /^\+\+\+ b\// { f = substr($0, 7); next }
+  /^@@/ { split($3, h, ","); n = substr(h[1], 2) + 0; next }
+  /^\+/ { if (length($0) - 1 > 120) print f ":" n ": " (length($0) - 1) " cols"; n++ }
+  /^ / { n++ }'
+```
+
+Trailing whitespace — note BOTH corrections: `' $'` alone misses a trailing TAB, and `[ \t]$` in a
+BRE matches a literal `t`, which silently flags every line ending in `@Test`. Use `-P`:
+
+```
+git diff --name-only HEAD | xargs /usr/bin/grep -nP '[ \t]+$'
 ```
 
 Comments, docs and commit messages are English (root `CLAUDE.md`).
@@ -117,7 +158,12 @@ Mark a finding `[BLOCKS CI]` only when the Hygiene workflow would actually fail 
 like a tolerated-but-questionable reflective load).
 
 End with one line per check: `clean` or the count. If everything passes, say so plainly and name the
-checks you ran — a silent pass is indistinguishable from a reviewer that did not run.
+checks you ran — a silent pass is indistinguishable from a reviewer that did not run. Say explicitly
+which checks were a READ rather than a command (4 and the nested-class half, 5), so nobody reads
+"clean" as "a sweep found nothing".
+
+If any command misbehaved, report that too, and say what you ran instead. A reviewer that quietly
+worked around a broken instruction leaves the next run to rediscover it.
 
 ## What you do NOT do
 

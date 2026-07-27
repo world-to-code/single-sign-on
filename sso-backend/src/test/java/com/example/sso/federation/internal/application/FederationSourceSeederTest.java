@@ -1,5 +1,6 @@
 package com.example.sso.federation.internal.application;
 
+import com.example.sso.federation.FederationProtocol;
 import com.example.sso.metadata.AttributeDefinitionSpec;
 import com.example.sso.metadata.AttributeSource;
 import com.example.sso.metadata.EntityKind;
@@ -58,7 +59,7 @@ class FederationSourceSeederTest {
         when(profiles.tenantProfile())
                 .thenReturn(Optional.of(new Profile(TENANT, "acme", ProfileKind.TENANT, null, true, true)));
 
-        seeder().ensureOidcSource(ORG);
+        seeder().ensureSource(ORG, FederationProtocol.OIDC);
 
         ArgumentCaptor<AttributeDefinitionSpec> spec = ArgumentCaptor.forClass(AttributeDefinitionSpec.class);
         verify(definitions, times(3)).save(eq(TENANT), spec.capture());
@@ -81,7 +82,7 @@ class FederationSourceSeederTest {
         when(mappings.mappingsFrom(SOURCE)).thenReturn(List.of());
         when(profiles.tenantProfile()).thenReturn(Optional.empty());
 
-        seeder().ensureOidcSource(ORG);
+        seeder().ensureSource(ORG, FederationProtocol.OIDC);
 
         verify(definitions, never()).save(any(), any());
         verify(mappings, never()).map(any(), any(), any(), any());
@@ -93,11 +94,30 @@ class FederationSourceSeederTest {
         when(mappings.mappingsFrom(SOURCE))
                 .thenReturn(List.of(new ProfileMapping(UUID.randomUUID(), SOURCE, "given_name", TENANT, "given_name")));
 
-        seeder().ensureOidcSource(ORG);
+        seeder().ensureSource(ORG, FederationProtocol.OIDC);
 
         // Already seeded (or customized by an admin) — declare nothing, map nothing, never touch the tenant.
         verify(definitions, never()).save(any(), any());
         verify(mappings, never()).map(any(), any(), any(), any());
         verify(profiles, never()).tenantProfile();
+    }
+
+    @Test
+    void theSamlSourceIsProvisionedEMPTY() {
+        // THE property that makes a freshly registered SAML connection write nothing by default. SAML attribute
+        // names are chosen entirely by the upstream, so any name seeded here would be a guess — and a guess that
+        // happened to match would hand a rogue connection a mapping the tenant never declared.
+        seeder().ensureSource(ORG, FederationProtocol.SAML);
+
+        verify(profiles).provisionForSource(ORG, ProfileKind.SAML, "SAML");
+        verify(definitions, never()).save(any(), any());
+        verify(mappings, never()).map(any(), any(), any(), any());
+    }
+
+    @Test
+    void seedingOneProtocolNeverProvisionsTheOther() {
+        seeder().ensureSource(ORG, FederationProtocol.SAML);
+
+        verify(profiles, never()).provisionForSource(any(), eq(ProfileKind.OIDC), any());
     }
 }
