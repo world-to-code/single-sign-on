@@ -7,6 +7,7 @@ import com.example.sso.federation.internal.application.FederationPresetCatalog;
 import com.example.sso.federation.internal.application.FederationPresetField;
 import com.example.sso.federation.internal.application.FederationPresetProperties;
 import com.example.sso.federation.internal.application.FederationPresetView;
+import com.example.sso.federation.internal.application.SamlSpMetadataService;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.rbac.Permissions;
@@ -49,12 +50,13 @@ class IdentityProviderAdminControllerTest {
                     new FederationPresetView("entra", "Microsoft Entra ID",
                             "https://login.microsoftonline.com/{tenant}/v2.0", "openid email profile",
                             List.of(new FederationPresetField("tenant", "Directory (tenant) ID", "a GUID"))))));
+    private final SamlSpMetadataService spMetadata = mock(SamlSpMetadataService.class);
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
         mvc = MockMvcBuilders.standaloneSetup(
-                new IdentityProviderAdminController(service, presetCatalog)).build();
+                new IdentityProviderAdminController(service, presetCatalog, spMetadata)).build();
     }
 
     private String body(String displayName, String issuer, String clientId) {

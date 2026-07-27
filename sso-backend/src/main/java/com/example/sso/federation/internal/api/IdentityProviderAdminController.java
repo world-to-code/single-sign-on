@@ -5,13 +5,16 @@ import com.example.sso.audit.Audited;
 import com.example.sso.federation.IdentityProviderService;
 import com.example.sso.federation.IdentityProviderView;
 import com.example.sso.federation.internal.application.FederationPresetCatalog;
+import com.example.sso.federation.internal.application.SamlSpMetadataService;
 import com.example.sso.federation.internal.application.FederationPresetView;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.rbac.Permissions;
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,6 +36,7 @@ public class IdentityProviderAdminController {
 
     private final IdentityProviderService service;
     private final FederationPresetCatalog presetCatalog;
+    private final SamlSpMetadataService spMetadata;
 
     @GetMapping
     @RequirePermission(Permissions.IDENTITY_PROVIDER_READ)
@@ -55,6 +59,17 @@ public class IdentityProviderAdminController {
     @RequirePermission(Permissions.IDENTITY_PROVIDER_READ)
     public IdentityProviderView get(@PathVariable String alias) {
         return service.get(alias);
+    }
+
+    /**
+     * This product's SP metadata for a SAML connection — the document the tenant's administrator hands to the
+     * upstream IdP's operators. Admin-gated rather than public: it is connection configuration, and an upstream
+     * is configured by a person, not by fetching a URL from us.
+     */
+    @GetMapping(value = "/{alias}/saml/metadata", produces = MediaType.APPLICATION_XML_VALUE)
+    @RequirePermission(Permissions.IDENTITY_PROVIDER_READ)
+    public ResponseEntity<String> samlMetadata(@PathVariable String alias, HttpServletRequest request) {
+        return ResponseEntity.ok(spMetadata.forProvider(alias, request));
     }
 
     @PutMapping("/{alias}")
