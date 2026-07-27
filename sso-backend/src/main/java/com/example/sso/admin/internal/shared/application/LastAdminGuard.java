@@ -6,7 +6,10 @@ import com.example.sso.user.account.UserService;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.RoleService;
 import com.example.sso.user.role.Roles;
+import java.util.Collection;
+import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
@@ -40,6 +43,59 @@ public class LastAdminGuard {
     private final RoleService roleService;
     private final UserService userService;
     private final TierAdvisoryLock tierLock;
+
+    /**
+     * Rejects (409) a DENY that left a tenant it reaches without an administrator. A deny's effect can span tiers —
+     * one stamped with no org is a platform-wide veto that applies inside EVERY tenant — so the caller passes the
+     * tiers the deny reaches and each is recounted, in org-id order so concurrent multi-tier writes queue on the
+     * same lock instead of each holding the other's next one.
+     *
+     * <p>Two narrowings keep this precise and affordable, and both are properties of a deny specifically — which is
+     * why this is a separate entry point from {@link #ensureTierRetainsAdmin}: a deny can only ever SUBTRACT
+     * permissions, so it can neither disable an account nor revoke a role.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void ensureDenyRetainsAdmins(String pattern, Collection<UUID> orgIds) {
+        if (!subtractsAdminCapability(pattern)) {
+            return;
+        }
+        for (UUID orgId : tenantTiersInLockOrder(orgIds)) {
+            tierLock.serialize(orgId); // serialize the tier's whole trigger set BEFORE recounting the post-state
+            if (denyLeftTenantWithoutAnAdmin(orgId)) {
+                throw ConflictException.of("admin.lastAdmin");
+            }
+        }
+    }
+
+    /** Narrowing 1: only a deny that can subtract the administrator capability itself can change any tier's count,
+     *  since {@link #retainsAdminCapability} turns on {@code user:update} alone. Without this, a deny of an
+     *  unrelated permission would recount every tenant a platform-wide veto reaches — cost with no invariant. */
+    private boolean subtractsAdminCapability(String pattern) {
+        return Permissions.expandWildcardMembers(Set.of(pattern)).contains(Permissions.USER_UPDATE);
+    }
+
+    /** The TENANT tiers, in a total lock order. The platform tier is dropped: a global super is deny-exempt, so no
+     *  deny can change the platform count — recounting it would always pass and prove nothing. */
+    private List<UUID> tenantTiersInLockOrder(Collection<UUID> orgIds) {
+        return orgIds.stream().filter(Objects::nonNull).sorted().toList();
+    }
+
+    /** Narrowing 2: a tenant is bricked BY THIS DENY only if it still has an enabled admin-role holder and none of
+     *  them retain the capability. A tier with no enabled holder was already un-administrable BEFORE the write —
+     *  a freshly onboarded tenant whose invited admin is still disabled is the normal case — and a deny cannot be
+     *  what broke it. Without this, one such tenant anywhere would refuse every platform-wide veto. */
+    private boolean denyLeftTenantWithoutAnAdmin(UUID orgId) {
+        List<UserAccount> enabledAdmins = enabledOrgAdmins(orgId);
+        return !enabledAdmins.isEmpty() && enabledAdmins.stream().noneMatch(this::retainsAdminCapability);
+    }
+
+    /** The tier's own enabled {@code ROLE_ORG_ADMIN} holders; empty when it has no own admin role to guard. */
+    private List<UserAccount> enabledOrgAdmins(UUID orgId) {
+        return roleService.findByName(Roles.ORG_ADMIN, orgId)
+                .filter(role -> orgId.equals(role.getOrgId()))
+                .map(role -> sameTierHolders(role.getId(), orgId).filter(UserAccount::isEnabled).toList())
+                .orElse(List.of());
+    }
 
     /**
      * Rejects (409) an operation that has left {@code orgId}'s tier with no enabled effective administrator.

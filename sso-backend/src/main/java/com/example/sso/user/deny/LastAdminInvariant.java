@@ -1,5 +1,6 @@
 package com.example.sso.user.deny;
 
+import java.util.Collection;
 import java.util.UUID;
 
 /**
@@ -11,8 +12,14 @@ import java.util.UUID;
 public interface LastAdminInvariant {
 
     /**
-     * Rejects (throws) when tier {@code orgId} (null = the platform tier) has no enabled effective administrator
-     * left after the just-written deny. Runs inside the deny's transaction, so the rejection rolls the deny back.
+     * Rejects (throws) when the just-written deny of {@code pattern} left ANY of the given tiers (a null element =
+     * the platform tier) without an enabled effective administrator. Runs inside the deny's transaction, so the
+     * rejection rolls the deny back.
+     *
+     * <p>The caller passes the tiers the deny actually REACHES, not the one it is stamped with: a platform-wide
+     * veto is stamped null yet takes effect inside every tenant. It passes the pattern too, because only a deny
+     * that can subtract the administrator capability itself can break the invariant — the implementation decides
+     * which capability that is, and skips the recount entirely for any other pattern.
      */
-    void ensureTierRetainsAdmin(UUID orgId);
+    void ensureDenyRetainsAdmins(String pattern, Collection<UUID> orgIds);
 }

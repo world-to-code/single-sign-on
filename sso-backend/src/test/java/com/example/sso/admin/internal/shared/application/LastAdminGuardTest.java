@@ -7,18 +7,22 @@ import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.RoleRef;
 import com.example.sso.user.role.RoleService;
 import com.example.sso.user.role.Roles;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -162,7 +166,108 @@ class LastAdminGuardTest {
         verify(tierLock).serialize(orgId);
     }
 
+    // --- the deny entry point: every reached tenant recounted, but only when the deny can matter -------
+
+    @Test
+    void everyTenantTheDenyReachesIsRecounted() {
+        // The reason this entry point exists: a platform-wide (null-org) deny applies in EVERY tenant, so
+        // recounting only the tier it was stamped with would leave the tenants it reaches unchecked.
+        UUID orgA = UUID.randomUUID();
+        UUID orgB = UUID.randomUUID();
+        stubHealthyOrg(orgA);
+        stubHealthyOrg(orgB);
+
+        guard.ensureDenyRetainsAdmins(Permissions.USER_UPDATE, List.of(orgA, orgB));
+
+        verify(tierLock).serialize(orgA);
+        verify(tierLock).serialize(orgB);
+    }
+
+    @Test
+    void oneBrickedTenantRejectsTheWholeDeny() {
+        // Tiers are locked ascending, so the healthy LOW tier is recounted before the bricked HIGH one throws.
+        stubHealthyOrg(LOW_TIER);
+        UUID strippedAdmin = UUID.randomUUID();
+        stubOrgAdmins(HIGH_TIER, List.of(enabledIn(strippedAdmin, HIGH_TIER)));
+        when(userService.effectiveAuthorities(strippedAdmin)).thenReturn(Set.of(Permissions.USER_READ));
+
+        assertThatThrownBy(() -> guard.ensureDenyRetainsAdmins(Permissions.USER_UPDATE,
+                List.of(LOW_TIER, HIGH_TIER))).isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void tierLocksAreTakenInAscendingOrderRegardlessOfInputOrder() {
+        // Deadlock freedom: two concurrent multi-tier writes must request the locks in the SAME order, or each
+        // can hold the other's next lock. A test that passed them already-sorted would prove nothing.
+        stubHealthyOrg(LOW_TIER);
+        stubHealthyOrg(HIGH_TIER);
+
+        guard.ensureDenyRetainsAdmins(Permissions.USER_UPDATE, List.of(HIGH_TIER, LOW_TIER));
+
+        InOrder locks = inOrder(tierLock);
+        locks.verify(tierLock).serialize(LOW_TIER);
+        locks.verify(tierLock).serialize(HIGH_TIER);
+    }
+
+    @Test
+    void thePlatformTierIsNotRecountedForADeny() {
+        // A global super is deny-exempt, so no deny can change the platform count — recounting it would always
+        // pass. null is a legitimate member of the reached set (a global user's tier) and must be dropped, not
+        // blow up the sort.
+        guard.ensureDenyRetainsAdmins(Permissions.USER_UPDATE, Arrays.asList((UUID) null));
+
+        verify(tierLock, never()).serialize(any());
+    }
+
+    @Test
+    void aDenyThatCannotSubtractTheAdminCapabilityRecountsNothing() {
+        // group:read cannot flip retainsAdminCapability (which turns on user:update alone), so recounting every
+        // tenant a platform-wide veto reaches would be pure cost — and would refuse writes it has no business in.
+        guard.ensureDenyRetainsAdmins(Permissions.GROUP_READ, List.of(LOW_TIER, HIGH_TIER));
+
+        verify(tierLock, never()).serialize(any());
+    }
+
+    @Test
+    void aWildcardDenyCoveringTheAdminCapabilityIsRecounted() {
+        // user:* subtracts user:update without naming it — matching on the literal string would miss this.
+        stubHealthyOrg(LOW_TIER);
+
+        guard.ensureDenyRetainsAdmins("user:*", List.of(LOW_TIER));
+
+        verify(tierLock).serialize(LOW_TIER);
+    }
+
+    @Test
+    void aTenantAlreadyWithoutAnEnabledAdminIsNotBlamedOnTheDeny() {
+        // A freshly onboarded tenant's invited admin is disabled until acceptance. A deny cannot disable an
+        // account, so that tenant was already un-administrable — refusing here would block every platform-wide
+        // veto for as long as any one tenant sits in that entirely normal state.
+        stubOrgAdmins(LOW_TIER, List.of(member(UUID.randomUUID(), false, LOW_TIER)));
+
+        assertThatCode(() -> guard.ensureDenyRetainsAdmins(Permissions.USER_UPDATE, List.of(LOW_TIER)))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void noReachedTierIsANoOp() {
+        guard.ensureDenyRetainsAdmins(Permissions.USER_UPDATE, List.of());
+
+        verify(tierLock, never()).serialize(any());
+    }
+
     // --- fixtures -------------------------------------------------------------------------------------
+
+    /** Two tiers with a KNOWN relative order, so lock-ordering assertions are about the guard, not luck. */
+    private static final UUID LOW_TIER = new UUID(0L, 1L);
+    private static final UUID HIGH_TIER = new UUID(0L, 2L);
+
+    private void stubHealthyOrg(UUID orgId) {
+        UUID adminId = UUID.randomUUID();
+        stubOrgAdmins(orgId, List.of(enabledIn(adminId, orgId)));
+        when(userService.effectiveAuthorities(adminId)).thenReturn(Set.of(Permissions.USER_UPDATE));
+    }
+
 
     private void stubGlobalAdmins(List<UserAccount> members) {
         RoleRef role = roleWith(members); // build the role + its holder stubs BEFORE the outer stubbing starts

@@ -19,6 +19,8 @@ import com.example.sso.user.internal.rbac.domain.PrincipalPermissionDenyReposito
 import com.example.sso.user.internal.rbac.domain.UserPermissionDenyRepository;
 import com.example.sso.user.rbac.Permissions;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -61,7 +63,7 @@ class DenyServiceImpl implements DenyService {
                         userDenies.insertIfAbsent(spec.subjectId(), orgId, spec.pattern(), author.id(),
                                 author.apexRoleId()) == 1;
                 UUID denyId = userDenies.findId(spec.subjectId(), spec.pattern()).orElseThrow();
-                afterCreate(created, spec.kind(), spec.subjectId(), orgId);
+                afterCreate(created, spec, orgId);
                 yield denyId;
             }
             case ROLE -> createPrincipal(DenySubjectType.ROLE, spec, orgId, author);
@@ -70,7 +72,7 @@ class DenyServiceImpl implements DenyService {
                 boolean created =
                         orgDenies.insertIfAbsent(orgId, spec.pattern(), author.id(), author.apexRoleId()) == 1;
                 UUID denyId = orgDenies.findId(orgId, spec.pattern()).orElseThrow();
-                afterCreate(created, spec.kind(), spec.subjectId(), orgId);
+                afterCreate(created, spec, orgId);
                 yield denyId;
             }
         };
@@ -118,26 +120,26 @@ class DenyServiceImpl implements DenyService {
         boolean created = principalDenies.insertIfAbsent(type.name(), spec.subjectId(), orgId, spec.pattern(),
                 author.id(), author.apexRoleId()) == 1;
         UUID denyId = principalDenies.findId(type, spec.subjectId(), spec.pattern()).orElseThrow();
-        afterCreate(created, spec.kind(), spec.subjectId(), orgId);
+        afterCreate(created, spec, orgId);
         return denyId;
     }
 
-    /** After a NEW deny row: first refuse it if it stripped the tier's last administrator (rolls the write back),
-     *  then terminate the affected subjects' sessions. Order matters — a rejected deny must not fire a
+    /** After a NEW deny row: first refuse it if it stripped a reached tier's last administrator (rolls the write
+     *  back), then terminate the affected subjects' sessions. Order matters — a rejected deny must not fire a
      *  session-termination event (it would be discarded on rollback anyway, but the intent is: no brick, no
      *  side effects). An idempotent re-create changed nothing, so it neither guards nor terminates.
      *
-     *  <p>Limitation (super-only, accepted): the guard checks the deny's stamped {@code orgId}. For every actor
-     *  the console reaches, that IS the affected tier (a tenant admin, or a super drilled into an org, is org-
-     *  bound). Only an UN-DRILLED super authoring a ROLE/GROUP deny stamps {@code orgId == null} (a platform-wide
-     *  veto) while the deny may in fact brick a specific tenant's holders — the platform-tier recount passes and
-     *  that tenant is not re-checked. Recoverable (a super re-appoints / lifts). A precise fix recounts every
-     *  tier the deny actually reaches; deferred.  */
-    private void afterCreate(boolean created, DenySubjectKind kind, UUID subjectId, UUID orgId) {
-        if (created) {
-            lastAdminInvariant.ensureTierRetainsAdmin(orgId);
+     *  <p>The fan-out is computed ONCE and serves both: the users whose sessions must re-resolve are also the
+     *  users whose tiers the deny can brick, so the guard is asked about exactly the tiers the deny reaches —
+     *  which for a null-org platform veto is every tenant it lands in, not the (deny-exempt) platform tier. */
+    private void afterCreate(boolean created, DenySpec spec, UUID orgId) {
+        if (!created) {
+            return;
         }
-        terminateIfChanged(created, kind, subjectId, orgId);
+        Set<UUID> affected = affectedUsers.forSubject(spec.kind(), spec.subjectId(), orgId);
+        lastAdminInvariant.ensureDenyRetainsAdmins(spec.pattern(),
+                affectedUsers.tiersFor(spec.kind(), orgId, affected));
+        accessChanges.forUserIds(affected);
     }
 
     private void liftIfPermitted(DenySubjectKind kind, UUID subjectId, UUID orgId, String pattern, UUID createdBy,
@@ -146,18 +148,10 @@ class DenyServiceImpl implements DenyService {
             throw ForbiddenException.of("user.deny.notPermitted");
         }
         delete.run();
-        // Lifting a deny widens access; its former subjects' live sessions must re-resolve. On create we
-        // terminate only when the row is new (an idempotent re-author changed nothing) — a lift always did.
-        terminateIfChanged(true, kind, subjectId, orgId);
-    }
-
-    /** A deny write that actually changed the stored set must end the affected users' sessions, so their
-     *  authority re-resolves from the new state rather than the one frozen into a live session. The deny's
-     *  {@code orgId} scopes the fan-out to the tenant it actually affects (null = platform-wide veto). */
-    private void terminateIfChanged(boolean changed, DenySubjectKind kind, UUID subjectId, UUID orgId) {
-        if (changed) {
-            accessChanges.forUserIds(affectedUsers.forSubject(kind, subjectId, orgId));
-        }
+        // Lifting a deny widens access; its former subjects' live sessions must re-resolve so their authority
+        // comes from the new state rather than the one frozen into a live session. A lift always changed
+        // something (the row existed), and widening can never brick a tier — so no guard, always terminate.
+        accessChanges.forUserIds(affectedUsers.forSubject(kind, subjectId, orgId));
     }
 
     /** The tier the deny row is stamped with: the target user's own org (composite-FK checked); the actor's
@@ -166,9 +160,25 @@ class DenyServiceImpl implements DenyService {
         return switch (kind) {
             case USER -> users.findById(subjectId).map(UserAccount::getOrgId)
                     .orElseThrow(() -> BadRequestException.of("user.notFound"));
-            case ROLE, GROUP -> orgContext.currentOrg().orElse(null);
+            case ROLE, GROUP -> actingTierOrPlatformVeto();
             case ORG -> subjectId; // the org being denied is itself the org_id (null = platform veto, super only)
         };
+    }
+
+    /**
+     * The acting tier, or the PLATFORM VETO (null) — which is an asserted capability, never the fall-through
+     * value of an unbound context. {@code currentOrg()} is empty for a platform actor AND for a fully
+     * authenticated user carrying no org marker; stamping the latter's deny null would apply it in every tenant.
+     */
+    private UUID actingTierOrPlatformVeto() {
+        Optional<UUID> actingOrg = orgContext.currentOrg();
+        if (actingOrg.isPresent()) {
+            return actingOrg.get();
+        }
+        if (!orgContext.isPlatform()) {
+            throw ForbiddenException.of("user.deny.notPermitted");
+        }
+        return null;
     }
 
     private DenySubjectKind kindOf(PrincipalPermissionDeny deny) {

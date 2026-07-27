@@ -19,7 +19,9 @@ import org.springframework.stereotype.Component;
  * {@code @Transactional(MANDATORY)}).
  *
  * <p>Postgres has a single advisory-lock keyspace shared with any other advisory lock in the app (e.g.
- * {@code ResourceRepository.lockEdgeMutations}); keys here carry a distinct string prefix so they cannot collide.
+ * {@code ResourceRepository.lockEdgeMutations}). The distinct string prefix keeps these keys apart as STRINGS;
+ * {@code hashtext} still returns an {@code int4}, so a collision with another namespace remains possible — the
+ * consequence is spurious blocking, never a missed exclusion.
  */
 @Component
 class TierAdvisoryLock {

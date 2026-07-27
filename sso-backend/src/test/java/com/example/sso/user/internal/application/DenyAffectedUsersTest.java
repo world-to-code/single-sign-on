@@ -5,6 +5,7 @@ import com.example.sso.user.deny.DenySubjectKind;
 import com.example.sso.user.internal.account.domain.AppUserRepository;
 import com.example.sso.user.internal.group.domain.UserGroupRepository;
 import com.example.sso.user.internal.role.domain.UserRoleRepository;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -101,6 +102,60 @@ class DenyAffectedUsersTest {
 
         assertThat(affectedUsers.forSubject(DenySubjectKind.ORG, null, null))
                 .containsExactlyInAnyOrder(memberA, memberB);
+    }
+
+    // --- tiersFor: the TIERS a deny can brick, which is not always the tier it is stamped with -------
+
+    @Test
+    void aStampedOrgIsItsOwnReach() {
+        // Every actor the console offers is org-bound, so the stamp IS the reach — and deriving it must not
+        // cost a query.
+        assertThat(affectedUsers.tiersFor(DenySubjectKind.ROLE, orgA, Set.of(UUID.randomUUID())))
+                .containsExactly(orgA);
+        verify(appUsers, never()).findDistinctOrgIdsByIds(any());
+        verify(appUsers, never()).findDistinctOrgIds();
+    }
+
+    @Test
+    void theAbsolutePlatformVetoReachesEveryTierThatHasAUser() {
+        // A null-org ORG deny strips the pattern from every user in every tenant (it beats even a USER allow),
+        // so every tier must be recounted. Deriving that from the whole-table fan-out would be a table-wide IN.
+        UUID orgB = UUID.randomUUID();
+        when(appUsers.findDistinctOrgIds()).thenReturn(Set.of(orgA, orgB));
+
+        assertThat(affectedUsers.tiersFor(DenySubjectKind.ORG, null, Set.of(UUID.randomUUID())))
+                .containsExactlyInAnyOrder(orgA, orgB);
+        verify(appUsers, never()).findDistinctOrgIdsByIds(any());
+    }
+
+    @Test
+    void aNullOrgRoleVetoReachesTheTiersItsHoldersLiveIn() {
+        UUID holderA = UUID.randomUUID();
+        UUID holderB = UUID.randomUUID();
+        UUID orgB = UUID.randomUUID();
+        when(appUsers.findDistinctOrgIdsByIds(Set.of(holderA, holderB))).thenReturn(Set.of(orgA, orgB));
+
+        assertThat(affectedUsers.tiersFor(DenySubjectKind.ROLE, null, Set.of(holderA, holderB)))
+                .containsExactlyInAnyOrder(orgA, orgB);
+    }
+
+    @Test
+    void aGlobalUsersTierIsThePlatformTier() {
+        // app_user.org_id is null for a global user, so the null element must survive as "the platform tier"
+        // rather than being dropped — the guard reads null as the tier to recount.
+        UUID globalUser = UUID.randomUUID();
+        Set<UUID> platformOnly = new HashSet<>();
+        platformOnly.add(null);
+        when(appUsers.findDistinctOrgIdsByIds(Set.of(globalUser))).thenReturn(platformOnly);
+
+        assertThat(affectedUsers.tiersFor(DenySubjectKind.USER, null, Set.of(globalUser)))
+                .containsExactly((UUID) null);
+    }
+
+    @Test
+    void anEmptyFanOutReachesNoTierAndCostsNoQuery() {
+        assertThat(affectedUsers.tiersFor(DenySubjectKind.ROLE, null, Set.of())).isEmpty();
+        verify(appUsers, never()).findDistinctOrgIdsByIds(any());
     }
 
     private void runPlatformSupplierInline() {

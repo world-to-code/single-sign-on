@@ -46,6 +46,24 @@ class DenyAffectedUsers {
         };
     }
 
+    /**
+     * The tiers whose last-administrator invariant this deny can break — which is NOT always the tier it was
+     * stamped with. A stamped org IS its own reach (every actor the console offers is org-bound). A null stamp is
+     * the platform veto: it subtracts the pattern inside every tenant, so recounting the platform tier would prove
+     * nothing (a super is deny-exempt and always passes) while the tenants it actually reaches go unchecked.
+     *
+     * @param affectedUserIds the already-computed fan-out, reused so the reach is derived once
+     */
+    Set<UUID> tiersFor(DenySubjectKind kind, UUID denyOrgId, Set<UUID> affectedUserIds) {
+        if (denyOrgId != null) {
+            return Set.of(denyOrgId);
+        }
+        if (kind == DenySubjectKind.ORG) {
+            return appUsers.findDistinctOrgIds(); // the absolute veto spans every tenant; skip the whole-table IN
+        }
+        return affectedUserIds.isEmpty() ? Set.of() : appUsers.findDistinctOrgIdsByIds(affectedUserIds);
+    }
+
     private Set<UUID> orgMembers(UUID orgId) {
         if (orgId != null) {
             return appUsers.findIdsByOrgId(orgId);

@@ -1,6 +1,7 @@
 package com.example.sso.admin.internal.shared.application;
 
 import com.example.sso.user.deny.LastAdminInvariant;
+import java.util.Collection;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -18,7 +19,7 @@ class LastAdminInvariantAdapter implements LastAdminInvariant {
     private final LastAdminGuard lastAdminGuard;
 
     @Override
-    public void ensureTierRetainsAdmin(UUID orgId) {
-        lastAdminGuard.ensureTierRetainsAdmin(orgId);
+    public void ensureDenyRetainsAdmins(String pattern, Collection<UUID> orgIds) {
+        lastAdminGuard.ensureDenyRetainsAdmins(pattern, orgIds);
     }
 }

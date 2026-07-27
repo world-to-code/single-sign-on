@@ -105,10 +105,52 @@ class DenyServiceImplTest {
         when(userDenies.insertIfAbsent(userId, userOrg, "user:read", actorId, apexId)).thenReturn(1);
         when(userDenies.findId(userId, "user:read")).thenReturn(Optional.of(UUID.randomUUID()));
         when(affectedUsers.forSubject(DenySubjectKind.USER, userId, userOrg)).thenReturn(Set.of(userId));
+        when(affectedUsers.tiersFor(DenySubjectKind.USER, userOrg, Set.of(userId))).thenReturn(Set.of(userOrg));
 
         service.create(new DenySpec(DenySubjectKind.USER, userId, "user:read"));
-        verify(lastAdminInvariant).ensureTierRetainsAdmin(userOrg); // a new deny recounts the tier's admins
+        // a new deny hands the guard its pattern and the tiers it reaches
+        verify(lastAdminInvariant).ensureDenyRetainsAdmins("user:read", Set.of(userOrg));
         verify(accessChanges).forUserIds(Set.of(userId));
+    }
+
+    @Test
+    void aPlatformWideRoleDenyForwardsTheReachedTiersToTheGuard() {
+        // The gap this closes: an un-drilled super stamps a ROLE deny with org null (a platform veto). Recounting
+        // the PLATFORM tier proves nothing — supers are deny-exempt, so it always passes while the veto can strip
+        // the admin capability inside every tenant. The tiers recounted must be the ones the deny actually reaches.
+        UUID roleId = UUID.randomUUID();
+        UUID holderA = UUID.randomUUID();
+        UUID holderB = UUID.randomUUID();
+        UUID orgA = UUID.randomUUID();
+        UUID orgB = UUID.randomUUID();
+        authorize(DenySubjectKind.ROLE, roleId, "user:update");
+        when(orgContext.currentOrg()).thenReturn(Optional.empty()); // un-drilled super: no acting org...
+        when(orgContext.isPlatform()).thenReturn(true); // ...but genuinely on the platform tier
+        when(principalDenies.insertIfAbsent("ROLE", roleId, null, "user:update", actorId, apexId)).thenReturn(1);
+        when(principalDenies.findId(DenySubjectType.ROLE, roleId, "user:update"))
+                .thenReturn(Optional.of(UUID.randomUUID()));
+        when(affectedUsers.forSubject(DenySubjectKind.ROLE, roleId, null)).thenReturn(Set.of(holderA, holderB));
+        when(affectedUsers.tiersFor(DenySubjectKind.ROLE, null, Set.of(holderA, holderB)))
+                .thenReturn(Set.of(orgA, orgB));
+
+        service.create(new DenySpec(DenySubjectKind.ROLE, roleId, "user:update"));
+
+        verify(lastAdminInvariant).ensureDenyRetainsAdmins("user:update", Set.of(orgA, orgB));
+    }
+
+    @Test
+    void aRoleDenyFromAnUnboundNonPlatformContextIsRefusedRatherThanStampedAsAPlatformVeto() {
+        // currentOrg() is empty for the platform tier AND for a fully authenticated principal carrying no org
+        // marker. Stamping the latter's deny null would silently make it apply in EVERY tenant, so the platform
+        // veto must be an asserted capability rather than the fall-through value of an unbound context.
+        UUID roleId = UUID.randomUUID();
+        authorize(DenySubjectKind.ROLE, roleId, "user:read");
+        when(orgContext.currentOrg()).thenReturn(Optional.empty());
+        when(orgContext.isPlatform()).thenReturn(false);
+
+        assertThatThrownBy(() -> service.create(new DenySpec(DenySubjectKind.ROLE, roleId, "user:read")))
+                .isInstanceOf(ForbiddenException.class);
+        verify(principalDenies, never()).insertIfAbsent(any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -121,7 +163,10 @@ class DenyServiceImplTest {
         when(users.findById(userId)).thenReturn(Optional.of(target));
         when(userDenies.insertIfAbsent(userId, userOrg, "user:update", actorId, apexId)).thenReturn(1);
         when(userDenies.findId(userId, "user:update")).thenReturn(Optional.of(UUID.randomUUID()));
-        doThrow(new ConflictException("admin.lastAdmin")).when(lastAdminInvariant).ensureTierRetainsAdmin(userOrg);
+        when(affectedUsers.forSubject(DenySubjectKind.USER, userId, userOrg)).thenReturn(Set.of(userId));
+        when(affectedUsers.tiersFor(DenySubjectKind.USER, userOrg, Set.of(userId))).thenReturn(Set.of(userOrg));
+        doThrow(new ConflictException("admin.lastAdmin"))
+                .when(lastAdminInvariant).ensureDenyRetainsAdmins("user:update", Set.of(userOrg));
 
         assertThatThrownBy(() -> service.create(new DenySpec(DenySubjectKind.USER, userId, "user:update")))
                 .isInstanceOf(ConflictException.class);
@@ -141,7 +186,7 @@ class DenyServiceImplTest {
 
         service.create(new DenySpec(DenySubjectKind.USER, userId, "user:read"));
         verify(accessChanges, never()).forUserIds(any());
-        verify(lastAdminInvariant, never()).ensureTierRetainsAdmin(any()); // a no-op re-create recounts nothing
+        verify(lastAdminInvariant, never()).ensureDenyRetainsAdmins(any(), any()); // a no-op re-create recounts nothing
     }
 
     @Test
@@ -186,7 +231,7 @@ class DenyServiceImplTest {
         service.lift(denyId, DenySubjectKind.USER);
         verify(userDenies).deleteById(denyId);
         verify(accessChanges).forUserIds(Set.of(userId));
-        verify(lastAdminInvariant, never()).ensureTierRetainsAdmin(any()); // lifting widens access, never bricks
+        verify(lastAdminInvariant, never()).ensureDenyRetainsAdmins(any(), any()); // lifting widens access, never bricks
     }
 
     @Test

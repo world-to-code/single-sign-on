@@ -1,5 +1,6 @@
 package com.example.sso.admin;
 
+import com.example.sso.admin.internal.deny.application.DenyAdminService;
 import com.example.sso.admin.internal.shared.application.LastAdminGuard;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
@@ -29,6 +30,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -55,6 +57,8 @@ class LastAdminGuardIT extends AbstractIntegrationTest {
     OrgContext orgContext;
     @Autowired
     DenyService denyService;
+    @Autowired
+    DenyAdminService denyAdminService;
     @Autowired
     UserService users;
     @Autowired
@@ -223,6 +227,107 @@ class LastAdminGuardIT extends AbstractIntegrationTest {
                 "select count(*) from app_user_permission ap join permission p on p.id = ap.permission_id "
                         + "where ap.user_id = ? and p.name = ?", Integer.class, admin, Permissions.USER_UPDATE);
         assertThat(grants).isEqualTo(1);
+    }
+
+    // --- a platform-wide veto is recounted against the TENANTS it reaches, not the platform tier ------
+
+    @Test
+    void aPlatformWideRoleDenyThatBricksATenantIsRefusedAndRolledBack() {
+        Seeded org = seedOrgWithAdmins(1);
+        asSuperAdmin();
+
+        // An UN-DRILLED super has no acting org, so the deny is stamped org_id NULL — a platform-wide veto. It
+        // still strips user:update from this tenant's sole admin. Recounting the PLATFORM tier would pass (supers
+        // are deny-exempt), so the tenant the veto actually reaches is the tier that has to be recounted.
+        assertThatThrownBy(() -> transactionTemplate().executeWithoutResult(status ->
+                orgContext.runAsPlatform(() -> denyService.create(
+                        new DenySpec(DenySubjectKind.ROLE, org.orgAdminRoleId, Permissions.USER_UPDATE)))))
+                .isInstanceOf(ConflictException.class);
+
+        Integer persisted = ownerJdbc().queryForObject(
+                "select count(*) from principal_permission_deny where subject_id = ? and org_id is null",
+                Integer.class, org.orgAdminRoleId);
+        assertThat(persisted).isZero();
+    }
+
+    @Test
+    void aPlatformWideDenyThatCannotStripTheAdminCapabilityStillCommitsAndTakesEffect() {
+        // The guard must stay a last-admin invariant, not a blanket refusal of platform vetoes: group:read is not
+        // the admin capability, so no tier can lose its administrator and the veto has to go through.
+        Seeded org = seedOrgWithAdmins(1);
+        UUID admin = org.adminIds.get(0);
+        asSuperAdmin();
+        cleanups.add(() -> ownerJdbc().update(
+                "delete from principal_permission_deny where subject_id = ?", org.orgAdminRoleId));
+
+        transactionTemplate().executeWithoutResult(status ->
+                orgContext.runAsPlatform(() -> denyService.create(
+                        new DenySpec(DenySubjectKind.ROLE, org.orgAdminRoleId, Permissions.GROUP_READ))));
+
+        // Asserted through the APPLICATION path, not the RLS-bypassing owner connection: the veto really reached
+        // the tenant's admin, and left the capability the guard protects intact.
+        Set<String> effective = transactionTemplate().execute(status ->
+                orgContext.callInOrg(org.orgId, () -> users.effectiveAuthorities(admin)));
+        assertThat(effective).doesNotContain(Permissions.GROUP_READ).contains(Permissions.USER_UPDATE);
+    }
+
+    @Test
+    void theAbsolutePlatformVetoIsGuardedAgainstTheTenantsItReaches() {
+        // kind=ORG with a null subject is the ABSOLUTE veto — it strips the pattern from every user in every
+        // tenant, beating even a USER-level allow. Its own stamped tier is the platform one, which is deny-exempt,
+        // so only the reach-derived recount can refuse it.
+        Seeded org = seedOrgWithAdmins(1);
+        UUID admin = org.adminIds.get(0);
+        asSuperAdmin();
+        cleanups.add(() -> ownerJdbc().update("delete from org_permission_deny where org_id is null"));
+
+        assertThatThrownBy(() -> transactionTemplate().executeWithoutResult(status ->
+                orgContext.runAsPlatform(() -> denyService.create(
+                        new DenySpec(DenySubjectKind.ORG, null, Permissions.USER_UPDATE)))))
+                .isInstanceOf(ConflictException.class);
+
+        assertThat(ownerJdbc().queryForObject(
+                "select count(*) from org_permission_deny where org_id is null and pattern = ?",
+                Integer.class, Permissions.USER_UPDATE)).isZero(); // rolled back...
+
+        Set<String> effective = transactionTemplate().execute(status ->
+                orgContext.callInOrg(org.orgId, () -> users.effectiveAuthorities(admin)));
+        assertThat(effective).contains(Permissions.USER_UPDATE); // ...and no tenant was left un-administrable
+    }
+
+    @Test
+    void theGuardRefusesToRunWithoutTheCallersTransaction() {
+        // MANDATORY is load-bearing, not decoration: outside a transaction pg_advisory_xact_lock would be taken
+        // and released within its own statement, and the recount would run in a DIFFERENT transaction that cannot
+        // see the caller's uncommitted mutation — every bricking write would then pass.
+        assertThatThrownBy(() -> guard.ensureDenyRetainsAdmins(Permissions.USER_UPDATE, List.of(UUID.randomUUID())))
+                .isInstanceOf(IllegalTransactionStateException.class);
+        assertThatThrownBy(() -> guard.ensureTierRetainsAdmin(UUID.randomUUID()))
+                .isInstanceOf(IllegalTransactionStateException.class);
+    }
+
+    @Test
+    void aRefusedDenyAttemptLeavesAnAuditTrailThatSurvivesTheRollback() {
+        // A mocked test can only prove logFailure was CALLED. That the row is still there after the refusal
+        // rolls the deny back is a property of the audit writer's own REQUIRES_NEW transaction — real DB only.
+        Seeded org = seedOrgWithAdmins(1);
+        asSuperAdmin();
+        cleanups.add(() -> ownerJdbc().update("delete from audit_event where detail like ?",
+                "%" + org.orgAdminRoleId + "%"));
+
+        assertThatThrownBy(() -> transactionTemplate().executeWithoutResult(status ->
+                orgContext.runInOrg(org.orgId, () -> denyAdminService.create(
+                        new DenySpec(DenySubjectKind.ROLE, org.orgAdminRoleId, Permissions.USER_UPDATE)))))
+                .isInstanceOf(ConflictException.class);
+
+        assertThat(ownerJdbc().queryForObject(
+                "select count(*) from principal_permission_deny where subject_id = ?",
+                Integer.class, org.orgAdminRoleId)).isZero(); // the deny itself rolled back
+
+        assertThat(ownerJdbc().queryForObject(
+                "select count(*) from audit_event where type = 'PERMISSION_DENY_CREATED' and success = false "
+                        + "and reason = 'admin.lastAdmin' and detail like ?",
+                Integer.class, "%" + org.orgAdminRoleId + "%")).isEqualTo(1); // ...the attempt did not
     }
 
     // --- fixtures ------------------------------------------------------------------------------------

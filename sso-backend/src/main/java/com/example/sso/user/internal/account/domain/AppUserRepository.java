@@ -30,6 +30,14 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
     @Query("select u.id from AppUser u")
     Set<UUID> findAllIds();
 
+    /** The distinct tiers the given users belong to; a null element is the platform tier (a global user). */
+    @Query("select distinct u.orgId from AppUser u where u.id in :ids")
+    Set<UUID> findDistinctOrgIdsByIds(@Param("ids") Collection<UUID> ids);
+
+    /** Every tier that has a user — the tiers an absolute (null-org) platform veto reaches. */
+    @Query("select distinct u.orgId from AppUser u")
+    Set<UUID> findDistinctOrgIds();
+
     /** Typeahead search by username (case-insensitive). */
     @Query("select u.id as id, u.username as name from AppUser u "
             + "where lower(u.username) like lower(concat('%', :q, '%')) order by u.username asc")
