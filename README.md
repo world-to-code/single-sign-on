@@ -388,7 +388,7 @@ All operational knobs live under `sso.*` (see `application.yml`; prod overrides 
 | Email OTP | `sso.email-otp.{ttl-minutes,max-attempts}` |
 | Admin console / elevation | `sso.admin-console.{redirect-uris,access-token-ttl-minutes,refresh-token-ttl-minutes,elevation-freshness-minutes}` |
 | Demo client | `sso.demo-client.{enabled,access-token-ttl-minutes,refresh-token-ttl-days}` (disabled in prod) |
-| SAML | `sso.saml.{entity-id,sso-location,keystore-*,certificate-dn,key-size,certificate-validity-days,assertion-validity-seconds}` |
+| SAML | `sso.saml.{entity-id,keystore-*,certificate-dn,key-size,certificate-validity-days,assertion-validity-seconds}` |
 | SCIM | `sso.scim.{max-results,max-filter-depth,max-bulk-operations}` |
 | Rate limit / lockout | `sso.ratelimit.*`, `sso.lockout.*` |
 | Zero-Trust | `sso.zerotrust.{bind-client,session-absolute-lifetime-minutes}` |
@@ -426,7 +426,7 @@ python3 scripts/scim_provision_flow.py  # SCIM: provision a user into an org, th
 
 Run with `SPRING_PROFILES_ACTIVE=prod`; secrets come from the environment (see
 `application-prod.yml`). Required: `DB_PASSWORD`, `REDIS_PASSWORD`, `SSO_ISSUER`,
-`SSO_ADMIN_PASSWORD`, `SSO_SAML_ENTITY_ID`, `SSO_SAML_SSO_LOCATION`, `SSO_SAML_KEYSTORE_PASSWORD`,
+`SSO_ADMIN_PASSWORD`, `SSO_SAML_ENTITY_ID`, `SSO_SAML_KEYSTORE_PASSWORD`,
 `SSO_CRYPTO_MASTER_PASSWORD`, `SSO_CRYPTO_SALT`, `SSO_ADMIN_CONSOLE_REDIRECT_URIS`. Set
 `SSO_TRUSTED_PROXIES` to the edge/load-balancer CIDR so client-IP-based controls are spoof-safe, and
 `SSO_ISSUER` to the **public edge origin** (the host the browser uses).

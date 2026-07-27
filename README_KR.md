@@ -372,7 +372,7 @@ env로). 주요 항목은 다음과 같다.
 | Email OTP | `sso.email-otp.{ttl-minutes,max-attempts}` |
 | 관리자 콘솔 / 승격 | `sso.admin-console.{redirect-uris,access-token-ttl-minutes,refresh-token-ttl-minutes}` |
 | 데모 클라이언트 | `sso.demo-client.{enabled,access-token-ttl-minutes,refresh-token-ttl-days}`(prod 비활성) |
-| SAML | `sso.saml.{entity-id,sso-location,keystore-*,certificate-dn,key-size,certificate-validity-days,assertion-validity-seconds}` |
+| SAML | `sso.saml.{entity-id,keystore-*,certificate-dn,key-size,certificate-validity-days,assertion-validity-seconds}` |
 | SCIM | `sso.scim.{max-results,max-filter-depth,max-bulk-operations}` |
 | Rate limit / lockout | `sso.ratelimit.*`, `sso.lockout.*` |
 | Zero-Trust | `sso.zerotrust.{bind-client,session-absolute-lifetime-minutes}` |
@@ -410,7 +410,7 @@ python3 scripts/scim_provision_flow.py  # SCIM: org에 사용자 provision 후 �
 
 `SPRING_PROFILES_ACTIVE=prod`로 실행하고, 시크릿은 환경에서 받는다(`application-prod.yml` 참고). 필수 값은
 `DB_PASSWORD`, `REDIS_PASSWORD`, `SSO_ISSUER`, `SSO_ADMIN_PASSWORD`, `SSO_SAML_ENTITY_ID`,
-`SSO_SAML_SSO_LOCATION`, `SSO_SAML_KEYSTORE_PASSWORD`, `SSO_CRYPTO_MASTER_PASSWORD`, `SSO_CRYPTO_SALT`,
+`SSO_SAML_KEYSTORE_PASSWORD`, `SSO_CRYPTO_MASTER_PASSWORD`, `SSO_CRYPTO_SALT`,
 `SSO_ADMIN_CONSOLE_REDIRECT_URIS`이다. IP 기반 제어가 스푸핑에 안전하도록 `SSO_TRUSTED_PROXIES`를 에지/
 로드밸런서 CIDR로, `SSO_ISSUER`는 **공개 에지 오리진**(브라우저가 쓰는 호스트)으로 맞춘다.
 
