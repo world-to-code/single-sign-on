@@ -26,11 +26,17 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.opensaml.core.config.InitializationService;
+import org.opensaml.core.xml.XMLObject;
 import org.opensaml.core.xml.config.XMLObjectProviderRegistrySupport;
+import org.opensaml.core.xml.schema.XSAny;
+import org.opensaml.core.xml.schema.XSString;
 import org.opensaml.saml.common.SAMLVersion;
 import org.opensaml.saml.common.xml.SAMLConstants;
 import org.opensaml.saml.saml2.core.Advice;
 import org.opensaml.saml.saml2.core.Assertion;
+import org.opensaml.saml.saml2.core.Attribute;
+import org.opensaml.saml.saml2.core.AttributeStatement;
+import org.opensaml.saml.saml2.core.AttributeValue;
 import org.opensaml.saml.saml2.core.Audience;
 import org.opensaml.saml.saml2.core.AudienceRestriction;
 import org.opensaml.saml.saml2.core.Conditions;
@@ -415,6 +421,76 @@ class SamlAssertionVerificationTest {
         response.getAssertions().add(assertion(a -> { }));
         tweak.accept(response);
         return response;
+    }
+
+    // --- attribute extraction, through REAL XML -----------------------------------------------------------
+    // The one part of the assertion nothing tested: every SamlFederationLoginImpl test hands the caller a
+    // ready-made Map, so the parse between the two was never run. It shipped dropping every attribute.
+
+    @Test
+    void anAttributeValueWithNoXsiTypeIsStillRead() {
+        // What Shibboleth, ADFS and Entra actually send. OpenSAML unmarshals these as XSAny, not XSString, so
+        // reading only the typed shape silently drops the whole AttributeStatement — and with it every claim
+        // this product syncs and the address SAML just-in-time provisioning names an account by.
+        VerifiedAssertion verified = verifier().verify(
+                signedResponse(response -> response.getAssertions().get(0).getAttributeStatements().add(
+                        attributeStatement("email", untypedValue("ada@corp.example")))), expectations());
+
+        assertThat(verified.attributes()).containsEntry("email", "ada@corp.example");
+    }
+
+    @Test
+    void aTypedAttributeValueIsReadToo() {
+        VerifiedAssertion verified = verifier().verify(
+                signedResponse(response -> response.getAssertions().get(0).getAttributeStatements().add(
+                        attributeStatement("dept", typedValue("engineering")))), expectations());
+
+        assertThat(verified.attributes()).containsEntry("dept", "engineering");
+    }
+
+    @Test
+    void surroundingWhitespaceIsNotPartOfTheValue() {
+        // Pretty-printed assertions are the norm, and an untrimmed value would name an account " ada@corp "
+        // — a row every downstream SP reads as the same person as the trimmed one.
+        VerifiedAssertion verified = verifier().verify(
+                signedResponse(response -> response.getAssertions().get(0).getAttributeStatements().add(
+                        attributeStatement("email", untypedValue("\n  ada@corp.example  ")))), expectations());
+
+        assertThat(verified.attributes()).containsEntry("email", "ada@corp.example");
+    }
+
+    @Test
+    void anAttributeWithNoUsableValueIsOmittedRatherThanMappedToBlank() {
+        VerifiedAssertion verified = verifier().verify(
+                signedResponse(response -> response.getAssertions().get(0).getAttributeStatements().add(
+                        attributeStatement("email", untypedValue("   ")))), expectations());
+
+        assertThat(verified.attributes()).doesNotContainKey("email");
+    }
+
+    private AttributeStatement attributeStatement(String name, XMLObject value) {
+        Attribute attribute = SamlObjects.build(Attribute.DEFAULT_ELEMENT_NAME);
+        attribute.setName(name);
+        attribute.getAttributeValues().add(value);
+        AttributeStatement statement = SamlObjects.build(AttributeStatement.DEFAULT_ELEMENT_NAME);
+        statement.getAttributes().add(attribute);
+        return statement;
+    }
+
+    /** An AttributeValue carrying no xsi:type — the common shape on the wire. */
+    private XSAny untypedValue(String text) {
+        XSAny value = (XSAny) XMLObjectProviderRegistrySupport.getBuilderFactory()
+                .getBuilder(XSAny.TYPE_NAME).buildObject(AttributeValue.DEFAULT_ELEMENT_NAME);
+        value.setTextContent(text);
+        return value;
+    }
+
+    private XSString typedValue(String text) {
+        XSString value = (XSString) XMLObjectProviderRegistrySupport.getBuilderFactory()
+                .getBuilder(XSString.TYPE_NAME)
+                .buildObject(AttributeValue.DEFAULT_ELEMENT_NAME, XSString.TYPE_NAME);
+        value.setValue(text);
+        return value;
     }
 
     private Assertion assertion(Consumer<Assertion> tweak) {

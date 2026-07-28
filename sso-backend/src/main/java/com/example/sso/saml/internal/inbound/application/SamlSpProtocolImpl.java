@@ -23,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 import net.shibboleth.shared.xml.SerializeSupport;
 import org.opensaml.core.xml.XMLObject;
 import org.opensaml.core.xml.io.MarshallingException;
+import org.opensaml.core.xml.schema.XSAny;
 import org.opensaml.core.xml.schema.XSString;
 import org.opensaml.saml.common.SAMLVersion;
 import org.opensaml.saml.common.xml.SAMLConstants;
@@ -260,10 +261,23 @@ class SamlSpProtocolImpl implements SamlSpProtocol {
         return Map.copyOf(attributes);
     }
 
+    /**
+     * Both shapes an AttributeValue arrives in. OpenSAML unmarshals it as {@link XSString} only when the element
+     * carries {@code xsi:type="xs:string"}; without one — which is what Shibboleth, ADFS and Entra actually send
+     * — it is an {@link XSAny}, and reading only the typed shape silently drops EVERY attribute. That is how it
+     * shipped, invisible to tests that hand the caller a ready-made map instead of parsing XML.
+     */
     private Optional<String> firstStringValue(Attribute attribute) {
         for (XMLObject value : attribute.getAttributeValues()) {
-            if (value instanceof XSString text && StringUtils.hasText(text.getValue())) {
-                return Optional.of(text.getValue());
+            String text = switch (value) {
+                case XSString typed -> typed.getValue();
+                // The element's OWN text, not its descendants': getTextContent would splice in the content of
+                // any child an upstream nested here, which is a value the tenant never sees in the assertion.
+                case XSAny untyped -> untyped.getTextContent();
+                default -> null;
+            };
+            if (StringUtils.hasText(text)) {
+                return Optional.of(text.trim());
             }
         }
         return Optional.empty();
