@@ -33,4 +33,18 @@ public interface AttributeValueGrantGuard {
      * <p>Fails CLOSED: an unresolved actor may write none of them.
      */
     Set<String> keysBeyondAuthority(Collection<String> attrKeys);
+
+    /**
+     * The subset of {@code attrKeys} the acting administrator must not REMOVE, because dropping the group or
+     * role a mapping rule confers on their bearer would also drop a DENY riding on it.
+     *
+     * <p>This is the exception to "removal only de-escalates". That premise is true of grants — mapping-rule
+     * operators are positive-only, so taking a value away can only retract one — but a deny has the opposite
+     * polarity: it SUBTRACTS from whoever holds the membership, so losing the membership hands the permission
+     * back. Deleting the attribute is then a way to lift a deny without going through the lift authority, and
+     * it works on the actor's own account, where lifting is refused outright.
+     *
+     * <p>Fails CLOSED, like its sibling.
+     */
+    Set<String> keysWhoseRemovalLiftsDeny(Collection<String> attrKeys);
 }

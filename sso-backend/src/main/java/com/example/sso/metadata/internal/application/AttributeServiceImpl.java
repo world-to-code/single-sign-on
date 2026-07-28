@@ -233,6 +233,7 @@ class AttributeServiceImpl implements AttributeService {
         keys.forEach(key -> requireLocallyOwned(kind, key));
         List<String> distinct = keys.stream().distinct().toList();
         requireMayDecidePolicy(kind, distinct);
+        requireRemovalLiftsNoDeny(kind, distinct);
         UUID tier = tierGuard.currentTier();
         // One statement, and it returns the row count. A derived delete would SELECT every row and issue a
         // DELETE each; the count is what matters more, because this retirement can retract an ABAC-granted
@@ -245,6 +246,28 @@ class AttributeServiceImpl implements AttributeService {
             // and doing that once per key would repeat the same work for one logical change.
             events.publishEvent(new EntityAttributeChangedEvent(kind, entityId, tier));
         }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Set<String> keysNotRemovable(EntityKind kind, Collection<String> keys) {
+        if (keys == null || keys.isEmpty()) {
+            return Set.of();
+        }
+        List<String> distinct = keys.stream().distinct().toList();
+        Set<String> refused = new LinkedHashSet<>();
+        // Deliberately the same three questions removeAll asks, in the same order, so the disclosure and the
+        // write cannot answer differently.
+        for (String key : distinct) {
+            if (isSourceOwned(kind, key) || (kind == EntityKind.GROUP && isSourceOwned(EntityKind.USER, key))) {
+                refused.add(key);
+            }
+        }
+        if (kind == EntityKind.USER || kind == EntityKind.GROUP) {
+            refused.addAll(policyGuard.keysBeyondAuthority(distinct));
+            refused.addAll(grantGuard.getObject().keysWhoseRemovalLiftsDeny(distinct));
+        }
+        return refused;
     }
 
     @Override
@@ -346,6 +369,22 @@ class AttributeServiceImpl implements AttributeService {
     private void requireRemovable(EntityKind kind, String key) {
         requireLocallyOwned(kind, key);
         requireMayDecidePolicy(kind, Set.of(key));
+        requireRemovalLiftsNoDeny(kind, Set.of(key));
+    }
+
+    /**
+     * The one case where removal does NOT de-escalate: a deny riding on the group or role a mapping rule
+     * confers. Losing the membership loses the deny, so deleting the attribute hands the withheld permission
+     * back — without the lift authority, and on the actor's own account, where lifting is refused outright.
+     */
+    private void requireRemovalLiftsNoDeny(EntityKind kind, Collection<String> keys) {
+        if (kind != EntityKind.USER && kind != EntityKind.GROUP) {
+            return;
+        }
+        Set<String> beyond = grantGuard.getObject().keysWhoseRemovalLiftsDeny(keys);
+        if (!beyond.isEmpty()) {
+            throw ForbiddenException.of("metadata.attribute.denyGoverned", beyond.iterator().next());
+        }
     }
 
     /**
@@ -400,11 +439,15 @@ class AttributeServiceImpl implements AttributeService {
     }
 
     private void refuseIfSourceOwned(EntityKind kind, String key) {
-        definitions.definitionOf(kind, key)
+        if (isSourceOwned(kind, key)) {
+            throw ConflictException.of("attribute.directoryOwned", key);
+        }
+    }
+
+    private boolean isSourceOwned(EntityKind kind, String key) {
+        return definitions.definitionOf(kind, key)
                 .filter(definition -> !definition.locallyEditable())
-                .ifPresent(definition -> {
-                    throw ConflictException.of("attribute.directoryOwned", key);
-                });
+                .isPresent();
     }
 
     /**

@@ -27,4 +27,17 @@ public interface DenyService {
     /** The org's OWN denies (id + pattern) — org-wide withholdings the console lists and lifts. Excludes the
      *  platform veto (org-null), which is managed at the platform tier, not on a tenant. */
     List<DenyRow> orgDenies(UUID orgId);
+
+    /**
+     * Whether the acting administrator could lift EVERY deny authored on this role or group — asked by callers
+     * that are about to drop somebody's membership of it rather than lift anything.
+     *
+     * <p>Dropping a membership removes the denies that ride on it just as surely as lifting them does, so a
+     * route that can do that without this check is a way around {@link DenyAuthority#mayLift}. Answered here
+     * because the answer needs the author provenance ({@code createdBy}, the stamped apex role) that the store
+     * holds and {@link DenyRow} deliberately does not carry.
+     *
+     * <p>True when the subject carries no denies at all: there is nothing to lift, so nothing to authorize.
+     */
+    boolean mayLiftEveryDenyOn(DenySubjectKind kind, UUID subjectId);
 }

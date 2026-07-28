@@ -25,6 +25,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -62,6 +63,7 @@ class AttributeOwnershipTest {
         service = new AttributeServiceImpl(
                 attributes, definitions, tierGuard, events, providerOf(grantGuard), policyGuard);
         lenient().when(grantGuard.keysBeyondAuthority(any())).thenReturn(Set.of());
+        lenient().when(grantGuard.keysWhoseRemovalLiftsDeny(any())).thenReturn(Set.of());
         lenient().when(policyGuard.keysBeyondAuthority(any())).thenReturn(Set.of());
         lenient().when(tierGuard.currentTier()).thenReturn(ORG);
         lenient().when(attributes.findByEntityKindAndEntityIdAndAttrKeyAndOrgId(any(), any(), any(), any()))
@@ -392,5 +394,68 @@ class AttributeOwnershipTest {
                 Map.of("team", List.of("platform"), "level", List.of("senior")));
 
         verify(grantGuard, times(1)).keysBeyondAuthority(Set.of("team", "level"));
+    }
+
+    /**
+     * The exception to "removal only de-escalates". A mapping rule confers a group on whoever carries the key;
+     * a deny on that group SUBTRACTS from its members. Deleting the key drops the membership and the deny with
+     * it, handing the withheld permission back — a lift, performed by someone the lift authority refuses, and
+     * available on their own account where lifting is refused outright.
+     */
+    @Test
+    void refusesToRemoveAKeyWhoseLossWouldLiftADenyTheActorCannotLift() {
+        when(grantGuard.keysWhoseRemovalLiftsDeny(Set.of("employment"))).thenReturn(Set.of("employment"));
+        lenient().when(definitions.definitionOf(EntityKind.USER, "employment")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.remove(EntityKind.USER, ENTITY, "employment"))
+                .isInstanceOf(ForbiddenException.class);
+
+        verify(attributes, never()).deleteAll(any());
+    }
+
+    /** And in bulk: the profile move deletes a whole key SET, so the ceiling has to hold over the set too. */
+    @Test
+    void refusesAWholeRemovalSetWhenOneKeyOfItWouldLiftADeny() {
+        when(grantGuard.keysWhoseRemovalLiftsDeny(List.of("team", "employment")))
+                .thenReturn(Set.of("employment"));
+
+        assertThatThrownBy(() -> service.removeAll(EntityKind.USER, ENTITY, List.of("team", "employment")))
+                .isInstanceOf(ForbiddenException.class);
+
+        verify(attributes, never()).deleteKeysInOrg(any(), any(), any(), any());
+    }
+
+    /** A key no rule reads still removes freely — the ceiling is about what the loss would confer back. */
+    @Test
+    void aKeyWhoseLossLiftsNothingIsStillRemovable() {
+        when(grantGuard.keysWhoseRemovalLiftsDeny(List.of("team"))).thenReturn(Set.of());
+
+        assertThatCode(() -> service.removeAll(EntityKind.USER, ENTITY, List.of("team")))
+                .doesNotThrowAnyException();
+    }
+
+    /**
+     * The disclosure query answers with every reason the write would refuse, not just the first one. Preview
+     * was wrong twice by enumerating reasons by hand; this is the single list both sides read.
+     */
+    @Test
+    void theRefusalQueryNamesEveryReasonTheWriteWouldRefuse() {
+        defined("syncedTeam", AttributeSource.DIRECTORY);
+        when(policyGuard.keysBeyondAuthority(List.of("syncedTeam", "tier", "employment")))
+                .thenReturn(Set.of("tier"));
+        when(grantGuard.keysWhoseRemovalLiftsDeny(List.of("syncedTeam", "tier", "employment")))
+                .thenReturn(Set.of("employment"));
+
+        assertThat(service.keysNotRemovable(EntityKind.USER, List.of("syncedTeam", "tier", "employment")))
+                .containsExactlyInAnyOrder("syncedTeam", "tier", "employment");
+    }
+
+    /** And it writes nothing — it is asked before the administrator has confirmed anything. */
+    @Test
+    void theRefusalQueryDeletesNothing() {
+        service.keysNotRemovable(EntityKind.USER, List.of("team"));
+
+        verify(attributes, never()).deleteAll(any());
+        verify(attributes, never()).deleteKeysInOrg(any(), any(), any(), any());
     }
 }

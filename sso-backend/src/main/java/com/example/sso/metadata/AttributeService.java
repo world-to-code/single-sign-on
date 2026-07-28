@@ -124,4 +124,18 @@ public interface AttributeService {
      * in the ACTING TIER only — the CONTAINS cohort, a trigram-indexed substring scan.
      */
     Set<String> entityIdsWithValueContainingInTier(EntityKind kind, String key, String substring);
+
+    /**
+     * Which of {@code keys} the acting administrator may NOT remove from this kind of entity, and why they
+     * would be refused — asked by a caller that has to DISCLOSE the cost of a deletion before performing it.
+     *
+     * <p>It exists so that "everything the write refuses, the preview reports" is one mechanism instead of a
+     * list somebody has to remember to extend. That list was already wrong twice: a directory-owned key was
+     * announced as simply going, and an externally-provisioned user was shown a clean move — each discovered
+     * when the confirm failed on something the preview had not mentioned. Adding a third reason (a deny that
+     * removal would lift) without this would have been the same bug a third time.
+     *
+     * <p>Writes nothing.
+     */
+    Set<String> keysNotRemovable(EntityKind kind, Collection<String> keys);
 }

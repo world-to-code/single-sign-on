@@ -111,6 +111,15 @@ class DenyServiceImpl implements DenyService {
 
     @Override
     @Transactional(readOnly = true)
+    public boolean mayLiftEveryDenyOn(DenySubjectKind kind, UUID subjectId) {
+        DenySubjectType type = kind == DenySubjectKind.ROLE ? DenySubjectType.ROLE : DenySubjectType.GROUP;
+        return principalDenies.findBySubjectTypeAndSubjectId(type, subjectId).stream()
+                .allMatch(deny -> denyAuthority.mayLift(kind, subjectId, deny.getPattern(),
+                        deny.getCreatedBy(), deny.getWriterApexRoleId()));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<DenyRow> orgDenies(UUID orgId) {
         return orgDenies.findByOrgId(orgId).stream()
                 .map(deny -> new DenyRow(deny.getId(), deny.getPattern())).toList();
