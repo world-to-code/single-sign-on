@@ -51,6 +51,7 @@ class MappingRuleServiceImpl implements MappingRuleService {
     private final MappingRuleConditionRepository conditions;
     private final MappingRuleMembershipRepository memberships;
     private final MappingRuleEvaluator evaluator;
+    private final MappingCohortResolver cohorts;
     private final List<MappingTargetApplier> appliers;
     private final OrgTierGuard tierGuard;
     private final AuditService audit;
@@ -117,7 +118,7 @@ class MappingRuleServiceImpl implements MappingRuleService {
     @Transactional(readOnly = true)
     public Set<UUID> preview(MappingRuleSpec spec) {
         requireMappableConditions(spec.conditions());
-        return evaluator.matchingUsers(spec.conditions());
+        return cohorts.matchingUsers(spec.conditions());
     }
 
     /** A rule needs at least one condition, and each targets a POSITIVE, index-able cohort only: EQUALS or EXISTS

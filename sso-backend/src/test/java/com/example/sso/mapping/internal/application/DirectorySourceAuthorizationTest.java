@@ -7,7 +7,6 @@ import com.example.sso.mapping.MappingCondition;
 import com.example.sso.mapping.MappingTargetAuthority;
 import com.example.sso.mapping.MappingTargetKind;
 import com.example.sso.mapping.internal.domain.MappingRule;
-import com.example.sso.mapping.internal.domain.MappingRuleCondition;
 import com.example.sso.mapping.internal.domain.MappingRuleConditionRepository;
 import com.example.sso.mapping.internal.domain.MappingRuleMembership;
 import com.example.sso.mapping.internal.domain.MappingRuleMembershipRepository;
@@ -69,11 +68,10 @@ class DirectorySourceAuthorizationTest {
     private static final UUID CONFIGURATOR = UUID.randomUUID();
 
     @Mock private MappingRuleRepository rules;
-    @Mock private MappingRuleConditionRepository conditions;
     @Mock private AttributeDefinitionService definitions;
     @Mock private AttributeSourceAuthority sources;
     @Mock private MappingRuleMembershipRepository memberships;
-    @Mock private AttributeService attributes;
+    @Mock private MappingCohortResolver cohorts;
     @Mock private OrgTierGuard tierGuard;
     @Mock private MappingTargetAuthority targetAuthority;
     @Mock private UserGroupService userGroups;
@@ -87,7 +85,7 @@ class DirectorySourceAuthorizationTest {
     @BeforeEach
     void setUp() {
         lenient().when(roleApplier.kind()).thenReturn(MappingTargetKind.ROLE);
-        evaluator = new MappingRuleEvaluator(rules, conditions, definitions, sources, memberships, attributes,
+        evaluator = new MappingRuleEvaluator(rules, cohorts, definitions, sources, memberships,
                 List.of(roleApplier), tierGuard, targetAuthority, userGroups, lastAdminInvariant, trail);
         rule = MappingRule.of(MappingTargetKind.ROLE, TARGET_ROLE, ORG, UUID.randomUUID());
         ReflectionTestUtils.setField(rule, "id", UUID.randomUUID());
@@ -97,13 +95,13 @@ class DirectorySourceAuthorizationTest {
         // The rule's own author is beyond reproach; only the directory's provenance is in question here.
         lenient().when(targetAuthority.authorMayAssign(eq(rule.getCreatedBy()), any(), any())).thenReturn(true);
         // Its condition reads an attribute a DIRECTORY owns — the whole premise of this control.
-        lenient().when(conditions.findByRuleId(rule.getId())).thenReturn(List.of(condition("department")));
+        lenient().when(cohorts.conditionsOf(rule.getId())).thenReturn(List.of(condition("department")));
         lenient().when(definitions.definitionOf(eq(EntityKind.USER), anyString()))
                 .thenReturn(Optional.of(directoryOwned()));
     }
 
-    private MappingRuleCondition condition(String key) {
-        return MappingRuleCondition.of(rule.getId(), new MappingCondition(key, AttributeOperator.EQUALS, "IT-Admins", List.of()), ORG);
+    private MappingCondition condition(String key) {
+        return new MappingCondition(key, AttributeOperator.EQUALS, "IT-Admins", List.of());
     }
 
     private AttributeDefinition directoryOwned() {

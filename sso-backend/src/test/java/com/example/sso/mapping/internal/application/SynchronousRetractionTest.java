@@ -21,6 +21,8 @@ import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.deny.LastAdminInvariant;
 import com.example.sso.user.group.UserGroupService;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -60,11 +62,10 @@ class SynchronousRetractionTest {
     private static final UUID ADMIN_ROLE = UUID.randomUUID();
 
     @Mock private MappingRuleRepository rules;
-    @Mock private MappingRuleConditionRepository conditions;
     @Mock private AttributeDefinitionService definitions;
     @Mock private AttributeSourceAuthority sources;
     @Mock private MappingRuleMembershipRepository memberships;
-    @Mock private AttributeService attributes;
+    @Mock private MappingCohortResolver cohorts;
     @Mock private OrgTierGuard tierGuard;
     @Mock private MappingTargetAuthority targetAuthority;
     @Mock private UserGroupService userGroups;
@@ -81,7 +82,7 @@ class SynchronousRetractionTest {
     void setUp() {
         lenient().when(groupApplier.kind()).thenReturn(MappingTargetKind.GROUP);
         lenient().when(roleApplier.kind()).thenReturn(MappingTargetKind.ROLE);
-        evaluator = new MappingRuleEvaluator(rules, conditions, definitions, sources, memberships, attributes,
+        evaluator = new MappingRuleEvaluator(rules, cohorts, definitions, sources, memberships,
                 List.of(groupApplier, roleApplier), tierGuard, targetAuthority, userGroups,
                 lastAdminInvariant, trail);
         lenient().when(tierGuard.currentTier()).thenReturn(ORG);
@@ -101,11 +102,9 @@ class SynchronousRetractionTest {
     @Test
     void aRetractionThatShrinksInheritedAttributesRetractsWhatDependedOnThem() {
         claims(groupRule, roleRule);
-        // Round 1 sees dept=eng (inherited from the group); round 2, after the group goes, sees nothing.
-        when(attributes.attributesOfInTier(EntityKind.USER, USER.toString())).thenReturn(List.of());
-        when(userGroups.groupIdsOf(USER)).thenReturn(Set.of(TEAM_GROUP), Set.of());
-        when(attributes.unionAttributesOfInTier(EntityKind.GROUP, List.of(TEAM_GROUP.toString())))
-                .thenReturn(List.of(new Attribute("dept", "eng")));
+        // Round 1 still sees dept=eng, inherited FROM the group; round 2, after the group goes, sees nothing.
+        // Two consecutive answers, because the shrink is the whole point — a single read cannot show it.
+        when(cohorts.effectiveAttributes(USER)).thenReturn(List.of(new Attribute("dept", "eng")), List.of());
 
         evaluator.retractStaleClaims(USER);
 
@@ -117,13 +116,12 @@ class SynchronousRetractionTest {
     @Test
     void itReadsOnlyTheRulesThatClaimTheUserAndNeverMaterializes() {
         claims(groupRule);
-        when(attributes.attributesOfInTier(EntityKind.USER, USER.toString())).thenReturn(List.of());
-        when(userGroups.groupIdsOf(USER)).thenReturn(Set.of());
+        when(cohorts.effectiveAttributes(USER)).thenReturn(List.of());
 
         evaluator.retractStaleClaims(USER);
 
         verify(rules, never()).findAll();
-        verify(conditions, never()).findAll();
+        verify(cohorts, never()).allConditionsGroupedByRule(); // the async pass's tier-wide read
         verify(rules, never()).findByIdForUpdate(any());        // the materialize branch's pessimistic lock
         verify(memberships, never()).insertClaimIfAbsent(any(), any(), any(), any());
     }
@@ -137,7 +135,7 @@ class SynchronousRetractionTest {
 
         verify(rules, never()).findAllById(any());
         verify(lastAdminInvariant, never()).retractionWouldNeedGuarding(any(), any());
-        verify(attributes, never()).attributesOfInTier(any(), anyString());
+        verify(cohorts, never()).effectiveAttributes(any());
     }
 
     /**
@@ -149,8 +147,7 @@ class SynchronousRetractionTest {
     @Test
     void aRefusalIsReportedSeparatelyFromTheRetractionItUndid() {
         claims(roleRule);
-        when(attributes.attributesOfInTier(EntityKind.USER, USER.toString())).thenReturn(List.of());
-        when(userGroups.groupIdsOf(USER)).thenReturn(Set.of());
+        when(cohorts.effectiveAttributes(USER)).thenReturn(List.of());
         when(lastAdminInvariant.retractionWouldNeedGuarding(any(), any())).thenReturn(true);
         ConflictException refused = ConflictException.of("admin.lastAdmin");
         doThrow(refused).when(lastAdminInvariant).ensureRetractionRetainsAdmin(ORG);
@@ -173,18 +170,26 @@ class SynchronousRetractionTest {
         }
         when(memberships.findByUserId(USER)).thenReturn(rows);
         when(rules.findAllById(any())).thenReturn(List.of(claimed));
-        when(conditions.findByRuleIdIn(any())).thenReturn(conditionsOf(claimed));
+        when(cohorts.conditionsGroupedByRule(any())).thenReturn(conditionsOf(claimed));
+        // The resolver's own matchesAll IS this predicate; delegating keeps the mock from asserting a matching
+        // rule matches, which would make every retraction below true by stub rather than by condition.
+        lenient().when(cohorts.matchesAll(any(), any())).thenAnswer(invocation -> {
+            List<MappingCondition> conditions = invocation.getArgument(0);
+            List<Attribute> held = invocation.getArgument(1);
+            return !conditions.isEmpty()
+                    && conditions.stream().allMatch(condition -> condition.toPredicate().matches(held));
+        });
     }
 
-    private List<MappingRuleCondition> conditionsOf(MappingRule... claimed) {
-        List<MappingRuleCondition> all = new ArrayList<>();
+    /** Each rule's condition, keyed by rule: the GROUP rule reads level=staff, the ROLE rule reads dept=eng. */
+    private Map<UUID, List<MappingCondition>> conditionsOf(MappingRule... claimed) {
+        Map<UUID, List<MappingCondition>> byRule = new HashMap<>();
         for (MappingRule rule : claimed) {
-            String key = rule.getThenKind() == MappingTargetKind.GROUP ? "level" : "dept";
-            String value = rule.getThenKind() == MappingTargetKind.GROUP ? "staff" : "eng";
-            all.add(MappingRuleCondition.of(rule.getId(),
-                    new MappingCondition(key, AttributeOperator.EQUALS, value, List.of()), ORG));
+            boolean group = rule.getThenKind() == MappingTargetKind.GROUP;
+            byRule.put(rule.getId(), List.of(new MappingCondition(group ? "level" : "dept",
+                    AttributeOperator.EQUALS, group ? "staff" : "eng", List.of())));
         }
-        return all;
+        return byRule;
     }
 
     private MappingRule ruleOf(MappingTargetKind kind, UUID targetId) {

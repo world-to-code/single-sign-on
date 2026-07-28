@@ -4,21 +4,18 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.mapping.MappingCondition;
 import com.example.sso.mapping.MappingTargetAuthority;
 import com.example.sso.mapping.internal.domain.MappingRule;
-import com.example.sso.mapping.internal.domain.MappingRuleCondition;
-import com.example.sso.mapping.internal.domain.MappingRuleConditionRepository;
 import com.example.sso.mapping.internal.domain.MappingRuleMembership;
 import com.example.sso.mapping.internal.domain.MappingRuleMembershipRepository;
 import com.example.sso.mapping.internal.domain.MappingRuleRepository;
 import com.example.sso.metadata.Attribute;
-import com.example.sso.metadata.AttributeService;
 import com.example.sso.mapping.MappingTargetKind;
 import com.example.sso.metadata.AttributeDefinitionService;
 import com.example.sso.metadata.AttributeSourceAuthority;
 import com.example.sso.metadata.AttributeSourceAuthors;
-import com.example.sso.metadata.EntityKind;
 import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.deny.LastAdminInvariant;
 import com.example.sso.user.group.UserGroupService;
+import com.example.sso.metadata.EntityKind;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -50,11 +47,10 @@ import org.springframework.transaction.annotation.Transactional;
 class MappingRuleEvaluator {
 
     private final MappingRuleRepository rules;
-    private final MappingRuleConditionRepository conditions;
+    private final MappingCohortResolver cohorts;
     private final AttributeDefinitionService definitions;
     private final AttributeSourceAuthority sources;
     private final MappingRuleMembershipRepository memberships;
-    private final AttributeService attributes;
     private final List<MappingTargetApplier> appliers;
     private final OrgTierGuard tierGuard;
     private final MappingTargetAuthority targetAuthority;
@@ -66,7 +62,7 @@ class MappingRuleEvaluator {
     @Transactional
     public void reevaluateRule(MappingRule rule) {
         boolean guarding = retractionNeedsGuarding(privilegeTargetsOf(List.of(rule))); // BEFORE any mutation
-        Set<UUID> matching = matchingUsers(conditionsOf(rule.getId()));
+        Set<UUID> matching = cohorts.matchingUsers(cohorts.conditionsOf(rule.getId()));
         Set<UUID> claimed = new HashSet<>();
         memberships.findByRuleId(rule.getId()).forEach(m -> claimed.add(m.getUserId()));
 
@@ -85,13 +81,11 @@ class MappingRuleEvaluator {
         // Evaluate against the user's OWN attributes UNIONED with those inherited from their groups, all own-tier
         // only (never inherited globals) — so this async path agrees with the sync cohort below, and a
         // platform-set global attribute never drives a tenant rule.
-        List<Attribute> userAttributes = effectiveAttributes(userId);
+        List<Attribute> userAttributes = cohorts.effectiveAttributes(userId);
         Set<UUID> claimedRuleIds = memberships.findByUserId(userId).stream()
                 .map(MappingRuleMembership::getRuleId).collect(Collectors.toSet()); // the user's claims in one query
         // Every tier rule's conditions in ONE query, grouped by rule — avoids a per-rule fetch in the loop below.
-        Map<UUID, List<MappingCondition>> conditionsByRule = conditions.findAll().stream().collect(
-                Collectors.groupingBy(MappingRuleCondition::getRuleId,
-                        Collectors.mapping(MappingRuleCondition::toValue, Collectors.toList())));
+        Map<UUID, List<MappingCondition>> conditionsByRule = cohorts.allConditionsGroupedByRule();
         // A user is governed only by rules in its OWN tier — a same-tier group is its only target. Stable id
         // order so concurrent re-evaluations acquire the per-rule locks (in materialize) in the same sequence —
         // a lock-order cycle can't form, only a clean wait the loser's retry/sweep re-drives.
@@ -104,7 +98,7 @@ class MappingRuleEvaluator {
 
         Set<UUID> retracted = new HashSet<>();
         for (MappingRule rule : tierRules) {
-            boolean matches = matchesAll(conditionsByRule.getOrDefault(rule.getId(), List.of()), userAttributes);
+            boolean matches = cohorts.matchesAll(conditionsByRule.getOrDefault(rule.getId(), List.of()), userAttributes);
             UUID went = reconcile(rule, userId, matches, claimedRuleIds.contains(rule.getId()));
             if (went != null) {
                 retracted.add(went);
@@ -142,11 +136,11 @@ class MappingRuleEvaluator {
         boolean inheritedAttributesShrank = true;
         while (inheritedAttributesShrank && !claimed.isEmpty()) {
             inheritedAttributesShrank = false;
-            List<Attribute> effective = effectiveAttributes(userId); // re-read: a lost group lends less
-            Map<UUID, List<MappingCondition>> byRule = conditionsGroupedByRule(claimed);
+            List<Attribute> effective = cohorts.effectiveAttributes(userId); // re-read: a lost group lends less
+            Map<UUID, List<MappingCondition>> byRule = cohorts.conditionsGroupedByRule(claimed);
             List<MappingRule> stillMatching = new ArrayList<>();
             for (MappingRule rule : claimed) {
-                if (matchesAll(byRule.getOrDefault(rule.getId(), List.of()), effective)) {
+                if (cohorts.matchesAll(byRule.getOrDefault(rule.getId(), List.of()), effective)) {
                     stillMatching.add(rule);
                     continue;
                 }
@@ -177,20 +171,6 @@ class MappingRuleEvaluator {
                 .toList();
     }
 
-    /** Those rules' conditions in ONE query, grouped by rule. */
-    private Map<UUID, List<MappingCondition>> conditionsGroupedByRule(Collection<MappingRule> ruleSet) {
-        return conditions.findByRuleIdIn(ruleSet.stream().map(MappingRule::getId).toList()).stream()
-                .collect(Collectors.groupingBy(MappingRuleCondition::getRuleId,
-                        Collectors.mapping(MappingRuleCondition::toValue, Collectors.toList())));
-    }
-
-    /** AND semantics: the user satisfies EVERY condition. An empty condition list never matches (a rule always
-     *  has ≥1; this guards the vacuous all-match). */
-    private boolean matchesAll(List<MappingCondition> ruleConditions, List<Attribute> userAttributes) {
-        return !ruleConditions.isEmpty()
-                && ruleConditions.stream().allMatch(condition -> condition.toPredicate().matches(userAttributes));
-    }
-
     /** The single add/retract decision, shared by both re-evaluation entry points so it can never drift.
      *  Answers whether a membership actually went, so the caller can recount the tier's admins once. */
     private UUID reconcile(MappingRule rule, UUID userId, boolean matches, boolean claimed) {
@@ -210,66 +190,6 @@ class MappingRuleEvaluator {
                 .map(m -> retract(rule, m.getUserId()))
                 .filter(Objects::nonNull).collect(Collectors.toSet());
         assertTierKeepsAnAdmin(guarding, retracted);
-    }
-
-    /** The users satisfying ALL conditions in the acting tier ONLY (own users, never inherited global ones — a
-     *  rule adds to a same-tier group, so a cross-tier user could never be a member): the INTERSECTION of each
-     *  condition's cohort. Dry run (preview) + reconcile source. An empty condition list matches nobody. */
-    Set<UUID> matchingUsers(List<MappingCondition> ruleConditions) {
-        Set<UUID> cohort = null;
-        for (MappingCondition condition : ruleConditions) {
-            Set<UUID> conditionCohort = cohortOf(condition);
-            cohort = cohort == null ? conditionCohort : intersect(cohort, conditionCohort);
-            if (cohort.isEmpty()) {
-                break; // AND: once a condition contributes nobody, the whole rule matches nobody
-            }
-        }
-        return cohort == null ? Set.of() : cohort;
-    }
-
-    /** The users one condition matches in the acting tier: those carrying the attribute DIRECTLY (USER entities)
-     *  UNIONED with the members of any GROUP carrying it (inheritance). Both sides are the same tier-scoped
-     *  entity query, just on a different kind, so global tags never leak in and members stay same-org. */
-    private Set<UUID> cohortOf(MappingCondition condition) {
-        Set<UUID> cohort = new HashSet<>(toUserIds(entityIdsFor(condition, EntityKind.USER)));
-        Set<String> matchingGroupIds = entityIdsFor(condition, EntityKind.GROUP);
-        if (!matchingGroupIds.isEmpty()) {
-            cohort.addAll(userGroups.memberIdsOf(matchingGroupIds.stream().map(UUID::fromString).toList()));
-        }
-        return cohort;
-    }
-
-    /** The ids of the entities of {@code kind} the condition matches in the acting tier. Exhaustive over the
-     *  operator — a new one is a compile error, and the un-mappable NOT_* operators are a can't-happen invariant. */
-    private Set<String> entityIdsFor(MappingCondition condition, EntityKind kind) {
-        String key = condition.attrKey();
-        return switch (condition.attrOp()) {
-            case EQUALS -> attributes.entityIdsWithInTier(kind, key, condition.attrValue());
-            case EXISTS -> attributes.entityIdsWithKeyInTier(kind, key);
-            case IN -> attributes.entityIdsWithAnyValueInTier(kind, key, condition.attrValues());
-            case CONTAINS -> attributes.entityIdsWithValueContainingInTier(kind, key, condition.attrValue());
-            case NOT_EQUALS, NOT_EXISTS ->
-                    throw new IllegalStateException("un-mappable operator reached a cohort: " + condition.attrOp());
-        };
-    }
-
-    /** A user's OWN own-tier attributes unioned with those inherited from the groups they belong to. */
-    private List<Attribute> effectiveAttributes(UUID userId) {
-        List<Attribute> effective = new ArrayList<>(attributes.attributesOfInTier(EntityKind.USER, userId.toString()));
-        Set<UUID> groupIds = userGroups.groupIdsOf(userId);
-        if (!groupIds.isEmpty()) {
-            effective.addAll(attributes.unionAttributesOfInTier(EntityKind.GROUP,
-                    groupIds.stream().map(UUID::toString).toList()));
-        }
-        return effective;
-    }
-
-    private Set<UUID> intersect(Set<UUID> a, Set<UUID> b) {
-        return a.stream().filter(b::contains).collect(Collectors.toSet());
-    }
-
-    private List<MappingCondition> conditionsOf(UUID ruleId) {
-        return conditions.findByRuleId(ruleId).stream().map(MappingRuleCondition::toValue).toList();
     }
 
     private void materialize(MappingRule rule, UUID userId) {
@@ -349,7 +269,7 @@ class MappingRuleEvaluator {
         if (rule.getThenKind() == MappingTargetKind.RESOURCE_MEMBER) {
             return true;
         }
-        Set<String> directoryKeys = conditionsOf(rule.getId()).stream()
+        Set<String> directoryKeys = cohorts.conditionsOf(rule.getId()).stream()
                 .map(MappingCondition::attrKey)
                 .filter(key -> definitions.definitionOf(EntityKind.USER, key)
                         .filter(definition -> !definition.locallyEditable())
@@ -441,10 +361,6 @@ class MappingRuleEvaluator {
     private MappingTargetApplier applierFor(MappingRule rule) {
         return appliers.stream().filter(a -> a.kind() == rule.getThenKind()).findFirst()
                 .orElseThrow(() -> new IllegalStateException("no applier for mapping kind " + rule.getThenKind()));
-    }
-
-    private Set<UUID> toUserIds(Set<String> ids) {
-        return ids.stream().map(UUID::fromString).collect(Collectors.toSet());
     }
 
 }
