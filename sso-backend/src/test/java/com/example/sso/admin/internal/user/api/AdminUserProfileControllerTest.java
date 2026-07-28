@@ -162,7 +162,8 @@ class AdminUserProfileControllerTest {
      */
     @Test
     void theMoveIsStepUpGatedAndAuditedAgainstTheUserItTargets() throws Exception {
-        Method move = AdminUserProfileController.class.getMethod("switchProfile", UUID.class, SwitchProfileRequest.class);
+        Method move = AdminUserProfileController.class
+                .getMethod("switchProfile", UUID.class, SwitchProfileRequest.class);
 
         assertThat(move.isAnnotationPresent(RequireStepUp.class)).as("a profile move is step-up gated").isTrue();
         Audited audited = move.getAnnotation(Audited.class);

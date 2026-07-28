@@ -45,10 +45,11 @@ public class AdminUserProfileController {
     /**
      * What moving this user onto {@code profileId} would delete, and whether it can happen at all.
      *
-     * <p>Gated as the WRITE, not as a read: it enumerates the attribute keys the person carries outside the
-     * chosen profile, so under a read gate a delegate who may not move an administrator could still iterate
-     * the org's profiles and read that administrator's whole key set — and, since a blocked key can now mean
-     * "a deny you cannot lift rides on this", learn about denies on principals they cannot see.
+     * <p>Gated as the WRITE, not as a read, for one reason: {@code blockedKeys} answers "a deny you cannot lift
+     * rides on this", so under a read gate a delegate could enumerate denies on principals they may not
+     * administer. The key set itself is NOT what this closes — {@code GET /api/admin/metadata/users/{id}}
+     * already returns every attribute a person holds at {@code user:read}, and an earlier version of this note
+     * claimed otherwise.
      */
     @GetMapping("/{id}/profile/preview")
     @CanChangeUserProfile
@@ -101,8 +102,8 @@ public class AdminUserProfileController {
     // subject + subjectParam, not a bare type: AuditScope resolves a USER subject by parsing subjectId as a
     // UUID, so a row left at subject NONE is invisible to every scoped delegate reviewing this person.
     @Audited(value = AuditType.ATTRIBUTE_CHANGED, subject = AuditSubjectType.USER, subjectParam = "id")
-    public UserProfileAttributesView replaceProfileAttributes(@PathVariable UUID id,
-                                                              @Valid @RequestBody UserProfileAttributesRequest request) {
+    public UserProfileAttributesView replaceProfileAttributes(
+            @PathVariable UUID id, @Valid @RequestBody UserProfileAttributesRequest request) {
         profileAttributes.replace(id, request.values());
         return columnsOf(id);
     }

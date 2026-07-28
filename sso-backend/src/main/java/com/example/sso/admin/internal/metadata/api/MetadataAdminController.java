@@ -1,5 +1,6 @@
 package com.example.sso.admin.internal.metadata.api;
 
+import com.example.sso.admin.internal.shared.security.CanChangeUserProfile;
 import com.example.sso.admin.internal.shared.security.CanViewUser;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
@@ -55,19 +56,30 @@ public class MetadataAdminController {
         return attributes.attributesOf(EntityKind.USER, id.toString());
     }
 
+    /**
+     * Gated like a profile write, not like the additive PUT above: deleting the attribute a mapping rule reads
+     * retracts the role it conferred and terminates the person's sessions. That is the same demote-and-log-out
+     * primitive {@code DELETE /users/{id}/sessions} refuses to a delegate who may not administer an
+     * administrator, so refusing it there and allowing it here would just be the longer way round.
+     *
+     * <p>The additive {@code PUT} keeps the plain write gate deliberately: mapping-rule operators are
+     * positive-only and a policy binding tightens on presence, so adding a value can grant or constrain but
+     * never retract — there is no demotion for the extra conjunct to prevent.
+     */
     @Audited(value = AuditType.ATTRIBUTE_CHANGED, subject = AuditSubjectType.USER, subjectParam = "id")
     @DeleteMapping("/users/{id}/{key}")
     @RequireStepUp
-    @PreAuthorize("hasAuthority('" + Permissions.USER_UPDATE + "') and @adminAccessPolicy.canAccessUser(#id)")
+    @CanChangeUserProfile
     public List<Attribute> removeUserAttribute(@PathVariable UUID id, @PathVariable String key) {
         attributes.remove(EntityKind.USER, id.toString(), key);
         return attributes.attributesOf(EntityKind.USER, id.toString());
     }
 
+    /** Same reasoning as {@link #removeUserAttribute} — dropping one value can end a rule's match just as well. */
     @Audited(value = AuditType.ATTRIBUTE_CHANGED, subject = AuditSubjectType.USER, subjectParam = "id")
     @DeleteMapping(value = "/users/{id}/{key}", params = "value")
     @RequireStepUp
-    @PreAuthorize("hasAuthority('" + Permissions.USER_UPDATE + "') and @adminAccessPolicy.canAccessUser(#id)")
+    @CanChangeUserProfile
     public List<Attribute> removeUserAttributeValue(@PathVariable UUID id, @PathVariable String key,
             @RequestParam String value) {
         attributes.removeValue(EntityKind.USER, id.toString(), key, value);

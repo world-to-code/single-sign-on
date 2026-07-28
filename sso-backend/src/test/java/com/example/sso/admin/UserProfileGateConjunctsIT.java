@@ -1,5 +1,7 @@
 package com.example.sso.admin;
 
+import com.example.sso.admin.internal.metadata.api.AttributeRequest;
+import com.example.sso.admin.internal.metadata.api.MetadataAdminController;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.user.api.AdminUserProfileController;
 import com.example.sso.admin.internal.user.api.SwitchProfileRequest;
@@ -21,6 +23,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -43,6 +46,7 @@ class UserProfileGateConjunctsIT extends AbstractIntegrationTest {
     private static final UUID TARGET = UUID.randomUUID();
 
     @Autowired AdminUserProfileController controller;
+    @Autowired MetadataAdminController metadata;
     @MockitoBean AdminAccessPolicy policy;
 
     @BeforeEach
@@ -55,6 +59,10 @@ class UserProfileGateConjunctsIT extends AbstractIntegrationTest {
     @AfterEach
     void clear() {
         SecurityContextHolder.clearContext();
+        // The additive-write test below is a REAL write: only AdminAccessPolicy is stubbed, so the attribute
+        // lands in entity_attribute against a user id that does not exist. Left behind, "team=Platform" in the
+        // platform tier is a ghost member of every cohort query a sibling suite's mapping rule makes.
+        ownerJdbc().update("delete from entity_attribute where entity_id = ?", TARGET.toString());
     }
 
     @Test
@@ -101,9 +109,8 @@ class UserProfileGateConjunctsIT extends AbstractIntegrationTest {
     }
 
     /**
-     * And on the administrator-target rule, symmetrically with the move it previews. A delegate who may not
-     * move an administrator may not enumerate that administrator's attribute keys either — which is what the
-     * preview returns, one profile at a time.
+     * And on the administrator-target rule, symmetrically with the move it previews — because the preview
+     * reports which keys are BLOCKED, i.e. which principals carry a deny the caller could not lift.
      */
     @Test
     void aPreviewOfAnAdministratorIsRefusedToWhoeverMayNotMoveThem() {
@@ -111,6 +118,35 @@ class UserProfileGateConjunctsIT extends AbstractIntegrationTest {
         when(policy.canChangeProfile(any())).thenReturn(false);
 
         assertDenied(() -> controller.previewProfileSwitch(TARGET, UUID.randomUUID()));
+    }
+
+    /**
+     * The same rule on the per-key metadata routes, which reach the same primitive by a shorter path: deleting
+     * the attribute a mapping rule reads retracts the role it conferred and ends the person's sessions. Gating
+     * the profile write and leaving these open would have made the refusal a detour rather than a control.
+     */
+    @Test
+    void anAdministratorTargetIsRefusedTheMetadataDeletesToo() {
+        when(policy.canAccessUser(any())).thenReturn(true);
+        when(policy.canChangeProfile(any())).thenReturn(false);
+
+        assertDenied(() -> metadata.removeUserAttribute(TARGET, "team"));
+        assertDenied(() -> metadata.removeUserAttributeValue(TARGET, "team", "Platform"));
+    }
+
+    /**
+     * And the deliberate asymmetry: the additive PUT keeps the plain write gate. Mapping-rule operators are
+     * positive-only and a policy binding tightens on presence, so adding a value can grant or constrain but
+     * never retract — there is no demotion here for the administrator-target conjunct to prevent, and adding
+     * it would have refused a write that costs nobody anything.
+     */
+    @Test
+    void anAdditiveMetadataWriteIsNotHeldToTheAdministratorTargetRule() {
+        when(policy.canAccessUser(any())).thenReturn(true);
+        when(policy.canChangeProfile(any())).thenReturn(false);
+
+        assertThatCode(() -> metadata.addUserAttribute(TARGET, new AttributeRequest("team", "Platform")))
+                .doesNotThrowAnyException();
     }
 
     private UserProfileAttributesRequest columns() {
