@@ -6,11 +6,13 @@ import com.example.sso.mapping.MappingTarget;
 import com.example.sso.metadata.AttributeValueGrantGuard;
 import com.example.sso.user.deny.DenyService;
 import com.example.sso.user.deny.DenySubjectKind;
+import com.example.sso.user.group.UserGroupService;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -31,6 +33,7 @@ class AttributeValueGrantGuardAdapter implements AttributeValueGrantGuard {
     private final MappingRuleService rules;
     private final AdminAccessPolicy accessPolicy;
     private final DenyService denies;
+    private final UserGroupService userGroups;
 
     @Override
     public Set<String> keysBeyondAuthority(Collection<String> attrKeys) {
@@ -56,15 +59,32 @@ class AttributeValueGrantGuardAdapter implements AttributeValueGrantGuard {
     }
 
     /**
-     * Whether losing this target would only lose denies the actor could have lifted anyway. A ROLE and a GROUP
-     * both carry denies; a resource membership confers no authority and is already excluded upstream.
+     * Whether losing this target would only lose denies the actor could have lifted anyway.
+     *
+     * <p>A group is asked about its OWN denies and about the denies on every role it delegates — the grant
+     * side already treats a group as "a role grant wearing a different name" ({@code mayConferRolesOf}), and
+     * the deny side has to match. A deny resolves against the holder's APEX roles, so losing the group loses
+     * the delegated role and the deny keyed on it: asking only about the group let a removal lift a deny by
+     * one indirection, which is the escalation this ceiling exists to refuse.
+     *
+     * <p>The switch is exhaustive on purpose. A {@code default} branch here would return "removable" for a
+     * mapping target kind added later — and the upstream filter that excludes {@code RESOURCE_MEMBER} today
+     * would be the only thing standing in for this check. Fail to compile instead.
      */
     private boolean mayUnbind(MappingTarget target) {
         return switch (target.kind()) {
-            case GROUP -> denies.mayLiftEveryDenyOn(DenySubjectKind.GROUP, target.targetId());
+            case GROUP -> denies.mayLiftEveryDenyOn(DenySubjectKind.GROUP, target.targetId())
+                    && delegatedRolesCarryNoUnliftableDeny(target.targetId());
             case ROLE -> denies.mayLiftEveryDenyOn(DenySubjectKind.ROLE, target.targetId());
-            default -> true;
+            // A resource membership confers no authority, so no deny can ride on losing it. Excluded upstream
+            // as well; named here so a new kind cannot slip through as "removable".
+            case RESOURCE_MEMBER -> true;
         };
+    }
+
+    private boolean delegatedRolesCarryNoUnliftableDeny(UUID groupId) {
+        return userGroups.delegatedRoleIds(Set.of(groupId)).getOrDefault(groupId, Set.of()).stream()
+                .allMatch(roleId -> denies.mayLiftEveryDenyOn(DenySubjectKind.ROLE, roleId));
     }
 
     private Set<String> beyond(Map<String, Set<MappingTarget>> decided) {

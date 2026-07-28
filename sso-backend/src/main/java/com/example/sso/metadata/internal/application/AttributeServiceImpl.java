@@ -356,6 +356,10 @@ class AttributeServiceImpl implements AttributeService {
         requireLocallyOwned(kind, key);
         requireMayDecideGrants(kind, Set.of(key));
         requireMayDecidePolicy(kind, Set.of(key));
+        // A set() replaces the key's other values, so it DELETES as well as writes: a rule reading key=x is
+        // defeated by writing key=y just as surely as by removing the key, and the deny that rode on the
+        // membership goes with it. Same ceiling, or the removal guard has a way around it.
+        requireRemovalLiftsNoDeny(kind, Set.of(key));
     }
 
     /**
