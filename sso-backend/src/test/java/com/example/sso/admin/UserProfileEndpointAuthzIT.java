@@ -1,6 +1,6 @@
 package com.example.sso.admin;
 
-import com.example.sso.admin.internal.user.api.AdminUserController;
+import com.example.sso.admin.internal.user.api.AdminUserProfileController;
 import com.example.sso.admin.internal.user.api.SwitchProfileRequest;
 import com.example.sso.admin.internal.user.api.UserProfileAttributesRequest;
 import com.example.sso.shared.error.NotFoundException;
@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class UserProfileEndpointAuthzIT extends AbstractIntegrationTest {
 
     @Autowired
-    AdminUserController controller;
+    AdminUserProfileController controller;
 
     private final List<Runnable> cleanups = new ArrayList<>();
 

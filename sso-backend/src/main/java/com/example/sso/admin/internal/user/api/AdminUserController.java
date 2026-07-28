@@ -1,6 +1,5 @@
 package com.example.sso.admin.internal.user.api;
 
-import com.example.sso.admin.internal.shared.security.CanChangeUserProfile;
 import com.example.sso.admin.internal.shared.security.CanCreateUser;
 import com.example.sso.admin.internal.shared.security.CanDeleteUser;
 import com.example.sso.admin.internal.shared.security.CanManageUserPermissions;
@@ -11,7 +10,6 @@ import com.example.sso.admin.internal.shared.security.CanUpdateUser;
 import com.example.sso.admin.internal.shared.security.CanViewUser;
 import com.example.sso.admin.internal.user.application.AdminUserView;
 import com.example.sso.admin.internal.user.application.NewUserCommand;
-import com.example.sso.admin.internal.user.application.UserProfileService;
 import com.example.sso.admin.internal.user.application.UserAdminService;
 import com.example.sso.admin.internal.user.application.UserProvisioningService;
 import com.example.sso.admin.internal.user.application.UserDetailAdminService;
@@ -26,10 +24,6 @@ import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.account.Suggestion;
-import com.example.sso.admin.internal.user.application.UserProfileAttributeService;
-import com.example.sso.metadata.AttributeService;
-import com.example.sso.metadata.EntityKind;
-import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.audit.Audited;
 import jakarta.validation.Valid;
@@ -63,9 +57,6 @@ public class AdminUserController {
     private final UserProvisioningService provisioning;
     private final UserDetailAdminService userDetailAdminService;
     private final UserRecoveryAdminService recovery;
-    private final UserProfileAttributeService profileAttributes;
-    private final UserProfileService userProfiles;
-    private final AttributeService metadata;
 
     @GetMapping
     @RequirePermission(Permissions.USER_READ)
@@ -126,65 +117,6 @@ public class AdminUserController {
                                          @RequestParam(defaultValue = "0") int page,
                                          @RequestParam(defaultValue = "20") int size) {
         return userDetailAdminService.activity(id, page, size);
-    }
-
-    /**
-     * What moving this user onto {@code profileId} would delete, and whether it can happen at all.
-     *
-     * <p>Gated as the WRITE, not as a read: it enumerates the attribute keys the person carries outside the
-     * chosen profile, so under {@code @CanViewUser} a delegate who may not move an administrator could still
-     * iterate the org's profiles and read that administrator's whole key set — and, since a blocked key can
-     * now mean "a deny you cannot lift rides on this", learn about denies on principals they cannot see.
-     */
-    @GetMapping("/{id}/profile/preview")
-    @CanChangeUserProfile
-    public ProfileSwitchPreviewView previewProfileSwitch(@PathVariable UUID id, @RequestParam UUID profileId) {
-        return ProfileSwitchPreviewView.of(userProfiles.preview(id, profileId));
-    }
-
-    /**
-     * Moves the user onto another profile. Destructive by design — a profile decides which attributes a person
-     * HAS, so anything the target does not declare stops existing — which is why the preview above is separate
-     * and why this carries a step-up: those keys can be conditions on mapping rules and policy bindings, so
-     * deleting one can retract a role.
-     */
-    // Audited here for the REFUSALS, which is the half a service-layer trail cannot cover: ProfileSwitchAuditor
-    // is AFTER_COMMIT, so a 403 on an administrator target, a 409 on a stale preview or a blocked key leaves no
-    // row at all without this. The two rows on success are deliberate and differ in kind — this one says the
-    // request happened and how it ended, the listener's says what it deleted.
-    @PutMapping("/{id}/profile")
-    @CanChangeUserProfile
-    @RequireStepUp
-    @Audited(value = AuditType.ATTRIBUTE_CHANGED, subject = AuditSubjectType.USER, subjectParam = "id")
-    public UserProfileAttributesView switchProfile(@PathVariable UUID id,
-                                                   @Valid @RequestBody SwitchProfileRequest request) {
-        userProfiles.switchTo(id, request.profileId(), request.confirmedKeys());
-        return profileAttributes(id);
-    }
-
-    /** The columns this user's profile declares — what the console renders as the person's own fields. */
-    @GetMapping("/{id}/profile-attributes")
-    @CanViewUser
-    public UserProfileAttributesView profileAttributes(@PathVariable UUID id) {
-        return UserProfileAttributesView.of(profileAttributes.columnsOf(id),
-                metadata.attributesOf(EntityKind.USER, id.toString()));
-    }
-
-    /**
-     * Replaces this user's profile columns as one set. A per-key write cannot tell an attribute the profile
-     * REQUIRES and nobody filled from one the request merely omits, so this is the shape that can enforce the
-     * declaration — the same validator the create form answers to.
-     */
-    @PutMapping("/{id}/profile-attributes")
-    @CanChangeUserProfile
-    @RequireStepUp
-    // subject + subjectParam, not a bare type: AuditScope resolves a USER subject by parsing subjectId as a
-    // UUID, so a row left at subject NONE is invisible to every scoped delegate reviewing this person.
-    @Audited(value = AuditType.ATTRIBUTE_CHANGED, subject = AuditSubjectType.USER, subjectParam = "id")
-    public UserProfileAttributesView replaceProfileAttributes(@PathVariable UUID id,
-                                                              @Valid @RequestBody UserProfileAttributesRequest request) {
-        profileAttributes.replace(id, request.values());
-        return profileAttributes(id);
     }
 
     @PostMapping

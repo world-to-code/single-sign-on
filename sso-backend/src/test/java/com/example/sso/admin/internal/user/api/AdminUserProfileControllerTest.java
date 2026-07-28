@@ -1,12 +1,8 @@
 package com.example.sso.admin.internal.user.api;
 
 import com.example.sso.admin.internal.user.application.ProfileSwitchPreview;
-import com.example.sso.admin.internal.user.application.UserAdminService;
-import com.example.sso.admin.internal.user.application.UserDetailAdminService;
 import com.example.sso.admin.internal.user.application.UserProfileAttributeService;
 import com.example.sso.admin.internal.user.application.UserProfileService;
-import com.example.sso.admin.internal.user.application.UserProvisioningService;
-import com.example.sso.admin.internal.user.application.UserRecoveryAdminService;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.Audited;
 import com.example.sso.metadata.AttributeService;
@@ -50,10 +46,8 @@ class AdminUserProfileControllerTest {
     void setUp() {
         when(profileAttributes.columnsOf(any())).thenReturn(List.of());
         when(metadata.attributesOf(any(), any())).thenReturn(List.of());
-        mvc = MockMvcBuilders.standaloneSetup(new AdminUserController(
-                        mock(UserAdminService.class), mock(UserProvisioningService.class),
-                        mock(UserDetailAdminService.class), mock(UserRecoveryAdminService.class),
-                        profileAttributes, userProfiles, metadata))
+        mvc = MockMvcBuilders
+                .standaloneSetup(new AdminUserProfileController(userProfiles, profileAttributes, metadata))
                 .build();
     }
 
@@ -156,7 +150,7 @@ class AdminUserProfileControllerTest {
      */
     @Test
     void theMoveIsStepUpGatedAndAuditedAgainstTheUserItTargets() throws Exception {
-        Method move = AdminUserController.class.getMethod("switchProfile", UUID.class, SwitchProfileRequest.class);
+        Method move = AdminUserProfileController.class.getMethod("switchProfile", UUID.class, SwitchProfileRequest.class);
 
         assertThat(move.isAnnotationPresent(RequireStepUp.class)).as("a profile move is step-up gated").isTrue();
         Audited audited = move.getAnnotation(Audited.class);
@@ -168,7 +162,7 @@ class AdminUserProfileControllerTest {
     /** The sibling write had the same subject-less row, and the same delegate could not see it. */
     @Test
     void theColumnSaveIsAuditedAgainstTheUserItTargets() throws Exception {
-        Audited audited = AdminUserController.class
+        Audited audited = AdminUserProfileController.class
                 .getMethod("replaceProfileAttributes", UUID.class, UserProfileAttributesRequest.class)
                 .getAnnotation(Audited.class);
 
