@@ -175,9 +175,9 @@ class GlobalExceptionHandlerI18nTest {
 
         ProblemDetail problem = handler.handleAccessDenied(new AccessDeniedException("denied"), null);
 
-        assertThat(problem.getDetail()).isNotNull();
-        assertThat(problem.getDetail()).doesNotContain("Access is denied");
-        assertThat(problem.getDetail()).isNotEqualTo("error.forbidden"); // the key itself would mean it is missing
+        // The exact string, like every sibling test here: "not the key, not blank" also passes for a garbled
+        // or wrong translation, which is most of what this suite exists to catch.
+        assertThat(problem.getDetail()).isEqualTo("이 작업을 수행할 권한이 없습니다.");
     }
 
     @Test
@@ -186,8 +186,7 @@ class GlobalExceptionHandlerI18nTest {
 
         ProblemDetail problem = handler.handleAccessDenied(new AccessDeniedException("denied"), null);
 
-        assertThat(problem.getDetail()).isNotEqualTo("error.forbidden");
-        assertThat(problem.getDetail()).isNotBlank();
+        assertThat(problem.getDetail()).isEqualTo("You do not have permission for this action.");
     }
 
     /**
@@ -218,6 +217,7 @@ class GlobalExceptionHandlerI18nTest {
                 new IllegalArgumentException("username taken: ada@corp.example"), null);
 
         assertThat(problem.getDetail()).doesNotContain("ada@corp.example");
+        assertThat(problem.getDetail()).isEqualTo("요청을 처리할 수 없습니다. 값을 확인한 뒤 다시 시도해 주세요.");
         assertThat(problem.getDetail()).isNotEqualTo("error.badRequest");
         assertThat(problem.getDetail()).isNotBlank();
     }

@@ -9,8 +9,8 @@ import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ProblemDetail;
 import org.springframework.security.access.AccessDeniedException;
-import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
@@ -38,6 +38,9 @@ import java.util.stream.Collectors;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    /** How many offending field names a validation refusal names before it stops listing them. */
+    private static final int MAX_REPORTED_FIELDS = 10;
 
     private final MessageSource messageSource;
 
@@ -70,12 +73,17 @@ public class GlobalExceptionHandler {
      * Bean validation writes its own message, in English, from the constraint's default ("must not be blank")
      * — so the raw binding result is untranslatable. The FIELDS are the part the reader needs and the part we
      * can hand over unchanged; the sentence around them comes from the bundle like every other refusal.
+     *
+     * <p>Capped: a collection field reports one error PER ELEMENT ({@code keys[0]}, {@code keys[1]}, …), all
+     * distinct, so an oversized list would turn a refusal into a response many times the size of the request
+     * that caused it. The cap keeps the naming useful for the first few and bounded for the rest.
      */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ProblemDetail handleValidation(MethodArgumentNotValidException ex, WebRequest request) {
         String fields = ex.getBindingResult().getFieldErrors().stream()
                 .map(FieldError::getField)
                 .distinct()
+                .limit(MAX_REPORTED_FIELDS)
                 .collect(Collectors.joining(", "));
         String detail = fields.isBlank()
                 ? localized("error.validation.failed.unnamed")
@@ -87,12 +95,24 @@ public class GlobalExceptionHandler {
      * An {@code IllegalArgumentException} is an invariant violation written for a developer, so its message is
      * English prose that frequently quotes the offending input. It used to be handed to the user verbatim:
      * untranslated, and a non-revealing-errors violation whenever the input was somebody's address. The
-     * message is logged for the operator and the user gets the localized generic.
+     * message is withheld from both the user and the log, and the operator gets the throw SITE instead.
+     *
+     * <p>Logging the message was the obvious thing and it is wrong here: it quotes the offending input, so the
+     * log inherits exactly what the response stopped carrying. Some of that input is secret — decoding a
+     * malformed TOTP secret throws with the offending CHARACTER in the message — and all of it is attacker
+     * chosen, which is how a newline in a username forges a second log line. The throw site says where to look
+     * without repeating anything the caller supplied.
      */
     @ExceptionHandler(IllegalArgumentException.class)
     ProblemDetail handleIllegalArgument(IllegalArgumentException ex, WebRequest request) {
-        log.debug("Mapped an IllegalArgumentException to 400: {}", ex.toString());
+        log.debug("Mapped an IllegalArgumentException to 400, thrown at {}", throwSite(ex));
         return problem(ErrorCode.BAD_REQUEST, localized("error.badRequest"), request);
+    }
+
+    /** The frame that threw, as {@code Class.method(File:line)} — enough to find the invariant, with no input in it. */
+    private String throwSite(Throwable ex) {
+        StackTraceElement[] frames = ex.getStackTrace();
+        return frames.length == 0 ? "an unknown frame" : frames[0].toString();
     }
 
     /**

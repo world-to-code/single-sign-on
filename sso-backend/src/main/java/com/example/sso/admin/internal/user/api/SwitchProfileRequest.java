@@ -2,6 +2,7 @@ package com.example.sso.admin.internal.user.api;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.UUID;
 
@@ -25,7 +26,9 @@ import java.util.UUID;
  *                      whatever it likes.
  */
 public record SwitchProfileRequest(@NotNull UUID profileId,
-                                  // Element-validated too: Set.copyOf rejects a null element with an NPE,
-                                  // which surfaced as a 500 rather than a refusal.
-                                  @NotNull List<@NotBlank String> confirmedKeys) {
+                                   // Element-validated too: Set.copyOf rejects a null element with an NPE,
+                                   // which surfaced as a 500 rather than a refusal. Bounded on both axes because
+                                   // the server compares this against a set it derives itself — an unbounded
+                                   // list buys nothing and costs a refusal that names every bad element.
+                                   @NotNull @Size(max = 200) List<@NotBlank @Size(max = 64) String> confirmedKeys) {
 }

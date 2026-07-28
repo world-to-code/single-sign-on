@@ -14,7 +14,7 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message?: string,
-    /** RFC 7807 `code` — the backend's stable error code (e.g. "invalid_cidr"). */
+    /** RFC 7807 `code` — the backend's stable error code (e.g. "VALIDATION_FAILED"). */
     public code?: string,
     /** RFC 7807 `traceId` — 12 hex chars the operator can grep server logs by (server/network failures only). */
     public traceId?: string,
@@ -33,9 +33,17 @@ export class StepUpCancelledError extends Error {
   }
 }
 
-/** The server's ProblemDetail `detail`, or null when parse() only had a status line to go on. */
+/**
+ * The server's ProblemDetail `detail`, or null when parse() only had a status line to go on.
+ *
+ * <p>4xx only. A 5xx detail is not written by our handlers — it would come from Spring's own error
+ * machinery, i.e. an exception message — so showing it would put internals on screen. `include-message:
+ * never` in application.yml means none arrives today; this keeps that a property of the code rather than
+ * of a YAML key nobody re-reads.
+ */
 function serverDetail(e: ApiError): string | null {
-  return e.message.startsWith("HTTP ") ? null : e.message;
+  if (e.status >= 500 || e.message.startsWith("HTTP ")) return null;
+  return e.message;
 }
 
 /**
