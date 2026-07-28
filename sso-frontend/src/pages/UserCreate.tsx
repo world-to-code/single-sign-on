@@ -11,7 +11,9 @@ import { Field } from "@/components/form/fields";
 import { CheckboxGroup } from "@/components/form/CheckboxGroup";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { listAttributeDefinitions, type AttributeDefinition } from "@/attributeDefinitions";
+import {
+  listAttributeDefinitions, listProfiles, type AttributeDefinition, type Profile,
+} from "@/attributeDefinitions";
 import { useCreationProfile } from "@/hooks/useCreationProfile";
 
 interface Role { id: string; name: string }
@@ -25,13 +27,27 @@ export default function UserCreate() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [definitions, setDefinitions] = useState<AttributeDefinition[]>([]);
   const [attrs, setAttrs] = useState<Record<string, string>>({});
-  const profile = useCreationProfile();
+  const defaultProfile = useCreationProfile();
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [profileId, setProfileId] = useState<string>("");
+
+  // Only TENANT profiles: a source profile describes a remote directory's schema, and creating a person on
+  // one would promise a shape no local form can fill.
+  useEffect(() => {
+    listProfiles().then((all) => setProfiles(all.filter((p) => p.kind === "TENANT"))).catch(() => setProfiles([]));
+  }, []);
+  useEffect(() => {
+    if (defaultProfile && !profileId) setProfileId(defaultProfile.id);
+  }, [defaultProfile, profileId]);
 
   // A tenant with no declared attributes simply gets no extra section — the schema is a catalog, not a demand.
+  //
+  // Re-read on every profile change: a stale list would ask for one schema while the server validated another.
   useEffect(() => {
-    if (!profile) return;
-    listAttributeDefinitions("USER", profile.id).then(setDefinitions).catch(() => setDefinitions([]));
-  }, [profile]);
+    if (!profileId) return;
+    setAttrs({});
+    listAttributeDefinitions("USER", profileId).then(setDefinitions).catch(() => setDefinitions([]));
+  }, [profileId]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -57,6 +73,7 @@ export default function UserCreate() {
         displayName: form.displayName || null,
         password: form.password,
         roles: form.roles,
+        profileId: profileId || null,
         attributes: Object.fromEntries(
           Object.entries(attrs).filter(([, v]) => v.trim() !== "").map(([k, v]) => [k, [v]])),
       });
@@ -98,6 +115,20 @@ export default function UserCreate() {
           <Input type="password" value={form.password} onChange={(e) => set({ password: e.target.value })} required />
         </Field>
       </SettingsSection>
+
+      {profiles.length > 1 && (
+        <SettingsSection title={t("userCreateProfilePickTitle")} description={t("userCreateProfilePickDesc")}>
+          <Field label={t("userCreateProfileLabel")}>
+            <Select value={profileId} onChange={(e) => setProfileId(e.target.value)}>
+              {profiles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.defaultForCreation ? t("userCreateProfileDefaultOption", { name: p.name }) : p.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </SettingsSection>
+      )}
 
       {declared.length > 0 && (
         <SettingsSection title={t("userCreateProfileTitle")} description={t("userCreateProfileDesc")}>

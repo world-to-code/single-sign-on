@@ -28,6 +28,8 @@ export interface UserDetail {
   emailVerified: boolean;
   accountNonLocked: boolean;
   externalId: string | null;
+  /** The profile that decides which attributes this person has; null before one was ever bound. */
+  profileId: string | null;
   createdAt: string;
   updatedAt: string;
   roleAssignments: RoleAssignment[];
@@ -43,7 +45,9 @@ export interface CreateUserRequest {
   displayName: string | null;
   password: string;
   roles: string[];
-  /** Values for the attributes the tenant's default profile declares; validated server-side. */
+  /** The profile to create this person on; null takes the organization's default. */
+  profileId?: string | null;
+  /** Values for the attributes that profile declares; validated server-side against the same one. */
   attributes?: Record<string, string[]>;
 }
 

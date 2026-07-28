@@ -22,6 +22,8 @@ import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/PageHeader";
 import { PermissionPicker } from "@/components/PermissionPicker";
 import { MetadataEditor } from "@/components/MetadataEditor";
+import { ProfileColumns } from "@/components/ProfileColumns";
+import { ProfileSwitcher } from "@/components/ProfileSwitcher";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { FederatedIdentities } from "@/components/FederatedIdentities";
 import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
@@ -36,7 +38,9 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 
-type Tab = "overview" | "activity";
+// Profile leads: "who is this person" is what the page is opened to answer; Access and Security are the two
+// follow-ups. One screen of nine cards had the person as its smallest item.
+type Tab = "profile" | "access" | "security" | "activity";
 
 export default function UserDetail({ session }: { session: SessionView }) {
   const { t, i18n } = useTranslation("console");
@@ -57,7 +61,7 @@ export default function UserDetail({ session }: { session: SessionView }) {
   const [apps, setApps] = useState<UserApplication[]>([]);
   const [devices, setDevices] = useState<UserDevices | null>(null);
   const [sessions, setSessions] = useState<UserSession[]>([]);
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>("profile");
   const activityPage = usePaginated<ActivityEntry>(`/api/admin/users/${id}/activity`);
 
   function load() { getUser(id).then(setUser).catch((e) => setError(errorMessage(e))); }
@@ -194,22 +198,36 @@ export default function UserDetail({ session }: { session: SessionView }) {
 
       {user && (
         <div className="mb-4 flex gap-1 border-b">
-          {(["overview", "activity"] as Tab[]).map((tabKey) => (
+          {(["profile", "access", "security", "activity"] as Tab[]).map((tabKey) => (
             <button key={tabKey} onClick={() => setTab(tabKey)}
                     className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${tab === tabKey ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
               {tabKey === "activity"
                 ? (activityPage.total ? t("userDetailTabActivityCount", { count: activityPage.total }) : t("userDetailTabActivity"))
-                : t("userDetailTabOverview")}
+                : tabKey === "profile" ? t("userDetailTabProfile")
+                : tabKey === "access" ? t("userDetailTabAccess")
+                : t("userDetailTabSecurity")}
             </button>
           ))}
         </div>
       )}
 
-      {user && tab === "overview" && (
+      {user && tab === "profile" && (
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>{t("userDetailProfile")}</CardTitle>
+              <CardTitle>{t("userDetailProfileColumns")}</CardTitle>
+              <CardDescription>{t("userDetailProfileColumnsDesc")}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <ProfileColumns userId={id} profileId={user.profileId} onSaved={load} />
+              {/* Reloading the user re-renders the columns, because the profile IS what they are. */}
+              <ProfileSwitcher userId={id} currentProfileId={user.profileId} onSwitched={load} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("userDetailAccount")}</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
               <Detail label={t("userDetailUsername")} value={user.username} mono />
@@ -228,6 +246,18 @@ export default function UserDetail({ session }: { session: SessionView }) {
             </CardContent>
           </Card>
 
+          {/* Free-form tags, deliberately below the declared columns: the profile is the contract, this is
+              the door for keys nobody declared — see the metadata route's own rules. */}
+          <Card>
+            <CardContent className="pt-6">
+              <MetadataEditor kind="users" entityId={id} profileId={user.profileId} />
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {user && tab === "access" && (
+        <div className="space-y-6">
           <Card>
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <div>
@@ -305,7 +335,11 @@ export default function UserDetail({ session }: { session: SessionView }) {
               )}
             </CardContent>
           </Card>
+        </div>
+      )}
 
+      {user && tab === "security" && (
+        <div className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><Fingerprint className="size-4" /> {t("userDetailAuthDevices")}</CardTitle>
@@ -360,6 +394,8 @@ export default function UserDetail({ session }: { session: SessionView }) {
             </CardContent>
           </Card>
 
+          {/* Where this identity comes from belongs beside how it authenticates: both answer "who vouches
+              for this person", and both are read-only here because the source owns them. */}
           <div className="grid gap-4 sm:grid-cols-2">
             <Card>
               <CardHeader>
@@ -374,9 +410,6 @@ export default function UserDetail({ session }: { session: SessionView }) {
               </CardContent>
             </Card>
             <FederatedIdentities userId={id} />
-            <Card>
-              <CardContent className="pt-6"><MetadataEditor kind="users" entityId={id} /></CardContent>
-            </Card>
           </div>
         </div>
       )}

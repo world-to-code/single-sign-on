@@ -26,7 +26,8 @@ import { Input } from "@/components/ui/input";
  * <p>The backend enforces the same ownership rule; this only stops an administrator being offered an edit that
  * would be refused, or worse, silently reverted hours later.
  */
-export function MetadataEditor({ kind, entityId }: { kind: MetadataKind; entityId: string }) {
+export function MetadataEditor({ kind, entityId, profileId }:
+  { kind: MetadataKind; entityId: string; profileId?: string | null }) {
   const { t } = useTranslation("console");
   const [attrs, setAttrs] = useState<Attribute[] | null>(null);
   const [definitions, setDefinitions] = useState<AttributeDefinition[]>([]);
@@ -35,7 +36,12 @@ export function MetadataEditor({ kind, entityId }: { kind: MetadataKind; entityI
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const profile = useTenantProfile();
+  // The entity's OWN profile when the caller knows it. Falling back to "the tenant's profile" is only right
+  // for a kind that has none of its own (groups, resources): an organization can hold several TENANT profiles,
+  // so for a user that fallback resolves whichever one comes back first and judges this person's keys against
+  // somebody else's schema.
+  const tenantProfile = useTenantProfile();
+  const profile = profileId ? { id: profileId } : tenantProfile;
 
   const reload = useCallback(() => {
     getAttributes(kind, entityId).then(setAttrs).catch((e) => setError(errorMessage(e)));
