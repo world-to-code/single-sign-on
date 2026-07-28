@@ -136,6 +136,45 @@ class AuthPolicyAdminServiceImplTest {
         verify(stepRepository, never()).save(any());
     }
 
+    /**
+     * The console has always filtered the add-factor dropdown, so this rule existed only in the browser and one
+     * PUT walked past it — on the policy that governs every login. A factor proves the same thing wherever it
+     * sits, so a second step demanding one already satisfied is either unpassable or free, and which it is
+     * depends on the factor.
+     */
+    @Test
+    void createRejectsTheSameFactorInTwoSteps() {
+        when(repository.findByNameAndOrgIdIsNull("Twice")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.create(spec("Twice",
+                List.of(Set.of(AuthFactor.PASSWORD), Set.of(AuthFactor.PASSWORD)))))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("authpolicy.step.factorDuplicate");
+        verify(stepRepository, never()).save(any());
+    }
+
+    @Test
+    void aFactorRepeatedAcrossSTEPSIsRefusedEvenWhenTheStepsDifferOtherwise() {
+        when(repository.findByNameAndOrgIdIsNull("Mixed")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.create(spec("Mixed",
+                List.of(Set.of(AuthFactor.PASSWORD), Set.of(AuthFactor.TOTP, AuthFactor.PASSWORD)))))
+                .isInstanceOf(BadRequestException.class);
+        verify(stepRepository, never()).save(any());
+    }
+
+    /** Two DIFFERENT factors in two steps is the ordinary MFA policy and must stay legal. */
+    @Test
+    void distinctFactorsAcrossStepsAreStillAccepted() {
+        when(repository.findByNameAndOrgIdIsNull("MFA")).thenReturn(Optional.empty());
+        when(repository.findByPriorityAndOrgIdIsNull(10)).thenReturn(List.of());
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.create(spec("MFA", List.of(Set.of(AuthFactor.PASSWORD), Set.of(AuthFactor.TOTP))));
+
+        verify(stepRepository, times(2)).save(any());
+    }
+
     @Test
     void createPersistsThePolicyWithEachStepAndFactorExplicitly() {
         when(repository.findByNameAndOrgIdIsNull("MFA")).thenReturn(Optional.empty());

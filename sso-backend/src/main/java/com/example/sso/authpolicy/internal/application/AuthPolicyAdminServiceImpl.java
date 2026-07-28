@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -206,9 +207,19 @@ public class AuthPolicyAdminServiceImpl implements AuthPolicyAdminService {
 
     /** Replaces a policy's steps: validate, delete the old step/factor rows, then insert the new ones. */
     private void replaceSteps(AuthPolicy policy, List<? extends Set<AuthFactor>> steps) {
+        Set<AuthFactor> seen = EnumSet.noneOf(AuthFactor.class);
         for (Set<AuthFactor> factors : steps) {
             if (factors.isEmpty()) {
                 throw BadRequestException.of("authpolicy.step.factorRequired");
+            }
+            // A factor proves the same thing wherever it sits, so a second step demanding one the user already
+            // satisfied is either a step that can never be passed or one that is passed for free — and which of
+            // those it is depends on the factor. The console has always filtered the dropdown; the API had no
+            // such rule, so the policy that governs every login could be built past it with one PUT.
+            for (AuthFactor factor : factors) {
+                if (!seen.add(factor)) {
+                    throw BadRequestException.of("authpolicy.step.factorDuplicate", factor.name());
+                }
             }
         }
 
