@@ -1,8 +1,5 @@
 package com.example.sso.mapping.internal.application;
 
-import com.example.sso.audit.AuditRecord;
-import com.example.sso.audit.AuditService;
-import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.mapping.MappingCondition;
 import com.example.sso.mapping.MappingTargetAuthority;
@@ -34,7 +31,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -53,8 +49,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 class MappingRuleEvaluator {
 
-    private static final String SYSTEM_PRINCIPAL = "system:mapping-rule";
-
     private final MappingRuleRepository rules;
     private final MappingRuleConditionRepository conditions;
     private final AttributeDefinitionService definitions;
@@ -62,12 +56,11 @@ class MappingRuleEvaluator {
     private final MappingRuleMembershipRepository memberships;
     private final AttributeService attributes;
     private final List<MappingTargetApplier> appliers;
-    private final AuditService audit;
     private final OrgTierGuard tierGuard;
     private final MappingTargetAuthority targetAuthority;
     private final UserGroupService userGroups;
     private final LastAdminInvariant lastAdminInvariant;
-    private final ApplicationEventPublisher events;
+    private final MappingAuditTrail trail;
 
     /** Reconcile ONE rule across the tier: add every matching user not yet claimed, retract every claim no longer matching. */
     @Transactional
@@ -295,7 +288,7 @@ class MappingRuleEvaluator {
             return;
         }
         applierFor(rule).assign(rule.getTargetId(), userId);
-        record(AuditType.MAPPING_RULE_APPLIED, rule, userId);
+        trail.changedMembership(AuditType.MAPPING_RULE_APPLIED, rule, userId);
         noteLegacyAuthor(rule);
     }
 
@@ -318,7 +311,7 @@ class MappingRuleEvaluator {
             return;
         }
         applierFor(rule).assignAll(rule.getTargetId(), newlyClaimed);
-        newlyClaimed.forEach(userId -> record(AuditType.MAPPING_RULE_APPLIED, rule, userId));
+        newlyClaimed.forEach(userId -> trail.changedMembership(AuditType.MAPPING_RULE_APPLIED, rule, userId));
         noteLegacyAuthor(rule);
     }
 
@@ -335,7 +328,7 @@ class MappingRuleEvaluator {
         if (targetAuthority.authorMayAssign(rule.getCreatedBy(), rule.getThenKind(), rule.getTargetId())) {
             return true;
         }
-        recordAuthor(AuditType.MAPPING_RULE_AUTHOR_UNAUTHORIZED, rule);
+        trail.changedGrantAdmission(AuditType.MAPPING_RULE_AUTHOR_UNAUTHORIZED, rule);
         return false;
     }
 
@@ -370,14 +363,14 @@ class MappingRuleEvaluator {
                 && authors.configurators().stream().allMatch(configurator ->
                         targetAuthority.authorMayAssign(configurator, rule.getThenKind(), rule.getTargetId()));
         if (!authorized) {
-            recordAuthor(AuditType.MAPPING_RULE_DIRECTORY_SOURCE_UNAUTHORIZED, rule);
+            trail.changedGrantAdmission(AuditType.MAPPING_RULE_DIRECTORY_SOURCE_UNAUTHORIZED, rule);
         }
         return authorized;
     }
 
     private void noteLegacyAuthor(MappingRule rule) {
         if (rule.getCreatedBy() == null) {
-            recordAuthor(AuditType.MAPPING_RULE_LEGACY_AUTHOR, rule);
+            trail.changedGrantAdmission(AuditType.MAPPING_RULE_LEGACY_AUTHOR, rule);
         }
     }
 
@@ -390,7 +383,7 @@ class MappingRuleEvaluator {
             applierFor(rule).unassign(rule.getTargetId(), userId); // no rule still keeps them on the target
             targetThatWent = rule.getThenKind() == MappingTargetKind.RESOURCE_MEMBER ? null : rule.getTargetId();
         }
-        record(AuditType.MAPPING_RULE_RETRACTED, rule, userId);
+        trail.changedMembership(AuditType.MAPPING_RULE_RETRACTED, rule, userId);
         return targetThatWent;
     }
 
@@ -422,26 +415,9 @@ class MappingRuleEvaluator {
         try {
             lastAdminInvariant.ensureRetractionRetainsAdmin(tierGuard.currentTier());
         } catch (RuntimeException refused) {
-            recordRefusal(retractedTargets, refused);
+            trail.refusalNow(tierGuard.currentTier(), retractedTargets.size(), refused);
             throw refused;
         }
-    }
-
-    /**
-     * Written INLINE, unlike every other row here: this one has to outlive the rollback it is about.
-     *
-     * <p>The changes are dropped with the transaction, correctly — they did not happen. But without this the
-     * refusal leaves no trace at all, and on the asynchronous path the exception is swallowed by the executor
-     * and the sweep re-drives the same rejected transaction on its next pass. What an operator sees is a rule
-     * that has silently stopped converging, with nothing anywhere to say why.
-     */
-    private void recordRefusal(Collection<UUID> retractedTargets, RuntimeException refused) {
-        UUID tier = tierGuard.currentTier();
-        String detail = ("re-evaluation rolled back in tier %s: retracting %d target(s) "
-                + "would have left it with no administrator").formatted(tier, retractedTargets.size());
-        // getMessage() is the exception's message KEY, not anything a caller supplied.
-        audit.record(new AuditRecord(AuditType.MAPPING_RULE_RETRACTION_REFUSED, SYSTEM_PRINCIPAL, false, detail,
-                null, AuditSubjectType.NONE, null, tier).withReason(refused.getMessage()));
     }
 
     /** The targets whose loss could take authority away — a RESOURCE_MEMBER rule confers none. */
@@ -471,24 +447,4 @@ class MappingRuleEvaluator {
         return ids.stream().map(UUID::fromString).collect(Collectors.toSet());
     }
 
-    private void record(AuditType type, MappingRule rule, UUID userId) {
-        String detail = "rule %s (%s): user %s / target %s"
-                .formatted(rule.getId(), rule.getThenKind(), userId, rule.getTargetId());
-        pending(new AuditRecord(type, SYSTEM_PRINCIPAL, true, detail, null,
-                AuditSubjectType.USER, userId.toString(), rule.getOrgId()));
-    }
-
-    /** A rule-level audit (no per-user subject): the author re-validation outcome for the whole grant. */
-    private void recordAuthor(AuditType type, MappingRule rule) {
-        String detail = "rule %s (%s): target %s / author %s"
-                .formatted(rule.getId(), rule.getThenKind(), rule.getTargetId(), rule.getCreatedBy());
-        pending(new AuditRecord(type, SYSTEM_PRINCIPAL, true, detail, null,
-                AuditSubjectType.NONE, rule.getTargetId().toString(), rule.getOrgId()));
-    }
-
-    /** Every row about a CHANGE goes through here, so none of them can outlive a rollback — see
-     *  {@link MappingAuditPending}. */
-    private void pending(AuditRecord record) {
-        events.publishEvent(new MappingAuditPending(record));
-    }
 }

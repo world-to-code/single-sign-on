@@ -1,7 +1,5 @@
 package com.example.sso.mapping.internal.application;
 
-import com.example.sso.audit.AuditRecord;
-import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
 import com.example.sso.mapping.MappingCondition;
 import com.example.sso.mapping.MappingTargetAuthority;
@@ -30,17 +28,14 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -70,12 +65,11 @@ class SynchronousRetractionTest {
     @Mock private AttributeSourceAuthority sources;
     @Mock private MappingRuleMembershipRepository memberships;
     @Mock private AttributeService attributes;
-    @Mock private AuditService audit;
     @Mock private OrgTierGuard tierGuard;
     @Mock private MappingTargetAuthority targetAuthority;
     @Mock private UserGroupService userGroups;
     @Mock private LastAdminInvariant lastAdminInvariant;
-    @Mock private ApplicationEventPublisher events;
+    @Mock private MappingAuditTrail trail;
     @Mock private MappingTargetApplier groupApplier;
     @Mock private MappingTargetApplier roleApplier;
 
@@ -88,8 +82,8 @@ class SynchronousRetractionTest {
         lenient().when(groupApplier.kind()).thenReturn(MappingTargetKind.GROUP);
         lenient().when(roleApplier.kind()).thenReturn(MappingTargetKind.ROLE);
         evaluator = new MappingRuleEvaluator(rules, conditions, definitions, sources, memberships, attributes,
-                List.of(groupApplier, roleApplier), audit, tierGuard, targetAuthority, userGroups,
-                lastAdminInvariant, events);
+                List.of(groupApplier, roleApplier), tierGuard, targetAuthority, userGroups,
+                lastAdminInvariant, trail);
         lenient().when(tierGuard.currentTier()).thenReturn(ORG);
         lenient().when(definitions.definitionOf(any(), anyString())).thenReturn(Optional.empty());
 
@@ -147,39 +141,24 @@ class SynchronousRetractionTest {
     }
 
     /**
-     * The audit half. A re-evaluation can be rejected AFTER it has retracted, and the rows describing those
-     * retractions are written in their own transaction — so before this they survived the rollback and the
-     * trail asserted authority changes that were undone. They are now published and written on commit, which
-     * a rollback simply drops; the REFUSAL is the one row that must outlive it, or the operator sees a rule
-     * that has silently stopped converging with nothing anywhere to explain it.
+     * The audit half, as this class's share of it: the evaluator says WHAT happened and to which kind of row,
+     * and {@link MappingAuditTrail} owns which of those survive a rollback (its own test pins that). Asserted
+     * here because the split only works if the retraction reports the change AND the refusal reports itself —
+     * a refusal that told the trail nothing would leave a rule silently not converging.
      */
     @Test
-    void aRefusalIsRecordedInlineWhileTheRetractionsItUndidAreNot() {
+    void aRefusalIsReportedSeparatelyFromTheRetractionItUndid() {
         claims(roleRule);
         when(attributes.attributesOfInTier(EntityKind.USER, USER.toString())).thenReturn(List.of());
         when(userGroups.groupIdsOf(USER)).thenReturn(Set.of());
         when(lastAdminInvariant.retractionWouldNeedGuarding(any(), any())).thenReturn(true);
-        doThrow(ConflictException.of("admin.lastAdmin"))
-                .when(lastAdminInvariant).ensureRetractionRetainsAdmin(ORG);
+        ConflictException refused = ConflictException.of("admin.lastAdmin");
+        doThrow(refused).when(lastAdminInvariant).ensureRetractionRetainsAdmin(ORG);
 
         assertThatThrownBy(() -> evaluator.retractStaleClaims(USER)).isInstanceOf(ConflictException.class);
 
-        ArgumentCaptor<AuditRecord> written = ArgumentCaptor.forClass(AuditRecord.class);
-        verify(audit).record(written.capture());
-        assertThat(written.getValue().type()).isEqualTo(AuditType.MAPPING_RULE_RETRACTION_REFUSED);
-        assertThat(written.getValue().success()).isFalse();
-        assertThat(written.getValue().reason()).isEqualTo("admin.lastAdmin");
-        // The retraction row went out as a pending event, so the rollback takes it with it.
-        assertThat(publishedAuditTypes()).containsExactly(AuditType.MAPPING_RULE_RETRACTED);
-    }
-
-    private List<AuditType> publishedAuditTypes() {
-        ArgumentCaptor<Object> published = ArgumentCaptor.forClass(Object.class);
-        verify(events, atLeastOnce()).publishEvent(published.capture());
-        return published.getAllValues().stream()
-                .filter(MappingAuditPending.class::isInstance)
-                .map(event -> ((MappingAuditPending) event).record().type())
-                .toList();
+        verify(trail).changedMembership(AuditType.MAPPING_RULE_RETRACTED, roleRule, USER);
+        verify(trail).refusalNow(ORG, 1, refused);
     }
 
     /** The user is claimed by these rules, and none of them still matches (no attributes are stubbed in). */

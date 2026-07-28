@@ -1,6 +1,5 @@
 package com.example.sso.mapping.internal.application;
 
-import com.example.sso.audit.AuditService;
 import com.example.sso.metadata.AttributeSourceAuthority;
 import com.example.sso.metadata.AttributeSourceAuthors;
 import com.example.sso.metadata.AttributeOperator;
@@ -33,7 +32,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -76,12 +74,11 @@ class DirectorySourceAuthorizationTest {
     @Mock private AttributeSourceAuthority sources;
     @Mock private MappingRuleMembershipRepository memberships;
     @Mock private AttributeService attributes;
-    @Mock private AuditService audit;
     @Mock private OrgTierGuard tierGuard;
     @Mock private MappingTargetAuthority targetAuthority;
     @Mock private UserGroupService userGroups;
     @Mock private LastAdminInvariant lastAdminInvariant;
-    @Mock private ApplicationEventPublisher events;
+    @Mock private MappingAuditTrail trail;
     @Mock private MappingTargetApplier roleApplier;
 
     private MappingRuleEvaluator evaluator;
@@ -91,7 +88,7 @@ class DirectorySourceAuthorizationTest {
     void setUp() {
         lenient().when(roleApplier.kind()).thenReturn(MappingTargetKind.ROLE);
         evaluator = new MappingRuleEvaluator(rules, conditions, definitions, sources, memberships, attributes,
-                List.of(roleApplier), audit, tierGuard, targetAuthority, userGroups, lastAdminInvariant, events);
+                List.of(roleApplier), tierGuard, targetAuthority, userGroups, lastAdminInvariant, trail);
         rule = MappingRule.of(MappingTargetKind.ROLE, TARGET_ROLE, ORG, UUID.randomUUID());
         ReflectionTestUtils.setField(rule, "id", UUID.randomUUID());
 
