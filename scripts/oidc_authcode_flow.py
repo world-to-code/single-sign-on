@@ -68,6 +68,11 @@ def main() -> int:
     print(f"[ok] id_token claims: iss={claims['iss']} sub={claims['sub']} aud={claims['aud']}")
     print(f"[claims] amr={claims.get('amr')} acr={claims.get('acr')} auth_time={claims.get('auth_time')}")
     assert claims["iss"] == BASE and claims["sub"] == "admin"
+    # email_verified rides WITH email, never omitted. A federated upstream can name an account here with an
+    # address nobody proved, so an RP that keys on `email` has to be able to see that — omitting the claim
+    # invites exactly the assumption this product refuses to make about the address itself.
+    assert "email_verified" in claims, "email_verified must accompany the email claim"
+    print(f"[ok] email={claims['email']} email_verified={claims['email_verified']}")
     cleanup(s, BASE)
     print("\nPASS: OIDC authorization-code + PKCE + MFA flow issued a valid ID token.")
     return 0

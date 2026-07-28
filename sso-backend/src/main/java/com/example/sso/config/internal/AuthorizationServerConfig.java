@@ -224,6 +224,11 @@ public class AuthorizationServerConfig {
 
                 if (idToken && context.getAuthorizedScopes().contains(OidcScopes.EMAIL)) {
                     context.getClaims().claim("email", user.getEmail());
+                    // Emitted BESIDE the address, never omitted. An address a federated upstream merely
+                    // asserted can name an account here, so an RP that keys on `email` has to be able to see
+                    // that nobody proved it — omitting the claim invites exactly the assumption we refuse
+                    // to make ourselves (see FederatedUserProvisioner).
+                    context.getClaims().claim("email_verified", user.isEmailVerified());
                 }
 
                 // Authentication-context claims so RPs (ID token) AND the admin elevation gate (access
