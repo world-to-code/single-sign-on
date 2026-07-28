@@ -57,6 +57,25 @@ class ActingAdmin {
         return authentication == null ? null : authentication.getName();
     }
 
+    /**
+     * Whether an account holds {@code ROLE_ADMIN} EFFECTIVELY — directly OR delegated via a group. The
+     * target-protection guards key on this so a scoped delegate cannot force-log-out, demote or delete an
+     * administrator who is one only through group membership. Uses the same effective-authority assembly as
+     * login, so the well-known name is emitted only for the GLOBAL super role — a tenant cannot mint one.
+     */
+    boolean isAdmin(UUID userId) {
+        return userService.effectiveAuthorities(userId).contains(Roles.ADMIN);
+    }
+
+    /**
+     * Whether an account holds {@code ROLE_ADMIN} DIRECTLY — the unscoped super authority (a scoped delegate
+     * holds {@code ROLE_GROUP_ADMIN}, never this). Same underlying question as {@link #isAdmin}, kept as a
+     * distinct name for the actor-side intent at privilege gates.
+     */
+    boolean isSuper(UUID userId) {
+        return userService.hasRole(userId, Roles.ADMIN);
+    }
+
     private Set<String> authorityNames(Authentication authentication) {
         return authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority).collect(Collectors.toSet());

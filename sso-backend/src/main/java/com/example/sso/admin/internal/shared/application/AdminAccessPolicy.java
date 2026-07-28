@@ -1,18 +1,10 @@
 package com.example.sso.admin.internal.shared.application;
 
 import com.example.sso.admin.internal.audit.application.AuditScope;
-import com.example.sso.resource.authorization.ApplicationAuthorization;
-import com.example.sso.resource.authorization.GroupAuthorization;
-import com.example.sso.resource.authorization.ResourceAuthorization;
 import com.example.sso.mapping.MappingTargetKind;
 import com.example.sso.user.deny.DenyAuthor;
 import com.example.sso.user.deny.DenyLift;
 import com.example.sso.user.deny.DenySubjectKind;
-import com.example.sso.organization.OrganizationAuthorization;
-import com.example.sso.portal.application.ApplicationService;
-import com.example.sso.portal.application.ApplicationView;
-import com.example.sso.resource.authorization.UserAuthorization;
-import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.RoleHierarchyService;
 import com.example.sso.user.role.RoleRef;
@@ -55,17 +47,11 @@ public class AdminAccessPolicy {
     static final String ADMIN_ROLE = Roles.ADMIN;
 
     private final ActingAdmin actingAdmin;
+    private final AdminScope scope;
     private final UserService userService;
     private final RoleService roleService;
     private final RoleHierarchyService roleHierarchy;
     private final UserGroupService userGroups;
-    private final UserAuthorization userAuth;
-    private final GroupAuthorization groupAuth;
-    private final ApplicationAuthorization appAuth;
-    private final ResourceAuthorization resourceAuth;
-    private final OrganizationAuthorization orgAuth;
-    private final ApplicationService applications;
-    private final OrgContext orgContext;
 
     /**
      * User scope: whether the acting admin may act on {@code targetId} at all. A super admin
@@ -74,30 +60,7 @@ public class AdminAccessPolicy {
      * unresolved actor.
      */
     public boolean canAccessUser(UUID targetId) {
-        Optional<UUID> actor = actingAdmin.id();
-        if (actor.isEmpty()) {
-            return false;
-        }
-
-        UUID actorId = actor.get();
-        return resourceAuth.isUnscoped(actorId)
-                || actorId.equals(targetId)
-                || userAuth.canManage(actorId, targetId)
-                || boundOrgContainsTarget(targetId);
-    }
-
-    /**
-     * A TENANT (org) admin acting within their own org reaches any user that BELONGS to that org — the
-     * organization, not a resource subtree, is their management scope. The target's org is read
-     * authoritatively ({@code app_user} carries no RLS), so a foreign-org user is out of scope even though
-     * the row is physically readable.
-     */
-    private boolean boundOrgContainsTarget(UUID targetId) {
-        if (!administersBoundOrg()) {
-            return false;
-        }
-        UUID boundOrg = orgContext.currentOrg().orElse(null);
-        return boundOrg != null && userService.orgIdOf(targetId).map(boundOrg::equals).orElse(false);
+        return scope.canAccessUser(targetId);
     }
 
     /**
@@ -106,7 +69,7 @@ public class AdminAccessPolicy {
      * gated by {@link #mayAssignRoles} on the endpoint, so a tenant admin cannot create an administrator.
      */
     public boolean canCreateUser() {
-        return actingAdmin.id().map(this::isSuper).orElse(false) || administersBoundOrg();
+        return scope.canCreateUser();
     }
 
     /**
@@ -140,7 +103,7 @@ public class AdminAccessPolicy {
             case GROUP -> canAccessGroup(actorId, targetId)
                     && mayConferRolesOf(actorId, actorAuthorities, Set.of(targetId)).contains(targetId);
             case ROLE -> isSuper(actorId) || mayGrantRole(actorId, actorAuthorities, targetId);
-            case RESOURCE_MEMBER -> resourceAuth.canManage(actorId, targetId); // manages the resource (subtree), by id
+            case RESOURCE_MEMBER -> scope.canManageResource(actorId, targetId); // the subtree, by id
         };
     }
 
@@ -278,12 +241,12 @@ public class AdminAccessPolicy {
      * must branch on this first: the {@code scoped*}/{@code managed*} sets are empty for a super admin.
      */
     public boolean isCurrentActorUnscoped() {
-        return actingAdmin.id().map(resourceAuth::isUnscoped).orElse(false);
+        return scope.isCurrentActorUnscoped();
     }
 
     /** Users a scoped admin may manage: those inside their resource subtree. */
     public Set<UUID> currentManagedUserIds() {
-        return actingAdmin.id().map(userAuth::scopedUserIds).orElse(Set.of());
+        return scope.currentManagedUserIds();
     }
 
     /**
@@ -293,13 +256,12 @@ public class AdminAccessPolicy {
      * is denied — which is what keeps them from mutating a platform-wide group even though RLS lets them read it.
      */
     public boolean canAccessGroup(UUID groupId) {
-        return actingAdmin.id().map(actorId -> canAccessGroup(actorId, groupId)).orElse(false);
+        return scope.canAccessGroup(groupId);
     }
 
     /** As {@link #canAccessGroup(UUID)} for an EXPLICIT actor (off the request thread — author re-validation). */
     private boolean canAccessGroup(UUID actorId, UUID groupId) {
-        return groupAuth.canManage(actorId, groupId)
-                || userGroups.orgIdOf(groupId).map(orgId -> orgAuth.canManage(actorId, orgId)).orElse(false);
+        return scope.canAccessGroup(actorId, groupId);
     }
 
     /**
@@ -308,8 +270,7 @@ public class AdminAccessPolicy {
      * Such an actor sees their whole org's directory (RLS scopes it) rather than only a resource subtree.
      */
     public boolean administersBoundOrg() {
-        return actingAdmin.id().flatMap(actorId ->
-                orgContext.currentOrg().map(orgId -> orgAuth.canManage(actorId, orgId))).orElse(false);
+        return scope.administersBoundOrg();
     }
 
     /**
@@ -318,24 +279,22 @@ public class AdminAccessPolicy {
      * tenant admin sees only their org and an un-drilled super-admin sees only global (org-less) data.
      */
     public UUID actingOrg() {
-        return orgContext.currentOrg().orElse(null);
+        return scope.actingOrg();
     }
 
     /** For a scoped acting admin, the ids of the groups inside their resource subtree. */
     public Set<UUID> currentScopedGroupIds() {
-        return actingAdmin.id().map(groupAuth::scopedGroupIds).orElse(Set.of());
+        return scope.currentScopedGroupIds();
     }
 
     /** Org scope: whether the acting admin may administer {@code orgId} (super bypasses; else org-admin+member). */
     public boolean canAccessOrg(UUID orgId) {
-        return actingAdmin.id()
-                .map(actorId -> resourceAuth.isUnscoped(actorId) || orgAuth.canManage(actorId, orgId))
-                .orElse(false);
+        return scope.canAccessOrg(orgId);
     }
 
     /** For a scoped acting admin, the ids of the organizations they administer (their memberships). */
     public Set<UUID> currentScopedOrgIds() {
-        return actingAdmin.id().map(orgAuth::scopedOrgIds).orElse(Set.of());
+        return scope.currentScopedOrgIds();
     }
 
     /**
@@ -345,20 +304,12 @@ public class AdminAccessPolicy {
      * tier's apps), so an app in another tenant (or a global one) is never in their catalog and stays out.
      */
     public boolean canAccessApp(String appId) {
-        Optional<UUID> actor = actingAdmin.id();
-        if (actor.isEmpty()) {
-            return false;
-        }
-        UUID actorId = actor.get();
-        return resourceAuth.isUnscoped(actorId)
-                || appAuth.canManage(actorId, appId)
-                || (administersBoundOrg() && applications.listApplications().stream()
-                        .map(ApplicationView::id).anyMatch(appId::equals));
+        return scope.canAccessApp(appId);
     }
 
     /** For a scoped acting admin, the ids of the applications inside their resource subtree. */
     public Set<String> currentScopedAppIds() {
-        return actingAdmin.id().map(appAuth::scopedAppIds).orElse(Set.of());
+        return scope.currentScopedAppIds();
     }
 
     /**
@@ -374,12 +325,12 @@ public class AdminAccessPolicy {
         }
 
         UUID actorId = actor.get();
-        if (resourceAuth.isUnscoped(actorId) || administersBoundOrg()) {
+        if (scope.isUnscoped(actorId) || scope.administersBoundOrg()) {
             return new AuditScope(true, actingAdmin.username(), Set.of(), Set.of(), Set.of(), Set.of());
         }
-        return new AuditScope(false, actingAdmin.username(), currentManagedUserIds(),
-                groupAuth.scopedGroupIds(actorId), appAuth.scopedAppIds(actorId),
-                resourceAuth.managedResourceIds(actorId));
+        return new AuditScope(false, actingAdmin.username(), scope.currentManagedUserIds(),
+                scope.scopedGroupIdsOf(actorId), scope.scopedAppIdsOf(actorId),
+                scope.managedResourceIdsOf(actorId));
     }
 
     /** Blocks disabling one's own account or any administrator's account; enabling is always allowed. */

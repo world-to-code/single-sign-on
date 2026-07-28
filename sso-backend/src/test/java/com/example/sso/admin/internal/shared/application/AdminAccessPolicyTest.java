@@ -85,9 +85,12 @@ class AdminAccessPolicyTest {
         orgContext = mock(OrgContext.class);
         // A REAL ActingAdmin over the same UserService: this suite drives the SecurityContext, and
         // stubbing actor resolution would move what it is testing out of the test.
-        policy = new AdminAccessPolicy(new ActingAdmin(userService), userService, roleService,
-                roleHierarchy, userGroups, userAuth, groupAuth,
-                appAuth, resourceAuth, orgAuth, applications, orgContext);
+        // REAL ActingAdmin and AdminScope over the same mocked ports: this suite drives the SecurityContext and
+        // asserts reach, so stubbing either would move what it tests out of the test.
+        ActingAdmin actingAdmin = new ActingAdmin(userService);
+        AdminScope scope = new AdminScope(actingAdmin, userService, userGroups, userAuth, groupAuth, appAuth,
+                resourceAuth, orgAuth, applications, orgContext);
+        policy = new AdminAccessPolicy(actingAdmin, scope, userService, roleService, roleHierarchy, userGroups);
 
         UserAccount actor = mock(UserAccount.class);
         when(actor.getId()).thenReturn(ACTOR_ID);
