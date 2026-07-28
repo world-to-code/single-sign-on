@@ -66,8 +66,8 @@ class CsvImportApplyTest {
     @BeforeEach
     void setUp() {
         service = new CsvImportServiceImpl(profiles, uploads, planner, creator, new CsvFailureText(bundle()));
-        lenient().when(profiles.findById(PROFILE)).thenReturn(Optional.of(
-                new Profile(PROFILE, "acme", ProfileKind.TENANT, null, true, true)));
+        lenient().when(profiles.requireAssignable(PROFILE))
+                .thenReturn(new Profile(PROFILE, "acme", ProfileKind.TENANT, null, true, true));
         lenient().when(uploads.validateOnly(any(), any())).thenReturn(new CsvUpload("users.csv", "csv"));
     }
 
@@ -172,12 +172,12 @@ class CsvImportApplyTest {
     /** A source profile cannot create users, and the file is not even read before that is settled. */
     @Test
     void aSourceProfileCannotBeImportedInto() {
-        when(profiles.findById(PROFILE)).thenReturn(Optional.of(
-                new Profile(PROFILE, "SCIM", ProfileKind.SCIM, null, false, false)));
+        when(profiles.requireAssignable(PROFILE))
+                .thenThrow(BadRequestException.of("metadata.profile.notAssignable"));
 
         assertThatThrownBy(() -> service.apply(PROFILE, request()))
                 .asInstanceOf(type(ApiException.class))
-                .extracting(ApiException::getMessageKey).isEqualTo("metadata.profile.notCreatable");
+                .extracting(ApiException::getMessageKey).isEqualTo("metadata.profile.notAssignable");
 
         verify(uploads, never()).validateOnly(any(), any());
         verify(creator, never()).create(any(), any());

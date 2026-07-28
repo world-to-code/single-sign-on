@@ -7,7 +7,9 @@ import com.example.sso.metadata.internal.domain.ProfileEntity;
 import com.example.sso.metadata.internal.domain.ProfileRepository;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationView;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
+import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import java.util.Collection;
 import java.util.List;
@@ -55,6 +57,17 @@ class ProfileServiceImpl implements ProfileService {
     public Optional<Profile> findByConnectorId(UUID connectorId) {
         return actingOrg().flatMap(org -> repository.findByConnectorIdAndOrgId(connectorId, org))
                 .map(this::toProfile);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Profile requireAssignable(UUID profileId) {
+        Profile profile = findById(profileId)
+                .orElseThrow(() -> NotFoundException.of("metadata.profile.notFound"));
+        if (!profile.governsUsers()) {
+            throw BadRequestException.of("metadata.profile.notAssignable");
+        }
+        return profile;
     }
 
     @Override

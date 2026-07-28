@@ -19,6 +19,18 @@ public interface ProfileService {
     /** The tenant's own profile — the target every source profile ultimately feeds. */
     Optional<Profile> tenantProfile();
 
+    /**
+     * The profile a user may be bound to, or a refusal.
+     *
+     * <p>Every route that binds a person to a profile takes the id from the client — creation, the CSV import
+     * and its template, the profile move — so each has to answer the same two questions: does it exist in the
+     * ACTING organization (a foreign id is a non-revealing 404, since {@link #findById} scopes by org), and
+     * does it {@link Profile#governsUsers() govern users} at all. Answering them here rather than at each
+     * caller is the point: a create path that trusted the id while the move path checked it is exactly how one
+     * tenant's account ends up carrying another tenant's profile.
+     */
+    Profile requireAssignable(UUID profileId);
+
 
     /**
      * Creates the profile describing a connector, if it has none. Called when the connector is saved: the two

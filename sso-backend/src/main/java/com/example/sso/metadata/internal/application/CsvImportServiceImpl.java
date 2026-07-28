@@ -41,11 +41,7 @@ class CsvImportServiceImpl implements CsvImportService {
     public CsvImportPreview preview(UUID profileId, MultipartRequest request) {
         // The profile is resolved BEFORE the file is read: an id that is not the caller's, or is a source
         // profile, should cost nothing and reveal nothing, and there is no reason to decode bytes for it.
-        Profile profile = profiles.findById(profileId)
-                .orElseThrow(() -> NotFoundException.of("metadata.profile.notFound"));
-        if (!profile.governsUsers()) {
-            throw BadRequestException.of("metadata.profile.notCreatable");
-        }
+        Profile profile = profiles.requireAssignable(profileId);
         return planner.plan(profile.id(), uploads.validateOnly(request, FILE_PART).text());
     }
 

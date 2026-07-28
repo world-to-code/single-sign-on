@@ -76,11 +76,6 @@ class CsvTemplateServiceImpl implements CsvTemplateService {
      * plausible, since the base attributes are synthesised for every profile alike.
      */
     private Profile requireProfile(UUID profileId) {
-        Profile profile = profiles.findById(profileId)
-                .orElseThrow(() -> NotFoundException.of("metadata.profile.notFound"));
-        if (!profile.governsUsers()) {
-            throw BadRequestException.of("metadata.profile.notCreatable");
-        }
-        return profile;
+        return profiles.requireAssignable(profileId);
     }
 }

@@ -62,7 +62,7 @@ class CsvTemplateServiceImplTest {
     void setUp() {
         service = new CsvTemplateServiceImpl(profiles, definitions, new CsvGuidanceRow(messages));
         Profile tenant = new Profile(PROFILE, "acme.com", ProfileKind.TENANT, null, true, true);
-        lenient().when(profiles.findById(PROFILE)).thenReturn(Optional.of(tenant));
+        lenient().when(profiles.requireAssignable(PROFILE)).thenReturn(tenant);
     }
 
     private AttributeDefinition column(String key, AttributeDataType type, List<String> enumValues,
@@ -170,7 +170,7 @@ class CsvTemplateServiceImplTest {
 
     @Test
     void anUnknownProfileHasNoTemplate() {
-        when(profiles.findById(PROFILE)).thenReturn(Optional.empty());
+        when(profiles.requireAssignable(PROFILE)).thenThrow(NotFoundException.of("metadata.profile.notFound"));
 
         assertThatThrownBy(() -> service.templateFor(PROFILE)).isInstanceOf(NotFoundException.class);
     }
@@ -182,8 +182,8 @@ class CsvTemplateServiceImplTest {
      */
     @Test
     void aSourceProfileHasNoTemplate() {
-        when(profiles.findById(PROFILE)).thenReturn(Optional.of(
-                new Profile(PROFILE, "SCIM", ProfileKind.SCIM, null, false, false)));
+        when(profiles.requireAssignable(PROFILE))
+                .thenThrow(BadRequestException.of("metadata.profile.notAssignable"));
 
         assertThatThrownBy(() -> service.templateFor(PROFILE)).isInstanceOf(BadRequestException.class);
     }
