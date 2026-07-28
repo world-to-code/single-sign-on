@@ -90,7 +90,8 @@ class AdminAccessPolicyTest {
         ActingAdmin actingAdmin = new ActingAdmin(userService);
         AdminScope scope = new AdminScope(actingAdmin, userService, userGroups, userAuth, groupAuth, appAuth,
                 resourceAuth, orgAuth, applications, orgContext);
-        policy = new AdminAccessPolicy(actingAdmin, scope, userService, roleService, roleHierarchy, userGroups);
+        RoleGrantCeiling ceiling = new RoleGrantCeiling(actingAdmin, scope, roleService, roleHierarchy, userGroups);
+        policy = new AdminAccessPolicy(actingAdmin, scope, ceiling, userService, roleHierarchy);
 
         UserAccount actor = mock(UserAccount.class);
         when(actor.getId()).thenReturn(ACTOR_ID);
@@ -362,6 +363,26 @@ class AdminAccessPolicyTest {
         when(resourceAuth.canManage(ACTOR_ID, resourceId)).thenReturn(true);
         assertThat(policy.mayAssignTarget(MappingTargetKind.RESOURCE_MEMBER, resourceId)).isTrue();
         assertThat(policy.mayAssignTarget(MappingTargetKind.RESOURCE_MEMBER, UUID.randomUUID())).isFalse();
+    }
+
+    /**
+     * The grant-only-what-you-hold term, isolated so its fail-CLOSED default is actually exercised.
+     *
+     * <p>{@code mayAssignRoles} composes three terms with AND, and the dominance term already refuses an
+     * unknown name — so flipping this one's {@code orElse(false)} to true left the whole suite green. That is
+     * defence in depth working, and also a check nothing was pinning: a role the ceiling cannot SEE must never
+     * be assignable, and an org-only name resolving as "unknown" while the service happily assigned the org
+     * role of that name was a real escalation path, not a hypothetical one.
+     */
+    @Test
+    void aRoleNameTheCeilingCannotResolveIsNeverAssignableEvenIfTheHierarchyAllowsIt() {
+        signInWith(Permissions.USER_READ); // not a super — setUp already resolves the actor either way
+        when(userService.hasRole(ACTOR_ID, Roles.ADMIN)).thenReturn(false);
+        // The dominance term says yes, so only the resolution-based terms can refuse.
+        when(roleHierarchy.actorMayManageRoleName(eq(ACTOR_ID), eq("ghost"), any())).thenReturn(true);
+        when(roleService.findByName(eq("ghost"), any())).thenReturn(Optional.empty());
+
+        assertThat(policy.mayAssignRoles(List.of("ghost"))).isFalse();
     }
 
     // --- parameterized mayAssignTarget: the SecurityContext-FREE variant used by the async author re-validation ---

@@ -7,16 +7,10 @@ import com.example.sso.user.deny.DenyLift;
 import com.example.sso.user.deny.DenySubjectKind;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.RoleHierarchyService;
-import com.example.sso.user.role.RoleRef;
-import com.example.sso.user.role.RoleService;
 import com.example.sso.user.role.Roles;
-import com.example.sso.user.group.UserGroupService;
 import com.example.sso.user.account.UserService;
 import java.util.Collection;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -48,10 +42,9 @@ public class AdminAccessPolicy {
 
     private final ActingAdmin actingAdmin;
     private final AdminScope scope;
+    private final RoleGrantCeiling ceiling;
     private final UserService userService;
-    private final RoleService roleService;
     private final RoleHierarchyService roleHierarchy;
-    private final UserGroupService userGroups;
 
     /**
      * User scope: whether the acting admin may act on {@code targetId} at all. A super admin
@@ -87,9 +80,7 @@ public class AdminAccessPolicy {
      * the grant targets the stored id. Fails closed on an unresolved id.
      */
     public boolean mayAssignTarget(MappingTargetKind kind, UUID targetId) {
-        return actingAdmin.id()
-                .map(actorId -> mayAssignTarget(actorId, actingAdmin.authorities(), kind, targetId))
-                .orElse(false);
+        return ceiling.mayAssignTarget(kind, targetId);
     }
 
     /**
@@ -99,12 +90,7 @@ public class AdminAccessPolicy {
      * so the manual create/update gate and the continuous re-check can never drift.
      */
     public boolean mayAssignTarget(UUID actorId, Set<String> actorAuthorities, MappingTargetKind kind, UUID targetId) {
-        return switch (kind) {
-            case GROUP -> canAccessGroup(actorId, targetId)
-                    && mayConferRolesOf(actorId, actorAuthorities, Set.of(targetId)).contains(targetId);
-            case ROLE -> isSuper(actorId) || mayGrantRole(actorId, actorAuthorities, targetId);
-            case RESOURCE_MEMBER -> scope.canManageResource(actorId, targetId); // the subtree, by id
-        };
+        return ceiling.mayAssignTarget(actorId, actorAuthorities, kind, targetId);
     }
 
     /**
@@ -125,21 +111,7 @@ public class AdminAccessPolicy {
      * file naming two hundred groups was thousands of queries inside one read-only transaction.
      */
     public Set<UUID> mayConferRolesOf(UUID actorId, Set<String> actorAuthorities, Collection<UUID> groupIds) {
-        if (groupIds.isEmpty()) {
-            return Set.of();
-        }
-        Map<UUID, Set<UUID>> delegated = userGroups.delegatedRoleIds(groupIds);
-        Map<UUID, Boolean> verdicts = new HashMap<>();
-        Set<UUID> conferrable = new LinkedHashSet<>();
-        for (UUID groupId : groupIds) {
-            // Absent means the group delegates nothing, so there is no ceiling for it to clear.
-            Set<UUID> roles = delegated.getOrDefault(groupId, Set.of());
-            if (roles.stream().allMatch(roleId -> verdicts.computeIfAbsent(roleId,
-                    id -> mayAssignTarget(actorId, actorAuthorities, MappingTargetKind.ROLE, id)))) {
-                conferrable.add(groupId);
-            }
-        }
-        return conferrable;
+        return ceiling.mayConferRolesOf(actorId, actorAuthorities, groupIds);
     }
 
     /**
@@ -157,43 +129,16 @@ public class AdminAccessPolicy {
      * <p>The actor is resolved ONCE for the set, like {@link #mayConferRolesOf}.
      */
     public boolean mayAssignRoleIds(Collection<UUID> roleIds) {
-        // Null-safe because this runs inside SpEL, before any binding validation: an omitted roleIds would
-        // otherwise NPE out of the gate as a 500 rather than a refusal the caller can read.
-        if (roleIds == null || roleIds.isEmpty()) {
-            return true;
-        }
-        Optional<UUID> actor = actingAdmin.id();
-        if (actor.isEmpty()) {
-            return false;
-        }
-        Set<String> authorities = actingAdmin.authorities();
-        return roleIds.stream().allMatch(roleId ->
-                mayAssignTarget(actor.get(), authorities, MappingTargetKind.ROLE, roleId));
+        return ceiling.mayAssignRoleIds(roleIds);
     }
 
     /** The same decision for the CURRENT actor, resolved once for the whole set. */
     public Set<UUID> currentMayConferRolesOf(Collection<UUID> groupIds) {
-        return actingAdmin.id()
-                .map(actorId -> mayConferRolesOf(actorId, actingAdmin.authorities(), groupIds))
-                .orElseGet(Set::of);
+        return ceiling.currentMayConferRolesOf(groupIds);
     }
 
     public boolean mayAssignRoles(Collection<String> roleNames) {
-        if (currentIsSuperAdmin()) {
-            return true;
-        }
-        if (roleNames == null) {
-            return true;
-        }
-        // A non-super may assign a role only if it is NOT strictly above them in the inheritance DAG (at or
-        // below their level — so a tenant ORG_ADMIN can hand out ORG_ADMIN/GROUP_ADMIN/USER within their
-        // tenant, but nobody can hand out ROLE_ADMIN), carries no platform-only permission, and they
-        // themselves hold every permission it carries (grant-only-what-you-hold — the real escalation floor).
-        // All three compose with AND, and each fails closed on an unknown/unresolved name.
-        return roleNames.stream().allMatch(name ->
-                currentActorMayManageRoleName(name)
-                        && !roleCarriesPlatformPermission(name)
-                        && actorHoldsAllPermissionsOfRole(name));
+        return ceiling.mayAssignRoles(roleNames);
     }
 
     /**
@@ -201,7 +146,7 @@ public class AdminAccessPolicy {
      * (role/permission assignment); visibility scoping uses {@link #isCurrentActorUnscoped()} instead.
      */
     public boolean currentIsSuperAdmin() {
-        return actingAdmin.id().map(this::isSuper).orElse(false);
+        return ceiling.currentIsSuperAdmin();
     }
 
     /**
@@ -209,7 +154,7 @@ public class AdminAccessPolicy {
      * sits strictly beneath them (and is therefore one they may assign). Empty for an unresolved actor.
      */
     public Set<UUID> currentActorApexRoleIds() {
-        return actingAdmin.id().map(roleHierarchy::apexRolesOf).orElse(Set.of());
+        return ceiling.currentActorApexRoleIds();
     }
 
     /**
@@ -218,7 +163,7 @@ public class AdminAccessPolicy {
      * grant-only-what-you-hold and platform-permission guards that compose with this on the endpoints.
      */
     public boolean currentActorMayManageRole(UUID roleId) {
-        return actingAdmin.id().map(actorId -> roleHierarchy.actorMayManageRole(actorId, roleId)).orElse(false);
+        return ceiling.currentActorMayManageRole(roleId);
     }
 
     /**
@@ -226,14 +171,12 @@ public class AdminAccessPolicy {
      * it is not strictly above them. Fail-closed on an unresolved actor or unknown name.
      */
     public boolean currentActorMayManageRoleName(String roleName) {
-        return actingAdmin.id()
-                .map(actorId -> roleHierarchy.actorMayManageRoleName(actorId, roleName, actingOrg()))
-                .orElse(false);
+        return ceiling.currentActorMayManageRoleName(roleName);
     }
 
     /** The roles that strictly OUTRANK the acting admin — hidden from their role listing (empty for super). */
     public Set<UUID> currentRolesAboveActor() {
-        return actingAdmin.id().map(roleHierarchy::rolesAboveActor).orElse(Set.of());
+        return ceiling.currentRolesAboveActor();
     }
 
     /**
@@ -398,15 +341,7 @@ public class AdminAccessPolicy {
      * this gate must be correct on its own.
      */
     public boolean mayGrantPermissions(Collection<String> permissions) {
-        if (currentIsSuperAdmin()) {
-            return true;
-        }
-        if (permissions == null) {
-            return true;
-        }
-        return permissions.stream().allMatch(Permissions::isGrantableName)
-                && permissions.stream().noneMatch(Permissions::isPlatformGrant)
-                && actingAdmin.authorities().containsAll(permissions);
+        return ceiling.mayGrantPermissions(permissions);
     }
 
     /**
@@ -534,17 +469,17 @@ public class AdminAccessPolicy {
      * admin must). The actor-independent "last administrator" invariant is a 409 in {@link UserAdminService}.
      */
     public boolean canRevokeRole(UUID userId, UUID roleId) {
-        if (isSelf(userId) && ADMIN_ROLE.equals(roleName(roleId))) {
+        if (isSelf(userId) && ADMIN_ROLE.equals(ceiling.roleName(roleId))) {
             return false;
         }
         return canManageRoleMembership(userId, roleId);
     }
 
     private boolean canManageRoleMembership(UUID userId, UUID roleId) {
-        if (!currentIsSuperAdmin()
-                && (isAdmin(userId) || !currentActorMayManageRole(roleId)
-                        || roleCarriesPlatformPermission(roleId)
-                        || !actorHoldsAllPermissionsOf(roleId))) {
+        if (!ceiling.currentIsSuperAdmin()
+                && (isAdmin(userId) || !ceiling.currentActorMayManageRole(roleId)
+                        || ceiling.roleCarriesPlatformPermission(roleId)
+                        || !ceiling.actorHoldsAllPermissionsOf(roleId))) {
             // A scoped/tenant admin may never touch an admin account, grant a role strictly ABOVE them (e.g.
             // ROLE_ADMIN), grant a role carrying a platform-only permission, nor grant a role carrying any
             // permission they do not themselves hold — all of which would escalate the target or themselves.
@@ -562,29 +497,14 @@ public class AdminAccessPolicy {
      * <p>The role's permissions are read ONCE. Both of the last two terms need them, and asking twice meant a
      * second query per role — which the bulk callers multiply by every group in a file.
      */
-    private boolean mayGrantRole(UUID actorId, Set<String> actorAuthorities, UUID roleId) {
-        if (!roleHierarchy.actorMayManageRole(actorId, roleId)) {
-            return false;
-        }
-        Set<String> granted = roleService.permissionNames(roleId);
-        return granted.stream().noneMatch(Permissions::isPlatformGrant) && actorAuthorities.containsAll(granted);
-    }
 
     /** Whether the role (by id) carries any platform-only permission — un-grantable by a non-super admin. */
-    private boolean roleCarriesPlatformPermission(UUID roleId) {
-        return roleService.permissionNames(roleId).stream().anyMatch(Permissions::isPlatformGrant);
-    }
 
     /**
      * Whether the role (by name) carries any platform-only permission. Resolved IN THE ACTING TIER (the
      * org's own role of that name first, else the global one) — exactly as the assignment resolves it, so
      * the role that is checked is the role that gets assigned. An unknown name carries nothing.
      */
-    private boolean roleCarriesPlatformPermission(String roleName) {
-        return roleService.findByName(roleName, actingOrg())
-                .map(role -> roleCarriesPlatformPermission(role.getId()))
-                .orElse(false);
-    }
 
     /**
      * Grant-only-what-you-hold: whether the acting admin holds EVERY permission the role (by id) carries. A
@@ -592,9 +512,6 @@ public class AdminAccessPolicy {
      * super-created role bearing a permission they don't have (e.g. {@code user:read}) and escalate. A super
      * admin holds the whole catalog, so this is a no-op for them (and privileged-role gates short-circuit first).
      */
-    private boolean actorHoldsAllPermissionsOf(UUID roleId) {
-        return actingAdmin.authorities().containsAll(roleService.permissionNames(roleId));
-    }
 
     /**
      * Grant-only-what-you-hold by role name, resolved IN THE ACTING TIER (org's own role first, else the
@@ -602,16 +519,8 @@ public class AdminAccessPolicy {
      * the check cannot see must never be assignable (an org-only name resolved as "unknown" while the
      * service happily assigned the org role was a real escalation path).
      */
-    private boolean actorHoldsAllPermissionsOfRole(String roleName) {
-        return roleService.findByName(roleName, actingOrg())
-                .map(role -> actorHoldsAllPermissionsOf(role.getId()))
-                .orElse(false);
-    }
 
     /** The role's name, or {@code null} if it no longer exists (the caller's service then 404s). */
-    private String roleName(UUID roleId) {
-        return roleService.findById(roleId).map(RoleRef::getName).orElse(null);
-    }
 
     private boolean isSelf(UUID targetId) {
         return actingAdmin.id().map(id -> id.equals(targetId)).orElse(false);
