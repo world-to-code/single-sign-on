@@ -3,6 +3,7 @@ package com.example.sso.admin.internal.role.application;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.shared.application.LastAdminGuard;
+import com.example.sso.admin.internal.shared.application.MembershipDenyCeiling;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.shared.IdName;
@@ -53,6 +54,7 @@ class RoleAdminServiceTest {
     private AdminAccessPolicy accessPolicy;
     private AdminAuditLogger auditLogger;
     private LastAdminGuard lastAdminGuard;
+    private MembershipDenyCeiling membershipDenies;
     private OrgContext orgContext;
     private OrgTierGuard tierGuard;
     private RoleAdminService service;
@@ -65,12 +67,13 @@ class RoleAdminServiceTest {
         accessPolicy = mock(AdminAccessPolicy.class);
         auditLogger = mock(AdminAuditLogger.class);
         lastAdminGuard = mock(LastAdminGuard.class);
+        membershipDenies = mock(MembershipDenyCeiling.class);
         orgContext = mock(OrgContext.class);
         tierGuard = new OrgTierGuard(orgContext);
         when(denyService.principalDenies(any(DenySubjectKind.class), any())).thenReturn(List.of());
         service = new RoleAdminService(
                 roleService, denyService, rbacService, accessPolicy, auditLogger, lastAdminGuard,
-                new ActingAdminTier(accessPolicy, orgContext), tierGuard);
+                membershipDenies, new ActingAdminTier(accessPolicy, orgContext), tierGuard);
     }
 
     @Test
@@ -654,5 +657,36 @@ class RoleAdminServiceTest {
         when(account.getId()).thenReturn(id);
         when(account.getOrgId()).thenReturn(orgId);
         return account;
+    }
+
+    /**
+     * A revocation is a LIFT act. Dropping the membership removes the deny riding on the role without a grant
+     * being made anywhere, so the grant ceiling never sees it — the ceiling has to refuse before the write,
+     * or the withheld permission comes back and the role is already gone.
+     */
+    @Test
+    void aRevocationRefusedByTheDenyCeilingWritesNothing() {
+        UUID roleId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        doThrow(ForbiddenException.of("user.membership.denyGoverned"))
+                .when(membershipDenies).requireMayDropRole(roleId);
+
+        assertThatThrownBy(() -> service.removeRoleMember(roleId, userId))
+                .isInstanceOf(ForbiddenException.class);
+
+        verify(roleService, never()).removeMember(any(), any());
+        verify(auditLogger, never()).log(any(), any(), any(), any());
+    }
+
+    /** And the ordinary path still revokes — the ceiling is asked, not assumed. */
+    @Test
+    void anAllowedRevocationProceeds() {
+        UUID roleId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+
+        service.removeRoleMember(roleId, userId);
+
+        verify(membershipDenies).requireMayDropRole(roleId);
+        verify(roleService).removeMember(roleId, userId);
     }
 }

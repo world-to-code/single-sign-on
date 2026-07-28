@@ -13,6 +13,7 @@ import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.NewUser;
+import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
 import com.example.sso.user.deny.DenyService;
 import com.example.sso.user.deny.DenySpec;
@@ -20,6 +21,7 @@ import com.example.sso.user.deny.DenySubjectKind;
 import com.example.sso.user.group.GroupSpec;
 import com.example.sso.user.group.UserGroupService;
 import com.example.sso.user.rbac.Permissions;
+import com.example.sso.admin.internal.role.application.RoleAdminService;
 import com.example.sso.user.role.RoleService;
 import com.example.sso.user.role.Roles;
 import java.util.ArrayList;
@@ -57,6 +59,7 @@ class AttributeRemovalDenyCeilingIT extends AbstractIntegrationTest {
     @Autowired AttributeService attributes;
     @Autowired MappingRuleService mappingRules;
     @Autowired RoleService roles;
+    @Autowired RoleAdminService roleAdmin;
     @Autowired UserGroupService groups;
     @Autowired DenyService denies;
     @Autowired UserService users;
@@ -208,6 +211,43 @@ class AttributeRemovalDenyCeilingIT extends AbstractIntegrationTest {
         asTenantAdmin(tenantAdmin);
         assertThat(orgContext.callInOrg(org, () -> attributes.keysNotRemovable(EntityKind.USER, List.of(key))))
                 .containsExactly(key);
+    }
+
+    /**
+     * The same ceiling on the DIRECT route. Revoking the role by hand drops exactly the membership the
+     * attribute deletion drops, so guarding only the indirect path left the leakier one open — and this is the
+     * route an administrator reaches first.
+     */
+    @Test
+    void aTenantAdminCannotRevokeTheRoleADenyRidesOnEither() {
+        String admin = superAdmin();
+        UUID role = privilegedRoleBy(admin);
+        denyOnBy(admin, DenySubjectKind.ROLE, role, Permissions.ORG_CREATE);
+        UUID org = org();
+        String tenantAdmin = tenantUser(org);
+        UUID victim = UUID.fromString(valueHolder(org, "unused-" + suffix(), "x"));
+        orgContext.runAsPlatform(() -> roles.addMember(role, victim));
+
+        asTenantAdmin(tenantAdmin);
+        assertThatThrownBy(() -> orgContext.runInOrg(org, () -> roleAdmin.removeRoleMember(role, victim)))
+                .isInstanceOf(ForbiddenException.class);
+
+        assertThat(orgContext.callAsPlatform(() -> roles.members(role)))
+                .extracting(UserAccount::getId).contains(victim);
+    }
+
+    /** And whoever could lift the deny may revoke the membership. */
+    @Test
+    void theSuperWhoAuthoredTheDenyMayRevokeTheSameRole() {
+        String admin = superAdmin();
+        UUID role = privilegedRoleBy(admin);
+        denyOnBy(admin, DenySubjectKind.ROLE, role, Permissions.ORG_CREATE);
+        UUID victim = UUID.fromString(platformValueHolder("unused-" + suffix(), "x"));
+        orgContext.runAsPlatform(() -> roles.addMember(role, victim));
+
+        asSuper(admin);
+        assertThatCode(() -> orgContext.runAsPlatform(() -> roleAdmin.removeRoleMember(role, victim)))
+                .doesNotThrowAnyException();
     }
 
     // --- helpers ---

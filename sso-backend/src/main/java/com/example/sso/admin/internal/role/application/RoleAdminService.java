@@ -4,6 +4,7 @@ import com.example.sso.admin.internal.shared.application.ActingAdminTier;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.shared.application.LastAdminGuard;
+import com.example.sso.admin.internal.shared.application.MembershipDenyCeiling;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.shared.IdName;
@@ -44,6 +45,7 @@ public class RoleAdminService {
     private final AdminAccessPolicy accessPolicy;
     private final AdminAuditLogger auditLogger;
     private final LastAdminGuard lastAdminGuard;
+    private final MembershipDenyCeiling membershipDenies;
     private final ActingAdminTier actingTier;
     private final OrgTierGuard tierGuard;
 
@@ -262,9 +264,16 @@ public class RoleAdminService {
                 "grant role=" + roleId + " to user=" + userId);
     }
 
-    /** Revokes a role from a user; keeps the administrator invariant when the role is an admin-bearing role. */
+    /**
+     * Revokes a role from a user; keeps the administrator invariant when the role is an admin-bearing role.
+     *
+     * <p>Refused first when a deny rides on the role that this administrator could not lift by hand. Dropping
+     * the membership removes that deny's effect without a grant being made anywhere — so neither the
+     * grant-only-what-you-hold ceiling nor the lift authority sees it, and the withheld permission comes back.
+     */
     @Transactional
     public void removeRoleMember(UUID roleId, UUID userId) {
+        membershipDenies.requireMayDropRole(roleId);
         roleService.removeMember(roleId, userId);
         guardAdminInvariantFor(roleId);
         auditLogger.log(AuditType.USER_UPDATED, AuditSubjectType.USER, userId.toString(),

@@ -1,18 +1,15 @@
 package com.example.sso.admin.internal.mapping.application;
 
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
+import com.example.sso.admin.internal.shared.application.MembershipDenyCeiling;
 import com.example.sso.mapping.MappingRuleService;
 import com.example.sso.mapping.MappingTarget;
 import com.example.sso.metadata.AttributeValueGrantGuard;
-import com.example.sso.user.deny.DenyService;
-import com.example.sso.user.deny.DenySubjectKind;
-import com.example.sso.user.group.UserGroupService;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -32,8 +29,7 @@ class AttributeValueGrantGuardAdapter implements AttributeValueGrantGuard {
 
     private final MappingRuleService rules;
     private final AdminAccessPolicy accessPolicy;
-    private final DenyService denies;
-    private final UserGroupService userGroups;
+    private final MembershipDenyCeiling membershipDenies;
 
     @Override
     public Set<String> keysBeyondAuthority(Collection<String> attrKeys) {
@@ -73,18 +69,12 @@ class AttributeValueGrantGuardAdapter implements AttributeValueGrantGuard {
      */
     private boolean mayUnbind(MappingTarget target) {
         return switch (target.kind()) {
-            case GROUP -> denies.mayLiftEveryDenyOn(DenySubjectKind.GROUP, target.targetId())
-                    && delegatedRolesCarryNoUnliftableDeny(target.targetId());
-            case ROLE -> denies.mayLiftEveryDenyOn(DenySubjectKind.ROLE, target.targetId());
+            case GROUP -> membershipDenies.mayDropGroup(target.targetId());
+            case ROLE -> membershipDenies.mayDropRole(target.targetId());
             // A resource membership confers no authority, so no deny can ride on losing it. Excluded upstream
             // as well; named here so a new kind cannot slip through as "removable".
             case RESOURCE_MEMBER -> true;
         };
-    }
-
-    private boolean delegatedRolesCarryNoUnliftableDeny(UUID groupId) {
-        return userGroups.delegatedRoleIds(Set.of(groupId)).getOrDefault(groupId, Set.of()).stream()
-                .allMatch(roleId -> denies.mayLiftEveryDenyOn(DenySubjectKind.ROLE, roleId));
     }
 
     private Set<String> beyond(Map<String, Set<MappingTarget>> decided) {
