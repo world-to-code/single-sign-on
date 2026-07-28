@@ -1,5 +1,6 @@
 package com.example.sso.admin.internal.user.api;
 
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import java.util.UUID;
@@ -17,5 +18,8 @@ import java.util.UUID;
  *                      delete a key the administrator never saw. That key can be the condition on a mapping
  *                      rule, so the difference is not cosmetic — it is a role retracted without consent.
  */
-public record SwitchProfileRequest(@NotNull UUID profileId, List<String> confirmedKeys) {
+public record SwitchProfileRequest(@NotNull UUID profileId,
+                                  // Element-validated: Set.copyOf rejects a null element with an
+                                  // NPE, which surfaced as a 500 rather than a refusal.
+                                  List<@NotBlank String> confirmedKeys) {
 }

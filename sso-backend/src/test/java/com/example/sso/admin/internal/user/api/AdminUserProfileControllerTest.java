@@ -7,6 +7,7 @@ import com.example.sso.admin.internal.user.application.UserProfileAttributeServi
 import com.example.sso.admin.internal.user.application.UserProfileService;
 import com.example.sso.admin.internal.user.application.UserProvisioningService;
 import com.example.sso.admin.internal.user.application.UserRecoveryAdminService;
+import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.Audited;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.shared.security.RequireStepUp;
@@ -145,16 +146,35 @@ class AdminUserProfileControllerTest {
     }
 
     /**
-     * The move keeps its step-up gate, and deliberately carries NO {@code @Audited}: the service records it
-     * AFTER_COMMIT with the keys that went and the actor as distinct from the subject, so an interceptor row
-     * beside it would be a second, poorer description of one operation under a different audit type.
+     * The move keeps its step-up gate and its audit declaration, and the declaration names a SUBJECT.
+     *
+     * <p>Both halves matter and neither is decoration. Without the annotation a refusal — a 403 on an
+     * administrator target, a 409 on a stale preview — leaves no row at all, because the service-layer trail is
+     * AFTER_COMMIT and therefore records successes only. Without {@code subject}/{@code subjectParam} the row
+     * is written at subject NONE, which the scoped-admin audit view resolves by parsing a UUID and so drops
+     * entirely — the most destructive operation on the page, invisible to the delegate worth watching.
      */
     @Test
-    void theMoveIsStepUpGatedAndLeavesTheAuditRowToTheService() throws Exception {
+    void theMoveIsStepUpGatedAndAuditedAgainstTheUserItTargets() throws Exception {
         Method move = AdminUserController.class.getMethod("switchProfile", UUID.class, SwitchProfileRequest.class);
 
         assertThat(move.isAnnotationPresent(RequireStepUp.class)).as("a profile move is step-up gated").isTrue();
-        assertThat(move.isAnnotationPresent(Audited.class)).as("not audited twice").isFalse();
+        Audited audited = move.getAnnotation(Audited.class);
+        assertThat(audited).as("a refused move must still leave a trail").isNotNull();
+        assertThat(audited.subject()).isEqualTo(AuditSubjectType.USER);
+        assertThat(audited.subjectParam()).isEqualTo("id");
+    }
+
+    /** The sibling write had the same subject-less row, and the same delegate could not see it. */
+    @Test
+    void theColumnSaveIsAuditedAgainstTheUserItTargets() throws Exception {
+        Audited audited = AdminUserController.class
+                .getMethod("replaceProfileAttributes", UUID.class, UserProfileAttributesRequest.class)
+                .getAnnotation(Audited.class);
+
+        assertThat(audited).isNotNull();
+        assertThat(audited.subject()).isEqualTo(AuditSubjectType.USER);
+        assertThat(audited.subjectParam()).isEqualTo("id");
     }
 
     private void expectStatus(String requestBody, int expected) throws Exception {

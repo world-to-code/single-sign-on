@@ -64,9 +64,13 @@ class UserProfileEndpointAuthzIT extends AbstractIntegrationTest {
                 new UserProfileAttributesRequest(Map.of("team", List.of("Platform")))));
     }
 
+    /**
+     * The preview is gated as the WRITE, not as a read: it enumerates the attribute keys the target carries
+     * outside the chosen profile, so a caller who may not move them may not list them either.
+     */
     @Test
-    void previewingAMoveNeedsUserRead() {
-        actAs(Permissions.USER_UPDATE);
+    void previewingAMoveNeedsTheSamePermissionAsTheMove() {
+        actAs(Permissions.USER_READ);
 
         assertDenied(() -> controller.previewProfileSwitch(UUID.randomUUID(), UUID.randomUUID()));
     }
@@ -92,8 +96,8 @@ class UserProfileEndpointAuthzIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void anAdministratorWithUserReadReachesThePreviewItself() {
-        actAs(Permissions.USER_READ);
+    void anAdministratorWithUserUpdateReachesThePreviewItself() {
+        actAs(Permissions.USER_UPDATE);
 
         assertThatThrownBy(() -> controller.previewProfileSwitch(UUID.randomUUID(), UUID.randomUUID()))
                 .isInstanceOf(NotFoundException.class);

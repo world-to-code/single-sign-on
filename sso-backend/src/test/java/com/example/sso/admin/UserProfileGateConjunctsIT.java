@@ -91,10 +91,24 @@ class UserProfileGateConjunctsIT extends AbstractIntegrationTest {
                 .isInstanceOf(NotFoundException.class);
     }
 
-    /** The read is gated on scope too — a preview lists the attribute keys a person holds. */
+    /** The preview is gated on scope too — it lists the attribute keys a person holds. */
     @Test
     void aPreviewOutsideTheActorsScopeIsRefused() {
         when(policy.canAccessUser(any())).thenReturn(false);
+        when(policy.canChangeProfile(any())).thenReturn(true);
+
+        assertDenied(() -> controller.previewProfileSwitch(TARGET, UUID.randomUUID()));
+    }
+
+    /**
+     * And on the administrator-target rule, symmetrically with the move it previews. A delegate who may not
+     * move an administrator may not enumerate that administrator's attribute keys either — which is what the
+     * preview returns, one profile at a time.
+     */
+    @Test
+    void aPreviewOfAnAdministratorIsRefusedToWhoeverMayNotMoveThem() {
+        when(policy.canAccessUser(any())).thenReturn(true);
+        when(policy.canChangeProfile(any())).thenReturn(false);
 
         assertDenied(() -> controller.previewProfileSwitch(TARGET, UUID.randomUUID()));
     }

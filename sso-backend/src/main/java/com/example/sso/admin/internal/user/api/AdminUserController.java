@@ -29,6 +29,7 @@ import com.example.sso.user.account.Suggestion;
 import com.example.sso.admin.internal.user.application.UserProfileAttributeService;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityKind;
+import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.audit.Audited;
 import jakarta.validation.Valid;
@@ -127,9 +128,16 @@ public class AdminUserController {
         return userDetailAdminService.activity(id, page, size);
     }
 
-    /** What moving this user onto {@code profileId} would delete, and whether it can happen at all. */
+    /**
+     * What moving this user onto {@code profileId} would delete, and whether it can happen at all.
+     *
+     * <p>Gated as the WRITE, not as a read: it enumerates the attribute keys the person carries outside the
+     * chosen profile, so under {@code @CanViewUser} a delegate who may not move an administrator could still
+     * iterate the org's profiles and read that administrator's whole key set — and, since a blocked key can
+     * now mean "a deny you cannot lift rides on this", learn about denies on principals they cannot see.
+     */
     @GetMapping("/{id}/profile/preview")
-    @CanViewUser
+    @CanChangeUserProfile
     public ProfileSwitchPreviewView previewProfileSwitch(@PathVariable UUID id, @RequestParam UUID profileId) {
         return ProfileSwitchPreviewView.of(userProfiles.preview(id, profileId));
     }
@@ -140,11 +148,14 @@ public class AdminUserController {
      * and why this carries a step-up: those keys can be conditions on mapping rules and policy bindings, so
      * deleting one can retract a role.
      */
-    // No @Audited: the move is recorded by ProfileSwitchAuditor once it has actually committed, and that row
-    // carries what this one cannot — the keys that went, and the actor as distinct from the subject.
+    // Audited here for the REFUSALS, which is the half a service-layer trail cannot cover: ProfileSwitchAuditor
+    // is AFTER_COMMIT, so a 403 on an administrator target, a 409 on a stale preview or a blocked key leaves no
+    // row at all without this. The two rows on success are deliberate and differ in kind — this one says the
+    // request happened and how it ended, the listener's says what it deleted.
     @PutMapping("/{id}/profile")
     @CanChangeUserProfile
     @RequireStepUp
+    @Audited(value = AuditType.ATTRIBUTE_CHANGED, subject = AuditSubjectType.USER, subjectParam = "id")
     public UserProfileAttributesView switchProfile(@PathVariable UUID id,
                                                    @Valid @RequestBody SwitchProfileRequest request) {
         userProfiles.switchTo(id, request.profileId(), request.confirmedKeys());
@@ -167,7 +178,9 @@ public class AdminUserController {
     @PutMapping("/{id}/profile-attributes")
     @CanChangeUserProfile
     @RequireStepUp
-    @Audited(AuditType.ATTRIBUTE_CHANGED)
+    // subject + subjectParam, not a bare type: AuditScope resolves a USER subject by parsing subjectId as a
+    // UUID, so a row left at subject NONE is invisible to every scoped delegate reviewing this person.
+    @Audited(value = AuditType.ATTRIBUTE_CHANGED, subject = AuditSubjectType.USER, subjectParam = "id")
     public UserProfileAttributesView replaceProfileAttributes(@PathVariable UUID id,
                                                               @Valid @RequestBody UserProfileAttributesRequest request) {
         profileAttributes.replace(id, request.values());
