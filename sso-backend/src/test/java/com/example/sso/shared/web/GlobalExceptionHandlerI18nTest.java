@@ -15,6 +15,10 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.context.request.ServletWebRequest;
 
 import java.sql.SQLException;
+import org.springframework.core.MethodParameter;
+import org.springframework.validation.BeanPropertyBindingResult;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import java.util.Locale;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -68,10 +72,14 @@ class GlobalExceptionHandlerI18nTest {
     void aMethodSecurityDenialRendersACleanForbiddenProblemNotAStackTrace() {
         // A method-security denial must map to the same RFC-7807 ProblemDetail (403, code, traceId) as every
         // other error — never Boot's default error body, which leaks a full stack `trace`.
+        LocaleContextHolder.setLocale(Locale.ENGLISH);
         var problem = handler.handleAccessDenied(new AccessDeniedException("Access Denied"), null);
 
         assertThat(problem.getStatus()).isEqualTo(403);
-        assertThat(problem.getDetail()).isEqualTo("Access is denied."); // generic, non-revealing
+        // Generic and non-revealing, and now resolved from the bundle: the console prefers the server's detail
+        // for a 403, so a hard-coded string here rendered English inside a Korean session.
+        assertThat(problem.getDetail()).isEqualTo("You do not have permission for this action.");
+        assertThat(problem.getDetail()).doesNotContain("Access Denied"); // never echoes the framework's reason
         assertThat(problem.getProperties()).containsEntry("code", "FORBIDDEN").containsKey("traceId");
         assertThat(problem.getProperties()).doesNotContainKey("trace"); // no stack trace leaks
     }
@@ -153,5 +161,70 @@ class GlobalExceptionHandlerI18nTest {
         LocaleContextHolder.setLocale(Locale.KOREAN);
         assertThat(handler.handleApiException(NotFoundException.of("user.notFound"), request).getDetail())
                 .isEqualTo("사용자를 찾을 수 없습니다");
+    }
+
+    /**
+     * A method-security denial is the most common refusal an administrator meets, and it was the one handler
+     * that answered in hard-coded English. The console prefers the server's {@code detail} over its own copy
+     * for a 403 precisely because the server is supposed to know WHY — so an untranslated string here is what
+     * a Korean console actually rendered.
+     */
+    @Test
+    void aDenialIsLocalizedLikeEveryOtherRefusal() {
+        LocaleContextHolder.setLocale(Locale.KOREAN);
+
+        ProblemDetail problem = handler.handleAccessDenied(new AccessDeniedException("denied"), null);
+
+        assertThat(problem.getDetail()).isNotNull();
+        assertThat(problem.getDetail()).doesNotContain("Access is denied");
+        assertThat(problem.getDetail()).isNotEqualTo("error.forbidden"); // the key itself would mean it is missing
+    }
+
+    @Test
+    void aDenialIsEnglishUnderEn() {
+        LocaleContextHolder.setLocale(Locale.ENGLISH);
+
+        ProblemDetail problem = handler.handleAccessDenied(new AccessDeniedException("denied"), null);
+
+        assertThat(problem.getDetail()).isNotEqualTo("error.forbidden");
+        assertThat(problem.getDetail()).isNotBlank();
+    }
+
+    /**
+     * Bean validation answers in English with the constraint's own default message and the raw field name
+     * ("confirmedKeys: must not be blank"). The frame is localized and the fields named, so the reader learns
+     * which input to fix in their own language.
+     */
+    @Test
+    void aValidationFailureIsLocalizedAndStillNamesTheFields() {
+        LocaleContextHolder.setLocale(Locale.KOREAN);
+
+        ProblemDetail problem = handler.handleValidation(validationFailureOn("confirmedKeys"), null);
+
+        assertThat(problem.getDetail()).contains("confirmedKeys");
+        assertThat(problem.getDetail()).isNotEqualTo("error.validation.failed");
+        assertThat(problem.getDetail()).doesNotContain("must not be blank");
+    }
+
+    /**
+     * An {@code IllegalArgumentException} carries an internal English sentence written for a developer. It
+     * reached the user verbatim, which is both untranslated and a non-revealing-errors violation.
+     */
+    @Test
+    void anInternalArgumentFailureDoesNotLeakItsMessage() {
+        LocaleContextHolder.setLocale(Locale.KOREAN);
+
+        ProblemDetail problem = handler.handleIllegalArgument(
+                new IllegalArgumentException("username taken: ada@corp.example"), null);
+
+        assertThat(problem.getDetail()).doesNotContain("ada@corp.example");
+        assertThat(problem.getDetail()).isNotEqualTo("error.badRequest");
+        assertThat(problem.getDetail()).isNotBlank();
+    }
+
+    private MethodArgumentNotValidException validationFailureOn(String field) {
+        BeanPropertyBindingResult binding = new BeanPropertyBindingResult(new Object(), "request");
+        binding.addError(new FieldError("request", field, "must not be blank"));
+        return new MethodArgumentNotValidException((MethodParameter) null, binding);
     }
 }

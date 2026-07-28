@@ -10,6 +10,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ProblemDetail;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.validation.FieldError;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
@@ -62,20 +63,36 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(AccessDeniedException.class)
     ProblemDetail handleAccessDenied(AccessDeniedException ex, WebRequest request) {
-        return problem(ErrorCode.FORBIDDEN, "Access is denied.", request);
+        return problem(ErrorCode.FORBIDDEN, localized("error.forbidden"), request);
     }
 
+    /**
+     * Bean validation writes its own message, in English, from the constraint's default ("must not be blank")
+     * — so the raw binding result is untranslatable. The FIELDS are the part the reader needs and the part we
+     * can hand over unchanged; the sentence around them comes from the bundle like every other refusal.
+     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ProblemDetail handleValidation(MethodArgumentNotValidException ex, WebRequest request) {
-        String detail = ex.getBindingResult().getFieldErrors().stream()
-                .map(error -> error.getField() + ": " + error.getDefaultMessage())
-                .collect(Collectors.joining("; "));
-        return problem(ErrorCode.VALIDATION_FAILED, detail.isBlank() ? "Validation failed" : detail, request);
+        String fields = ex.getBindingResult().getFieldErrors().stream()
+                .map(FieldError::getField)
+                .distinct()
+                .collect(Collectors.joining(", "));
+        String detail = fields.isBlank()
+                ? localized("error.validation.failed.unnamed")
+                : localized("error.validation.failed", fields);
+        return problem(ErrorCode.VALIDATION_FAILED, detail, request);
     }
 
+    /**
+     * An {@code IllegalArgumentException} is an invariant violation written for a developer, so its message is
+     * English prose that frequently quotes the offending input. It used to be handed to the user verbatim:
+     * untranslated, and a non-revealing-errors violation whenever the input was somebody's address. The
+     * message is logged for the operator and the user gets the localized generic.
+     */
     @ExceptionHandler(IllegalArgumentException.class)
     ProblemDetail handleIllegalArgument(IllegalArgumentException ex, WebRequest request) {
-        return problem(ErrorCode.BAD_REQUEST, ex.getMessage(), request);
+        log.debug("Mapped an IllegalArgumentException to 400: {}", ex.toString());
+        return problem(ErrorCode.BAD_REQUEST, localized("error.badRequest"), request);
     }
 
     /**
@@ -105,6 +122,15 @@ public class GlobalExceptionHandler {
             }
         }
         return false;
+    }
+
+    /**
+     * Every 4xx detail resolves through the bundle, so the console never has to decide whether the string it
+     * received is in the user's language. That was the actual defect: three of the five handlers built their
+     * detail in English while the client (correctly) preferred the server's detail over its own copy.
+     */
+    private String localized(String key, Object... args) {
+        return messageSource.getMessage(key, args, LocaleContextHolder.getLocale());
     }
 
     private ProblemDetail problem(ErrorCode code, String detail, WebRequest request) {
