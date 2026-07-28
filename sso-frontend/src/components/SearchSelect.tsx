@@ -40,7 +40,9 @@ export function SearchSelect({ placeholder, fetcher, onSelect, resetKey }: {
     const t = setTimeout(() => {
       fetcherRef.current(q)
         .then((r) => { if (!cancel) setItems(r); })
-        .catch(() => { if (!cancel) setItems([]); setFailed(true); })
+        // Both writes belong to the guard: a superseded request that rejects later would otherwise raise the
+        // failure flag on the live component and hide the newer request's real results behind "search failed".
+        .catch(() => { if (!cancel) { setItems([]); setFailed(true); } })
         .finally(() => { if (!cancel) setLoading(false); });
     }, 200);
     return () => { cancel = true; clearTimeout(t); };

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SearchSelect } from "./SearchSelect";
 
 vi.mock("react-i18next", async (importOriginal) => ({
@@ -49,6 +49,26 @@ describe("SearchSelect", () => {
     fireEvent.change(screen.getByPlaceholderText("find"), { target: { value: "ad" } });
 
     await waitFor(() => expect(screen.getByText("Ada")).toBeInTheDocument());
+    expect(screen.queryByText("searchFailed")).not.toBeInTheDocument();
+  });
+
+  it("ignores a superseded request that fails after the newer one succeeded", async () => {
+    // The failure branch renders ahead of the results, so a late rejection from a request nobody is waiting
+    // for any more would replace real matches with "search failed" — the same lie, arrived by the other door.
+    let failFirst: (reason: Error) => void = () => {};
+    const fetcher = vi.fn()
+      .mockImplementationOnce(() => new Promise<never>((_, reject) => { failFirst = reject; }))
+      .mockResolvedValue([{ id: "u1", label: "Ada" }]);
+    render(<SearchSelect placeholder="find" fetcher={fetcher} onSelect={vi.fn()} />);
+    open();
+    await act(async () => { await vi.advanceTimersByTimeAsync(250); }); // let the first request actually start
+
+    fireEvent.change(screen.getByPlaceholderText("find"), { target: { value: "ad" } });
+    await waitFor(() => expect(screen.getByText("Ada")).toBeInTheDocument());
+
+    await act(async () => { failFirst(new Error("403")); });
+
+    expect(screen.getByText("Ada")).toBeInTheDocument();
     expect(screen.queryByText("searchFailed")).not.toBeInTheDocument();
   });
 });
