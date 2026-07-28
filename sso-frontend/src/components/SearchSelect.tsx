@@ -22,6 +22,9 @@ export function SearchSelect({ placeholder, fetcher, onSelect, resetKey }: {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Suggestion[]>([]);
   const [loading, setLoading] = useState(false);
+  // A failed search must not read as "no matches": one means the thing is not there, the other means we do
+  // not know — and on a search that decides who gets added to a group, those are different answers.
+  const [failed, setFailed] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
@@ -32,11 +35,12 @@ export function SearchSelect({ placeholder, fetcher, onSelect, resetKey }: {
   useEffect(() => {
     if (!open) return;
     let cancel = false;
+    setFailed(false);
     setLoading(true);
     const t = setTimeout(() => {
       fetcherRef.current(q)
         .then((r) => { if (!cancel) setItems(r); })
-        .catch(() => { if (!cancel) setItems([]); })
+        .catch(() => { if (!cancel) setItems([]); setFailed(true); })
         .finally(() => { if (!cancel) setLoading(false); });
     }, 200);
     return () => { cancel = true; clearTimeout(t); };
@@ -58,6 +62,8 @@ export function SearchSelect({ placeholder, fetcher, onSelect, resetKey }: {
         <div className="absolute z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-md border bg-popover shadow-md">
           {loading ? (
             <div className="px-3 py-2 text-sm text-muted-foreground">{t("searching")}</div>
+          ) : failed ? (
+            <div className="px-3 py-2 text-sm text-destructive">{t("searchFailed")}</div>
           ) : items.length === 0 ? (
             <div className="px-3 py-2 text-sm text-muted-foreground">{t("noMatches")}</div>
           ) : items.map((s) => (

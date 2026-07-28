@@ -17,6 +17,8 @@ export function useTenantProfile(): Profile | null {
       .then((all) => {
         if (!cancelled) setProfile(all.find((p) => p.kind === "TENANT") ?? null);
       })
+      // Deliberate: null means "no schema", which every caller already renders. A tenant that declared
+      // nothing and a lookup that failed are the same thing to them.
       .catch(() => { if (!cancelled) setProfile(null); });
     return () => { cancelled = true; };
   }, []);

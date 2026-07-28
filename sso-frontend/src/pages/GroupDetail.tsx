@@ -44,7 +44,7 @@ export default function GroupDetail() {
 
   const [denyState, setDenyState] = useState<GroupDenyState | null>(null);
   function loadGroup() { getGroup(id).then(setGroup).catch((e) => setError(errorMessage(e))); }
-  function loadDenies() { getGroupDenies(id).then(setDenyState).catch(() => undefined); }
+  function loadDenies() { getGroupDenies(id).then(setDenyState).catch((e) => setError(errorMessage(e))); }
   useEffect(loadGroup, [id]);
   useEffect(loadDenies, [id]);
   useEffect(() => {
@@ -54,7 +54,7 @@ export default function GroupDetail() {
     if (tab === "apps") getGroupApplications(id).then(setApps).catch((e) => setError(errorMessage(e)));
   }, [id, tab]);
   useEffect(() => {
-    if (tab === "roles") listRoles().then(setAllRoles).catch(() => undefined);
+    if (tab === "roles") listRoles().then(setAllRoles).catch((e) => setError(errorMessage(e)));
   }, [tab]);
 
   function openRoles() {

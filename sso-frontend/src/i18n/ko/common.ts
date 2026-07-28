@@ -13,6 +13,7 @@ export const common: Record<keyof typeof enCommon, string> = {
   loading: "불러오는 중",
   searching: "검색 중…",
   noMatches: "검색 결과 없음",
+  searchFailed: "검색하지 못했습니다. 다시 시도해 주세요.",
   noOptions: "선택 항목 없음",
   copy: "복사",
   copyToClipboard: "클립보드에 복사",

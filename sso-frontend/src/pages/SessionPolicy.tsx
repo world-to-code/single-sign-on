@@ -53,7 +53,7 @@ export default function SessionPolicyPage() {
   }
   useEffect(() => {
     reload();
-    apiGet<Role[]>("/api/admin/roles").then(setRoles).catch(() => undefined);
+    apiGet<Role[]>("/api/admin/roles").then(setRoles).catch((e) => setError(errorMessage(e)));
   }, []);
 
   // Resolve the user ids assigned across the loaded policies to names for the table (no all-users load).
@@ -61,7 +61,7 @@ export default function SessionPolicyPage() {
     const ids = [...new Set((policies ?? []).flatMap((p) => p.assignedUserIds))];
     usersByIds(ids)
       .then((sugs) => setUserNames(Object.fromEntries(sugs.map((s) => [s.id, s.label]))))
-      .catch(() => undefined);
+      .catch((e) => setError(errorMessage(e)));
   }, [policies]);
 
   async function remove(p: SessionPolicy) {

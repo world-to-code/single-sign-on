@@ -56,7 +56,7 @@ export default function UserCreate() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    apiGet<Role[]>("/api/admin/roles").then(setRoles).catch(() => undefined);
+    apiGet<Role[]>("/api/admin/roles").then(setRoles).catch((e) => setError(errorMessage(e)));
   }, []);
 
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));

@@ -35,8 +35,8 @@ export default function RoleDetail() {
   const load = useCallback(() => {
     getRoleDetail(id).then(setRole).catch((e) => setError(errorMessage(e)));
     listRoleMembers(id).then(setMembers).catch((e) => setError(errorMessage(e)));
-    listRoles().then(setAllRoles).catch(() => undefined);
-    listPermissions().then(setCatalog).catch(() => undefined);
+    listRoles().then(setAllRoles).catch((e) => setError(errorMessage(e)));
+    listPermissions().then(setCatalog).catch((e) => setError(errorMessage(e)));
   }, [id]);
   useEffect(load, [load]);
 

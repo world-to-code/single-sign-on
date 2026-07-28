@@ -94,7 +94,7 @@ export default function AuthPolicyDetail() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    apiGet<Role[]>("/api/admin/roles").then(setRoles).catch(() => undefined);
+    apiGet<Role[]>("/api/admin/roles").then(setRoles).catch((e) => setError(errorMessage(e)));
   }, []);
   useEffect(() => {
     if (isNew) return;

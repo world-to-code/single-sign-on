@@ -19,6 +19,7 @@ export function useCreationProfile(): Profile | null {
         if (cancelled) return;
         setProfile(all.find((p) => p.defaultForCreation) ?? all.find((p) => p.system) ?? null);
       })
+      // Deliberate, as in useTenantProfile: null is "no creation profile", a state the form handles.
       .catch(() => { if (!cancelled) setProfile(null); });
     return () => { cancelled = true; };
   }, []);

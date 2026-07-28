@@ -67,7 +67,7 @@ export default function Applications() {
   const [sessionPolicies, setSessionPolicies] = useState<SessionPolicy[]>([]);
 
   useEffect(() => {
-    apiGet<Page<Policy>>("/api/admin/auth-policies?size=100").then((p) => setPolicies(p.items)).catch(() => undefined);
+    apiGet<Page<Policy>>("/api/admin/auth-policies?size=100").then((p) => setPolicies(p.items)).catch((e) => setFormError(errorMessage(e)));
   }, []);
 
   // Only app-only policies (Applies-to-login = off) are valid as per-app step-up policies.
@@ -75,7 +75,7 @@ export default function Applications() {
   const policyName = (id: string | null) => (id ? policies.find((p) => p.id === id)?.name ?? "policy" : null);
 
   function loadAssignments(app: Application) {
-    apiGet<Assignment[]>(`/api/admin/applications/${app.type.toLowerCase()}/${app.id}/assignments`).then(setAssignments).catch(() => setAssignments([]));
+    apiGet<Assignment[]>(`/api/admin/applications/${app.type.toLowerCase()}/${app.id}/assignments`).then(setAssignments).catch((e) => setFormError(errorMessage(e)));
   }
   function manage(app: Application) {
     setFormError(null); setActive(app); setSubjectType("GROUP"); setSubjectId(""); setRequiredPolicyId("");
@@ -88,7 +88,7 @@ export default function Applications() {
     setSettingsError(null); setSettingsSaved(false); setSettings(null); setSettingsOpen(true);
     apiGet<PortalSettings>(PORTAL_SETTINGS_PATH[portal]).then(setSettings).catch((e) => setSettingsError(errorMessage(e)));
     apiGet<Page<SessionPolicy>>("/api/admin/session-policies?size=100")
-      .then((p) => setSessionPolicies(p.items)).catch(() => undefined);
+      .then((p) => setSessionPolicies(p.items)).catch((e) => setFormError(errorMessage(e)));
   }
 
   async function saveSettings() {

@@ -334,7 +334,7 @@ function ResourceDetailDialog(
     && !(detail?.children ?? []).some((c) => c.id === r.id));
 
   // Applications aren't searchable server-side; load them once and filter the (small) list client-side.
-  useEffect(() => { if (canHaveApps) listApplications().then(setApps).catch(() => undefined); }, [canHaveApps]);
+  useEffect(() => { if (canHaveApps) listApplications().then(setApps).catch((e) => setError(errorMessage(e))); }, [canHaveApps]);
 
   // Per-kind search placeholder — a per-value key, never a runtime `.toLowerCase()` (meaningless in Korean).
   const searchPlaceholder: Record<MemberType, string> = {

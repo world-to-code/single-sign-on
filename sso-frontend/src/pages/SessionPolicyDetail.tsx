@@ -122,8 +122,8 @@ export default function SessionPolicyDetail() {
   const [addKey, setAddKey] = useState(0);
 
   useEffect(() => {
-    apiGet<Role[]>("/api/admin/roles").then(setRoles).catch(() => undefined);
-    listZones().then((zs) => setZoneNames(Object.fromEntries(zs.map((z) => [z.id, z.name])))).catch(() => undefined);
+    apiGet<Role[]>("/api/admin/roles").then(setRoles).catch((e) => setError(errorMessage(e)));
+    listZones().then((zs) => setZoneNames(Object.fromEntries(zs.map((z) => [z.id, z.name])))).catch((e) => setError(errorMessage(e)));
   }, []);
   useEffect(() => {
     if (isNew) return;

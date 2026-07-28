@@ -52,7 +52,7 @@ export default function Organizations() {
 
   const [orgDenies, setOrgDenies] = useState<OrgDenyState | null>(null);
   const {
-    editor, set, setEditor, open, setOpen, error, openCreate, openEdit, save,
+    editor, set, setEditor, open, setOpen, error, setError, openCreate, openEdit, save,
   } = useEditorForm<Editor>({
     blank: blankEditor,
     toRequest: (e) => ({ slug: e.slug, name: e.name, status: e.status }),
@@ -67,7 +67,9 @@ export default function Organizations() {
   });
 
   const loadOrgDenies = () => {
-    if (editor.id) getOrgDenies(editor.id).then(setOrgDenies).catch(() => undefined);
+    // Not swallowed: an empty deny list and a failed read look identical on screen, and one of them means
+    // "nothing is withheld from this organization".
+    if (editor.id) getOrgDenies(editor.id).then(setOrgDenies).catch((e) => setError(errorMessage(e)));
   };
   useEffect(() => {
     if (open && editor.id) loadOrgDenies();

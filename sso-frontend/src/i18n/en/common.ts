@@ -13,6 +13,7 @@ export const common = {
   loading: "Loading",
   searching: "Searching…",
   noMatches: "No matches",
+  searchFailed: "Couldn't search — try again.",
   noOptions: "No options",
   copy: "Copy",
   copyToClipboard: "Copy to clipboard",

@@ -99,6 +99,8 @@ export async function loadPolicyBindings(): Promise<BindingsResult> {
   const userIds = new Set<string>();
   for (const p of authPolicies) if (p.appliesToLogin) p.assignedUserIds.forEach((id) => userIds.add(id));
   for (const p of sessionPolicies) p.assignedUserIds.forEach((id) => userIds.add(id));
+  // Deliberate: label resolution for ids already present in the bindings. Failing it degrades the labels,
+  // it does not hide a binding.
   const resolvedUsers = await usersByIds([...userIds]).catch(() => []);
   const userLabel = new Map(resolvedUsers.map((u) => [u.id, u.label]));
 

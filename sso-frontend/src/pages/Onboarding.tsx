@@ -64,7 +64,7 @@ export default function Onboarding() {
   useEffect(() => {
     if (!job || settled(job.status)) return;
     const timer = setInterval(() => {
-      onboardingStatus(job.id).then(setJob).catch(() => undefined);
+      onboardingStatus(job.id).then(setJob).catch((e) => setError(errorMessage(e)));
     }, 2000);
     return () => clearInterval(timer);
   }, [job]);

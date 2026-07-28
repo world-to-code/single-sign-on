@@ -13,6 +13,8 @@ export function useAttributeTargets(profileId: string): AttributeDefinition[] {
   useEffect(() => {
     listAttributeDefinitions("USER", profileId)
       .then((all) => setDefinitions(all.filter((d) => !d.base && d.source === "DIRECTORY")))
+      // Deliberate: an empty target list makes the mapping form offer nothing, which is the same outcome as
+      // a profile that declares nothing directory-owned — and the save would refuse either way.
       .catch(() => setDefinitions([]));
   }, [profileId]);
 

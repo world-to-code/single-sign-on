@@ -51,7 +51,9 @@ export function MetadataEditor({ kind, entityId, profileId }:
   // A missing or forbidden schema is not an error here — the editor simply falls back to free-form keys.
   useEffect(() => {
     const entityKind = kind === "groups" ? "GROUP" : kind === "users" ? "USER" : "RESOURCE";
-    listAttributeDefinitions(entityKind, profile?.id).then(setDefinitions).catch(() => setDefinitions([]));
+    listAttributeDefinitions(entityKind, profile?.id).then(setDefinitions)
+      // Deliberate (see the comment above): no schema means free-form keys, which is a working editor.
+      .catch(() => setDefinitions([]));
   }, [kind, profile?.id]);
 
   const definitionOf = (attrKey: string) => definitions.find((d) => d.key === attrKey);

@@ -67,13 +67,13 @@ export default function UserDetail({ session }: { session: SessionView }) {
   function load() { getUser(id).then(setUser).catch((e) => setError(errorMessage(e))); }
   useEffect(load, [id]);
   useEffect(() => {
-    getUserApplications(id).then(setApps).catch(() => undefined);
-    getUserDevices(id).then(setDevices).catch(() => undefined);
-    getUserSessions(id).then(setSessions).catch(() => undefined);
+    getUserApplications(id).then(setApps).catch((e) => setError(errorMessage(e)));
+    getUserDevices(id).then(setDevices).catch((e) => setError(errorMessage(e)));
+    getUserSessions(id).then(setSessions).catch((e) => setError(errorMessage(e)));
   }, [id]);
   useEffect(() => {
-    listRoles().then(setAllRoles).catch(() => undefined);
-    listPermissions().then(setCatalog).catch(() => undefined);
+    listRoles().then(setAllRoles).catch((e) => setError(errorMessage(e)));
+    listPermissions().then(setCatalog).catch((e) => setError(errorMessage(e)));
   }, []);
 
   const isSelf = !!user && user.username === session.username;

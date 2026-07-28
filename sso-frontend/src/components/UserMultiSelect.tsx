@@ -24,6 +24,8 @@ export function UserMultiSelect({ selected, onChange, placeholder }: {
     if (missing.length === 0) return;
     usersByIds(missing)
       .then((sugs) => setLabels((prev) => ({ ...prev, ...Object.fromEntries(sugs.map((s) => [s.id, s.label])) })))
+      // Deliberate: these are display labels for ids the caller already holds. A failed lookup degrades to
+      // showing the id, which is worse to read but still correct — not a hidden refusal.
       .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
