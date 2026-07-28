@@ -1,5 +1,6 @@
 package com.example.sso.admin.internal.shared.application;
 
+import com.example.sso.mapping.LastAdminRetractionGuard;
 import com.example.sso.user.deny.LastAdminInvariant;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.RoleService;
@@ -13,10 +14,14 @@ import org.springframework.stereotype.Component;
  * is an admin-tier concern ({@link LastAdminGuard}), but the deny WRITE lives in the user module, so it reaches
  * the guard through this port — keeping the guard in admin (where its sibling triggers are) with no user→admin
  * cycle, exactly like {@code DenyAuthorityAdapter}.
+ *
+ * <p>It implements TWO ports because two modules ask two different questions of the same guard: the deny write
+ * lives in {@code user}, the ABAC retraction in {@code mapping}. Each port is declared by its own caller, so
+ * neither module has to see the other's contract.
  */
 @Component
 @RequiredArgsConstructor
-class LastAdminInvariantAdapter implements LastAdminInvariant {
+class LastAdminInvariantAdapter implements LastAdminInvariant, LastAdminRetractionGuard {
 
     private final LastAdminGuard lastAdminGuard;
     private final RoleService roles;

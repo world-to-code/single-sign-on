@@ -18,8 +18,7 @@ import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.AttributeSource;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.tenancy.OrgTierGuard;
-import com.example.sso.user.deny.LastAdminInvariant;
-import com.example.sso.user.group.UserGroupService;
+import com.example.sso.shared.error.ConflictException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -34,6 +33,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
@@ -72,8 +72,7 @@ class MappingRuleEvaluatorGuardsTest {
     @Mock private MappingCohortResolver cohorts;
     @Mock private OrgTierGuard tierGuard;
     @Mock private MappingGrantAdmission admission;
-    @Mock private UserGroupService userGroups;
-    @Mock private LastAdminInvariant lastAdminInvariant;
+    @Mock private RetractionAdminGuard retractionGuard;
     @Mock private MappingAuditTrail trail;
     @Mock private MappingTargetApplier roleApplier;
 
@@ -84,7 +83,7 @@ class MappingRuleEvaluatorGuardsTest {
     void setUp() {
         lenient().when(roleApplier.kind()).thenReturn(MappingTargetKind.ROLE);
         evaluator = new MappingRuleEvaluator(rules, cohorts, admission, memberships,
-                List.of(roleApplier), tierGuard, userGroups, lastAdminInvariant, trail);
+                List.of(roleApplier), tierGuard, retractionGuard, trail);
         rule = MappingRule.of(MappingTargetKind.ROLE, TARGET_ROLE, ORG, UUID.randomUUID());
         ReflectionTestUtils.setField(rule, "id", UUID.randomUUID());
 
@@ -122,65 +121,33 @@ class MappingRuleEvaluatorGuardsTest {
     }
 
     /**
-     * A retraction reaches {@code RoleService.removeMember} directly — the domain service, below every guard
-     * the console path goes through. So a tenant whose ORG_ADMIN is conferred by a mapping rule could lose its
-     * last administrator to an attribute edit, and nothing else in the system would notice. Rejecting rolls
-     * the re-evaluation back: somebody keeps a role they no longer qualify for, which an administrator can
-     * see and fix, instead of the tier having none, which only a platform super can undo.
+     * The evaluator's share of the last-admin guard: it opens a scope BEFORE it retracts and spends it after.
+     * The guard's own behaviour is {@code RetractionAdminGuardTest}'s; what is asserted here is that the
+     * evaluator does not skip either half — the pre-state read is the part that cannot be recovered later.
      */
     @Test
-    void aRetractionThatWouldStripTheTiersLastAdminIsRefused() {
+    void aRetractionOpensAScopeBeforeItActsAndSpendsItAfterwards() {
         claimedBy(UUID.randomUUID());
-        when(lastAdminInvariant.retractionWouldNeedGuarding(any(), any())).thenReturn(true);
-        doThrow(new IllegalStateException("last admin"))
-                .when(lastAdminInvariant).ensureRetractionRetainsAdmin(any());
+        when(retractionGuard.before(any())).thenReturn(new RetractionScope(retractionGuard, ORG, true));
+        doThrow(ConflictException.of("admin.lastAdmin")).when(retractionGuard).recount(eq(ORG), anyInt());
 
-        assertThatThrownBy(() -> evaluator.retractAll(rule)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> evaluator.retractAll(rule)).isInstanceOf(ConflictException.class);
+
+        InOrder order = inOrder(retractionGuard, roleApplier);
+        order.verify(retractionGuard).before(any());
+        order.verify(roleApplier).unassign(any(), any());
+        order.verify(retractionGuard).recount(eq(ORG), anyInt());
     }
 
-    /** And the recount is asked ONCE for the whole transaction, not once per member of a retracted cohort. */
+    /** And the recount is spent ONCE for the whole transaction, not once per member of a retracted cohort. */
     @Test
     void theTierIsRecountedOncePerReevaluationNotPerMember() {
         claimedBy(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
-        when(lastAdminInvariant.retractionWouldNeedGuarding(any(), any())).thenReturn(true);
+        when(retractionGuard.before(any())).thenReturn(new RetractionScope(retractionGuard, ORG, true));
 
         evaluator.retractAll(rule);
 
-        verify(lastAdminInvariant, times(1)).ensureRetractionRetainsAdmin(any());
-    }
-
-    /**
-     * The narrowing that has to happen BEFORE the mutation, and the reason it cannot be derived afterwards.
-     *
-     * <p>The recount answers "does this tier have an administrator NOW". In a tier that had none to begin
-     * with — a freshly onboarded tenant whose invited admin is still disabled is the ordinary case — that is
-     * false whatever this retraction did, so a bare recount refuses every admin-bearing retraction from then
-     * on, forever, for a state the retraction did not cause. On the async path the refusal is swallowed and
-     * the sweep re-drives the same doomed transaction. An earlier version narrowed by role NAME instead,
-     * which is a different question and left this one open.
-     */
-    @Test
-    void aTierThatHadNoAdministratorBeforehandIsNotBlamedOnTheRetraction() {
-        claimedBy(UUID.randomUUID());
-        when(lastAdminInvariant.retractionWouldNeedGuarding(any(), any())).thenReturn(false);
-
-        evaluator.retractAll(rule);
-
-        verify(lastAdminInvariant, never()).ensureRetractionRetainsAdmin(any());
-    }
-
-    /** And the pre-state is read BEFORE the memberships go, which is the only moment it is still knowable. */
-    @Test
-    void thePreStateIsReadBeforeAnythingIsRetracted() {
-        claimedBy(UUID.randomUUID());
-        when(lastAdminInvariant.retractionWouldNeedGuarding(any(), any())).thenReturn(true);
-
-        evaluator.retractAll(rule);
-
-        InOrder order = inOrder(lastAdminInvariant, roleApplier);
-        order.verify(lastAdminInvariant).retractionWouldNeedGuarding(any(), any());
-        order.verify(roleApplier).unassign(any(), any());
-        order.verify(lastAdminInvariant).ensureRetractionRetainsAdmin(any());
+        verify(retractionGuard, times(1)).recount(eq(ORG), anyInt());
     }
 
     /** Three members leave the role, so the retraction really happened — the recount is not vacuous. */
@@ -199,11 +166,13 @@ class MappingRuleEvaluatorGuardsTest {
         }
     }
 
-    /** A re-evaluation that retracted nothing does not pay for the recount at all. */
+    /** A re-evaluation that retracted nothing spends a scope that does nothing. */
     @Test
     void nothingRetractedMeansNoRecount() {
+        when(retractionGuard.before(any())).thenReturn(new RetractionScope(retractionGuard, ORG, true));
+
         evaluator.reevaluateUser(UUID.randomUUID());
 
-        verify(lastAdminInvariant, never()).ensureRetractionRetainsAdmin(any());
+        verify(retractionGuard, never()).recount(any(), anyInt());
     }
 }

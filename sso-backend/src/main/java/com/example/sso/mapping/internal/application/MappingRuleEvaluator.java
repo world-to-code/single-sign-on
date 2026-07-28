@@ -9,8 +9,6 @@ import com.example.sso.metadata.Attribute;
 import com.example.sso.mapping.MappingCondition;
 import com.example.sso.mapping.MappingTargetKind;
 import com.example.sso.tenancy.OrgTierGuard;
-import com.example.sso.user.deny.LastAdminInvariant;
-import com.example.sso.user.group.UserGroupService;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -47,14 +45,13 @@ class MappingRuleEvaluator {
     private final MappingRuleMembershipRepository memberships;
     private final List<MappingTargetApplier> appliers;
     private final OrgTierGuard tierGuard;
-    private final UserGroupService userGroups;
-    private final LastAdminInvariant lastAdminInvariant;
+    private final RetractionAdminGuard retractionGuard;
     private final MappingAuditTrail trail;
 
     /** Reconcile ONE rule across the tier: add every matching user not yet claimed, retract every claim no longer matching. */
     @Transactional
     public void reevaluateRule(MappingRule rule) {
-        boolean guarding = retractionNeedsGuarding(privilegeTargetsOf(List.of(rule))); // BEFORE any mutation
+        RetractionScope scope = retractionGuard.before(List.of(rule)); // BEFORE any mutation
         Set<UUID> matching = cohorts.matchingUsers(cohorts.conditionsOf(rule.getId()));
         Set<UUID> claimed = new HashSet<>();
         memberships.findByRuleId(rule.getId()).forEach(m -> claimed.add(m.getUserId()));
@@ -64,7 +61,7 @@ class MappingRuleEvaluator {
         Set<UUID> retracted = claimed.stream().filter(userId -> !matching.contains(userId))
                 .map(userId -> retract(rule, userId))
                 .filter(Objects::nonNull).collect(Collectors.toSet());
-        assertTierKeepsAnAdmin(guarding, retracted);
+        scope.assertTierKeepsAnAdmin(retracted);
     }
 
     /** Reconcile every rule in the tier for ONE user whose attributes just changed. */
@@ -86,8 +83,8 @@ class MappingRuleEvaluator {
                 .filter(rule -> Objects.equals(rule.getOrgId(), tier))
                 .sorted(Comparator.comparing(MappingRule::getId)).toList();
         // Only what this user is already CLAIMED by can be retracted, and the read must precede the loop.
-        boolean guarding = retractionNeedsGuarding(privilegeTargetsOf(
-                tierRules.stream().filter(rule -> claimedRuleIds.contains(rule.getId())).toList()));
+        RetractionScope scope = retractionGuard.before(
+                tierRules.stream().filter(rule -> claimedRuleIds.contains(rule.getId())).toList());
 
         Set<UUID> retracted = new HashSet<>();
         for (MappingRule rule : tierRules) {
@@ -97,7 +94,7 @@ class MappingRuleEvaluator {
                 retracted.add(went);
             }
         }
-        assertTierKeepsAnAdmin(guarding, retracted);
+        scope.assertTierKeepsAnAdmin(retracted);
     }
 
     /**
@@ -124,7 +121,7 @@ class MappingRuleEvaluator {
         if (claimed.isEmpty()) {
             return;
         }
-        boolean guarding = retractionNeedsGuarding(privilegeTargetsOf(claimed)); // BEFORE any mutation
+        RetractionScope scope = retractionGuard.before(claimed); // BEFORE any mutation
         Set<UUID> retracted = new HashSet<>();
         boolean inheritedAttributesShrank = true;
         while (inheritedAttributesShrank && !claimed.isEmpty()) {
@@ -148,7 +145,7 @@ class MappingRuleEvaluator {
             }
             claimed = stillMatching;
         }
-        assertTierKeepsAnAdmin(guarding, retracted);
+        scope.assertTierKeepsAnAdmin(retracted);
     }
 
     /** The tier's rules that already claim this user — the only ones a retraction pass can act on. */
@@ -178,11 +175,11 @@ class MappingRuleEvaluator {
     /** Retract every membership a rule materialized (before the rule itself is deleted). */
     @Transactional
     public void retractAll(MappingRule rule) {
-        boolean guarding = retractionNeedsGuarding(privilegeTargetsOf(List.of(rule))); // BEFORE any mutation
+        RetractionScope scope = retractionGuard.before(List.of(rule)); // BEFORE any mutation
         Set<UUID> retracted = memberships.findByRuleId(rule.getId()).stream()
                 .map(m -> retract(rule, m.getUserId()))
                 .filter(Objects::nonNull).collect(Collectors.toSet());
-        assertTierKeepsAnAdmin(guarding, retracted);
+        scope.assertTierKeepsAnAdmin(retracted);
     }
 
     private void materialize(MappingRule rule, UUID userId) {
@@ -233,57 +230,6 @@ class MappingRuleEvaluator {
         }
         trail.changedMembership(AuditType.MAPPING_RULE_RETRACTED, rule, userId);
         return targetThatWent;
-    }
-
-    /**
-     * Whether a retraction in this transaction has to answer to the last-admin invariant — asked BEFORE
-     * anything is retracted, because once the memberships are gone the recount can no longer tell "this write
-     * took the tier's last administrator" from "the tier never had one". See
-     * {@link LastAdminInvariant#retractionWouldNeedGuarding}.
-     */
-    private boolean retractionNeedsGuarding(Collection<UUID> candidateTargets) {
-        return lastAdminInvariant.retractionWouldNeedGuarding(rolesBehind(candidateTargets),
-                tierGuard.currentTier());
-    }
-
-    /**
-     * A retraction reaches the domain service directly, below every guard the console path goes through — so
-     * the tier could lose its last administrator here and nowhere else would notice. Asked ONCE per
-     * transaction rather than per user: the recount is a query, and a cohort retraction would otherwise pay it
-     * per member for one logical change.
-     *
-     * <p>Rejecting rolls the whole re-evaluation back, which is the deliberate trade the deny path already
-     * makes: somebody keeps a role they no longer qualify for — visible, and fixable by an administrator —
-     * instead of the tier having none, which is recoverable only by a platform super.
-     */
-    private void assertTierKeepsAnAdmin(boolean guarding, Collection<UUID> retractedTargets) {
-        if (!guarding || retractedTargets.isEmpty()) {
-            return;
-        }
-        try {
-            lastAdminInvariant.ensureRetractionRetainsAdmin(tierGuard.currentTier());
-        } catch (RuntimeException refused) {
-            trail.refusalNow(tierGuard.currentTier(), retractedTargets.size(), refused);
-            throw refused;
-        }
-    }
-
-    /** The targets whose loss could take authority away — a RESOURCE_MEMBER rule confers none. */
-    private Set<UUID> privilegeTargetsOf(Collection<MappingRule> candidates) {
-        return candidates.stream()
-                .filter(rule -> rule.getThenKind() != MappingTargetKind.RESOURCE_MEMBER)
-                .map(MappingRule::getTargetId)
-                .collect(Collectors.toSet());
-    }
-
-    /** What a retracted target actually takes away: a ROLE is itself, a GROUP is the roles it delegates. */
-    private Set<UUID> rolesBehind(Collection<UUID> targetIds) {
-        if (targetIds.isEmpty()) {
-            return Set.of();
-        }
-        Set<UUID> roleIds = new HashSet<>(targetIds);
-        userGroups.delegatedRoleIds(targetIds).values().forEach(roleIds::addAll);
-        return roleIds;
     }
 
     private MappingTargetApplier applierFor(MappingRule rule) {

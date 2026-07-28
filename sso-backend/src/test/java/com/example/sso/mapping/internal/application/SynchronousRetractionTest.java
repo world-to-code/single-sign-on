@@ -18,8 +18,6 @@ import com.example.sso.metadata.AttributeSourceAuthority;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.tenancy.OrgTierGuard;
-import com.example.sso.user.deny.LastAdminInvariant;
-import com.example.sso.user.group.UserGroupService;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
@@ -37,6 +35,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
@@ -66,8 +66,7 @@ class SynchronousRetractionTest {
     @Mock private MappingCohortResolver cohorts;
     @Mock private OrgTierGuard tierGuard;
     @Mock private MappingGrantAdmission admission;
-    @Mock private UserGroupService userGroups;
-    @Mock private LastAdminInvariant lastAdminInvariant;
+    @Mock private RetractionAdminGuard retractionGuard;
     @Mock private MappingAuditTrail trail;
     @Mock private MappingTargetApplier groupApplier;
     @Mock private MappingTargetApplier roleApplier;
@@ -81,8 +80,9 @@ class SynchronousRetractionTest {
         lenient().when(groupApplier.kind()).thenReturn(MappingTargetKind.GROUP);
         lenient().when(roleApplier.kind()).thenReturn(MappingTargetKind.ROLE);
         evaluator = new MappingRuleEvaluator(rules, cohorts, admission, memberships,
-                List.of(groupApplier, roleApplier), tierGuard, userGroups, lastAdminInvariant, trail);
+                List.of(groupApplier, roleApplier), tierGuard, retractionGuard, trail);
         lenient().when(tierGuard.currentTier()).thenReturn(ORG);
+        lenient().when(retractionGuard.before(any())).thenReturn(new RetractionScope(retractionGuard, ORG, false));
 
         groupRule = ruleOf(MappingTargetKind.GROUP, TEAM_GROUP);   // level=staff  -> GROUP Team
         roleRule = ruleOf(MappingTargetKind.ROLE, ADMIN_ROLE);     // dept=eng     -> ROLE OrgAdmin
@@ -130,7 +130,7 @@ class SynchronousRetractionTest {
         evaluator.retractStaleClaims(USER);
 
         verify(rules, never()).findAllById(any());
-        verify(lastAdminInvariant, never()).retractionWouldNeedGuarding(any(), any());
+        verify(retractionGuard, never()).before(any());
         verify(cohorts, never()).effectiveAttributes(any());
     }
 
@@ -144,14 +144,13 @@ class SynchronousRetractionTest {
     void aRefusalIsReportedSeparatelyFromTheRetractionItUndid() {
         claims(roleRule);
         when(cohorts.effectiveAttributes(USER)).thenReturn(List.of());
-        when(lastAdminInvariant.retractionWouldNeedGuarding(any(), any())).thenReturn(true);
-        ConflictException refused = ConflictException.of("admin.lastAdmin");
-        doThrow(refused).when(lastAdminInvariant).ensureRetractionRetainsAdmin(ORG);
+        when(retractionGuard.before(any())).thenReturn(new RetractionScope(retractionGuard, ORG, true));
+        doThrow(ConflictException.of("admin.lastAdmin")).when(retractionGuard).recount(eq(ORG), anyInt());
 
         assertThatThrownBy(() -> evaluator.retractStaleClaims(USER)).isInstanceOf(ConflictException.class);
 
         verify(trail).changedMembership(AuditType.MAPPING_RULE_RETRACTED, roleRule, USER);
-        verify(trail).refusalNow(ORG, 1, refused);
+        verify(retractionGuard).recount(ORG, 1); // the refusal row itself is the guard's — see its own test
     }
 
     /** The user is claimed by these rules, and none of them still matches (no attributes are stubbed in). */
