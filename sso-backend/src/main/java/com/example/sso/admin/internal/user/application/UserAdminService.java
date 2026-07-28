@@ -4,6 +4,7 @@ import com.example.sso.admin.internal.shared.application.ActingAdminTier;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.shared.application.LastAdminGuard;
+import com.example.sso.admin.internal.shared.application.MembershipDenyCeiling;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.shared.Page;
@@ -37,6 +38,7 @@ public class UserAdminService {
     private final AdminAccessPolicy accessPolicy;
     private final AdminAuditLogger auditLogger;
     private final LastAdminGuard lastAdminGuard;
+    private final MembershipDenyCeiling membershipDenies;
 
     @Transactional(readOnly = true)
     public Page<AdminUserView> listUsers(int page, int size) {
@@ -83,12 +85,32 @@ public class UserAdminService {
 
     @Transactional
     public AdminUserView updateUser(UUID id, UserUpdate update) {
+        requireMayDropTheRolesThisReplaceRemoves(id, update.roleNames());
         // Recount AFTER the change (which may disable the user or strip the admin role) rather than predict it.
         UserAccount updated = userService.updateUser(id, update);
         lastAdminGuard.ensureTierRetainsAdmin(updated.getOrgId());
         auditLogger.log(AuditType.USER_UPDATED, AuditSubjectType.USER, id.toString(),
                 "user=" + id + " enabled=" + update.enabled() + " roles=" + update.roleNames());
         return AdminUserView.of(updated);
+    }
+
+    /**
+     * The removal half of a role REPLACE, held to the same lift ceiling as {@code DELETE
+     * /roles/{id}/members/{userId}}.
+     *
+     * <p>This route's gate judges only the roles being assigned ({@code mayAssignRoles} over
+     * {@code #request.roles()}), so a request that merely OMITS a role was authorized by nothing — and at the
+     * identical permission, {@code user:update}. Dropping the membership a deny rides on hands the withheld
+     * permission back exactly as the dedicated revoke route would, which is why guarding only the route named
+     * "remove member" was a detour rather than a control.
+     */
+    private void requireMayDropTheRolesThisReplaceRemoves(UUID id, Set<String> desiredRoleNames) {
+        if (desiredRoleNames == null) {
+            return; // this update does not touch the role set at all
+        }
+        userService.findById(id).map(UserAccount::getRoles).orElse(Set.of()).stream()
+                .filter(role -> !desiredRoleNames.contains(role.getName()))
+                .forEach(role -> membershipDenies.requireMayDropRole(role.getId()));
     }
 
     @Transactional

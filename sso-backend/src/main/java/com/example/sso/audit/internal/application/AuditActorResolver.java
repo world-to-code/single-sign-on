@@ -20,7 +20,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AuditActorResolver {
 
-    private static final String SCIM_CLIENT = "scim-client";   // scim.ScimBearerTokenFilter machine principal
+    // Deliberately a literal, not scim.ScimBearerTokenFilter.SCIM_PRINCIPAL: scim already depends on
+    // audit, so importing it back would close a module cycle for one string.
+    private static final String SCIM_CLIENT = "scim-client";
     private static final String SYSTEM_PREFIX = "system:";      // e.g. "system:mapping-rule"
     private static final String UNKNOWN = "unknown";
     private static final String ANONYMOUS = "anonymous";

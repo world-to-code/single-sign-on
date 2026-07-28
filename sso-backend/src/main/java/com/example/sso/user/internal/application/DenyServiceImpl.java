@@ -13,6 +13,7 @@ import com.example.sso.user.deny.DenyService;
 import com.example.sso.user.deny.DenySpec;
 import com.example.sso.user.deny.DenySubjectKind;
 import com.example.sso.user.deny.LastAdminInvariant;
+import com.example.sso.user.deny.ScopedDenyRow;
 import com.example.sso.user.internal.rbac.domain.DenySubjectType;
 import com.example.sso.user.internal.rbac.domain.OrgPermissionDenyRepository;
 import com.example.sso.user.internal.rbac.domain.PrincipalPermissionDeny;
@@ -108,6 +109,20 @@ class DenyServiceImpl implements DenyService {
         DenySubjectType type = kind == DenySubjectKind.ROLE ? DenySubjectType.ROLE : DenySubjectType.GROUP;
         return principalDenies.findBySubjectTypeAndSubjectId(type, subjectId).stream()
                 .map(deny -> new DenyRow(deny.getId(), deny.getPattern())).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ScopedDenyRow> principalDeniesAcrossTiers(DenySubjectKind kind, UUID subjectId) {
+        DenySubjectType type = kind == DenySubjectKind.ROLE ? DenySubjectType.ROLE : DenySubjectType.GROUP;
+        // Read AS PLATFORM deliberately. The deny SELECT policy shows the acting tier's rows plus the org-null
+        // veto, and is fail-closed with no context at all — so a caller standing outside any tenant would get
+        // an empty list and read it as "nothing rides on this subject". Widening the scope is safe here
+        // because the method reports rather than decides; the tier comes back on every row.
+        return orgContext.callAsPlatform(() ->
+                principalDenies.findBySubjectTypeAndSubjectId(type, subjectId).stream()
+                        .map(deny -> new ScopedDenyRow(deny.getId(), deny.getPattern(), deny.getOrgId()))
+                        .toList());
     }
 
     @Override

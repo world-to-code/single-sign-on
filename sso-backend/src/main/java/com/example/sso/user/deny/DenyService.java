@@ -24,6 +24,21 @@ public interface DenyService {
     /** The denies authored directly on this ROLE or GROUP (id + pattern) — for the console to list and lift. */
     List<DenyRow> principalDenies(DenySubjectKind kind, UUID subjectId);
 
+    /**
+     * The same denies, from EVERY tier, each carrying the tier it is stamped with.
+     *
+     * <p>For a caller whose own org context cannot see them all. {@code principalDenies} above answers under
+     * the caller's RLS scope, which is right for the console — a tenant admin lists the denies that apply to
+     * them — and silently wrong for anything that must not miss one: an unset context (a platform machine
+     * client) sees only the org-null rows, and reads that as "no deny rides on this subject". Scoping is
+     * therefore this module's decision, made once here, rather than a property of wherever the caller happens
+     * to be standing.
+     *
+     * <p>Read-only and unauthorized by design: it reports what exists, it does not decide anything. A caller
+     * that needs a VERDICT wants {@link #mayLiftEveryDenyOn}, which resolves the acting administrator.
+     */
+    List<ScopedDenyRow> principalDeniesAcrossTiers(DenySubjectKind kind, UUID subjectId);
+
     /** The org's OWN denies (id + pattern) — org-wide withholdings the console lists and lifts. Excludes the
      *  platform veto (org-null), which is managed at the platform tier, not on a tenant. */
     List<DenyRow> orgDenies(UUID orgId);

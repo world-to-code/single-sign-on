@@ -26,6 +26,9 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ScimBearerTokenFilter extends OncePerRequestFilter {
 
+    /** The authenticated name every SCIM request runs as — the join between the filter and the audit trail. */
+    public static final String SCIM_PRINCIPAL = "scim-client";
+
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final ScimTokenService tokenService;
@@ -41,7 +44,7 @@ public class ScimBearerTokenFilter extends OncePerRequestFilter {
                     .orElse(null);
             if (principal != null) {
                 SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
-                        "scim-client", null, List.of(new SimpleGrantedAuthority(Roles.SCIM))));
+                        SCIM_PRINCIPAL, null, List.of(new SimpleGrantedAuthority(Roles.SCIM))));
                 // Bind the token's tenant so every org-scoped read/write in the SCIM request is confined to it.
                 if (principal.orgId() == null) {
                     orgContext.enterPlatform();

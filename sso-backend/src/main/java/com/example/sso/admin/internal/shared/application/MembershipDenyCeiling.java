@@ -1,5 +1,6 @@
 package com.example.sso.admin.internal.shared.application;
 
+import com.example.sso.audit.AuditType;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.user.deny.DenyService;
 import com.example.sso.user.deny.DenySubjectKind;
@@ -31,21 +32,37 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class MembershipDenyCeiling {
 
+    private static final String REFUSAL = "user.membership.denyGoverned";
+
     private final DenyService denies;
     private final UserGroupService userGroups;
+    private final AdminAuditLogger auditLogger;
 
     /** Refuses the revocation when a deny on the role is one this administrator could not lift by hand. */
     public void requireMayDropRole(UUID roleId) {
         if (!denies.mayLiftEveryDenyOn(DenySubjectKind.ROLE, roleId)) {
-            throw ForbiddenException.of("user.membership.denyGoverned");
+            refuse("role", roleId);
         }
     }
 
     /** The same for a group, including every role the group delegates to its members. */
     public void requireMayDropGroup(UUID groupId) {
         if (!mayDropGroup(groupId)) {
-            throw ForbiddenException.of("user.membership.denyGoverned");
+            refuse("group", groupId);
         }
+    }
+
+    /**
+     * Audited, then thrown. The refusal is also a small disclosure — it tells an administrator who cannot read
+     * denies that one exists on this subject — and there is no way to withhold that without withholding the
+     * reason the write failed. So it is left in the response and made DETECTABLE instead: somebody sweeping
+     * subjects to map the deny model now leaves a run of these, and the trail survives the rollback that the
+     * refusal causes ({@code logFailure} commits in its own transaction).
+     */
+    private void refuse(String subjectKind, UUID subjectId) {
+        auditLogger.logFailure(AuditType.AUTHORIZATION_DENIED,
+                "refused to drop a membership on " + subjectKind + "=" + subjectId, REFUSAL);
+        throw ForbiddenException.of(REFUSAL);
     }
 
     /** The verdict without the refusal, for a caller that reports rather than throws. */

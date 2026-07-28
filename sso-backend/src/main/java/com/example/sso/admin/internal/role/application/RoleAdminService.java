@@ -211,9 +211,16 @@ public class RoleAdminService {
         }
     }
 
+    /**
+     * Deleting the role drops every membership AND the subject a deny resolved against, so it lifts for every
+     * holder at once — the widest version of the act {@link #removeRoleMember} guards one person at a time.
+     * The symmetric group route asks the same question; leaving this one open would have made the ceiling a
+     * detour, since {@code role:delete} and {@code user:update} are both tenant-grantable.
+     */
     @Transactional
     public void deleteRole(UUID id) {
         requireRoleInTier(id);
+        membershipDenies.requireMayDropRole(id);
         roleService.deleteRole(id);
         auditLogger.log(AuditType.ROLE_DELETED, "role=" + id);
     }

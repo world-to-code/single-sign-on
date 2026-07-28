@@ -137,7 +137,7 @@ class AttributeServiceImpl implements AttributeService {
     @Override
     @Transactional
     public void set(EntityKind kind, String entityId, String key, String value) {
-        requireWritable(kind, key);
+        requireReplaceable(kind, key);
         UUID tier = tierGuard.currentTier();
         List<EntityAttribute> rows = ownRows(kind, entityId, key, tier);
         List<EntityAttribute> stale = rows.stream().filter(row -> !row.getAttrValue().equals(value)).toList();
@@ -344,10 +344,6 @@ class AttributeServiceImpl implements AttributeService {
     }
 
     /**
-     * An administrator may not edit an attribute a directory owns — the next sync would overwrite the edit, and
-     * a change that silently disappears hours later is worse than one that is refused now.
-     */
-    /**
      * The two questions a local write has to pass: does a directory own this key, and does writing it decide a
      * privilege the actor could not confer by hand. Kept together because every write path asks both, and one
      * of them was added long after the other.
@@ -356,9 +352,20 @@ class AttributeServiceImpl implements AttributeService {
         requireLocallyOwned(kind, key);
         requireMayDecideGrants(kind, Set.of(key));
         requireMayDecidePolicy(kind, Set.of(key));
-        // A set() replaces the key's other values, so it DELETES as well as writes: a rule reading key=x is
-        // defeated by writing key=y just as surely as by removing the key, and the deny that rode on the
-        // membership goes with it. Same ceiling, or the removal guard has a way around it.
+    }
+
+    /**
+     * What a REPLACING write asks on top of {@link #requireWritable}: {@code set} narrows the key to exactly one
+     * value, so it DELETES as well as writes — a rule reading {@code key=x} is defeated by writing {@code key=y}
+     * just as surely as by removing the key, and the deny that rode on the membership goes with it. Same
+     * ceiling, or the removal guard has a way around it.
+     *
+     * <p>Deliberately NOT asked of {@code add}, which only ever inserts a missing {@code (key, value)} and
+     * leaves the existing ones alone. An additive write can retract nothing, so it can lift no deny; requiring
+     * the lift authority there refused administrators a write that bought no safety.
+     */
+    private void requireReplaceable(EntityKind kind, String key) {
+        requireWritable(kind, key);
         requireRemovalLiftsNoDeny(kind, Set.of(key));
     }
 

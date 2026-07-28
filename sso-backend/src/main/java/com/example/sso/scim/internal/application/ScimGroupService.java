@@ -41,6 +41,7 @@ public class ScimGroupService {
 
     private final RoleService roleService;
     private final OrgContext orgContext;
+    private final ScimMembershipDenyAuditor denyAuditor;
 
     /**
      * Roles that confer elevated privilege and must never be created/assigned/deleted via SCIM. This
@@ -114,9 +115,23 @@ public class ScimGroupService {
         if (role.isSystem()) { // symmetric with delete: no destructive membership rewrite of a system role
             throw new BadRequestException("system group '" + role.getName() + "' cannot be modified via SCIM");
         }
-        roleService.setMembers(role.getId(), desiredMembers(resource));
+        Set<UUID> desired = desiredMembers(resource);
+        Set<UUID> losing = membersLost(role, desired); // read BEFORE the write; afterwards they are simply absent
+        roleService.setMembers(role.getId(), desired);
+        denyAuditor.noteLiftedBy("SCIM group update", role.getId(), role.getName(), losing);
 
         return ScimGroupMapper.toScim(role, roleService.members(role.getId()));
+    }
+
+    /**
+     * Who this replace takes off the role. Id-only: the caller needs identities, not accounts, and a directory
+     * sync can name tens of thousands of members — materializing each of them to read one field is a cost the
+     * audit line does not justify.
+     */
+    private Set<UUID> membersLost(RoleRef role, Set<UUID> desired) {
+        return roleService.memberIds(role.getId()).stream()
+                .filter(memberId -> !desired.contains(memberId))
+                .collect(Collectors.toSet());
     }
 
     @Transactional
@@ -126,9 +141,17 @@ public class ScimGroupService {
                 .orElseThrow(() -> new ResourceNotFoundException("Group not found: " + id));
         ensureManageable(role.getName());
 
+        // Deleting the role drops every membership AND the subject the deny resolved against, so it lifts for
+        // everyone at once — the widest version of the act the update above notes. Read the members first, and
+        // note the lift only once the delete has actually happened: deleteRole below refuses EVERY system role,
+        // and the audit row commits in its own transaction, so noting it first would assert a lift that a 409
+        // then undid.
+        Set<UUID> losing = membersLost(role, Set.of());
+
         // deleteRole (not the unguarded delete) so EVERY system role — ROLE_USER, ROLE_ORG_ADMIN, … — is
         // 409-protected, not just the name-listed PROTECTED_ROLES.
         roleService.deleteRole(role.getId());
+        denyAuditor.noteLiftedBy("SCIM group delete", role.getId(), role.getName(), losing);
     }
 
     private Set<UUID> desiredMembers(Group group) {

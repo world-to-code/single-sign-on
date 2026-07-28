@@ -3,6 +3,7 @@ package com.example.sso.admin.internal.group.application;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.shared.application.LastAdminGuard;
+import com.example.sso.admin.internal.shared.application.MembershipDenyCeiling;
 import com.example.sso.admin.internal.user.application.UserDetailAdminService;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
@@ -59,6 +60,7 @@ class GroupAdminServiceTest {
     private LastAdminGuard lastAdminGuard;
     private RoleService roleService;
     private DenyService denyService;
+    private MembershipDenyCeiling membershipDenies;
     private GroupAdminService service;
 
     @BeforeEach
@@ -72,9 +74,11 @@ class GroupAdminServiceTest {
         lastAdminGuard = mock(LastAdminGuard.class);
         roleService = mock(RoleService.class);
         denyService = mock(DenyService.class);
+        membershipDenies = mock(MembershipDenyCeiling.class);
         when(userGroups.orgIdOf(any())).thenReturn(Optional.empty()); // setRoles recounts the group's org tier
         service = new GroupAdminService(userGroups, applications, accessPolicy, auditLogger, userDetail,
-                new ActingAdminTier(accessPolicy, orgContext), lastAdminGuard, roleService, denyService);
+                new ActingAdminTier(accessPolicy, orgContext), lastAdminGuard, roleService, denyService,
+                membershipDenies);
     }
 
     @Test

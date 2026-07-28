@@ -4,6 +4,7 @@ import com.example.sso.admin.internal.shared.application.ActingAdminTier;
 import com.example.sso.admin.internal.shared.application.AdminAccessPolicy;
 import com.example.sso.admin.internal.shared.application.AdminAuditLogger;
 import com.example.sso.admin.internal.shared.application.LastAdminGuard;
+import com.example.sso.admin.internal.shared.application.MembershipDenyCeiling;
 import com.example.sso.admin.internal.user.application.UserDetailAdminService;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
@@ -13,6 +14,7 @@ import com.example.sso.shared.Page;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.user.group.GroupMembersPage;
 import com.example.sso.user.group.GroupRequest;
+import com.example.sso.user.group.GroupSpec;
 import com.example.sso.user.group.GroupView;
 import com.example.sso.user.account.Suggestion;
 import com.example.sso.user.deny.DenyService;
@@ -52,6 +54,7 @@ public class GroupAdminService {
     private final LastAdminGuard lastAdminGuard;
     private final RoleService roleService;
     private final DenyService denyService;
+    private final MembershipDenyCeiling membershipDenies;
 
     public Page<GroupView> list(int page, int size) {
         // Tier-scoped: an un-drilled platform admin (tier null) sees ONLY the global/system groups; a super-admin
@@ -66,14 +69,32 @@ public class GroupAdminService {
         return userGroups.create(request.toSpec());
     }
 
+    /**
+     * A full replace: {@code memberUserIds} omitted means the empty set, so this route can empty a group
+     * without ever naming a member. That makes it a membership DROP, and it answers to the lift ceiling for
+     * the same reason {@code DELETE /roles/{id}/members/{userId}} does — see {@link MembershipDenyCeiling}.
+     */
+    @Transactional
     public GroupView update(UUID id, GroupRequest request) {
         requireAccess(id);
-        return userGroups.update(id, request.toSpec());
+        GroupSpec spec = request.toSpec();
+        requireMayDropMembersOf(id, spec.memberIds());
+        return userGroups.update(id, spec);
     }
 
+    /** Deleting the group drops every membership AND the deny riding on the group itself — always a lift act. */
+    @Transactional
     public void delete(UUID id) {
         requireAccess(id);
+        membershipDenies.requireMayDropGroup(id);
         userGroups.delete(id);
+    }
+
+    /** Refused only when the replace actually loses somebody: a rename must not need the lift authority. */
+    private void requireMayDropMembersOf(UUID groupId, Set<UUID> desired) {
+        if (userGroups.memberIdsOf(Set.of(groupId)).stream().anyMatch(member -> !desired.contains(member))) {
+            membershipDenies.requireMayDropGroup(groupId);
+        }
     }
 
     /** Replaces the roles delegated to a group; members inherit them. Transactional so the admin-invariant
@@ -177,11 +198,17 @@ public class GroupAdminService {
      * group is resolved, which the annotation cannot do.
      */
     private void requireMayChange(UUID groupId, Set<UUID> desired) {
+        Set<UUID> delegated = userGroups.delegatedRoleIds(Set.of(groupId)).getOrDefault(groupId, Set.of());
         Set<UUID> changing = new HashSet<>(desired);
-        changing.addAll(userGroups.delegatedRoleIds(Set.of(groupId)).getOrDefault(groupId, Set.of()));
+        changing.addAll(delegated);
         if (!accessPolicy.mayAssignRoleIds(changing)) {
             throw ForbiddenException.of("admin.group.roleOutsideCeiling");
         }
+        // The grant ceiling above asks whether the actor could have CONFERRED these roles. Undelegating one is
+        // the other polarity and has its own authority: a deny resolves against the holder's apex roles, so
+        // dropping the delegation drops the deny that rode on it for every member at once.
+        delegated.stream().filter(roleId -> !desired.contains(roleId))
+                .forEach(membershipDenies::requireMayDropRole);
     }
 
     private void requireAccess(UUID groupId) {

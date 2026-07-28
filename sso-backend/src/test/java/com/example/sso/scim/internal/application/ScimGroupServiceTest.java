@@ -7,6 +7,7 @@ import com.example.sso.user.role.Roles;
 import de.captaingoldfish.scim.sdk.common.exceptions.BadRequestException;
 import de.captaingoldfish.scim.sdk.common.exceptions.ForbiddenException;
 import de.captaingoldfish.scim.sdk.common.resources.Group;
+import de.captaingoldfish.scim.sdk.common.resources.multicomplex.Member;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -14,6 +15,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -22,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -40,6 +43,8 @@ class ScimGroupServiceTest {
     private RoleService roleService;
     @Mock
     private OrgContext orgContext;
+    @Mock
+    private ScimMembershipDenyAuditor denyAuditor;
 
     @InjectMocks
     private ScimGroupService service;
@@ -110,6 +115,53 @@ class ScimGroupServiceTest {
 
         assertThatThrownBy(() -> service.delete(id.toString())).isInstanceOf(BadRequestException.class);
         verify(roleService, never()).delete(any());
+    }
+
+    /**
+     * The wiring, asserted rather than assumed — its absence is the exact shape of the bug this control was
+     * added for. The console's ceiling shipped with a method no production code called: it read as a control
+     * and protected nothing. A collaborator that is only ever constructed is the same defect.
+     */
+    @Test
+    void updateNamesWhoTheReplaceTakesOffTheRoleBeforeWritingIt() {
+        UUID id = UUID.randomUUID();
+        UUID staying = UUID.randomUUID();
+        UUID leaving = UUID.randomUUID();
+        RoleRef role = mock(RoleRef.class);
+        when(role.getId()).thenReturn(id);
+        when(role.getName()).thenReturn("engineers");
+        when(roleService.findById(id)).thenReturn(Optional.of(role));
+        when(roleService.memberIds(id)).thenReturn(Set.of(staying, leaving));
+
+        service.update(Group.builder().id(id.toString()).displayName("engineers")
+                .members(List.of(Member.builder().value(staying.toString()).build())).build());
+
+        // The ORDER is the finding, not just the call: read the members BEFORE the write (afterwards only the
+        // survivors are left, so the lift would be recorded as affecting nobody), and record AFTER it (the
+        // audit row commits in its own transaction, so noting it first asserts a lift a refusal could undo).
+        InOrder order = inOrder(roleService, denyAuditor);
+        order.verify(roleService).memberIds(id);
+        order.verify(roleService).setMembers(id, Set.of(staying));
+        order.verify(denyAuditor).noteLiftedBy("SCIM group update", id, "engineers", Set.of(leaving));
+    }
+
+    /** Deleting the role lifts for EVERY member at once, and had no test at all — the wiring could be deleted. */
+    @Test
+    void deleteNamesEveryMemberItTakesOffTheRole() {
+        UUID id = UUID.randomUUID();
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        RoleRef role = mock(RoleRef.class);
+        when(role.getId()).thenReturn(id);
+        when(role.getName()).thenReturn("engineers");
+        when(roleService.findById(id)).thenReturn(Optional.of(role));
+        when(roleService.memberIds(id)).thenReturn(Set.of(first, second));
+
+        service.delete(id.toString());
+
+        InOrder order = inOrder(roleService, denyAuditor);
+        order.verify(roleService).deleteRole(id);
+        order.verify(denyAuditor).noteLiftedBy("SCIM group delete", id, "engineers", Set.of(first, second));
     }
 
     @Test

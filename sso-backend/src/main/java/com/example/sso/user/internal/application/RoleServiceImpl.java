@@ -411,6 +411,12 @@ public class RoleServiceImpl implements RoleService {
 
     @Override
     @Transactional(readOnly = true)
+    public Set<UUID> memberIds(UUID roleId) {
+        return Set.copyOf(userRoles.findUserIdsByRoleId(roleId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<UserAccount> effectiveHolders(UUID roleId) {
         // Direct + group-delegated holders (the group side read as platform, RLS-blind) — the same set the
         // holder-session termination uses, so a role's true reach is counted, not just its direct grants.

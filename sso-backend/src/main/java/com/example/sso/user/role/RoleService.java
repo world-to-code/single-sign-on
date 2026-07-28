@@ -114,6 +114,9 @@ public interface RoleService {
     /** The users assigned this role DIRECTLY (a direct user→role grant only, NOT group-delegated). */
     List<UserAccount> members(UUID roleId);
 
+    /** Just who holds the role, without materializing an account each — for a caller that only needs the ids. */
+    Set<UUID> memberIds(UUID roleId);
+
     /** Every user this role EFFECTIVELY reaches — assigned directly OR via a GROUP that delegates it. The true
      *  holder set, unlike {@link #members} (direct grants only); use this wherever group-delegated holders count. */
     List<UserAccount> effectiveHolders(UUID roleId);

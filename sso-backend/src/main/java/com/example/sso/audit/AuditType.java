@@ -57,6 +57,9 @@ public enum AuditType {
     USER_PERMISSIONS_UPDATED(AuditCategory.AUTHORIZATION),
     PERMISSION_DENY_CREATED(AuditCategory.AUTHORIZATION),
     PERMISSION_DENY_LIFTED(AuditCategory.AUTHORIZATION),
+    // A membership drop removed the subject a deny resolved against, so the withheld permission came back
+    // without anyone clearing the lift ceiling. Only emitted where that ceiling cannot be asked (SCIM).
+    PERMISSION_DENY_LIFTED_BY_SYNC(AuditCategory.AUTHORIZATION),
     ROLE_CREATED(AuditCategory.AUTHORIZATION),
     ROLE_UPDATED(AuditCategory.AUTHORIZATION),
     ROLE_DELETED(AuditCategory.AUTHORIZATION),
@@ -67,6 +70,7 @@ public enum AuditType {
     MAPPING_RULE_DELETED(AuditCategory.AUTHORIZATION),
     MAPPING_RULE_APPLIED(AuditCategory.AUTHORIZATION),
     MAPPING_RULE_RETRACTED(AuditCategory.AUTHORIZATION),
+    MAPPING_RULE_RETRACTION_REFUSED(AuditCategory.AUTHORIZATION),  // rolled back: it would have left a tier admin-less
     MAPPING_RULE_AUTHOR_UNAUTHORIZED(AuditCategory.AUTHORIZATION), // rule outlived its author's grant authority — grant skipped
     MAPPING_RULE_LEGACY_AUTHOR(AuditCategory.AUTHORIZATION),       // a grant by a rule with no recorded author (pre-V97/system)
 
