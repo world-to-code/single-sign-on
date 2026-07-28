@@ -12,11 +12,14 @@ import com.example.sso.metadata.ProfileKind;
 import com.example.sso.metadata.ProfileService;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
+import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
+import com.example.sso.user.account.UserAccessChangedEvent;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -75,17 +78,17 @@ class ProfileSwitchBlockingTest {
         lenient().when(users.orgIdOf(USER)).thenReturn(Optional.of(ORG));
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         Profile target = new Profile(TARGET, "acme", ProfileKind.TENANT, null, true, true);
-        lenient().when(profiles.findById(TARGET)).thenReturn(Optional.of(target));
+        lenient().when(profiles.requireAssignable(TARGET)).thenReturn(target);
         // The target declares nothing, so everything the user carries would be removed.
         lenient().when(definitions.definitionsIn(TARGET)).thenReturn(List.of());
         lenient().when(attributes.attributesOfInTier(eq(EntityKind.USER), any()))
                 .thenReturn(List.of(new Attribute("syncedTeam", "Platform")));
     }
 
+    /** What the STORE says about deleting the key — the one source both preview and the write consult. */
     private void ownedBy(AttributeSource source) {
-        when(definitions.definitionOf(EntityKind.USER, "syncedTeam")).thenReturn(Optional.of(
-                new AttributeDefinition(UUID.randomUUID(), EntityKind.USER, "syncedTeam", "Team", null,
-                        AttributeDataType.STRING, List.of(), false, false, source, 0)));
+        when(attributes.keysNotRemovable(eq(EntityKind.USER), any()))
+                .thenReturn(source == AttributeSource.LOCAL ? Set.of() : Set.of("syncedTeam"));
     }
 
     @Test
@@ -103,7 +106,7 @@ class ProfileSwitchBlockingTest {
     void theMoveIsRefusedBeforeAnythingIsDeleted() {
         ownedBy(AttributeSource.DIRECTORY);
 
-        assertThatThrownBy(() -> service.switchTo(USER, TARGET)).isInstanceOf(ConflictException.class);
+        assertThatThrownBy(() -> service.switchTo(USER, TARGET, null)).isInstanceOf(ConflictException.class);
 
         verify(attributes, never()).removeAll(any(), any(), any());
         verify(users, never()).assignProfile(any(), any());
@@ -114,7 +117,7 @@ class ProfileSwitchBlockingTest {
     void aLocallyOwnedAttributeDoesNotBlockTheMove() {
         ownedBy(AttributeSource.LOCAL);
 
-        service.switchTo(USER, TARGET);
+        service.switchTo(USER, TARGET, null);
 
         verify(attributes).removeAll(EntityKind.USER, USER.toString(), List.of("syncedTeam"));
         verify(users).assignProfile(USER, TARGET);
@@ -128,10 +131,10 @@ class ProfileSwitchBlockingTest {
     @Test
     void aSourceProfileCannotGovernAUser() {
         UUID source = UUID.randomUUID();
-        when(profiles.findById(source)).thenReturn(Optional.of(
-                new Profile(source, "LDAP", ProfileKind.LDAP, UUID.randomUUID(), false, false)));
+        when(profiles.requireAssignable(source))
+                .thenThrow(BadRequestException.of("metadata.profile.notAssignable"));
 
-        assertThatThrownBy(() -> service.switchTo(USER, source)).isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.switchTo(USER, source, null)).isInstanceOf(BadRequestException.class);
 
         verify(attributes, never()).removeAll(any(), any(), any());
         verify(users, never()).assignProfile(any(), any());
@@ -147,7 +150,7 @@ class ProfileSwitchBlockingTest {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken("root", "n/a", List.of()));
         try {
-            service.switchTo(USER, TARGET);
+            service.switchTo(USER, TARGET, null);
         } finally {
             SecurityContextHolder.clearContext();
         }
@@ -160,6 +163,87 @@ class ProfileSwitchBlockingTest {
 
         assertThat(switched.actor()).isEqualTo("root");
         assertThat(switched.subject()).isEqualTo("ada");
+        // The id, not the name, is what the audit console resolves a USER subject by — a scoped admin's view
+        // parses it as a UUID, so a username there drops the row out of their console entirely.
+        assertThat(switched.subjectId()).isEqualTo(USER);
+    }
+
+    /**
+     * A move that deletes nothing and lands on the profile the person is already on changes no authorization,
+     * so it must not terminate their sessions.
+     *
+     * <p>Unconditional termination made this endpoint a way to log any reachable person out at will —
+     * repeatable, and answering to {@code user:update} rather than to the session-revocation gate that exists
+     * to refuse exactly that.
+     */
+    @Test
+    void aMoveToTheProfileTheUserIsAlreadyOnWritesNothingAtAll() {
+        when(user.getProfileId()).thenReturn(TARGET);
+        when(definitions.definitionsIn(TARGET)).thenReturn(List.of(declaration("syncedTeam")));
+
+        service.switchTo(USER, TARGET, null);
+
+        verify(events, never()).publishEvent(any(UserAccessChangedEvent.class));
+        verify(attributes, never()).removeAll(any(), any(), any());
+        verify(users, never()).assignProfile(any(), any());
+    }
+
+    /**
+     * A real move — the person lands on a different profile — but one that declares everything they hold, so
+     * nothing is deleted. The binding changes and the trail says so; their sessions do not end, because no
+     * attribute went and therefore no mapping rule or policy binding can have changed its answer.
+     */
+    @Test
+    void aLosslessMoveRebindsTheProfileWithoutEndingAnySession() {
+        when(user.getProfileId()).thenReturn(UUID.randomUUID());
+        when(definitions.definitionsIn(TARGET)).thenReturn(List.of(declaration("syncedTeam")));
+
+        service.switchTo(USER, TARGET, null);
+
+        verify(users).assignProfile(USER, TARGET);
+        verify(events).publishEvent(any(ProfileSwitched.class));
+        verify(events, never()).publishEvent(any(UserAccessChangedEvent.class));
+    }
+
+    /** But a move that actually deletes a key does end them — that key can be what grants a role. */
+    @Test
+    void aMoveThatDeletesAKeyTerminatesTheSessions() {
+        ownedBy(AttributeSource.LOCAL);
+
+        service.switchTo(USER, TARGET, null);
+
+        verify(events).publishEvent(any(UserAccessChangedEvent.class));
+    }
+
+    /**
+     * Preview resolves the target profile through the same check as the write. Without it an administrator is
+     * shown a deletion list computed against a profile they cannot move to — a confirmation for something that
+     * then fails, and a list that describes nothing real.
+     */
+    @Test
+    void previewRefusesATargetTheMoveWouldAlsoRefuse() {
+        UUID source = UUID.randomUUID();
+        when(profiles.requireAssignable(source))
+                .thenThrow(BadRequestException.of("metadata.profile.notAssignable"));
+
+        assertThatThrownBy(() -> service.preview(USER, source)).isInstanceOf(BadRequestException.class);
+    }
+
+    /**
+     * The org filter is the ONLY thing scoping a user id here — {@code app_user} carries no RLS — so a target
+     * outside the acting organization is a non-revealing 404 rather than a move across the tenant boundary.
+     */
+    @Test
+    void aUserOutsideTheActingOrganizationIsNotFound() {
+        when(users.orgIdOf(USER)).thenReturn(Optional.of(UUID.randomUUID()));
+
+        assertThatThrownBy(() -> service.switchTo(USER, TARGET, null)).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.preview(USER, TARGET)).isInstanceOf(NotFoundException.class);
+    }
+
+    private AttributeDefinition declaration(String key) {
+        return new AttributeDefinition(UUID.randomUUID(), EntityKind.USER, key, key, null,
+                AttributeDataType.STRING, List.of(), false, false, AttributeSource.LOCAL, 0);
     }
 
     /**
@@ -194,9 +278,35 @@ class ProfileSwitchBlockingTest {
     void theMoveIsRefusedForAnExternallyManagedUser() {
         when(user.getExternalId()).thenReturn("scim-42");
 
-        assertThatThrownBy(() -> service.switchTo(USER, TARGET)).isInstanceOf(ConflictException.class);
+        assertThatThrownBy(() -> service.switchTo(USER, TARGET, null)).isInstanceOf(ConflictException.class);
 
         verify(attributes, never()).removeAll(any(), any(), any());
         verify(users, never()).assignProfile(any(), any());
+    }
+
+    /**
+     * What the administrator confirmed is what the move may delete. Between the preview and the confirm a sync
+     * can add an attribute or the target can drop a declaration, and the extra key that then goes can be the
+     * condition on a mapping rule — a role retracted without anyone agreeing to it.
+     */
+    @Test
+    void aMoveWhoseCostChangedSinceThePreviewIsRefused() {
+        ownedBy(AttributeSource.LOCAL);
+
+        assertThatThrownBy(() -> service.switchTo(USER, TARGET, List.of("somethingElse")))
+                .isInstanceOf(ConflictException.class);
+
+        verify(attributes, never()).removeAll(any(), any(), any());
+        verify(users, never()).assignProfile(any(), any());
+    }
+
+    /** And when it still matches, the move proceeds — order is not part of the comparison. */
+    @Test
+    void aMoveWhoseCostIsUnchangedProceeds() {
+        ownedBy(AttributeSource.LOCAL);
+
+        service.switchTo(USER, TARGET, List.of("syncedTeam"));
+
+        verify(attributes).removeAll(EntityKind.USER, USER.toString(), List.of("syncedTeam"));
     }
 }

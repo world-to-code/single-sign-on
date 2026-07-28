@@ -14,6 +14,7 @@ import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.UserAccessChangedEvent;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -50,12 +51,12 @@ class UserProfileServiceImpl implements UserProfileService {
     public ProfileSwitchPreview preview(UUID userId, UUID profileId) {
         UserAccount user = requireUser(userId);
         List<String> removed = removedKeys(user, requireProfile(profileId));
-        return new ProfileSwitchPreview(removed, directoryOwned(removed), user.getExternalId() != null);
+        return new ProfileSwitchPreview(removed, notRemovable(removed), user.getExternalId() != null);
     }
 
     @Override
     @Transactional
-    public void switchTo(UUID userId, UUID profileId) {
+    public void switchTo(UUID userId, UUID profileId, Collection<String> confirmedKeys) {
         UserAccount user = requireUser(userId);
         UUID target = requireProfile(profileId);
         requireLocallyManaged(user);
@@ -64,23 +65,57 @@ class UserProfileServiceImpl implements UserProfileService {
         // Refuse before deleting anything. attributes.remove would throw on the first directory-owned key,
         // rolling the whole switch back — after preview had already told the administrator those keys would
         // simply go. Fail up front, naming them, so the two agree.
-        List<String> blocked = directoryOwned(removed);
+        List<String> blocked = notRemovable(removed);
         if (!blocked.isEmpty()) {
             throw ConflictException.of("metadata.profile.switchBlocked", String.join(", ", blocked));
+        }
+        requireStillTheConfirmedCost(removed, confirmedKeys);
+        if (removed.isEmpty() && target.equals(user.getProfileId())) {
+            return; // nothing to delete and nowhere to move: not a write, so not a termination either
         }
         attributes.removeAll(EntityKind.USER, userId.toString(), removed);
         users.assignProfile(userId, target);
         // The deletion can retract a role, so it has to be attributable afterwards — the keys, not the values.
         // Published rather than recorded inline: AuditService writes REQUIRES_NEW, so an inline record would
         // commit independently and then assert a deletion that a rollback undid.
-        events.publishEvent(new ProfileSwitched(actingAdministrator(), user.getUsername(),
+        events.publishEvent(new ProfileSwitched(actingAdministrator(), user.getId(), user.getUsername(),
                 user.getOrgId(), target, removed));
+        if (removed.isEmpty()) {
+            return;
+        }
         // Own the termination rather than leaning on the async mapping re-evaluation the attribute deletions
         // also trigger. That path covers a key used by a mapping RULE, but not one used only by a policy
         // binding, and when it fails the retraction waits out the sweep interval — or is lost entirely, since
-        // the sweeper does not re-drive a retraction whose claim row is already gone. A destructive,
-        // privilege-changing operation should not depend on a side effect to take effect.
+        // the sweeper does not re-drive a retraction whose claim row is already gone.
+        //
+        // What this does NOT do is make the role retraction itself immediate: the mapping re-evaluation is
+        // @Async, so between this commit and its completion the sessions are gone while `app_user_role` still
+        // carries the role, and a re-login inside that window is fully privileged. The termination is the
+        // policy-binding half taking effect at once, plus a second termination when the retraction lands —
+        // not the retraction. Closing the window means retracting synchronously here, which would put a
+        // mapping re-evaluation inside an admin write transaction; that trade has not been made.
+        //
+        // Only when a key actually went, though: a move that deletes nothing changes no authorization, and an
+        // unconditional termination made this endpoint a way to log a person out at will — one that answers to
+        // user:update rather than to the session-revocation gate.
         events.publishEvent(new UserAccessChangedEvent(user.getUsername(), user.getOrgId()));
+    }
+
+    /**
+     * The move deletes what the administrator was SHOWN, or it does not happen.
+     *
+     * <p>Preview and confirm are two requests with nothing binding them. Between them a sync can add an
+     * attribute, or the target profile can drop a declaration — and the extra key that then goes can be the
+     * condition on a mapping rule or a policy binding, so the move retracts a role nobody agreed to lose.
+     * Refusing sends the console back to preview, which is cheap; the alternative is not undoable.
+     */
+    private void requireStillTheConfirmedCost(List<String> removed, Collection<String> confirmedKeys) {
+        if (confirmedKeys == null) {
+            return; // a caller that never previewed accepts the computed cost
+        }
+        if (!Set.copyOf(removed).equals(Set.copyOf(confirmedKeys))) {
+            throw ConflictException.of("metadata.profile.previewStale");
+        }
     }
 
     /**
@@ -93,17 +128,15 @@ class UserProfileServiceImpl implements UserProfileService {
     }
 
     /**
-     * The keys a DIRECTORY owns, which an administrator may not delete.
+     * The keys the move would have to delete but this administrator may not — asked of the store that will do
+     * the deleting, rather than re-derived here.
      *
-     * <p>Ownership resolves through the TENANT profile — the same profile {@code attributes.remove} consults —
-     * not through the move's target, or preview and the write would disagree again.
+     * <p>This used to test one reason (a directory owns the key) and the write enforced three, so each reason
+     * the preview did not know about surfaced as a confirm that failed on something never disclosed. Asking
+     * the store means a reason added there is reported here without anyone remembering to.
      */
-    private List<String> directoryOwned(List<String> keys) {
-        return keys.stream()
-                .filter(key -> definitions.definitionOf(EntityKind.USER, key)
-                        .filter(definition -> !definition.locallyEditable())
-                        .isPresent())
-                .toList();
+    private List<String> notRemovable(List<String> keys) {
+        return List.copyOf(attributes.keysNotRemovable(EntityKind.USER, keys));
     }
 
     /** Attributes the user carries that the target profile does not declare. */
@@ -147,16 +180,8 @@ class UserProfileServiceImpl implements UserProfileService {
         return user;
     }
 
-    /**
-     * The target, which must be one of the tenant's OWN profiles — see {@link Profile#governsUsers()}. The
-     * mapping side refuses a non-tenant target for the same reason, and reports it differently.
-     */
+    /** The target, resolved by the one check every profile-binding route shares. */
     private UUID requireProfile(UUID profileId) {
-        Profile profile = profiles.findById(profileId)
-                .orElseThrow(() -> NotFoundException.of("metadata.profile.notFound"));
-        if (!profile.governsUsers()) {
-            throw BadRequestException.of("metadata.profile.notAssignable");
-        }
-        return profile.id();
+        return profiles.requireAssignable(profileId).id();
     }
 }

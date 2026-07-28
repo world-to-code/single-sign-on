@@ -127,7 +127,7 @@ class ProfileSwitchRetractsRoleIT extends AbstractIntegrationTest {
         orgContext.runInOrg(orgA, () -> definitions.delete(
                 orgContext.callInOrg(orgA, () -> definitions.definitionsIn(bare.id())).stream()
                         .filter(d -> d.key().equals("team")).findFirst().orElseThrow().id()));
-        orgContext.runInOrg(orgA, () -> userProfiles.switchTo(userId, bare.id()));
+        orgContext.runInOrg(orgA, () -> userProfiles.switchTo(userId, bare.id(), null));
 
         await().until(() -> rolesOf().stream().noneMatch(r -> r.startsWith("ROLE_PLATFORM_")));
         assertThat(rolesOf()).doesNotContain("ROLE_PLATFORM_" + slug);

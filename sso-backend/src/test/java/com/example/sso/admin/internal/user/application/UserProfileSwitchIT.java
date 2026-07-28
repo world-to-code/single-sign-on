@@ -140,7 +140,7 @@ class UserProfileSwitchIT extends AbstractIntegrationTest {
             attributes.set(EntityKind.USER, subject.getId().toString(), "legacyCode", "X1");
         });
 
-        orgContext.runInOrg(orgA, () -> userProfiles.switchTo(subject.getId(), tenant.id()));
+        orgContext.runInOrg(orgA, () -> userProfiles.switchTo(subject.getId(), tenant.id(), null));
 
         List<Attribute> remaining = orgContext.callInOrg(orgA,
                 () -> attributes.attributesOfInTier(EntityKind.USER, subject.getId().toString()));
@@ -163,7 +163,7 @@ class UserProfileSwitchIT extends AbstractIntegrationTest {
         });
 
         assertThatThrownBy(() -> orgContext.runInOrg(orgA,
-                () -> userProfiles.switchTo(subject.getId(), tenant.id())))
+                () -> userProfiles.switchTo(subject.getId(), tenant.id(), null)))
                 .isInstanceOf(ConflictException.class);
     }
 

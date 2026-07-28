@@ -408,6 +408,20 @@ public class AdminAccessPolicy {
         return currentIsSuperAdmin() || !isAdmin(targetId);
     }
 
+    /**
+     * Who may rewrite a user's profile — the columns they hold, or the profile that declares them.
+     *
+     * <p>The same rule as {@link #canRevokeSessions}, and for the same reason rather than by coincidence: a
+     * profile write DELETES attributes, an attribute can be the condition on a mapping rule or a policy
+     * binding, and the deletion therefore retracts roles and ends every live session. Without this, the route
+     * refused to a scoped delegate at {@code DELETE /users/{id}/sessions} was reachable at
+     * {@code PUT /users/{id}/profile} — a way to log out an administrator at will, answering only to
+     * {@code user:update}.
+     */
+    public boolean canChangeProfile(UUID targetId) {
+        return canRevokeSessions(targetId);
+    }
+
     /** Blocks resetting another administrator's MFA (resetting your own is allowed). */
     public boolean canResetMfa(UUID targetId) {
         return isSelf(targetId) || !isAdmin(targetId);
