@@ -60,20 +60,18 @@ import static org.mockito.Mockito.when;
  * one that was left uncovered when this control was first written.
  */
 @ExtendWith(MockitoExtension.class)
-class DirectorySourceAuthorizationTest {
+class MappingRuleEvaluatorGuardsTest {
 
     private static final UUID ORG = UUID.randomUUID();
     private static final UUID USER = UUID.randomUUID();
     private static final UUID TARGET_ROLE = UUID.randomUUID();
-    private static final UUID CONFIGURATOR = UUID.randomUUID();
+    private static final UUID OTHER_USER = UUID.randomUUID();
 
     @Mock private MappingRuleRepository rules;
-    @Mock private AttributeDefinitionService definitions;
-    @Mock private AttributeSourceAuthority sources;
     @Mock private MappingRuleMembershipRepository memberships;
     @Mock private MappingCohortResolver cohorts;
     @Mock private OrgTierGuard tierGuard;
-    @Mock private MappingTargetAuthority targetAuthority;
+    @Mock private MappingGrantAdmission admission;
     @Mock private UserGroupService userGroups;
     @Mock private LastAdminInvariant lastAdminInvariant;
     @Mock private MappingAuditTrail trail;
@@ -85,109 +83,42 @@ class DirectorySourceAuthorizationTest {
     @BeforeEach
     void setUp() {
         lenient().when(roleApplier.kind()).thenReturn(MappingTargetKind.ROLE);
-        evaluator = new MappingRuleEvaluator(rules, cohorts, definitions, sources, memberships,
-                List.of(roleApplier), tierGuard, targetAuthority, userGroups, lastAdminInvariant, trail);
+        evaluator = new MappingRuleEvaluator(rules, cohorts, admission, memberships,
+                List.of(roleApplier), tierGuard, userGroups, lastAdminInvariant, trail);
         rule = MappingRule.of(MappingTargetKind.ROLE, TARGET_ROLE, ORG, UUID.randomUUID());
         ReflectionTestUtils.setField(rule, "id", UUID.randomUUID());
 
         lenient().when(tierGuard.currentTier()).thenReturn(ORG);
         lenient().when(rules.findByIdForUpdate(any())).thenReturn(Optional.of(rule));
-        // The rule's own author is beyond reproach; only the directory's provenance is in question here.
-        lenient().when(targetAuthority.authorMayAssign(eq(rule.getCreatedBy()), any(), any())).thenReturn(true);
-        // Its condition reads an attribute a DIRECTORY owns — the whole premise of this control.
-        lenient().when(cohorts.conditionsOf(rule.getId())).thenReturn(List.of(condition("department")));
-        lenient().when(definitions.definitionOf(eq(EntityKind.USER), anyString()))
-                .thenReturn(Optional.of(directoryOwned()));
-    }
-
-    private MappingCondition condition(String key) {
-        return new MappingCondition(key, AttributeOperator.EQUALS, "IT-Admins", List.of());
-    }
-
-    private AttributeDefinition directoryOwned() {
-        return new AttributeDefinition(UUID.randomUUID(), EntityKind.USER, "department", "Department", null,
-                AttributeDataType.STRING, List.of(), false, false, AttributeSource.DIRECTORY, 0);
-    }
-
-    private void directoryVouchedForBy(UUID configurator, boolean mayAssign) {
-        when(sources.authorsFilling(any()))
-                .thenReturn(new AttributeSourceAuthors(Set.of(configurator), true));
-        when(targetAuthority.authorMayAssign(eq(configurator), eq(MappingTargetKind.ROLE), eq(TARGET_ROLE)))
-                .thenReturn(mayAssign);
     }
 
     /**
-     * The attacker's path: an attribute changed, so ONE user is re-evaluated. Whoever aimed the directory that
-     * filled it cannot grant this role by hand, so the directory must not grant it for them.
+     * The wiring seam, and the reason admission is ONE call. Both materialize paths asked the author check and
+     * the directory check separately, which is two places for a later one to reach only half — and the cohort
+     * path is exactly the one that was left uncovered when the directory check was first written. The logic
+     * itself is {@code MappingGrantAdmissionTest}'s; what is asserted here is that neither path skips it.
      */
     @Test
-    void aDirectoryWhoseConfiguratorCannotGrantTheRoleDoesNotGrantIt() {
-        directoryVouchedForBy(CONFIGURATOR, false);
+    void neitherMaterializePathGrantsWhatAdmissionRefuses() {
+        when(admission.admits(rule)).thenReturn(false);
 
         ReflectionTestUtils.invokeMethod(evaluator, "materialize", rule, USER);
-
-        verify(memberships, never()).insertClaimIfAbsent(any(), any(), any(), any());
-    }
-
-    @Test
-    void aDirectoryWhoseConfiguratorCouldGrantTheRoleIsAllowedTo() {
-        directoryVouchedForBy(CONFIGURATOR, true);
-        when(memberships.insertClaimIfAbsent(any(), any(), any(), any())).thenReturn(1);
-
-        ReflectionTestUtils.invokeMethod(evaluator, "materialize", rule, USER);
-
-        verify(memberships).insertClaimIfAbsent(rule.getId(), USER, TARGET_ROLE, ORG);
-    }
-
-    /**
-     * A source with no connector at all — SCIM, CSV — fills the key too, and nobody configured a directory we
-     * could hold responsible for it. Answering "who can fill this?" with only the connector-backed half would
-     * let a legitimate LDAP configurator vouch for a value a SCIM client wrote. The set must be COMPLETE.
-     */
-    @Test
-    void anUnattributableSourceMakesTheAnswerIncompleteEvenAlongsideAGoodConnector() {
-        when(sources.authorsFilling(any()))
-                .thenReturn(new AttributeSourceAuthors(Set.of(CONFIGURATOR), false));
-        lenient().when(targetAuthority.authorMayAssign(eq(CONFIGURATOR), any(), any())).thenReturn(true);
-
-        ReflectionTestUtils.invokeMethod(evaluator, "materialize", rule, USER);
-
-        verify(memberships, never()).insertClaimIfAbsent(any(), any(), any(), any());
-    }
-
-    /** An unattributed connector vouches for nothing — fail closed rather than guess who aimed it. */
-    @Test
-    void anUnattributedDirectoryVouchesForNothing() {
-        when(sources.authorsFilling(any()))
-                .thenReturn(new AttributeSourceAuthors(Set.of(), false));
-
-        ReflectionTestUtils.invokeMethod(evaluator, "materialize", rule, USER);
-
-        verify(memberships, never()).insertClaimIfAbsent(any(), any(), any(), any());
-    }
-
-    /** The same gate on the batch path, which runs when a rule is created or edited. */
-    @Test
-    void theBatchPathIsGatedToo() {
-        directoryVouchedForBy(CONFIGURATOR, false);
-
         ReflectionTestUtils.invokeMethod(evaluator, "materializeAll", rule, Set.of(USER));
 
         verify(memberships, never()).insertClaimIfAbsent(any(), any(), any(), any());
     }
 
-    /** A rule that reads no directory-owned attribute is nobody's injection point; it must not be blocked. */
+    /** And both grant when it admits — otherwise the test above would pass with the grant simply broken. */
     @Test
-    void aRuleReadingOnlyLocallyOwnedAttributesIsUnaffected() {
-        when(definitions.definitionOf(eq(EntityKind.USER), anyString())).thenReturn(Optional.of(
-                new AttributeDefinition(UUID.randomUUID(), EntityKind.USER, "department", "Department", null,
-                        AttributeDataType.STRING, List.of(), false, false, AttributeSource.LOCAL, 0)));
+    void bothMaterializePathsGrantWhenAdmissionAllowsIt() {
+        when(admission.admits(rule)).thenReturn(true);
         when(memberships.insertClaimIfAbsent(any(), any(), any(), any())).thenReturn(1);
 
         ReflectionTestUtils.invokeMethod(evaluator, "materialize", rule, USER);
+        ReflectionTestUtils.invokeMethod(evaluator, "materializeAll", rule, Set.of(OTHER_USER));
 
         verify(memberships).insertClaimIfAbsent(rule.getId(), USER, TARGET_ROLE, ORG);
-        verify(sources, never()).authorsFilling(any());
+        verify(memberships).insertClaimIfAbsent(rule.getId(), OTHER_USER, TARGET_ROLE, ORG);
     }
 
     /**

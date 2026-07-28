@@ -62,12 +62,10 @@ class SynchronousRetractionTest {
     private static final UUID ADMIN_ROLE = UUID.randomUUID();
 
     @Mock private MappingRuleRepository rules;
-    @Mock private AttributeDefinitionService definitions;
-    @Mock private AttributeSourceAuthority sources;
     @Mock private MappingRuleMembershipRepository memberships;
     @Mock private MappingCohortResolver cohorts;
     @Mock private OrgTierGuard tierGuard;
-    @Mock private MappingTargetAuthority targetAuthority;
+    @Mock private MappingGrantAdmission admission;
     @Mock private UserGroupService userGroups;
     @Mock private LastAdminInvariant lastAdminInvariant;
     @Mock private MappingAuditTrail trail;
@@ -82,11 +80,9 @@ class SynchronousRetractionTest {
     void setUp() {
         lenient().when(groupApplier.kind()).thenReturn(MappingTargetKind.GROUP);
         lenient().when(roleApplier.kind()).thenReturn(MappingTargetKind.ROLE);
-        evaluator = new MappingRuleEvaluator(rules, cohorts, definitions, sources, memberships,
-                List.of(groupApplier, roleApplier), tierGuard, targetAuthority, userGroups,
-                lastAdminInvariant, trail);
+        evaluator = new MappingRuleEvaluator(rules, cohorts, admission, memberships,
+                List.of(groupApplier, roleApplier), tierGuard, userGroups, lastAdminInvariant, trail);
         lenient().when(tierGuard.currentTier()).thenReturn(ORG);
-        lenient().when(definitions.definitionOf(any(), anyString())).thenReturn(Optional.empty());
 
         groupRule = ruleOf(MappingTargetKind.GROUP, TEAM_GROUP);   // level=staff  -> GROUP Team
         roleRule = ruleOf(MappingTargetKind.ROLE, ADMIN_ROLE);     // dept=eng     -> ROLE OrgAdmin
