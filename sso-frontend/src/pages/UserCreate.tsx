@@ -67,9 +67,12 @@ export default function UserCreate() {
     }
   }
 
-  // The profile declares what a person of this tenant HAS, so the form asks for exactly that — no more
-  // hardcoded field list. Built-ins already have their own inputs above.
-  const declared = definitions.filter((d) => !d.base);
+  // Only what the profile REQUIRES. Creation is the one moment an administrator cannot skip, so asking for
+  // every optional column here turns a two-field task into a form nobody finishes — and the server refuses a
+  // create that omits a required one, which is the only part that has to happen now. The optional columns are
+  // editable on the user's own page, where there is context for them.
+  // A DIRECTORY-owned column is never asked for: its connector supplies it, and the server refuses it here.
+  const declared = definitions.filter((d) => !d.base && d.required && d.source === "LOCAL");
 
   return (
     <EditorPage

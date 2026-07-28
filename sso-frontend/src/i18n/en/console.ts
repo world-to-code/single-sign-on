@@ -514,7 +514,8 @@ export const console = {
   userCreateCredentialsDesc: "A temporary password the user replaces on first sign-in.",
   userCreateTempPassword: "Temporary password",
   userCreateProfileTitle: "Profile attributes",
-  userCreateProfileDesc: "The attributes this organization\u2019s profile declares for a person.",
+  userCreateProfileDesc:
+    "The attributes this organization\u2019s profile REQUIRES. The optional ones are editable on the user\u2019s own page.",
   userCreateAttrUnset: "Not set",
   userCreateRolesTitle: "Roles",
   userCreateRolesDesc: "Roles grant the user permissions. Defaults to ROLE_USER.",

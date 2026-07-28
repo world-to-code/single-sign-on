@@ -514,7 +514,8 @@ export const console: Record<keyof typeof enConsole, string> = {
   userCreateCredentialsDesc: "사용자가 첫 로그인 시 교체하는 임시 비밀번호.",
   userCreateTempPassword: "임시 비밀번호",
   userCreateProfileTitle: "프로필 속성",
-  userCreateProfileDesc: "이 조직의 프로필이 사용자에 대해 정의한 속성입니다.",
+  userCreateProfileDesc:
+    "이 조직의 프로필이 필수로 정의한 속성입니다. 선택 속성은 사용자 상세 화면에서 입력할 수 있습니다.",
   userCreateAttrUnset: "지정 안 함",
   userCreateRolesTitle: "역할",
   userCreateRolesDesc: "역할은 사용자에게 권한을 부여합니다. 기본값은 ROLE_USER입니다.",
