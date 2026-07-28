@@ -34,7 +34,8 @@ export default function UserCreate() {
   // Only TENANT profiles: a source profile describes a remote directory's schema, and creating a person on
   // one would promise a shape no local form can fill.
   useEffect(() => {
-    listProfiles().then((all) => setProfiles(all.filter((p) => p.kind === "TENANT"))).catch(() => setProfiles([]));
+    listProfiles().then((all) => setProfiles(all.filter((p) => p.kind === "TENANT")))
+      .catch((e) => setError(errorMessage(e)));
   }, []);
   useEffect(() => {
     if (defaultProfile && !profileId) setProfileId(defaultProfile.id);
@@ -46,7 +47,10 @@ export default function UserCreate() {
   useEffect(() => {
     if (!profileId) return;
     setAttrs({});
-    listAttributeDefinitions("USER", profileId).then(setDefinitions).catch(() => setDefinitions([]));
+    // Swallowing this one cost the most: the form then asked for no attributes at all, and the server
+    // refused the create for a required column the administrator was never shown.
+    listAttributeDefinitions("USER", profileId).then(setDefinitions)
+      .catch((e) => setError(errorMessage(e)));
   }, [profileId]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

@@ -18,6 +18,11 @@ vi.mock("@/profileAttributes", async (importOriginal) => ({
   switchProfile: vi.fn(),
 }));
 
+vi.mock("@/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/api")>()),
+  errorMessage: (e: unknown) => String(e),
+}));
+
 vi.mock("@/attributeDefinitions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/attributeDefinitions")>()),
   listProfiles: vi.fn(),
@@ -185,5 +190,16 @@ describe("ProfileSwitcher", () => {
     fireEvent.click(screen.getByRole("button", { name: "userDetailSwitchProfileAction" }));
 
     expect(switchProfile).not.toHaveBeenCalled();
+  });
+
+  it("says the profile list could not be loaded instead of vanishing", async () => {
+    // This component renders nothing when it has no candidates, so a refused load was indistinguishable from
+    // "there is nowhere to move to" — no control on screen, and no reason for its absence.
+    vi.mocked(listProfiles).mockRejectedValue(new Error("403"));
+
+    render(<ProfileSwitcher userId={USER} currentProfileId={CURRENT} onSwitched={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(screen.queryByLabelText("userDetailSwitchProfileLabel")).not.toBeInTheDocument();
   });
 });

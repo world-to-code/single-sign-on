@@ -30,7 +30,10 @@ export function ProfileSwitcher({ userId, currentProfileId, onSwitched }:
   useEffect(() => {
     listProfiles()
       .then((all) => setCandidates(all.filter((p) => p.kind === "TENANT" && p.id !== currentProfileId)))
-      .catch(() => setCandidates([]));
+      // Not swallowed into an empty list: this component renders nothing when it has no candidates, so a
+      // refused load looked exactly like "this organization has one profile" — the administrator saw no
+      // control and no reason for its absence.
+      .catch((e) => setError(errorMessage(e)));
   }, [currentProfileId]);
 
   const pick = (profileId: string) => {
@@ -57,12 +60,15 @@ export function ProfileSwitcher({ userId, currentProfileId, onSwitched }:
       .finally(() => setBusy(false));
   };
 
-  if (candidates.length === 0) return null;
+  // A load failure still renders, precisely because there is nothing else on screen to hint at it: with no
+  // candidates this component draws nothing, so a refused list looked like "there is nowhere to move to".
+  if (candidates.length === 0 && !error) return null;
 
   return (
     <div className="space-y-3">
       {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
 
+      {candidates.length > 0 && (
       <div className="flex flex-wrap items-end gap-2">
         <div className="min-w-56 space-y-1.5">
           <Label htmlFor="profile-switch-target">{t("userDetailSwitchProfileLabel")}</Label>
@@ -76,6 +82,7 @@ export function ProfileSwitcher({ userId, currentProfileId, onSwitched }:
           {t("userDetailSwitchProfileAction")}
         </Button>
       </div>
+      )}
 
       {preview && <PreviewNotice preview={preview} />}
     </div>

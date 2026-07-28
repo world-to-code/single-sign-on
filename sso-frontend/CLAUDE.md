@@ -53,6 +53,16 @@ src/
   Use `cn()` to compose classes. Respect the light/dark theme tokens.
 - **Centralize API calls** in the `lib` api/auth client; components call typed functions, never raw
   `fetch` scattered around. Always render loading / error / empty states (reuse `states`/`DataList`).
+- **Never swallow a failed load.** `.catch(() => setItems([]))` and `.catch(() => undefined)` render a
+  refusal as an empty list, so the user cannot tell "you may not see this" from "there is nothing here" —
+  and a control that only draws when it has data disappears with no explanation at all. Keep the error in
+  state and render it (`ErrorCard`/`FailurePanel`/an `Alert`), even when the rest of the component would
+  otherwise render nothing.
+- **Error copy comes from the server's `detail`.** Every 4xx `ProblemDetail` is resolved from the backend
+  message bundle against `Accept-Language`, so `errorMessage()` prefers it for every status (401 and 413
+  excepted — the first is deliberately non-revealing, the second never reaches the application). The
+  `code_*` keys in the `errors` bundle are a FLOOR for a response that carried no detail; do not grow them
+  into a second copy of the server's catalogue, which is how the two drift out of sync.
 - **Accessibility:** semantic HTML, labelled inputs, keyboard-navigable dialogs/menus (Radix gives
   this — keep it), meaningful `aria-*`.
 - **No dead code:** remove unused components, props, imports, and exports.
