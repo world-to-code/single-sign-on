@@ -1,5 +1,6 @@
 package com.example.sso.admin.internal.user.application;
 
+import com.example.sso.mapping.MappingRuleService;
 import com.example.sso.metadata.Attribute;
 import com.example.sso.metadata.AttributeDefinition;
 import com.example.sso.metadata.AttributeDefinitionService;
@@ -45,6 +46,7 @@ class UserProfileServiceImpl implements UserProfileService {
     private final AttributeService attributes;
     private final ApplicationEventPublisher events;
     private final OrgContext orgContext;
+    private final MappingRuleService mappingRules;
 
     @Override
     @Transactional(readOnly = true)
@@ -84,24 +86,23 @@ class UserProfileServiceImpl implements UserProfileService {
         events.publishEvent(new ProfileSwitched(actingAdministrator(), user.getId(), user.getUsername(),
                 user.getOrgId(), target, removed));
         if (removed.isEmpty()) {
-            return;
+            return; // nothing was deleted, so no rule can have changed its answer and no authority moved
         }
+        // Retract SYNCHRONOUSLY, before the termination below. The deletion fans out asynchronously too and
+        // that pass finds nothing left to do — but relying on it meant the sessions were gone while
+        // app_user_role still carried the role, so a re-login in between was fully privileged. Affordable
+        // inside the write because it is ONE user and retraction only: mapping operators are positive-only,
+        // so deleting a value can only ever un-match.
+        mappingRules.reevaluateNow(userId);
         // Own the termination rather than leaning on the async mapping re-evaluation the attribute deletions
         // also trigger. That path covers a key used by a mapping RULE, but not one used only by a policy
         // binding, and when it fails the retraction waits out the sweep interval — or is lost entirely, since
         // the sweeper does not re-drive a retraction whose claim row is already gone.
         //
-        // What this does NOT do is make the role retraction itself immediate: the mapping re-evaluation is
-        // @Async, so between this commit and its completion the sessions are gone while `app_user_role` still
-        // carries the role, and a re-login inside that window is fully privileged. The termination is the
-        // policy-binding half taking effect at once, plus a second termination when the retraction lands —
-        // not the retraction. Closing the window means retracting synchronously here, which would put a
-        // mapping re-evaluation inside an admin write transaction; that trade has not been made.
-        //
-        // What IS closed: the retraction can no longer strip a tier's last administrator. It reaches
-        // RoleService.removeMember directly, below every console guard, so MappingRuleEvaluator now recounts
-        // the tier once per re-evaluation and rolls the retraction back rather than leaving a tenant with no
-        // administrator (LastAdminInvariant.ensureTierRetainsAdmin).
+        // The retraction above already happened, so this terminates a session whose authority is genuinely
+        // gone rather than one that a later async pass will catch up with. And because the last-administrator
+        // invariant runs inside that re-evaluation, a move that would leave the tier with no administrator
+        // fails HERE, rolling everything back, instead of bricking the tenant after the response.
         //
         // Only when a key actually went, though: a move that deletes nothing changes no authorization, and an
         // unconditional termination made this endpoint a way to log a person out at will — one that answers to

@@ -41,4 +41,23 @@ public interface MappingRuleService {
      * <p>Keys nothing reads are absent from the result rather than mapped to an empty set.
      */
     Map<String, Set<MappingTarget>> privilegeTargetsByKey(Collection<String> attrKeys);
+
+    /**
+     * Re-evaluates every rule in the ACTING TIER for one user, NOW, inside the caller's transaction.
+     *
+     * <p>The ordinary path is asynchronous and should stay that way: an attribute edit fans out to a cohort,
+     * and a cohort has no business inside a request. This is for the caller that deleted attributes for ONE
+     * person and must not return until the consequences are real — the profile move, whose whole point is that
+     * the keys it removes can be conditions on mapping rules.
+     *
+     * <p>Why it matters that it is synchronous: that caller also terminates the person's sessions on commit.
+     * Asynchronously, the sessions were gone while {@code app_user_role} still carried the role, so a re-login
+     * in between was fully privileged. Running here means the role is already retracted when the termination
+     * fires, and — because the last-administrator invariant runs inside the re-evaluation — a move that would
+     * leave the tier with no administrator now fails the move instead of bricking the tenant later.
+     *
+     * <p>Bounded on purpose: ONE user, and a deletion can only ever un-match (mapping operators are
+     * positive-only), so this retracts and never materializes — no cohort, no per-rule advisory lock.
+     */
+    void reevaluateNow(UUID userId);
 }

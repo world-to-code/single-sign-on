@@ -236,4 +236,10 @@ class MappingRuleServiceImpl implements MappingRuleService {
                 .collect(Collectors.toMap(MappingRule::getId,
                         rule -> new MappingTarget(rule.getThenKind(), rule.getTargetId())));
     }
+
+    @Override
+    @Transactional
+    public void reevaluateNow(UUID userId) {
+        evaluator.reevaluateUser(userId);
+    }
 }

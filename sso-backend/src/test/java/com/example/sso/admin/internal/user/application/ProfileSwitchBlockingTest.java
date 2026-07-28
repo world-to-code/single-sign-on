@@ -1,5 +1,6 @@
 package com.example.sso.admin.internal.user.application;
 
+import com.example.sso.mapping.MappingRuleService;
 import com.example.sso.metadata.Attribute;
 import com.example.sso.metadata.AttributeDataType;
 import com.example.sso.metadata.AttributeDefinition;
@@ -25,6 +26,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
@@ -36,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -62,13 +65,15 @@ class ProfileSwitchBlockingTest {
     @Mock private AttributeService attributes;
     @Mock private ApplicationEventPublisher events;
     @Mock private OrgContext orgContext;
+    @Mock private MappingRuleService mappingRules;
 
     private UserProfileServiceImpl service;
     private UserAccount user;
 
     @BeforeEach
     void setUp() {
-        service = new UserProfileServiceImpl(users, profiles, definitions, attributes, events, orgContext);
+        service = new UserProfileServiceImpl(users, profiles, definitions, attributes, events, orgContext,
+                mappingRules);
         user = org.mockito.Mockito.mock(UserAccount.class);
         lenient().when(user.getId()).thenReturn(USER);
         lenient().when(user.getUsername()).thenReturn("ada");
@@ -308,5 +313,45 @@ class ProfileSwitchBlockingTest {
         service.switchTo(USER, TARGET, List.of("syncedTeam"));
 
         verify(attributes).removeAll(EntityKind.USER, USER.toString(), List.of("syncedTeam"));
+    }
+
+    /**
+     * The retraction happens BEFORE the termination is published, and that order is the whole point.
+     *
+     * <p>Asynchronously the sessions were killed while {@code app_user_role} still carried the role, so a
+     * re-login in between was fully privileged and the retraction only caught up afterwards. Nothing about
+     * the second (async) pass fixes that — it is the window before it that mattered.
+     */
+    @Test
+    void theRoleIsRetractedBeforeTheSessionsAreTerminated() {
+        ownedBy(AttributeSource.LOCAL);
+
+        service.switchTo(USER, TARGET, null);
+
+        InOrder inOrder = inOrder(attributes, mappingRules, events);
+        inOrder.verify(attributes).removeAll(eq(EntityKind.USER), any(), any());
+        inOrder.verify(mappingRules).reevaluateNow(USER);
+        inOrder.verify(events).publishEvent(any(UserAccessChangedEvent.class));
+    }
+
+    /** A refused move retracts nothing — the re-evaluation must not run before the refusal. */
+    @Test
+    void aBlockedMoveDoesNotReevaluateAnything() {
+        ownedBy(AttributeSource.DIRECTORY);
+
+        assertThatThrownBy(() -> service.switchTo(USER, TARGET, null)).isInstanceOf(ConflictException.class);
+
+        verify(mappingRules, never()).reevaluateNow(any());
+    }
+
+    /** And a move that deletes nothing has nothing to retract, so it does not pay for a re-evaluation. */
+    @Test
+    void aLosslessMoveDoesNotReevaluateAnything() {
+        when(user.getProfileId()).thenReturn(UUID.randomUUID());
+        when(definitions.definitionsIn(TARGET)).thenReturn(List.of(declaration("syncedTeam")));
+
+        service.switchTo(USER, TARGET, null);
+
+        verify(mappingRules, never()).reevaluateNow(any());
     }
 }
