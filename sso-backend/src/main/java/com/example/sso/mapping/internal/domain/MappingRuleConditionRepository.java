@@ -10,6 +10,9 @@ public interface MappingRuleConditionRepository extends JpaRepository<MappingRul
 
     List<MappingRuleCondition> findByRuleId(UUID ruleId);
 
+    /** The conditions of a KNOWN set of rules — what a retraction pass needs, instead of the whole tier's. */
+    List<MappingRuleCondition> findByRuleIdIn(Collection<UUID> ruleIds);
+
     /**
      * Every condition reading one of these attribute keys — the reverse lookup that answers "who does writing
      * this key decide something for". RLS-confined like the rest.

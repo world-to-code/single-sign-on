@@ -24,22 +24,30 @@ public interface LastAdminInvariant {
     void ensureDenyRetainsAdmins(String pattern, Collection<UUID> orgIds);
 
     /**
-     * Rejects (throws) when RETRACTING these roles left the tier without an enabled effective administrator.
+     * The snapshot a retraction takes BEFORE it acts: could losing {@code roleIds} cost {@code orgId}'s tier
+     * the administrator capability, AND did the tier still have an administrator at that moment.
      *
-     * <p>Exists because the admin-layer writes are not the only way a tier loses its last administrator. An
-     * ABAC mapping rule confers a role on whoever carries an attribute; deleting that attribute retracts the
-     * membership through the async re-evaluation, which reaches {@code RoleService.removeMember} — the domain
+     * <p>This exists because the admin-layer writes are not the only way a tier loses its last administrator.
+     * An ABAC mapping rule confers a role on whoever carries an attribute; deleting that attribute retracts
+     * the membership through the re-evaluation, which reaches {@code RoleService.removeMember} — the domain
      * service, below every guard the console path goes through.
      *
-     * <p>The caller passes the roles that stopped applying rather than asking for a bare recount, for the
-     * reason {@link #ensureDenyRetainsAdmins} passes its pattern: only a retraction that can subtract the
-     * administrator capability itself can break the invariant, and the implementation is what knows which
-     * roles those are. A recount on every retraction would instead refuse ordinary ones in a tier that had no
-     * administrator to begin with — blaming a pre-existing state on the write that happened to follow it.
+     * <p>Both halves are narrowings, and both are needed. Only a retraction that can subtract the
+     * administrator capability is capable of breaking the invariant, and the implementation is what knows
+     * which roles those are. And a recount answers "does this tier have an administrator NOW", which in a tier
+     * that had none to begin with — a freshly onboarded tenant whose invited admin is still disabled is the
+     * normal case — refuses every retraction that follows, forever, for a state the retraction did not cause.
+     * Reading the pre-state is the only way to tell those apart once the mutation has happened.
+     */
+    boolean retractionWouldNeedGuarding(Collection<UUID> roleIds, UUID orgId);
+
+    /**
+     * Rejects (throws) when the tier no longer has an enabled effective administrator. Call only when
+     * {@link #retractionWouldNeedGuarding} said so — otherwise the refusal names a state that was already true.
      *
      * <p>Must run inside the retraction's transaction, so a rejection rolls the retraction back: the person
      * keeps a role they no longer qualify for, which is visible and fixable, rather than the tier losing its
      * last administrator, which is neither.
      */
-    void ensureRetractionRetainsAdmin(Collection<UUID> retractedRoleIds, UUID orgId);
+    void ensureRetractionRetainsAdmin(UUID orgId);
 }

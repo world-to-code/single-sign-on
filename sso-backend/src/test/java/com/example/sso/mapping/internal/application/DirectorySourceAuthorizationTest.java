@@ -22,6 +22,7 @@ import com.example.sso.metadata.EntityKind;
 import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.user.deny.LastAdminInvariant;
 import com.example.sso.user.group.UserGroupService;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -29,18 +30,21 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.atMost;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
@@ -77,6 +81,7 @@ class DirectorySourceAuthorizationTest {
     @Mock private MappingTargetAuthority targetAuthority;
     @Mock private UserGroupService userGroups;
     @Mock private LastAdminInvariant lastAdminInvariant;
+    @Mock private ApplicationEventPublisher events;
     @Mock private MappingTargetApplier roleApplier;
 
     private MappingRuleEvaluator evaluator;
@@ -86,7 +91,7 @@ class DirectorySourceAuthorizationTest {
     void setUp() {
         lenient().when(roleApplier.kind()).thenReturn(MappingTargetKind.ROLE);
         evaluator = new MappingRuleEvaluator(rules, conditions, definitions, sources, memberships, attributes,
-                List.of(roleApplier), audit, tierGuard, targetAuthority, userGroups, lastAdminInvariant);
+                List.of(roleApplier), audit, tierGuard, targetAuthority, userGroups, lastAdminInvariant, events);
         rule = MappingRule.of(MappingTargetKind.ROLE, TARGET_ROLE, ORG, UUID.randomUUID());
         ReflectionTestUtils.setField(rule, "id", UUID.randomUUID());
 
@@ -191,12 +196,7 @@ class DirectorySourceAuthorizationTest {
     }
 
     /**
-     * Only the roles that actually stopped applying are handed over, so the implementation can skip the
-     * recount for a retraction that cannot touch admin capability — a bare recount refuses ordinary
-     * retractions in a tier that had no administrator to begin with, blaming a pre-existing state on the
-     * write that followed it. (Two integration tests caught exactly that.)
-     *
-     * <p>A retraction reaches {@code RoleService.removeMember} directly — the domain service, below every guard
+     * A retraction reaches {@code RoleService.removeMember} directly — the domain service, below every guard
      * the console path goes through. So a tenant whose ORG_ADMIN is conferred by a mapping rule could lose its
      * last administrator to an attribute edit, and nothing else in the system would notice. Rejecting rolls
      * the re-evaluation back: somebody keeps a role they no longer qualify for, which an administrator can
@@ -205,8 +205,9 @@ class DirectorySourceAuthorizationTest {
     @Test
     void aRetractionThatWouldStripTheTiersLastAdminIsRefused() {
         claimedBy(UUID.randomUUID());
+        when(lastAdminInvariant.retractionWouldNeedGuarding(any(), any())).thenReturn(true);
         doThrow(new IllegalStateException("last admin"))
-                .when(lastAdminInvariant).ensureRetractionRetainsAdmin(any(), any());
+                .when(lastAdminInvariant).ensureRetractionRetainsAdmin(any());
 
         assertThatThrownBy(() -> evaluator.retractAll(rule)).isInstanceOf(IllegalStateException.class);
     }
@@ -215,17 +216,52 @@ class DirectorySourceAuthorizationTest {
     @Test
     void theTierIsRecountedOncePerReevaluationNotPerMember() {
         claimedBy(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+        when(lastAdminInvariant.retractionWouldNeedGuarding(any(), any())).thenReturn(true);
 
         evaluator.retractAll(rule);
 
-        verify(lastAdminInvariant, times(1)).ensureRetractionRetainsAdmin(any(), any());
+        verify(lastAdminInvariant, times(1)).ensureRetractionRetainsAdmin(any());
+    }
+
+    /**
+     * The narrowing that has to happen BEFORE the mutation, and the reason it cannot be derived afterwards.
+     *
+     * <p>The recount answers "does this tier have an administrator NOW". In a tier that had none to begin
+     * with — a freshly onboarded tenant whose invited admin is still disabled is the ordinary case — that is
+     * false whatever this retraction did, so a bare recount refuses every admin-bearing retraction from then
+     * on, forever, for a state the retraction did not cause. On the async path the refusal is swallowed and
+     * the sweep re-drives the same doomed transaction. An earlier version narrowed by role NAME instead,
+     * which is a different question and left this one open.
+     */
+    @Test
+    void aTierThatHadNoAdministratorBeforehandIsNotBlamedOnTheRetraction() {
+        claimedBy(UUID.randomUUID());
+        when(lastAdminInvariant.retractionWouldNeedGuarding(any(), any())).thenReturn(false);
+
+        evaluator.retractAll(rule);
+
+        verify(lastAdminInvariant, never()).ensureRetractionRetainsAdmin(any());
+    }
+
+    /** And the pre-state is read BEFORE the memberships go, which is the only moment it is still knowable. */
+    @Test
+    void thePreStateIsReadBeforeAnythingIsRetracted() {
+        claimedBy(UUID.randomUUID());
+        when(lastAdminInvariant.retractionWouldNeedGuarding(any(), any())).thenReturn(true);
+
+        evaluator.retractAll(rule);
+
+        InOrder order = inOrder(lastAdminInvariant, roleApplier);
+        order.verify(lastAdminInvariant).retractionWouldNeedGuarding(any(), any());
+        order.verify(roleApplier).unassign(any(), any());
+        order.verify(lastAdminInvariant).ensureRetractionRetainsAdmin(any());
     }
 
     /** Three members leave the role, so the retraction really happened — the recount is not vacuous. */
     private void claimedBy(UUID... userIds) {
-        List<MappingRuleMembership> claims = java.util.Arrays.stream(userIds)
+        List<MappingRuleMembership> claims = Arrays.stream(userIds)
                 .map(userId -> {
-                    MappingRuleMembership claim = org.mockito.Mockito.mock(MappingRuleMembership.class);
+                    MappingRuleMembership claim = mock(MappingRuleMembership.class);
                     lenient().when(claim.getUserId()).thenReturn(userId);
                     lenient().when(claim.getRuleId()).thenReturn(rule.getId());
                     return claim;
@@ -242,6 +278,6 @@ class DirectorySourceAuthorizationTest {
     void nothingRetractedMeansNoRecount() {
         evaluator.reevaluateUser(UUID.randomUUID());
 
-        verify(lastAdminInvariant, never()).ensureRetractionRetainsAdmin(any(), any());
+        verify(lastAdminInvariant, never()).ensureRetractionRetainsAdmin(any());
     }
 }

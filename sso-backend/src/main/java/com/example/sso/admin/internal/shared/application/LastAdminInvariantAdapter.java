@@ -1,8 +1,8 @@
 package com.example.sso.admin.internal.shared.application;
 
 import com.example.sso.user.deny.LastAdminInvariant;
+import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.RoleService;
-import com.example.sso.user.role.Roles;
 import java.util.Collection;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -27,18 +27,25 @@ class LastAdminInvariantAdapter implements LastAdminInvariant {
     }
 
     @Override
-    public void ensureRetractionRetainsAdmin(Collection<UUID> retractedRoleIds, UUID orgId) {
-        // Only an admin-bearing role can break the invariant. Skipping the rest is not an optimisation: the
-        // recount answers "does this tier have an admin NOW", so running it after an unrelated retraction
-        // refuses the write for a state that was already true before it.
-        if (retractedRoleIds.stream().anyMatch(this::confersAdmin)) {
-            lastAdminGuard.ensureTierRetainsAdmin(orgId);
-        }
+    public boolean retractionWouldNeedGuarding(Collection<UUID> roleIds, UUID orgId) {
+        // Cheap half first: the tier read below walks every admin-role holder's effective authorities, and
+        // the overwhelming majority of retractions cannot touch the capability at all.
+        return confersAdminCapability(roleIds) && lastAdminGuard.tierHasAdmin(orgId);
     }
 
-    private boolean confersAdmin(UUID roleId) {
-        return roles.findById(roleId)
-                .map(role -> Roles.ADMIN.equals(role.getName()) || Roles.ORG_ADMIN.equals(role.getName()))
-                .orElse(false);
+    @Override
+    public void ensureRetractionRetainsAdmin(UUID orgId) {
+        lastAdminGuard.ensureTierRetainsAdmin(orgId);
+    }
+
+    /**
+     * By CAPABILITY, not by role name. {@code ROLE_ORG_ADMIN}'s permission set is editable, so an org may
+     * legitimately move {@code user:update} onto a separate role — and the recount turns on {@code user:update}
+     * alone ({@code LastAdminGuard.retainsAdminCapability}). Comparing names therefore skipped the recount for
+     * exactly the role that mattered, and let the tier lose its last effective admin with no 409. Effective
+     * permissions, not the role's own, so a role that inherits the capability down the DAG counts too.
+     */
+    private boolean confersAdminCapability(Collection<UUID> roleIds) {
+        return !roleIds.isEmpty() && roles.effectivePermissionNames(roleIds).contains(Permissions.USER_UPDATE);
     }
 }

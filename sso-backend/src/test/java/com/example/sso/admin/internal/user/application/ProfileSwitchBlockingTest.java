@@ -330,7 +330,7 @@ class ProfileSwitchBlockingTest {
 
         InOrder inOrder = inOrder(attributes, mappingRules, events);
         inOrder.verify(attributes).removeAll(eq(EntityKind.USER), any(), any());
-        inOrder.verify(mappingRules).reevaluateNow(USER);
+        inOrder.verify(mappingRules).retractStaleClaims(USER);
         inOrder.verify(events).publishEvent(any(UserAccessChangedEvent.class));
     }
 
@@ -341,7 +341,7 @@ class ProfileSwitchBlockingTest {
 
         assertThatThrownBy(() -> service.switchTo(USER, TARGET, null)).isInstanceOf(ConflictException.class);
 
-        verify(mappingRules, never()).reevaluateNow(any());
+        verify(mappingRules, never()).retractStaleClaims(any());
     }
 
     /** And a move that deletes nothing has nothing to retract, so it does not pay for a re-evaluation. */
@@ -352,6 +352,6 @@ class ProfileSwitchBlockingTest {
 
         service.switchTo(USER, TARGET, null);
 
-        verify(mappingRules, never()).reevaluateNow(any());
+        verify(mappingRules, never()).retractStaleClaims(any());
     }
 }

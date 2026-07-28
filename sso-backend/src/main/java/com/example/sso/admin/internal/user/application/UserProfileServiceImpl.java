@@ -90,10 +90,8 @@ class UserProfileServiceImpl implements UserProfileService {
         }
         // Retract SYNCHRONOUSLY, before the termination below. The deletion fans out asynchronously too and
         // that pass finds nothing left to do — but relying on it meant the sessions were gone while
-        // app_user_role still carried the role, so a re-login in between was fully privileged. Affordable
-        // inside the write because it is ONE user and retraction only: mapping operators are positive-only,
-        // so deleting a value can only ever un-match.
-        mappingRules.reevaluateNow(userId);
+        // app_user_role still carried the role, so a re-login in between was fully privileged.
+        mappingRules.retractStaleClaims(userId);
         // Own the termination rather than leaning on the async mapping re-evaluation the attribute deletions
         // also trigger. That path covers a key used by a mapping RULE, but not one used only by a policy
         // binding, and when it fails the retraction waits out the sweep interval — or is lost entirely, since

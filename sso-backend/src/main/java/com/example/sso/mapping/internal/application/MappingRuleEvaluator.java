@@ -34,6 +34,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -66,10 +67,12 @@ class MappingRuleEvaluator {
     private final MappingTargetAuthority targetAuthority;
     private final UserGroupService userGroups;
     private final LastAdminInvariant lastAdminInvariant;
+    private final ApplicationEventPublisher events;
 
     /** Reconcile ONE rule across the tier: add every matching user not yet claimed, retract every claim no longer matching. */
     @Transactional
     public void reevaluateRule(MappingRule rule) {
+        boolean guarding = retractionNeedsGuarding(privilegeTargetsOf(List.of(rule))); // BEFORE any mutation
         Set<UUID> matching = matchingUsers(conditionsOf(rule.getId()));
         Set<UUID> claimed = new HashSet<>();
         memberships.findByRuleId(rule.getId()).forEach(m -> claimed.add(m.getUserId()));
@@ -79,7 +82,7 @@ class MappingRuleEvaluator {
         Set<UUID> retracted = claimed.stream().filter(userId -> !matching.contains(userId))
                 .map(userId -> retract(rule, userId))
                 .filter(Objects::nonNull).collect(Collectors.toSet());
-        assertTierKeepsAnAdmin(retracted);
+        assertTierKeepsAnAdmin(guarding, retracted);
     }
 
     /** Reconcile every rule in the tier for ONE user whose attributes just changed. */
@@ -96,20 +99,96 @@ class MappingRuleEvaluator {
         Map<UUID, List<MappingCondition>> conditionsByRule = conditions.findAll().stream().collect(
                 Collectors.groupingBy(MappingRuleCondition::getRuleId,
                         Collectors.mapping(MappingRuleCondition::toValue, Collectors.toList())));
-        // Stable id order so concurrent re-evaluations acquire the per-rule locks (in materialize) in the same
-        // sequence — a lock-order cycle can't form, only a clean wait the loser's retry/sweep re-drives.
+        // A user is governed only by rules in its OWN tier — a same-tier group is its only target. Stable id
+        // order so concurrent re-evaluations acquire the per-rule locks (in materialize) in the same sequence —
+        // a lock-order cycle can't form, only a clean wait the loser's retry/sweep re-drives.
+        List<MappingRule> tierRules = rules.findAll().stream()
+                .filter(rule -> Objects.equals(rule.getOrgId(), tier))
+                .sorted(Comparator.comparing(MappingRule::getId)).toList();
+        // Only what this user is already CLAIMED by can be retracted, and the read must precede the loop.
+        boolean guarding = retractionNeedsGuarding(privilegeTargetsOf(
+                tierRules.stream().filter(rule -> claimedRuleIds.contains(rule.getId())).toList()));
+
         Set<UUID> retracted = new HashSet<>();
-        for (MappingRule rule : rules.findAll().stream().sorted(Comparator.comparing(MappingRule::getId)).toList()) {
-            if (!Objects.equals(rule.getOrgId(), tier)) {
-                continue; // a user is governed only by rules in its OWN tier — a same-tier group is its only target
-            }
+        for (MappingRule rule : tierRules) {
             boolean matches = matchesAll(conditionsByRule.getOrDefault(rule.getId(), List.of()), userAttributes);
             UUID went = reconcile(rule, userId, matches, claimedRuleIds.contains(rule.getId()));
             if (went != null) {
                 retracted.add(went);
             }
         }
-        assertTierKeepsAnAdmin(retracted);
+        assertTierKeepsAnAdmin(guarding, retracted);
+    }
+
+    /**
+     * Retract, to a fixed point, every claim this user no longer qualifies for. The SYNCHRONOUS pass, run
+     * inside a write that has just deleted the attributes those rules read.
+     *
+     * <p>Deliberately not {@link #reevaluateUser}. That one is the general reconcile and is the wrong shape to
+     * put inside an interactive write: it reads every rule and every condition in the tier, and its
+     * materialize branch is reachable, which takes a {@code SELECT FOR UPDATE} on each rule row. This reads
+     * only the rules that already CLAIM this user and never materializes — a deletion can only ever un-match,
+     * since mapping operators are positive-only — so it takes no row locks at all, and the tier lock behind
+     * the last-administrator guard is only reached when an admin-bearing role actually goes.
+     *
+     * <p>Iterated rather than single-pass because retracting a GROUP takes back the attributes that group lent
+     * the user, and another claimed rule may have been matching on one of those. A single pass reads the
+     * attribute set once and so retracts the group while leaving the role behind it in place — the IdP would
+     * then declare the person logged out while {@code app_user_role} still carried the role. Only a GROUP can
+     * shrink the attribute set, so only a GROUP retraction buys another round, and each round retracts at
+     * least one claim, so the loop is bounded by the claims the user started with.
+     */
+    @Transactional
+    public void retractStaleClaims(UUID userId) {
+        List<MappingRule> claimed = claimedRulesOf(userId);
+        if (claimed.isEmpty()) {
+            return;
+        }
+        boolean guarding = retractionNeedsGuarding(privilegeTargetsOf(claimed)); // BEFORE any mutation
+        Set<UUID> retracted = new HashSet<>();
+        boolean inheritedAttributesShrank = true;
+        while (inheritedAttributesShrank && !claimed.isEmpty()) {
+            inheritedAttributesShrank = false;
+            List<Attribute> effective = effectiveAttributes(userId); // re-read: a lost group lends less
+            Map<UUID, List<MappingCondition>> byRule = conditionsGroupedByRule(claimed);
+            List<MappingRule> stillMatching = new ArrayList<>();
+            for (MappingRule rule : claimed) {
+                if (matchesAll(byRule.getOrDefault(rule.getId(), List.of()), effective)) {
+                    stillMatching.add(rule);
+                    continue;
+                }
+                UUID went = retract(rule, userId);
+                if (went != null) {
+                    retracted.add(went);
+                }
+                // Another round only if the group actually WENT: a retract whose target another rule still
+                // claims leaves the membership in place, so the inherited attributes are unchanged and the
+                // extra round is four queries for a guaranteed no-op.
+                inheritedAttributesShrank |= went != null && rule.getThenKind() == MappingTargetKind.GROUP;
+            }
+            claimed = stillMatching;
+        }
+        assertTierKeepsAnAdmin(guarding, retracted);
+    }
+
+    /** The tier's rules that already claim this user — the only ones a retraction pass can act on. */
+    private List<MappingRule> claimedRulesOf(UUID userId) {
+        Set<UUID> claimedRuleIds = memberships.findByUserId(userId).stream()
+                .map(MappingRuleMembership::getRuleId).collect(Collectors.toSet());
+        if (claimedRuleIds.isEmpty()) {
+            return List.of();
+        }
+        UUID tier = tierGuard.currentTier();
+        return rules.findAllById(claimedRuleIds).stream()
+                .filter(rule -> Objects.equals(rule.getOrgId(), tier)) // own-tier rules govern a user, only
+                .toList();
+    }
+
+    /** Those rules' conditions in ONE query, grouped by rule. */
+    private Map<UUID, List<MappingCondition>> conditionsGroupedByRule(Collection<MappingRule> ruleSet) {
+        return conditions.findByRuleIdIn(ruleSet.stream().map(MappingRule::getId).toList()).stream()
+                .collect(Collectors.groupingBy(MappingRuleCondition::getRuleId,
+                        Collectors.mapping(MappingRuleCondition::toValue, Collectors.toList())));
     }
 
     /** AND semantics: the user satisfies EVERY condition. An empty condition list never matches (a rule always
@@ -133,10 +212,11 @@ class MappingRuleEvaluator {
     /** Retract every membership a rule materialized (before the rule itself is deleted). */
     @Transactional
     public void retractAll(MappingRule rule) {
+        boolean guarding = retractionNeedsGuarding(privilegeTargetsOf(List.of(rule))); // BEFORE any mutation
         Set<UUID> retracted = memberships.findByRuleId(rule.getId()).stream()
                 .map(m -> retract(rule, m.getUserId()))
                 .filter(Objects::nonNull).collect(Collectors.toSet());
-        assertTierKeepsAnAdmin(retracted);
+        assertTierKeepsAnAdmin(guarding, retracted);
     }
 
     /** The users satisfying ALL conditions in the acting tier ONLY (own users, never inherited global ones — a
@@ -315,6 +395,17 @@ class MappingRuleEvaluator {
     }
 
     /**
+     * Whether a retraction in this transaction has to answer to the last-admin invariant — asked BEFORE
+     * anything is retracted, because once the memberships are gone the recount can no longer tell "this write
+     * took the tier's last administrator" from "the tier never had one". See
+     * {@link LastAdminInvariant#retractionWouldNeedGuarding}.
+     */
+    private boolean retractionNeedsGuarding(Collection<UUID> candidateTargets) {
+        return lastAdminInvariant.retractionWouldNeedGuarding(rolesBehind(candidateTargets),
+                tierGuard.currentTier());
+    }
+
+    /**
      * A retraction reaches the domain service directly, below every guard the console path goes through — so
      * the tier could lose its last administrator here and nowhere else would notice. Asked ONCE per
      * transaction rather than per user: the recount is a query, and a cohort retraction would otherwise pay it
@@ -324,14 +415,48 @@ class MappingRuleEvaluator {
      * makes: somebody keeps a role they no longer qualify for — visible, and fixable by an administrator —
      * instead of the tier having none, which is recoverable only by a platform super.
      */
-    private void assertTierKeepsAnAdmin(Collection<UUID> retractedTargets) {
-        if (!retractedTargets.isEmpty()) {
-            lastAdminInvariant.ensureRetractionRetainsAdmin(rolesBehind(retractedTargets), tierGuard.currentTier());
+    private void assertTierKeepsAnAdmin(boolean guarding, Collection<UUID> retractedTargets) {
+        if (!guarding || retractedTargets.isEmpty()) {
+            return;
+        }
+        try {
+            lastAdminInvariant.ensureRetractionRetainsAdmin(tierGuard.currentTier());
+        } catch (RuntimeException refused) {
+            recordRefusal(retractedTargets, refused);
+            throw refused;
         }
     }
 
-    /** What a retracted target actually took away: a ROLE is itself, a GROUP is the roles it delegates. */
+    /**
+     * Written INLINE, unlike every other row here: this one has to outlive the rollback it is about.
+     *
+     * <p>The changes are dropped with the transaction, correctly — they did not happen. But without this the
+     * refusal leaves no trace at all, and on the asynchronous path the exception is swallowed by the executor
+     * and the sweep re-drives the same rejected transaction on its next pass. What an operator sees is a rule
+     * that has silently stopped converging, with nothing anywhere to say why.
+     */
+    private void recordRefusal(Collection<UUID> retractedTargets, RuntimeException refused) {
+        UUID tier = tierGuard.currentTier();
+        String detail = ("re-evaluation rolled back in tier %s: retracting %d target(s) "
+                + "would have left it with no administrator").formatted(tier, retractedTargets.size());
+        // getMessage() is the exception's message KEY, not anything a caller supplied.
+        audit.record(new AuditRecord(AuditType.MAPPING_RULE_RETRACTION_REFUSED, SYSTEM_PRINCIPAL, false, detail,
+                null, AuditSubjectType.NONE, null, tier).withReason(refused.getMessage()));
+    }
+
+    /** The targets whose loss could take authority away — a RESOURCE_MEMBER rule confers none. */
+    private Set<UUID> privilegeTargetsOf(Collection<MappingRule> candidates) {
+        return candidates.stream()
+                .filter(rule -> rule.getThenKind() != MappingTargetKind.RESOURCE_MEMBER)
+                .map(MappingRule::getTargetId)
+                .collect(Collectors.toSet());
+    }
+
+    /** What a retracted target actually takes away: a ROLE is itself, a GROUP is the roles it delegates. */
     private Set<UUID> rolesBehind(Collection<UUID> targetIds) {
+        if (targetIds.isEmpty()) {
+            return Set.of();
+        }
         Set<UUID> roleIds = new HashSet<>(targetIds);
         userGroups.delegatedRoleIds(targetIds).values().forEach(roleIds::addAll);
         return roleIds;
@@ -349,7 +474,7 @@ class MappingRuleEvaluator {
     private void record(AuditType type, MappingRule rule, UUID userId) {
         String detail = "rule %s (%s): user %s / target %s"
                 .formatted(rule.getId(), rule.getThenKind(), userId, rule.getTargetId());
-        audit.record(new AuditRecord(type, SYSTEM_PRINCIPAL, true, detail, null,
+        pending(new AuditRecord(type, SYSTEM_PRINCIPAL, true, detail, null,
                 AuditSubjectType.USER, userId.toString(), rule.getOrgId()));
     }
 
@@ -357,7 +482,13 @@ class MappingRuleEvaluator {
     private void recordAuthor(AuditType type, MappingRule rule) {
         String detail = "rule %s (%s): target %s / author %s"
                 .formatted(rule.getId(), rule.getThenKind(), rule.getTargetId(), rule.getCreatedBy());
-        audit.record(new AuditRecord(type, SYSTEM_PRINCIPAL, true, detail, null,
+        pending(new AuditRecord(type, SYSTEM_PRINCIPAL, true, detail, null,
                 AuditSubjectType.NONE, rule.getTargetId().toString(), rule.getOrgId()));
+    }
+
+    /** Every row about a CHANGE goes through here, so none of them can outlive a rollback — see
+     *  {@link MappingAuditPending}. */
+    private void pending(AuditRecord record) {
+        events.publishEvent(new MappingAuditPending(record));
     }
 }

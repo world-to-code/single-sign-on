@@ -129,7 +129,9 @@ class ProfileSwitchRetractsRoleIT extends AbstractIntegrationTest {
                         .filter(d -> d.key().equals("team")).findFirst().orElseThrow().id()));
         orgContext.runInOrg(orgA, () -> userProfiles.switchTo(userId, bare.id(), null));
 
-        await().until(() -> rolesOf().stream().noneMatch(r -> r.startsWith("ROLE_PLATFORM_")));
+        // Asserted straight, NOT awaited. The async re-evaluation also gets there eventually, and an await()
+        // is satisfied by it — so the whole point of the synchronous retraction (the role is gone when the
+        // caller returns, before it terminates the sessions) could be deleted and this would stay green.
         assertThat(rolesOf()).doesNotContain("ROLE_PLATFORM_" + slug);
     }
 }

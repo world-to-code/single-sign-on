@@ -56,8 +56,11 @@ public interface MappingRuleService {
      * fires, and — because the last-administrator invariant runs inside the re-evaluation — a move that would
      * leave the tier with no administrator now fails the move instead of bricking the tenant later.
      *
-     * <p>Bounded on purpose: ONE user, and a deletion can only ever un-match (mapping operators are
-     * positive-only), so this retracts and never materializes — no cohort, no per-rule advisory lock.
+     * <p>Bounded on purpose, and bounded by construction rather than by argument: it reads only the rules
+     * that already CLAIM this user, and it has no materialize branch at all — so no cohort, no per-rule row
+     * lock, and the tier lock behind the last-administrator invariant only when an admin-bearing role goes.
+     * It iterates to a fixed point, because retracting a GROUP takes back the attributes that group lent the
+     * user and another claimed rule may have been matching on one of them.
      */
-    void reevaluateNow(UUID userId);
+    void retractStaleClaims(UUID userId);
 }

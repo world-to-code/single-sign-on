@@ -110,6 +110,20 @@ public class LastAdminGuard {
         }
     }
 
+    /**
+     * The same question {@link #ensureTierRetainsAdmin} answers, without the lock and without refusing
+     * anything — the PRE-state a caller reads before a mutation it may later be blamed for.
+     *
+     * <p>Once the mutation has happened the recount can only say "there is no administrator now"; it cannot
+     * say whether this write is why. The deny path narrows that away with {@code denyLeftTenantWithoutAnAdmin},
+     * which works only because a deny cannot revoke a role. A retraction can, so its post-state genuinely may
+     * be an empty holder set — and telling "took the last one" from "there was none" needs the earlier read.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean tierHasAdmin(UUID orgId) {
+        return tierHasEnabledAdmin(orgId);
+    }
+
     private boolean tierHasEnabledAdmin(UUID orgId) {
         return orgId == null ? platformHasEnabledSuper() : orgHasEffectiveAdmin(orgId);
     }

@@ -239,7 +239,7 @@ class MappingRuleServiceImpl implements MappingRuleService {
 
     @Override
     @Transactional
-    public void reevaluateNow(UUID userId) {
-        evaluator.reevaluateUser(userId);
+    public void retractStaleClaims(UUID userId) {
+        evaluator.retractStaleClaims(userId);
     }
 }
