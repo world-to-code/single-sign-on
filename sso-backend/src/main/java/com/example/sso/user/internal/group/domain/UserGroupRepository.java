@@ -64,6 +64,19 @@ public interface UserGroupRepository extends JpaRepository<UserGroup, UUID> {
             + "join UserGroupMember mem on mem.id.groupId = g.id where g.id in :groupIds")
     List<UUID> findMemberIdsByGroupIds(@Param("groupIds") Collection<UUID> groupIds);
 
+    /**
+     * Whether the group has ANY member outside {@code keeping} — the "does this replace lose somebody" question,
+     * answered by the database instead of by loading every member id into the JVM to run a contains over them.
+     * On a per-org All Users group that set is the whole tenant, read to decide one boolean.
+     *
+     * <p>{@code keeping} must be non-empty: {@code not in ()} is invalid SQL. The caller short-circuits an empty
+     * desired set, which is the "wipe everyone" case and needs no probe.
+     */
+    @Query("select (count(mem) > 0) from UserGroup g "
+            + "join UserGroupMember mem on mem.id.groupId = g.id "
+            + "where g.id = :groupId and mem.id.userId not in :keeping")
+    boolean hasMemberOutside(@Param("groupId") UUID groupId, @Param("keeping") Collection<UUID> keeping);
+
     /** Distinct ids of all users who hold the given role via ANY group that delegates it (group-delegated
      *  holders) — used to end their sessions when the role's permissions or existence change. */
     @Query("select distinct mem.id.userId from UserGroup g "

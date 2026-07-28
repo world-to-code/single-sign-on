@@ -344,6 +344,16 @@ public class UserGroupServiceImpl implements UserGroupService {
 
     @Override
     @Transactional(readOnly = true)
+    public boolean replaceWouldDropMembers(UUID groupId, Set<UUID> desired) {
+        // An empty desired set is the wipe: everybody goes, and `not in ()` is not valid SQL anyway. Any member
+        // at all means the replace loses them.
+        return desired.isEmpty()
+                ? !repository.findMemberIdsByGroupIds(Set.of(groupId)).isEmpty()
+                : repository.hasMemberOutside(groupId, desired);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Set<UUID> groupIdsOf(UUID userId) {
         return Set.copyOf(repository.findGroupIdsByMember(userId));
     }

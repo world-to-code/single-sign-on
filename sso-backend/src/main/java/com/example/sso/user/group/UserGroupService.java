@@ -103,6 +103,13 @@ public interface UserGroupService {
     /** Ids of all users who are members of ANY of the given groups (bulk scope expansion). */
     Set<UUID> memberIdsOf(Collection<UUID> groupIds);
 
+    /**
+     * Whether replacing this group's membership with {@code desired} would drop anybody — asked as one indexed
+     * statement rather than by reading every member id back to decide a boolean. On a per-org All Users group
+     * that read is the whole tenant.
+     */
+    boolean replaceWouldDropMembers(UUID groupId, Set<UUID> desired);
+
     /** (id, name) labels for the given group ids — resolve display names without loading groups. */
     List<IdName> idNames(Collection<UUID> ids);
 

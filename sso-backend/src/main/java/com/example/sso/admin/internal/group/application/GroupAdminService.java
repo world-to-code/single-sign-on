@@ -92,7 +92,7 @@ public class GroupAdminService {
 
     /** Refused only when the replace actually loses somebody: a rename must not need the lift authority. */
     private void requireMayDropMembersOf(UUID groupId, Set<UUID> desired) {
-        if (userGroups.memberIdsOf(Set.of(groupId)).stream().anyMatch(member -> !desired.contains(member))) {
+        if (userGroups.replaceWouldDropMembers(groupId, desired)) {
             membershipDenies.requireMayDropGroup(groupId);
         }
     }
