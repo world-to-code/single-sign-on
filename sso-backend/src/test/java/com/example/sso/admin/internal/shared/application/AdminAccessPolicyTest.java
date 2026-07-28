@@ -83,7 +83,10 @@ class AdminAccessPolicyTest {
         orgAuth = mock(OrganizationAuthorization.class);
         applications = mock(ApplicationService.class);
         orgContext = mock(OrgContext.class);
-        policy = new AdminAccessPolicy(userService, roleService, roleHierarchy, userGroups, userAuth, groupAuth,
+        // A REAL ActingAdmin over the same UserService: this suite drives the SecurityContext, and
+        // stubbing actor resolution would move what it is testing out of the test.
+        policy = new AdminAccessPolicy(new ActingAdmin(userService), userService, roleService,
+                roleHierarchy, userGroups, userAuth, groupAuth,
                 appAuth, resourceAuth, orgAuth, applications, orgContext);
 
         UserAccount actor = mock(UserAccount.class);

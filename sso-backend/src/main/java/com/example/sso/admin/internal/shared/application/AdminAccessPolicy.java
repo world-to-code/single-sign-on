@@ -18,7 +18,6 @@ import com.example.sso.user.role.RoleHierarchyService;
 import com.example.sso.user.role.RoleRef;
 import com.example.sso.user.role.RoleService;
 import com.example.sso.user.role.Roles;
-import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.group.UserGroupService;
 import com.example.sso.user.account.UserService;
 import java.util.Collection;
@@ -31,9 +30,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 /**
@@ -58,7 +54,7 @@ public class AdminAccessPolicy {
 
     static final String ADMIN_ROLE = Roles.ADMIN;
 
-
+    private final ActingAdmin actingAdmin;
     private final UserService userService;
     private final RoleService roleService;
     private final RoleHierarchyService roleHierarchy;
@@ -78,7 +74,7 @@ public class AdminAccessPolicy {
      * unresolved actor.
      */
     public boolean canAccessUser(UUID targetId) {
-        Optional<UUID> actor = currentUserId();
+        Optional<UUID> actor = actingAdmin.id();
         if (actor.isEmpty()) {
             return false;
         }
@@ -110,7 +106,7 @@ public class AdminAccessPolicy {
      * gated by {@link #mayAssignRoles} on the endpoint, so a tenant admin cannot create an administrator.
      */
     public boolean canCreateUser() {
-        return currentUserId().map(this::isSuper).orElse(false) || administersBoundOrg();
+        return actingAdmin.id().map(this::isSuper).orElse(false) || administersBoundOrg();
     }
 
     /**
@@ -128,8 +124,8 @@ public class AdminAccessPolicy {
      * the grant targets the stored id. Fails closed on an unresolved id.
      */
     public boolean mayAssignTarget(MappingTargetKind kind, UUID targetId) {
-        return currentUserId()
-                .map(actorId -> mayAssignTarget(actorId, currentAuthorities(), kind, targetId))
+        return actingAdmin.id()
+                .map(actorId -> mayAssignTarget(actorId, actingAdmin.authorities(), kind, targetId))
                 .orElse(false);
     }
 
@@ -203,19 +199,19 @@ public class AdminAccessPolicy {
         if (roleIds == null || roleIds.isEmpty()) {
             return true;
         }
-        Optional<UUID> actor = currentUserId();
+        Optional<UUID> actor = actingAdmin.id();
         if (actor.isEmpty()) {
             return false;
         }
-        Set<String> authorities = currentAuthorities();
+        Set<String> authorities = actingAdmin.authorities();
         return roleIds.stream().allMatch(roleId ->
                 mayAssignTarget(actor.get(), authorities, MappingTargetKind.ROLE, roleId));
     }
 
     /** The same decision for the CURRENT actor, resolved once for the whole set. */
     public Set<UUID> currentMayConferRolesOf(Collection<UUID> groupIds) {
-        return currentUserId()
-                .map(actorId -> mayConferRolesOf(actorId, currentAuthorities(), groupIds))
+        return actingAdmin.id()
+                .map(actorId -> mayConferRolesOf(actorId, actingAdmin.authorities(), groupIds))
                 .orElseGet(Set::of);
     }
 
@@ -242,7 +238,7 @@ public class AdminAccessPolicy {
      * (role/permission assignment); visibility scoping uses {@link #isCurrentActorUnscoped()} instead.
      */
     public boolean currentIsSuperAdmin() {
-        return currentUserId().map(this::isSuper).orElse(false);
+        return actingAdmin.id().map(this::isSuper).orElse(false);
     }
 
     /**
@@ -250,7 +246,7 @@ public class AdminAccessPolicy {
      * sits strictly beneath them (and is therefore one they may assign). Empty for an unresolved actor.
      */
     public Set<UUID> currentActorApexRoleIds() {
-        return currentUserId().map(roleHierarchy::apexRolesOf).orElse(Set.of());
+        return actingAdmin.id().map(roleHierarchy::apexRolesOf).orElse(Set.of());
     }
 
     /**
@@ -259,7 +255,7 @@ public class AdminAccessPolicy {
      * grant-only-what-you-hold and platform-permission guards that compose with this on the endpoints.
      */
     public boolean currentActorMayManageRole(UUID roleId) {
-        return currentUserId().map(actorId -> roleHierarchy.actorMayManageRole(actorId, roleId)).orElse(false);
+        return actingAdmin.id().map(actorId -> roleHierarchy.actorMayManageRole(actorId, roleId)).orElse(false);
     }
 
     /**
@@ -267,14 +263,14 @@ public class AdminAccessPolicy {
      * it is not strictly above them. Fail-closed on an unresolved actor or unknown name.
      */
     public boolean currentActorMayManageRoleName(String roleName) {
-        return currentUserId()
+        return actingAdmin.id()
                 .map(actorId -> roleHierarchy.actorMayManageRoleName(actorId, roleName, actingOrg()))
                 .orElse(false);
     }
 
     /** The roles that strictly OUTRANK the acting admin — hidden from their role listing (empty for super). */
     public Set<UUID> currentRolesAboveActor() {
-        return currentUserId().map(roleHierarchy::rolesAboveActor).orElse(Set.of());
+        return actingAdmin.id().map(roleHierarchy::rolesAboveActor).orElse(Set.of());
     }
 
     /**
@@ -282,12 +278,12 @@ public class AdminAccessPolicy {
      * must branch on this first: the {@code scoped*}/{@code managed*} sets are empty for a super admin.
      */
     public boolean isCurrentActorUnscoped() {
-        return currentUserId().map(resourceAuth::isUnscoped).orElse(false);
+        return actingAdmin.id().map(resourceAuth::isUnscoped).orElse(false);
     }
 
     /** Users a scoped admin may manage: those inside their resource subtree. */
     public Set<UUID> currentManagedUserIds() {
-        return currentUserId().map(userAuth::scopedUserIds).orElse(Set.of());
+        return actingAdmin.id().map(userAuth::scopedUserIds).orElse(Set.of());
     }
 
     /**
@@ -297,7 +293,7 @@ public class AdminAccessPolicy {
      * is denied — which is what keeps them from mutating a platform-wide group even though RLS lets them read it.
      */
     public boolean canAccessGroup(UUID groupId) {
-        return currentUserId().map(actorId -> canAccessGroup(actorId, groupId)).orElse(false);
+        return actingAdmin.id().map(actorId -> canAccessGroup(actorId, groupId)).orElse(false);
     }
 
     /** As {@link #canAccessGroup(UUID)} for an EXPLICIT actor (off the request thread — author re-validation). */
@@ -312,7 +308,7 @@ public class AdminAccessPolicy {
      * Such an actor sees their whole org's directory (RLS scopes it) rather than only a resource subtree.
      */
     public boolean administersBoundOrg() {
-        return currentUserId().flatMap(actorId ->
+        return actingAdmin.id().flatMap(actorId ->
                 orgContext.currentOrg().map(orgId -> orgAuth.canManage(actorId, orgId))).orElse(false);
     }
 
@@ -327,19 +323,19 @@ public class AdminAccessPolicy {
 
     /** For a scoped acting admin, the ids of the groups inside their resource subtree. */
     public Set<UUID> currentScopedGroupIds() {
-        return currentUserId().map(groupAuth::scopedGroupIds).orElse(Set.of());
+        return actingAdmin.id().map(groupAuth::scopedGroupIds).orElse(Set.of());
     }
 
     /** Org scope: whether the acting admin may administer {@code orgId} (super bypasses; else org-admin+member). */
     public boolean canAccessOrg(UUID orgId) {
-        return currentUserId()
+        return actingAdmin.id()
                 .map(actorId -> resourceAuth.isUnscoped(actorId) || orgAuth.canManage(actorId, orgId))
                 .orElse(false);
     }
 
     /** For a scoped acting admin, the ids of the organizations they administer (their memberships). */
     public Set<UUID> currentScopedOrgIds() {
-        return currentUserId().map(orgAuth::scopedOrgIds).orElse(Set.of());
+        return actingAdmin.id().map(orgAuth::scopedOrgIds).orElse(Set.of());
     }
 
     /**
@@ -349,7 +345,7 @@ public class AdminAccessPolicy {
      * tier's apps), so an app in another tenant (or a global one) is never in their catalog and stays out.
      */
     public boolean canAccessApp(String appId) {
-        Optional<UUID> actor = currentUserId();
+        Optional<UUID> actor = actingAdmin.id();
         if (actor.isEmpty()) {
             return false;
         }
@@ -362,7 +358,7 @@ public class AdminAccessPolicy {
 
     /** For a scoped acting admin, the ids of the applications inside their resource subtree. */
     public Set<String> currentScopedAppIds() {
-        return currentUserId().map(appAuth::scopedAppIds).orElse(Set.of());
+        return actingAdmin.id().map(appAuth::scopedAppIds).orElse(Set.of());
     }
 
     /**
@@ -372,23 +368,18 @@ public class AdminAccessPolicy {
      * further to the union of their scoped user/group/app/resource ids via {@link AuditScope#permits}.
      */
     public AuditScope currentAuditScope() {
-        Optional<UUID> actor = currentUserId();
+        Optional<UUID> actor = actingAdmin.id();
         if (actor.isEmpty()) {
-            return new AuditScope(false, currentUsername(), Set.of(), Set.of(), Set.of(), Set.of());
+            return new AuditScope(false, actingAdmin.username(), Set.of(), Set.of(), Set.of(), Set.of());
         }
 
         UUID actorId = actor.get();
         if (resourceAuth.isUnscoped(actorId) || administersBoundOrg()) {
-            return new AuditScope(true, currentUsername(), Set.of(), Set.of(), Set.of(), Set.of());
+            return new AuditScope(true, actingAdmin.username(), Set.of(), Set.of(), Set.of(), Set.of());
         }
-        return new AuditScope(false, currentUsername(), currentManagedUserIds(),
+        return new AuditScope(false, actingAdmin.username(), currentManagedUserIds(),
                 groupAuth.scopedGroupIds(actorId), appAuth.scopedAppIds(actorId),
                 resourceAuth.managedResourceIds(actorId));
-    }
-
-    private String currentUsername() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return authentication == null ? null : authentication.getName();
     }
 
     /** Blocks disabling one's own account or any administrator's account; enabling is always allowed. */
@@ -450,7 +441,7 @@ public class AdminAccessPolicy {
      * CATALOG permissions, are tenant-grantable, and that they themselves currently hold — otherwise a tenant
      * admin could grant a puppet account (or themselves) an authority they lack and escalate within the tenant.
      *
-     * <p>The catalog check is explicit and NOT delegated to the service: {@link #currentAuthorities()} mixes
+     * <p>The catalog check is explicit and NOT delegated to the service: {@link #actingAdmin.authorities()} mixes
      * permissions with role names and session markers ({@code MFA_COMPLETE}, {@code FACTOR_*}), so a bare
      * "the actor holds this string" test would pass for a marker. The service rejects a non-catalog name too;
      * this gate must be correct on its own.
@@ -464,7 +455,7 @@ public class AdminAccessPolicy {
         }
         return permissions.stream().allMatch(Permissions::isGrantableName)
                 && permissions.stream().noneMatch(Permissions::isPlatformGrant)
-                && currentAuthorities().containsAll(permissions);
+                && actingAdmin.authorities().containsAll(permissions);
     }
 
     /**
@@ -474,7 +465,7 @@ public class AdminAccessPolicy {
      * — they must administer the subject, and they must hold a single unambiguous role position (else refused).
      */
     public Optional<DenyAuthor> authorizeDenyAuthor(DenySubjectKind kind, UUID subjectId, String pattern) {
-        return currentUserId().flatMap(actorId -> {
+        return actingAdmin.id().flatMap(actorId -> {
             if (!mayGrantLive(userService.effectiveAuthorities(actorId), pattern)
                     || !mayReachDenySubject(kind, subjectId)) {
                 return Optional.empty();
@@ -510,7 +501,7 @@ public class AdminAccessPolicy {
         if (denies.isEmpty()) {
             return true;
         }
-        return currentUserId().map(actorId -> {
+        return actingAdmin.id().map(actorId -> {
             if (kind == DenySubjectKind.USER && actorId.equals(subjectId)) {
                 return false; // never re-grant yourself by lifting a deny on your own account
             }
@@ -651,7 +642,7 @@ public class AdminAccessPolicy {
      * admin holds the whole catalog, so this is a no-op for them (and privileged-role gates short-circuit first).
      */
     private boolean actorHoldsAllPermissionsOf(UUID roleId) {
-        return currentAuthorities().containsAll(roleService.permissionNames(roleId));
+        return actingAdmin.authorities().containsAll(roleService.permissionNames(roleId));
     }
 
     /**
@@ -666,23 +657,13 @@ public class AdminAccessPolicy {
                 .orElse(false);
     }
 
-    /** The authority strings the acting admin currently holds (role names, permissions, and session markers). */
-    private Set<String> currentAuthorities() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null) {
-            return Set.of();
-        }
-        return authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority).collect(Collectors.toSet());
-    }
-
     /** The role's name, or {@code null} if it no longer exists (the caller's service then 404s). */
     private String roleName(UUID roleId) {
         return roleService.findById(roleId).map(RoleRef::getName).orElse(null);
     }
 
     private boolean isSelf(UUID targetId) {
-        return currentUserId().map(id -> id.equals(targetId)).orElse(false);
+        return actingAdmin.id().map(id -> id.equals(targetId)).orElse(false);
     }
 
     /**
@@ -710,20 +691,4 @@ public class AdminAccessPolicy {
         return roles != null && roles.contains(ADMIN_ROLE);
     }
 
-    private Optional<UUID> currentUserId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
-            return Optional.empty();
-        }
-        // Resolve the ACTING principal by their own identity, not the organization they have drilled into: the
-        // platform super-admin is a GLOBAL account (org_id NULL, carrying ROLE_ADMIN), so resolve them globally
-        // — otherwise a same-named user planted in the drilled org (allowed by per-org uniqueness) would be
-        // mistaken for the actor. A tenant admin is only ever in their own (bound) org.
-        boolean platformAdmin = authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority).anyMatch(Roles.ADMIN::equals);
-        return (platformAdmin
-                ? userService.findByUsernameInOrg(authentication.getName(), null)
-                : userService.findByUsername(authentication.getName()))
-                .map(UserAccount::getId);
-    }
 }
