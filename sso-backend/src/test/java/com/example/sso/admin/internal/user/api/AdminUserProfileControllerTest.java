@@ -60,6 +60,18 @@ class AdminUserProfileControllerTest {
         verify(userProfiles, never()).switchTo(any(), any(), any());
     }
 
+    /**
+     * A move that never previewed is refused. The field is a mandatory disclosure precondition: optional, a
+     * caller who WANTED the extra key deleted simply omitted it, and the server obliged.
+     */
+    @Test
+    void aMoveThatConfirmedNothingIsRefused() throws Exception {
+        expectStatus("""
+                {"profileId":"%s"}""".formatted(UUID.randomUUID()), 400);
+
+        verify(userProfiles, never()).switchTo(any(), any(), any());
+    }
+
     @Test
     void aMoveNamingAMalformedProfileIsRefused() throws Exception {
         expectStatus("""
@@ -74,10 +86,10 @@ class AdminUserProfileControllerTest {
         UUID profile = UUID.randomUUID();
 
         mvc.perform(put("/api/admin/users/" + user + "/profile").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"profileId\":\"" + profile + "\"}"))
+                        .content("{\"profileId\":\"" + profile + "\",\"confirmedKeys\":[]}"))
                 .andExpect(status().isOk());
 
-        verify(userProfiles).switchTo(user, profile, null);
+        verify(userProfiles).switchTo(user, profile, List.of());
         // Answering with the target profile's columns is what lets the console render the move's outcome
         // rather than the schema the person just left.
         verify(profileAttributes).columnsOf(user);

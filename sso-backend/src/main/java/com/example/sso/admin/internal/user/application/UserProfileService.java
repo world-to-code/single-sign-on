@@ -16,9 +16,13 @@ public interface UserProfileService {
      * owned upstream, and the next sync would fight whatever this changed.
      *
      * <p>{@code confirmedKeys} is what {@link #preview} told the administrator would go, echoed back. When it
-     * is given and no longer matches, the move is refused rather than performed against a different cost: the
-     * preview and the write are separate requests, and a sync or a schema edit in between can change the
-     * answer. Null accepts whatever the move computes — for a caller that never previewed.
+     * no longer matches, the move is refused rather than performed against a different cost: the preview and
+     * the write are separate requests, and a sync or a schema edit in between can change the answer.
+     *
+     * <p>The HTTP layer REQUIRES it, so no client can skip the disclosure by omitting it. Null is still
+     * accepted here, and means only "no confirmation was recorded" — it is not an escape hatch a caller can
+     * reach, and it is not an authorization control either way: whoever reaches this method has already
+     * cleared the write gate and could always preview first.
      */
     void switchTo(UUID userId, UUID profileId, Collection<String> confirmedKeys);
 }
