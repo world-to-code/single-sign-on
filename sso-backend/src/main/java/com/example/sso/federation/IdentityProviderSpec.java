@@ -29,11 +29,11 @@ public record IdentityProviderSpec(String alias, String displayName, boolean all
                 linkByVerifiedEmail, enabled, null);
     }
 
-    /** A SAML provider; {@code nameIdFormat} is optional (null requests nothing of the upstream). */
+    /** A SAML provider; {@code emailAttribute} is required only when {@code allowJitProvisioning} is on. */
     public static IdentityProviderSpec saml(String alias, String displayName, String idpEntityId, String ssoUrl,
-            String signingCertificate, String nameIdFormat, boolean allowJitProvisioning,
-            boolean linkByVerifiedEmail, boolean enabled, String presetId) {
+            String signingCertificate, String nameIdFormat, String emailAttribute,
+            boolean allowJitProvisioning, boolean linkByVerifiedEmail, boolean enabled, String presetId) {
         return new IdentityProviderSpec(alias, displayName, allowJitProvisioning, linkByVerifiedEmail, enabled,
-                presetId, new SamlConfig(idpEntityId, ssoUrl, signingCertificate, nameIdFormat));
+                presetId, new SamlConfig(idpEntityId, ssoUrl, signingCertificate, nameIdFormat, emailAttribute));
     }
 }

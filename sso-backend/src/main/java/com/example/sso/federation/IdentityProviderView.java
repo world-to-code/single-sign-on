@@ -10,6 +10,6 @@ package com.example.sso.federation;
 public record IdentityProviderView(String alias, String displayName, FederationProtocol protocol,
                                    String issuerUri, String clientId, String scopes,
                                    String idpEntityId, String ssoUrl, String signingCertificate,
-                                   String nameIdFormat, boolean allowJitProvisioning,
+                                   String nameIdFormat, String emailAttribute, boolean allowJitProvisioning,
                                    boolean linkByVerifiedEmail, boolean enabled, String presetId) {
 }

@@ -118,4 +118,27 @@ class FederationLoginServiceImplTest {
         assertThat(identity.linkByVerifiedEmail()).isTrue();
         assertThat(identity.jitProvisioningAllowed()).isFalse(); // asymmetric — a swap surfaces here
     }
+
+    /**
+     * OIDC never claims the tenant accepted an unverified address. The flag exists for SAML, whose assertions
+     * carry no verification and whose administrator names the attribute deliberately; here the address arrives
+     * on a spec-fixed claim beside the upstream's OWN email_verified, and nobody opted into ignoring it.
+     *
+     * <p>This pin has to live HERE. Every caller-side test mocks {@code completeLogin}, so flipping this one
+     * literal re-opens JIT to unverified OIDC addresses with the whole rest of the suite still green.
+     */
+    @Test
+    void anOidcIdentityNeverClaimsTheAddressWasAcceptedByConfiguration() {
+        when(configStore.resolveEnabled(ORG, ALIAS)).thenReturn(
+                new ResolvedProvider(ALIAS, ISSUER, "client-123", "s3cret", "openid email", true, true));
+        when(upstream.exchangeCodeForIdToken(METADATA, "client-123", "s3cret", "code-1", REDIRECT, "verifier-1"))
+                .thenReturn("id-token");
+        when(verifier.verify(METADATA, "client-123", "id-token", "nonce-1"))
+                .thenReturn(new VerifiedIdToken("sub-9", "ada@example.com", false, "Ada", Map.of()));
+
+        FederatedIdentity identity = service.completeLogin(ORG, ALIAS, "code-1", REDIRECT, "nonce-1", "verifier-1");
+
+        assertThat(identity.addressAssertedByConfiguration()).isFalse();
+        assertThat(identity.emailVerified()).isFalse(); // carried through honestly, not corrected
+    }
 }

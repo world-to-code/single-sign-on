@@ -80,7 +80,7 @@ class FederationConfigStoreIT extends AbstractIntegrationTest {
             providers.save(IdentityProviderSpec.oidc(OIDC_ALIAS, "Google", ISSUER, "client-123", "s3cret",
                     "openid email", true, false, true));
             providers.save(IdentityProviderSpec.saml(SAML_ALIAS, "Corp SSO", "https://idp.corp.example/entity",
-                    "https://idp.corp.example/sso", CERT, NameIDType.PERSISTENT, true, false, true, null));
+                    "https://idp.corp.example/sso", CERT, NameIDType.PERSISTENT, "mail", true, false, true, null));
         });
     }
 

@@ -20,7 +20,6 @@ import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import com.example.sso.user.role.RoleRef;
 import com.example.sso.user.role.Roles;
 import java.util.Set;
 import com.example.sso.shared.error.BadRequestException;
@@ -120,14 +119,16 @@ class FederatedAuthenticationServiceTest {
      *  exercise that branch; the opt-in itself is covered by its own tests. */
     private FederatedIdentity identity(boolean emailVerified, boolean jitAllowed, boolean linkByEmail) {
         return new FederatedIdentity(ALIAS, ISSUER, "sub-1", "ada@example.com", emailVerified, "Ada",
-                jitAllowed, linkByEmail, Map.of("given_name", "Ada"));
+                jitAllowed, linkByEmail, false, Map.of("given_name", "Ada"));
     }
 
     /** An org-owned, enabled, unlocked, UNPRIVILEGED member of ORG — the happy-path account state. */
     private UserAccount user(UUID id) {
         UserAccount u = mock(UserAccount.class);
-        lenient().doReturn(Set.of(roleNamed(Roles.USER))).when(u).getRoles();
         lenient().when(u.getDirectPermissionNames()).thenReturn(Set.of());
+        // The privilege bar reads users.effectiveAuthorities, not the account's own role rows, so that a role
+        // arriving through a GROUP is seen. Fixtures therefore say what the resolver would return.
+        lenient().when(users.effectiveAuthorities(id)).thenReturn(Set.of(Roles.USER));
         lenient().when(u.getId()).thenReturn(id);
         lenient().when(u.getUsername()).thenReturn("ada@example.com");
         lenient().when(u.getOrgId()).thenReturn(ORG);
@@ -135,6 +136,20 @@ class FederatedAuthenticationServiceTest {
         lenient().when(u.isAccountNonLocked()).thenReturn(true);
         lenient().when(u.isTemporarilyLocked(any())).thenReturn(false);
         return u;
+    }
+
+    /** A SAML-shaped identity: an address the connection's configured attribute carried, never verified. */
+    private FederatedIdentity assertedAddress(boolean linkByEmail) {
+        return new FederatedIdentity(ALIAS, ISSUER, "sub-1", "ada@example.com", false, "Ada", true, linkByEmail,
+                true, Map.of("given_name", "Ada"));
+    }
+
+    /** The account JIT hands back — a member, since the provisioner adds membership in the same transaction. */
+    private void provisioningYields() {
+        UUID newId = UUID.randomUUID();
+        UserAccount created = user(newId); // built OUTSIDE when(...): stubbing a mock inside one is unfinished
+        when(provisioner.provision(any(), eq(ORG))).thenReturn(created);
+        when(organizations.isMember(ORG, newId)).thenReturn(true);
     }
 
     private void completeLoginReturns(FederatedIdentity identity) {
@@ -161,14 +176,21 @@ class FederatedAuthenticationServiceTest {
                 .applyClaims(ORG, FederationProtocol.OIDC, userId.toString(), Map.of("given_name", "Ada"));
     }
 
+    /**
+     * REPLACES a test that refused an unverified address outright. That guard existed because provisioning used
+     * to MARK the address verified — laundering an unproven claim into a proof — and it no longer does. What
+     * survives is the half that was actually load-bearing: an unverified address may NAME a new account, and may
+     * never be used to look up an existing one. The lookup is the takeover primitive; naming is not.
+     */
     @Test
-    void anUnverifiedEmailIsRefusedAndEstablishesNothing() {
-        completeLoginReturns(identity(false, true)); // upstream did NOT verify the address
+    void anUnverifiedAddressNeverReachesTheLookupThatCouldClaimAnExistingAccount() {
+        completeLoginReturns(assertedAddress(true)); // unverified, opt-in ON, JIT ON
+        provisioningYields();
 
-        assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
-                .isInstanceOf(UnauthorizedException.class);
-        verify(users, never()).createUser(any(), any());
-        verify(factorAuth, never()).establish(any(), any(), any());
+        service.complete(ALIAS, CODE, STATE, request, response);
+
+        verify(users, never()).findByLoginInOrg(any(), any());
+        verify(provisioner).provision(any(), eq(ORG));
     }
 
     @Test
@@ -245,7 +267,8 @@ class FederatedAuthenticationServiceTest {
 
     @Test
     void aVerifiedButBlankEmailIsRefusedWithoutLookup() {
-        completeLoginReturns(new FederatedIdentity(ALIAS, ISSUER, "sub-1", "  ", true, "Ada", true, false, Map.of()));
+        completeLoginReturns(new FederatedIdentity(ALIAS, ISSUER, "sub-1", "  ", true, "Ada", true, false,
+                false, Map.of()));
 
         assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
                 .isInstanceOf(UnauthorizedException.class);
@@ -304,7 +327,8 @@ class FederatedAuthenticationServiceTest {
     void aLinkedSubjectResolvesTheSameUserAfterTheUpstreamEmailChanged() {
         UUID userId = UUID.randomUUID();
         UserAccount member = user(userId);
-        completeLoginReturns(new FederatedIdentity(ALIAS, ISSUER, "sub-1", "ada.lovelace@example.com", true, "Ada", true, false, Map.of()));
+        completeLoginReturns(new FederatedIdentity(ALIAS, ISSUER, "sub-1", "ada.lovelace@example.com", true,
+                "Ada", true, false, false, Map.of()));
         when(links.findLinkedUser(ORG, ISSUER, "sub-1")).thenReturn(Optional.of(userId));
         when(users.findById(userId)).thenReturn(Optional.of(member));
         when(organizations.isMember(ORG, userId)).thenReturn(true);
@@ -476,10 +500,24 @@ class FederatedAuthenticationServiceTest {
         verify(factorAuth, never()).establish(any(), any(), any());
     }
 
-    private RoleRef roleNamed(String name) {
-        RoleRef role = mock(RoleRef.class);
-        lenient().when(role.getName()).thenReturn(name);
-        return role;
+    /**
+     * The bar reads EFFECTIVE authority. An administrator whose ORG_ADMIN comes through a group holds nothing
+     * in app_user_role, so a direct-only read finds {ROLE_USER} and calls them ordinary — handing over exactly
+     * the account this guard exists to protect. The mock says what the two layers disagree about: the account's
+     * own rows are baseline, the resolver's answer is not.
+     */
+    @Test
+    void anAccountWhoseAdminRoleArrivesThroughAGroupCannotBeClaimedByEmail() {
+        UUID userId = UUID.randomUUID();
+        UserAccount delegated = user(userId); // direct rows: ROLE_USER only
+        when(users.effectiveAuthorities(userId)).thenReturn(Set.of(Roles.USER, Roles.ORG_ADMIN));
+        completeLoginReturns(identity(true, true));
+        when(users.findByLoginInOrg("ada@example.com", ORG)).thenReturn(Optional.of(delegated));
+        when(organizations.isMember(ORG, userId)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
+                .isInstanceOf(UnauthorizedException.class);
+        verify(factorAuth, never()).establish(any(), any(), any());
     }
 
     // --- the email bootstrap must not reach a privileged account -----------------------------------------
@@ -490,7 +528,7 @@ class FederatedAuthenticationServiceTest {
     void anAccountHoldingAnAdminRoleCannotBeClaimedByEmail() {
         UUID userId = UUID.randomUUID();
         UserAccount admin = user(userId);
-        doReturn(Set.of(roleNamed(Roles.ORG_ADMIN))).when(admin).getRoles();
+        when(users.effectiveAuthorities(userId)).thenReturn(Set.of(Roles.USER, Roles.ORG_ADMIN));
         completeLoginReturns(identity(true, true));
         when(users.findByLoginInOrg("ada@example.com", ORG)).thenReturn(Optional.of(admin));
         when(organizations.isMember(ORG, userId)).thenReturn(true);
@@ -522,7 +560,7 @@ class FederatedAuthenticationServiceTest {
     void anAlreadyLinkedAdminAccountStillSignsIn() {
         UUID userId = UUID.randomUUID();
         UserAccount admin = user(userId);
-        lenient().doReturn(Set.of(roleNamed(Roles.ORG_ADMIN))).when(admin).getRoles();
+        lenient().when(users.effectiveAuthorities(admin.getId())).thenReturn(Set.of(Roles.USER, Roles.ORG_ADMIN));
         completeLoginReturns(identity(true, false));
         when(links.findLinkedUser(ORG, ISSUER, "sub-1")).thenReturn(Optional.of(userId));
         when(users.findById(userId)).thenReturn(Optional.of(admin));
@@ -605,7 +643,9 @@ class FederatedAuthenticationServiceTest {
     void anAccountWhoseRolesAreUnreadableIsRefusedRatherThanTreatedAsOrdinary() {
         UUID userId = UUID.randomUUID();
         UserAccount opaque = user(userId);
-        doReturn(Set.of()).when(opaque).getRoles(); // what an RLS-invisible hydration actually produces
+        // What an RLS-invisible resolution actually produces — and 'every role is baseline' is vacuously
+        // true of an empty set, which is why the bar demands the baseline role be PRESENT.
+        when(users.effectiveAuthorities(opaque.getId())).thenReturn(Set.of());
         completeLoginReturns(identity(true, true));
         when(users.findByLoginInOrg("ada@example.com", ORG)).thenReturn(Optional.of(opaque));
         when(organizations.isMember(ORG, userId)).thenReturn(true);
@@ -620,7 +660,7 @@ class FederatedAuthenticationServiceTest {
     void aDirectoryMatchedAdminAccountIsRefused() {
         UUID userId = UUID.randomUUID();
         UserAccount admin = user(userId);
-        doReturn(Set.of(roleNamed(Roles.ORG_ADMIN))).when(admin).getRoles();
+        when(users.effectiveAuthorities(admin.getId())).thenReturn(Set.of(Roles.USER, Roles.ORG_ADMIN));
         completeLoginReturns(identity(true, true));
         when(users.findByExternalIdInOrg("sub-1", ORG)).thenReturn(Optional.of(admin));
         when(organizations.isMember(ORG, userId)).thenReturn(true);
@@ -629,14 +669,60 @@ class FederatedAuthenticationServiceTest {
                 .isInstanceOf(UnauthorizedException.class);
     }
 
-    /** The gate above every branch that keys on the address — including the pure JIT path. */
+    /**
+     * The other half of the replaced guard. Provisioning needs an address only to NAME the account; the join key
+     * is still the subject and the account is brand new, so there is nothing an unproven address can claim.
+     * Whether it stays unproven is {@code FederatedUserProvisionerTest}'s to hold.
+     */
     @Test
-    void anUnverifiedEmailIsRefusedEvenWhenOnlyJitWouldHaveRun() {
-        completeLoginReturns(identity(false, true, false)); // unverified, opt-in OFF, JIT ON
+    void anUnverifiedAddressStillProvisionsWhenJitIsTheOnlyBranchLeft() {
+        completeLoginReturns(assertedAddress(false)); // unverified, opt-in OFF, JIT ON
+        provisioningYields();
+
+        service.complete(ALIAS, CODE, STATE, request, response);
+
+        verify(provisioner).provision(any(), eq(ORG));
+    }
+
+    /**
+     * The OIDC path is UNCHANGED by the SAML work: there the address arrives on a spec-fixed claim beside the
+     * upstream's own email_verified, so an unverified one is still refused outright. Only a connection whose
+     * administrator NAMED the attribute the address is read from — which is SAML, and only SAML — may provision
+     * from an unproven address.
+     */
+    @Test
+    void anOidcUpstreamStillCannotProvisionFromAnUnverifiedAddress() {
+        completeLoginReturns(identity(false, true, false)); // addressAssertedByConfiguration is false for OIDC
 
         assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
                 .isInstanceOf(UnauthorizedException.class);
         verify(provisioner, never()).provision(any(), any());
+    }
+
+    /** JIT names the account by the address, so without one there is nothing to create. */
+    @Test
+    void anIdentityCarryingNoAddressAtAllIsRefusedRatherThanProvisionedNameless() {
+        completeLoginReturns(new FederatedIdentity(ALIAS, ISSUER, "sub-1", null, false, "Ada", true, false, false,
+                Map.of()));
+
+        assertThatThrownBy(() -> service.complete(ALIAS, CODE, STATE, request, response))
+                .isInstanceOf(UnauthorizedException.class);
+        verify(provisioner, never()).provision(any(), any());
+    }
+
+    /**
+     * The opt-in is not a way around the proof. A provider may switch address-matching ON, but an UNVERIFIED
+     * address still must not reach the lookup — otherwise the opt-in alone would hand an upstream every account
+     * in the tenant by asserting its address.
+     */
+    @Test
+    void theOptInDoesNotOpenTheLookupToAnUnverifiedAddress() {
+        completeLoginReturns(assertedAddress(true)); // unverified, opt-in ON, JIT ON
+        provisioningYields();
+
+        service.complete(ALIAS, CODE, STATE, request, response);
+
+        verify(users, never()).findByLoginInOrg(any(), any());
     }
 
     /** The directory branch must not depend on the address gates it sits above. */
@@ -682,7 +768,7 @@ class FederatedAuthenticationServiceTest {
         UUID userId = user.getId(); // read the mock BEFORE stubbing — a call inside when(...) is unfinished stubbing
         when(samlLogin.completeLogin(eq(ALIAS), eq("b64"), eq("rs"), any())).thenReturn(new SamlLoginResult(ORG,
                 new FederatedIdentity(ALIAS, "saml:https://idp.corp.example/entity", "persistent-subject-42",
-                        null, false, null, true, false, Map.of())));
+                        null, false, null, true, false, false, Map.of())));
         when(links.findLinkedUser(ORG, "saml:https://idp.corp.example/entity", "persistent-subject-42"))
                 .thenReturn(Optional.of(userId));
         when(users.findById(userId)).thenReturn(Optional.of(user));

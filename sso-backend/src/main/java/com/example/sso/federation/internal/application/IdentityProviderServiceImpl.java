@@ -69,6 +69,7 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
 
     /** SAML 2.0 bounds an EntityID at 1024 characters; an unbounded value would also overflow a btree key. */
     private static final int MAX_ENTITY_ID_LENGTH = 1024;
+    private static final int MAX_EMAIL_ATTRIBUTE_LENGTH = 128;
 
     private static final int MAX_CERTIFICATE_LENGTH = 16_384;
 
@@ -180,7 +181,8 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
         if (existing == null) {
             IdentityProvider row = IdentityProvider.createSaml(org, alias, displayName, entityId,
                     config.ssoUrl().trim(), config.signingCertificate().trim(),
-                    requireStableNameIdFormat(config.nameIdFormat()), flags);
+                    requireStableNameIdFormat(config.nameIdFormat()),
+                    normalizeEmailAttribute(config.emailAttribute()), flags);
             row.configuredBy(resolveConfigurator());
             repository.save(row);
             seedSource(org, FederationProtocol.SAML);
@@ -197,7 +199,8 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
             retireLinks(org, alias, upstreamIssuerOf(existing));
         }
         existing.reconfigureSaml(displayName, entityId, config.ssoUrl().trim(),
-                config.signingCertificate().trim(), requireStableNameIdFormat(config.nameIdFormat()), flags);
+                config.signingCertificate().trim(), requireStableNameIdFormat(config.nameIdFormat()),
+                normalizeEmailAttribute(config.emailAttribute()), flags);
         existing.configuredBy(resolveConfigurator());
         seedSource(org, FederationProtocol.SAML);
     }
@@ -284,7 +287,7 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
         }
         switch (spec.config()) {
             case OidcConfig oidc -> validateOidc(oidc);
-            case SamlConfig saml -> validateSaml(saml);
+            case SamlConfig saml -> validateSaml(saml, spec.allowJitProvisioning(), spec.linkByVerifiedEmail());
         }
     }
 
@@ -298,7 +301,7 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
         hostValidator.validate(host);
     }
 
-    private void validateSaml(SamlConfig config) {
+    private void validateSaml(SamlConfig config, boolean allowJitProvisioning, boolean linkByVerifiedEmail) {
         if (!StringUtils.hasText(config.idpEntityId())) {
             throw BadRequestException.of("federation.provider.entityIdRequired");
         }
@@ -312,6 +315,28 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
                 "federation.provider.ssoUrlMalformed", "federation.provider.ssoUrlNotHttps");
         requireParsableCertificate(config.signingCertificate());
         requireStableNameIdFormat(config.nameIdFormat());
+        // JIT names the new account by the address, and SAML — unlike OIDC, whose claim names the spec fixes —
+        // lets the upstream choose its attribute names. Without one, every first-time login would be refused at
+        // the ACS: a failure the tenant reads as "federation is broken", long after the write that caused it.
+        // SAML assertions never carry a verification, so address-MATCHING can never fire on this protocol.
+        // Storing the flag would promise a tenant that their existing accounts get linked on first sign-in
+        // while every user is silently provisioned as a DUPLICATE, orphaning the real account's roles.
+        if (linkByVerifiedEmail) {
+            throw BadRequestException.of("federation.provider.emailLinkingUnsupported");
+        }
+        if (allowJitProvisioning && !StringUtils.hasText(config.emailAttribute())) {
+            throw BadRequestException.of("federation.provider.emailAttributeRequired");
+        }
+        if (StringUtils.hasText(config.emailAttribute())
+                && config.emailAttribute().trim().length() > MAX_EMAIL_ATTRIBUTE_LENGTH) {
+            throw BadRequestException.of("federation.provider.emailAttributeTooLong");
+        }
+    }
+
+    /** The configured attribute name, trimmed; {@code null} when absent, so an empty string never reaches the
+     *  column and "not configured" has exactly one representation. */
+    private String normalizeEmailAttribute(String emailAttribute) {
+        return StringUtils.hasText(emailAttribute) ? emailAttribute.trim() : null;
     }
 
     /** An upstream endpoint must be an absolute https URL. Returns its host so a caller can validate further. */
@@ -427,7 +452,8 @@ public class IdentityProviderServiceImpl implements IdentityProviderService {
     private IdentityProviderView toView(IdentityProvider p) {
         return new IdentityProviderView(p.getAlias(), p.getDisplayName(), p.getProtocol(), p.getIssuerUri(),
                 p.getClientId(), p.getScopes(), p.getIdpEntityId(), p.getSsoUrl(), p.getSigningCertificate(),
-                p.getNameIdFormat(), p.isAllowJitProvisioning(), p.isLinkByVerifiedEmail(), p.isEnabled(),
+                p.getNameIdFormat(), p.getEmailAttribute(), p.isAllowJitProvisioning(),
+                p.isLinkByVerifiedEmail(), p.isEnabled(),
                 p.getPresetId());
     }
 

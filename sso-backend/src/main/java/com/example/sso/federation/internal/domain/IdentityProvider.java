@@ -85,6 +85,11 @@ public class IdentityProvider extends AuditedEntity implements OrgOwned {
     @Column(name = "name_id_format", length = 128)
     private String nameIdFormat;
 
+    /** SAML: which assertion attribute carries the user's address. Required when JIT provisioning is on —
+     *  there would otherwise be nothing to name a new account with — and never treated as verified. */
+    @Column(name = "email_attribute", length = 128)
+    private String emailAttribute;
+
     /** Whether a first-time federated user with no local account is provisioned just-in-time (else denied). */
     @Column(name = "allow_jit_provisioning", nullable = false)
     private boolean allowJitProvisioning;
@@ -129,11 +134,13 @@ public class IdentityProvider extends AuditedEntity implements OrgOwned {
 
     /** A SAML provider. Owning tenant, or {@code null} for a platform-tier provider. */
     public static IdentityProvider createSaml(UUID orgId, String alias, String displayName, String idpEntityId,
-            String ssoUrl, String signingCertificate, String nameIdFormat, ProviderFlags flags) {
+            String ssoUrl, String signingCertificate, String nameIdFormat, String emailAttribute,
+            ProviderFlags flags) {
         IdentityProvider provider = new IdentityProvider();
         provider.orgId = orgId;
         provider.alias = alias;
-        provider.reconfigureSaml(displayName, idpEntityId, ssoUrl, signingCertificate, nameIdFormat, flags);
+        provider.reconfigureSaml(displayName, idpEntityId, ssoUrl, signingCertificate, nameIdFormat,
+                emailAttribute, flags);
         return provider;
     }
 
@@ -161,12 +168,13 @@ public class IdentityProvider extends AuditedEntity implements OrgOwned {
     /** Repoint this SAML provider; the alias is immutable. See {@link #reconfigureOidc} on the other protocol's
      *  columns. */
     public void reconfigureSaml(String displayName, String idpEntityId, String ssoUrl, String signingCertificate,
-            String nameIdFormat, ProviderFlags flags) {
+            String nameIdFormat, String emailAttribute, ProviderFlags flags) {
         this.protocol = FederationProtocol.SAML;
         this.idpEntityId = idpEntityId;
         this.ssoUrl = ssoUrl;
         this.signingCertificate = signingCertificate;
         this.nameIdFormat = nameIdFormat;
+        this.emailAttribute = emailAttribute;
         apply(displayName, flags);
     }
 

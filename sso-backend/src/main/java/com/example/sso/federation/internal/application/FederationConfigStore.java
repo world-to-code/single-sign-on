@@ -48,7 +48,7 @@ class FederationConfigStore {
                 .orElseThrow(() -> NotFoundException.of("federation.provider.unknown"));
         return new ResolvedSamlProvider(p.getAlias(),
                 new UpstreamIdp(p.getIdpEntityId(), p.getSsoUrl(), p.getSigningCertificate(), p.getNameIdFormat()),
-                p.isAllowJitProvisioning(), p.isLinkByVerifiedEmail());
+                p.getEmailAttribute(), p.isAllowJitProvisioning(), p.isLinkByVerifiedEmail());
     }
 
     @Transactional(readOnly = true)

@@ -123,6 +123,7 @@ class IdentityProviderServiceImplTest {
             """;
     /** The link namespace is QUALIFIED so a SAML EntityID can never collide with an OIDC issuer. */
     private static final String SAML_LINK = "saml:" + IDP_ENTITY_ID;
+    private static final String EMAIL_ATTRIBUTE = "mail";
     private static final String CERT = """
                     -----BEGIN CERTIFICATE-----
                     MIIDFzCCAf+gAwIBAgIUJfPDNVgTXzIHND2TQIMTY5ai5EswDQYJKoZIhvcNAQEL
@@ -145,15 +146,81 @@ class IdentityProviderServiceImplTest {
                     -----END CERTIFICATE-----
             """;
 
+    /**
+     * JIT names the new account by the address, so a connection that allows it without saying which attribute
+     * carries one cannot provision anybody. Refusing the WRITE is the point: the alternative is a refusal at
+     * LOGIN, which the tenant reads as "federation is broken" long after the write that caused it.
+     */
+    @Test
+    void samlJitWithoutAnAddressAttributeIsRefused() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        assertThatThrownBy(() -> service.save(IdentityProviderSpec.saml(SAML_ALIAS, "Corp SSO", IDP_ENTITY_ID,
+                SSO_URL, CERT, PERSISTENT, null, true, false, true, null)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("federation.provider.emailAttributeRequired");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void aBlankAddressAttributeCountsAsAbsentRatherThanAsAName() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        assertThatThrownBy(() -> service.save(IdentityProviderSpec.saml(SAML_ALIAS, "Corp SSO", IDP_ENTITY_ID,
+                SSO_URL, CERT, PERSISTENT, "   ", true, false, true, null)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("federation.provider.emailAttributeRequired");
+    }
+
+    @Test
+    void samlCannotStoreTheEmailLinkingFlagItCanNeverHonour() {
+        // SAML assertions carry no verification, so the match branch can never fire. Storing the flag would
+        // promise the tenant that existing accounts get linked on first sign-in while every user is silently
+        // provisioned as a DUPLICATE — orphaning the real account's groups and roles.
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        assertThatThrownBy(() -> service.save(IdentityProviderSpec.saml(SAML_ALIAS, "Corp SSO", IDP_ENTITY_ID,
+                SSO_URL, CERT, PERSISTENT, EMAIL_ATTRIBUTE, false, true, true, null)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("federation.provider.emailLinkingUnsupported");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void aSamlConnectionWithoutJitNeedsNoAddressAttribute() {
+        // The attribute exists to serve JIT; demanding it unconditionally would refuse the perfectly ordinary
+        // connection whose users are all provisioned through SCIM.
+        actingIn(ORG, SAML_ALIAS, null);
+
+        service.save(IdentityProviderSpec.saml(SAML_ALIAS, "Corp SSO", IDP_ENTITY_ID, SSO_URL, CERT,
+                PERSISTENT, null, false, false, true, null));
+
+        ArgumentCaptor<IdentityProvider> saved = ArgumentCaptor.captor();
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getEmailAttribute()).isNull();
+    }
+
+    @Test
+    void theAddressAttributeIsStoredTrimmed() {
+        actingIn(ORG, SAML_ALIAS, null);
+
+        service.save(IdentityProviderSpec.saml(SAML_ALIAS, "Corp SSO", IDP_ENTITY_ID, SSO_URL, CERT,
+                PERSISTENT, "  mail  ", true, false, true, null));
+
+        ArgumentCaptor<IdentityProvider> saved = ArgumentCaptor.captor();
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getEmailAttribute()).isEqualTo("mail");
+    }
+
     private IdentityProviderSpec samlSpec(String entityId, String ssoUrl, String cert, String nameIdFormat) {
         return IdentityProviderSpec.saml(SAML_ALIAS, "Corp SSO", entityId, ssoUrl, cert, nameIdFormat,
-                true, false, true, null);
+                EMAIL_ATTRIBUTE, true, false, true, null);
     }
 
     /** A stored row, built the way the service stores one — trimmed — so a re-save is not mistaken for an edit. */
     private IdentityProvider samlRow(String entityId) {
         return IdentityProvider.createSaml(ORG, SAML_ALIAS, "Corp SSO", entityId, SSO_URL, CERT.trim(),
-                PERSISTENT, new ProviderFlags(true, false, true, null));
+                PERSISTENT, EMAIL_ATTRIBUTE, new ProviderFlags(true, false, true, null));
     }
 
     private void actingIn(UUID org, String alias, IdentityProvider existing) {
@@ -282,7 +349,7 @@ class IdentityProviderServiceImplTest {
         actingIn(ORG, ALIAS, row(ORG, "encg:cipher"));
 
         assertThatThrownBy(() -> service.save(IdentityProviderSpec.saml(ALIAS, "Corp SSO", IDP_ENTITY_ID,
-                SSO_URL, CERT, PERSISTENT, true, false, true, null)))
+                SSO_URL, CERT, PERSISTENT, "mail", true, false, true, null)))
                 .isInstanceOf(BadRequestException.class);
         verify(links, never()).unlinkAll(any(), any(), any());
     }
@@ -327,7 +394,7 @@ class IdentityProviderServiceImplTest {
         when(repository.findByOrgIdOrderByAlias(ORG)).thenReturn(List.of(samlRow(IDP_ENTITY_ID)));
 
         assertThatThrownBy(() -> service.save(IdentityProviderSpec.saml("corp-b", "Corp B", IDP_ENTITY_ID,
-                SSO_URL, CERT, PERSISTENT, true, false, true, null)))
+                SSO_URL, CERT, PERSISTENT, "mail", true, false, true, null)))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessage("federation.provider.entityIdAlreadyRegistered");
         verify(repository, never()).save(any());

@@ -88,7 +88,7 @@ class IdentityProviderTenantScopeIT extends AbstractIntegrationTest {
         // row — a mocked repository would store anything.
         orgA = org("saml-rt");
         orgContext.runInOrg(orgA, () -> providers.save(IdentityProviderSpec.saml("corp", "Corp SSO",
-                IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.PERSISTENT, true, false, true, null)));
+                IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.PERSISTENT, "mail", true, false, true, null)));
 
         IdentityProviderView view = orgContext.callInOrg(orgA, () -> providers.get("corp"));
         assertThat(view.protocol()).isEqualTo(FederationProtocol.SAML);
@@ -110,11 +110,11 @@ class IdentityProviderTenantScopeIT extends AbstractIntegrationTest {
         // a check-then-act in the service has no decision under two concurrent writes.
         orgA = org("saml-dup");
         orgContext.runInOrg(orgA, () -> providers.save(IdentityProviderSpec.saml("corp-a", "Corp A",
-                IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.PERSISTENT, true, false, true, null)));
+                IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.PERSISTENT, "mail", true, false, true, null)));
 
         assertThatThrownBy(() -> orgContext.runInOrg(orgA, () -> providers.save(IdentityProviderSpec.saml(
-                "corp-b", "Corp B", IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.PERSISTENT, true, false, true,
-                null)))).isInstanceOf(BadRequestException.class)
+                "corp-b", "Corp B", IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.PERSISTENT, "mail", true, false,
+                true, null)))).isInstanceOf(BadRequestException.class)
                 .hasMessage("federation.provider.entityIdAlreadyRegistered");
 
         // ...and the INDEX is what actually holds it: the service check has no decision under two concurrent
@@ -123,7 +123,7 @@ class IdentityProviderTenantScopeIT extends AbstractIntegrationTest {
                 "insert into identity_provider (id, org_id, alias, display_name, protocol, idp_entity_id,"
                         + " sso_url, signing_certificate, name_id_format, allow_jit_provisioning,"
                         + " link_by_verified_email, enabled)"
-                        + " values (gen_random_uuid(), ?, 'corp-c', 'Corp C', 'SAML', ?, ?, ?, ?, true, false, true)",
+                        + " values (gen_random_uuid(), ?, 'corp-c', 'Corp C', 'SAML', ?, ?, ?, ?, false, false, true)",
                 orgA, IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.PERSISTENT))
                 .isInstanceOf(DataIntegrityViolationException.class)
                 .hasMessageContaining("uq_identity_provider_saml_entity_org");
@@ -136,10 +136,10 @@ class IdentityProviderTenantScopeIT extends AbstractIntegrationTest {
         orgA = org("saml-tier-a");
         orgB = org("saml-tier-b");
         orgContext.runInOrg(orgA, () -> providers.save(IdentityProviderSpec.saml("corp", "Corp SSO",
-                IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.PERSISTENT, true, false, true, null)));
+                IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.PERSISTENT, "mail", true, false, true, null)));
 
         orgContext.runInOrg(orgB, () -> providers.save(IdentityProviderSpec.saml("corp", "Corp SSO",
-                IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.PERSISTENT, true, false, true, null)));
+                IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.PERSISTENT, "mail", true, false, true, null)));
 
         assertThat(orgContext.callInOrg(orgB, () -> providers.get("corp")).idpEntityId())
                 .isEqualTo(IDP_ENTITY_ID);
@@ -157,7 +157,7 @@ class IdentityProviderTenantScopeIT extends AbstractIntegrationTest {
                         + " client_secret_encrypted, scopes, idp_entity_id, sso_url, signing_certificate,"
                         + " allow_jit_provisioning, link_by_verified_email, enabled)"
                         + " values (gen_random_uuid(), ?, 'hybrid', 'Hybrid', 'SAML', ?, 'c', 'enc', 'openid',"
-                        + " ?, ?, ?, true, false, true)",
+                        + " ?, ?, ?, false, false, true)",
                 orgA, "https://issuer.example", IDP_ENTITY_ID, SSO_URL, CERT))
                 .isInstanceOf(DataIntegrityViolationException.class)
                 .hasMessageContaining("identity_provider_protocol_config");
@@ -171,10 +171,43 @@ class IdentityProviderTenantScopeIT extends AbstractIntegrationTest {
         assertThatThrownBy(() -> ownerJdbc().update(
                 "insert into identity_provider (id, org_id, alias, display_name, protocol, idp_entity_id,"
                         + " sso_url, allow_jit_provisioning, link_by_verified_email, enabled)"
-                        + " values (gen_random_uuid(), ?, 'nocert', 'No cert', 'SAML', ?, ?, true, false, true)",
+                        + " values (gen_random_uuid(), ?, 'nocert', 'No cert', 'SAML', ?, ?, false, false, true)",
                 orgA, IDP_ENTITY_ID, SSO_URL))
                 .isInstanceOf(DataIntegrityViolationException.class)
                 .hasMessageContaining("identity_provider_protocol_config");
+    }
+
+    @Test
+    void theSchemaRefusesSamlJitWithNoAddressAttribute() {
+        // The service raises the friendly error; this is what holds when two concurrent updates each see a
+        // legal row. JIT names the new account by the address, so the pair is a connection that would refuse
+        // every first-time login — a failure the tenant only ever sees long after the write that caused it.
+        orgA = org("saml-jit-noattr");
+
+        assertThatThrownBy(() -> ownerJdbc().update(
+                "insert into identity_provider (id, org_id, alias, display_name, protocol, idp_entity_id,"
+                        + " sso_url, signing_certificate, name_id_format, allow_jit_provisioning,"
+                        + " link_by_verified_email, enabled)"
+                        + " values (gen_random_uuid(), ?, 'jitnoattr', 'JIT no attr', 'SAML', ?, ?, ?, ?,"
+                        + " true, false, true)",
+                orgA, IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.PERSISTENT))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("identity_provider_jit_needs_email_attribute");
+    }
+
+    @Test
+    void theSchemaAllowsSamlJitOnceAnAddressAttributeIsNamed() {
+        // The other direction: without it the constraint could be inverted, or simply refuse all SAML JIT, and
+        // the test above would stay green while the feature never worked.
+        orgA = org("saml-jit-attr");
+
+        ownerJdbc().update(
+                "insert into identity_provider (id, org_id, alias, display_name, protocol, idp_entity_id,"
+                        + " sso_url, signing_certificate, name_id_format, email_attribute,"
+                        + " allow_jit_provisioning, link_by_verified_email, enabled)"
+                        + " values (gen_random_uuid(), ?, 'jitattr', 'JIT attr', 'SAML', ?, ?, ?, ?, 'mail',"
+                        + " true, false, true)",
+                orgA, IDP_ENTITY_ID, SSO_URL, CERT, NameIDType.PERSISTENT);
     }
 
     @Test

@@ -19,14 +19,14 @@ import jakarta.validation.constraints.NotBlank;
 public record IdentityProviderRequest(@NotBlank String displayName, FederationProtocol protocol,
                                       String issuerUri, String clientId, String clientSecret, String scopes,
                                       String idpEntityId, String ssoUrl, String signingCertificate,
-                                      String nameIdFormat, boolean allowJitProvisioning,
+                                      String nameIdFormat, String emailAttribute, boolean allowJitProvisioning,
                                       Boolean linkByVerifiedEmail, boolean enabled, String presetId) {
 
     public IdentityProviderSpec toSpec(String alias) {
         boolean linkByEmail = Boolean.TRUE.equals(linkByVerifiedEmail);
         if (protocol == FederationProtocol.SAML) {
             return IdentityProviderSpec.saml(alias, displayName, idpEntityId, ssoUrl, signingCertificate,
-                    nameIdFormat, allowJitProvisioning, linkByEmail, enabled, presetId);
+                    nameIdFormat, emailAttribute, allowJitProvisioning, linkByEmail, enabled, presetId);
         }
         return IdentityProviderSpec.oidc(alias, displayName, issuerUri, clientId, clientSecret, scopes,
                 allowJitProvisioning, linkByEmail, enabled, presetId);

@@ -172,7 +172,7 @@ class IdentityProviderAdminControllerTest {
 
     private IdentityProviderView view() {
         return new IdentityProviderView("google", "Google", FederationProtocol.OIDC,
-                "https://accounts.google.com", "client-123", "openid email", null, null, null, null,
+                "https://accounts.google.com", "client-123", "openid email", null, null, null, null, null,
                 true, false, true, "google");
     }
 

@@ -14,8 +14,14 @@ import java.util.Map;
  * <p>{@code issuer}, not {@code alias}, identifies the upstream: an alias is a tenant-chosen label that can be
  * repointed at a different IdP, so a durable identity link keyed on the alias would silently carry over to the
  * new upstream. {@code emailVerified} is load-bearing wherever an account is matched BY email.
+ *
+ * <p>{@code addressAssertedByConfiguration} says the tenant deliberately accepted an address the upstream did
+ * NOT verify as the name for a new account — because they named the attribute it comes from. SAML sets it (its
+ * assertions never carry a verification); OIDC never does, because there the address arrives on a spec-fixed
+ * claim alongside the upstream's own {@code email_verified} and no administrator ever decided to trust it
+ * unproven. It gates PROVISIONING only, never matching.
  */
 public record FederatedIdentity(String alias, String issuer, String subject, String email, boolean emailVerified,
                                 String name, boolean jitProvisioningAllowed, boolean linkByVerifiedEmail,
-                                Map<String, String> claims) {
+                                boolean addressAssertedByConfiguration, Map<String, String> claims) {
 }

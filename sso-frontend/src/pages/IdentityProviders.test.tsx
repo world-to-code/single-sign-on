@@ -40,6 +40,7 @@ const PRESETS: IdentityProviderPreset[] = [
 const provider = (over: Partial<IdentityProvider>): IdentityProvider => ({
   alias: "a", displayName: "A", protocol: "OIDC", issuerUri: "https://idp.acme.example", clientId: "c",
   scopes: "openid", idpEntityId: null, ssoUrl: null, signingCertificate: null, nameIdFormat: null,
+  emailAttribute: null,
   allowJitProvisioning: false, linkByVerifiedEmail: false, enabled: true, presetId: null, ...over,
 });
 

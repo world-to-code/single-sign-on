@@ -35,6 +35,7 @@ interface Editor {
   idpEntityId: string;
   ssoUrl: string;
   signingCertificate: string;
+  emailAttribute: string; // SAML only; required once JIT is on, since JIT names the account by the address
   presetId: string | null; // the vendor card this was created from, sent back so the badge stays authoritative
   fieldValues: Record<string, string>; // extra preset inputs (e.g. { tenant }) that build the issuer
   allowJitProvisioning: boolean;
@@ -44,7 +45,7 @@ interface Editor {
 
 const blank: Editor = {
   id: null, alias: "", displayName: "", protocol: "OIDC", issuerUri: "", clientId: "", clientSecret: "",
-  scopes: "openid email profile", idpEntityId: "", ssoUrl: "", signingCertificate: "",
+  scopes: "openid email profile", idpEntityId: "", ssoUrl: "", signingCertificate: "", emailAttribute: "",
   presetId: null, fieldValues: {},
   allowJitProvisioning: false, linkByVerifiedEmail: false, enabled: true,
 };
@@ -78,6 +79,7 @@ export default function IdentityProviders() {
       // Not offered as a choice: the server accepts only the persistent format, because it is the one SAML
       // guarantees is a stable per-SP identifier and a link may be keyed on nothing weaker.
       nameIdFormat: PERSISTENT_NAME_ID,
+      emailAttribute: e.emailAttribute.trim(),
       presetId: e.presetId,
       allowJitProvisioning: e.allowJitProvisioning,
       linkByVerifiedEmail: e.linkByVerifiedEmail,
@@ -115,7 +117,7 @@ export default function IdentityProviders() {
       id: p.alias, alias: p.alias, displayName: p.displayName, protocol: p.protocol,
       issuerUri: p.issuerUri ?? "", clientId: p.clientId ?? "", clientSecret: "", scopes: p.scopes ?? "",
       idpEntityId: p.idpEntityId ?? "", ssoUrl: p.ssoUrl ?? "",
-      signingCertificate: p.signingCertificate ?? "",
+      signingCertificate: p.signingCertificate ?? "", emailAttribute: p.emailAttribute ?? "",
       presetId: p.presetId, fieldValues: {},
       allowJitProvisioning: p.allowJitProvisioning, linkByVerifiedEmail: p.linkByVerifiedEmail, enabled: p.enabled,
     });
@@ -347,14 +349,30 @@ export default function IdentityProviders() {
               </div>
               <Switch checked={editor.allowJitProvisioning} onCheckedChange={(v) => set({ allowJitProvisioning: v })} />
             </div>
-            <div className="flex items-center justify-between rounded-lg border p-3">
-              <div>
-                <p className="text-sm font-medium">{t("idpEmailLinkingLabel")}</p>
-                <p className="text-xs text-muted-foreground">{t("idpEmailLinkingHint")}</p>
+            {/* SAML only: OIDC's email claim is named by the spec, SAML's is whatever the upstream chose. Required
+                alongside JIT because JIT names the new account by the address — the server refuses the pair. */}
+            {editor.protocol === "SAML" && (
+              <div className="space-y-2">
+                <Label htmlFor="idp-email-attribute">{t("idpEmailAttributeLabel")}</Label>
+                <Input id="idp-email-attribute" className="font-mono" value={editor.emailAttribute}
+                       placeholder="email"
+                       onChange={(e) => set({ emailAttribute: e.target.value })}
+                       required={editor.allowJitProvisioning} />
+                <p className="text-xs text-muted-foreground">{t("idpEmailAttributeHint")}</p>
               </div>
-              <Switch checked={editor.linkByVerifiedEmail}
-                      onCheckedChange={(v) => set({ linkByVerifiedEmail: v })} />
-            </div>
+            )}
+            {/* OIDC only: a SAML assertion never carries a VERIFIED address, so this could never fire — and
+                the server refuses the flag rather than store a promise the protocol cannot keep. */}
+            {editor.protocol === "OIDC" && (
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div>
+                  <p className="text-sm font-medium">{t("idpEmailLinkingLabel")}</p>
+                  <p className="text-xs text-muted-foreground">{t("idpEmailLinkingHint")}</p>
+                </div>
+                <Switch checked={editor.linkByVerifiedEmail}
+                        onCheckedChange={(v) => set({ linkByVerifiedEmail: v })} />
+              </div>
+            )}
             <div className="flex items-center justify-between rounded-lg border p-3">
               <div>
                 <p className="text-sm font-medium">{t("idpEnabledLabel")}</p>

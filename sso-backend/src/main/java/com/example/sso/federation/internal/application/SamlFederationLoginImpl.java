@@ -15,6 +15,7 @@ import java.util.Base64;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 /**
  * Drives a SAML login: resolve the connection, start it, and turn what comes back into the same
@@ -94,9 +95,12 @@ public class SamlFederationLoginImpl implements SamlFederationLogin {
 
     /**
      * The protocol-neutral identity. {@code issuer} is the QUALIFIED namespace and {@code subject} the NameID —
-     * the stable, per-SP identifier the connection is restricted to. Email is NOT taken from the assertion as a
-     * verified address: the upstream asserting an address is not proof it was verified, and treating it as such
-     * would hand the email-matching path an unearned input.
+     * the stable, per-SP identifier the connection is restricted to.
+     *
+     * <p>The address comes from the attribute the connection names, and {@code emailVerified} is ALWAYS false —
+     * not a value read from the assertion, a constant. An upstream asserting an address is not proof it verified
+     * one, and that single false is what keeps SAML out of the email-MATCHING branch entirely: an address here
+     * can name a NEW account and can never claim an existing one. Do not make it configurable.
      *
      * <p>The assertion's attributes ride along and are recorded under the tenant's SAML source — never the OIDC
      * one. That separation is what stops a connection whose attribute names it fully controls from writing
@@ -104,8 +108,17 @@ public class SamlFederationLoginImpl implements SamlFederationLogin {
      */
     private FederatedIdentity identityOf(ResolvedSamlProvider provider, VerifiedAssertion assertion) {
         return new FederatedIdentity(provider.alias(), LINK_NAMESPACE + provider.upstream().entityId(),
-                assertion.nameId(), null, false, null, provider.jitProvisioningAllowed(),
-                provider.linkByVerifiedEmail(), assertion.attributes());
+                assertion.nameId(), assertedEmail(provider, assertion), false, null,
+                provider.jitProvisioningAllowed(), provider.linkByVerifiedEmail(),
+                StringUtils.hasText(provider.emailAttribute()), assertion.attributes());
+    }
+
+    /** The address the connection's configured attribute carries, or {@code null} when it names none. */
+    private String assertedEmail(ResolvedSamlProvider provider, VerifiedAssertion assertion) {
+        if (!StringUtils.hasText(provider.emailAttribute())) {
+            return null;
+        }
+        return assertion.attributes().get(provider.emailAttribute());
     }
 
     private String randomToken() {

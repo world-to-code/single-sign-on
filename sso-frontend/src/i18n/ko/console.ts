@@ -1058,7 +1058,11 @@ export const console: Record<keyof typeof enConsole, string> = {
   idpScopesLabel: "스코프",
   idpScopesHint: "공백으로 구분. openid는 항상 요청됩니다.",
   idpJitLabel: "JIT 프로비저닝",
-  idpJitHint: "계정이 없는 인증된 사용자를 첫 로그인 시 자동 생성합니다.",
+  idpEmailAttributeLabel: "이메일 속성",
+  idpEmailAttributeHint:
+    "사용자 주소가 담긴 어설션 속성 이름입니다. 자동 계정 생성을 켜면 필수이며, 새 계정의 이름이 됩니다. 이 주소는 검증된 것으로 취급하지 않습니다.",
+  idpJitHint:
+    "계정이 없는 사용자를 첫 로그인 시 자동 생성합니다. SAML에서는 주소를 아래 속성에서 읽으며 검증된 것으로 취급하지 않으므로, 업스트림이 로그인시키는 누구나 이곳의 계정 이름을 차지할 수 있습니다.",
   idpEmailLinking: "이메일 연결",
   idpEmailLinkingLabel: "검증된 이메일로 기존 계정 연결",
   idpEmailLinkingHint: "기본값은 꺼짐입니다. 처음 로그인하고 아직 연결된 신원이 없을 때, 이메일이 일치하는 기존 계정까지 찾아 연결합니다. 업스트림에서 주소가 다른 사람에게 재할당될 수 있으므로, 아무도 의도하지 않은 계정에 로그인이 붙을 수 있습니다. 디렉터리로 프로비저닝하지 않은 로컬 계정이 있는 조직이 아니라면 꺼두세요.",

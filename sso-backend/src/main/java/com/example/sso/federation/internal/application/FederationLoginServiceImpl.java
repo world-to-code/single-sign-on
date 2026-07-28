@@ -75,7 +75,9 @@ public class FederationLoginServiceImpl implements FederationLoginService {
         VerifiedIdToken claims = verifier.verify(metadata, provider.clientId(), idToken, nonce);
         return new FederatedIdentity(provider.alias(), provider.issuerUri(), claims.subject(), claims.email(),
                 claims.emailVerified(), claims.name(), provider.jitProvisioningAllowed(),
-                provider.linkByVerifiedEmail(), claims.claims());
+                // false: OIDC's address arrives on a spec-fixed claim next to the upstream's own
+                // email_verified, so there is nothing for an administrator to have opted into.
+                provider.linkByVerifiedEmail(), false, claims.claims());
     }
 
     /** Reads the provider inside the tenant's RLS context (pre-auth has none bound by the request filter). */

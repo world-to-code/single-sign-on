@@ -22,6 +22,7 @@ export interface IdentityProvider {
   ssoUrl: string | null;
   signingCertificate: string | null;
   nameIdFormat: string | null;
+  emailAttribute: string | null; // SAML: which assertion attribute carries the address
   allowJitProvisioning: boolean;
   linkByVerifiedEmail: boolean;
   enabled: boolean;
@@ -45,6 +46,7 @@ export interface IdentityProviderInput {
   ssoUrl: string;
   signingCertificate: string;
   nameIdFormat: string;
+  emailAttribute: string;
   allowJitProvisioning: boolean;
   linkByVerifiedEmail: boolean;
   enabled: boolean;

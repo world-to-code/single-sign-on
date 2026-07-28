@@ -41,7 +41,7 @@ class SamlSpMetadataServiceTest {
 
     private IdentityProviderView provider(FederationProtocol protocol) {
         return new IdentityProviderView("corp", "Corp SSO", protocol, null, null, null,
-                "https://idp.corp.example/entity", "https://idp.corp.example/sso", "cert", PERSISTENT,
+                "https://idp.corp.example/entity", "https://idp.corp.example/sso", "cert", PERSISTENT, "mail",
                 true, false, true, null);
     }
 

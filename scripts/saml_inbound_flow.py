@@ -40,6 +40,9 @@ ALIAS = "corp-saml"
 IDP_ENTITY_ID = "urn:example:upstream-idp"
 IDP_SSO_URL = "https://upstream-idp.example/sso"  # never fetched: the browser is the only transport
 NAME_ID = "upstream-subject-0001"
+EMAIL_ATTRIBUTE = "email"
+JIT_NAME_ID = "upstream-subject-jit"
+JIT_USER = "saml.jit@example.com"
 FEDERATED_USER = "saml.inbound@example.com"
 
 NS = {
@@ -121,7 +124,7 @@ def _signed_info(reference_id: str, digest: str):
 
 
 def build_response(idp: UpstreamIdp, request_id: str, acs_url: str, sp_entity_id: str,
-                   name_id: str = NAME_ID, sign_with=None):
+                   name_id: str = NAME_ID, sign_with=None, email: str = FEDERATED_USER):
     """A SAML Response whose ASSERTION is signed — the shape our SP requires."""
     now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
     stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -150,7 +153,7 @@ def build_response(idp: UpstreamIdp, request_id: str, acs_url: str, sp_entity_id
       </saml:AuthnContextClassRef></saml:AuthnContext>
     </saml:AuthnStatement>
     <saml:AttributeStatement>
-      <saml:Attribute Name="email"><saml:AttributeValue>{FEDERATED_USER}</saml:AttributeValue></saml:Attribute>
+      <saml:Attribute Name="{EMAIL_ATTRIBUTE}"><saml:AttributeValue>{email}</saml:AttributeValue></saml:Attribute>
     </saml:AttributeStatement>
   </saml:Assertion>
 </samlp:Response>"""
@@ -183,7 +186,7 @@ def drill_into_tenant(admin):
     admin.headers["X-Org-Context"] = org["id"]
 
 
-def register_provider(admin, idp: UpstreamIdp):
+def register_provider(admin, idp: UpstreamIdp, jit: bool = False):
     body = {
         "displayName": "Corp SAML",
         "protocol": "SAML",
@@ -191,7 +194,8 @@ def register_provider(admin, idp: UpstreamIdp):
         "ssoUrl": IDP_SSO_URL,
         "signingCertificate": idp.certificate_pem(),
         "nameIdFormat": PERSISTENT,
-        "allowJitProvisioning": False,
+        "emailAttribute": EMAIL_ATTRIBUTE,
+        "allowJitProvisioning": jit,
         "enabled": True,
     }
     resp = admin.put(f"{BASE}/api/admin/identity-providers/{ALIAS}", json=body, headers=csrf(admin))
@@ -247,6 +251,15 @@ def begin_login(session):
 def post_assertion(session, response, relay_state, acs_url):
     return session.post(acs_url, data={"SAMLResponse": encode(response), "RelayState": relay_state},
                         allow_redirects=False)
+
+
+def email_verified(admin, username: str) -> bool:
+    """Read the account back through the admin API: an asserted address must land unverified."""
+    users = admin.get(f"{BASE}/api/admin/users?size=100").json()["items"]
+    user = next((u for u in users if u["username"] == username), None)
+    if user is None:
+        raise SystemExit(f"provisioned user {username} not found")
+    return bool(admin.get(f"{BASE}/api/admin/users/{user['id']}").json().get("emailVerified"))
 
 
 def resolved_subject(session):
@@ -350,6 +363,19 @@ def run(admin) -> int:
     post_assertion(unknown, build_response(idp, unknown_request.get("ID"), acs_url, sp_entity_id,
                                            name_id="nobody-here"), unknown_relay, acs_url)
     passed &= check("an unknown subject is refused rather than provisioned", resolved_subject(unknown) != FEDERATED_USER)
+
+    # --- just-in-time provisioning ------------------------------------------------------------------
+    # A subject no directory ever recorded. With JIT off it is refused (checked above); with JIT on the
+    # connection may create the account, naming it by the address its configured attribute carries.
+    register_provider(admin, idp, jit=True)
+    jit_browser = requests.Session()
+    jit_request, jit_relay = begin_login(jit_browser)
+    post_assertion(jit_browser, build_response(idp, jit_request.get("ID"), acs_url, sp_entity_id,
+                                               name_id=JIT_NAME_ID, email=JIT_USER), jit_relay, acs_url)
+    passed &= check("an unknown subject is provisioned when the connection allows it",
+                    resolved_subject(jit_browser) == JIT_USER, resolved_subject(jit_browser) or "nobody")
+    passed &= check("the provisioned address is NOT marked verified",
+                    not email_verified(admin, JIT_USER))
 
     print("\nAll checks passed." if passed else "\nSOME CHECKS FAILED.")
     return 0 if passed else 1

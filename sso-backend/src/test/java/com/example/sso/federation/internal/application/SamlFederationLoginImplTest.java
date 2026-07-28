@@ -39,6 +39,7 @@ class SamlFederationLoginImplTest {
     private static final UUID ORG = UUID.randomUUID();
     private static final String ALIAS = "corp";
     private static final String IDP_ENTITY_ID = "https://idp.corp.example/entity";
+    private static final String EMAIL_ATTRIBUTE = "mail";
     private static final String SP_ENTITY_ID = "https://acme.idp.example/saml2/sp/corp";
     private static final String ACS_URL = "https://acme.idp.example/api/auth/federation/corp/acs";
     private static final String REQUEST_ID = "_req-1";
@@ -62,12 +63,12 @@ class SamlFederationLoginImplTest {
     private ResolvedSamlProvider provider() {
         return new ResolvedSamlProvider(ALIAS,
                 new UpstreamIdp(IDP_ENTITY_ID, "https://idp.corp.example/sso", "cert-pem", PERSISTENT),
-                true, false);
+                EMAIL_ATTRIBUTE, true, false);
     }
 
     private VerifiedAssertion assertion() {
         return new VerifiedAssertion("_a1", "persistent-subject-42", Instant.now().plusSeconds(300),
-                Map.of("dept", "engineering"));
+                Map.of("dept", "engineering", EMAIL_ATTRIBUTE, "ada@corp.example"));
     }
 
     @Test
@@ -136,22 +137,50 @@ class SamlFederationLoginImplTest {
     }
 
     @Test
-    void anAssertionTheUpstreamNeverVouchedForAnEmailIsNotTreatedAsVerified() {
-        // An upstream ASSERTING an address is not proof it verified it. Marking it verified would hand the
-        // email-matching resolution path an unearned input on a connection that never opted into it.
-        when(correlations.consume("rs")).thenReturn(Optional.of(new PendingSamlLogin(ORG, ALIAS, REQUEST_ID, SP_ENTITY_ID, ACS_URL, "handle-1")));
-        bindOrgInline();
-        when(configStore.resolveEnabledSaml(ORG, ALIAS)).thenReturn(provider());
-        when(protocol.verify(any(), any())).thenReturn(assertion());
-        when(replayGuard.firstUse(any(), any(), any(), any())).thenReturn(true);
+    void theAddressComesFromTheAttributeTheConnectionNamesButIsNeverVerified() {
+        // An upstream ASSERTING an address is not proof it verified it. The address is carried so JIT has
+        // something to name the new account with; emailVerified stays false so it can never reach the lookup
+        // that claims an EXISTING account. Both halves in one test because they are one decision.
+        arrangeCompleteLogin(provider());
 
         SamlLoginResult result = login.completeLogin(ALIAS, "b64", "rs", handle -> true);
 
-        assertThat(result.identity().email()).isNull();
+        assertThat(result.identity().email()).isEqualTo("ada@corp.example");
         assertThat(result.identity().emailVerified()).isFalse();
         // The attributes DO ride along — they are recorded under the tenant's own SAML source, so an
         // upstream-chosen name cannot forge a value carrying the OIDC source's provenance.
         assertThat(result.identity().claims()).containsEntry("dept", "engineering");
+    }
+
+    @Test
+    void aConnectionNamingNoAttributeYieldsNoAddress() {
+        // Legal while JIT is off (the service refuses the pair), and it must not read some other attribute.
+        arrangeCompleteLogin(new ResolvedSamlProvider(ALIAS,
+                new UpstreamIdp(IDP_ENTITY_ID, "https://idp.corp.example/sso", "cert-pem", PERSISTENT),
+                null, false, false));
+
+        assertThat(login.completeLogin(ALIAS, "b64", "rs", handle -> true).identity().email()).isNull();
+    }
+
+    @Test
+    void anAttributeTheAssertionDidNotCarryYieldsNoAddress() {
+        // The connection names an attribute the upstream stopped sending. Refusing at the login is the
+        // provisioner's job; here the point is that nothing else is substituted for it.
+        arrangeCompleteLogin(new ResolvedSamlProvider(ALIAS,
+                new UpstreamIdp(IDP_ENTITY_ID, "https://idp.corp.example/sso", "cert-pem", PERSISTENT),
+                "absent", true, false));
+
+        assertThat(login.completeLogin(ALIAS, "b64", "rs", handle -> true).identity().email()).isNull();
+    }
+
+    /** The four stubs every completeLogin case repeats, with the connection under test. */
+    private void arrangeCompleteLogin(ResolvedSamlProvider provider) {
+        when(correlations.consume("rs")).thenReturn(Optional.of(
+                new PendingSamlLogin(ORG, ALIAS, REQUEST_ID, SP_ENTITY_ID, ACS_URL, "handle-1")));
+        bindOrgInline();
+        when(configStore.resolveEnabledSaml(ORG, ALIAS)).thenReturn(provider);
+        when(protocol.verify(any(), any())).thenReturn(assertion());
+        when(replayGuard.firstUse(any(), any(), any(), any())).thenReturn(true);
     }
 
     @Test

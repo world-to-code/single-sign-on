@@ -1058,7 +1058,11 @@ export const console = {
   idpScopesLabel: "Scopes",
   idpScopesHint: "Space-separated. openid is always requested.",
   idpJitLabel: "Just-in-time provisioning",
-  idpJitHint: "Create an account on first sign-in for a verified user with none yet.",
+  idpEmailAttributeLabel: "Email attribute",
+  idpEmailAttributeHint:
+    "Which assertion attribute carries the user's address. Required when just-in-time provisioning is on — it names the new account. The address is never treated as verified.",
+  idpJitHint:
+    "Create an account on first sign-in for a user with none yet. On SAML the address comes from the attribute below and is NOT treated as verified, so anyone your upstream lets sign in can claim a name here.",
   idpEmailLinking: "Email linking",
   idpEmailLinkingLabel: "Match existing accounts by verified email",
   idpEmailLinkingHint: "Off by default. When a user signs in for the first time and no identity is linked yet, also try to claim an existing account whose email matches. An address can be reassigned upstream, so this can attach a sign-in to an account nobody deliberately connected — leave it off unless this organization has local accounts that were never provisioned from a directory.",

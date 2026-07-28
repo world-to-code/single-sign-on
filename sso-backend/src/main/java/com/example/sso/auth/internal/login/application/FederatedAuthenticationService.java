@@ -26,7 +26,6 @@ import com.example.sso.user.account.NewUser;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
 import com.example.sso.user.role.Roles;
-import com.example.sso.user.role.RoleRef;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.nio.charset.StandardCharsets;
@@ -216,26 +215,32 @@ public class FederatedAuthenticationService {
             // a tenant-grantable SCIM capability, so whoever can provision users can also choose which upstream
             // subject resolves to which account. That is the same admin-takeover primitive as the address
             // branch, through a different door. An administrator federates on a link created deliberately.
-            return link(identity, orgId, clientIp, unprivileged(authorized(provisioned, orgId)));
+            return link(identity, orgId, clientIp, unprivileged(authorized(provisioned, orgId), orgId));
         }
-        // Nothing but the address left, and everything below keys on it: the match obviously, and provisioning
-        // too, which creates the account under that address AND marks it verified. So an address the upstream
-        // did not prove control of gets no further, whichever branch would have taken it. (A LINKED identity
-        // needs no such proof: the subject is the proof.)
-        if (!identity.emailVerified() || !StringUtils.hasText(identity.email())) {
-            throw new UnauthorizedException();
-        }
-        // Matching an EXISTING account by address is an INFERENCE about who somebody is — an address can be
-        // reassigned upstream — so the provider has to opt into it.
-        if (identity.linkByVerifiedEmail()) {
+        // Nothing but the address left, and the two remaining branches need DIFFERENT things from it.
+        //
+        // MATCHING an existing account is an inference about who somebody is — an address can be reassigned
+        // upstream — so it needs a VERIFIED address AND the provider has to opt in. This is the branch that can
+        // attach a login to an account nobody deliberately connected, so the proof requirement lives here.
+        if (identity.linkByVerifiedEmail() && identity.emailVerified() && StringUtils.hasText(identity.email())) {
             UserAccount existing = orgContext
                     .callInOrg(orgId, () -> users.findByLoginInOrg(identity.email(), orgId)).orElse(null);
             if (existing != null) {
-                return link(identity, orgId, clientIp, unprivileged(authorized(existing, orgId)));
+                return link(identity, orgId, clientIp, unprivileged(authorized(existing, orgId), orgId));
             }
         }
         if (!identity.jitProvisioningAllowed()) {
             throw ForbiddenException.of("auth.identity.noAccount");
+        }
+        // PROVISIONING needs only an address to NAME the new account. The join key is still the subject and the
+        // account is brand new, so there is nothing here for an unproven address to claim — which is why SAML,
+        // whose identities are never emailVerified, can provision yet can never match. An UNVERIFIED address
+        // counts only where the tenant decided it should, by naming the attribute it is read from; on OIDC the
+        // upstream reports email_verified itself and nobody opted into ignoring it, so it is refused as ever.
+        // And it never arrives trusted: the provisioner marks the account verified only if the upstream did.
+        if (!StringUtils.hasText(identity.email())
+                || (!identity.emailVerified() && !identity.addressAssertedByConfiguration())) {
+            throw new UnauthorizedException();
         }
         return link(identity, orgId, clientIp, authorized(provision(identity, orgId), orgId));
     }
@@ -252,8 +257,16 @@ public class FederatedAuthenticationService {
      * <p>An existing LINK still signs in normally, however privileged: the restriction is on bootstrapping a
      * binding that nobody created deliberately, not on federating.
      */
-    private UserAccount unprivileged(UserAccount account) {
-        Set<String> roleNames = account.getRoles().stream().map(RoleRef::getName).collect(Collectors.toSet());
+    private UserAccount unprivileged(UserAccount account, UUID orgId) {
+        // EFFECTIVE, not direct. An administrator whose ORG_ADMIN arrives through a group holds no row in
+        // app_user_role, so a direct-only read finds {ROLE_USER} and calls them ordinary — handing exactly the
+        // account this bar exists to protect to whoever registered the upstream. (Same lesson as LastAdminGuard:
+        // members() is direct-only, holders are not.)
+        // IN the tenant's scope: `role` is RLS-forced, so an unscoped read returns NOTHING and the check below
+        // would refuse every bootstrap rather than only the privileged ones. Fail-closed, but a dead feature.
+        Set<String> roleNames = orgContext.callInOrg(orgId, () -> users.effectiveAuthorities(account.getId()))
+                .stream().filter(authority -> authority.startsWith(Roles.ROLE_PREFIX))
+                .collect(Collectors.toSet());
         // Fails CLOSED on a degenerate read. `role` is RLS-forced, so an account resolved without the tenant's
         // context hydrates with NO roles — and "every role is the baseline role" is vacuously true of an empty
         // set, which would wave an administrator straight through. Demand the baseline role be PRESENT, so a
