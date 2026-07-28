@@ -24,6 +24,11 @@ import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.account.Suggestion;
+import com.example.sso.admin.internal.user.application.UserProfileAttributeService;
+import com.example.sso.metadata.AttributeService;
+import com.example.sso.metadata.EntityKind;
+import com.example.sso.audit.AuditType;
+import com.example.sso.audit.Audited;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -55,6 +60,8 @@ public class AdminUserController {
     private final UserProvisioningService provisioning;
     private final UserDetailAdminService userDetailAdminService;
     private final UserRecoveryAdminService recovery;
+    private final UserProfileAttributeService profileAttributes;
+    private final AttributeService metadata;
 
     @GetMapping
     @RequirePermission(Permissions.USER_READ)
@@ -115,6 +122,29 @@ public class AdminUserController {
                                          @RequestParam(defaultValue = "0") int page,
                                          @RequestParam(defaultValue = "20") int size) {
         return userDetailAdminService.activity(id, page, size);
+    }
+
+    /** The columns this user's profile declares — what the console renders as the person's own fields. */
+    @GetMapping("/{id}/profile-attributes")
+    @CanViewUser
+    public UserProfileAttributesView profileAttributes(@PathVariable UUID id) {
+        return UserProfileAttributesView.of(profileAttributes.columnsOf(id),
+                metadata.attributesOf(EntityKind.USER, id.toString()));
+    }
+
+    /**
+     * Replaces this user's profile columns as one set. A per-key write cannot tell an attribute the profile
+     * REQUIRES and nobody filled from one the request merely omits, so this is the shape that can enforce the
+     * declaration — the same validator the create form answers to.
+     */
+    @PutMapping("/{id}/profile-attributes")
+    @CanUpdateUser
+    @RequireStepUp
+    @Audited(AuditType.ATTRIBUTE_CHANGED)
+    public UserProfileAttributesView replaceProfileAttributes(@PathVariable UUID id,
+                                                              @RequestBody UserProfileAttributesRequest request) {
+        profileAttributes.replace(id, request.values());
+        return profileAttributes(id);
     }
 
     @PostMapping
