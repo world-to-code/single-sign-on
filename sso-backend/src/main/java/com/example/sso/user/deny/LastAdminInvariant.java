@@ -22,4 +22,24 @@ public interface LastAdminInvariant {
      * which capability that is, and skips the recount entirely for any other pattern.
      */
     void ensureDenyRetainsAdmins(String pattern, Collection<UUID> orgIds);
+
+    /**
+     * Rejects (throws) when RETRACTING these roles left the tier without an enabled effective administrator.
+     *
+     * <p>Exists because the admin-layer writes are not the only way a tier loses its last administrator. An
+     * ABAC mapping rule confers a role on whoever carries an attribute; deleting that attribute retracts the
+     * membership through the async re-evaluation, which reaches {@code RoleService.removeMember} — the domain
+     * service, below every guard the console path goes through.
+     *
+     * <p>The caller passes the roles that stopped applying rather than asking for a bare recount, for the
+     * reason {@link #ensureDenyRetainsAdmins} passes its pattern: only a retraction that can subtract the
+     * administrator capability itself can break the invariant, and the implementation is what knows which
+     * roles those are. A recount on every retraction would instead refuse ordinary ones in a tier that had no
+     * administrator to begin with — blaming a pre-existing state on the write that happened to follow it.
+     *
+     * <p>Must run inside the retraction's transaction, so a rejection rolls the retraction back: the person
+     * keeps a role they no longer qualify for, which is visible and fixable, rather than the tier losing its
+     * last administrator, which is neither.
+     */
+    void ensureRetractionRetainsAdmin(Collection<UUID> retractedRoleIds, UUID orgId);
 }

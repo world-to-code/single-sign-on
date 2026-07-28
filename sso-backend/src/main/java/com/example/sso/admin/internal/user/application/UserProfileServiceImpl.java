@@ -98,6 +98,11 @@ class UserProfileServiceImpl implements UserProfileService {
         // not the retraction. Closing the window means retracting synchronously here, which would put a
         // mapping re-evaluation inside an admin write transaction; that trade has not been made.
         //
+        // What IS closed: the retraction can no longer strip a tier's last administrator. It reaches
+        // RoleService.removeMember directly, below every console guard, so MappingRuleEvaluator now recounts
+        // the tier once per re-evaluation and rolls the retraction back rather than leaving a tenant with no
+        // administrator (LastAdminInvariant.ensureTierRetainsAdmin).
+        //
         // Only when a key actually went, though: a move that deletes nothing changes no authorization, and an
         // unconditional termination made this endpoint a way to log a person out at will — one that answers to
         // user:update rather than to the session-revocation gate.
