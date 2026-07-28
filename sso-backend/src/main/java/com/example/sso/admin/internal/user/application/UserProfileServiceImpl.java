@@ -65,6 +65,9 @@ class UserProfileServiceImpl implements UserProfileService {
         // Refuse before deleting anything. attributes.remove would throw on the first directory-owned key,
         // rolling the whole switch back — after preview had already told the administrator those keys would
         // simply go. Fail up front, naming them, so the two agree.
+        // Asked ONCE. removeAll re-runs the same three questions itself, and each of them reaches the mapping
+        // rules and the deny store — on a tenant that uses mapping rules that is targets x denies x a full RBAC
+        // resolution, paid twice for one move.
         List<String> blocked = notRemovable(removed);
         if (!blocked.isEmpty()) {
             throw ConflictException.of("metadata.profile.switchBlocked", String.join(", ", blocked));

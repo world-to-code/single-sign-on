@@ -6,6 +6,7 @@ import com.example.sso.resource.authorization.GroupAuthorization;
 import com.example.sso.resource.authorization.ResourceAuthorization;
 import com.example.sso.mapping.MappingTargetKind;
 import com.example.sso.user.deny.DenyAuthor;
+import com.example.sso.user.deny.DenyLift;
 import com.example.sso.user.deny.DenySubjectKind;
 import com.example.sso.organization.OrganizationAuthorization;
 import com.example.sso.portal.application.ApplicationService;
@@ -23,6 +24,7 @@ import com.example.sso.user.account.UserService;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -490,15 +492,34 @@ public class AdminAccessPolicy {
      */
     public boolean mayLiftDeny(DenySubjectKind kind, UUID subjectId, String pattern, UUID createdBy,
             UUID writerApexRoleId) {
+        return mayLiftDenies(kind, subjectId, List.of(new DenyLift(pattern, createdBy, writerApexRoleId)));
+    }
+
+    /**
+     * The same decision for a whole subject's denies, with the actor resolved ONCE.
+     *
+     * <p>Identical verdict to calling {@link #mayLiftDeny} per row — the actor-derived inputs (their id, their
+     * effective authority set, whether they reach the subject) do not vary across rows, and only the pattern
+     * and the author provenance do. Per row they were re-derived every time, and
+     * {@code effectiveAuthorities} re-hydrates roles, group-delegated roles, the inheritance DAG and the
+     * actor's own denies. On the attribute-removal ceiling that was paid targets x denies x2 for one move.
+     *
+     * <p>Empty batch is true: nothing to lift, nothing to authorize. Unresolved actor is false, as ever.
+     */
+    public boolean mayLiftDenies(DenySubjectKind kind, UUID subjectId, Collection<DenyLift> denies) {
+        if (denies.isEmpty()) {
+            return true;
+        }
         return currentUserId().map(actorId -> {
             if (kind == DenySubjectKind.USER && actorId.equals(subjectId)) {
                 return false; // never re-grant yourself by lifting a deny on your own account
             }
-            if (!mayGrantLive(userService.effectiveAuthorities(actorId), pattern)
-                    || !mayReachDenySubject(kind, subjectId)) {
+            if (!mayReachDenySubject(kind, subjectId)) {
                 return false;
             }
-            return actorId.equals(createdBy) || strictlyDominates(actorId, writerApexRoleId);
+            Set<String> actorAuthorities = userService.effectiveAuthorities(actorId);
+            return denies.stream().allMatch(deny -> mayGrantLive(actorAuthorities, deny.pattern())
+                    && (actorId.equals(deny.createdBy()) || strictlyDominates(actorId, deny.writerApexRoleId())));
         }).orElse(false);
     }
 

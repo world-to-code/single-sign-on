@@ -1,5 +1,6 @@
 package com.example.sso.user.deny;
 
+import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -28,4 +29,14 @@ public interface DenyAuthority {
      * not being on the actor themselves.
      */
     boolean mayLift(DenySubjectKind kind, UUID subjectId, String pattern, UUID createdBy, UUID writerApexRoleId);
+
+    /**
+     * Whether the actor may lift EVERY one of these denies on the subject — the batch form of
+     * {@link #mayLift}, and the one to use when a caller holds a whole subject's rows.
+     *
+     * <p>Same verdict, one authority resolution: the per-row form re-reads the acting administrator and
+     * re-hydrates their full effective authority set for each row. True for an empty batch — there is nothing
+     * to lift, so nothing to authorize. Fails CLOSED like its sibling.
+     */
+    boolean mayLiftAll(DenySubjectKind kind, UUID subjectId, Collection<DenyLift> denies);
 }

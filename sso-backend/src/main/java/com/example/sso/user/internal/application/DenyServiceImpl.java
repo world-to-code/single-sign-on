@@ -7,6 +7,7 @@ import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
 import com.example.sso.user.deny.DenyAuthor;
 import com.example.sso.user.deny.DenyAuthority;
+import com.example.sso.user.deny.DenyLift;
 import com.example.sso.user.deny.DenyRow;
 import com.example.sso.user.deny.DenyService;
 import com.example.sso.user.deny.DenySpec;
@@ -113,9 +114,13 @@ class DenyServiceImpl implements DenyService {
     @Transactional(readOnly = true)
     public boolean mayLiftEveryDenyOn(DenySubjectKind kind, UUID subjectId) {
         DenySubjectType type = kind == DenySubjectKind.ROLE ? DenySubjectType.ROLE : DenySubjectType.GROUP;
-        return principalDenies.findBySubjectTypeAndSubjectId(type, subjectId).stream()
-                .allMatch(deny -> denyAuthority.mayLift(kind, subjectId, deny.getPattern(),
-                        deny.getCreatedBy(), deny.getWriterApexRoleId()));
+        // ONE authorization call for the whole subject: asked per row, each question re-resolved the actor and
+        // re-hydrated their entire effective authority set.
+        return denyAuthority.mayLiftAll(kind, subjectId,
+                principalDenies.findBySubjectTypeAndSubjectId(type, subjectId).stream()
+                        .map(deny -> new DenyLift(deny.getPattern(), deny.getCreatedBy(),
+                                deny.getWriterApexRoleId()))
+                        .toList());
     }
 
     @Override

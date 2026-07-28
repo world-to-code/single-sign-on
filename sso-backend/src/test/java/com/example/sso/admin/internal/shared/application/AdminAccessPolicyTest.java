@@ -11,6 +11,7 @@ import com.example.sso.portal.application.ApplicationView;
 import com.example.sso.resource.authorization.UserAuthorization;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.deny.DenyAuthor;
+import com.example.sso.user.deny.DenyLift;
 import com.example.sso.user.deny.DenySubjectKind;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.RoleHierarchyService;
@@ -770,6 +771,67 @@ class AdminAccessPolicyTest {
 
         assertThat(policy.mayLiftDeny(DenySubjectKind.USER, OTHER_ID, Permissions.USER_READ,
                 UUID.randomUUID(), authorApex)).isTrue();
+    }
+
+    /**
+     * The batch form must reach the SAME verdict as asking row by row — it exists to resolve the actor once,
+     * not to decide differently. One un-liftable row refuses the batch.
+     */
+    @Test
+    void aBatchIsRefusedWhenAnySingleDenyInItWouldBe() {
+        UUID authorApex = UUID.randomUUID();
+        UUID peerApex = UUID.randomUUID();
+        signInWith(Permissions.USER_READ);
+        when(userService.effectiveAuthorities(ACTOR_ID)).thenReturn(Set.of(Permissions.USER_READ));
+        when(userAuth.canManage(ACTOR_ID, OTHER_ID)).thenReturn(true);
+        when(roleHierarchy.actorMayManageRole(ACTOR_ID, authorApex)).thenReturn(true);
+        when(roleHierarchy.actorMayManageRole(ACTOR_ID, peerApex)).thenReturn(true);
+        when(roleHierarchy.apexRolesOf(ACTOR_ID)).thenReturn(Set.of(peerApex)); // peerApex is AT my level
+
+        DenyLift liftable = new DenyLift(Permissions.USER_READ, UUID.randomUUID(), authorApex);
+        DenyLift peers = new DenyLift(Permissions.USER_READ, UUID.randomUUID(), peerApex);
+
+        assertThat(policy.mayLiftDenies(DenySubjectKind.USER, OTHER_ID, List.of(liftable))).isTrue();
+        assertThat(policy.mayLiftDenies(DenySubjectKind.USER, OTHER_ID, List.of(liftable, peers))).isFalse();
+    }
+
+    /** A pattern the actor could not grant refuses the batch too — the ceiling is per row, not per subject. */
+    @Test
+    void aBatchIsRefusedWhenOneRowsPatternIsBeyondTheActor() {
+        signInWith(Permissions.USER_READ);
+        when(userService.effectiveAuthorities(ACTOR_ID)).thenReturn(Set.of(Permissions.USER_READ));
+        when(userAuth.canManage(ACTOR_ID, OTHER_ID)).thenReturn(true);
+
+        assertThat(policy.mayLiftDenies(DenySubjectKind.USER, OTHER_ID, List.of(
+                new DenyLift(Permissions.USER_READ, ACTOR_ID, UUID.randomUUID()),
+                new DenyLift(Permissions.USER_DELETE, ACTOR_ID, UUID.randomUUID())))).isFalse();
+    }
+
+    /** Nothing to lift, so nothing to authorize — and the actor is never even resolved. */
+    @Test
+    void anEmptyBatchIsAllowedWithoutResolvingTheActor() {
+        assertThat(policy.mayLiftDenies(DenySubjectKind.USER, OTHER_ID, List.of())).isTrue();
+
+        verify(userService, never()).effectiveAuthorities(any());
+    }
+
+    /**
+     * The reason the batch form exists: the actor's authority set is hydrated ONCE for the whole subject.
+     * Row by row it was re-read per deny — roles, group-delegated roles, the inheritance DAG and the actor's
+     * own denies — multiplied again by mapping target and again by the two evaluations a profile move makes.
+     */
+    @Test
+    void theActorsAuthoritiesAreResolvedOncePerBatch() {
+        signInWith(Permissions.USER_READ);
+        when(userService.effectiveAuthorities(ACTOR_ID)).thenReturn(Set.of(Permissions.USER_READ));
+        when(userAuth.canManage(ACTOR_ID, OTHER_ID)).thenReturn(true);
+
+        policy.mayLiftDenies(DenySubjectKind.USER, OTHER_ID, List.of(
+                new DenyLift(Permissions.USER_READ, ACTOR_ID, UUID.randomUUID()),
+                new DenyLift(Permissions.USER_READ, ACTOR_ID, UUID.randomUUID()),
+                new DenyLift(Permissions.USER_READ, ACTOR_ID, UUID.randomUUID())));
+
+        verify(userService, times(1)).effectiveAuthorities(ACTOR_ID);
     }
 
     @Test
