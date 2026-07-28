@@ -11,6 +11,17 @@ export const errors = {
   tooLarge: "That file is too large to upload.",
   failed: "Request failed ({{status}}).",
 
+  // Copy keyed by the ProblemDetail `code`, used when the response carried no detail at all (a proxy error
+  // page, a truncated body). The server localizes every detail it sends, so these are a floor, not a
+  // translation layer — duplicating the catalogue here is how the two drift.
+  code_FORBIDDEN: "You don't have permission for this action.",
+  code_NOT_FOUND: "Not found — it may have been removed.",
+  code_CONFLICT: "Conflict — the change wasn't applied.",
+  code_BAD_REQUEST: "Invalid input — please check the form.",
+  code_VALIDATION_FAILED: "Some values are invalid — please check the form.",
+  code_UNAUTHORIZED: "Re-authentication required — please retry.",
+  code_LOCKED: "This account is locked.",
+
   // The four load-failure panels (DESIGN.md §5). A 403 discloses nothing about existence; only
   // network/server failures are retryable and carry a trace ID. Titles say what happened, never apologise.
   failureNetworkTitle: "Couldn't reach the server",

@@ -33,28 +33,66 @@ export class StepUpCancelledError extends Error {
   }
 }
 
-/** Human-friendly copy for a caught request error, mapping known statuses to plain language. */
+/** The server's ProblemDetail `detail`, or null when parse() only had a status line to go on. */
+function serverDetail(e: ApiError): string | null {
+  return e.message.startsWith("HTTP ") ? null : e.message;
+}
+
+/**
+ * Our copy per stable ProblemDetail `code`. Declared as a map rather than built from the code string so the
+ * key is type-checked against the bundle — a code the server adds without copy here falls through to the
+ * status line instead of rendering a missing-key placeholder at the user.
+ */
+const CODE_COPY = {
+  FORBIDDEN: "code_FORBIDDEN",
+  NOT_FOUND: "code_NOT_FOUND",
+  CONFLICT: "code_CONFLICT",
+  BAD_REQUEST: "code_BAD_REQUEST",
+  VALIDATION_FAILED: "code_VALIDATION_FAILED",
+  UNAUTHORIZED: "code_UNAUTHORIZED",
+  LOCKED: "code_LOCKED",
+} as const;
+
+function codeCopy(code: string | undefined): string | null {
+  const key = code ? CODE_COPY[code as keyof typeof CODE_COPY] : undefined;
+  return key ? i18n.t(key, { ns: "errors" }) : null;
+}
+
+/**
+ * Human-friendly copy for a caught request error.
+ *
+ * <p>The server's `detail` comes first for every status, because EVERY 4xx detail is now resolved from the
+ * message bundle against the request's Accept-Language. That was not always true: three of the five handlers
+ * built their detail in English while this function (correctly) preferred it, which is exactly how a Korean
+ * console rendered "Access is denied." — the response and the screen disagreeing on language rather than on
+ * meaning.
+ *
+ * <p>401 is the deliberate exception: its detail is shared by every unauthenticated outcome so it cannot say
+ * anything specific, and saying something specific is what account enumeration is made of.
+ */
 export function errorMessage(e: unknown): string {
   if (e instanceof StepUpCancelledError) {
     return ""; // cancelled step-up: nothing went wrong, so show no message
   }
   if (e instanceof ApiError) {
-    // The server's ProblemDetail `detail` (when parse() captured one) is more precise than a status
-    // line for input/conflict errors — e.g. "invalid CIDR: x" or "zone is referenced by a policy".
-    const detail = e.message.startsWith("HTTP ") ? null : e.message;
-    switch (e.status) {
-      // The backend localizes these `detail` strings by Accept-Language, so prefer them; the rest are our
-      // copy. A bare "Forbidden" hides the one thing a 403 usually needs to say — WHY, and what to do next.
-      case 400: return detail ?? i18n.t("badRequest", { ns: "errors" });
-      case 401: return i18n.t("unauthorized", { ns: "errors" });
-      case 403: return detail ?? i18n.t("forbidden", { ns: "errors" });
-      case 404: return i18n.t("notFound", { ns: "errors" });
-      case 409: return detail ?? i18n.t("conflict", { ns: "errors" });
-      case 413: return i18n.t("tooLarge", { ns: "errors" });
-      default: return i18n.t("failed", { ns: "errors", status: e.status });
-    }
+    if (e.status === 401) return i18n.t("unauthorized", { ns: "errors" });
+    // 413 never reaches the application — the servlet container rejects the upload — so there is no detail.
+    if (e.status === 413) return i18n.t("tooLarge", { ns: "errors" });
+    return serverDetail(e)
+      ?? codeCopy(e.code)
+      ?? statusCopy(e.status);
   }
   return e instanceof Error ? e.message : String(e);
+}
+
+function statusCopy(status: number): string {
+  switch (status) {
+    case 400: return i18n.t("badRequest", { ns: "errors" });
+    case 403: return i18n.t("forbidden", { ns: "errors" });
+    case 404: return i18n.t("notFound", { ns: "errors" });
+    case 409: return i18n.t("conflict", { ns: "errors" });
+    default: return i18n.t("failed", { ns: "errors", status });
+  }
 }
 
 function csrfHeader(): Record<string, string> {
