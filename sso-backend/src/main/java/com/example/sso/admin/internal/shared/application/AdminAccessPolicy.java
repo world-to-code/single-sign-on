@@ -6,9 +6,7 @@ import com.example.sso.user.deny.DenyAuthor;
 import com.example.sso.user.deny.DenyLift;
 import com.example.sso.user.deny.DenySubjectKind;
 import com.example.sso.user.rbac.Permissions;
-import com.example.sso.user.role.RoleHierarchyService;
 import com.example.sso.user.role.Roles;
-import com.example.sso.user.account.UserService;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -43,8 +41,7 @@ public class AdminAccessPolicy {
     private final ActingAdmin actingAdmin;
     private final AdminScope scope;
     private final RoleGrantCeiling ceiling;
-    private final UserService userService;
-    private final RoleHierarchyService roleHierarchy;
+    private final DenyAuthorityPolicy denyPolicy;
 
     /**
      * User scope: whether the acting admin may act on {@code targetId} at all. A super admin
@@ -351,14 +348,7 @@ public class AdminAccessPolicy {
      * — they must administer the subject, and they must hold a single unambiguous role position (else refused).
      */
     public Optional<DenyAuthor> authorizeDenyAuthor(DenySubjectKind kind, UUID subjectId, String pattern) {
-        return actingAdmin.id().flatMap(actorId -> {
-            if (!mayGrantLive(userService.effectiveAuthorities(actorId), pattern)
-                    || !mayReachDenySubject(kind, subjectId)) {
-                return Optional.empty();
-            }
-            Set<UUID> apex = roleHierarchy.apexRolesOf(actorId);
-            return apex.size() == 1 ? Optional.of(new DenyAuthor(actorId, apex.iterator().next())) : Optional.empty();
-        });
+        return denyPolicy.authorizeDenyAuthor(kind, subjectId, pattern);
     }
 
     /**
@@ -369,7 +359,7 @@ public class AdminAccessPolicy {
      */
     public boolean mayLiftDeny(DenySubjectKind kind, UUID subjectId, String pattern, UUID createdBy,
             UUID writerApexRoleId) {
-        return mayLiftDenies(kind, subjectId, List.of(new DenyLift(pattern, createdBy, writerApexRoleId)));
+        return denyPolicy.mayLiftDeny(kind, subjectId, pattern, createdBy, writerApexRoleId);
     }
 
     /**
@@ -384,48 +374,15 @@ public class AdminAccessPolicy {
      * <p>Empty batch is true: nothing to lift, nothing to authorize. Unresolved actor is false, as ever.
      */
     public boolean mayLiftDenies(DenySubjectKind kind, UUID subjectId, Collection<DenyLift> denies) {
-        if (denies.isEmpty()) {
-            return true;
-        }
-        return actingAdmin.id().map(actorId -> {
-            if (kind == DenySubjectKind.USER && actorId.equals(subjectId)) {
-                return false; // never re-grant yourself by lifting a deny on your own account
-            }
-            if (!mayReachDenySubject(kind, subjectId)) {
-                return false;
-            }
-            Set<String> actorAuthorities = userService.effectiveAuthorities(actorId);
-            return denies.stream().allMatch(deny -> mayGrantLive(actorAuthorities, deny.pattern())
-                    && (actorId.equals(deny.createdBy()) || strictlyDominates(actorId, deny.writerApexRoleId())));
-        }).orElse(false);
+        return denyPolicy.mayLiftDenies(kind, subjectId, denies);
     }
 
     /** LIVE grant-only-what-you-hold for ONE name: a super grants anything; else a grantable, non-platform name
      *  the actor's live authorities actually hold (the wildcard token or the concrete permission). */
-    private boolean mayGrantLive(Set<String> authorities, String pattern) {
-        return authorities.contains(ADMIN_ROLE)
-                || (Permissions.isGrantableName(pattern) && !Permissions.isPlatformGrant(pattern)
-                        && authorities.contains(pattern));
-    }
 
     /** The actor administers the deny's subject — the SAME access the grant path demands, per subject kind. */
-    private boolean mayReachDenySubject(DenySubjectKind kind, UUID subjectId) {
-        return switch (kind) {
-            case USER -> canAccessUser(subjectId);
-            case ROLE -> mayAssignTarget(MappingTargetKind.ROLE, subjectId);
-            case GROUP -> canAccessGroup(subjectId);
-            // A platform super may author for any org (or the org-null platform veto); a tenant only its own.
-            case ORG -> isCurrentActorUnscoped()
-                    || (subjectId != null && administersBoundOrg() && subjectId.equals(actingOrg()));
-        };
-    }
 
     /** The actor is strictly above the author's frozen apex: may manage that role AND it is not at their level. */
-    private boolean strictlyDominates(UUID actorId, UUID writerApexRoleId) {
-        return writerApexRoleId != null
-                && roleHierarchy.actorMayManageRole(actorId, writerApexRoleId)
-                && !roleHierarchy.apexRolesOf(actorId).contains(writerApexRoleId);
-    }
 
     /**
      * Blocks disabling any administrator (self or other) via a profile update, and self-revocation of a
@@ -535,7 +492,7 @@ public class AdminAccessPolicy {
      * only for the GLOBAL super-admin role (a tenant cannot mint a system {@code ROLE_ADMIN}).
      */
     private boolean isAdmin(UUID userId) {
-        return userService.effectiveAuthorities(userId).contains(ADMIN_ROLE);
+        return actingAdmin.isAdmin(userId);
     }
 
     /**
@@ -544,7 +501,7 @@ public class AdminAccessPolicy {
      * kept as a distinct name for the actor-side intent at privilege-gate call sites.
      */
     private boolean isSuper(UUID userId) {
-        return userService.hasRole(userId, ADMIN_ROLE);
+        return actingAdmin.isSuper(userId);
     }
 
     private boolean containsAdmin(Collection<String> roles) {

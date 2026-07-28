@@ -91,7 +91,9 @@ class AdminAccessPolicyTest {
         AdminScope scope = new AdminScope(actingAdmin, userService, userGroups, userAuth, groupAuth, appAuth,
                 resourceAuth, orgAuth, applications, orgContext);
         RoleGrantCeiling ceiling = new RoleGrantCeiling(actingAdmin, scope, roleService, roleHierarchy, userGroups);
-        policy = new AdminAccessPolicy(actingAdmin, scope, ceiling, userService, roleHierarchy);
+        DenyAuthorityPolicy denyPolicy =
+                new DenyAuthorityPolicy(actingAdmin, scope, ceiling, userService, roleHierarchy);
+        policy = new AdminAccessPolicy(actingAdmin, scope, ceiling, denyPolicy);
 
         UserAccount actor = mock(UserAccount.class);
         when(actor.getId()).thenReturn(ACTOR_ID);
@@ -772,6 +774,23 @@ class AdminAccessPolicyTest {
 
         assertThat(policy.mayLiftDeny(DenySubjectKind.USER, OTHER_ID, Permissions.USER_READ,
                 ACTOR_ID, UUID.randomUUID())).isTrue(); // createdBy == actor
+    }
+
+    /**
+     * The refusal that no rank clears: nobody lifts a deny on their OWN account.
+     *
+     * <p>An actor who AUTHORED the deny satisfies the provenance term outright, so without this guard
+     * self-re-granting is the one lift that needs no dominance at all — author a deny on yourself, lift it,
+     * and the ceiling never had a say. It is also the only term here that is not grant-symmetric, which is why
+     * it is asked before reach and provenance rather than folded into them.
+     */
+    @Test
+    void nobodyLiftsADenyOnTheirOwnAccountEvenTheAuthor() {
+        signInWith(Permissions.USER_READ);
+        when(userService.effectiveAuthorities(ACTOR_ID)).thenReturn(Set.of(Permissions.USER_READ));
+
+        assertThat(policy.mayLiftDeny(DenySubjectKind.USER, ACTOR_ID, Permissions.USER_READ,
+                ACTOR_ID, UUID.randomUUID())).isFalse();
     }
 
     @Test
