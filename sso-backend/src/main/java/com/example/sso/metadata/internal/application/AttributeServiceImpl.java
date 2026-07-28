@@ -1,10 +1,8 @@
 package com.example.sso.metadata.internal.application;
 
 import com.example.sso.metadata.Attribute;
-import com.example.sso.metadata.AttributeKeyPolicyGuard;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityAttributeChangedEvent;
-import com.example.sso.metadata.AttributeValueGrantGuard;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.metadata.internal.domain.EntityAttribute;
 import com.example.sso.metadata.internal.domain.EntityAttributeRepository;
@@ -24,7 +22,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,27 +36,10 @@ import org.springframework.transaction.annotation.Transactional;
 class AttributeServiceImpl implements AttributeService {
 
     private final EntityAttributeRepository attributes;
-    private final AttributeDefinitionService definitions;
     private final OrgTierGuard tierGuard;
     private final ApplicationEventPublisher events;
-    /**
-     * Lazy, to break a construction cycle: the guard reaches the mapping rules, whose evaluator reads the
-     * attributes this service owns. Resolved on first use, long after construction — the same device
-     * {@code OrgContext} uses for its connection binder.
-     *
-     * <p>{@code getObject()} rather than {@code ifAvailable()}: a missing binder there legitimately means "no
-     * transaction", but a missing guard here would mean the ceiling silently stops being enforced. It throws
-     * instead, which is loud.
-     */
-    private final ObjectProvider<AttributeValueGrantGuard> grantGuard;
-    /**
-     * The policy-binding twin of {@link #grantGuard}. A binding tests an attribute to pick a stricter auth or
-     * session policy, re-read on every request, so writing OR removing the value it reads moves a live session's
-     * posture — and removal is the sharper edge: dropping the value falls the target back to the looser org
-     * default. Whoever moves posture must hold the authority to set that policy. Injected directly, not lazily:
-     * the portal impl reads only the bindings, never back into this service, so there is no construction cycle.
-     */
-    private final AttributeKeyPolicyGuard policyGuard;
+    /** Every question about WHETHER a key may be written or removed — see {@link AttributeWriteCeiling}. */
+    private final AttributeWriteCeiling ceiling;
 
     @Override
     @Transactional(readOnly = true)
@@ -137,7 +117,7 @@ class AttributeServiceImpl implements AttributeService {
     @Override
     @Transactional
     public void set(EntityKind kind, String entityId, String key, String value) {
-        requireReplaceable(kind, key);
+        ceiling.requireReplaceable(kind, key);
         UUID tier = tierGuard.currentTier();
         List<EntityAttribute> rows = ownRows(kind, entityId, key, tier);
         List<EntityAttribute> stale = rows.stream().filter(row -> !row.getAttrValue().equals(value)).toList();
@@ -156,7 +136,7 @@ class AttributeServiceImpl implements AttributeService {
     @Override
     @Transactional
     public void add(EntityKind kind, String entityId, String key, String value) {
-        requireWritable(kind, key);
+        ceiling.requireWritable(kind, key);
         UUID tier = tierGuard.currentTier();
         if (!ownValueExists(kind, entityId, key, value, tier)) { // idempotent — never a duplicate (key,value)
             attributes.save(new EntityAttribute(kind, entityId, key, value, tier));
@@ -170,9 +150,9 @@ class AttributeServiceImpl implements AttributeService {
         // Ownership is per key (a group tag re-checks the USER key too); the grant ceiling is asked ONCE over
         // the whole key set. The guard reaches the mapping rules, so asking it per key re-ran that lookup for
         // every attribute of a bulk write — a bulk import names many keys at once.
-        values.keySet().forEach(key -> requireLocallyOwned(kind, key));
-        requireMayDecideGrants(kind, values.keySet());
-        requireMayDecidePolicy(kind, values.keySet());
+        ceiling.requireAllLocallyOwned(kind, values.keySet());
+        ceiling.requireMayDecideGrants(kind, values.keySet());
+        ceiling.requireMayDecidePolicy(kind, values.keySet());
         UUID tier = tierGuard.currentTier();
         boolean wrote = false;
         for (Map.Entry<String, List<String>> attribute : values.entrySet()) {
@@ -200,7 +180,7 @@ class AttributeServiceImpl implements AttributeService {
     @Override
     @Transactional
     public void removeValue(EntityKind kind, String entityId, String key, String value) {
-        requireRemovable(kind, key);
+        ceiling.requireRemovable(kind, List.of(key));
         UUID tier = tierGuard.currentTier();
         List<EntityAttribute> rows = ownRows(kind, entityId, key, tier).stream()
                 .filter(row -> row.getAttrValue().equals(value)).toList();
@@ -213,7 +193,7 @@ class AttributeServiceImpl implements AttributeService {
     @Override
     @Transactional
     public void remove(EntityKind kind, String entityId, String key) {
-        requireRemovable(kind, key);
+        ceiling.requireRemovable(kind, List.of(key));
         UUID tier = tierGuard.currentTier();
         List<EntityAttribute> rows = ownRows(kind, entityId, key, tier);
         if (!rows.isEmpty()) {
@@ -230,10 +210,8 @@ class AttributeServiceImpl implements AttributeService {
         }
         // Refuse the whole set before deleting any of it: ownership per key, the policy ceiling once for all of
         // them (a binding removal loosens posture just as a single remove does).
-        keys.forEach(key -> requireLocallyOwned(kind, key));
+        ceiling.requireRemovable(kind, keys);
         List<String> distinct = keys.stream().distinct().toList();
-        requireMayDecidePolicy(kind, distinct);
-        requireRemovalLiftsNoDeny(kind, distinct);
         UUID tier = tierGuard.currentTier();
         // One statement, and it returns the row count. A derived delete would SELECT every row and issue a
         // DELETE each; the count is what matters more, because this retirement can retract an ABAC-granted
@@ -251,23 +229,9 @@ class AttributeServiceImpl implements AttributeService {
     @Override
     @Transactional(readOnly = true)
     public Set<String> keysNotRemovable(EntityKind kind, Collection<String> keys) {
-        if (keys == null || keys.isEmpty()) {
-            return Set.of();
-        }
-        List<String> distinct = keys.stream().distinct().toList();
-        Set<String> refused = new LinkedHashSet<>();
-        // Deliberately the same three questions removeAll asks, in the same order, so the disclosure and the
-        // write cannot answer differently.
-        for (String key : distinct) {
-            if (isSourceOwned(kind, key) || (kind == EntityKind.GROUP && isSourceOwned(EntityKind.USER, key))) {
-                refused.add(key);
-            }
-        }
-        if (kind == EntityKind.USER || kind == EntityKind.GROUP) {
-            refused.addAll(policyGuard.keysBeyondAuthority(distinct));
-            refused.addAll(grantGuard.getObject().keysWhoseRemovalLiftsDeny(distinct));
-        }
-        return refused;
+        // The SAME method the write refuses on, not a re-statement of it — the preview and the write cannot
+        // answer differently because there is only one answer.
+        return ceiling.keysNotRemovable(kind, keys);
     }
 
     @Override
@@ -326,7 +290,7 @@ class AttributeServiceImpl implements AttributeService {
     @Override
     @Transactional
     public void applyFromDirectory(EntityKind kind, String entityId, String key, Collection<String> values) {
-        requireDirectoryOwned(kind, key);
+        ceiling.requireDirectoryOwned(kind, key);
         UUID tier = tierGuard.currentTier();
         List<EntityAttribute> rows = ownRows(kind, entityId, key, tier);
         Set<String> wanted = Set.copyOf(values);
@@ -340,137 +304,6 @@ class AttributeServiceImpl implements AttributeService {
                 .forEach(value -> attributes.save(new EntityAttribute(kind, entityId, key, value, tier)));
         if (!stale.isEmpty() || !present.containsAll(wanted)) {
             events.publishEvent(new EntityAttributeChangedEvent(kind, entityId, tier));
-        }
-    }
-
-    /**
-     * The two questions a local write has to pass: does a directory own this key, and does writing it decide a
-     * privilege the actor could not confer by hand. Kept together because every write path asks both, and one
-     * of them was added long after the other.
-     */
-    private void requireWritable(EntityKind kind, String key) {
-        requireLocallyOwned(kind, key);
-        requireMayDecideGrants(kind, Set.of(key));
-        requireMayDecidePolicy(kind, Set.of(key));
-    }
-
-    /**
-     * What a REPLACING write asks on top of {@link #requireWritable}: {@code set} narrows the key to exactly one
-     * value, so it DELETES as well as writes — a rule reading {@code key=x} is defeated by writing {@code key=y}
-     * just as surely as by removing the key, and the deny that rode on the membership goes with it. Same
-     * ceiling, or the removal guard has a way around it.
-     *
-     * <p>Deliberately NOT asked of {@code add}, which only ever inserts a missing {@code (key, value)} and
-     * leaves the existing ones alone. An additive write can retract nothing, so it can lift no deny; requiring
-     * the lift authority there refused administrators a write that bought no safety.
-     */
-    private void requireReplaceable(EntityKind kind, String key) {
-        requireWritable(kind, key);
-        requireRemovalLiftsNoDeny(kind, Set.of(key));
-    }
-
-    /**
-     * Removal carries no mapping-rule GRANT ceiling: a grant is on the PRESENCE of a value (operators are
-     * positive-only — {@link com.example.sso.mapping.MappingRuleService} rejects {@code NOT_EXISTS}/
-     * {@code NOT_EQUALS} at creation), so taking a value away can only retract a grant, never make one, and an
-     * administrator must always be able to retract. But a policy binding is the OPPOSITE polarity: it tightens
-     * on presence, so removing the value it reads drops the target back to the looser org default — a posture
-     * move that needs the same policy authority a write does. So removal keeps the policy ceiling, not the grant one.
-     */
-    private void requireRemovable(EntityKind kind, String key) {
-        requireLocallyOwned(kind, key);
-        requireMayDecidePolicy(kind, Set.of(key));
-        requireRemovalLiftsNoDeny(kind, Set.of(key));
-    }
-
-    /**
-     * The one case where removal does NOT de-escalate: a deny riding on the group or role a mapping rule
-     * confers. Losing the membership loses the deny, so deleting the attribute hands the withheld permission
-     * back — without the lift authority, and on the actor's own account, where lifting is refused outright.
-     */
-    private void requireRemovalLiftsNoDeny(EntityKind kind, Collection<String> keys) {
-        if (kind != EntityKind.USER && kind != EntityKind.GROUP) {
-            return;
-        }
-        Set<String> beyond = grantGuard.getObject().keysWhoseRemovalLiftsDeny(keys);
-        if (!beyond.isEmpty()) {
-            throw ForbiddenException.of("metadata.attribute.denyGoverned", beyond.iterator().next());
-        }
-    }
-
-    /**
-     * A mapping rule can confer a role on whoever carries a value, so writing the key it reads is a grant by
-     * another route. Group membership works the same way and is already refused unless the actor could confer
-     * the group's roles; this is that rule, for the other route. The ceiling is asked over the whole key set in
-     * one call — the guard reaches the mapping rules, so a per-key call re-ran that lookup for every key.
-     *
-     * <p>USER and GROUP only: a group tag is unioned into every member's attributes and tested by the same
-     * predicate, so it reaches rules exactly as a user attribute does. Application and resource tags are not.
-     */
-    private void requireMayDecideGrants(EntityKind kind, Collection<String> keys) {
-        if (kind != EntityKind.USER && kind != EntityKind.GROUP) {
-            return;
-        }
-        Set<String> beyond = grantGuard.getObject().keysBeyondAuthority(keys);
-        if (!beyond.isEmpty()) {
-            throw ForbiddenException.of("metadata.attribute.grantGoverned", beyond.iterator().next());
-        }
-    }
-
-    /**
-     * A policy binding decides a live session's auth/session policy by testing an attribute, re-read every
-     * request, so writing OR removing the value it reads moves the target's posture. Whoever moves it must hold
-     * the authority to set that policy themselves — the same ceiling {@code AttributeKeyPolicyGuard} enforces
-     * when a source is aimed at the key. Asked over the whole key set in one call, for the reason
-     * {@link #requireMayDecideGrants} gives.
-     *
-     * <p>USER and GROUP only, and the key NAME is enough for both: a binding condition carries only the key, and
-     * a group tag is unioned into every member's attributes, so a binding reading the key matches whether it was
-     * set on a user or on a group they belong to.
-     */
-    private void requireMayDecidePolicy(EntityKind kind, Collection<String> keys) {
-        if (kind != EntityKind.USER && kind != EntityKind.GROUP) {
-            return;
-        }
-        Set<String> beyond = policyGuard.keysBeyondAuthority(keys);
-        if (!beyond.isEmpty()) {
-            throw ForbiddenException.of("metadata.attribute.policyGoverned", beyond.iterator().next());
-        }
-    }
-
-    private void requireLocallyOwned(EntityKind kind, String key) {
-        refuseIfSourceOwned(kind, key);
-        if (kind == EntityKind.GROUP) {
-            // A group tag is unioned into every member's attributes and tested by the SAME predicate, with no
-            // kind in the comparison (PolicyBindingResolverImpl.effectiveAttributes). Tagging a group with a
-            // directory-owned USER key would forge that key for all its members, so the ownership the USER
-            // branch enforces has to hold here too — otherwise it holds on one path and not the other.
-            refuseIfSourceOwned(EntityKind.USER, key);
-        }
-    }
-
-    private void refuseIfSourceOwned(EntityKind kind, String key) {
-        if (isSourceOwned(kind, key)) {
-            throw ConflictException.of("attribute.directoryOwned", key);
-        }
-    }
-
-    private boolean isSourceOwned(EntityKind kind, String key) {
-        return definitions.definitionOf(kind, key)
-                .filter(definition -> !definition.locallyEditable())
-                .isPresent();
-    }
-
-    /**
-     * The mirror image, and the half that is easy to forget: a sync may only write what its schema says it
-     * owns. Without this a mis-mapped connector silently eats values an administrator owns, and an undeclared
-     * key would let a sync invent schema by writing to it.
-     */
-    private void requireDirectoryOwned(EntityKind kind, String key) {
-        AttributeDefinition definition = definitions.definitionOf(kind, key)
-                .orElseThrow(() -> ConflictException.of("attribute.notDeclared", key));
-        if (definition.locallyEditable()) {
-            throw ConflictException.of("attribute.locallyOwned", key);
         }
     }
 

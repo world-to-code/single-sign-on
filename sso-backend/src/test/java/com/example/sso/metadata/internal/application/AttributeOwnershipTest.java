@@ -60,8 +60,10 @@ class AttributeOwnershipTest {
 
     @BeforeEach
     void setUp() {
-        service = new AttributeServiceImpl(
-                attributes, definitions, tierGuard, events, providerOf(grantGuard), policyGuard);
+        // A REAL ceiling over the same mocks: this suite is about the rule holding IN THE STORE, so stubbing
+        // the ceiling would move the thing under test out of the test.
+        service = new AttributeServiceImpl(attributes, tierGuard, events,
+                new AttributeWriteCeiling(definitions, providerOf(grantGuard), policyGuard));
         lenient().when(grantGuard.keysBeyondAuthority(any())).thenReturn(Set.of());
         lenient().when(grantGuard.keysWhoseRemovalLiftsDeny(any())).thenReturn(Set.of());
         lenient().when(policyGuard.keysBeyondAuthority(any())).thenReturn(Set.of());
@@ -265,7 +267,9 @@ class AttributeOwnershipTest {
      */
     @Test
     void refusesRemovingAKeyWhosePolicyTheActorCannotSet() {
-        when(policyGuard.keysBeyondAuthority(Set.of("clearance"))).thenReturn(Set.of("clearance"));
+        // A LIST, not a set: the removal path preserves the caller's order so the refusal it reports
+        // first is deterministic.
+        when(policyGuard.keysBeyondAuthority(List.of("clearance"))).thenReturn(Set.of("clearance"));
         lenient().when(definitions.definitionOf(EntityKind.USER, "clearance")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.remove(EntityKind.USER, ENTITY, "clearance"))
@@ -404,7 +408,7 @@ class AttributeOwnershipTest {
      */
     @Test
     void refusesToRemoveAKeyWhoseLossWouldLiftADenyTheActorCannotLift() {
-        when(grantGuard.keysWhoseRemovalLiftsDeny(Set.of("employment"))).thenReturn(Set.of("employment"));
+        when(grantGuard.keysWhoseRemovalLiftsDeny(List.of("employment"))).thenReturn(Set.of("employment"));
         lenient().when(definitions.definitionOf(EntityKind.USER, "employment")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.remove(EntityKind.USER, ENTITY, "employment"))
