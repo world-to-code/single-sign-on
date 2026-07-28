@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 /** Admin request to create a user; roles default to ROLE_USER when omitted. */
 public record CreateUserRequest(@NotBlank String username,
@@ -17,7 +18,12 @@ public record CreateUserRequest(@NotBlank String username,
                                 Set<String> roles,
                                 /* Attribute values for the profile a new user is created on; validated
                                    server-side against what that profile declares. */
-                                Map<String, List<String>> attributes) {
+                                Map<String, List<String>> attributes,
+                                /* The profile to create this person on; null takes the organization's
+                                   default. Sent explicitly so the values below are validated against the
+                                   SAME profile the form rendered, not whichever one happens to be default
+                                   when the request lands. */
+                                UUID profileId) {
 
     /** The create command, defaulting the role set to {@link Roles#USER} when none is given. */
     /** The declared attribute values, never null. */

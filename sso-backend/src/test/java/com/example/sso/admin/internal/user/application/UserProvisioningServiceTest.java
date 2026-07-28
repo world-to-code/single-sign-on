@@ -6,9 +6,13 @@ import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityKind;
+import com.example.sso.metadata.Profile;
 import com.example.sso.metadata.ProfileAttributeValidator;
+import com.example.sso.metadata.ProfileKind;
+import com.example.sso.metadata.ProfileService;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.account.UserAccount;
@@ -51,6 +55,7 @@ class UserProvisioningServiceTest {
 
     @Mock private UserService userService;
     @Mock private ProfileAttributeValidator validator;
+    @Mock private ProfileService profiles;
     @Mock private AttributeService attributes;
     @Mock private OrganizationService organizations;
     @Mock private ActingAdminTier tier;
@@ -60,8 +65,8 @@ class UserProvisioningServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new UserProvisioningService(userService, validator, attributes, organizations, tier,
-                auditLogger);
+        service = new UserProvisioningService(userService, validator, profiles, attributes, organizations,
+                tier, auditLogger);
         lenient().when(tier.actingOrg()).thenReturn(ORG);
     }
 
@@ -75,12 +80,66 @@ class UserProvisioningServiceTest {
         UserAccount created = user(userId); // the helper stubs, so it cannot run inside when(...)
         when(userService.createUser(eq(newUser), eq(org), any())).thenReturn(created);
 
-        service.create(NewUserCommand.fromConsole(newUser, Map.of("team", List.of("Platform"))));
+        service.create(NewUserCommand.fromConsole(newUser, Map.of("team", List.of("Platform")), null));
 
         verify(userService).assignProfile(userId, profile);
         // One call for the whole write, not one per value — see AttributeService.addAll.
         verify(attributes).addAll(EntityKind.USER, userId.toString(), Map.of("team", List.of("Platform")));
     }
+    /**
+     * The administrator picked a profile on the form, so the account is bound to THAT one — the organization's
+     * default is not consulted at all. Otherwise the form asks for one profile's required columns and the
+     * server files the answers under another.
+     */
+    @Test
+    void aChosenProfileIsUsedInsteadOfTheOrganizationsDefault() {
+        UUID chosen = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "pw", Set.of(Roles.USER));
+        when(profiles.requireAssignable(chosen))
+                .thenReturn(new Profile(chosen, "Contractor", ProfileKind.TENANT, null, false, true));
+        UserAccount created = user(userId);
+        when(userService.createUser(eq(newUser), eq(ORG), any())).thenReturn(created);
+
+        service.create(NewUserCommand.fromConsole(newUser, Map.of(), chosen));
+
+        verify(userService).assignProfile(userId, chosen);
+        verify(validator, never()).defaultForCreation();
+        verify(validator).validate(eq(chosen), any());
+    }
+
+    /**
+     * The chosen id is client input, so it is resolved rather than trusted — and the refusal must land BEFORE
+     * the account exists. Unchecked, another tenant's profile id bound a new account across the tenant
+     * boundary: the declaration lookup is org-scoped, so the foreign profile declared nothing and the
+     * required-column check passed over an empty set.
+     */
+    @Test
+    void aProfileTheCallersOrganizationDoesNotOwnRefusesTheCreation() {
+        UUID foreign = UUID.randomUUID();
+        NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "pw", Set.of(Roles.USER));
+        when(profiles.requireAssignable(foreign)).thenThrow(NotFoundException.of("metadata.profile.notFound"));
+
+        assertThatThrownBy(() -> service.create(NewUserCommand.fromConsole(newUser, Map.of(), foreign)))
+                .isInstanceOf(NotFoundException.class);
+
+        verify(userService, never()).createUser(any(), any(), any());
+    }
+
+    /** Same guard, the other refusal: a SOURCE profile of the caller's own organization cannot govern a user. */
+    @Test
+    void aSourceProfileRefusesTheCreation() {
+        UUID source = UUID.randomUUID();
+        NewUser newUser = new NewUser("bob", "bob@example.com", "Bob", "pw", Set.of(Roles.USER));
+        when(profiles.requireAssignable(source))
+                .thenThrow(BadRequestException.of("metadata.profile.notAssignable"));
+
+        assertThatThrownBy(() -> service.create(NewUserCommand.fromConsole(newUser, Map.of(), source)))
+                .isInstanceOf(BadRequestException.class);
+
+        verify(userService, never()).createUser(any(), any(), any());
+    }
+
     /** A blank value is "not supplied", not an empty attribute nobody can search for. */
     @Test
     void blankAttributeValuesAreNotStored() {
@@ -92,7 +151,7 @@ class UserProvisioningServiceTest {
         UserAccount created = user(userId);
         when(userService.createUser(eq(newUser), eq(org), any())).thenReturn(created);
 
-        service.create(NewUserCommand.fromConsole(newUser, Map.of("team", List.of("  "))));
+        service.create(NewUserCommand.fromConsole(newUser, Map.of("team", List.of("  ")), null));
 
         // Handed over as given; addAll is where a blank is skipped, and its own test says so.
         verify(attributes).addAll(EntityKind.USER, userId.toString(), Map.of("team", List.of("  ")));
@@ -107,7 +166,7 @@ class UserProvisioningServiceTest {
         UserAccount created = user(userId);
         when(userService.createUser(eq(newUser), eq(org), any())).thenReturn(created);
 
-        service.create(NewUserCommand.fromConsole(newUser, java.util.Map.of()));
+        service.create(NewUserCommand.fromConsole(newUser, Map.of(), null));
 
         verify(organizations).addMember(org, userId);
     }
@@ -119,7 +178,7 @@ class UserProvisioningServiceTest {
         UserAccount created = user(UUID.randomUUID());
         when(userService.createUser(eq(newUser), any(), any())).thenReturn(created);
 
-        service.create(NewUserCommand.fromConsole(newUser, java.util.Map.of()));
+        service.create(NewUserCommand.fromConsole(newUser, Map.of(), null));
 
         verify(organizations, never()).addMember(any(), any());
     }
@@ -129,7 +188,7 @@ class UserProvisioningServiceTest {
         when(userService.createUser(eq(newUser), any(), any()))
                 .thenThrow(new IllegalArgumentException("username taken"));
 
-        assertThatThrownBy(() -> service.create(NewUserCommand.fromConsole(newUser, Map.of())))
+        assertThatThrownBy(() -> service.create(NewUserCommand.fromConsole(newUser, Map.of(), null)))
                 .isInstanceOf(ConflictException.class);
     }
     @Test
@@ -138,7 +197,7 @@ class UserProvisioningServiceTest {
         UserAccount created = user(UUID.randomUUID());
         when(userService.createUser(eq(newUser), any(), any())).thenReturn(created);
 
-        service.create(NewUserCommand.fromConsole(newUser, java.util.Map.of()));
+        service.create(NewUserCommand.fromConsole(newUser, Map.of(), null));
 
         verify(auditLogger).log(eq(AuditType.USER_CREATED), eq(AuditSubjectType.USER), any(), any());
     }
@@ -149,7 +208,7 @@ class UserProvisioningServiceTest {
         UserAccount created = user(newId);
         when(userService.createUser(eq(newUser), any(), any())).thenReturn(created);
 
-        service.create(NewUserCommand.fromConsole(newUser, java.util.Map.of()));
+        service.create(NewUserCommand.fromConsole(newUser, Map.of(), null));
 
         verify(userService).requirePasswordReset(newId);
     }
@@ -159,7 +218,7 @@ class UserProvisioningServiceTest {
         UserAccount created = user(UUID.randomUUID());
         when(userService.createUser(eq(newUser), any(), any())).thenReturn(created);
 
-        service.create(NewUserCommand.fromConsole(newUser, java.util.Map.of()));
+        service.create(NewUserCommand.fromConsole(newUser, Map.of(), null));
 
         verify(userService, never()).requirePasswordReset(any());
     }
@@ -176,7 +235,7 @@ class UserProvisioningServiceTest {
         doThrow(BadRequestException.of("metadata.attribute.required", "Team"))
                 .when(validator).validate(eq(profile), any());
 
-        assertThatThrownBy(() -> service.create(NewUserCommand.fromConsole(newUser, Map.of("team", List.of("")))))
+        assertThatThrownBy(() -> service.create(NewUserCommand.fromConsole(newUser, Map.of("team", List.of("")), null)))
                 .isInstanceOf(BadRequestException.class);
 
         // The point of validating first: a rejected attribute must not leave a half-made account behind.

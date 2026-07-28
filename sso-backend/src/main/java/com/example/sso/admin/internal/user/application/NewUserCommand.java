@@ -21,11 +21,13 @@ public record NewUserCommand(NewUser user, Map<String, List<String>> attributeVa
                       OwnershipChallenge challenge) {
 
     /**
-     * One account, typed into the console. The organization's default profile governs it, and the new address
-     * gets an ownership challenge now — an administrator asserted it, its owner did not.
+     * One account, typed into the console, on the profile the administrator picked — {@code null} falls back to
+     * the organization's default. The new address gets an ownership challenge now: an administrator asserted
+     * it, its owner did not.
      */
-    public static NewUserCommand fromConsole(NewUser user, Map<String, List<String>> attributeValues) {
-        return new NewUserCommand(user, attributeValues, null, OwnershipChallenge.SEND);
+    public static NewUserCommand fromConsole(NewUser user, Map<String, List<String>> attributeValues,
+            UUID profileId) {
+        return new NewUserCommand(user, attributeValues, profileId, OwnershipChallenge.SEND);
     }
 
     /**

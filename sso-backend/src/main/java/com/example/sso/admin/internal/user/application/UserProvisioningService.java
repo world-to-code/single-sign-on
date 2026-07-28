@@ -7,6 +7,7 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.metadata.AttributeService;
 import com.example.sso.metadata.EntityKind;
 import com.example.sso.metadata.ProfileAttributeValidator;
+import com.example.sso.metadata.ProfileService;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.user.account.UserAccount;
@@ -33,6 +34,7 @@ public class UserProvisioningService {
 
     private final UserService userService;
     private final ProfileAttributeValidator validator;
+    private final ProfileService profiles;
     private final AttributeService attributes;
     private final OrganizationService organizations;
     private final ActingAdminTier tier;
@@ -77,12 +79,20 @@ public class UserProvisioningService {
      * tenant profile governs. Otherwise the caller's choice wins over the organization's default: an import
      * picked a profile and downloaded its template, so falling back would discard every column it was told to
      * provide.
+     *
+     * <p>That choice arrives from the client, so it is resolved rather than trusted. Unchecked, it bound an
+     * account to another tenant's profile — the declaration lookup is org-scoped, so a foreign id simply
+     * declares nothing and the required-column check passes over an empty set — or to one of the org's own
+     * SOURCE profiles, whose schema a console form can neither fill nor own.
      */
     private UUID profileToBind(NewUserCommand command, UUID org) {
         if (org == null) {
             return null;
         }
-        return command.profileId() != null ? command.profileId() : validator.defaultForCreation();
+        if (command.profileId() == null) {
+            return validator.defaultForCreation();
+        }
+        return profiles.requireAssignable(command.profileId()).id();
     }
 
     /**
