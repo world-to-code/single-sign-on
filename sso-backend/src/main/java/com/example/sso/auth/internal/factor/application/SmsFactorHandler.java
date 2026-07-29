@@ -2,9 +2,11 @@ package com.example.sso.auth.internal.factor.application;
 
 import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.mfa.SmsVerificationService;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.user.account.UserAccount;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
 import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -32,8 +34,12 @@ public class SmsFactorHandler implements FactorHandler {
     public FactorChallenge prepare(UserAccount user, HttpServletRequest request) {
         requireVerifiedPhone(user);
         String code = sms.generateCode();
+        String deliveryKey = request.getSession(true).getId();
+        // Cleared HERE, synchronously: leaving it to the send would let a resend followed quickly by a guess
+        // report the previous attempt's failure as this one's.
+        sms.clearDeliveryFailure(deliveryKey);
         challenge.issue(request.getSession(true), code);
-        sms.sendCode(user.getOrgId(), user.getPhoneNumber(), code);
+        sms.sendCode(user.getOrgId(), user.getPhoneNumber(), code, deliveryKey);
         return FactorChallenge.sent();
     }
 
@@ -43,7 +49,20 @@ public class SmsFactorHandler implements FactorHandler {
         if (!user.isPhoneVerified()) {
             return false;
         }
+        requireCodeWasDelivered(request);
         return challenge.matches(request.getSession(false), verification.code());
+    }
+
+    /**
+     * "That code is wrong" is the wrong answer when no code was ever sent. The send happens off the request
+     * thread, so its failure lands after the "we texted you" response has gone; this is the first moment the
+     * person can be told. No attempt is consumed either — there was nothing to get wrong.
+     */
+    private void requireCodeWasDelivered(HttpServletRequest request) {
+        HttpSession session = request.getSession(false);
+        if (session != null && sms.deliveryFailed(session.getId())) {
+            throw BadRequestException.of("auth.factor.sms.notDelivered");
+        }
     }
 
     /**

@@ -31,6 +31,7 @@ import org.springframework.web.client.RestClient;
 class SolapiSmsGateway implements SmsGateway {
 
     private static final String SIGNATURE_ALGORITHM = "HmacSHA256";
+    private static final String KOREA_COUNTRY_CODE = "82";
 
     private final RestClient http;
     private final SmsDelivery delivery;
@@ -70,7 +71,13 @@ class SolapiSmsGateway implements SmsGateway {
      * People type separators and the console accepts them; stripping belongs here, at the wire.
      */
     private String digitsOnly(String number) {
-        return number.replaceAll("[^0-9]", "");
+        String digits = number.replaceAll("[^0-9]", "");
+        // Solapi registers and compares KOREAN DOMESTIC numbers, so an international-form one never matches
+        // whatever is on the account: +82 10-1234-5678 becomes 821012345678, and 01012345678 is what was
+        // registered. Korean numbers all begin with 0, so a leading 82 is the country code and not a prefix.
+        return digits.startsWith(KOREA_COUNTRY_CODE) && !digits.startsWith("0")
+                ? "0" + digits.substring(KOREA_COUNTRY_CODE.length())
+                : digits;
     }
 
     /** {@code HMAC-SHA256 apiKey=…, date=…, salt=…, signature=HMAC(date+salt, apiSecret)} — Solapi's scheme. */

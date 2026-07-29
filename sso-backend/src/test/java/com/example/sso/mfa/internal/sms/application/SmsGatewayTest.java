@@ -129,6 +129,32 @@ class SmsGatewayTest {
                 .doesNotContain("-");
     }
 
+    /**
+     * Solapi registers Korean DOMESTIC numbers, so an international-form sending number never matches whatever
+     * is on the account — the provider answers "발신번호 미등록", which reads as though it were never registered.
+     * Korean numbers all begin with 0, so a leading 82 is the country code rather than a prefix.
+     */
+    @Test
+    void solapiConvertsAnInternationalKoreanNumberToDomesticForm() {
+        SmsAccount international = new SmsAccount(SmsProvider.SOLAPI, "API-KEY-1", SECRET, "+82 10-9999-8888");
+
+        solapi().send(international, "+82 10-1234-5678", "Your code is 123456");
+
+        assertThat(received.getFirst().body())
+                .contains("\"from\":\"01099998888\"")
+                .contains("\"to\":\"01012345678\"");
+    }
+
+    /** A number that already begins with 0 is left alone — 082… is a domestic prefix, not a country code. */
+    @Test
+    void solapiLeavesADomesticNumberUntouched() {
+        SmsAccount domestic = new SmsAccount(SmsProvider.SOLAPI, "API-KEY-1", SECRET, "0822345678");
+
+        solapi().send(domestic, "01012345678", "code");
+
+        assertThat(received.getFirst().body()).contains("\"from\":\"0822345678\"");
+    }
+
     /** Twilio wants E.164: separators go, the leading + stays — and is never invented for a number without one. */
     @Test
     void twilioNormalisesToE164WithoutInventingACountryCode() {

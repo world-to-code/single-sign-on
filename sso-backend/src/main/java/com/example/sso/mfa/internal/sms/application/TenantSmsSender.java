@@ -79,13 +79,13 @@ class TenantSmsSender implements SmsSender {
             gateway.send(account, phoneNumber, message);
         } catch (SmsDeliveryException firstAttempt) {
             if (!firstAttempt.retryable()) {
-                throw audited(firstAttempt, orgId);
+                throw audited(firstAttempt, account, orgId);
             }
             log.warn("SMS provider {} was not reached; retrying once", firstAttempt.provider());
             try {
                 gateway.send(account, phoneNumber, message);
             } catch (SmsDeliveryException retry) {
-                throw audited(retry, orgId);
+                throw audited(retry, account, orgId);
             }
         }
     }
@@ -98,8 +98,13 @@ class TenantSmsSender implements SmsSender {
      * <p>The record carries the provider and its error CODE, never its message: that text is a third party's
      * and would land verbatim in the audit row.
      */
-    private SmsDeliveryException audited(SmsDeliveryException failure, UUID orgId) {
-        log.error("SMS not delivered via {}: {} ({})", failure.provider(), failure.providerCode(),
+    private SmsDeliveryException audited(SmsDeliveryException failure, SmsAccount account, UUID orgId) {
+        // The SENDING number is named because the provider's commonest refusal is that it does not recognise
+        // it, and the value it compares is the normalised one — so an operator otherwise has no way to see that
+        // "+82 10-1234-5678" reached the provider as 821012345678 while 01012345678 is what they registered.
+        // The recipient is deliberately absent: that is an end user's phone number.
+        log.error("SMS not delivered via {} from sending number {}: {} ({})",
+                failure.provider(), account.senderNumber(), failure.providerCode(),
                 failure.providerDetail() == null ? "no explanation given" : failure.providerDetail());
         audit.record(new AuditRecord(AuditType.SMS_SEND_FAILED, AuditActor.of(), false,
                 "SMS not delivered via " + failure.provider(), null, AuditSubjectType.NONE, null, orgId,

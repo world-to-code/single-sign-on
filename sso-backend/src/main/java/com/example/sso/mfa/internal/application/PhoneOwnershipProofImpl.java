@@ -48,7 +48,7 @@ public class PhoneOwnershipProofImpl implements PhoneOwnershipProof {
         redis.opsForHash().putAll(key, Map.of(
                 CODE, code, PHONE, phoneNumber, ATTEMPTS, String.valueOf(maxAttempts)));
         redis.expire(key, ttl);
-        sms.sendCode(orgId, phoneNumber, code);
+        sms.sendCode(orgId, phoneNumber, code, null);
     }
 
     @Override

@@ -1,6 +1,7 @@
 package com.example.sso.auth.internal.factor.application;
 
 import com.example.sso.authpolicy.factor.AuthFactor;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.mfa.SmsVerificationService;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.user.account.UserAccount;
@@ -15,6 +16,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -51,6 +53,63 @@ class SmsFactorHandlerTest {
         return new FactorVerificationRequest(value, null, null);
     }
 
+    /**
+     * The send runs off the request thread, so its failure lands after "we texted you a code" has already
+     * reached the browser. Telling the person their code is WRONG at that point is the one answer that is
+     * certainly untrue — there was never a code to get right.
+     */
+    @Test
+    void aCodeThatWasNeverSentIsReportedAsSuchRatherThanAsAWrongCode() {
+        when(sms.generateCode()).thenReturn(CODE);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        handler.prepare(user, request);
+        when(sms.deliveryFailed(request.getSession(true).getId())).thenReturn(true);
+
+        assertThatThrownBy(() -> handler.verify(user, code("000000"), request))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("auth.factor.sms.notDelivered");
+    }
+
+    /** And the attempt is not spent: burning one of three tries for a code that never arrived is a lockout. */
+    @Test
+    void aFailedDeliveryDoesNotConsumeAnAttempt() {
+        when(sms.generateCode()).thenReturn(CODE);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        handler.prepare(user, request);
+        when(sms.deliveryFailed(request.getSession(true).getId())).thenReturn(true);
+
+        for (int attempt = 0; attempt < 5; attempt++) {
+            assertThatThrownBy(() -> handler.verify(user, code("000000"), request))
+                    .isInstanceOf(BadRequestException.class);
+        }
+
+        // The code still works once delivery recovers, which it would not if those had counted as tries.
+        when(sms.deliveryFailed(request.getSession(true).getId())).thenReturn(false);
+        assertThat(handler.verify(user, code(CODE), request)).isTrue();
+    }
+
+    /** A delivered code is unaffected — the check must not swallow the ordinary path. */
+    @Test
+    void aDeliveredCodeStillVerifiesNormally() {
+        when(sms.generateCode()).thenReturn(CODE);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        handler.prepare(user, request);
+        when(sms.deliveryFailed(request.getSession(true).getId())).thenReturn(false);
+
+        assertThat(handler.verify(user, code(CODE), request)).isTrue();
+    }
+
+    /** Asking for a fresh code forgets the previous failure, or the resend reports the attempt before it. */
+    @Test
+    void requestingAFreshCodeClearsAnEarlierFailure() {
+        when(sms.generateCode()).thenReturn(CODE);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+
+        handler.prepare(user, request);
+
+        verify(sms).clearDeliveryFailure(request.getSession(true).getId());
+    }
+
     @Test
     void factorIsSms() {
         assertThat(handler.factor()).isEqualTo(AuthFactor.SMS);
@@ -64,7 +123,7 @@ class SmsFactorHandlerTest {
         FactorChallenge challenge = handler.prepare(user, request);
 
         assertThat(challenge.prepared()).isTrue();
-        verify(sms).sendCode(ORG, PHONE, CODE); // via the user's own tenant relay
+        verify(sms).sendCode(eq(ORG), eq(PHONE), eq(CODE), any()); // via the user's own tenant relay
     }
 
     @Test
@@ -130,7 +189,7 @@ class SmsFactorHandlerTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
 
         assertThatThrownBy(() -> handler.prepare(user, request)).isInstanceOf(ForbiddenException.class);
-        verify(sms, never()).sendCode(any(), any(), any());
+        verify(sms, never()).sendCode(any(), any(), any(), any());
     }
 
     @Test
@@ -141,7 +200,7 @@ class SmsFactorHandlerTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
 
         assertThatThrownBy(() -> handler.prepare(user, request)).isInstanceOf(ForbiddenException.class);
-        verify(sms, never()).sendCode(any(), any(), any());
+        verify(sms, never()).sendCode(any(), any(), any(), any());
     }
 
     @Test

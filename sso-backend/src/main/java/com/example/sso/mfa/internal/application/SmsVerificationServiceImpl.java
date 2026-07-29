@@ -23,10 +23,13 @@ public class SmsVerificationServiceImpl implements SmsVerificationService {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final SmsSender sms;
+    private final SmsDeliveryStatus deliveryStatus;
     private final long ttlMinutes; // single source of truth with the SMS factor's TTL, for the message text
 
-    public SmsVerificationServiceImpl(SmsSender sms, @Value("${sso.sms-otp.ttl-minutes}") long ttlMinutes) {
+    public SmsVerificationServiceImpl(SmsSender sms, SmsDeliveryStatus deliveryStatus,
+            @Value("${sso.sms-otp.ttl-minutes}") long ttlMinutes) {
         this.sms = sms;
+        this.deliveryStatus = deliveryStatus;
         this.ttlMinutes = ttlMinutes;
     }
 
@@ -40,8 +43,25 @@ public class SmsVerificationServiceImpl implements SmsVerificationService {
     // exception handler, not to the caller.
     @Async("notificationExecutor")
     @Override
-    public void sendCode(UUID orgId, String phoneNumber, String code) {
-        sms.send(orgId, phoneNumber,
-                "Your Mini SSO verification code is " + code + ". It expires in " + ttlMinutes + " minutes.");
+    public void sendCode(UUID orgId, String phoneNumber, String code, String deliveryKey) {
+        try {
+            sms.send(orgId, phoneNumber,
+                    "Your Mini SSO verification code is " + code + ". It expires in " + ttlMinutes + " minutes.");
+        } catch (RuntimeException undelivered) {
+            // Recorded before rethrowing: the caller is the async handler, which logs — but the person waiting
+            // for the code learns nothing from a server log.
+            deliveryStatus.markFailed(deliveryKey);
+            throw undelivered;
+        }
+    }
+
+    @Override
+    public void clearDeliveryFailure(String deliveryKey) {
+        deliveryStatus.clear(deliveryKey);
+    }
+
+    @Override
+    public boolean deliveryFailed(String deliveryKey) {
+        return deliveryStatus.failed(deliveryKey);
     }
 }
