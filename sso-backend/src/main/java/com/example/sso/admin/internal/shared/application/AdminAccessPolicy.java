@@ -9,6 +9,7 @@ import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.Roles;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -375,6 +376,11 @@ public class AdminAccessPolicy {
      */
     public boolean mayLiftDenies(DenySubjectKind kind, UUID subjectId, Collection<DenyLift> denies) {
         return denyPolicy.mayLiftDenies(kind, subjectId, denies);
+    }
+
+    /** The same over several subjects of one kind, with the acting administrator resolved once. */
+    public boolean mayLiftDeniesOn(DenySubjectKind kind, Map<UUID, List<DenyLift>> deniesBySubject) {
+        return denyPolicy.mayLiftDeniesOn(kind, deniesBySubject);
     }
 
     /** LIVE grant-only-what-you-hold for ONE name: a super grants anything; else a grantable, non-platform name

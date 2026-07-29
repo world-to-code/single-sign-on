@@ -1,6 +1,8 @@
 package com.example.sso.user.deny;
 
 import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -39,4 +41,16 @@ public interface DenyAuthority {
      * to lift, so nothing to authorize. Fails CLOSED like its sibling.
      */
     boolean mayLiftAll(DenySubjectKind kind, UUID subjectId, Collection<DenyLift> denies);
+
+    /**
+     * The same verdict over SEVERAL subjects of one kind, with the acting administrator resolved once.
+     *
+     * <p>Asked per subject, every call re-derived the actor and re-hydrated their entire effective authority
+     * set — roles, group-delegated roles, the inheritance DAG and their own denies. A user losing eight roles,
+     * or a group delegating eight, paid that eight times for one decision.
+     *
+     * <p>All or nothing: one subject the actor may not lift refuses the set, because every caller is asking
+     * about a change it will either make whole or refuse whole.
+     */
+    boolean mayLiftAll(DenySubjectKind kind, Map<UUID, List<DenyLift>> deniesBySubject);
 }

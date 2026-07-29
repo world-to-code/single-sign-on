@@ -20,10 +20,13 @@ import com.example.sso.user.internal.rbac.domain.PrincipalPermissionDeny;
 import com.example.sso.user.internal.rbac.domain.PrincipalPermissionDenyRepository;
 import com.example.sso.user.internal.rbac.domain.UserPermissionDenyRepository;
 import com.example.sso.user.rbac.Permissions;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -128,14 +131,24 @@ class DenyServiceImpl implements DenyService {
     @Override
     @Transactional(readOnly = true)
     public boolean mayLiftEveryDenyOn(DenySubjectKind kind, UUID subjectId) {
+        return mayLiftEveryDenyOn(kind, List.of(subjectId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean mayLiftEveryDenyOn(DenySubjectKind kind, Collection<UUID> subjectIds) {
+        if (subjectIds.isEmpty()) {
+            return true;
+        }
         DenySubjectType type = kind == DenySubjectKind.ROLE ? DenySubjectType.ROLE : DenySubjectType.GROUP;
-        // ONE authorization call for the whole subject: asked per row, each question re-resolved the actor and
-        // re-hydrated their entire effective authority set.
-        return denyAuthority.mayLiftAll(kind, subjectId,
-                principalDenies.findBySubjectTypeAndSubjectId(type, subjectId).stream()
-                        .map(deny -> new DenyLift(deny.getPattern(), deny.getCreatedBy(),
-                                deny.getWriterApexRoleId()))
-                        .toList());
+        // ONE row read and ONE authorization call for the whole set. Asked per subject — and before that, per
+        // row — each question re-resolved the actor and re-hydrated their entire effective authority set.
+        Map<UUID, List<DenyLift>> bySubject = principalDenies
+                .findBySubjectTypeAndSubjectIdIn(type, subjectIds).stream()
+                .collect(Collectors.groupingBy(PrincipalPermissionDeny::getSubjectId,
+                        Collectors.mapping(deny -> new DenyLift(deny.getPattern(), deny.getCreatedBy(),
+                                deny.getWriterApexRoleId()), Collectors.toList())));
+        return denyAuthority.mayLiftAll(kind, bySubject);
     }
 
     @Override

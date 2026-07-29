@@ -5,6 +5,8 @@ import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.user.deny.DenyService;
 import com.example.sso.user.deny.DenySubjectKind;
 import com.example.sso.user.group.UserGroupService;
+import java.util.Collection;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -40,8 +42,17 @@ public class MembershipDenyCeiling {
 
     /** Refuses the revocation when a deny on the role is one this administrator could not lift by hand. */
     public void requireMayDropRole(UUID roleId) {
-        if (!denies.mayLiftEveryDenyOn(DenySubjectKind.ROLE, roleId)) {
-            refuse("role", roleId);
+        requireMayDropRoles(List.of(roleId));
+    }
+
+    /**
+     * The same for a SET of roles — a role replace, or a group's delegations changing — asked in one call so
+     * the acting administrator is resolved once rather than once per role. All or nothing, because the write
+     * it guards is: the first role they could not drop names the refusal.
+     */
+    public void requireMayDropRoles(Collection<UUID> roleIds) {
+        if (!denies.mayLiftEveryDenyOn(DenySubjectKind.ROLE, roleIds)) {
+            refuse("role", roleIds.iterator().next());
         }
     }
 
@@ -67,9 +78,10 @@ public class MembershipDenyCeiling {
 
     /** The verdict without the refusal, for a caller that reports rather than throws. */
     public boolean mayDropGroup(UUID groupId) {
+        // Two calls, not 1 + N: the group's own denies, then every role it delegates asked together.
         return denies.mayLiftEveryDenyOn(DenySubjectKind.GROUP, groupId)
-                && userGroups.delegatedRoleIds(Set.of(groupId)).getOrDefault(groupId, Set.of()).stream()
-                        .allMatch(roleId -> denies.mayLiftEveryDenyOn(DenySubjectKind.ROLE, roleId));
+                && denies.mayLiftEveryDenyOn(DenySubjectKind.ROLE,
+                        userGroups.delegatedRoleIds(Set.of(groupId)).getOrDefault(groupId, Set.of()));
     }
 
     /** The verdict without the refusal, for a caller that reports rather than throws. */

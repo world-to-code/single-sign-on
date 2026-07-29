@@ -207,8 +207,8 @@ public class GroupAdminService {
         // The grant ceiling above asks whether the actor could have CONFERRED these roles. Undelegating one is
         // the other polarity and has its own authority: a deny resolves against the holder's apex roles, so
         // dropping the delegation drops the deny that rode on it for every member at once.
-        delegated.stream().filter(roleId -> !desired.contains(roleId))
-                .forEach(membershipDenies::requireMayDropRole);
+        membershipDenies.requireMayDropRoles(
+                delegated.stream().filter(roleId -> !desired.contains(roleId)).toList());
     }
 
     private void requireAccess(UUID groupId) {

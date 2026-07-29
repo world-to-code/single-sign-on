@@ -182,8 +182,8 @@ class UserAdminServiceTest {
 
         service.updateUser(id, new UserUpdate("N", "e@example.com", true, Set.of("ROLE_KEPT")));
 
-        verify(membershipDenies).requireMayDropRole(dropped);
-        verify(membershipDenies, never()).requireMayDropRole(kept);
+        // Asked as ONE set, so the actor is resolved once rather than once per dropped role.
+        verify(membershipDenies).requireMayDropRoles(List.of(dropped));
     }
 
     private RoleRef role(UUID id, String name) {

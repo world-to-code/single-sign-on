@@ -5,6 +5,8 @@ import com.example.sso.user.deny.DenyAuthority;
 import com.example.sso.user.deny.DenyLift;
 import com.example.sso.user.deny.DenySubjectKind;
 import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -35,5 +37,10 @@ class DenyAuthorityAdapter implements DenyAuthority {
     @Override
     public boolean mayLiftAll(DenySubjectKind kind, UUID subjectId, Collection<DenyLift> denies) {
         return accessPolicy.mayLiftDenies(kind, subjectId, denies);
+    }
+
+    @Override
+    public boolean mayLiftAll(DenySubjectKind kind, Map<UUID, List<DenyLift>> deniesBySubject) {
+        return accessPolicy.mayLiftDeniesOn(kind, deniesBySubject);
     }
 }

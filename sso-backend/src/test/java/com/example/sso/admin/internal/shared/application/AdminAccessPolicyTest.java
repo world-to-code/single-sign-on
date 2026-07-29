@@ -823,6 +823,37 @@ class AdminAccessPolicyTest {
      * The batch form must reach the SAME verdict as asking row by row — it exists to resolve the actor once,
      * not to decide differently. One un-liftable row refuses the batch.
      */
+    /**
+     * The multi-SUBJECT batch, which is the shape every real caller has: a role replace dropping several roles,
+     * a group's delegations changing. All or nothing — the write it guards is made whole or refused whole, so
+     * one subject the actor cannot lift must refuse the set.
+     *
+     * <p>Two subjects with opposite verdicts, because a batch of uniform verdicts cannot tell {@code allMatch}
+     * from {@code anyMatch}, and that is exactly the mistake the shape invites.
+     */
+    @Test
+    void aMultiSubjectBatchIsRefusedWhenOneSubjectWouldBe() {
+        UUID liftableRole = UUID.randomUUID();
+        UUID peerHeldRole = UUID.randomUUID();
+        UUID authorApex = UUID.randomUUID();
+        UUID peerApex = UUID.randomUUID();
+        signInWith(Permissions.USER_READ);
+        when(userService.effectiveAuthorities(ACTOR_ID)).thenReturn(Set.of(Permissions.USER_READ));
+        // Reach over both roles: dominated in the DAG, and carrying only what the actor already holds.
+        when(roleHierarchy.actorMayManageRole(eq(ACTOR_ID), any())).thenReturn(true);
+        when(roleService.permissionNames(any())).thenReturn(Set.of(Permissions.USER_READ));
+        when(roleHierarchy.apexRolesOf(ACTOR_ID)).thenReturn(Set.of(peerApex)); // peerApex is AT my level
+
+        Map<UUID, List<DenyLift>> batch = Map.of(
+                liftableRole, List.of(new DenyLift(Permissions.USER_READ, UUID.randomUUID(), authorApex)),
+                peerHeldRole, List.of(new DenyLift(Permissions.USER_READ, UUID.randomUUID(), peerApex)));
+
+        assertThat(policy.mayLiftDeniesOn(DenySubjectKind.ROLE, batch)).isFalse();
+        // ...and the liftable one alone still passes, so the refusal above is the peer's, not a broken fixture.
+        assertThat(policy.mayLiftDeniesOn(DenySubjectKind.ROLE,
+                Map.of(liftableRole, batch.get(liftableRole)))).isTrue();
+    }
+
     @Test
     void aBatchIsRefusedWhenAnySingleDenyInItWouldBe() {
         UUID authorApex = UUID.randomUUID();

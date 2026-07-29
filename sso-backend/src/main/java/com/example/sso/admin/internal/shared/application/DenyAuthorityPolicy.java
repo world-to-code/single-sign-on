@@ -10,9 +10,11 @@ import com.example.sso.user.role.RoleHierarchyService;
 import com.example.sso.user.role.Roles;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -73,20 +75,41 @@ class DenyAuthorityPolicy {
      * <p>Empty batch is true: nothing to lift, nothing to authorize. Unresolved actor is false, as ever.
      */
     boolean mayLiftDenies(DenySubjectKind kind, UUID subjectId, Collection<DenyLift> denies) {
-        if (denies.isEmpty()) {
+        return mayLiftDeniesOn(kind, Map.of(subjectId, List.copyOf(denies)));
+    }
+
+    /**
+     * The same decision over SEVERAL subjects, which is the shape every caller actually has — a role replace,
+     * a delegation change, a group and the roles it delegates. The actor and their effective authority set are
+     * resolved ONCE for the whole set; only reach and the per-row provenance vary by subject.
+     *
+     * <p>Subjects carrying no denies are dropped before anything is resolved, preserving the single-subject
+     * rule that an empty set authorizes nothing and therefore needs no actor: it is not a lift.
+     */
+    boolean mayLiftDeniesOn(DenySubjectKind kind, Map<UUID, List<DenyLift>> deniesBySubject) {
+        Map<UUID, List<DenyLift>> lifting = deniesBySubject.entrySet().stream()
+                .filter(entry -> !entry.getValue().isEmpty())
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        if (lifting.isEmpty()) {
             return true;
         }
         return actingAdmin.id().map(actorId -> {
-            if (kind == DenySubjectKind.USER && actorId.equals(subjectId)) {
-                return false; // never re-grant yourself by lifting a deny on your own account
-            }
-            if (!mayReachDenySubject(kind, subjectId)) {
-                return false;
-            }
             Set<String> actorAuthorities = userService.effectiveAuthorities(actorId);
-            return denies.stream().allMatch(deny -> mayGrantLive(actorAuthorities, deny.pattern())
-                    && (actorId.equals(deny.createdBy()) || strictlyDominates(actorId, deny.writerApexRoleId())));
+            return lifting.entrySet().stream()
+                    .allMatch(entry -> mayLift(kind, entry.getKey(), entry.getValue(), actorId, actorAuthorities));
         }).orElse(false);
+    }
+
+    private boolean mayLift(DenySubjectKind kind, UUID subjectId, List<DenyLift> denies, UUID actorId,
+            Set<String> actorAuthorities) {
+        if (kind == DenySubjectKind.USER && actorId.equals(subjectId)) {
+            return false; // never re-grant yourself by lifting a deny on your own account
+        }
+        if (!mayReachDenySubject(kind, subjectId)) {
+            return false;
+        }
+        return denies.stream().allMatch(deny -> mayGrantLive(actorAuthorities, deny.pattern())
+                && (actorId.equals(deny.createdBy()) || strictlyDominates(actorId, deny.writerApexRoleId())));
     }
 
     /** LIVE grant-only-what-you-hold for ONE name: a super grants anything; else a grantable, non-platform name

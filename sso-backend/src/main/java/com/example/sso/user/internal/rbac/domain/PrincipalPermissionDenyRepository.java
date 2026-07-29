@@ -29,6 +29,10 @@ public interface PrincipalPermissionDenyRepository extends JpaRepository<Princip
     /** The deny rows (id + pattern) authored on ONE role/group subject, for the console to list and lift. */
     List<PrincipalPermissionDeny> findBySubjectTypeAndSubjectId(DenySubjectType subjectType, UUID subjectId);
 
+    /** The same rows for a whole SET of subjects, so a caller judging several does not read them one at a time. */
+    List<PrincipalPermissionDeny> findBySubjectTypeAndSubjectIdIn(DenySubjectType subjectType,
+            Collection<UUID> subjectIds);
+
     @Modifying
     @Query(nativeQuery = true, value = "insert into principal_permission_deny "
             + "(id, subject_type, subject_id, org_id, pattern, created_by, writer_apex_role_id) "

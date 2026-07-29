@@ -1,5 +1,6 @@
 package com.example.sso.user.deny;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -55,4 +56,12 @@ public interface DenyService {
      * <p>True when the subject carries no denies at all: there is nothing to lift, so nothing to authorize.
      */
     boolean mayLiftEveryDenyOn(DenySubjectKind kind, UUID subjectId);
+
+    /**
+     * The same question over SEVERAL subjects of one kind, all or nothing, with the acting administrator
+     * resolved once. Every caller that drops more than one membership at a time — a role replace, a delegation
+     * change — wants exactly this, and asking per subject re-hydrated the actor's whole effective authority set
+     * each time.
+     */
+    boolean mayLiftEveryDenyOn(DenySubjectKind kind, Collection<UUID> subjectIds);
 }

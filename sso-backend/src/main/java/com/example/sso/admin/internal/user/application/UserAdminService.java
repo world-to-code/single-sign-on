@@ -11,6 +11,7 @@ import com.example.sso.shared.Page;
 import com.example.sso.user.account.Suggestion;
 import com.example.sso.user.account.UserAccount;
 import com.example.sso.user.account.UserService;
+import com.example.sso.user.role.RoleRef;
 import com.example.sso.user.account.UserUpdate;
 import java.util.Collection;
 import java.util.HashSet;
@@ -108,9 +109,10 @@ public class UserAdminService {
         if (desiredRoleNames == null) {
             return; // this update does not touch the role set at all
         }
-        userService.findById(id).map(UserAccount::getRoles).orElse(Set.of()).stream()
-                .filter(role -> !desiredRoleNames.contains(role.getName()))
-                .forEach(role -> membershipDenies.requireMayDropRole(role.getId()));
+        membershipDenies.requireMayDropRoles(
+                userService.findById(id).map(UserAccount::getRoles).orElse(Set.of()).stream()
+                        .filter(role -> !desiredRoleNames.contains(role.getName()))
+                        .map(RoleRef::getId).toList());
     }
 
     @Transactional
