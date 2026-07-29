@@ -963,6 +963,15 @@ export const console = {
   attrTargetDiff: "Attribute predicates",
 
   // SMTP settings (per-tenant relay) ----------------------------------------
+  emailProvider: "How mail is sent",
+  emailProviderHint: "SMTP needs a relay you can reach; an HTTP provider works where submission ports are blocked.",
+  emailProvider_SMTP: "SMTP relay",
+  emailProvider_RESEND: "Resend (HTTPS API)",
+  emailApiKey: "API key",
+  emailApiKeyHint: "The key from your provider. Stored encrypted; never shown again.",
+  emailApiKeyKeepHint: "Leave blank to keep the stored key unchanged.",
+  emailApiKeyUnchanged: "•••••••• (unchanged)",
+  emailApiKeyRequired: "An API key is required.",
   smtpTitle: "SMTP Settings",
   smtpDescription: "Send your workspace's email from your own mail server.",
   smtpConfiguredHint: "Your workspace sends email through this relay. Onboarding and verification codes use it.",

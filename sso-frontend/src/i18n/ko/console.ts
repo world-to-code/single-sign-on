@@ -963,6 +963,15 @@ export const console: Record<keyof typeof enConsole, string> = {
   attrTargetDiff: "속성 조건",
 
   // SMTP 설정 (테넌트 전용 relay)
+  emailProvider: "발송 방식",
+  emailProviderHint: "SMTP는 접속 가능한 릴레이가 필요하고, HTTP 공급자는 발송 포트가 막힌 환경에서도 동작합니다.",
+  emailProvider_SMTP: "SMTP 릴레이",
+  emailProvider_RESEND: "Resend (HTTPS API)",
+  emailApiKey: "API 키",
+  emailApiKeyHint: "공급자에서 발급한 키입니다. 암호화되어 저장되며 다시 표시되지 않습니다.",
+  emailApiKeyKeepHint: "비워 두면 저장된 키를 그대로 유지합니다.",
+  emailApiKeyUnchanged: "•••••••• (변경 없음)",
+  emailApiKeyRequired: "API 키를 입력하세요.",
   smtpTitle: "SMTP 설정",
   smtpDescription: "워크스페이스의 이메일을 자체 메일 서버로 발송합니다.",
   smtpConfiguredHint: "이 relay로 이메일을 발송합니다. 온보딩·인증 코드 메일에 사용됩니다.",
