@@ -1,22 +1,11 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, Building2, Lock } from "lucide-react";
 import { Brand } from "@/components/Brand";
 import { LanguageToggle } from "@/components/layout/LanguageToggle";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { getBranding, type Branding } from "@/branding";
-import { applyAccent } from "@/lib/prefs";
-
-// Fetch the host tenant's branding once per page load (shared across the auth-flow steps, no re-fetch/flicker).
-let brandingCache: Branding | null = null;
-let brandingPromise: Promise<Branding> | null = null;
-function loadBranding(): Promise<Branding> {
-  if (!brandingPromise) {
-    brandingPromise = getBranding().catch(() => ({ logoUrl: null, accentColor: null, productName: null }));
-  }
-  return brandingPromise;
-}
+import { useBranding } from "@/components/BrandingProvider";
 
 /** Centered authentication shell used by the login / MFA screens. */
 export default function AuthLayout({
@@ -26,14 +15,8 @@ export default function AuthLayout({
   footer?: ReactNode; onBack?: () => void; backLabel?: string;
 }) {
   const { t } = useTranslation("auth");
-  const [branding, setBranding] = useState<Branding | null>(brandingCache);
-  useEffect(() => {
-    loadBranding().then((b) => {
-      brandingCache = b;
-      setBranding(b);
-      applyAccent(b.accentColor); // the tenant's accent overrides --primary across the auth screens
-    });
-  }, []);
+  // Shared with the console, the portal and the splash: one fetch, one answer, everywhere.
+  const branding = useBranding();
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-background px-4 py-10">
       {/* Pre-login language/theme switch — a signed-out visitor still needs to pick their language. */}
@@ -43,7 +26,7 @@ export default function AuthLayout({
       </div>
       <div className="w-full max-w-md">
         <div className="mb-6 flex justify-center">
-          <Brand logoUrl={branding?.logoUrl} name={branding?.productName} />
+          <Brand logoUrl={branding.logoUrl} name={branding.productName} />
         </div>
         <Card>
           <CardHeader className="space-y-1">

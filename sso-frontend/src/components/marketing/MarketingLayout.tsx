@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { ArrowRight, Menu, X } from "lucide-react";
 import { Brand } from "@/components/Brand";
+import { useBranding } from "@/components/BrandingProvider";
 import { LanguageToggle } from "@/components/layout/LanguageToggle";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,7 @@ const FOOTER: { headingKey: MKey; links: FootLink[] }[] = [
  *  routes and hand off to the app's sign-in / signup flows. */
 export default function MarketingLayout() {
   const { t } = useTranslation("marketing");
+  const branding = useBranding();
   const [menuOpen, setMenuOpen] = useState(false);
   const { pathname } = useLocation();
 
@@ -49,7 +51,9 @@ export default function MarketingLayout() {
       <header className="sticky top-0 z-30 border-b bg-background/85 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-8">
-            <Link to="/" aria-label={t("ariaHome")}><Brand /></Link>
+            <Link to="/" aria-label={t("ariaHome")}>
+              <Brand logoUrl={branding.logoUrl} name={branding.productName} />
+            </Link>
             <nav className="hidden items-center gap-1 md:flex">
               {NAV.map((n) => (
                 <Link key={n.to} to={n.to}
@@ -96,7 +100,7 @@ export default function MarketingLayout() {
         <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
           <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-3">
-              <Brand />
+              <Brand logoUrl={branding.logoUrl} name={branding.productName} />
               <p className="max-w-xs text-sm text-muted-foreground">{t("footerTagline")}</p>
             </div>
             {FOOTER.map((col) => (

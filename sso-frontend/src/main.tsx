@@ -1,6 +1,7 @@
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
+import { BrandingProvider } from "./components/BrandingProvider";
 import { ConfirmProvider } from "./components/ConfirmProvider";
 import { ToastProvider } from "./components/ToastProvider";
 import "./i18n"; // side-effecting: inits i18next and sets the initial <html lang> before first paint
@@ -18,7 +19,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <BrowserRouter>
     <ToastProvider>
       <ConfirmProvider>
-        <App />
+        <BrandingProvider>
+          <App />
+        </BrandingProvider>
       </ConfirmProvider>
     </ToastProvider>
   </BrowserRouter>,
