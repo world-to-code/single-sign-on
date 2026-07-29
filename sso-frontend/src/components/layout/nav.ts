@@ -2,7 +2,7 @@ import {
   RefreshCw,
   Tags,
   LayoutDashboard, KeyRound, Users, ShieldCheck, AppWindow, Network, Coins, ScrollText,
-  Clock, Globe, LayoutGrid, Boxes, UsersRound, UserCog, KeySquare, Building2, Link2, Wand2, Mail, Palette, LogIn,
+  Clock, Globe, LayoutGrid, Boxes, UsersRound, UserCog, KeySquare, Building2, Link2, Wand2, Mail, MessageSquare, Palette, LogIn,
   type LucideIcon,
 } from "lucide-react";
 import type { nav as navResources } from "@/i18n/en/nav";
@@ -99,6 +99,7 @@ export const NAV: NavGroup[] = [
         items: [
           { to: "/admin/scim-tokens", label: "scimTokens", icon: Coins, permission: "scim:manage" },
           { to: "/admin/smtp-settings", label: "smtpSettings", icon: Mail, permission: "smtp-settings:read" },
+          { to: "/admin/sms-settings", label: "smsSettings", icon: MessageSquare, permission: "sms-settings:read" },
           { to: "/admin/customize", label: "customize", icon: Palette, permission: "email-template:read" },
           { to: "/admin/audit", label: "auditLog", icon: ScrollText, permission: "audit:read" },
         ],

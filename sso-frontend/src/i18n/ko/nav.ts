@@ -31,6 +31,7 @@ export const nav: Record<keyof typeof enNav, string> = {
   mappingRules: "매핑 규칙",
   scimTokens: "SCIM 토큰",
   smtpSettings: "SMTP 설정",
+  smsSettings: "SMS 설정",
   customize: "커스터마이즈",
   auditLog: "감사 로그",
   // Shell chrome

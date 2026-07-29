@@ -75,6 +75,9 @@ public final class Permissions {
     // Per-tenant SMTP relay settings (credential-bearing — a distinct grant from portal settings)
     public static final String SMTP_SETTINGS_READ = "smtp-settings:read";
     public static final String SMTP_SETTINGS_UPDATE = "smtp-settings:update";
+    // Per-tenant SMS gateway settings (credential-bearing, same tier of grant as the SMTP relay)
+    public static final String SMS_SETTINGS_READ = "sms-settings:read";
+    public static final String SMS_SETTINGS_UPDATE = "sms-settings:update";
     // Per-tenant email templates (tenant-authored branded email per event)
     public static final String EMAIL_TEMPLATE_READ = "email-template:read";
     public static final String EMAIL_TEMPLATE_UPDATE = "email-template:update";
@@ -149,6 +152,7 @@ public final class Permissions {
             NETWORK_ZONE_READ, NETWORK_ZONE_CREATE, NETWORK_ZONE_UPDATE, NETWORK_ZONE_DELETE,
             PORTAL_SETTINGS_READ, PORTAL_SETTINGS_UPDATE,
             SMTP_SETTINGS_READ, SMTP_SETTINGS_UPDATE,
+            SMS_SETTINGS_READ, SMS_SETTINGS_UPDATE,
             EMAIL_TEMPLATE_READ, EMAIL_TEMPLATE_UPDATE,
             BRANDING_READ, BRANDING_UPDATE,
             IDENTITY_PROVIDER_READ, IDENTITY_PROVIDER_WRITE,

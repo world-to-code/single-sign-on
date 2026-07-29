@@ -37,6 +37,7 @@ import NetworkZones from "./pages/NetworkZones";
 import IdentityProviders from "./pages/IdentityProviders";
 import MappingRules from "./pages/MappingRules";
 import SmtpSettings from "./pages/SmtpSettings";
+import SmsSettings from "./pages/SmsSettings";
 import Customize from "./pages/Customize";
 import MyApps from "./pages/MyApps";
 import Applications from "./pages/Applications";
@@ -101,6 +102,7 @@ export default function Console({ session }: { session: SessionView }) {
                     <Route path="mapping-rules" element={<MappingRules />} />
                     <Route path="scim-tokens" element={<ScimTokens />} />
                     <Route path="smtp-settings" element={<SmtpSettings />} />
+                    <Route path="sms-settings" element={<SmsSettings />} />
                     <Route path="customize" element={<Customize />} />
                     <Route path="audit" element={<Audit session={session} />} />
                   </Route>

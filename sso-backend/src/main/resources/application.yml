@@ -259,6 +259,12 @@ sso:
           max-defer: PT6H             # cap — where a standing conflict comes to rest, and self-heals from
           failure-window: PT24H       # TTL on the consecutive-failure count, so an isolated failure decays
           stalled-after: 6            # consecutive failures before it is announced once as no longer converging
+  sms:                              # outbound SMS gateways; per-tenant credentials live in sms_settings
+    http-timeout: PT5S              # the code is sent DURING a sign-in, so a slow provider must not hold the thread
+    solapi:
+      endpoint: https://api.solapi.com/messages/v4/send
+    twilio:
+      endpoint: https://api.twilio.com/2010-04-01/Accounts/{accountSid}/Messages.json
   crypto:
     master-password: dev-master-password-change-me  # dev only — override in prod
     salt: 5c0744940b5c369b

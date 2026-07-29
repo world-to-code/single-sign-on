@@ -29,6 +29,7 @@ export const nav = {
   mappingRules: "Mapping Rules",
   scimTokens: "SCIM Tokens",
   smtpSettings: "SMTP Settings",
+  smsSettings: "SMS Settings",
   customize: "Customize",
   auditLog: "Audit Log",
   // Shell chrome
