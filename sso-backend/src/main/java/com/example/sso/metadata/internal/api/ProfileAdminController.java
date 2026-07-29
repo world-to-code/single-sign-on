@@ -109,6 +109,7 @@ public class ProfileAdminController {
     @PutMapping("/{id}/mappings")
     @RequirePermission(Permissions.ATTRIBUTE_DEFINITION_WRITE)
     @RequireStepUp
+    @Audited(AuditType.PROFILE_MAPPING_CHANGED)
     public ProfileMapping map(@PathVariable UUID id, @Valid @RequestBody ProfileMappingRequest request) {
         return mappings.map(id, request.sourceKey(), request.targetProfileId(), request.targetKey());
     }
@@ -116,6 +117,7 @@ public class ProfileAdminController {
     @DeleteMapping("/{id}/mappings/{mappingId}")
     @RequirePermission(Permissions.ATTRIBUTE_DEFINITION_WRITE)
     @RequireStepUp
+    @Audited(AuditType.PROFILE_MAPPING_CHANGED)
     public ResponseEntity<Void> unmap(@PathVariable UUID id, @PathVariable UUID mappingId) {
         mappings.unmapFrom(id, mappingId);
         return ResponseEntity.noContent().build();

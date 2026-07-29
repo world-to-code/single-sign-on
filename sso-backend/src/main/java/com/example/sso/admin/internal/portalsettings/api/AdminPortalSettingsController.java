@@ -1,5 +1,7 @@
 package com.example.sso.admin.internal.portalsettings.api;
 
+import com.example.sso.audit.AuditType;
+import com.example.sso.audit.Audited;
 import com.example.sso.admin.internal.portalsettings.application.AdminConsoleSettingsService;
 import com.example.sso.portal.binding.AdminConsoleConfigService;
 import com.example.sso.portal.binding.PortalApps;
@@ -42,6 +44,7 @@ public class AdminPortalSettingsController {
 
     @PutMapping
     @RequirePermission(Permissions.PORTAL_SETTINGS_UPDATE)
+    @Audited(AuditType.PORTAL_SETTINGS_CHANGED)
     public AdminConsoleSettingsView updatePortalSettings(@Valid @RequestBody AdminConsoleSettingsRequest request) {
         // One transaction for both writes: a malformed CIDR must not leave a new session policy applied with a
         // stale allowlist (a half-applied, fail-open network control).
@@ -57,6 +60,7 @@ public class AdminPortalSettingsController {
 
     @PutMapping("/user")
     @RequirePermission(Permissions.PORTAL_SETTINGS_UPDATE)
+    @Audited(AuditType.PORTAL_SETTINGS_CHANGED)
     public AdminPortalSettingsView updateUserPortalSettings(@Valid @RequestBody AdminPortalSettingsRequest request) {
         portalBinding.setSessionPolicy(PortalApps.USER, request.toPolicyId());
         return userPortalView();

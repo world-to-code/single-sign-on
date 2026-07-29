@@ -1,5 +1,7 @@
 package com.example.sso.branding.internal.api;
 
+import com.example.sso.audit.AuditType;
+import com.example.sso.audit.Audited;
 import com.example.sso.branding.internal.application.BrandingService;
 import com.example.sso.branding.internal.application.BrandingView;
 import com.example.sso.shared.security.RequirePermission;
@@ -34,6 +36,7 @@ public class AdminBrandingController {
     @PutMapping
     @RequirePermission(Permissions.BRANDING_UPDATE)
     @RequireStepUp
+    @Audited(AuditType.BRANDING_CHANGED)
     public BrandingView update(@Valid @RequestBody BrandingRequest request) {
         service.update(request.toSpec());
         return service.get();
@@ -42,6 +45,7 @@ public class AdminBrandingController {
     @DeleteMapping
     @RequirePermission(Permissions.BRANDING_UPDATE)
     @RequireStepUp
+    @Audited(AuditType.BRANDING_CHANGED)
     public BrandingView delete() {
         service.delete();
         return service.get();

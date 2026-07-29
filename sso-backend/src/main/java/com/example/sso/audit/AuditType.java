@@ -115,6 +115,20 @@ public enum AuditType {
     // password-reset links are DELIVERED — redirecting them is an account-takeover primitive that needs no
     // password. So a change to either is privilege-relevant and must be attributable to an administrator after
     // the fact, alongside the refused attempts the interceptor records as failures.
+    // Branding is the same phishing surface as the templates: the logo and product name are what makes a mail
+    // or a sign-in screen look like it came from this company rather than somebody else.
+    BRANDING_CHANGED(AuditCategory.ADMIN),
+    // Portal settings decide how the consoles behave for everyone in the tier, including how long an elevation
+    // lasts — so a change is worth attributing even when it looks cosmetic.
+    PORTAL_SETTINGS_CHANGED(AuditCategory.ADMIN),
+    // A profile MAPPING is how a source's values reach the tenant's own attributes, and an attribute can decide
+    // an ABAC policy. Re-aiming one changes what the directory is allowed to say about a person.
+    PROFILE_MAPPING_CHANGED(AuditCategory.ADMIN),
+    // Onboarding provisions a whole tenant and invites its first administrator. ORGANIZATION_CREATED covers the
+    // direct admin route only, so without these a tenant could appear with no record of who asked for it, and a
+    // re-issued admin invitation — a fresh credential sent to an address — left no trace at all.
+    TENANT_ONBOARDING_STARTED(AuditCategory.ADMIN),
+    TENANT_ADMIN_REINVITED(AuditCategory.ADMIN),
     // A template is the wording a person receives FROM this IdP, so editing one is a phishing surface in its
     // own right — the same reason the settings above are audited, one step further along the same path.
     EMAIL_TEMPLATE_CHANGED(AuditCategory.ADMIN),

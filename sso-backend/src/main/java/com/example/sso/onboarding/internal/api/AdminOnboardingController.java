@@ -1,5 +1,7 @@
 package com.example.sso.onboarding.internal.api;
 
+import com.example.sso.audit.AuditType;
+import com.example.sso.audit.Audited;
 import com.example.sso.onboarding.internal.application.OnboardingServiceImpl;
 import com.example.sso.onboarding.internal.application.OnboardingView;
 import com.example.sso.shared.security.RequirePermission;
@@ -31,6 +33,7 @@ class AdminOnboardingController {
     @PostMapping
     @RequirePermission(Permissions.ORG_CREATE)
     @RequireStepUp
+    @Audited(AuditType.TENANT_ONBOARDING_STARTED)
     public ResponseEntity<OnboardingView> start(@Valid @RequestBody CreateOnboardingRequest request) {
         return ResponseEntity.accepted().body(onboarding.start(request.toSpec()));
     }
@@ -47,6 +50,7 @@ class AdminOnboardingController {
     @PostMapping("/{id}/reinvite")
     @RequirePermission(Permissions.ORG_CREATE)
     @RequireStepUp
+    @Audited(AuditType.TENANT_ADMIN_REINVITED)
     public OnboardingView reinvite(@PathVariable UUID id) {
         return onboarding.requestReinvite(id);
     }
