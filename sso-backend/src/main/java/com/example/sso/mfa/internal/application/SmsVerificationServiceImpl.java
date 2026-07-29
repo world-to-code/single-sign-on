@@ -38,7 +38,7 @@ public class SmsVerificationServiceImpl implements SmsVerificationService {
     // Sent off the request thread: the send must not (a) block the caller, nor (b) make a code send measurably
     // slower than a no-op, which would disclose whether a number is enrolled. A failure surfaces via the async
     // exception handler, not to the caller.
-    @Async
+    @Async("notificationExecutor")
     @Override
     public void sendCode(UUID orgId, String phoneNumber, String code) {
         sms.send(orgId, phoneNumber,

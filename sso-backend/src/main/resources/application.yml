@@ -198,6 +198,11 @@ sso:
         lock-ttl: PT25S                     # SET NX PX single-driver lock; < sweep-interval, > worst-case batch
         processing-lease: PT2M              # visibility timeout: a claimed entry re-surfaces if the driver dies
         sweep-batch-size: 200               # max entries re-driven per tick (bounds lock-hold time)
+  notification:
+    executor:                     # outbound email/SMS sends, OFF the shared pool: a hanging provider must not
+      core-pool-size: 4           # stall tenant onboarding, and its timeout must not reach the login path
+      max-pool-size: 8
+      queue-capacity: 200         # bounded on purpose — overflow DROPS the send and audits NOTIFICATION_DROPPED
   logout:
     # Dedicated bounded pool for OIDC back-channel + SAML SLO fan-out, kept OFF the shared @Async pool so a
     # slow relying party can never starve tenant onboarding/provisioning (and vice versa). A full queue

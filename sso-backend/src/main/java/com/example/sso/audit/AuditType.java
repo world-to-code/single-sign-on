@@ -115,6 +115,10 @@ public enum AuditType {
     // password-reset links are DELIVERED — redirecting them is an account-takeover primitive that needs no
     // password. So a change to either is privilege-relevant and must be attributable to an administrator after
     // the fact, alongside the refused attempts the interceptor records as failures.
+    // The outbound send queue overflowed and a notification was discarded. A dropped one-time code is a person
+    // who cannot finish signing in, and the cause is upstream (a hanging provider), so it must be visible rather
+    // than inferred from its absence.
+    NOTIFICATION_DROPPED(AuditCategory.SYSTEM),
     // Branding is the same phishing surface as the templates: the logo and product name are what makes a mail
     // or a sign-in screen look like it came from this company rather than somebody else.
     BRANDING_CHANGED(AuditCategory.ADMIN),

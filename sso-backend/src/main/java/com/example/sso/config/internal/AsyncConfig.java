@@ -1,5 +1,6 @@
 package com.example.sso.config.internal;
 
+import com.example.sso.audit.AuditService;
 import java.util.concurrent.ThreadPoolExecutor;
 import org.springframework.aop.interceptor.AsyncUncaughtExceptionHandler;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,6 +49,35 @@ public class AsyncConfig implements AsyncConfigurer {
         executor.setQueueCapacity(queueCapacity);
         executor.setThreadNamePrefix("logout-propagation-");
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.initialize();
+        return executor;
+    }
+
+    /**
+     * Dedicated bounded pool for OUTBOUND NOTIFICATION sends (verification email, SMS one-time codes), kept OFF
+     * the shared {@code applicationTaskExecutor} for the reason the two pools around it exist — except that this
+     * is the path most likely to hang, and it was the one still sharing.
+     *
+     * <p>These sends call a third party over the network with a multi-second timeout. On the shared pool a
+     * provider outage parks every thread for that timeout and grows an unbounded queue, and tenant onboarding
+     * and baseline provisioning queue up behind somebody else's mail server. An SMTP host that has stopped
+     * answering should cost undelivered email, not a stalled tenant.
+     *
+     * <p>Overflow DISCARDS the send and audits it ({@link AuditingNotificationRejection}) rather than running it
+     * on the caller — here the caller is a sign-in request, so caller-runs would put the provider's timeout back
+     * on the login path.
+     */
+    @Bean
+    TaskExecutor notificationExecutor(AuditService audit,
+            @Value("${sso.notification.executor.core-pool-size}") int corePoolSize,
+            @Value("${sso.notification.executor.max-pool-size}") int maxPoolSize,
+            @Value("${sso.notification.executor.queue-capacity}") int queueCapacity) {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(corePoolSize);
+        executor.setMaxPoolSize(maxPoolSize);
+        executor.setQueueCapacity(queueCapacity);
+        executor.setThreadNamePrefix("notification-");
+        executor.setRejectedExecutionHandler(new AuditingNotificationRejection(audit));
         executor.initialize();
         return executor;
     }

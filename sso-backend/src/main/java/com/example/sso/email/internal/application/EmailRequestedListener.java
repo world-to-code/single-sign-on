@@ -25,7 +25,7 @@ class EmailRequestedListener {
     private final EmailComposer composer;
     private final OrgContext orgContext;
 
-    @Async
+    @Async("notificationExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onEmailRequested(EmailRequested event) {
         if (event.orgId() != null) {
