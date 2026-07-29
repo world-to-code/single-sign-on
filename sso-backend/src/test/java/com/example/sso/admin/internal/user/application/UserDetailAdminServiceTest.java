@@ -240,7 +240,7 @@ class UserDetailAdminServiceTest {
     }
 
     private SessionMetadata session(String sessionId, String ip) {
-        return new SessionMetadata("handle-" + sessionId, sessionId, USERNAME, "Firefox", ip, Instant.EPOCH);
+        return new SessionMetadata("handle-" + sessionId, sessionId, USERNAME, "Firefox", ip, Instant.EPOCH, Instant.EPOCH);
     }
 
     private AuditEntry entryWithPii() {

@@ -4,7 +4,6 @@ import com.example.sso.session.lifecycle.SessionLifecycle;
 
 import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditService;
-import com.example.sso.session.lifecycle.SessionMetadataStore;
 import com.example.sso.session.policy.EffectiveSessionPolicy;
 import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.session.lifecycle.StepUpInterceptor;
@@ -55,7 +54,6 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
     private final AuditService audit;
     private final UserSessionPolicy userSessionPolicy;
     private final SessionRegistry sessionRegistry;
-    private final SessionMetadataStore sessionMetadata;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -119,7 +117,6 @@ public class SessionIntegrityFilter extends OncePerRequestFilter {
             }
 
             session.setAttribute(LAST_ACTIVITY, now);
-            sessionMetadata.touch(session.getId()); // refresh "last seen" for the My Profile sessions list
 
             if (effective.bindClient()) {
                 String current = clientBinding(request);

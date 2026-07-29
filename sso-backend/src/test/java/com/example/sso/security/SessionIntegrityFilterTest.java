@@ -2,7 +2,6 @@ package com.example.sso.security;
 
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
-import com.example.sso.session.lifecycle.SessionMetadataStore;
 import com.example.sso.session.policy.EffectiveSessionPolicy;
 import com.example.sso.session.policy.UserSessionPolicy;
 import com.example.sso.session.lifecycle.StepUpInterceptor;
@@ -55,13 +54,12 @@ class SessionIntegrityFilterTest {
     @Mock private AuditService audit;
     @Mock private UserSessionPolicy policyService;
     @Mock private SessionRegistry sessionRegistry;
-    @Mock private SessionMetadataStore sessionMetadata;
 
     private SessionIntegrityFilter filter;
 
     @BeforeEach
     void setUp() {
-        filter = new SessionIntegrityFilter(audit, policyService, sessionRegistry, sessionMetadata);
+        filter = new SessionIntegrityFilter(audit, policyService, sessionRegistry);
         // One resolution: floored idle/absolute (30m/8h), the winner's re-auth (15m, TOTP/PASSWORD), client
         // binding off (a dedicated test turns it on).
         lenient().when(policyService.effectiveForUsername("alice"))
@@ -113,7 +111,6 @@ class SessionIntegrityFilterTest {
         verify(chain).doFilter(request, response);
         verify(s).setMaxInactiveInterval((int) (30 * 60L + 60)); // idle minutes -> container timeout + grace
         verify(s).setAttribute(eq(LAST_ACTIVITY), any(Long.class));
-        verify(sessionMetadata).touch("sid");
         verify(s, never()).invalidate();
         assertThat(response.getStatus()).isEqualTo(200);
     }

@@ -54,7 +54,7 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
 
         // Spring Session registers + principal-indexes the session automatically (it holds the security
         // context), so we don't register here — the backing registry queries Redis by principal.
-        sessionMetadata.record(session.getId(), username, request.getHeader(HttpHeaders.USER_AGENT), ClientIp.of(request));
+        sessionMetadata.record(session, request.getHeader(HttpHeaders.USER_AGENT), ClientIp.of(request));
         // The cap is a FLOOR across every policy governing the user — the most-restrictive non-zero limit — so a
         // narrow policy with a looser cap cannot lift a broad org-wide one.
         int max = userSessionPolicy.maxConcurrentSessionsFor(username);
@@ -79,18 +79,13 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
 
     @Override
     public void rotateSessionId(HttpServletRequest request, String username) {
-        HttpSession session = request.getSession(false);
-        if (session == null) {
+        if (request.getSession(false) == null) {
             return;
         }
 
-        String oldId = session.getId();
-        String newId = request.changeSessionId();
-        if (!oldId.equals(newId)) {
-            // Spring Session re-keys the Redis session + its principal index on changeSessionId(); we only
-            // re-key our own device-metadata map (keyed by the old id) so "My Profile" keeps the session.
-            sessionMetadata.rekey(oldId, newId);
-        }
+        // Spring Session re-keys the Redis session, its principal index AND its attributes, so the device
+        // metadata (a session attribute) rides along — the public handle survives the rotation by itself.
+        request.changeSessionId();
     }
 
     @Override
@@ -98,14 +93,13 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
         HttpSession current = request.getSession(false);
         String currentId = current == null ? null : current.getId();
 
-        // Guarantee the caller's CURRENT session is always shown: backfill device metadata if missing
-        // (e.g. a restart cleared the in-memory store, or it was never recorded). Spring Session already
-        // tracks the session itself in the registry, so only the metadata needs backfilling.
+        // Guarantee the caller's CURRENT session is always shown: backfill the device if this session predates
+        // its own metadata (it signed in before this deployment, or never reached MFA_COMPLETE).
         if (currentId != null) {
             boolean tracked = sessionMetadata.forUser(username).stream()
                     .anyMatch(m -> m.sessionId().equals(currentId));
             if (!tracked) {
-                sessionMetadata.record(currentId, username, request.getHeader(HttpHeaders.USER_AGENT), ClientIp.of(request));
+                sessionMetadata.record(current, request.getHeader(HttpHeaders.USER_AGENT), ClientIp.of(request));
             }
         }
 
@@ -123,14 +117,12 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
         if (info != null) {
             hardDelete(info); // deletes the Redis session -> downstream BCL/SLO logout, not just a mark
         }
-
-        sessionMetadata.remove(target.sessionId());
     }
 
     @Override
     public int terminateForUser(String username, UUID orgId) {
         Set<String> ids = orgScopedSessionIds(username, orgId);
-        ids.forEach(sessionRepository::deleteById); // fires SessionDeletedEvent -> BCL/SLO + metadata cleanup
+        ids.forEach(sessionRepository::deleteById); // fires SessionDeletedEvent -> BCL/SLO propagation
         return ids.size();
     }
 
@@ -187,7 +179,7 @@ public class SessionManagerImpl implements SessionLifecycle, UserSessions {
     /**
      * Ends a session by DELETING its Redis key rather than {@code expireNow()} (which only marks it EXPIRED
      * and defers deletion to the victim's next request). The deletion fires a keyspace notification ->
-     * {@code SessionDeletedEvent} -> OIDC back-channel logout / SAML SLO + the metadata cleanup listener, so
+     * {@code SessionDeletedEvent} -> OIDC back-channel logout / SAML SLO, so
      * every termination source (admin force-expiry, access change, self-revoke, concurrent eviction) logs the
      * user out of their downstream apps promptly instead of only on their return or the idle/absolute TTL.
      */

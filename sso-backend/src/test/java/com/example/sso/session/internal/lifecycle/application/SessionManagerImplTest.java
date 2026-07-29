@@ -32,6 +32,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -95,7 +96,7 @@ class SessionManagerImplTest {
         manager.registerAndEnforceLimit(request, USER);
 
         verify(sessionRegistry, never()).registerNewSession(anyString(), any());
-        verify(sessionMetadata, never()).record(anyString(), anyString(), any(), any());
+        verify(sessionMetadata, never()).record(any(), any(), any());
     }
 
     @Test
@@ -106,8 +107,9 @@ class SessionManagerImplTest {
 
         manager.registerAndEnforceLimit(request, USER);
 
-        // Spring Session auto-registers + principal-indexes the session; we only stamp device metadata.
-        verify(sessionMetadata).record(eq(id), eq(USER), any(), eq("10.0.0.1"));
+        // Spring Session auto-registers + principal-indexes the session; we only stamp device metadata —
+        // onto the request's OWN session, so a later id rotation carries it instead of dropping it.
+        verify(sessionMetadata).record(argThat(session -> id.equals(session.getId())), any(), eq("10.0.0.1"));
         verify(sessionRegistry, never()).registerNewSession(anyString(), any());
     }
 
@@ -282,12 +284,13 @@ class SessionManagerImplTest {
         when(sessionMetadata.findByUserAndHandle(USER, "ghost")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> manager.revoke(USER, "ghost")).isInstanceOf(NotFoundException.class);
-        verify(sessionMetadata, never()).remove(anyString());
+        verify(sessionRepository, never()).deleteById(anyString());
     }
 
+    /** Deleting the session is all there is to do: its metadata is an attribute and goes with it. */
     @Test
-    void revokeDeletesTheRegistrySessionAndForgetsItsMetadata() {
-        SessionMetadata target = new SessionMetadata("h1", "sid-1", USER, "UA", "ip", Instant.now());
+    void revokeDeletesTheSessionItself() {
+        SessionMetadata target = new SessionMetadata("h1", "sid-1", USER, "UA", "ip", Instant.EPOCH, Instant.EPOCH);
         when(sessionMetadata.findByUserAndHandle(USER, "h1")).thenReturn(Optional.of(target));
         SessionInformation info = mock(SessionInformation.class);
         when(info.getSessionId()).thenReturn("sid-1");
@@ -296,6 +299,5 @@ class SessionManagerImplTest {
         manager.revoke(USER, "h1");
 
         verify(sessionRepository).deleteById("sid-1"); // hard delete -> downstream BCL/SLO, not a mark
-        verify(sessionMetadata).remove("sid-1");
     }
 }

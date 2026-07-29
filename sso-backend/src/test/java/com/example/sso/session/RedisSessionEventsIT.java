@@ -1,7 +1,5 @@
 package com.example.sso.session;
 
-import com.example.sso.session.lifecycle.SessionMetadataStore;
-
 import com.example.sso.support.AbstractIntegrationTest;
 import java.time.Duration;
 import java.util.List;
@@ -25,8 +23,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>invalidation publishes a {@code SessionDestroyedEvent} (the propagation trigger), and</li>
  *   <li><b>idle TTL expiry publishes it with NO request</b> — via Redis keyspace notifications — the only
  *       way idle-expired sessions can be caught proactively, and</li>
- *   <li>the {@code SessionMetadataCleanupListener} evicts device metadata on destroy (no leak).</li>
  * </ul>
+ *
+ * <p>Device metadata used to need a third bullet here — an eviction listener that deleted it on destroy. It is
+ * now an attribute of the session, so it cannot outlive one; {@code SessionMetadataStoreIT} covers that.
  */
 @Import(RedisSessionEventsIT.Config.class)
 class RedisSessionEventsIT extends AbstractIntegrationTest {
@@ -35,8 +35,6 @@ class RedisSessionEventsIT extends AbstractIntegrationTest {
     RedisIndexedSessionRepository sessions;
     @Autowired
     CapturedEvents events;
-    @Autowired
-    SessionMetadataStore metadata;
 
     @Test
     void deletingASessionPublishesADestroyedEvent() {
@@ -60,20 +58,6 @@ class RedisSessionEventsIT extends AbstractIntegrationTest {
         // No further access — only Redis' key TTL + keyspace notification can surface this.
         await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
                 assertThat(events.destroyed).contains(id));
-    }
-
-    @Test
-    void metadataIsEvictedWhenTheSessionIsDestroyed() {
-        RedisSession session = sessions.createSession();
-        sessions.save(session);
-        String id = session.getId();
-        metadata.record(id, "events-probe-user", "JUnit", "127.0.0.1");
-        assertThat(metadata.forUser("events-probe-user")).anyMatch(m -> m.sessionId().equals(id));
-
-        sessions.deleteById(id);
-
-        await().atMost(Duration.ofSeconds(15)).untilAsserted(() ->
-                assertThat(metadata.forUser("events-probe-user")).noneMatch(m -> m.sessionId().equals(id)));
     }
 
     /** Captures {@code SessionDestroyedEvent} (deleted + expired) off the Redis listener thread. */
