@@ -1009,7 +1009,7 @@ export const console: Record<keyof typeof enConsole, string> = {
   smsApiSecretUnchanged: "•••••••• (변경 없음)",
   smsSecretRequired: "API 시크릿을 입력하세요.",
   smsSenderNumber: "발신번호",
-  smsSenderNumberHint: "코드가 발송되는 번호입니다. 발송사에 사전 등록된 번호여야 합니다.",
+  smsSenderNumberHint: "코드가 발송되는 번호입니다. 발송사에 등록한 형태 그대로 입력하세요 — 하이픈 유무까지 같아야 합니다. 입력한 값이 그대로 전송되며, 발송사는 문자 단위로 대조합니다.",
   smsSenderInvalid: "발신번호 형식이 올바르지 않습니다. 숫자와 하이픈, 맨 앞의 +만 사용할 수 있습니다.",
   smsReset: "기본값으로 되돌리기",
   smsResetTitle: "플랫폼 기본값으로 되돌릴까요?",

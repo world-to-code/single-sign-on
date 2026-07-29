@@ -1009,7 +1009,7 @@ export const console = {
   smsApiSecretUnchanged: "•••••••• (unchanged)",
   smsSecretRequired: "An API secret is required.",
   smsSenderNumber: "Sending number",
-  smsSenderNumberHint: "The number codes are sent from. It must be pre-registered with your provider.",
+  smsSenderNumberHint: "The number codes are sent from, EXACTLY as registered with your provider — including whether it has hyphens. It is sent unchanged, and a provider matches it character for character.",
   smsSenderInvalid: "Enter a valid sending number — digits, optionally with a leading + and hyphens.",
   smsReset: "Reset to default",
   smsResetTitle: "Reset to the platform default?",
