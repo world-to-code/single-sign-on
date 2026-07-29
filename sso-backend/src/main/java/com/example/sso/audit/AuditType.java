@@ -111,6 +111,12 @@ public enum AuditType {
     RELYING_PARTY_CREATED(AuditCategory.ADMIN),
     RELYING_PARTY_UPDATED(AuditCategory.ADMIN),
     RELYING_PARTY_DELETED(AuditCategory.ADMIN),
+    // Whoever controls the mail relay or the SMS gateway controls where one-time codes, verification links and
+    // password-reset links are DELIVERED — redirecting them is an account-takeover primitive that needs no
+    // password. So a change to either is privilege-relevant and must be attributable to an administrator after
+    // the fact, alongside the refused attempts the interceptor records as failures.
+    SMTP_SETTINGS_CHANGED(AuditCategory.ADMIN),
+    SMS_SETTINGS_CHANGED(AuditCategory.ADMIN),
     SCIM_TOKEN_CHANGED(AuditCategory.ADMIN),
     NETWORK_ZONE_CHANGED(AuditCategory.ADMIN),
     APP_ASSIGNMENT_CHANGED(AuditCategory.AUTHORIZATION),

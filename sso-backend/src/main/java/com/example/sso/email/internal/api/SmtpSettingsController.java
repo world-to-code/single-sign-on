@@ -2,6 +2,8 @@ package com.example.sso.email.internal.api;
 
 import com.example.sso.email.internal.application.SmtpSettingsService;
 import com.example.sso.email.internal.application.SmtpSettingsView;
+import com.example.sso.audit.AuditType;
+import com.example.sso.audit.Audited;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.rbac.Permissions;
@@ -35,6 +37,7 @@ public class SmtpSettingsController {
     @PutMapping
     @RequirePermission(Permissions.SMTP_SETTINGS_UPDATE)
     @RequireStepUp
+    @Audited(AuditType.SMTP_SETTINGS_CHANGED)
     public SmtpSettingsView update(@Valid @RequestBody SmtpSettingsRequest request) {
         service.update(request.toSpec());
         return service.get();
@@ -43,6 +46,7 @@ public class SmtpSettingsController {
     @DeleteMapping
     @RequirePermission(Permissions.SMTP_SETTINGS_UPDATE)
     @RequireStepUp
+    @Audited(AuditType.SMTP_SETTINGS_CHANGED)
     public SmtpSettingsView delete() {
         service.delete();
         return service.get();

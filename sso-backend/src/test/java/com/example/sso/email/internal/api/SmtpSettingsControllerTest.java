@@ -1,5 +1,7 @@
 package com.example.sso.email.internal.api;
 
+import com.example.sso.audit.AuditType;
+import com.example.sso.audit.Audited;
 import com.example.sso.email.internal.application.SmtpSettingsService;
 import com.example.sso.email.internal.application.SmtpSettingsView;
 import com.example.sso.shared.security.RequirePermission;
@@ -89,6 +91,24 @@ class SmtpSettingsControllerTest {
 
         assertThat(isStepUpGated("update", SmtpSettingsRequest.class)).as("update is step-up gated").isTrue();
         assertThat(isStepUpGated("delete")).as("delete is step-up gated").isTrue();
+    }
+
+    /**
+     * Whoever controls the mail relay decides where one-time codes and password-reset links are
+     * DELIVERED, so a change here has to be attributable afterwards. The marker covers the REFUSALS too:
+     * the interceptor records a 4xx as a failed privileged attempt (see {@code AdminAuditInterceptorTest}),
+     * which is how an attempt to edit a tier the caller does not own leaves a trace rather than none.
+     */
+    @Test
+    void theWriteEndpointsLeaveAnAuditTrail() throws Exception {
+        assertThat(auditTypeOf("update", SmtpSettingsRequest.class)).isEqualTo(AuditType.SMTP_SETTINGS_CHANGED);
+        assertThat(auditTypeOf("delete")).isEqualTo(AuditType.SMTP_SETTINGS_CHANGED);
+    }
+
+    private AuditType auditTypeOf(String method, Class<?>... params) throws Exception {
+        Audited annotation = SmtpSettingsController.class.getMethod(method, params).getAnnotation(Audited.class);
+        assertThat(annotation).as("%s is audited", method).isNotNull();
+        return annotation.value();
     }
 
     private String permissionOf(String method, Class<?>... params) throws Exception {

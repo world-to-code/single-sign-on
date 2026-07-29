@@ -1,5 +1,7 @@
 package com.example.sso.mfa.internal.sms.api;
 
+import com.example.sso.audit.AuditType;
+import com.example.sso.audit.Audited;
 import com.example.sso.mfa.SmsProvider;
 import com.example.sso.mfa.internal.sms.application.SmsSettingsService;
 import com.example.sso.mfa.internal.sms.application.SmsSettingsView;
@@ -138,6 +140,24 @@ class SmsSettingsControllerTest {
 
         assertThat(isStepUpGated("update", SmsSettingsRequest.class)).as("update is step-up gated").isTrue();
         assertThat(isStepUpGated("delete")).as("delete is step-up gated").isTrue();
+    }
+
+    /**
+     * Whoever controls the SMS gateway decides where one-time codes and password-reset links are
+     * DELIVERED, so a change here has to be attributable afterwards. The marker covers the REFUSALS too:
+     * the interceptor records a 4xx as a failed privileged attempt (see {@code AdminAuditInterceptorTest}),
+     * which is how an attempt to edit a tier the caller does not own leaves a trace rather than none.
+     */
+    @Test
+    void theWriteEndpointsLeaveAnAuditTrail() throws Exception {
+        assertThat(auditTypeOf("update", SmsSettingsRequest.class)).isEqualTo(AuditType.SMS_SETTINGS_CHANGED);
+        assertThat(auditTypeOf("delete")).isEqualTo(AuditType.SMS_SETTINGS_CHANGED);
+    }
+
+    private AuditType auditTypeOf(String method, Class<?>... params) throws Exception {
+        Audited annotation = SmsSettingsController.class.getMethod(method, params).getAnnotation(Audited.class);
+        assertThat(annotation).as("%s is audited", method).isNotNull();
+        return annotation.value();
     }
 
     private String permissionOf(String method, Class<?>... params) throws Exception {

@@ -2,6 +2,8 @@ package com.example.sso.mfa.internal.sms.api;
 
 import com.example.sso.mfa.internal.sms.application.SmsSettingsService;
 import com.example.sso.mfa.internal.sms.application.SmsSettingsView;
+import com.example.sso.audit.AuditType;
+import com.example.sso.audit.Audited;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.rbac.Permissions;
@@ -35,6 +37,7 @@ public class SmsSettingsController {
     @PutMapping
     @RequirePermission(Permissions.SMS_SETTINGS_UPDATE)
     @RequireStepUp
+    @Audited(AuditType.SMS_SETTINGS_CHANGED)
     public SmsSettingsView update(@Valid @RequestBody SmsSettingsRequest request) {
         service.update(request.toSpec());
         return service.get();
@@ -43,6 +46,7 @@ public class SmsSettingsController {
     @DeleteMapping
     @RequirePermission(Permissions.SMS_SETTINGS_UPDATE)
     @RequireStepUp
+    @Audited(AuditType.SMS_SETTINGS_CHANGED)
     public SmsSettingsView delete() {
         service.delete();
         return service.get();
