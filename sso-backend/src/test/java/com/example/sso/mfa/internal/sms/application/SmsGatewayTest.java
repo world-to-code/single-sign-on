@@ -111,6 +111,46 @@ class SmsGatewayTest {
                 .contains("Body=Your+code+is+123456");
     }
 
+    /**
+     * The number people TYPE is not the number Solapi compares. It matches registered sending numbers as bare
+     * digits, so a hyphenated one is refused with "발신번호 미등록" — which reads as though the number had never
+     * been registered, sending an administrator to check the wrong thing entirely.
+     */
+    @Test
+    void solapiSendsBareDigitsWhateverSeparatorsWereTyped() {
+        SmsAccount hyphenated = new SmsAccount(SmsProvider.SOLAPI, "API-KEY-1", SECRET, "010-9999-8888");
+
+        solapi().send(hyphenated, "010-1234-5678", "Your code is 123456");
+
+        RecordedRequest request = received.getFirst();
+        assertThat(request.body())
+                .contains("\"from\":\"01099998888\"")
+                .contains("\"to\":\"01012345678\"")
+                .doesNotContain("-");
+    }
+
+    /** Twilio wants E.164: separators go, the leading + stays — and is never invented for a number without one. */
+    @Test
+    void twilioNormalisesToE164WithoutInventingACountryCode() {
+        SmsAccount spaced = new SmsAccount(SmsProvider.TWILIO, "AC-SID-1", SECRET, "+1 555-000-0000");
+
+        twilio().send(spaced, "+1 (555) 123-4567", "Your code is 123456");
+
+        RecordedRequest request = received.getFirst();
+        assertThat(request.body())
+                .contains("To=%2B15551234567")
+                .contains("From=%2B15550000000");
+    }
+
+    @Test
+    void twilioLeavesANumberWithNoPlusWithoutOne() {
+        SmsAccount local = new SmsAccount(SmsProvider.TWILIO, "AC-SID-1", SECRET, "010-9999-8888");
+
+        twilio().send(local, "010-1234-5678", "code");
+
+        assertThat(received.getFirst().body()).contains("From=01099998888").doesNotContain("%2B010");
+    }
+
     private SolapiSmsGateway solapi() {
         return new SolapiSmsGateway(http(), Clock.fixed(NOW, ZoneOffset.UTC), url("/messages/v4/send"));
     }

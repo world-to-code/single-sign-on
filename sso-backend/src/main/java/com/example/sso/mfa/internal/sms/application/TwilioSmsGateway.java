@@ -31,11 +31,20 @@ class TwilioSmsGateway implements SmsGateway {
         return SmsProvider.TWILIO;
     }
 
+    /**
+     * Twilio wants E.164, so separators are stripped while a leading {@code +} is kept. No {@code +} is ADDED:
+     * guessing a country code for a number that has none would send to the wrong country silently.
+     */
+    private String e164(String number) {
+        String digits = number.replaceAll("[^0-9]", "");
+        return number.trim().startsWith("+") ? "+" + digits : digits;
+    }
+
     @Override
     public void send(SmsAccount account, String to, String message) {
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-        form.add("To", to);
-        form.add("From", account.senderNumber());
+        form.add("To", e164(to));
+        form.add("From", e164(account.senderNumber()));
         form.add("Body", message);
         http.post()
                 .uri(endpointTemplate, account.apiKey())

@@ -55,9 +55,20 @@ class SolapiSmsGateway implements SmsGateway {
                 .uri(endpoint)
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("Authorization", authorization(account))
-                .body(Map.of("message", Map.of("to", to, "from", account.senderNumber(), "text", message)))
+                .body(Map.of("message", Map.of("to", digitsOnly(to), "from", digitsOnly(account.senderNumber()),
+                        "text", message)))
                 .retrieve()
                 .toBodilessEntity();
+    }
+
+    /**
+     * Solapi compares numbers as bare digits, so anything else is not a formatting preference — a sending
+     * number saved as {@code 010-1234-5678} does not match the {@code 01012345678} registered on the account
+     * and the send is refused with "발신번호 미등록", which reads as if the number were never registered at all.
+     * People type separators and the console accepts them; stripping belongs here, at the wire.
+     */
+    private String digitsOnly(String number) {
+        return number.replaceAll("[^0-9]", "");
     }
 
     /** {@code HMAC-SHA256 apiKey=…, date=…, salt=…, signature=HMAC(date+salt, apiSecret)} — Solapi's scheme. */
