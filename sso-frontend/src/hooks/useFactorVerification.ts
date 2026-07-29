@@ -14,6 +14,12 @@ import { assertFactorCredential, registerFactorCredential } from "@/webauthn";
  */
 const DELIVERY_CHECKS_MS = [1500, 2500, 4000];
 
+/**
+ * How long before another code may be requested. A text costs the tenant money per message and arrives with a
+ * delay people underestimate, so an unthrottled resend button is a button that gets pressed five times.
+ */
+const RESEND_COOLDOWN_MS = 30_000;
+
 export interface FactorVerificationState {
   factor: string;
   setFactor: Dispatch<SetStateAction<string>>;
@@ -22,6 +28,10 @@ export interface FactorVerificationState {
   password: string;
   setPassword: Dispatch<SetStateAction<string>>;
   codeSent: boolean;
+  /** Seconds the sent code remains usable; 0 once it has expired or when none was sent. */
+  codeSecondsLeft: number;
+  /** Seconds until another code may be requested; 0 when it may be requested now. */
+  resendSecondsLeft: number;
   error: string | null;
   setError: Dispatch<SetStateAction<string | null>>;
   busy: boolean;
@@ -51,6 +61,9 @@ export function useFactorVerification(
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [codeSent, setCodeSent] = useState(false);
+  const [codeExpiresAt, setCodeExpiresAt] = useState<number | null>(null);
+  const [resendAt, setResendAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const [addressUnverified, setAddressUnverified] = useState(false);
   const [addressVerificationSent, setAddressVerificationSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +72,7 @@ export function useFactorVerification(
   // One set of inputs is reused across factors: clear them whenever the active factor changes.
   useEffect(() => {
     setCode(""); setPassword(""); setCodeSent(false); setError(null); setBusy(false);
+    setCodeExpiresAt(null); setResendAt(null);
     setAddressUnverified(false); setAddressVerificationSent(false);
   }, [factor]);
 
@@ -125,8 +139,12 @@ export function useFactorVerification(
   const sendCode = useCallback(async () => {
     setError(null); setAddressUnverified(false);
     try {
-      await prepareFactor(factor);
+      const challenge = await prepareFactor(factor);
       setCodeSent(true);
+      // Both clocks start from the answer, not from the send: the person's wait began when the screen changed.
+      setNow(Date.now());
+      setCodeExpiresAt(challenge.expiresInSeconds > 0 ? Date.now() + challenge.expiresInSeconds * 1000 : null);
+      setResendAt(Date.now() + RESEND_COOLDOWN_MS);
       void watchDelivery();
     } catch (e) {
       // A 403 here is not a failure to send — it is the factor refusing an address nobody has proven. Saying
@@ -140,6 +158,18 @@ export function useFactorVerification(
   }, [factor, watchDelivery]);
 
 
+  // One ticker for both countdowns, running only while something is counting down.
+  useEffect(() => {
+    if (codeExpiresAt === null && resendAt === null) {
+      return;
+    }
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, [codeExpiresAt, resendAt]);
+
+  const secondsUntil = (deadline: number | null) =>
+    deadline === null ? 0 : Math.max(0, Math.ceil((deadline - now) / 1000));
+
   const sendAddressVerification = useCallback(async () => {
     setError(null);
     try {
@@ -152,6 +182,7 @@ export function useFactorVerification(
 
   return {
     factor, setFactor, code, setCode, password, setPassword, codeSent,
+    codeSecondsLeft: secondsUntil(codeExpiresAt), resendSecondsLeft: secondsUntil(resendAt),
     error, setError, busy, setBusy, submitCode, submitPassword, sendCode, fido2, fido2Register,
     addressUnverified, sendAddressVerification, addressVerificationSent,
   };

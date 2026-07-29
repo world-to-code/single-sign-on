@@ -99,6 +99,10 @@ export const auth = {
   mfaEnterKeyManually: "Enter key manually",
   mfaEnrollStartFailed: "Could not start enrollment.",
   factorCodeNotDelivered: "We could not send your verification code. Try again, or contact your administrator.",
+  mfaCodeExpiresIn: "Expires in {{time}}",
+  mfaCodeExpired: "This code has expired.",
+  mfaResend: "Send a new code",
+  mfaResendIn: "Resend in {{seconds}}s",
   mfaVerifyAndEnroll: "Verify & enroll",
 
   // Shared TOTP QR ---------------------------------------------------------

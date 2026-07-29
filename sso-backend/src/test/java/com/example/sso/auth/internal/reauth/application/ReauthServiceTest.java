@@ -229,7 +229,7 @@ class ReauthServiceTest {
     @Test
     void prepareReturnsTheChallengeForAnAllowedFactor() {
         MockHttpServletRequest request = requestWithPending("FIDO2");
-        FactorChallenge challenge = new FactorChallenge(true, null, null, "{options}");
+        FactorChallenge challenge = new FactorChallenge(true, null, null, "{options}", 0);
         when(factorHandlers.get(AuthFactor.FIDO2)).thenReturn(handler);
         when(handler.prepare(user, request)).thenReturn(challenge);
 

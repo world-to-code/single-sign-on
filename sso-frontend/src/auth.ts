@@ -36,6 +36,8 @@ export interface FactorChallenge {
   secret: string | null;
   qrDataUri: string | null;
   publicKeyOptions: string | null;
+  /** How long the code just sent stays usable, so the screen can count down. 0 when no code was sent. */
+  expiresInSeconds: number;
 }
 
 export interface FactorVerification {

@@ -101,6 +101,10 @@ export const auth: Record<keyof typeof enAuth, string> = {
   mfaEnterKeyManually: "키 직접 입력",
   mfaEnrollStartFailed: "등록을 시작할 수 없습니다.",
   factorCodeNotDelivered: "인증번호를 보내지 못했습니다. 다시 시도하거나 관리자에게 문의하세요.",
+  mfaCodeExpiresIn: "{{time}} 후 만료",
+  mfaCodeExpired: "인증번호가 만료되었습니다.",
+  mfaResend: "인증번호 다시 받기",
+  mfaResendIn: "{{seconds}}초 후 재발송",
   mfaVerifyAndEnroll: "확인 후 등록",
 
   // Shared TOTP QR ---------------------------------------------------------

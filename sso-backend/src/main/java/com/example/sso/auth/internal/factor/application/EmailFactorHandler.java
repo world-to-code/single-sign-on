@@ -15,11 +15,13 @@ public class EmailFactorHandler implements FactorHandler {
 
     private final EmailVerificationService emails;
     private final SessionOtpChallenge challenge;
+    private final Duration codeValidFor;
 
     public EmailFactorHandler(EmailVerificationService emails,
                               @Value("${sso.email-otp.ttl-minutes:10}") long ttlMinutes,
                               @Value("${sso.email-otp.max-attempts:5}") int maxAttempts) {
         this.emails = emails;
+        this.codeValidFor = Duration.ofMinutes(ttlMinutes);
         this.challenge = new SessionOtpChallenge("EMAIL_FACTOR", Duration.ofMinutes(ttlMinutes), maxAttempts);
     }
 
@@ -34,7 +36,7 @@ public class EmailFactorHandler implements FactorHandler {
         String code = emails.generateCode();
         challenge.issue(request.getSession(true), code);
         emails.sendCode(user.getOrgId(), user.getEmail(), code);
-        return FactorChallenge.sent();
+        return FactorChallenge.sent(codeValidFor);
     }
 
     @Override

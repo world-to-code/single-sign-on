@@ -17,11 +17,13 @@ public class SmsFactorHandler implements FactorHandler {
 
     private final SmsVerificationService sms;
     private final SessionOtpChallenge challenge;
+    private final Duration codeValidFor;
 
     public SmsFactorHandler(SmsVerificationService sms,
                             @Value("${sso.sms-otp.ttl-minutes}") long ttlMinutes,
                             @Value("${sso.sms-otp.max-attempts}") int maxAttempts) {
         this.sms = sms;
+        this.codeValidFor = Duration.ofMinutes(ttlMinutes);
         this.challenge = new SessionOtpChallenge("SMS_FACTOR", Duration.ofMinutes(ttlMinutes), maxAttempts);
     }
 
@@ -40,7 +42,7 @@ public class SmsFactorHandler implements FactorHandler {
         sms.clearDeliveryFailure(deliveryKey);
         challenge.issue(request.getSession(true), code);
         sms.sendCode(user.getOrgId(), user.getPhoneNumber(), code, deliveryKey);
-        return FactorChallenge.sent();
+        return FactorChallenge.sent(codeValidFor);
     }
 
     @Override

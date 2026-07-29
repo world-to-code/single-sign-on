@@ -10,7 +10,7 @@ vi.mock("react-i18next", async (importOriginal) => ({
 
 vi.mock("@/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/auth")>()),
-  prepareFactor: vi.fn().mockResolvedValue({ prepared: true }),
+  prepareFactor: vi.fn().mockResolvedValue({ prepared: true, expiresInSeconds: 600 }),
   verifyFactor: vi.fn(),
   factorDeliveryFailed: vi.fn(),
 }));
@@ -57,4 +57,38 @@ describe("useFactorVerification delivery watch", () => {
     await new Promise((resume) => setTimeout(resume, 2200));
     expect(result.current.error).toBeNull();
   });
+
+  /** A code with no visible clock is one people find has expired only by being told they are wrong. */
+  it("counts the sent code down from the lifetime the server gave it", async () => {
+    vi.mocked(factorDeliveryFailed).mockResolvedValue(false);
+    const { result } = renderHook(() => useFactorVerification(session));
+
+    await act(async () => { await result.current.sendCode(); });
+
+    expect(result.current.codeSecondsLeft).toBeGreaterThan(590);
+    expect(result.current.codeSecondsLeft).toBeLessThanOrEqual(600);
+  });
+
+  /** Resend is throttled: a text costs the tenant money and arrives slower than people expect. */
+  it("holds the resend closed for a cooldown after sending", async () => {
+    vi.mocked(factorDeliveryFailed).mockResolvedValue(false);
+    const { result } = renderHook(() => useFactorVerification(session));
+
+    expect(result.current.resendSecondsLeft).toBe(0); // nothing sent yet, nothing to wait for
+    await act(async () => { await result.current.sendCode(); });
+
+    expect(result.current.resendSecondsLeft).toBeGreaterThan(25);
+  });
+
+  /** A step that issues no expiring code must not show a clock counting to zero. */
+  it("shows no countdown when the step sent no code", async () => {
+    vi.mocked(prepareFactor).mockResolvedValue({ prepared: true, expiresInSeconds: 0 } as never);
+    vi.mocked(factorDeliveryFailed).mockResolvedValue(false);
+    const { result } = renderHook(() => useFactorVerification(session));
+
+    await act(async () => { await result.current.sendCode(); });
+
+    expect(result.current.codeSecondsLeft).toBe(0);
+  });
+
 });

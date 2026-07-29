@@ -22,11 +22,19 @@ function preferredFactor(factors: string[], session: SessionView): string {
 }
 
 /** Completes the current authentication-policy step; the user picks one allowed factor. */
+/** m:ss — a bare second count reads as a number, not as time left. */
+function countdown(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
 export default function MfaStep({ session, onDone }: { session: SessionView; onDone: (s: SessionView) => void }) {
   const { t } = useTranslation("auth");
   const factors = session.pendingFactors;
   const {
     factor, setFactor, code, setCode, password, setPassword, codeSent,
+    codeSecondsLeft, resendSecondsLeft,
     error, setError, busy, setBusy, submitCode, submitPassword, sendCode, fido2, fido2Register,
     addressUnverified, sendAddressVerification, addressVerificationSent,
   } = useFactorVerification({ initialFactor: preferredFactor(factors, session), onSuccess: onDone });
@@ -142,6 +150,23 @@ export default function MfaStep({ session, onDone }: { session: SessionView; onD
       {((factor === "TOTP" && !enrollBlocked) || ((factor === "EMAIL" || factor === "SMS") && codeSent)) && (
         <form onSubmit={submitCode} className="space-y-3">
           <OtpInput value={code} onChange={(e) => setCode(e.target.value)} />
+
+          {/* A code with no visible clock is one people discover has expired by being told they are wrong, and
+              a screen with no way back is one they abandon. Both belong beside the input, not in a help page. */}
+          {(factor === "EMAIL" || factor === "SMS") && codeSent && (
+            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span>
+                {codeSecondsLeft > 0
+                  ? t("mfaCodeExpiresIn", { time: countdown(codeSecondsLeft) })
+                  : t("mfaCodeExpired")}
+              </span>
+              <button type="button" onClick={sendCode} disabled={resendSecondsLeft > 0}
+                      className="font-medium text-primary underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline">
+                {resendSecondsLeft > 0 ? t("mfaResendIn", { seconds: resendSecondsLeft }) : t("mfaResend")}
+              </button>
+            </div>
+          )}
+
           <Button type="submit" className="w-full" disabled={busy}>
             {busy ? <Loader2 className="animate-spin" /> : <Icon />} {needEnroll ? t("mfaVerifyAndEnroll") : t("verify")}
           </Button>
