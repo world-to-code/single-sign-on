@@ -1,5 +1,6 @@
 package com.example.sso.mfa.internal.sms.application;
 
+import com.example.sso.audit.AuditService;
 import com.example.sso.mfa.SmsProvider;
 import com.example.sso.mfa.SmsSender;
 import com.example.sso.organization.NewOrganization;
@@ -30,6 +31,7 @@ class TenantSmsSenderIT extends AbstractIntegrationTest {
     @Autowired SmsSettingsService settings;
     @Autowired OrganizationService organizations;
     @Autowired OrgContext orgContext;
+    @Autowired AuditService audit;
 
     private final List<UUID> createdOrgs = new ArrayList<>();
     private final RecordingGateway gateway = new RecordingGateway();
@@ -82,7 +84,7 @@ class TenantSmsSenderIT extends AbstractIntegrationTest {
     }
 
     private TenantSmsSender sender() {
-        return new TenantSmsSender(settings, orgContext, List.of(gateway), fallback);
+        return new TenantSmsSender(settings, orgContext, audit, List.of(gateway), fallback);
     }
 
     private UUID org() {

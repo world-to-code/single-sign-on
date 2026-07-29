@@ -19,10 +19,13 @@ import org.springframework.web.client.RestClient;
 class TwilioSmsGateway implements SmsGateway {
 
     private final RestClient http;
+    private final SmsDelivery delivery;
     private final String endpointTemplate;
 
-    TwilioSmsGateway(SmsHttp httpFactory, @Value("${sso.sms.twilio.endpoint}") String endpointTemplate) {
+    TwilioSmsGateway(SmsHttp httpFactory, SmsDelivery delivery,
+            @Value("${sso.sms.twilio.endpoint}") String endpointTemplate) {
         this.http = httpFactory.client();
+        this.delivery = delivery;
         this.endpointTemplate = endpointTemplate;
     }
 
@@ -46,12 +49,12 @@ class TwilioSmsGateway implements SmsGateway {
         form.add("To", e164(to));
         form.add("From", e164(account.senderNumber()));
         form.add("Body", message);
-        http.post()
+        delivery.attempt(provider(), () -> http.post()
                 .uri(endpointTemplate, account.apiKey())
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .headers(headers -> headers.setBasicAuth(account.apiKey(), account.apiSecret()))
                 .body(form)
                 .retrieve()
-                .toBodilessEntity();
+                .toBodilessEntity());
     }
 }

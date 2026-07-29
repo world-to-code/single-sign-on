@@ -1,5 +1,8 @@
 package com.example.sso.mfa.internal.sms.application;
 
+import com.example.sso.audit.AuditRecord;
+import com.example.sso.audit.AuditService;
+import com.example.sso.audit.AuditType;
 import com.example.sso.mfa.SmsProvider;
 import com.example.sso.mfa.SmsSender;
 import com.example.sso.tenancy.OrgContext;
@@ -9,8 +12,10 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -18,6 +23,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -31,6 +37,7 @@ class TenantSmsSenderTest {
 
     private SmsSettingsService settings;
     private OrgContext orgContext;
+    private AuditService audit;
     private SmsGateway solapi;
     private SmsGateway twilio;
     private SmsSender fallback;
@@ -41,13 +48,14 @@ class TenantSmsSenderTest {
         settings = mock(SmsSettingsService.class);
         // The real one binds the tenant on the connection for RLS; here it only has to run the lookup, since a
         // mocked store has no row-level security to be excluded by. TenantSmsSenderIT is what covers the binding.
+        audit = mock(AuditService.class);
         orgContext = mock(OrgContext.class);
         Mockito.lenient().when(orgContext.callInOrg(any(), any()))
                 .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(1)).get());
         solapi = gateway(SmsProvider.SOLAPI);
         twilio = gateway(SmsProvider.TWILIO);
         fallback = mock(SmsSender.class);
-        sender = new TenantSmsSender(settings, orgContext, List.of(solapi, twilio), fallback);
+        sender = new TenantSmsSender(settings, orgContext, audit, List.of(solapi, twilio), fallback);
     }
 
     @Test
@@ -94,7 +102,7 @@ class TenantSmsSenderTest {
     void aStoredProviderWithNoClientOnThisBuildIsRefusedRatherThanFallenBack() {
         SmsAccount account = new SmsAccount(SmsProvider.TWILIO, "AC-SID", "token", "+15550000000");
         when(settings.resolve(ORG)).thenReturn(Optional.of(account));
-        sender = new TenantSmsSender(settings, orgContext, List.of(solapi), fallback);
+        sender = new TenantSmsSender(settings, orgContext, audit, List.of(solapi), fallback);
 
         assertThatThrownBy(() -> sender.send(ORG, "+15551234567", "code"))
                 .isInstanceOf(IllegalStateException.class);
@@ -106,7 +114,7 @@ class TenantSmsSenderTest {
     void theRefusalNamesTheProviderAndNothingElse() {
         SmsAccount account = new SmsAccount(SmsProvider.TWILIO, "AC-SID", "the-auth-token", "+15550000000");
         when(settings.resolve(ORG)).thenReturn(Optional.of(account));
-        sender = new TenantSmsSender(settings, orgContext, List.of(solapi), fallback);
+        sender = new TenantSmsSender(settings, orgContext, audit, List.of(solapi), fallback);
 
         assertThatThrownBy(() -> sender.send(ORG, "+15551234567", "code"))
                 .hasMessageContaining("TWILIO")
@@ -143,6 +151,94 @@ class TenantSmsSenderTest {
 
         verify(orgContext).callInOrg(eq(ORG), any());
         verify(orgContext, never()).callAsPlatform(any());
+    }
+
+    /**
+     * A refusal is never retried. The provider already answered — the same request gets the same answer, so a
+     * retry buys nothing, doubles the log noise, and on a channel billed per message is a habit worth not
+     * forming.
+     */
+    @Test
+    void aProviderRefusalIsNotRetriedAndIsAudited() {
+        configuredSolapi();
+        doThrow(SmsDeliveryException.refused(SmsProvider.SOLAPI, "FailedToAddMessage", null))
+                .when(solapi).send(any(), anyString(), anyString());
+
+        assertThatThrownBy(() -> sender.send(ORG, "01012345678", "code"))
+                .isInstanceOf(SmsDeliveryException.class);
+
+        verify(solapi, times(1)).send(any(), anyString(), anyString());
+        assertThat(recordedFailure().reason()).isEqualTo("FailedToAddMessage");
+    }
+
+    /** A connection that never opened proves nothing was sent, which is the only safe case to repeat. */
+    @Test
+    void aProviderThatWasNeverReachedIsRetriedOnce() {
+        configuredSolapi();
+        doThrow(SmsDeliveryException.unreachable(SmsProvider.SOLAPI, SmsDeliveryException.NOT_CONNECTED, null))
+                .when(solapi).send(any(), anyString(), anyString());
+
+        assertThatThrownBy(() -> sender.send(ORG, "01012345678", "code"))
+                .isInstanceOf(SmsDeliveryException.class);
+
+        verify(solapi, times(2)).send(any(), anyString(), anyString());
+    }
+
+    /**
+     * A request that went out and was never answered MAY have been accepted. Repeating it bills the tenant
+     * twice and texts the person twice, so ambiguity means no retry.
+     */
+    @Test
+    void aSendWhoseOutcomeIsUnknownIsNotRepeated() {
+        configuredSolapi();
+        doThrow(SmsDeliveryException.unreachable(SmsProvider.SOLAPI, SmsDeliveryException.NO_ANSWER, null))
+                .when(solapi).send(any(), anyString(), anyString());
+
+        assertThatThrownBy(() -> sender.send(ORG, "01012345678", "code"))
+                .isInstanceOf(SmsDeliveryException.class);
+
+        verify(solapi, times(1)).send(any(), anyString(), anyString());
+    }
+
+    /** A retry that succeeds is a delivered code, so nothing is audited as a failure. */
+    @Test
+    void aSuccessfulRetryLeavesNoFailureBehind() {
+        configuredSolapi();
+        doThrow(SmsDeliveryException.unreachable(SmsProvider.SOLAPI, SmsDeliveryException.NOT_CONNECTED, null))
+                .doNothing()
+                .when(solapi).send(any(), anyString(), anyString());
+
+        sender.send(ORG, "01012345678", "code");
+
+        verify(solapi, times(2)).send(any(), anyString(), anyString());
+        verify(audit, never()).record(any());
+    }
+
+    /** The audit row must name the provider and its code, never the provider's own message text. */
+    @Test
+    void theAuditRecordsTheCodeAndTheTenantNotTheProvidersProse() {
+        configuredSolapi();
+        doThrow(SmsDeliveryException.refused(SmsProvider.SOLAPI, "FailedToAddMessage", null))
+                .when(solapi).send(any(), anyString(), anyString());
+
+        assertThatThrownBy(() -> sender.send(ORG, "01012345678", "code")).isInstanceOf(RuntimeException.class);
+
+        AuditRecord record = recordedFailure();
+        assertThat(record.type()).isEqualTo(AuditType.SMS_SEND_FAILED);
+        assertThat(record.success()).isFalse();
+        assertThat(record.orgId()).isEqualTo(ORG);
+        assertThat(record.detail()).doesNotContain("발신번호");
+    }
+
+    private void configuredSolapi() {
+        when(settings.resolve(ORG)).thenReturn(Optional.of(
+                new SmsAccount(SmsProvider.SOLAPI, "KEY", "secret", "01099998888")));
+    }
+
+    private AuditRecord recordedFailure() {
+        ArgumentCaptor<AuditRecord> captured = ArgumentCaptor.forClass(AuditRecord.class);
+        verify(audit).record(captured.capture());
+        return captured.getValue();
     }
 
     private SmsGateway gateway(SmsProvider provider) {

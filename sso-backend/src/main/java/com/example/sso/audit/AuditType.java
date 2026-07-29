@@ -115,6 +115,10 @@ public enum AuditType {
     // password-reset links are DELIVERED — redirecting them is an account-takeover primitive that needs no
     // password. So a change to either is privilege-relevant and must be attributable to an administrator after
     // the fact, alongside the refused attempts the interceptor records as failures.
+    // The provider refused or could not be reached, so a one-time code was not delivered. Recorded because the
+    // send is off-request: nothing it throws reaches the user, and the tenant's own gateway config is the usual
+    // cause — an unregistered sending number, an expired key — which is only actionable if somebody can see it.
+    SMS_SEND_FAILED(AuditCategory.SYSTEM),
     // The outbound send queue overflowed and a notification was discarded. A dropped one-time code is a person
     // who cannot finish signing in, and the cause is upstream (a hanging provider), so it must be visible rather
     // than inferred from its absence.

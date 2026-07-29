@@ -152,11 +152,11 @@ class SmsGatewayTest {
     }
 
     private SolapiSmsGateway solapi() {
-        return new SolapiSmsGateway(http(), Clock.fixed(NOW, ZoneOffset.UTC), url("/messages/v4/send"));
+        return new SolapiSmsGateway(http(), new SmsDelivery(), Clock.fixed(NOW, ZoneOffset.UTC), url("/messages/v4/send"));
     }
 
     private TwilioSmsGateway twilio() {
-        return new TwilioSmsGateway(http(), url("/Accounts/{sid}/Messages.json"));
+        return new TwilioSmsGateway(http(), new SmsDelivery(), url("/Accounts/{sid}/Messages.json"));
     }
 
     private SmsHttp http() {

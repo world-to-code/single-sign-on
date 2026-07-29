@@ -33,13 +33,15 @@ class SolapiSmsGateway implements SmsGateway {
     private static final String SIGNATURE_ALGORITHM = "HmacSHA256";
 
     private final RestClient http;
+    private final SmsDelivery delivery;
     private final String endpoint;
     private final Clock clock;
     private final SecureRandom salt = new SecureRandom();
 
-    SolapiSmsGateway(SmsHttp httpFactory, Clock clock,
+    SolapiSmsGateway(SmsHttp httpFactory, SmsDelivery delivery, Clock clock,
             @Value("${sso.sms.solapi.endpoint}") String endpoint) {
         this.http = httpFactory.client();
+        this.delivery = delivery;
         this.endpoint = endpoint;
         this.clock = clock;
     }
@@ -51,14 +53,14 @@ class SolapiSmsGateway implements SmsGateway {
 
     @Override
     public void send(SmsAccount account, String to, String message) {
-        http.post()
+        delivery.attempt(provider(), () -> http.post()
                 .uri(endpoint)
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("Authorization", authorization(account))
                 .body(Map.of("message", Map.of("to", digitsOnly(to), "from", digitsOnly(account.senderNumber()),
                         "text", message)))
                 .retrieve()
-                .toBodilessEntity();
+                .toBodilessEntity());
     }
 
     /**

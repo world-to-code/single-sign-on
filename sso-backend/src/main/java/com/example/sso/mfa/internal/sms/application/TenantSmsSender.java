@@ -1,6 +1,11 @@
 package com.example.sso.mfa.internal.sms.application;
 
 import com.example.sso.mfa.SmsProvider;
+import com.example.sso.audit.AuditActor;
+import com.example.sso.audit.AuditRecord;
+import com.example.sso.audit.AuditService;
+import com.example.sso.audit.AuditSubjectType;
+import com.example.sso.audit.AuditType;
 import com.example.sso.mfa.SmsSender;
 import com.example.sso.tenancy.OrgContext;
 import java.util.EnumMap;
@@ -32,13 +37,15 @@ class TenantSmsSender implements SmsSender {
 
     private final SmsSettingsService settings;
     private final OrgContext orgContext;
+    private final AuditService audit;
     private final Map<SmsProvider, SmsGateway> gateways = new EnumMap<>(SmsProvider.class);
     private final SmsSender fallback;
 
-    TenantSmsSender(SmsSettingsService settings, OrgContext orgContext, List<SmsGateway> gateways,
-            @Qualifier("loggingSmsSender") SmsSender fallback) {
+    TenantSmsSender(SmsSettingsService settings, OrgContext orgContext, AuditService audit,
+            List<SmsGateway> gateways, @Qualifier("loggingSmsSender") SmsSender fallback) {
         this.settings = settings;
         this.orgContext = orgContext;
+        this.audit = audit;
         gateways.forEach(gateway -> this.gateways.put(gateway.provider(), gateway));
         this.fallback = fallback;
     }
@@ -56,7 +63,47 @@ class TenantSmsSender implements SmsSender {
             // the only honest answer: the tenant configured a gateway and this deployment cannot use it.
             throw new IllegalStateException("no SMS client for provider " + account.provider());
         }
-        gateway.send(account, phoneNumber, message);
+        deliver(gateway, account, phoneNumber, message, orgId);
+    }
+
+    /**
+     * Sends, retrying ONCE and only when the provider was demonstrably never reached.
+     *
+     * <p>Deliberately not a general retry. A text is billed per message and is not idempotent, so re-sending
+     * one that may already have been accepted charges the tenant twice and delivers twice. A refusal is worse
+     * to retry: the same request is refused identically, so it buys nothing and doubles the noise. And the
+     * person is waiting at a code prompt with a resend button, which is a better retry than any loop here.
+     */
+    private void deliver(SmsGateway gateway, SmsAccount account, String phoneNumber, String message, UUID orgId) {
+        try {
+            gateway.send(account, phoneNumber, message);
+        } catch (SmsDeliveryException firstAttempt) {
+            if (!firstAttempt.retryable()) {
+                throw audited(firstAttempt, orgId);
+            }
+            log.warn("SMS provider {} was not reached; retrying once", firstAttempt.provider());
+            try {
+                gateway.send(account, phoneNumber, message);
+            } catch (SmsDeliveryException retry) {
+                throw audited(retry, orgId);
+            }
+        }
+    }
+
+    /**
+     * Records the failure and hands it back. Auditing here rather than at the caller is what makes an
+     * undelivered code visible at all: the send runs off the request thread, so nothing it throws reaches a
+     * user, and a stack trace in a log is not something an administrator goes looking for.
+     *
+     * <p>The record carries the provider and its error CODE, never its message: that text is a third party's
+     * and would land verbatim in the audit row.
+     */
+    private SmsDeliveryException audited(SmsDeliveryException failure, UUID orgId) {
+        log.error("SMS not delivered via {}: {}", failure.provider(), failure.providerCode());
+        audit.record(new AuditRecord(AuditType.SMS_SEND_FAILED, AuditActor.of(), false,
+                "SMS not delivered via " + failure.provider(), null, AuditSubjectType.NONE, null, orgId,
+                failure.providerCode(), true));
+        return failure;
     }
 
     /**
