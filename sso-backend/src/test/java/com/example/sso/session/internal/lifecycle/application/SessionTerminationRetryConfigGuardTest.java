@@ -9,6 +9,9 @@ import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 /**
  * The startup guard must reject a durable registry TTL shorter than the give-up horizon — otherwise a durable
  * termination entry could expire from Redis before it is delivered or abandoned, silently losing a revocation.
+ *
+ * <p>The schedule arithmetic itself is checked once in {@code RetryScheduleTest}; what is left here is this
+ * subsystem's wiring — that the guard runs the check, and that it names this subsystem's key and noun.
  */
 class SessionTerminationRetryConfigGuardTest {
 
@@ -21,7 +24,11 @@ class SessionTerminationRetryConfigGuardTest {
         SessionTerminationRetryConfigGuard guard =
                 new SessionTerminationRetryConfigGuard(backoff, Duration.ofMinutes(10)); // 10min < ~31.75min
 
-        assertThatIllegalStateException().isThrownBy(guard::verify).withMessageContaining("registry-ttl");
+        assertThatIllegalStateException().isThrownBy(guard::verify)
+                // This subsystem's own key and noun — logoutretry passes different ones into the same shared
+                // check, and a swap would point an operator at the wrong knob for the wrong loss.
+                .withMessageContaining("sso.zerotrust.termination-retry.durable.registry-ttl")
+                .withMessageContaining("a revocation");
     }
 
     @Test

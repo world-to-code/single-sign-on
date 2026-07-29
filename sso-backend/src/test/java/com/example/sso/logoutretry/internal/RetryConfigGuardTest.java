@@ -9,6 +9,9 @@ import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 /**
  * The startup guard must reject a retry store TTL shorter than the give-up horizon — otherwise a retry entry
  * could expire before it is delivered or abandoned, silently losing a logout.
+ *
+ * <p>The schedule arithmetic itself is checked once in {@code RetryScheduleTest}; what is left here is this
+ * subsystem's wiring — that the guard runs the check, and that it names this subsystem's key and noun.
  */
 class RetryConfigGuardTest {
 
@@ -20,7 +23,10 @@ class RetryConfigGuardTest {
         RetryConfigGuard guard = new RetryConfigGuard(backoff, Duration.ofHours(1)); // 1h < ~6.4h horizon
 
         assertThatIllegalStateException().isThrownBy(guard::verify)
-                .withMessageContaining("registry-ttl");
+                // The key and the noun are this subsystem's own; the other guard passes different ones
+                // into the same shared check, and a swap would send an operator to the wrong knob.
+                .withMessageContaining("sso.logout.propagation.retry.registry-ttl")
+                .withMessageContaining("a logout");
     }
 
     @Test

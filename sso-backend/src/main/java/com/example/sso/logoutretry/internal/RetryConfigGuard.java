@@ -6,12 +6,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * Fails startup on a retry config that would silently lose logouts. The give-up horizon (total time from the
- * first failure to abandonment, {@link RetryBackoff#maxGiveUpHorizon()}) is derived from the backoff tunables
- * and the cap, while the retry store TTL is set independently — so raising {@code max-attempts} or the backoff
- * without raising {@code registry-ttl} could let a retry entry EXPIRE from Redis before it is delivered or
- * explicitly abandoned+audited, dropping the logout with no give-up record. This guard makes that
- * misconfiguration loud (fail-closed) instead of a silent revocation gap.
+ * Fails startup on a retry config that would silently lose logouts: the give-up horizon is derived from the
+ * backoff tunables while {@code registry-ttl} is set independently, so raising one without the other lets a
+ * retry entry expire from Redis before it is delivered or explicitly abandoned + audited. The comparison
+ * itself lives on the shared schedule, so the session-termination guard cannot drift from this one.
  */
 @Component
 class RetryConfigGuard {
@@ -27,13 +25,6 @@ class RetryConfigGuard {
 
     @PostConstruct
     void verify() {
-        Duration horizon = backoff.maxGiveUpHorizon();
-        if (registryTtl.compareTo(horizon) < 0) {
-            throw new IllegalStateException(
-                    "sso.logout.propagation.retry.registry-ttl (" + registryTtl + ") is shorter than the retry "
-                            + "give-up horizon (" + horizon + "): a retry entry could expire before it is "
-                            + "delivered or abandoned, silently losing a logout. Raise registry-ttl above the "
-                            + "horizon (or lower max-attempts / the backoff).");
-        }
+        backoff.requireOutlivedBy(registryTtl);
     }
 }
