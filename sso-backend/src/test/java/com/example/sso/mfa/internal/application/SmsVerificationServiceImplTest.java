@@ -41,7 +41,7 @@ class SmsVerificationServiceImplTest {
     @Mock
     SmsSender sms;
 
-    private final SmsDeliveryStatus deliveryStatus = mock(SmsDeliveryStatus.class);
+    private final CodeDeliveryStatus deliveryStatus = mock(CodeDeliveryStatus.class);
     private final BrandingResolver branding = mock(BrandingResolver.class);
     private final OrgContext orgContext = mock(OrgContext.class);
     private final StaticMessageSource messages = new StaticMessageSource();

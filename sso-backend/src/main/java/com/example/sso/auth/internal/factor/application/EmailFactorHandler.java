@@ -4,7 +4,9 @@ import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.mfa.EmailVerificationService;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.user.account.UserAccount;
+import com.example.sso.shared.error.BadRequestException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
 import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -34,9 +36,19 @@ public class EmailFactorHandler implements FactorHandler {
     public FactorChallenge prepare(UserAccount user, HttpServletRequest request) {
         requireVerifiedAddress(user);
         String code = emails.generateCode();
+        String deliveryKey = request.getSession(true).getId();
+        // Cleared synchronously: leaving it to the send would let a resend followed quickly by a guess report
+        // the previous attempt's failure as this one's.
+        emails.clearDeliveryFailure(deliveryKey);
         challenge.issue(request.getSession(true), code);
-        emails.sendCode(user.getOrgId(), user.getEmail(), code);
+        emails.sendCode(user.getOrgId(), user.getEmail(), code, deliveryKey);
         return FactorChallenge.sent(codeValidFor);
+    }
+
+    @Override
+    public boolean deliveryFailed(HttpServletRequest request) {
+        HttpSession session = request.getSession(false);
+        return session != null && emails.deliveryFailed(session.getId());
     }
 
     @Override
@@ -44,6 +56,11 @@ public class EmailFactorHandler implements FactorHandler {
         // Re-checked here too: a code minted before the address changed must not still authenticate.
         if (!user.isEmailVerified()) {
             return false;
+        }
+        // "That code is wrong" is the wrong answer when no code was ever sent — and no attempt is spent for a
+        // code that never arrived.
+        if (deliveryFailed(request)) {
+            throw BadRequestException.of("auth.factor.email.notDelivered");
         }
         return challenge.matches(request.getSession(false), verification.code());
     }

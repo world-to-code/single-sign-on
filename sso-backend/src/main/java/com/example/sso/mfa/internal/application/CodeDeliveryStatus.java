@@ -6,7 +6,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 /**
- * Whether the last code sent for a given login attempt actually left the building.
+ * Whether the last code sent for a given login attempt actually left the building — by text or by email.
  *
  * <p>The send runs off the request thread, so by the time it fails the "we texted you a code" response has
  * already reached the browser and there is nowhere left to put the bad news. Recording it here lets the next
@@ -20,14 +20,14 @@ import org.springframework.stereotype.Component;
  * expired, not one that never came.
  */
 @Component
-class SmsDeliveryStatus {
+class CodeDeliveryStatus {
 
-    private static final String KEY = "sms:delivery:failed:";
+    private static final String KEY = "code:delivery:failed:";
 
     private final StringRedisTemplate redis;
     private final Duration ttl;
 
-    SmsDeliveryStatus(StringRedisTemplate redis, @Value("${sso.sms-otp.ttl-minutes}") long ttlMinutes) {
+    CodeDeliveryStatus(StringRedisTemplate redis, @Value("${sso.sms-otp.ttl-minutes}") long ttlMinutes) {
         this.redis = redis;
         this.ttl = Duration.ofMinutes(ttlMinutes);
     }

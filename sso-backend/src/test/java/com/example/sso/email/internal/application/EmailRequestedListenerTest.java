@@ -13,6 +13,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import com.example.sso.email.template.EmailDeliveryFailed;
+import java.util.Map;
+import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
+
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -42,8 +50,52 @@ class EmailRequestedListenerTest {
     @Mock
     OrgContext orgContext;
 
+    private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+
+
+    /**
+     * The send runs off the request thread, so what it throws reaches a log and nobody who is waiting for the
+     * mail. Announcing the failure is what lets the module that asked for it tell that person — and it is an
+     * EVENT rather than a call back, because that module already publishes one to get here.
+     */
+    @Test
+    void aFailedSendIsAnnouncedAndStillSurfaces() {
+        doThrow(new IllegalStateException("relay down")).when(mailSender).send(any());
+
+        assertThatThrownBy(() -> listener().onEmailRequested(
+                new EmailRequested(EmailEvent.EMAIL_VERIFICATION_CODE, "a@b.example", Map.of(), null, "attempt-1")))
+                .isInstanceOf(IllegalStateException.class);
+
+        ArgumentCaptor<EmailDeliveryFailed> announced = ArgumentCaptor.forClass(EmailDeliveryFailed.class);
+        verify(events).publishEvent(announced.capture());
+        assertThat(announced.getValue().deliveryKey()).isEqualTo("attempt-1");
+    }
+
+    /** Mail nobody is waiting on a screen for carries no attempt, and announcing it tells nobody anything. */
+    @Test
+    void aFailedSendWithNoWaitingAttemptAnnouncesNoKey() {
+        doThrow(new IllegalStateException("relay down")).when(mailSender).send(any());
+
+        assertThatThrownBy(() -> listener().onEmailRequested(
+                new EmailRequested(EmailEvent.EMAIL_VERIFICATION_CODE, "a@b.example", Map.of(), null)))
+                .isInstanceOf(IllegalStateException.class);
+
+        ArgumentCaptor<EmailDeliveryFailed> announced = ArgumentCaptor.forClass(EmailDeliveryFailed.class);
+        verify(events).publishEvent(announced.capture());
+        assertThat(announced.getValue().deliveryKey()).isNull();
+    }
+
+    /** A send that works announces nothing. */
+    @Test
+    void aSuccessfulSendAnnouncesNothing() {
+        listener().onEmailRequested(
+                new EmailRequested(EmailEvent.EMAIL_VERIFICATION_CODE, "a@b.example", Map.of(), null, "attempt-1"));
+
+        verify(events, never()).publishEvent(any(EmailDeliveryFailed.class));
+    }
+
     private EmailRequestedListener listener() {
-        return new EmailRequestedListener(mailSender, composer, orgContext);
+        return new EmailRequestedListener(mailSender, composer, orgContext, events);
     }
 
     private EmailRequested request(String to, UUID orgId) {

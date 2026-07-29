@@ -1,6 +1,7 @@
 package com.example.sso.auth.internal.factor.application;
 
 import com.example.sso.authpolicy.factor.AuthFactor;
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.mfa.EmailVerificationService;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.user.account.UserAccount;
@@ -13,9 +14,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.lenient;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -50,6 +53,38 @@ class EmailFactorHandlerTest {
         return new FactorVerificationRequest(value, null, null);
     }
 
+    /**
+     * The mail goes out through an event, off the request thread, so its failure lands after "we emailed you"
+     * has already reached the browser. Telling the person their code is WRONG at that point is the one answer
+     * that is certainly untrue — and it must not spend one of their attempts either.
+     */
+    @Test
+    void aCodeThatWasNeverEmailedIsReportedAsSuchRatherThanAsAWrongCode() {
+        when(emails.generateCode()).thenReturn(CODE);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        handler.prepare(user, request);
+        when(emails.deliveryFailed(request.getSession(true).getId())).thenReturn(true);
+
+        assertThatThrownBy(() -> handler.verify(user, code("000000"), request))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("auth.factor.email.notDelivered");
+
+        // Still usable once delivery recovers, which it would not be if those had counted as tries.
+        when(emails.deliveryFailed(request.getSession(true).getId())).thenReturn(false);
+        assertThat(handler.verify(user, code(CODE), request)).isTrue();
+    }
+
+    /** Asking for a fresh code forgets the previous failure, or a resend reports the attempt before it. */
+    @Test
+    void requestingAFreshCodeClearsAnEarlierFailure() {
+        when(emails.generateCode()).thenReturn(CODE);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+
+        handler.prepare(user, request);
+
+        verify(emails).clearDeliveryFailure(request.getSession(true).getId());
+    }
+
     @Test
     void factorIsEmail() {
         assertThat(handler.factor()).isEqualTo(AuthFactor.EMAIL);
@@ -63,7 +98,7 @@ class EmailFactorHandlerTest {
         FactorChallenge challenge = handler.prepare(user, request);
 
         assertThat(challenge.prepared()).isTrue();
-        verify(emails).sendCode(ORG, "alice@example.com", CODE); // via the user's own tenant relay
+        verify(emails).sendCode(eq(ORG), eq("alice@example.com"), eq(CODE), any()); // via the user's own tenant relay
     }
 
     @Test
@@ -129,7 +164,7 @@ class EmailFactorHandlerTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
 
         assertThatThrownBy(() -> handler.prepare(user, request)).isInstanceOf(ForbiddenException.class);
-        verify(emails, never()).sendCode(any(), any(), any());
+        verify(emails, never()).sendCode(any(), any(), any(), any());
     }
 
     @Test

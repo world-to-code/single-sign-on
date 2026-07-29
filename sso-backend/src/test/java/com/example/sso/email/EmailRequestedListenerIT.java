@@ -68,7 +68,7 @@ class EmailRequestedListenerIT extends AbstractIntegrationTest {
     void aPublishedEmailRequestIsConsumedOffThreadWithTheRightPayload() {
         String callerThread = Thread.currentThread().getName();
 
-        emails.sendCode(null, "otp@example.com", "111111"); // real path: no surrounding transaction
+        emails.sendCode(null, "otp@example.com", "111111", null); // real path: no surrounding transaction
 
         // Consumed: the composer was invoked with the event's kind + recipient + the code/ttl variables, and the
         // mailer sent the composed message — i.e. the event travelled publish → listener → compose → send.
@@ -85,12 +85,12 @@ class EmailRequestedListenerIT extends AbstractIntegrationTest {
     @Test
     void aRolledBackTransactionNeverSendsButACommittedOneDoes() {
         new TransactionTemplate(txManager).executeWithoutResult(status -> {
-            emails.sendCode(null, "rolledback@example.com", "222222");
+            emails.sendCode(null, "rolledback@example.com", "222222", null);
             status.setRollbackOnly(); // AFTER_COMMIT must NOT fire for an aborted business action
         });
         // A committed send afterwards gives a positive sync point to await on.
         new TransactionTemplate(txManager).executeWithoutResult(status ->
-                emails.sendCode(null, "committed@example.com", "333333"));
+                emails.sendCode(null, "committed@example.com", "333333", null));
 
         await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
                 verify(mailSender).send(argThat(e -> "committed@example.com".equals(e.to()))));

@@ -13,6 +13,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 
+import static org.mockito.Mockito.mock;
+
 /**
  * Unit tests for {@link EmailVerificationServiceImpl}: it mints a 6-digit code and PUBLISHES an
  * {@link EmailRequested} carrying the code + TTL and the tenant to send it for (null for a global recipient).
@@ -26,8 +28,10 @@ class EmailVerificationServiceImplTest {
     @Mock
     ApplicationEventPublisher events;
 
+    private final CodeDeliveryStatus deliveryStatus = mock(CodeDeliveryStatus.class);
+
     private EmailVerificationServiceImpl service() {
-        return new EmailVerificationServiceImpl(events, 10);
+        return new EmailVerificationServiceImpl(events, deliveryStatus, 10);
     }
 
     @Test
@@ -39,7 +43,7 @@ class EmailVerificationServiceImplTest {
 
     @Test
     void sendCodePublishesAnEmailRequestForTheTenantWithTheCodeAndTtl() {
-        service().sendCode(ORG, "alice@example.com", "123456");
+        service().sendCode(ORG, "alice@example.com", "123456", null);
 
         ArgumentCaptor<EmailRequested> event = ArgumentCaptor.captor();
         verify(events).publishEvent(event.capture());
@@ -51,7 +55,7 @@ class EmailVerificationServiceImplTest {
 
     @Test
     void aGlobalRecipientPublishesWithANullOrg() {
-        service().sendCode(null, "root@example.com", "654321");
+        service().sendCode(null, "root@example.com", "654321", null);
 
         ArgumentCaptor<EmailRequested> event = ArgumentCaptor.captor();
         verify(events).publishEvent(event.capture());

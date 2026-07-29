@@ -25,11 +25,13 @@ public class EmailVerificationServiceImpl implements EmailVerificationService {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final ApplicationEventPublisher events;
+    private final CodeDeliveryStatus deliveryStatus;
     private final long ttlMinutes; // single source of truth with the email factor's TTL, for the message text
 
-    public EmailVerificationServiceImpl(ApplicationEventPublisher events,
+    public EmailVerificationServiceImpl(ApplicationEventPublisher events, CodeDeliveryStatus deliveryStatus,
                                         @Value("${sso.email-otp.ttl-minutes:10}") long ttlMinutes) {
         this.events = events;
+        this.deliveryStatus = deliveryStatus;
         this.ttlMinutes = ttlMinutes;
     }
 
@@ -39,8 +41,19 @@ public class EmailVerificationServiceImpl implements EmailVerificationService {
     }
 
     @Override
-    public void sendCode(UUID orgId, String email, String code) {
+    public void sendCode(UUID orgId, String email, String code, String deliveryKey) {
         Map<String, Object> vars = Map.of("code", code, "ttlMinutes", ttlMinutes);
-        events.publishEvent(new EmailRequested(EmailEvent.EMAIL_VERIFICATION_CODE, email, vars, orgId));
+        events.publishEvent(
+                new EmailRequested(EmailEvent.EMAIL_VERIFICATION_CODE, email, vars, orgId, deliveryKey));
+    }
+
+    @Override
+    public void clearDeliveryFailure(String deliveryKey) {
+        deliveryStatus.clear(deliveryKey);
+    }
+
+    @Override
+    public boolean deliveryFailed(String deliveryKey) {
+        return deliveryStatus.failed(deliveryKey);
     }
 }

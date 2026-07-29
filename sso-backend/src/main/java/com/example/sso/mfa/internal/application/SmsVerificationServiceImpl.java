@@ -28,13 +28,13 @@ public class SmsVerificationServiceImpl implements SmsVerificationService {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final SmsSender sms;
-    private final SmsDeliveryStatus deliveryStatus;
+    private final CodeDeliveryStatus deliveryStatus;
     private final BrandingResolver branding;
     private final OrgContext orgContext;
     private final MessageSource messages;
     private final long ttlMinutes; // single source of truth with the SMS factor's TTL, for the message text
 
-    public SmsVerificationServiceImpl(SmsSender sms, SmsDeliveryStatus deliveryStatus,
+    public SmsVerificationServiceImpl(SmsSender sms, CodeDeliveryStatus deliveryStatus,
             BrandingResolver branding, OrgContext orgContext, MessageSource messages,
             @Value("${sso.sms-otp.ttl-minutes}") long ttlMinutes) {
         this.sms = sms;

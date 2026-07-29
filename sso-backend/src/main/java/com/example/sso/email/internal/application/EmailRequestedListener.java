@@ -2,8 +2,10 @@ package com.example.sso.email.internal.application;
 
 import com.example.sso.email.TenantMailSender;
 import com.example.sso.email.template.EmailComposer;
+import com.example.sso.email.template.EmailDeliveryFailed;
 import com.example.sso.email.template.EmailRequested;
 import com.example.sso.tenancy.OrgContext;
+import org.springframework.context.ApplicationEventPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
@@ -24,10 +26,22 @@ class EmailRequestedListener {
     private final TenantMailSender mailSender;
     private final EmailComposer composer;
     private final OrgContext orgContext;
+    private final ApplicationEventPublisher events;
 
     @Async("notificationExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onEmailRequested(EmailRequested event) {
+        try {
+            deliver(event);
+        } catch (RuntimeException undelivered) {
+            // Announced before it surfaces: this runs off the request thread, so what it throws reaches the
+            // async handler's log and nobody who is waiting for the mail.
+            events.publishEvent(new EmailDeliveryFailed(event.deliveryKey()));
+            throw undelivered;
+        }
+    }
+
+    private void deliver(EmailRequested event) {
         if (event.orgId() != null) {
             orgContext.runInOrg(event.orgId(),
                     () -> mailSender.send(composer.compose(event.kind(), event.recipient(), event.variables())));

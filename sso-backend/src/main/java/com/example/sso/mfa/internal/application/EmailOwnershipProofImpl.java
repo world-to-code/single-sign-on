@@ -51,7 +51,7 @@ public class EmailOwnershipProofImpl implements EmailOwnershipProof {
         redis.opsForHash().putAll(key, Map.of(
                 CODE, code, EMAIL, email, ATTEMPTS, String.valueOf(maxAttempts)));
         redis.expire(key, ttl);
-        emails.sendCode(orgId, email, code);
+        emails.sendCode(orgId, email, code, null);
     }
 
     @Override
