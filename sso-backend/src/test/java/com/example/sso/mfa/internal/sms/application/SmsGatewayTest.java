@@ -111,48 +111,23 @@ class SmsGatewayTest {
                 .contains("Body=Your+code+is+123456");
     }
 
+
+
+
     /**
-     * The number people TYPE is not the number Solapi compares. It matches registered sending numbers as bare
-     * digits, so a hyphenated one is refused with "발신번호 미등록" — which reads as though the number had never
-     * been registered, sending an administrator to check the wrong thing entirely.
+     * Solapi matches the sending number against whatever was REGISTERED on the account, and only the
+     * administrator who registered it knows that string. Reformatting it here was a guess that cost a real
+     * diagnosis — it goes out exactly as configured.
      */
     @Test
-    void solapiSendsBareDigitsWhateverSeparatorsWereTyped() {
+    void solapiSendsTheNumbersExactlyAsConfigured() {
         SmsAccount hyphenated = new SmsAccount(SmsProvider.SOLAPI, "API-KEY-1", SECRET, "010-9999-8888");
 
         solapi().send(hyphenated, "010-1234-5678", "Your code is 123456");
 
-        RecordedRequest request = received.getFirst();
-        assertThat(request.body())
-                .contains("\"from\":\"01099998888\"")
-                .contains("\"to\":\"01012345678\"")
-                .doesNotContain("-");
-    }
-
-    /**
-     * Solapi registers Korean DOMESTIC numbers, so an international-form sending number never matches whatever
-     * is on the account — the provider answers "발신번호 미등록", which reads as though it were never registered.
-     * Korean numbers all begin with 0, so a leading 82 is the country code rather than a prefix.
-     */
-    @Test
-    void solapiConvertsAnInternationalKoreanNumberToDomesticForm() {
-        SmsAccount international = new SmsAccount(SmsProvider.SOLAPI, "API-KEY-1", SECRET, "+82 10-9999-8888");
-
-        solapi().send(international, "+82 10-1234-5678", "Your code is 123456");
-
         assertThat(received.getFirst().body())
-                .contains("\"from\":\"01099998888\"")
-                .contains("\"to\":\"01012345678\"");
-    }
-
-    /** A number that already begins with 0 is left alone — 082… is a domestic prefix, not a country code. */
-    @Test
-    void solapiLeavesADomesticNumberUntouched() {
-        SmsAccount domestic = new SmsAccount(SmsProvider.SOLAPI, "API-KEY-1", SECRET, "0822345678");
-
-        solapi().send(domestic, "01012345678", "code");
-
-        assertThat(received.getFirst().body()).contains("\"from\":\"0822345678\"");
+                .contains("\"from\":\"010-9999-8888\"")
+                .contains("\"to\":\"010-1234-5678\"");
     }
 
     /** Twilio wants E.164: separators go, the leading + stays — and is never invented for a number without one. */

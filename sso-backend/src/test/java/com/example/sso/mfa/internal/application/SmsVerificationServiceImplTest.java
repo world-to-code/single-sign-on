@@ -17,6 +17,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import com.example.sso.branding.Branding;
+import com.example.sso.branding.BrandingResolver;
+import java.util.Locale;
+import org.junit.jupiter.api.BeforeEach;
+import com.example.sso.tenancy.OrgContext;
+import org.springframework.context.support.StaticMessageSource;
+
+import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.mock;
 
 /**
@@ -34,9 +42,18 @@ class SmsVerificationServiceImplTest {
     SmsSender sms;
 
     private final SmsDeliveryStatus deliveryStatus = mock(SmsDeliveryStatus.class);
+    private final BrandingResolver branding = mock(BrandingResolver.class);
+    private final OrgContext orgContext = mock(OrgContext.class);
+    private final StaticMessageSource messages = new StaticMessageSource();
+
+    @BeforeEach
+    void registerTemplate() {
+        messages.addMessage("mfa.sms.verification.text", Locale.getDefault(),
+                "[{0}] Verification code: {1}. Enter it within {2} minutes.");
+    }
 
     private SmsVerificationServiceImpl service() {
-        return new SmsVerificationServiceImpl(sms, deliveryStatus, 10);
+        return new SmsVerificationServiceImpl(sms, deliveryStatus, branding, orgContext, messages, 10);
     }
 
     @Test
@@ -48,11 +65,36 @@ class SmsVerificationServiceImplTest {
 
     @Test
     void sendCodeTextsTheCodeAndTtlToTheGivenTenantAndNumber() {
+        when(orgContext.callInOrg(eq(ORG), any())).thenReturn(new Branding(null, null, "Acme ID"));
+
         service().sendCode(ORG, PHONE, "123456", "delivery-key");
 
         ArgumentCaptor<String> message = ArgumentCaptor.captor();
         verify(sms).send(eq(ORG), eq(PHONE), message.capture());
-        assertThat(message.getValue()).contains("123456").contains("10 minutes");
+        // The tenant's own name leads: a code from an unknown number that names nobody is a phishing text.
+        assertThat(message.getValue()).contains("Acme ID").contains("123456").contains("10 minutes");
+    }
+
+    /** A tenant that has set no name still gets a message, under the deployment's own. */
+    @Test
+    void aTenantWithNoNameOfItsOwnFallsBackToTheDeploymentName() {
+        when(orgContext.callInOrg(eq(ORG), any())).thenReturn(new Branding(null, null, null));
+
+        service().sendCode(ORG, PHONE, "123456", "delivery-key");
+
+        ArgumentCaptor<String> message = ArgumentCaptor.captor();
+        verify(sms).send(eq(ORG), eq(PHONE), message.capture());
+        assertThat(message.getValue()).contains(Branding.platformDefault().productName());
+    }
+
+    /** Branding is read under RLS and can fail; a one-time code must go out regardless. */
+    @Test
+    void aBrandingLookupThatFailsDoesNotStopTheCode() {
+        when(orgContext.callInOrg(eq(ORG), any())).thenThrow(new IllegalStateException("no context"));
+
+        service().sendCode(ORG, PHONE, "123456", "delivery-key");
+
+        verify(sms).send(eq(ORG), eq(PHONE), anyString());
     }
 
     /**
