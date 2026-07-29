@@ -9,6 +9,7 @@ import com.example.sso.portal.binding.PortalSessionBinding;
 import com.example.sso.session.policy.SessionPolicyDetails;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.shared.security.RequirePermission;
+import com.example.sso.shared.security.RequireStepUp;
 import com.example.sso.user.rbac.Permissions;
 import jakarta.validation.Valid;
 import java.util.Optional;
@@ -25,6 +26,12 @@ import org.springframework.web.bind.annotation.RestController;
  * step-up posture (a {@code PORTAL}/{@code admin} binding) plus its console-only enforcement knobs (elevation-
  * token lifetime + entry IP allowlist, in {@code admin_console_config}); {@code /user} selects the session policy
  * governing the end-user portal (a {@code PORTAL}/{@code user} binding). Both are per tenant.
+ *
+ * <p>Both writes are {@code @RequireStepUp}-gated, and the root one especially: it SELECTS the policy that
+ * decides the console's own step-up posture, and edits the elevation lifetime and entry IP allowlist. Editing a
+ * session policy is already gated ({@code AdminSessionPolicyController}), so without this an administrator
+ * could reach the same looser posture by swapping in a different policy instead of editing one — the gate on
+ * the object with none on the pointer to it.
  */
 @RestController
 @RequestMapping("/api/admin/portal-settings")
@@ -44,6 +51,7 @@ public class AdminPortalSettingsController {
 
     @PutMapping
     @RequirePermission(Permissions.PORTAL_SETTINGS_UPDATE)
+    @RequireStepUp
     @Audited(AuditType.PORTAL_SETTINGS_CHANGED)
     public AdminConsoleSettingsView updatePortalSettings(@Valid @RequestBody AdminConsoleSettingsRequest request) {
         // One transaction for both writes: a malformed CIDR must not leave a new session policy applied with a
@@ -60,6 +68,7 @@ public class AdminPortalSettingsController {
 
     @PutMapping("/user")
     @RequirePermission(Permissions.PORTAL_SETTINGS_UPDATE)
+    @RequireStepUp
     @Audited(AuditType.PORTAL_SETTINGS_CHANGED)
     public AdminPortalSettingsView updateUserPortalSettings(@Valid @RequestBody AdminPortalSettingsRequest request) {
         portalBinding.setSessionPolicy(PortalApps.USER, request.toPolicyId());
