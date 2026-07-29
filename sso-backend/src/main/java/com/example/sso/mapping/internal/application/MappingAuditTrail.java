@@ -64,6 +64,18 @@ class MappingAuditTrail {
                 null, AuditSubjectType.NONE, null, tier).withReason(refused.getMessage()));
     }
 
+    /**
+     * A rule has failed to reconcile often enough to be considered stuck, and the sweep has parked it at its
+     * backoff cap. Written NOW like a refusal — there is no business transaction here at all, and this row is
+     * the ONE signal an operator gets: after it, the rule goes quiet rather than repeating itself hourly.
+     */
+    void reconcileStalledNow(MappingRule rule) {
+        String detail = "rule %s (%s): target %s has stopped converging — the sweep is now deferring it"
+                .formatted(rule.getId(), rule.getThenKind(), rule.getTargetId());
+        audit.record(new AuditRecord(AuditType.MAPPING_RULE_RECONCILE_STALLED, SYSTEM_PRINCIPAL, false, detail,
+                null, AuditSubjectType.NONE, rule.getTargetId().toString(), rule.getOrgId()));
+    }
+
     private void publishOnCommit(AuditRecord record) {
         events.publishEvent(new MappingAuditPending(record));
     }

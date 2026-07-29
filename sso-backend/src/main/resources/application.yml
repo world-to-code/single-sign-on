@@ -253,6 +253,12 @@ sso:
       sweep:
         interval: PT10M               # @Scheduled fixedDelay — durability backstop that re-drives lost reconciles, not the primary path
         lock-ttl: PT8M                # SET NX PX single-driver lock; < interval so a crashed driver's next tick re-acquires
+        backoff:                      # a rule that keeps FAILING is re-driven less often, not every tick
+          multiplier: 2.0             # exponential growth per consecutive failure
+          randomization-factor: 0.5   # jitter band (+/-50%): rules that failed together must not wake together
+          max-defer: PT6H             # cap — where a standing conflict comes to rest, and self-heals from
+          failure-window: PT24H       # TTL on the consecutive-failure count, so an isolated failure decays
+          stalled-after: 6            # consecutive failures before it is announced once as no longer converging
   crypto:
     master-password: dev-master-password-change-me  # dev only — override in prod
     salt: 5c0744940b5c369b

@@ -38,16 +38,21 @@ class MappingReconcileSweeper {
     private final MappingRuleRepository rules;
     private final MappingRuleEvaluator evaluator;
     private final OrgContext orgContext;
+    private final MappingReconcileBackoff backoff;
+    private final MappingAuditTrail trail;
     private final Duration lockTtl;
     private final String nodeToken = UUID.randomUUID().toString();
 
     MappingReconcileSweeper(StringRedisTemplate redis, MappingRuleRepository rules,
-            MappingRuleEvaluator evaluator, OrgContext orgContext,
+            MappingRuleEvaluator evaluator, OrgContext orgContext, MappingReconcileBackoff backoff,
+            MappingAuditTrail trail,
             @Value("${sso.mapping.reconcile.sweep.lock-ttl}") Duration lockTtl) {
         this.redis = redis;
         this.rules = rules;
         this.evaluator = evaluator;
         this.orgContext = orgContext;
+        this.backoff = backoff;
+        this.trail = trail;
         this.lockTtl = lockTtl;
     }
 
@@ -65,6 +70,9 @@ class MappingReconcileSweeper {
         List<MappingRule> all = orgContext.callAsPlatform(() -> rules.findAll().stream()
                 .sorted(Comparator.comparing(MappingRule::getId)).toList());
         for (MappingRule rule : all) {
+            if (backoff.deferred(rule.getId())) {
+                continue; // still inside the window its last failure bought
+            }
             try {
                 Runnable reconcile = () -> evaluator.reevaluateRule(rule);
                 if (rule.getOrgId() == null) {
@@ -72,8 +80,16 @@ class MappingReconcileSweeper {
                 } else {
                     orgContext.runInOrg(rule.getOrgId(), reconcile);
                 }
+                backoff.recordSuccess(rule.getId());
             } catch (RuntimeException e) {
-                log.warn("mapping reconcile sweep failed for rule {} — next tick will retry", rule.getId(), e);
+                // A fixed-interval retry is right for a transient failure and wrong for a standing conflict —
+                // the last-administrator invariant refusing a retraction will refuse it again in ten minutes,
+                // and the refusal row that exists so an operator can SEE a stalled rule arrives 144 times a day.
+                boolean nowStalled = backoff.recordFailure(rule.getId());
+                log.warn("mapping reconcile sweep failed for rule {} — deferring the next attempt", rule.getId(), e);
+                if (nowStalled) {
+                    trail.reconcileStalledNow(rule);
+                }
             }
         }
     }
