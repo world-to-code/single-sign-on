@@ -91,4 +91,24 @@ describe("useFactorVerification delivery watch", () => {
     expect(result.current.codeSecondsLeft).toBe(0);
   });
 
+
+  /**
+   * The window has to outlast the slowest way a send can fail. A refusal answers in milliseconds, but a
+   * connection that is simply never accepted — a blocked submission port, the failure people actually hit —
+   * takes the transport's full timeout, ten seconds for SMTP. The first version of this stopped watching at
+   * eight seconds, so the one failure that mattered was the one it could never report.
+   *
+   * <p>Asserted on the OUTCOME at that moment rather than on how many times it asked: polling left running by
+   * earlier tests inflates a call count, which made the first version of this test pass against the defect.
+   */
+  it("reports a failure that only appears after ten seconds", async () => {
+    const failsAt = Date.now() + 10_000;
+    vi.mocked(factorDeliveryFailed).mockImplementation(async () => Date.now() >= failsAt);
+    const { result } = renderHook(() => useFactorVerification(session));
+
+    await act(async () => { await result.current.sendCode(); });
+
+    await waitFor(() => expect(result.current.error).toBe("factorCodeNotDelivered"), { timeout: 18_000 });
+  }, 25_000);
+
 });

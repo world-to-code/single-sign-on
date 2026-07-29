@@ -8,11 +8,14 @@ import type { SessionView } from "@/auth";
 import { assertFactorCredential, registerFactorCredential } from "@/webauthn";
 
 /**
- * When to ask whether the code actually went out, in millis BETWEEN checks. A provider refusal comes back in
- * well under a second, so the early checks catch nearly everything; the later ones cover a slow provider
- * without leaving the request open. Short and finite on purpose — this is a courtesy, not a delivery receipt.
+ * When to ask whether the code actually went out, in millis BETWEEN checks.
+ *
+ * <p>A refusal comes back in well under a second, so the early checks catch nearly everything. The window as a
+ * whole must outlast the SLOWEST way a send can fail, which is a connection timing out rather than being
+ * refused — an SMTP relay is given ten seconds. The first version of this stopped at eight, so the one failure
+ * people actually hit, a blocked submission port, was the one it could never report.
  */
-const DELIVERY_CHECKS_MS = [1500, 2500, 4000];
+const DELIVERY_CHECKS_MS = [1500, 2500, 4000, 4000, 4000];
 
 /**
  * How long before another code may be requested. A text costs the tenant money per message and arrives with a
