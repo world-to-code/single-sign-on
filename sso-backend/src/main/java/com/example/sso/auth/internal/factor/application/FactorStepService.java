@@ -69,6 +69,15 @@ public class FactorStepService {
         return handler.prepare(user, request);
     }
 
+    /**
+     * Whether the code this session last requested failed to go out. Answered without touching the user or the
+     * policy: it reports on a send this session already asked for, so it neither advances the login nor says
+     * anything a caller could not already infer.
+     */
+    public boolean deliveryFailed(AuthFactor factor, HttpServletRequest request) {
+        return factorHandlers.get(factor).deliveryFailed(request);
+    }
+
     private AuthPolicyView resolveForLogin(UserAccount user, UUID loginOrgId) {
         return loginPolicy.resolve(user, loginOrgId);
     }

@@ -100,6 +100,7 @@ export const auth: Record<keyof typeof enAuth, string> = {
   mfaScanWithApp: "인증 앱으로 스캔",
   mfaEnterKeyManually: "키 직접 입력",
   mfaEnrollStartFailed: "등록을 시작할 수 없습니다.",
+  factorCodeNotDelivered: "인증번호를 보내지 못했습니다. 다시 시도하거나 관리자에게 문의하세요.",
   mfaVerifyAndEnroll: "확인 후 등록",
 
   // Shared TOTP QR ---------------------------------------------------------

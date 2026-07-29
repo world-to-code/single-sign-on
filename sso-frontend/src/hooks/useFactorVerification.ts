@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Dispatch, FormEvent, SetStateAction } from "react";
 import { ApiError, errorMessage } from "@/api";
-import { prepareFactor, verifyFactor } from "@/auth";
+import { factorDeliveryFailed, prepareFactor, verifyFactor } from "@/auth";
 import { requestEmailCode } from "@/profile";
 import type { SessionView } from "@/auth";
 import { assertFactorCredential, registerFactorCredential } from "@/webauthn";
+
+/**
+ * When to ask whether the code actually went out, in millis BETWEEN checks. A provider refusal comes back in
+ * well under a second, so the early checks catch nearly everything; the later ones cover a slow provider
+ * without leaving the request open. Short and finite on purpose — this is a courtesy, not a delivery receipt.
+ */
+const DELIVERY_CHECKS_MS = [1500, 2500, 4000];
 
 export interface FactorVerificationState {
   factor: string;
@@ -38,6 +46,7 @@ export interface FactorVerificationState {
 export function useFactorVerification(
   { initialFactor, onSuccess }: { initialFactor: string; onSuccess: (session: SessionView) => void | Promise<void> },
 ): FactorVerificationState {
+  const { t } = useTranslation("auth");
   const [factor, setFactor] = useState(initialFactor);
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
@@ -90,12 +99,35 @@ export function useFactorVerification(
     return verifyFactor("FIDO2", { credential: await registerFactorCredential(prepared) });
   }, "Passkey registration failed.", "Passkey registration was cancelled or failed."), [run]);
 
+  /**
+   * Asks, for a short while, whether the code actually went out.
+   *
+   * <p>The send is deliberately off the request thread, so `prepare` has already answered by the time it can
+   * fail — leaving somebody staring at a code box for a text that is never coming. Polling briefly is the only
+   * way to tell them without putting the provider's latency back on the login path.
+   *
+   * <p>It stops at the first failure and gives up after the window: a code that has not failed by then has
+   * been handed to the provider, and anything after that is the carrier's business, not ours.
+   */
+  const watchDelivery = useCallback(async () => {
+    for (const waitMs of DELIVERY_CHECKS_MS) {
+      await new Promise((resume) => setTimeout(resume, waitMs));
+      // A check that itself fails says nothing about the send; leave the screen as it is.
+      const failed = await factorDeliveryFailed(factor).catch(() => false);
+      if (failed) {
+        setError(t("factorCodeNotDelivered"));
+        return;
+      }
+    }
+  }, [factor, t]);
+
   // Sends a code for the CURRENTLY selected code factor (EMAIL or SMS); the backend prepare texts/emails it.
   const sendCode = useCallback(async () => {
     setError(null); setAddressUnverified(false);
     try {
       await prepareFactor(factor);
       setCodeSent(true);
+      void watchDelivery();
     } catch (e) {
       // A 403 here is not a failure to send — it is the factor refusing an address nobody has proven. Saying
       // "could not send, try again" invites the one action that cannot possibly work; surface the server's
@@ -105,7 +137,8 @@ export function useFactorVerification(
       }
       setError(errorMessage(e));
     }
-  }, [factor]);
+  }, [factor, watchDelivery]);
+
 
   const sendAddressVerification = useCallback(async () => {
     setError(null);

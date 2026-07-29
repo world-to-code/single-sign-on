@@ -82,6 +82,14 @@ const factorSegment = (factor: string) => factor.toLowerCase();
 // Generic factor steps — the backend dispatches to the per-factor strategy.
 export const prepareFactor = (factor: string) =>
   apiPost<FactorChallenge>(`/api/auth/factors/${factorSegment(factor)}/prepare`);
+/**
+ * Whether the code just requested failed to leave. `prepare` answers BEFORE the send happens — deliberately,
+ * so that sending a code is never measurably slower than not sending one — so a screen waiting for a text has
+ * no other way to learn that none is coming.
+ */
+export const factorDeliveryFailed = (factor: string) =>
+  apiGet<{ failed: boolean }>(`/api/auth/factors/${factorSegment(factor)}/delivery`).then((r) => r.failed);
+
 export const verifyFactor = (factor: string, payload: FactorVerification) =>
   apiPost<SessionView>(`/api/auth/factors/${factorSegment(factor)}/verify`, payload);
 

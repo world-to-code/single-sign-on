@@ -53,14 +53,19 @@ public class SmsFactorHandler implements FactorHandler {
         return challenge.matches(request.getSession(false), verification.code());
     }
 
+    @Override
+    public boolean deliveryFailed(HttpServletRequest request) {
+        HttpSession session = request.getSession(false);
+        return session != null && sms.deliveryFailed(session.getId());
+    }
+
     /**
      * "That code is wrong" is the wrong answer when no code was ever sent. The send happens off the request
      * thread, so its failure lands after the "we texted you" response has gone; this is the first moment the
      * person can be told. No attempt is consumed either — there was nothing to get wrong.
      */
     private void requireCodeWasDelivered(HttpServletRequest request) {
-        HttpSession session = request.getSession(false);
-        if (session != null && sms.deliveryFailed(session.getId())) {
+        if (deliveryFailed(request)) {
             throw BadRequestException.of("auth.factor.sms.notDelivered");
         }
     }

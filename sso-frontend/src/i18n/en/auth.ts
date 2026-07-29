@@ -98,6 +98,7 @@ export const auth = {
   mfaScanWithApp: "Scan with your authenticator app",
   mfaEnterKeyManually: "Enter key manually",
   mfaEnrollStartFailed: "Could not start enrollment.",
+  factorCodeNotDelivered: "We could not send your verification code. Try again, or contact your administrator.",
   mfaVerifyAndEnroll: "Verify & enroll",
 
   // Shared TOTP QR ---------------------------------------------------------

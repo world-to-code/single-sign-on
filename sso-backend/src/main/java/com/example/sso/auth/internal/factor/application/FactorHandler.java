@@ -28,6 +28,14 @@ public interface FactorHandler {
         return FactorChallenge.none();
     }
 
+    /**
+     * Whether the challenge this session last asked for failed to REACH the user — a text that never left, not
+     * a wrong answer. Only factors that hand a code to a third party can fail this way; the rest never do.
+     */
+    default boolean deliveryFailed(HttpServletRequest request) {
+        return false;
+    }
+
     /** Verifies the user's response for this factor (and completes enrollment where applicable). */
     boolean verify(UserAccount user, FactorVerificationRequest verification, HttpServletRequest request);
 }
