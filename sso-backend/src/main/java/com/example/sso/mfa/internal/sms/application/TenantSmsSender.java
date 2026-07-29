@@ -99,7 +99,8 @@ class TenantSmsSender implements SmsSender {
      * and would land verbatim in the audit row.
      */
     private SmsDeliveryException audited(SmsDeliveryException failure, UUID orgId) {
-        log.error("SMS not delivered via {}: {}", failure.provider(), failure.providerCode());
+        log.error("SMS not delivered via {}: {} ({})", failure.provider(), failure.providerCode(),
+                failure.providerDetail() == null ? "no explanation given" : failure.providerDetail());
         audit.record(new AuditRecord(AuditType.SMS_SEND_FAILED, AuditActor.of(), false,
                 "SMS not delivered via " + failure.provider(), null, AuditSubjectType.NONE, null, orgId,
                 failure.providerCode(), true));

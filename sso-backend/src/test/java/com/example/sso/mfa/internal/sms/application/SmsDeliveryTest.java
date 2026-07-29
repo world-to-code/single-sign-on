@@ -32,16 +32,40 @@ class SmsDeliveryTest {
     }
 
     /**
-     * The provider's prose must not travel with the failure: it is a third party's free text and would land
-     * verbatim in an audit row and a log line.
+     * The provider's explanation is kept, separately, because the CODE alone is not diagnosable: Solapi answers
+     * {@code FailedToAddMessage} for an unregistered sending number, an expired key and an empty balance alike.
+     * Dropping it cost a diagnosis the first time this fired in anger.
      */
     @Test
-    void theProvidersOwnMessageTextIsNotCarried() {
+    void theProvidersExplanationIsKeptForTheLog() {
+        SmsDeliveryException failure = attemptFailing(new HttpClientErrorException(HttpStatus.BAD_REQUEST,
+                "Bad Request", """
+                        {"errorCode":"FailedToAddMessage","errorMessage":"발신번호 미등록"}""".getBytes(), null));
+
+        assertThat(failure.providerDetail()).isEqualTo("발신번호 미등록");
+    }
+
+    /**
+     * But it stays OUT of the exception message, which is what the audit row and any surfaced error are built
+     * from: it is unbounded text from a third party.
+     */
+    @Test
+    void theProvidersExplanationStaysOutOfTheExceptionMessage() {
         SmsDeliveryException failure = attemptFailing(new HttpClientErrorException(HttpStatus.BAD_REQUEST,
                 "Bad Request", """
                         {"errorCode":"FailedToAddMessage","errorMessage":"발신번호 미등록"}""".getBytes(), null));
 
         assertThat(failure.getMessage()).doesNotContain("발신번호").contains("FailedToAddMessage");
+    }
+
+    /** And it is bounded, since it is pasted verbatim into a log line. */
+    @Test
+    void anOverlongExplanationIsTruncated() {
+        String flood = "x".repeat(5000);
+        SmsDeliveryException failure = attemptFailing(new HttpClientErrorException(HttpStatus.BAD_REQUEST,
+                "Bad Request", ("{\"errorCode\":\"E\",\"errorMessage\":\"" + flood + "\"}").getBytes(), null));
+
+        assertThat(failure.providerDetail()).hasSizeLessThan(250);
     }
 
     @Test

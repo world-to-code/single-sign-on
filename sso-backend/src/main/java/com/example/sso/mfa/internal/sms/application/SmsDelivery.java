@@ -25,7 +25,7 @@ class SmsDelivery {
         try {
             call.run();
         } catch (HttpStatusCodeException refused) {
-            throw SmsDeliveryException.refused(provider, errorCode(refused), refused);
+            throw SmsDeliveryException.refused(provider, errorCode(refused), explanation(refused), refused);
         } catch (ResourceAccessException unreachable) {
             throw SmsDeliveryException.unreachable(provider, reachability(unreachable), unreachable);
         }
@@ -48,6 +48,20 @@ class SmsDelivery {
             // A body that is not the documented shape tells us nothing; the status still does.
         }
         return "HTTP " + refused.getStatusCode().value();
+    }
+
+    /**
+     * The provider's own explanation, for the log line only. {@code FailedToAddMessage} is Solapi's catch-all —
+     * the reason that actually helps ("발신번호 미등록", an expired key, no balance) lives here.
+     */
+    private String explanation(HttpStatusCodeException refused) {
+        try {
+            JsonNode body = JSON.readTree(refused.getResponseBodyAsString());
+            JsonNode message = body.hasNonNull("errorMessage") ? body.get("errorMessage") : body.get("message");
+            return message == null ? null : message.asText();
+        } catch (RuntimeException | JsonProcessingException notJson) {
+            return null;
+        }
     }
 
     /**

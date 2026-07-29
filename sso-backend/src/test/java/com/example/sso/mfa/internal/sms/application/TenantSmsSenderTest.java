@@ -161,7 +161,7 @@ class TenantSmsSenderTest {
     @Test
     void aProviderRefusalIsNotRetriedAndIsAudited() {
         configuredSolapi();
-        doThrow(SmsDeliveryException.refused(SmsProvider.SOLAPI, "FailedToAddMessage", null))
+        doThrow(SmsDeliveryException.refused(SmsProvider.SOLAPI, "FailedToAddMessage", "발신번호 미등록", null))
                 .when(solapi).send(any(), anyString(), anyString());
 
         assertThatThrownBy(() -> sender.send(ORG, "01012345678", "code"))
@@ -218,7 +218,7 @@ class TenantSmsSenderTest {
     @Test
     void theAuditRecordsTheCodeAndTheTenantNotTheProvidersProse() {
         configuredSolapi();
-        doThrow(SmsDeliveryException.refused(SmsProvider.SOLAPI, "FailedToAddMessage", null))
+        doThrow(SmsDeliveryException.refused(SmsProvider.SOLAPI, "FailedToAddMessage", "발신번호 미등록", null))
                 .when(solapi).send(any(), anyString(), anyString());
 
         assertThatThrownBy(() -> sender.send(ORG, "01012345678", "code")).isInstanceOf(RuntimeException.class);
@@ -227,7 +227,10 @@ class TenantSmsSenderTest {
         assertThat(record.type()).isEqualTo(AuditType.SMS_SEND_FAILED);
         assertThat(record.success()).isFalse();
         assertThat(record.orgId()).isEqualTo(ORG);
+        // The provider's explanation is kept for the LOG, so this is the line that stops it drifting into the
+        // stored row: neither field may carry a third party's free text.
         assertThat(record.detail()).doesNotContain("발신번호");
+        assertThat(record.reason()).doesNotContain("발신번호");
     }
 
     private void configuredSolapi() {
