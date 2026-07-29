@@ -1,10 +1,16 @@
 package com.example.sso.email.internal.application;
 
+import com.example.sso.email.EmailProvider;
+
 /**
- * A resolved SMTP relay ready to send with — the DECRYPTED view of a {@code SmtpSettings} row, internal to the
- * email module (never leaves it; the password stays here only long enough to build the sender).
+ * A resolved way of sending — the DECRYPTED view of an {@code SmtpSettings} row, internal to the email module.
+ * Never leaves it; the secrets live here only long enough to build one send.
+ *
+ * <p>Which fields carry meaning depends on {@link #provider()}: an SMTP relay uses host/port/credentials, an
+ * HTTP provider uses {@link #apiKey()}. {@code fromAddress} is common to both.
  */
-record MailServer(String host, int port, String username, String password, String fromAddress, boolean starttls) {
+record MailServer(EmailProvider provider, String host, Integer port, String username, String password,
+                  String apiKey, String fromAddress, boolean starttls) {
 
     boolean authenticated() {
         return username != null && !username.isBlank();

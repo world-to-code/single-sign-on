@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import com.example.sso.email.EmailProvider;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -46,20 +47,29 @@ class SmtpSettingsControllerTest {
 
     private String body(String host, int port) {
         return """
-                {"host":"%s","port":%d,"username":"postmaster","password":"s3cret","fromAddress":"a@b.example"}"""
+                {"provider":"SMTP","host":"%s","port":%d,"username":"postmaster","password":"s3cret",
+                 "fromAddress":"a@b.example"}"""
                 .formatted(host, port);
     }
 
     @Test
     void aValidBodyIsAccepted() throws Exception {
-        when(service.get()).thenReturn(new SmtpSettingsView(true, "smtp.acme.example", 587, "postmaster",
+        when(service.get()).thenReturn(new SmtpSettingsView(true, EmailProvider.SMTP, "smtp.acme.example", 587, "postmaster",
                 "a@b.example", true));
         expectPutStatus(body("smtp.acme.example", 587), 200);
     }
 
+    /**
+     * A host is required for SMTP and meaningless for a provider reached over HTTP, which no annotation on the
+     * request can say — so the rule moved to the service, where the provider is known
+     * ({@code SmtpSettingsServiceTest}). What is asserted here is that the shape still BINDS, because a request
+     * refused at binding would never reach the rule that should decide it.
+     */
     @Test
-    void aBlankHostIsRejected() throws Exception {
-        expectPutStatus(body("", 587), 400);
+    void aBlankHostStillBindsSoTheServiceCanDecide() throws Exception {
+        when(service.get()).thenReturn(new SmtpSettingsView(true, EmailProvider.SMTP, "smtp.acme.example", 587,
+                "postmaster", "a@b.example", true));
+        expectPutStatus(body("", 587), 200);
     }
 
     @Test
@@ -70,7 +80,7 @@ class SmtpSettingsControllerTest {
 
     @Test
     void theResponseNeverEchoesTheSubmittedPassword() throws Exception {
-        when(service.get()).thenReturn(new SmtpSettingsView(true, "smtp.acme.example", 587, "postmaster",
+        when(service.get()).thenReturn(new SmtpSettingsView(true, EmailProvider.SMTP, "smtp.acme.example", 587, "postmaster",
                 "a@b.example", true));
 
         mvc.perform(put("/api/admin/smtp-settings").contentType(MediaType.APPLICATION_JSON)

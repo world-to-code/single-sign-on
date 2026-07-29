@@ -2,7 +2,10 @@ package com.example.sso.email.internal.domain;
 
 import com.example.sso.shared.domain.AuditedEntity;
 import com.example.sso.tenancy.OrgOwned;
+import com.example.sso.email.EmailProvider;
 import jakarta.persistence.Column;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import java.util.UUID;
@@ -25,11 +28,16 @@ public class SmtpSettings extends AuditedEntity implements OrgOwned {
     @Column(name = "org_id")
     private UUID orgId;
 
+    /** Which transport this row describes; decides which of the columns below carry meaning. */
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
+    private EmailProvider provider;
+
+    /** Relay host; {@code null} for a provider reached over HTTP, which has no relay of its own. */
     private String host;
 
-    @Column(nullable = false)
-    private int port;
+    /** Relay port; {@code null} for a provider reached over HTTP. */
+    private Integer port;
 
     /** SMTP AUTH username; {@code null} = an unauthenticated relay (no username/password). */
     private String username;
@@ -42,31 +50,38 @@ public class SmtpSettings extends AuditedEntity implements OrgOwned {
     @Column(name = "from_address")
     private String fromAddress;
 
+    /** SecretCipher ciphertext of an HTTP provider's API key; {@code null} for an SMTP relay. */
+    @Column(name = "api_key_encrypted", columnDefinition = "text")
+    private String apiKeyEncrypted;
+
     @Column(nullable = false)
     private boolean starttls;
 
     /** Owning tenant, or {@code null} for the platform-wide override row. */
-    public static SmtpSettings create(UUID orgId, String host, int port, String username, String passwordEncrypted,
-            String fromAddress, boolean starttls) {
+    public static SmtpSettings create(UUID orgId, EmailConfiguration configuration) {
         SmtpSettings settings = new SmtpSettings();
         settings.orgId = orgId;
-        settings.apply(host, port, username, passwordEncrypted, fromAddress, starttls);
+        settings.apply(configuration);
         return settings;
     }
 
-    /** Point this row at a new relay (intent-revealing mutation, not a JavaBean setter). */
-    public void reconfigure(String host, int port, String username, String passwordEncrypted, String fromAddress,
-            boolean starttls) {
-        apply(host, port, username, passwordEncrypted, fromAddress, starttls);
+    /** Point this row at a different way of sending (intent-revealing mutation, not a JavaBean setter). */
+    public void reconfigure(EmailConfiguration configuration) {
+        apply(configuration);
     }
 
-    private void apply(String host, int port, String username, String passwordEncrypted, String fromAddress,
-            boolean starttls) {
-        this.host = host;
-        this.port = port;
-        this.username = username;
-        this.passwordEncrypted = passwordEncrypted;
-        this.fromAddress = fromAddress;
-        this.starttls = starttls;
+    /**
+     * Assigned as one object rather than eight positional arguments: half of them are Strings and adjacent, so
+     * a swap would compile and then send mail as somebody else, or with the wrong secret.
+     */
+    private void apply(EmailConfiguration configuration) {
+        this.provider = configuration.provider();
+        this.host = configuration.host();
+        this.port = configuration.port();
+        this.username = configuration.username();
+        this.passwordEncrypted = configuration.passwordEncrypted();
+        this.apiKeyEncrypted = configuration.apiKeyEncrypted();
+        this.fromAddress = configuration.fromAddress();
+        this.starttls = configuration.starttls();
     }
 }

@@ -1,6 +1,7 @@
 package com.example.sso.email.internal.application;
 
 import com.example.sso.crypto.SecretCipher;
+import com.example.sso.email.internal.domain.EmailConfiguration;
 import com.example.sso.email.internal.domain.SmtpSettings;
 import com.example.sso.email.internal.domain.SmtpSettingsRepository;
 import com.example.sso.shared.error.BadRequestException;
@@ -65,12 +66,9 @@ public class SmtpSettingsService {
         UUID org = writableOrg();
         validate(spec);
         Optional<SmtpSettings> existing = ownRow();
-        String encrypted = resolvePassword(spec, existing.orElse(null));
-        existing.ifPresentOrElse(
-                row -> row.reconfigure(spec.host(), spec.port(), trimToNull(spec.username()), encrypted,
-                        trimToNull(spec.fromAddress()), spec.starttls()),
-                () -> repository.save(SmtpSettings.create(org, spec.host(), spec.port(), trimToNull(spec.username()),
-                        encrypted, trimToNull(spec.fromAddress()), spec.starttls())));
+        EmailConfiguration configuration = configure(spec, existing.orElse(null));
+        existing.ifPresentOrElse(row -> row.reconfigure(configuration),
+                () -> repository.save(SmtpSettings.create(org, configuration)));
     }
 
     /**
@@ -78,6 +76,31 @@ public class SmtpSettingsService {
      * newly-supplied password is encrypted; a BLANK password on an update KEEPS the stored ciphertext — the
      * write-only secret is never echoed back to the client, so a save that edits other fields must not wipe it.
      */
+    /** The row to persist, with both secrets resolved and encrypted and the unused half left null. */
+    private EmailConfiguration configure(SmtpSettingsSpec spec, SmtpSettings existing) {
+        return spec.isSmtp()
+                ? new EmailConfiguration(spec.provider(), spec.host().trim(), spec.port(),
+                        trimToNull(spec.username()), resolvePassword(spec, existing), null,
+                        trimToNull(spec.fromAddress()), spec.starttls())
+                : new EmailConfiguration(spec.provider(), null, null, null, null, resolveApiKey(spec, existing),
+                        trimToNull(spec.fromAddress()), true);
+    }
+
+    /**
+     * The API key ciphertext. A BLANK key on an update KEEPS the stored one, for the same reason the SMTP
+     * password does: it is write-only and never echoed back, so a save that only changes the From address must
+     * not wipe the credential it was never shown.
+     */
+    private String resolveApiKey(SmtpSettingsSpec spec, SmtpSettings existing) {
+        if (StringUtils.hasText(spec.apiKey())) {
+            return cipher.encrypt(spec.apiKey());
+        }
+        if (existing != null && StringUtils.hasText(existing.getApiKeyEncrypted())) {
+            return existing.getApiKeyEncrypted();
+        }
+        throw BadRequestException.of("email.provider.apiKey.required");
+    }
+
     private String resolvePassword(SmtpSettingsSpec spec, SmtpSettings existing) {
         if (!StringUtils.hasText(spec.username())) {
             return null;
@@ -96,6 +119,14 @@ public class SmtpSettingsService {
     }
 
     private void validate(SmtpSettingsSpec spec) {
+        if (!spec.isSmtp()) {
+            return; // an HTTP provider has no relay to reach: its endpoint is ours, not the tenant's
+        }
+        // Required only for SMTP, which bean validation on the request cannot express — a RESEND row has no
+        // relay at all, so the annotation would refuse a perfectly good configuration.
+        if (!StringUtils.hasText(spec.host())) {
+            throw BadRequestException.of("email.smtp.host.required");
+        }
         if (!ALLOWED_PORTS.contains(spec.port())) {
             throw BadRequestException.of("email.smtp.port.unsupported");
         }
@@ -106,9 +137,13 @@ public class SmtpSettingsService {
     }
 
     private MailServer toMailServer(SmtpSettings s) {
-        String encrypted = s.getPasswordEncrypted();
-        String password = StringUtils.hasText(encrypted) ? cipher.decrypt(encrypted) : null;
-        return new MailServer(s.getHost(), s.getPort(), s.getUsername(), password, s.getFromAddress(), s.isStarttls());
+        return new MailServer(s.getProvider(), s.getHost(), s.getPort(), s.getUsername(),
+                decrypted(s.getPasswordEncrypted()), decrypted(s.getApiKeyEncrypted()), s.getFromAddress(),
+                s.isStarttls());
+    }
+
+    private String decrypted(String ciphertext) {
+        return StringUtils.hasText(ciphertext) ? cipher.decrypt(ciphertext) : null;
     }
 
     /**

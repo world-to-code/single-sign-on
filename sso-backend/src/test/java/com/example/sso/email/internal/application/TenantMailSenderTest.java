@@ -15,6 +15,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mail.javamail.JavaMailSender;
+import com.example.sso.email.EmailProvider;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -52,7 +54,8 @@ class TenantMailSenderTest {
 
     @BeforeEach
     void setUp() {
-        sender = new TenantMailSenderImpl(platformSender, settings, orgContext, hostValidator, connections);
+        SmtpEmailGateway smtp = new SmtpEmailGateway(connections);
+        sender = new TenantMailSenderImpl(platformSender, settings, orgContext, smtp, hostValidator, List.of(smtp));
         lenient().when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
     }
 
@@ -61,7 +64,7 @@ class TenantMailSenderTest {
     }
 
     private MailServer relay(String host, String from) {
-        return new MailServer(host, 587, "postmaster", "s3cret", from, true);
+        return new MailServer(EmailProvider.SMTP, host, 587, "postmaster", "s3cret", null, from, true);
     }
 
     private static MimeMessage emptyMime() {

@@ -2,6 +2,7 @@ package com.example.sso.email.internal.application;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
+import com.example.sso.email.EmailProvider;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -18,7 +19,7 @@ class MailServerConnectionFactoryTest {
     @Test
     void aStarttlsRelayIsWiredWithAuthAndServerIdentityVerification() {
         JavaMailSenderImpl impl = (JavaMailSenderImpl) factory.create(
-                new MailServer("smtp.acme.example", 587, "postmaster", "s3cret", "no-reply@acme.example", true));
+                new MailServer(EmailProvider.SMTP, "smtp.acme.example", 587, "postmaster", "s3cret", null, "no-reply@acme.example", true));
 
         assertThat(impl.getHost()).isEqualTo("smtp.acme.example");
         assertThat(impl.getPort()).isEqualTo(587);
@@ -35,7 +36,7 @@ class MailServerConnectionFactoryTest {
     @Test
     void an465RelayEnablesImplicitTls() {
         JavaMailSenderImpl impl = (JavaMailSenderImpl) factory.create(
-                new MailServer("smtp.acme.example", 465, "postmaster", "s3cret", null, false));
+                new MailServer(EmailProvider.SMTP, "smtp.acme.example", 465, "postmaster", "s3cret", null, null, false));
 
         assertThat(impl.getJavaMailProperties())
                 .containsEntry("mail.smtp.ssl.enable", "true")                  // implicit TLS on 465
@@ -45,7 +46,7 @@ class MailServerConnectionFactoryTest {
     @Test
     void anUnauthenticatedRelayCarriesNoCredentialsAndDisablesAuth() {
         JavaMailSenderImpl impl = (JavaMailSenderImpl) factory.create(
-                new MailServer("smtp.acme.example", 587, null, null, null, true));
+                new MailServer(EmailProvider.SMTP, "smtp.acme.example", 587, null, null, null, null, true));
 
         assertThat(impl.getUsername()).isNull();
         assertThat(impl.getPassword()).isNull();

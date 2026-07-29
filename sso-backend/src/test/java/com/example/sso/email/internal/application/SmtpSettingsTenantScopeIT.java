@@ -9,6 +9,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import com.example.sso.email.EmailProvider;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -58,7 +59,7 @@ class SmtpSettingsTenantScopeIT extends AbstractIntegrationTest {
     private static final String HOST_GLOBAL = "1.1.1.1";
 
     private SmtpSettingsSpec spec(String host, String password) {
-        return new SmtpSettingsSpec(host, 587, "postmaster", password, "no-reply@example.com", true);
+        return new SmtpSettingsSpec(EmailProvider.SMTP, host, 587, "postmaster", password, null, "no-reply@example.com", true);
     }
 
     @Test

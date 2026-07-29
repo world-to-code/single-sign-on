@@ -198,6 +198,10 @@ sso:
         lock-ttl: PT25S                     # SET NX PX single-driver lock; < sweep-interval, > worst-case batch
         processing-lease: PT2M              # visibility timeout: a claimed entry re-surfaces if the driver dies
         sweep-batch-size: 200               # max entries re-driven per tick (bounds lock-hold time)
+  email:
+    http-timeout: PT10S             # an HTTP provider must not hold a notification thread indefinitely
+    resend:
+      endpoint: https://api.resend.com/emails
   notification:
     executor:                     # outbound email/SMS sends, OFF the shared pool: a hanging provider must not
       core-pool-size: 4           # stall tenant onboarding, and its timeout must not reach the login path

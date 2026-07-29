@@ -15,6 +15,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import com.example.sso.email.EmailProvider;
+import com.example.sso.email.internal.domain.EmailConfiguration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -22,6 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -52,8 +55,8 @@ class SmtpSettingsServiceTest {
     }
 
     private SmtpSettings row(UUID orgId, String encryptedPassword) {
-        return SmtpSettings.create(orgId, "smtp.acme.example", 587, "postmaster", encryptedPassword,
-                "no-reply@acme.example", true);
+        return SmtpSettings.create(orgId, new EmailConfiguration(EmailProvider.SMTP, "smtp.acme.example", 587,
+                "postmaster", encryptedPassword, null, "no-reply@acme.example", true));
     }
 
     @Test
@@ -111,8 +114,7 @@ class SmtpSettingsServiceTest {
         when(repository.findByOrgId(ORG)).thenReturn(Optional.empty());
         when(cipher.encrypt("s3cret")).thenReturn("encg:cipher");
 
-        service.update(new SmtpSettingsSpec("smtp.acme.example", 587, "postmaster", "s3cret",
-                "no-reply@acme.example", true));
+        service.update(new SmtpSettingsSpec(EmailProvider.SMTP, "smtp.acme.example", 587, "postmaster", "s3cret", null, "no-reply@acme.example", true));
 
         ArgumentCaptor<SmtpSettings> saved = ArgumentCaptor.captor();
         verify(repository).save(saved.capture());
@@ -128,7 +130,7 @@ class SmtpSettingsServiceTest {
         doThrow(new BadRequestException("internal address")).when(hostValidator).validate("127.0.0.1");
 
         assertThatThrownBy(() -> service.update(
-                new SmtpSettingsSpec("127.0.0.1", 587, "u", "p", null, true)))
+                new SmtpSettingsSpec(EmailProvider.SMTP, "127.0.0.1", 587, "u", "p", null, null, true)))
                 .isInstanceOf(BadRequestException.class);
         verify(repository, never()).save(any());
     }
@@ -136,9 +138,9 @@ class SmtpSettingsServiceTest {
     @Test
     void updateRejectsANonAllowlistedPortAndPlaintextRelay() {
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
-        assertThatThrownBy(() -> service.update(new SmtpSettingsSpec("smtp.acme.example", 8080, "u", "p", null, true)))
+        assertThatThrownBy(() -> service.update(new SmtpSettingsSpec(EmailProvider.SMTP, "smtp.acme.example", 8080, "u", "p", null, null, true)))
                 .isInstanceOf(BadRequestException.class); // port not allowlisted
-        assertThatThrownBy(() -> service.update(new SmtpSettingsSpec("smtp.acme.example", 587, "u", "p", null, false)))
+        assertThatThrownBy(() -> service.update(new SmtpSettingsSpec(EmailProvider.SMTP, "smtp.acme.example", 587, "u", "p", null, null, false)))
                 .isInstanceOf(BadRequestException.class); // no TLS on a non-465 port
         verify(repository, never()).save(any());
     }
@@ -148,7 +150,7 @@ class SmtpSettingsServiceTest {
         when(orgContext.currentOrg()).thenReturn(Optional.empty());
         when(orgContext.isPlatform()).thenReturn(false); // bound to a tier but no org resolved → fail closed
 
-        assertThatThrownBy(() -> service.update(new SmtpSettingsSpec("smtp.acme.example", 587, "u", "p", null, true)))
+        assertThatThrownBy(() -> service.update(new SmtpSettingsSpec(EmailProvider.SMTP, "smtp.acme.example", 587, "u", "p", null, null, true)))
                 .isInstanceOf(ForbiddenException.class);
         verify(repository, never()).save(any());
     }
@@ -170,7 +172,7 @@ class SmtpSettingsServiceTest {
         when(repository.findByOrgId(ORG)).thenReturn(Optional.empty());
         when(cipher.encrypt("s3cret")).thenReturn("encg:cipher");
 
-        service.update(new SmtpSettingsSpec("smtp.acme.example", 465, "postmaster", "s3cret", null, false));
+        service.update(new SmtpSettingsSpec(EmailProvider.SMTP, "smtp.acme.example", 465, "postmaster", "s3cret", null, null, false));
 
         verify(repository).save(any()); // 465 is TLS-implicit, so starttls=false is allowed
     }
@@ -182,7 +184,7 @@ class SmtpSettingsServiceTest {
         when(repository.findByOrgId(ORG)).thenReturn(Optional.of(existing));
         when(cipher.encrypt("new-secret")).thenReturn("encg:new");
 
-        service.update(new SmtpSettingsSpec("smtp.new.example", 587, "postmaster", "new-secret", null, true));
+        service.update(new SmtpSettingsSpec(EmailProvider.SMTP, "smtp.new.example", 587, "postmaster", "new-secret", null, null, true));
 
         verify(repository, never()).save(any()); // mutated in place (dirty-checked), no second row inserted
         assertThat(existing.getHost()).isEqualTo("smtp.new.example");
@@ -196,7 +198,7 @@ class SmtpSettingsServiceTest {
         when(repository.findByOrgId(ORG)).thenReturn(Optional.of(existing));
 
         // The view never returns the password, so an edit of other fields submits a blank one — it must NOT wipe.
-        service.update(new SmtpSettingsSpec("smtp.new.example", 587, "postmaster", null, null, true));
+        service.update(new SmtpSettingsSpec(EmailProvider.SMTP, "smtp.new.example", 587, "postmaster", null, null, null, true));
 
         assertThat(existing.getHost()).isEqualTo("smtp.new.example");
         assertThat(existing.getPasswordEncrypted()).isEqualTo("encg:kept"); // retained, not cleared
@@ -209,7 +211,7 @@ class SmtpSettingsServiceTest {
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(repository.findByOrgId(ORG)).thenReturn(Optional.of(existing));
 
-        service.update(new SmtpSettingsSpec("smtp.new.example", 25, null, null, null, true));
+        service.update(new SmtpSettingsSpec(EmailProvider.SMTP, "smtp.new.example", 25, null, null, null, null, true));
 
         assertThat(existing.getUsername()).isNull();
         assertThat(existing.getPasswordEncrypted()).isNull(); // no auth → no stored secret
@@ -244,4 +246,49 @@ class SmtpSettingsServiceTest {
         assertThatThrownBy(() -> service.delete()).isInstanceOf(ForbiddenException.class);
         verify(repository, never()).delete(any());
     }
+
+    /**
+     * The two shapes have different requirements, and each must be complete for its own kind: a half-configured
+     * row is a tenant whose mail silently stops.
+     */
+    @Test
+    void anSmtpConfigurationWithoutAHostIsRefused() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        assertThatThrownBy(() -> service.update(new SmtpSettingsSpec(EmailProvider.SMTP, "  ", 587, "u", "p",
+                null, "a@b.example", true)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("email.smtp.host.required");
+    }
+
+    /** An HTTP provider needs its key and nothing else — no host, no port allowlist, no TLS rule. */
+    @Test
+    void anHttpProviderNeedsOnlyItsKey() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgId(ORG)).thenReturn(Optional.empty());
+        when(cipher.encrypt("re_live_key")).thenReturn("encg:key");
+
+        service.update(new SmtpSettingsSpec(EmailProvider.RESEND, null, 0, null, null, "re_live_key",
+                "a@b.example", true));
+
+        ArgumentCaptor<SmtpSettings> saved = ArgumentCaptor.forClass(SmtpSettings.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getProvider()).isEqualTo(EmailProvider.RESEND);
+        assertThat(saved.getValue().getApiKeyEncrypted()).isEqualTo("encg:key");
+        assertThat(saved.getValue().getHost()).isNull();
+        verifyNoInteractions(hostValidator); // there is no relay to reach, so nothing to check for SSRF
+    }
+
+    /** A first save with no key is refused rather than storing a provider that cannot authenticate. */
+    @Test
+    void anHttpProviderWithNoKeyIsRefused() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgId(ORG)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.update(new SmtpSettingsSpec(EmailProvider.RESEND, null, 0, null, null,
+                "  ", "a@b.example", true)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("email.provider.apiKey.required");
+    }
+
 }
