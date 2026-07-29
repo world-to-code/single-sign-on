@@ -2,19 +2,24 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import CodeMirror, { EditorView, type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { html } from "@codemirror/lang-html";
 import { html as beautifyHtml } from "js-beautify";
+import { templateVariableHighlighter } from "./templateVariables";
 import { useTranslation } from "react-i18next";
 import { WandSparkles } from "lucide-react";
 import { resolvedTheme } from "@/lib/prefs";
 import { Button } from "@/components/ui/button";
 
 /**
- * An HTML source editor for the email templates: syntax highlighting, line numbers, bracket matching, and a
- * language-aware re-indent.
+ * The source editor for a mail template's bodies: line numbers, `{{variable}}` highlighting, and — for the
+ * HTML body only — markup highlighting and a pretty-print action.
  *
  * <p>It replaces a bare textarea, which is a fine control for prose and a poor one for markup — a template of
  * any size arrives as one unbroken wall of tags, so finding the block you meant to edit is the slow part of
  * every change. Highlighting is what makes it scannable; the reformat button is what recovers a template that
  * was pasted, or hand-edited, into a single line.
+ *
+ * <p>The TEXT body gets neither of those, deliberately. It is not markup, so colouring it as HTML would assert
+ * a structure it does not have, and there is nothing to pretty-print. What it shares is the part that matters
+ * to both: the placeholders are highlighted, and a name this event does not supply is called out.
  *
  * <p>Loaded LAZILY by its parent. CodeMirror is a large dependency and this is one admin screen, so it must
  * not sit in the bundle every sign-in downloads first. The toolbar lives in here rather than in the parent so
@@ -24,10 +29,14 @@ import { Button } from "@/components/ui/button";
  * <p>Not a security boundary. The value is HTML the tenant authors and the SERVER renders; this shows the
  * SOURCE as text and never executes it, and the preview beside it is sandboxed ({@code HtmlPreview}).
  */
-export function HtmlCodeEditor({ value, onChange, ariaLabel, rows = 16 }: {
+export function TemplateSourceEditor({ value, onChange, ariaLabel, variables, language = "html", rows = 16 }: {
   value: string;
   onChange: (next: string) => void;
   ariaLabel: string;
+  /** The placeholders this event supplies; anything else is marked so a typo is visible. */
+  variables: readonly string[];
+  /** HTML gets markup highlighting and the reformat action. The text body is NOT markup and gets neither. */
+  language?: "html" | "text";
   rows?: number;
 }) {
   const { t } = useTranslation("console");
@@ -49,7 +58,8 @@ export function HtmlCodeEditor({ value, onChange, ariaLabel, rows = 16 }: {
    * SURFACE is taken over; the syntax colours stay with the theme, since that is what the theme is for.
    */
   const extensions = useMemo(() => [
-    html(),
+    ...(language === "html" ? [html()] : []),
+    templateVariableHighlighter(variables),
     EditorView.lineWrapping,
     EditorView.theme({
       "&": { backgroundColor: "hsl(var(--background))", color: "hsl(var(--foreground))", fontSize: "0.8125rem" },
@@ -63,8 +73,17 @@ export function HtmlCodeEditor({ value, onChange, ariaLabel, rows = 16 }: {
       ".cm-activeLine, .cm-activeLineGutter": { backgroundColor: "hsl(var(--muted))" },
       ".cm-content": { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", padding: "0.5rem 0" },
       ".cm-cursor": { borderLeftColor: "hsl(var(--foreground))" },
+      // The placeholders, and the ones this event does not supply. A wrong name renders EMPTY rather than
+      // failing, so the warning colour is the only thing standing between a typo and a mail with a gap in it.
+      ".cm-template-var": { color: "hsl(var(--primary))", fontWeight: "600" },
+      ".cm-template-var-unknown": {
+        color: "hsl(var(--destructive))",
+        fontWeight: "600",
+        textDecoration: "underline wavy",
+        textUnderlineOffset: "0.2em",
+      },
     }),
-  ], []);
+  ], [language, variables]);
 
   /**
    * Pretty-prints the document: breaks the markup onto lines AND indents it.
@@ -92,11 +111,13 @@ export function HtmlCodeEditor({ value, onChange, ariaLabel, rows = 16 }: {
 
   return (
     <div className="grid gap-1.5">
-      <div className="flex justify-end">
-        <Button type="button" variant="ghost" size="sm" onClick={reformat}>
-          <WandSparkles /> {t("customizeFormatHtml")}
-        </Button>
-      </div>
+      {language === "html" && (
+        <div className="flex justify-end">
+          <Button type="button" variant="ghost" size="sm" onClick={reformat}>
+            <WandSparkles /> {t("customizeFormatHtml")}
+          </Button>
+        </div>
+      )}
       <div className="overflow-hidden rounded-md border border-input">
         <CodeMirror
           ref={editor}

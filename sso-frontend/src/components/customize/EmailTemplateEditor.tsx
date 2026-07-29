@@ -13,7 +13,8 @@ import {
 import { HtmlPreview } from "../HtmlPreview";
 // Lazy: CodeMirror is large and this is one admin screen, so it must not sit in the bundle every sign-in
 // downloads first. The fallback is the old read-only textarea, so the markup is never invisible.
-const HtmlCodeEditor = lazy(() => import("./HtmlCodeEditor").then((m) => ({ default: m.HtmlCodeEditor })));
+const TemplateSourceEditor = lazy(() =>
+  import("./TemplateSourceEditor").then((m) => ({ default: m.TemplateSourceEditor })));
 import { Field } from "../form/fields";
 import { useToast } from "../ToastProvider";
 import { useConfirm } from "../ConfirmProvider";
@@ -162,8 +163,8 @@ export function EmailTemplateEditor({ template, onSaved }: {
 
         <Field label={t("customizeHtmlBody")} hint={t("customizeHtmlHint")}>
           <Suspense fallback={<Textarea value={form.htmlBody} readOnly rows={12} />}>
-            <HtmlCodeEditor value={form.htmlBody} onChange={(next) => set({ htmlBody: next })}
-                            ariaLabel={t("customizeHtmlBody")} rows={12} />
+            <TemplateSourceEditor value={form.htmlBody} onChange={(next) => set({ htmlBody: next })}
+                                  ariaLabel={t("customizeHtmlBody")} variables={template.variables} rows={12} />
           </Suspense>
         </Field>
 
@@ -181,7 +182,13 @@ export function EmailTemplateEditor({ template, onSaved }: {
         </div>
 
         <Field label={t("customizeTextBody")} hint={t("customizeTextHint")}>
-          <Textarea value={form.textBody} onChange={(e) => set({ textBody: e.target.value })} rows={5} />
+          <Suspense fallback={<Textarea value={form.textBody} readOnly rows={5} />}>
+            {/* language="text": the plain-text body is not markup, so it gets the placeholder highlighting
+                the two bodies share and none of the HTML-specific machinery. */}
+            <TemplateSourceEditor value={form.textBody} onChange={(next) => set({ textBody: next })}
+                                  ariaLabel={t("customizeTextBody")} variables={template.variables}
+                                  language="text" rows={5} />
+          </Suspense>
         </Field>
 
         <Field label={t("customizeLogoUrl")} hint={t("customizeLogoHint")}>

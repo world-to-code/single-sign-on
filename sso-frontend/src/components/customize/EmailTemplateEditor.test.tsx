@@ -20,8 +20,8 @@ vi.mock("../ToastProvider", () => ({ useToast: () => vi.fn() }));
 vi.mock("../ConfirmProvider", () => ({ useConfirm: () => vi.fn() }));
 // CodeMirror does not render meaningfully in jsdom and is not what these tests are about; the contract that
 // matters here is that editing the body drives a new preview.
-vi.mock("./HtmlCodeEditor", () => ({
-  HtmlCodeEditor: ({ value, onChange, ariaLabel }: {
+vi.mock("./TemplateSourceEditor", () => ({
+  TemplateSourceEditor: ({ value, onChange, ariaLabel }: {
     value: string; onChange: (next: string) => void; ariaLabel: string;
   }) => <textarea aria-label={ariaLabel} value={value} onChange={(e) => onChange(e.target.value)} />,
 }));
