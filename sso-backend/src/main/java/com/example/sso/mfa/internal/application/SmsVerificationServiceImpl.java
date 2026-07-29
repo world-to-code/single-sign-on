@@ -12,8 +12,10 @@ import java.util.UUID;
 
 /**
  * Default {@link SmsVerificationService}: a 6-digit {@code SecureRandom} code, texted via {@link SmsSender}
- * off the request thread. The org is passed to the sender explicitly (no ambient-context dependency), so no
- * {@code runInOrg} re-bind is needed on the async thread. Mirrors {@code EmailVerificationServiceImpl}.
+ * off the request thread. The org travels as an ARGUMENT rather than in the ambient context, which is why this
+ * needs no {@code runInOrg} of its own — but the sender does re-bind it before reading the tenant's gateway,
+ * because that read is under row-level security and an argument does not scope a connection. Mirrors
+ * {@code EmailVerificationServiceImpl}.
  */
 @Service
 public class SmsVerificationServiceImpl implements SmsVerificationService {

@@ -2,6 +2,7 @@ package com.example.sso.mfa.internal.sms.application;
 
 import com.example.sso.mfa.SmsProvider;
 import com.example.sso.mfa.SmsSender;
+import com.example.sso.tenancy.OrgContext;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -30,19 +31,21 @@ import org.springframework.stereotype.Component;
 class TenantSmsSender implements SmsSender {
 
     private final SmsSettingsService settings;
+    private final OrgContext orgContext;
     private final Map<SmsProvider, SmsGateway> gateways = new EnumMap<>(SmsProvider.class);
     private final SmsSender fallback;
 
-    TenantSmsSender(SmsSettingsService settings, List<SmsGateway> gateways,
+    TenantSmsSender(SmsSettingsService settings, OrgContext orgContext, List<SmsGateway> gateways,
             @Qualifier("loggingSmsSender") SmsSender fallback) {
         this.settings = settings;
+        this.orgContext = orgContext;
         gateways.forEach(gateway -> this.gateways.put(gateway.provider(), gateway));
         this.fallback = fallback;
     }
 
     @Override
     public void send(UUID orgId, String phoneNumber, String message) {
-        SmsAccount account = settings.resolve(orgId).orElse(null);
+        SmsAccount account = accountFor(orgId);
         if (account == null) {
             fallback.send(orgId, phoneNumber, message);
             return;
@@ -54,5 +57,24 @@ class TenantSmsSender implements SmsSender {
             throw new IllegalStateException("no SMS client for provider " + account.provider());
         }
         gateway.send(account, phoneNumber, message);
+    }
+
+    /**
+     * The tenant's sending account, with the tenant BOUND on the connection rather than merely passed as an
+     * argument.
+     *
+     * <p>{@code sms_settings} is under FORCE row-level security, so an unbound caller does not just fail to
+     * match the tenant's row — it cannot SEE it. A code is sent from an {@code @Async} thread, which carries no
+     * context, so without this the lookup came back empty and the send took the development fallback that
+     * writes the code to a log instead of texting it. A configured tenant looked exactly like an unconfigured
+     * one.
+     *
+     * <p>A {@code null} org is the platform account, whose row is readable with no context by design.
+     */
+    private SmsAccount accountFor(UUID orgId) {
+        if (orgId == null) {
+            return settings.resolve(null).orElse(null);
+        }
+        return orgContext.callInOrg(orgId, () -> settings.resolve(orgId)).orElse(null);
     }
 }
