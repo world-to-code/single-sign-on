@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { RotateCcw, Save } from "lucide-react";
 import { errorMessage } from "../../api";
@@ -11,6 +11,9 @@ import {
   type EmailTemplatePreview,
 } from "../../emailTemplates";
 import { HtmlPreview } from "../HtmlPreview";
+// Lazy: CodeMirror is large and this is one admin screen, so it must not sit in the bundle every sign-in
+// downloads first. The fallback is the old read-only textarea, so the markup is never invisible.
+const HtmlCodeEditor = lazy(() => import("./HtmlCodeEditor").then((m) => ({ default: m.HtmlCodeEditor })));
 import { Field } from "../form/fields";
 import { useToast } from "../ToastProvider";
 import { useConfirm } from "../ConfirmProvider";
@@ -61,20 +64,48 @@ export function EmailTemplateEditor({ template, onSaved }: {
   const [form, setForm] = useState<FormState>(() => toForm(template));
   const [preview, setPreview] = useState<EmailTemplatePreview | null>(null);
   const [showText, setShowText] = useState(false);
+  // Two different failures, deliberately kept apart: a SAVE that was refused belongs beside the button that
+  // asked for it, a RENDER that was refused belongs beside the preview it invalidates. They shared one field
+  // before, under the Subject input, which is where neither of them is about.
   const [formError, setFormError] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [rendering, setRendering] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Re-seed the form when the selected event changes or the server state is refreshed (save/reset).
   useEffect(() => setForm(toForm(template)), [template]);
 
-  // Debounced live preview: re-render on the server (sandboxed) as the admin edits.
+  /**
+   * Debounced live preview, re-rendered on the server (and shown sandboxed) as the admin edits.
+   *
+   * <p>Two things this has to get right, and neither is the request itself.
+   *
+   * <p>A superseded request must not land last. The renders are not equally fast — a template that grew a
+   * table takes longer than the one before it — so without the guard an older response can arrive after a
+   * newer one and leave the preview showing markup the editor no longer contains. That is indistinguishable
+   * from "the preview ignored my change", which is exactly what it was reported as.
+   *
+   * <p>And a FAILED render must not leave the last good one standing silently. Half-typed markup is refused by
+   * the server constantly and normally — every {@code &#123;&#123;} is invalid until its closing braces are
+   * typed — so the preview would sit there looking authoritative while showing something else entirely.
+   */
   useEffect(() => {
+    let cancelled = false;
     const handle = setTimeout(() => {
+      setRendering(true);
       previewEmailTemplate(template.event, toInput(form))
-        .then((rendered) => { setPreview(rendered); setFormError(null); })
-        .catch((e) => setFormError(errorMessage(e)));
+        .then((rendered) => {
+          if (cancelled) return;
+          setPreview(rendered);
+          setPreviewError(null);
+        })
+        .catch((e) => {
+          if (cancelled) return;
+          setPreviewError(errorMessage(e));
+        })
+        .finally(() => { if (!cancelled) setRendering(false); });
     }, 400);
-    return () => clearTimeout(handle);
+    return () => { cancelled = true; clearTimeout(handle); };
   }, [form, template.event]);
 
   function set(patch: Partial<FormState>): void {
@@ -125,12 +156,15 @@ export function EmailTemplateEditor({ template, onSaved }: {
           </Badge>
         </div>
 
-        <Field label={t("customizeSubject")} error={formError ?? undefined}>
+        <Field label={t("customizeSubject")}>
           <Input value={form.subject} onChange={(e) => set({ subject: e.target.value })} />
         </Field>
 
         <Field label={t("customizeHtmlBody")} hint={t("customizeHtmlHint")}>
-          <Textarea value={form.htmlBody} onChange={(e) => set({ htmlBody: e.target.value })} rows={12} />
+          <Suspense fallback={<Textarea value={form.htmlBody} readOnly rows={12} />}>
+            <HtmlCodeEditor value={form.htmlBody} onChange={(next) => set({ htmlBody: next })}
+                            ariaLabel={t("customizeHtmlBody")} rows={12} />
+          </Suspense>
         </Field>
 
         <div className="grid gap-1.5">
@@ -155,6 +189,8 @@ export function EmailTemplateEditor({ template, onSaved }: {
                  placeholder="https://cdn.example.com/logo.png" />
         </Field>
 
+        {formError && <p role="alert" className="text-xs text-destructive">{formError}</p>}
+
         <div className="flex items-center justify-between gap-2">
           <Button variant="outline" onClick={resetToDefault} disabled={busy || !template.configured}>
             <RotateCcw /> {t("customizeReset")}
@@ -177,11 +213,21 @@ export function EmailTemplateEditor({ template, onSaved }: {
             </Button>
           </div>
         </div>
-        {preview && !showText && <HtmlPreview html={preview.html} title={t("customizePreview")} />}
-        {preview && showText && (
-          <pre className="h-96 w-full overflow-auto rounded-md border border-input bg-sunken p-3 text-xs
-                          whitespace-pre-wrap">{preview.text}</pre>
+        {previewError && (
+          <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2
+                                     text-xs text-destructive">
+            {t("customizePreviewStale")} {previewError}
+          </p>
         )}
+        {/* Dimmed while a render is in flight or the last one failed: the frame below is the PREVIOUS answer,
+            and showing it at full strength is how it gets mistaken for the current one. */}
+        <div className={previewError || rendering ? "opacity-50 transition-opacity" : "transition-opacity"}>
+          {preview && !showText && <HtmlPreview html={preview.html} title={t("customizePreview")} />}
+          {preview && showText && (
+            <pre className="h-96 w-full overflow-auto rounded-md border border-input bg-sunken p-3 text-xs
+                            whitespace-pre-wrap">{preview.text}</pre>
+          )}
+        </div>
         {preview && <p className="text-xs text-muted-foreground">{t("customizePreviewSubject")}: {preview.subject}</p>}
       </div>
     </div>

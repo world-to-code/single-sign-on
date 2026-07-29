@@ -1003,6 +1003,7 @@ export const console = {
   customizeSubject: "Subject",
   customizeHtmlBody: "HTML body",
   customizeHtmlHint: "Rendered in the recipient's mail client. Use the variables below; unknown ones render empty.",
+  customizeFormatHtml: "Reformat",
   customizeTextBody: "Plain-text alternative",
   customizeTextHint: "Shown by clients that can't display HTML. Leave blank to use the default.",
   customizeLogoUrl: "Logo URL",
@@ -1017,6 +1018,7 @@ export const console = {
   customizePreview: "Preview",
   customizePreviewHtml: "HTML",
   customizePreviewText: "Text",
+  customizePreviewStale: "Showing the last preview that rendered — this one did not:",
   customizePreviewSubject: "Subject",
 
   // Customize tab — branding

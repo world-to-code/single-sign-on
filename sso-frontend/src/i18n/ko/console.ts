@@ -1003,6 +1003,7 @@ export const console: Record<keyof typeof enConsole, string> = {
   customizeSubject: "제목",
   customizeHtmlBody: "HTML 본문",
   customizeHtmlHint: "수신자 메일 클라이언트에서 렌더링됩니다. 아래 변수를 사용하세요(없는 변수는 빈 값).",
+  customizeFormatHtml: "서식 정리",
   customizeTextBody: "일반 텍스트 대체본",
   customizeTextHint: "HTML을 표시 못 하는 클라이언트에서 사용됩니다. 비우면 기본값을 사용합니다.",
   customizeLogoUrl: "로고 URL",
@@ -1017,6 +1018,7 @@ export const console: Record<keyof typeof enConsole, string> = {
   customizePreview: "미리보기",
   customizePreviewHtml: "HTML",
   customizePreviewText: "텍스트",
+  customizePreviewStale: "마지막으로 렌더링된 미리보기입니다 — 이번 것은 실패했습니다:",
   customizePreviewSubject: "제목",
 
   // Customize 탭 — 브랜딩
