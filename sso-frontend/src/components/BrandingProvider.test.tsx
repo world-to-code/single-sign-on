@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { BrandingProvider } from "./BrandingProvider";
+import { BrandingProvider, useBrandingRefresh } from "./BrandingProvider";
 import { Brand } from "./Brand";
 import LoadingScreen from "./LoadingScreen";
 import AppShell from "./layout/AppShell";
@@ -100,6 +100,26 @@ describe("BrandingProvider", () => {
 
     await waitFor(() => expect(screen.getAllByText("Acme ID").length).toBeGreaterThan(0));
     expect(branding).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The provider sits at the ROOT and never unmounts, so its one fetch is the only one there is. Without a way
+   * to re-read it, a tenant who saved a new logo and product name kept seeing the old ones until a full browser
+   * reload — the console showing what the branding used to be, indefinitely.
+   */
+  it("re-reads the branding on demand so a save is reflected without a reload", async () => {
+    function Refresher() {
+      const refresh = useBrandingRefresh();
+      return <button onClick={() => void refresh()}>refresh</button>;
+    }
+    render(<BrandingProvider><LoadingScreen /><Refresher /></BrandingProvider>);
+    await waitFor(() => expect(screen.getByText("Acme ID")).toBeInTheDocument());
+
+    branding.mockResolvedValue({ logoUrl: null, accentColor: "#654321", productName: "Renamed Co" });
+    fireEvent.click(screen.getByRole("button", { name: "refresh" }));
+
+    await waitFor(() => expect(screen.getByText("Renamed Co")).toBeInTheDocument());
+    expect(applyAccent).toHaveBeenCalledWith("#654321");
   });
 
   /** An unbranded tenant and a failed request mean the same thing: the built-in mark, and no error shown. */

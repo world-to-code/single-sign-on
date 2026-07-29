@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { getBranding, type Branding } from "@/branding";
 import { applyAccent } from "@/lib/prefs";
 
@@ -6,6 +6,12 @@ import { applyAccent } from "@/lib/prefs";
 const DEFAULT: Branding = { logoUrl: null, accentColor: null, productName: null };
 
 const BrandingContext = createContext<Branding>(DEFAULT);
+
+/**
+ * Separate from the value so that consumers of the branding do not re-render when only this function's
+ * identity changes — and so {@link useBranding} keeps its shape, since almost every caller wants only the mark.
+ */
+const BrandingRefreshContext = createContext<() => Promise<void>>(async () => {});
 
 /**
  * The host tenant's branding, for the WHOLE app.
@@ -22,25 +28,40 @@ const BrandingContext = createContext<Branding>(DEFAULT);
 export function BrandingProvider({ children }: { children: ReactNode }) {
   const [branding, setBranding] = useState<Branding>(DEFAULT);
 
+  // A tenant that has not configured branding and a request that fails outright mean the same thing: use the
+  // defaults. There is no version of this worth showing anyone an error about.
+  const load = useCallback(async (): Promise<void> => {
+    const resolved = await getBranding().catch(() => DEFAULT);
+    setBranding(resolved);
+    applyAccent(resolved.accentColor); // overrides --primary for every screen, not just the auth ones
+  }, []);
+
   // Once, for the page. The provider is mounted at the root, so every surface below it shares this one
   // fetch — which is the whole reason it moved here from the auth layout, where it was re-fetched as the
   // sign-in steps mounted and unmounted.
   useEffect(() => {
     let cancelled = false;
-    // A tenant that has not configured branding and a request that fails outright mean the same thing: use
-    // the defaults. There is no version of this worth showing anyone an error about.
-    getBranding().catch(() => DEFAULT).then((resolved) => {
-      if (cancelled) return;
-      setBranding(resolved);
-      applyAccent(resolved.accentColor); // overrides --primary for every screen, not just the auth ones
-    });
+    load().then(() => { if (cancelled) return; });
     return () => { cancelled = true; };
-  }, []);
+  }, [load]);
 
-  return <BrandingContext.Provider value={branding}>{children}</BrandingContext.Provider>;
+  return (
+    <BrandingRefreshContext.Provider value={load}>
+      <BrandingContext.Provider value={branding}>{children}</BrandingContext.Provider>
+    </BrandingRefreshContext.Provider>
+  );
 }
 
 /** The resolved branding. Defaults until the fetch lands, so a consumer never has to handle "not yet". */
 export function useBranding(): Branding {
   return useContext(BrandingContext);
+}
+
+/**
+ * Re-reads the branding for the whole app. The editor calls this after saving, because the provider sits at
+ * the ROOT and never unmounts — so without it a tenant saw their new logo and product name only after a full
+ * browser reload, and until then the console kept showing what the branding used to be.
+ */
+export function useBrandingRefresh(): () => Promise<void> {
+  return useContext(BrandingRefreshContext);
 }

@@ -11,6 +11,7 @@ import {
 } from "../../branding";
 import { hexToHslTriple } from "@/lib/prefs";
 import { Brand } from "../Brand";
+import { useBrandingRefresh } from "../BrandingProvider";
 import { Field } from "../form/fields";
 import { LoadingCard, ErrorCard } from "../states";
 import { useToast } from "../ToastProvider";
@@ -45,6 +46,7 @@ function toInput(form: FormState): BrandingInput {
 export function BrandingEditor() {
   const { t } = useTranslation("console");
   const toast = useToast();
+  const refreshBranding = useBrandingRefresh();
   const confirm = useConfirm();
 
   const [configured, setConfigured] = useState(false);
@@ -75,6 +77,7 @@ export function BrandingEditor() {
     try {
       await updateBranding(toInput(form));
       await reload();
+      await refreshBranding(); // the shell reads the resolved branding, not this form
       toast({ tone: "success", title: t("brandingSaved") });
     } catch (e) {
       setFormError(errorMessage(e));
@@ -95,6 +98,7 @@ export function BrandingEditor() {
     try {
       await deleteBranding();
       await reload();
+      await refreshBranding();
       toast({ tone: "success", title: t("brandingResetDone") });
     } catch (e) {
       setFormError(errorMessage(e));
