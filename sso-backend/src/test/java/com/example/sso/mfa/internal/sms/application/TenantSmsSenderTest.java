@@ -161,7 +161,7 @@ class TenantSmsSenderTest {
     @Test
     void aProviderRefusalIsNotRetriedAndIsAudited() {
         configuredSolapi();
-        doThrow(SmsDeliveryException.refused(SmsProvider.SOLAPI, "FailedToAddMessage", "발신번호 미등록", null))
+        doThrow(SmsDeliveryException.refused(SmsProvider.SOLAPI, "010-9999-8888", "FailedToAddMessage", "발신번호 미등록", null))
                 .when(solapi).send(any(), anyString(), anyString());
 
         assertThatThrownBy(() -> sender.send(ORG, "01012345678", "code"))
@@ -175,7 +175,7 @@ class TenantSmsSenderTest {
     @Test
     void aProviderThatWasNeverReachedIsRetriedOnce() {
         configuredSolapi();
-        doThrow(SmsDeliveryException.unreachable(SmsProvider.SOLAPI, SmsDeliveryException.NOT_CONNECTED, null))
+        doThrow(SmsDeliveryException.unreachable(SmsProvider.SOLAPI, "010-9999-8888", SmsDeliveryException.NOT_CONNECTED, null))
                 .when(solapi).send(any(), anyString(), anyString());
 
         assertThatThrownBy(() -> sender.send(ORG, "01012345678", "code"))
@@ -191,7 +191,7 @@ class TenantSmsSenderTest {
     @Test
     void aSendWhoseOutcomeIsUnknownIsNotRepeated() {
         configuredSolapi();
-        doThrow(SmsDeliveryException.unreachable(SmsProvider.SOLAPI, SmsDeliveryException.NO_ANSWER, null))
+        doThrow(SmsDeliveryException.unreachable(SmsProvider.SOLAPI, "010-9999-8888", SmsDeliveryException.NO_ANSWER, null))
                 .when(solapi).send(any(), anyString(), anyString());
 
         assertThatThrownBy(() -> sender.send(ORG, "01012345678", "code"))
@@ -204,7 +204,7 @@ class TenantSmsSenderTest {
     @Test
     void aSuccessfulRetryLeavesNoFailureBehind() {
         configuredSolapi();
-        doThrow(SmsDeliveryException.unreachable(SmsProvider.SOLAPI, SmsDeliveryException.NOT_CONNECTED, null))
+        doThrow(SmsDeliveryException.unreachable(SmsProvider.SOLAPI, "010-9999-8888", SmsDeliveryException.NOT_CONNECTED, null))
                 .doNothing()
                 .when(solapi).send(any(), anyString(), anyString());
 
@@ -218,7 +218,7 @@ class TenantSmsSenderTest {
     @Test
     void theAuditRecordsTheCodeAndTheTenantNotTheProvidersProse() {
         configuredSolapi();
-        doThrow(SmsDeliveryException.refused(SmsProvider.SOLAPI, "FailedToAddMessage", "발신번호 미등록", null))
+        doThrow(SmsDeliveryException.refused(SmsProvider.SOLAPI, "010-9999-8888", "FailedToAddMessage", "발신번호 미등록", null))
                 .when(solapi).send(any(), anyString(), anyString());
 
         assertThatThrownBy(() -> sender.send(ORG, "01012345678", "code")).isInstanceOf(RuntimeException.class);

@@ -99,12 +99,11 @@ class TenantSmsSender implements SmsSender {
      * and would land verbatim in the audit row.
      */
     private SmsDeliveryException audited(SmsDeliveryException failure, SmsAccount account, UUID orgId) {
-        // The SENDING number is named because the provider's commonest refusal is that it does not recognise
-        // it, and the value it compares is the normalised one — so an operator otherwise has no way to see that
-        // "+82 10-1234-5678" reached the provider as 821012345678 while 01012345678 is what they registered.
-        // The recipient is deliberately absent: that is an end user's phone number.
-        log.error("SMS not delivered via {} from sending number {}: {} ({})",
-                failure.provider(), account.senderNumber(), failure.providerCode(),
+        // The number AS SENT, and separately as stored, because the provider compares the sent one character
+        // for character — printing only the stored value left the actual question unanswered. The recipient is
+        // deliberately absent: that is an end user's phone number.
+        log.error("SMS not delivered via {}: sent from [{}] (stored as [{}]): {} ({})",
+                failure.provider(), failure.sentFrom(), account.senderNumber(), failure.providerCode(),
                 failure.providerDetail() == null ? "no explanation given" : failure.providerDetail());
         audit.record(new AuditRecord(AuditType.SMS_SEND_FAILED, AuditActor.of(), false,
                 "SMS not delivered via " + failure.provider(), null, AuditSubjectType.NONE, null, orgId,

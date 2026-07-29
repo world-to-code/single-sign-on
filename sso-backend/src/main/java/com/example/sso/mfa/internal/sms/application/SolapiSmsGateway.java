@@ -58,12 +58,12 @@ class SolapiSmsGateway implements SmsGateway {
 
     @Override
     public void send(SmsAccount account, String to, String message) {
-        delivery.attempt(provider(), () -> http.post()
+        String from = account.senderNumber().trim();
+        delivery.attempt(provider(), from, () -> http.post()
                 .uri(endpoint)
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("Authorization", authorization(account))
-                .body(Map.of("message", Map.of("to", to.trim(), "from", account.senderNumber().trim(),
-                        "text", message)))
+                .body(Map.of("message", Map.of("to", to.trim(), "from", from, "text", message)))
                 .retrieve()
                 .toBodilessEntity());
     }

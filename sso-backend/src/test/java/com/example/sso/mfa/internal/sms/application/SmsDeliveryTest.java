@@ -111,12 +111,27 @@ class SmsDeliveryTest {
 
     @Test
     void aSendThatSucceedsRaisesNothing() {
-        delivery.attempt(SmsProvider.SOLAPI, () -> { });
+        delivery.attempt(SmsProvider.SOLAPI, "010-9999-8888", () -> { });
+    }
+
+
+    /**
+     * The number AS SENT travels with the failure. It is the fact in question when a provider says it does not
+     * recognise the number, and the log used to print the STORED value instead — identical for a provider we
+     * send verbatim to, different for one we normalise for, and indistinguishable in either case.
+     */
+    @Test
+    void theFailureCarriesTheNumberAsItWentOnTheWire() {
+        SmsDeliveryException failure = attemptFailing(new HttpClientErrorException(HttpStatus.BAD_REQUEST,
+                "Bad Request", """
+                        {"errorCode":"FailedToAddMessage","errorMessage":"발신번호 미등록"}""".getBytes(), null));
+
+        assertThat(failure.sentFrom()).isEqualTo("010-9999-8888");
     }
 
     private SmsDeliveryException attemptFailing(RuntimeException cause) {
         return catchThrowableOfType(SmsDeliveryException.class,
-                () -> delivery.attempt(SmsProvider.SOLAPI, () -> {
+                () -> delivery.attempt(SmsProvider.SOLAPI, "010-9999-8888", () -> {
                     throw cause;
                 }));
     }

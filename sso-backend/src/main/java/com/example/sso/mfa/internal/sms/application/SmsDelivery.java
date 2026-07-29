@@ -20,14 +20,17 @@ class SmsDelivery {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    /** Runs {@code call}, translating a refusal or a failure to reach the provider. */
-    void attempt(SmsProvider provider, Runnable call) {
+    /** Runs {@code call}, translating a refusal or a failure to reach the provider.
+     *
+     * @param sentFrom the sending number as this call actually put it on the wire */
+    void attempt(SmsProvider provider, String sentFrom, Runnable call) {
         try {
             call.run();
         } catch (HttpStatusCodeException refused) {
-            throw SmsDeliveryException.refused(provider, errorCode(refused), explanation(refused), refused);
+            throw SmsDeliveryException.refused(provider, sentFrom, errorCode(refused),
+                    explanation(refused), refused);
         } catch (ResourceAccessException unreachable) {
-            throw SmsDeliveryException.unreachable(provider, reachability(unreachable), unreachable);
+            throw SmsDeliveryException.unreachable(provider, sentFrom, reachability(unreachable), unreachable);
         }
     }
 

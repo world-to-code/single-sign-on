@@ -34,12 +34,14 @@ class SmsDeliveryException extends RuntimeException {
     private final transient SmsProvider provider;
     private final String providerCode;
     private final String providerDetail;
+    private final String sentFrom;
     private final boolean retryable;
 
-    private SmsDeliveryException(SmsProvider provider, String providerCode, String providerDetail,
-            boolean retryable, Throwable cause) {
+    private SmsDeliveryException(SmsProvider provider, String sentFrom, String providerCode,
+            String providerDetail, boolean retryable, Throwable cause) {
         super(provider + " did not accept the message: " + providerCode, cause);
         this.provider = provider;
+        this.sentFrom = sentFrom;
         this.providerCode = providerCode;
         this.providerDetail = truncate(providerDetail);
         this.retryable = retryable;
@@ -53,14 +55,14 @@ class SmsDeliveryException extends RuntimeException {
     }
 
     /** The provider answered and refused. Never retryable: the same request would be refused the same way. */
-    static SmsDeliveryException refused(SmsProvider provider, String providerCode, String providerDetail,
-            Throwable cause) {
-        return new SmsDeliveryException(provider, providerCode, providerDetail, false, cause);
+    static SmsDeliveryException refused(SmsProvider provider, String sentFrom, String providerCode,
+            String providerDetail, Throwable cause) {
+        return new SmsDeliveryException(provider, sentFrom, providerCode, providerDetail, false, cause);
     }
 
     /** The provider was not reached. Retryable only when the connection demonstrably never opened. */
-    static SmsDeliveryException unreachable(SmsProvider provider, String code, Throwable cause) {
-        return new SmsDeliveryException(provider, code, null, NOT_CONNECTED.equals(code), cause);
+    static SmsDeliveryException unreachable(SmsProvider provider, String sentFrom, String code, Throwable cause) {
+        return new SmsDeliveryException(provider, sentFrom, code, null, NOT_CONNECTED.equals(code), cause);
     }
 
     SmsProvider provider() {
@@ -69,6 +71,17 @@ class SmsDeliveryException extends RuntimeException {
 
     String providerCode() {
         return providerCode;
+    }
+
+    /**
+     * The sending number as it went ON THE WIRE — not as it is stored.
+     *
+     * <p>Those are the same for a provider we send verbatim to and different for one we normalise for, and the
+     * log used to print the stored value for both. That is precisely the fact in question when a provider says
+     * it does not recognise the number, so reading it cost an afternoon.
+     */
+    String sentFrom() {
+        return sentFrom;
     }
 
     /** The provider's explanation, for the log. Null when it gave none. Never put this in an audit row. */
