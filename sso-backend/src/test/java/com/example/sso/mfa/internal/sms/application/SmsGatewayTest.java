@@ -73,8 +73,8 @@ class SmsGatewayTest {
                 .isEqualTo(hmac(SECRET, NOW + field(request.authorization(), "salt")));
 
         assertThat(request.body())
-                .contains("\"to\":\"01012345678\"")
-                .contains("\"from\":\"01099998888\"")
+                .contains("\"to\":\"010-1234-5678\"")     // rendered in the form this domestic provider matches
+                .contains("\"from\":\"010-9999-8888\"")
                 .contains("Your code is 123456");
     }
 
@@ -114,50 +114,64 @@ class SmsGatewayTest {
 
 
 
+
+
+
     /**
-     * Solapi matches the sending number against whatever was REGISTERED on the account, and only the
-     * administrator who registered it knows that string. Reformatting it here was a guess that cost a real
-     * diagnosis — it goes out exactly as configured.
+     * The same stored number, in the shape each provider actually wants.
+     *
+     * <p>Solapi is domestic and matches the Korean national form an operator registered; Twilio is
+     * international and requires E.164. An administrator stores the number once — however they happen to write
+     * it — and both are satisfied. Getting this wrong is not a cosmetic bug: the provider answers
+     * "발신번호 미등록", which reads as though the number had never been registered at all.
      */
     @Test
-    void solapiSendsTheNumbersExactlyAsConfigured() {
-        SmsAccount hyphenated = new SmsAccount(SmsProvider.SOLAPI, "API-KEY-1", SECRET, "010-9999-8888");
+    void oneStoredNumberReachesEachProviderInItsOwnForm() {
+        for (String stored : new String[] { "01082003855", "010-8200-3855", "+821082003855", "+82 10-8200-3855" }) {
+            received.clear();
+            solapi().send(new SmsAccount(SmsProvider.SOLAPI, "K", SECRET, stored), stored, "code");
+            assertThat(received.getFirst().body()).as("solapi, stored as %s", stored)
+                    .contains("\"from\":\"010-8200-3855\"")
+                    .contains("\"to\":\"010-8200-3855\"");
 
-        solapi().send(hyphenated, "010-1234-5678", "Your code is 123456");
-
-        assertThat(received.getFirst().body())
-                .contains("\"from\":\"010-9999-8888\"")
-                .contains("\"to\":\"010-1234-5678\"");
+            received.clear();
+            twilio().send(new SmsAccount(SmsProvider.TWILIO, "AC", SECRET, stored), stored, "code");
+            assertThat(received.getFirst().body()).as("twilio, stored as %s", stored)
+                    .contains("From=%2B821082003855")
+                    .contains("To=%2B821082003855");
+        }
     }
 
-    /** Twilio wants E.164: separators go, the leading + stays — and is never invented for a number without one. */
+    /** A foreign number has no Korean national form; rendering one would mean a different number entirely. */
     @Test
-    void twilioNormalisesToE164WithoutInventingACountryCode() {
-        SmsAccount spaced = new SmsAccount(SmsProvider.TWILIO, "AC-SID-1", SECRET, "+1 555-000-0000");
+    void aForeignNumberFallsBackToTheUnambiguousInternationalForm() {
+        solapi().send(new SmsAccount(SmsProvider.SOLAPI, "K", SECRET, "+1 555-123-4567"), "+15551234567", "code");
 
-        twilio().send(spaced, "+1 (555) 123-4567", "Your code is 123456");
-
-        RecordedRequest request = received.getFirst();
-        assertThat(request.body())
-                .contains("To=%2B15551234567")
-                .contains("From=%2B15550000000");
+        assertThat(received.getFirst().body()).contains("\"from\":\"+15551234567\"");
     }
 
+    /**
+     * Something unparseable still goes out as typed, through EITHER provider: no code at all is worse than an
+     * unusual number, and the provider is the authority on which of its numbers are real.
+     */
     @Test
-    void twilioLeavesANumberWithNoPlusWithoutOne() {
-        SmsAccount local = new SmsAccount(SmsProvider.TWILIO, "AC-SID-1", SECRET, "010-9999-8888");
+    void anUnparseableNumberIsPassedThroughRatherThanRefused() {
+        solapi().send(new SmsAccount(SmsProvider.SOLAPI, "K", SECRET, "not-a-number"), "01082003855", "code");
+        assertThat(received.getFirst().body()).contains("\"from\":\"not-a-number\"");
 
-        twilio().send(local, "010-1234-5678", "code");
-
-        assertThat(received.getFirst().body()).contains("From=01099998888").doesNotContain("%2B010");
+        received.clear();
+        twilio().send(new SmsAccount(SmsProvider.TWILIO, "AC", SECRET, "not-a-number"), "+821082003855", "code");
+        assertThat(received.getFirst().body()).contains("From=not-a-number");
     }
 
     private SolapiSmsGateway solapi() {
-        return new SolapiSmsGateway(http(), new SmsDelivery(), Clock.fixed(NOW, ZoneOffset.UTC), url("/messages/v4/send"));
+        return new SolapiSmsGateway(http(), new SmsDelivery(), new SmsPhoneNumbers("KR"), Clock.fixed(NOW, ZoneOffset.UTC),
+                url("/messages/v4/send"));
     }
 
     private TwilioSmsGateway twilio() {
-        return new TwilioSmsGateway(http(), new SmsDelivery(), url("/Accounts/{sid}/Messages.json"));
+        return new TwilioSmsGateway(http(), new SmsDelivery(), new SmsPhoneNumbers("KR"),
+                url("/Accounts/{sid}/Messages.json"));
     }
 
     private SmsHttp http() {

@@ -26,10 +26,9 @@ import org.springframework.web.client.RestClient;
  * <p>The salt and date are part of the signature to bound replay: the same signature is not valid twice, and
  * an old one is refused by the far end on the date. Both come from here rather than from stored state.
  *
- * <p>Numbers go out EXACTLY as configured, trimmed and nothing more. Reformatting them here was a guess that
- * cost a real diagnosis: the provider matches the sending number against what was registered on the account,
- * and only the administrator who registered it knows that string. Twilio is different — E.164 is a documented
- * requirement of its API, not an assumption — which is why its client still normalises.
+ * <p>Numbers go out in the KOREAN NATIONAL form ({@code 010-8200-3855}), which is what this domestic service
+ * matches registered sending numbers against — Twilio wants the same number as E.164, and reconciling that is
+ * {@link SmsPhoneNumbers}'s job rather than the administrator's.
  */
 @Component
 @Slf4j
@@ -39,14 +38,16 @@ class SolapiSmsGateway implements SmsGateway {
 
     private final RestClient http;
     private final SmsDelivery delivery;
+    private final SmsPhoneNumbers phones;
     private final String endpoint;
     private final Clock clock;
     private final SecureRandom salt = new SecureRandom();
 
-    SolapiSmsGateway(SmsHttp httpFactory, SmsDelivery delivery, Clock clock,
+    SolapiSmsGateway(SmsHttp httpFactory, SmsDelivery delivery, SmsPhoneNumbers phones, Clock clock,
             @Value("${sso.sms.solapi.endpoint}") String endpoint) {
         this.http = httpFactory.client();
         this.delivery = delivery;
+        this.phones = phones;
         this.endpoint = endpoint;
         this.clock = clock;
     }
@@ -58,12 +59,12 @@ class SolapiSmsGateway implements SmsGateway {
 
     @Override
     public void send(SmsAccount account, String to, String message) {
-        String from = account.senderNumber().trim();
+        String from = phones.national(account.senderNumber());
         delivery.attempt(provider(), from, () -> http.post()
                 .uri(endpoint)
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("Authorization", authorization(account))
-                .body(Map.of("message", Map.of("to", to.trim(), "from", from, "text", message)))
+                .body(Map.of("message", Map.of("to", phones.national(to), "from", from, "text", message)))
                 .retrieve()
                 .toBodilessEntity());
     }

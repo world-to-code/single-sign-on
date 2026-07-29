@@ -265,6 +265,7 @@ sso:
           failure-window: PT24H       # TTL on the consecutive-failure count, so an isolated failure decays
           stalled-after: 6            # consecutive failures before it is announced once as no longer converging
   sms:                              # outbound SMS gateways; per-tenant credentials live in sms_settings
+    default-region: KR              # region a number with no country code belongs to, for per-provider formatting
     http-timeout: PT5S              # the code is sent DURING a sign-in, so a slow provider must not hold the thread
     solapi:
       endpoint: https://api.solapi.com/messages/v4/send

@@ -125,6 +125,10 @@ dependencies {
     // Jittered-exponential backoff schedule for durable logout-propagation retry (IntervalFunction).
     // Functional core only — NOT the spring-boot integration, which would pull AOP + a synchronous
     // in-call @Retry we deliberately do not use (the durable sweep is the retry). Pinned like the rest.
+    // Phone-number parsing and per-region formatting. Not hand-rolled: each SMS provider wants a different
+    // shape of the SAME number (Solapi the Korean national form, Twilio E.164), and the rules for which digits
+    // are an area code change over time. Google's is the reference implementation and pulls nothing in.
+    implementation 'com.googlecode.libphonenumber:libphonenumber:9.0.4'
     implementation 'io.github.resilience4j:resilience4j-core:2.3.0'
     implementation 'com.github.ben-manes.caffeine:caffeine:3.2.4'
 
