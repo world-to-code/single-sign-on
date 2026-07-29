@@ -1,5 +1,7 @@
 package com.example.sso.email.internal.api;
 
+import com.example.sso.audit.AuditType;
+import com.example.sso.audit.Audited;
 import com.example.sso.email.internal.application.EmailTemplatePreview;
 import com.example.sso.email.internal.application.EmailTemplateService;
 import com.example.sso.email.template.EmailEvent;
@@ -96,6 +98,31 @@ class EmailTemplateControllerTest {
         assertThat(isStepUpGated("update", EmailEvent.class, EmailTemplateRequest.class)).isTrue();
         assertThat(isStepUpGated("delete", EmailEvent.class)).isTrue();
         assertThat(isStepUpGated("preview", EmailEvent.class, EmailTemplateRequest.class)).isFalse(); // a read
+    }
+
+    /**
+     * A template is the wording a person receives from this IdP, so editing one is a phishing surface: an
+     * administrator can change what a password-reset mail says and where it appears to come from. The event
+     * being changed needs no subject id — it is a path variable, so the recorded URI already names it.
+     *
+     * <p>Preview stays UNAUDITED on purpose: it renders unsaved content with sample data and persists nothing,
+     * so auditing it would bury real edits under the keystroke-by-keystroke noise of the editor.
+     */
+    @Test
+    void theWriteEndpointsLeaveAnAuditTrailAndPreviewDoesNot() throws Exception {
+        assertThat(auditTypeOf("update", EmailEvent.class, EmailTemplateRequest.class))
+                .isEqualTo(AuditType.EMAIL_TEMPLATE_CHANGED);
+        assertThat(auditTypeOf("delete", EmailEvent.class)).isEqualTo(AuditType.EMAIL_TEMPLATE_CHANGED);
+
+        assertThat(EmailTemplateController.class
+                .getMethod("preview", EmailEvent.class, EmailTemplateRequest.class)
+                .isAnnotationPresent(Audited.class)).as("preview persists nothing").isFalse();
+    }
+
+    private AuditType auditTypeOf(String method, Class<?>... params) throws Exception {
+        Audited annotation = EmailTemplateController.class.getMethod(method, params).getAnnotation(Audited.class);
+        assertThat(annotation).as("%s is audited", method).isNotNull();
+        return annotation.value();
     }
 
     private String permissionOf(String method, Class<?>... params) throws Exception {

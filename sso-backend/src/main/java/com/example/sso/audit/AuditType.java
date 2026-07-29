@@ -115,6 +115,9 @@ public enum AuditType {
     // password-reset links are DELIVERED — redirecting them is an account-takeover primitive that needs no
     // password. So a change to either is privilege-relevant and must be attributable to an administrator after
     // the fact, alongside the refused attempts the interceptor records as failures.
+    // A template is the wording a person receives FROM this IdP, so editing one is a phishing surface in its
+    // own right — the same reason the settings above are audited, one step further along the same path.
+    EMAIL_TEMPLATE_CHANGED(AuditCategory.ADMIN),
     SMTP_SETTINGS_CHANGED(AuditCategory.ADMIN),
     SMS_SETTINGS_CHANGED(AuditCategory.ADMIN),
     SCIM_TOKEN_CHANGED(AuditCategory.ADMIN),

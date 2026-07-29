@@ -1,5 +1,7 @@
 package com.example.sso.email.internal.api;
 
+import com.example.sso.audit.AuditType;
+import com.example.sso.audit.Audited;
 import com.example.sso.email.internal.application.EmailTemplatePreview;
 import com.example.sso.email.internal.application.EmailTemplateService;
 import com.example.sso.email.internal.application.EmailTemplateView;
@@ -41,6 +43,7 @@ public class EmailTemplateController {
     @PutMapping("/{event}")
     @RequirePermission(Permissions.EMAIL_TEMPLATE_UPDATE)
     @RequireStepUp
+    @Audited(AuditType.EMAIL_TEMPLATE_CHANGED)
     public List<EmailTemplateView> update(@PathVariable EmailEvent event,
             @Valid @RequestBody EmailTemplateRequest request) {
         return service.update(event, request.toSpec());
@@ -49,6 +52,7 @@ public class EmailTemplateController {
     @DeleteMapping("/{event}")
     @RequirePermission(Permissions.EMAIL_TEMPLATE_UPDATE)
     @RequireStepUp
+    @Audited(AuditType.EMAIL_TEMPLATE_CHANGED)
     public List<EmailTemplateView> delete(@PathVariable EmailEvent event) {
         return service.delete(event);
     }
