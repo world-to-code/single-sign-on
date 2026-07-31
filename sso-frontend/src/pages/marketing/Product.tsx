@@ -6,7 +6,8 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Section, CtaBand } from "@/components/marketing/MarketingLayout";
+import { Section } from "@/components/marketing/MarketingLayout";
+import { AuditSeverityChart } from "@/components/marketing/AuditSeverityChart";
 
 type MKey = keyof (typeof import("@/i18n/en/marketing"))["marketing"];
 import { cn } from "@/lib/utils";
@@ -66,7 +67,36 @@ export default function Product() {
         </dl>
       </Section>
 
-      <CtaBand />
+      <Section>
+        <Badge variant="muted" className="mb-4">{t("productRunBadge")}</Badge>
+        <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">{t("productRunTitle")}</h2>
+        <p className="mt-4 max-w-2xl text-pretty text-muted-foreground">{t("productRunBody")}</p>
+        <div className="mt-10 grid gap-4 sm:grid-cols-2">
+          {RUNNING.map(([title, body]) => (
+            <div key={title} className="rounded-xl border bg-card p-6">
+              <h3 className="font-semibold">{t(title)}</h3>
+              <p className="mt-2 text-sm text-pretty text-muted-foreground">{t(body)}</p>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section tone="muted">
+        <div className="mx-auto max-w-3xl">
+          <Badge variant="muted" className="mb-4">{t("productLimitsBadge")}</Badge>
+          <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">{t("productLimitsTitle")}</h2>
+          <p className="mt-4 text-pretty text-muted-foreground">{t("productLimitsBody")}</p>
+          <ul className="mt-8 space-y-5">
+            {LIMITS.map(([title, body]) => (
+              <li key={title} className="border-l-2 border-muted-foreground/30 pl-5">
+                <h3 className="font-semibold">{t(title)}</h3>
+                <p className="mt-1 text-sm text-pretty text-muted-foreground">{t(body)}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </Section>
+
     </>
   );
 }
@@ -200,7 +230,7 @@ function RbacMock() {
 }
 
 function AuditMock() {
-  const bars = ["h-[40%]", "h-[58%]", "h-[48%]", "h-[70%]", "h-[62%]", "h-[85%]", "h-[74%]"];
+  const { t } = useTranslation("marketing");
   const events = [
     { t: "09:14", e: "user.login · passkey" },
     { t: "09:12", e: "client.create · admin" },
@@ -208,9 +238,11 @@ function AuditMock() {
   ];
   return (
     <div className="space-y-4 rounded-lg border bg-card p-4">
-      <div className="flex h-16 items-end gap-1.5">
-        {bars.map((h, i) => <div key={i} className={`flex-1 rounded-t bg-primary/70 ${h}`} />)}
-      </div>
+      <AuditSeverityChart
+        labels={["M", "T", "W", "T", "F", "S", "S"]}
+        legend={[t("productMockSevInfo"), t("productMockSevWarning"), t("productMockSevCritical")]}
+        className="text-foreground"
+      />
       <ul className="space-y-1.5">
         {events.map((ev) => (
           <li key={ev.t} className="flex items-center gap-3 font-mono text-xs">
@@ -248,6 +280,22 @@ const CAPABILITIES: { icon: LucideIcon; title: MKey; body: MKey; points: MKey[];
     icon: ScrollText, title: "productAuditTitle", Mock: AuditMock, body: "productAuditBody",
     points: ["productAuditPoint1", "productAuditPoint2", "productAuditPoint3", "productAuditPoint4"],
   },
+];
+
+/** The operational shape of self-hosting, which decides the answer as much as the capability list does. */
+const RUNNING: [MKey, MKey][] = [
+  ["productRunStackTitle", "productRunStackBody"],
+  ["productRunDataTitle", "productRunDataBody"],
+  ["productRunDnsTitle", "productRunDnsBody"],
+  ["productRunOpsTitle", "productRunOpsBody"],
+];
+
+/** Where something else is the better answer. A page that never says no gives a reader nothing to trust. */
+const LIMITS: [MKey, MKey][] = [
+  ["productLimit1Title", "productLimit1Body"],
+  ["productLimit2Title", "productLimit2Body"],
+  ["productLimit3Title", "productLimit3Body"],
+  ["productLimit4Title", "productLimit4Body"],
 ];
 
 const SPECS: { label: MKey; value: MKey }[] = [

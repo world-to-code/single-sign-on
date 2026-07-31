@@ -146,6 +146,14 @@
   /* Korean-first vertical rhythm (DESIGN.md §2): Hangul needs looser leading and tighter heading tracking. */
   :root[lang="ko"] body { line-height: 1.65; }
   :root[lang="ko"] h1, :root[lang="ko"] h2, :root[lang="ko"] h3 { letter-spacing: -0.03em; }
+  /* Korean breaks between 어절, not inside one. Without this a heading splits words down the middle —
+     "하나 / 로", "테 / 넌트" — which reads as a typo rather than a line break. break-word is the escape
+     hatch for a token that genuinely cannot fit, such as a URL, so nothing overflows its container. */
+  :root[lang="ko"] h1, :root[lang="ko"] h2, :root[lang="ko"] h3,
+  :root[lang="ko"] h4, :root[lang="ko"] p, :root[lang="ko"] li {
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
   :root[lang="en"] body { line-height: 1.55; }
   :root[lang="en"] h1, :root[lang="en"] h2, :root[lang="en"] h3 { letter-spacing: -0.022em; }
   h1, h2, h3 { text-wrap: balance; }

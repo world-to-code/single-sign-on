@@ -8,6 +8,8 @@ import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Section, CtaBand, getStarted, signIn } from "@/components/marketing/MarketingLayout";
+import { ConsoleScreen } from "@/components/marketing/ConsoleScreen";
+import { SignInChart } from "@/components/marketing/SignInChart";
 
 type MKey = keyof (typeof import("@/i18n/en/marketing"))["marketing"];
 
@@ -24,11 +26,11 @@ export default function Home() {
             <h1 className="text-balance text-4xl font-bold tracking-tight sm:text-5xl">{t("homeHeroTitle")}</h1>
             <p className="mt-5 max-w-xl text-pretty text-lg text-muted-foreground">{t("homeHeroBody")}</p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Button size="lg" onClick={getStarted}>{t("homeHeroStartFree")} <ArrowRight /></Button>
+              <Button size="lg" onClick={getStarted}>{t("homeHeroPrimaryCta")} <ArrowRight /></Button>
               <Button size="lg" variant="outline" onClick={signIn}>{t("homeHeroSignIn")}</Button>
             </div>
             <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
-              {(["homeHeroChipNoCard", "homeHeroChipMinutes", "homeHeroChipStandards"] as MKey[]).map((k) => (
+              {(["homeHeroChipSelfHosted", "homeHeroChipOneDeploy", "homeHeroChipProtocols"] as MKey[]).map((k) => (
                 <span key={k} className="inline-flex items-center gap-1.5"><Check className="size-4 text-primary" /> {t(k)}</span>
               ))}
             </div>
@@ -74,6 +76,19 @@ export default function Home() {
         </div>
       </Section>
 
+      <Section>
+        <div className="mx-auto max-w-2xl text-center">
+          <Badge variant="muted" className="mb-4">{t("homeConsoleBadge")}</Badge>
+          <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
+            {t("homeConsoleTitle")}
+          </h2>
+          <p className="mt-4 text-pretty text-muted-foreground">{t("homeConsoleBody")}</p>
+        </div>
+        <div className="mt-10">
+          <ConsoleScreen />
+        </div>
+      </Section>
+
       <Section tone="muted">
         <div className="mb-8 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -99,6 +114,22 @@ export default function Home() {
         </div>
       </Section>
 
+      <Section>
+        <div className="mx-auto max-w-3xl">
+          <Badge variant="muted" className="mb-4">{t("homeFaqBadge")}</Badge>
+          <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">{t("homeFaqTitle")}</h2>
+          <p className="mt-4 text-pretty text-muted-foreground">{t("homeFaqBody")}</p>
+          <dl className="mt-10 divide-y border-t">
+            {FAQ.map(([question, answer]) => (
+              <div key={question} className="py-6">
+                <dt className="text-base font-semibold">{t(question)}</dt>
+                <dd className="mt-2 text-pretty text-muted-foreground">{t(answer)}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </Section>
+
       <CtaBand />
     </>
   );
@@ -107,12 +138,11 @@ export default function Home() {
 /** A stylized in-browser product preview — a tenant admin dashboard — built entirely from tokens. */
 function ProductPreview() {
   const { t } = useTranslation("marketing");
-  const bars = ["h-[38%]", "h-[52%]", "h-[44%]", "h-[61%]", "h-[55%]", "h-[72%]",
-    "h-[66%]", "h-[80%]", "h-[74%]", "h-[90%]", "h-[62%]", "h-[84%]"];
-  const stats: { label: MKey; value: string; icon: LucideIcon }[] = [
-    { label: "homePreviewUsers", value: "1,284", icon: UsersRound },
-    { label: "homePreviewSignins", value: "3,907", icon: UserCheck },
-    { label: "homePreviewApps", value: "24", icon: Blocks },
+  // A delta beside each figure, because a bare number on a dashboard says nothing about direction.
+  const stats: { label: MKey; value: string; delta: string; icon: LucideIcon }[] = [
+    { label: "homePreviewUsers", value: "1,284", delta: "+18", icon: UsersRound },
+    { label: "homePreviewSignins", value: "3,907", delta: "+12.4%", icon: UserCheck },
+    { label: "homePreviewApps", value: "24", delta: "+2", icon: Blocks },
   ];
   return (
     <div className="overflow-hidden rounded-xl border bg-card shadow-2xl">
@@ -131,32 +161,46 @@ function ProductPreview() {
               <span className="text-xs text-muted-foreground">{t(s.label)}</span>
               <s.icon className="size-4 text-primary" />
             </div>
-            <div className="mt-1 text-2xl font-semibold tabular-nums">{s.value}</div>
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-2xl font-semibold tabular-nums tracking-tight">{s.value}</span>
+              <span className="text-[11px] font-medium tabular-nums text-success">{s.delta}</span>
+            </div>
           </div>
         ))}
       </div>
       <div className="px-5 pb-5">
         <div className="rounded-lg border bg-background p-4">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-1 flex items-baseline justify-between">
             <span className="text-sm font-medium">{t("homePreviewChartTitle")}</span>
-            <Badge variant="success">+12%</Badge>
+            <span className="font-mono text-[11px] text-muted-foreground">{t("homePreviewChartRange")}</span>
           </div>
-          <div className="flex h-24 items-end gap-1.5">
-            {bars.map((h, i) => (
-              <div key={i} className={`flex-1 rounded-t bg-primary/80 ${h}`} />
-            ))}
-          </div>
+          <p className="mb-2 text-[11px] text-muted-foreground">{t("homePreviewChartCaption")}</p>
+          <SignInChart labels={DAY_LABELS} className="text-foreground" />
         </div>
       </div>
     </div>
   );
 }
 
+/** Weekday initials keep the axis readable at this width in both languages. */
+const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"] as const;
+
 const PROBLEMS: { icon: LucideIcon; title: MKey; body: MKey; fix: MKey }[] = [
   { icon: KeyRound, title: "homeProblem1Title", body: "homeProblem1Body", fix: "homeProblem1Fix" },
   { icon: RefreshCw, title: "homeProblem2Title", body: "homeProblem2Body", fix: "homeProblem2Fix" },
   { icon: Eye, title: "homeProblem3Title", body: "homeProblem3Body", fix: "homeProblem3Fix" },
   { icon: ShieldAlert, title: "homeProblem4Title", body: "homeProblem4Body", fix: "homeProblem4Fix" },
+];
+
+/** The objections worth answering before someone commits to running an identity provider themselves —
+ *  including the one that argues against it, because a list that never says no earns nothing. */
+const FAQ: [MKey, MKey][] = [
+  ["homeFaq1Q", "homeFaq1A"],
+  ["homeFaq2Q", "homeFaq2A"],
+  ["homeFaq3Q", "homeFaq3A"],
+  ["homeFaq4Q", "homeFaq4A"],
+  ["homeFaq5Q", "homeFaq5A"],
+  ["homeFaq6Q", "homeFaq6A"],
 ];
 
 const EXPLORE: { to: string; icon: LucideIcon; title: MKey; body: MKey }[] = [

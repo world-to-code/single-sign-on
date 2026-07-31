@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { ArrowDown, Lock, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Section, CtaBand } from "@/components/marketing/MarketingLayout";
+import { Section } from "@/components/marketing/MarketingLayout";
 
 type MKey = keyof (typeof import("@/i18n/en/marketing"))["marketing"];
 
@@ -91,7 +91,6 @@ export default function Security() {
         </div>
       </Section>
 
-      <CtaBand />
     </>
   );
 }

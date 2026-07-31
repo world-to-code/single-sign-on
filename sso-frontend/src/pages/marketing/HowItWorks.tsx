@@ -22,6 +22,20 @@ export default function HowItWorks() {
       </section>
 
       <Section>
+        <Badge variant="muted" className="mb-4">{t("howReadyBadge")}</Badge>
+        <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">{t("howReadyTitle")}</h2>
+        <p className="mt-4 max-w-2xl text-pretty text-muted-foreground">{t("howReadyBody")}</p>
+        <div className="mt-10 grid gap-4 sm:grid-cols-2">
+          {READY.map(([title, body]) => (
+            <div key={title} className="rounded-xl border bg-card p-6">
+              <h3 className="font-semibold">{t(title)}</h3>
+              <p className="mt-2 text-sm text-pretty text-muted-foreground">{t(body)}</p>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section>
         <ol className="mx-auto max-w-3xl">
           {STEPS.map((s, i) => (
             <li key={s.title} className="flex gap-5 sm:gap-6">
@@ -126,6 +140,14 @@ const STEPS: { icon: LucideIcon; title: MKey; body: MKey; detail: ReactNode }[] 
     icon: Rocket, title: "howStep4Title", body: "howStep4Body",
     detail: <Chips itemKeys={["howChipAuditTrail", "howChipSigninTrends", "howChipBackchannel", "howChipSamlSlo"]} />,
   },
+];
+
+/** Arranged before the first organization exists, because afterwards people are waiting on each one. */
+const READY: [MKey, MKey][] = [
+  ["howReady1Title", "howReady1Body"],
+  ["howReady2Title", "howReady2Body"],
+  ["howReady3Title", "howReady3Body"],
+  ["howReady4Title", "howReady4Body"],
 ];
 
 const OUTCOMES: { title: MKey; body: MKey }[] = [

@@ -158,7 +158,7 @@ export function CtaBand() {
         <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">{t("ctaTitle")}</h2>
         <p className="mx-auto mt-3 max-w-lg text-muted-foreground">{t("ctaBody")}</p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <Button size="lg" onClick={getStarted}>{t("ctaGetStartedFree")} <ArrowRight /></Button>
+          <Button size="lg" onClick={getStarted}>{t("ctaPrimary")} <ArrowRight /></Button>
           <Button size="lg" variant="outline" onClick={signIn}>{t("signIn")}</Button>
         </div>
       </div>

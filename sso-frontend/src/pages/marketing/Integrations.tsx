@@ -3,7 +3,7 @@ import { Blocks, Network, Plug, RefreshCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Section, CtaBand, getStarted } from "@/components/marketing/MarketingLayout";
+import { Section, getStarted } from "@/components/marketing/MarketingLayout";
 import { cn } from "@/lib/utils";
 
 type MKey = keyof (typeof import("@/i18n/en/marketing"))["marketing"];
@@ -97,7 +97,55 @@ export default function Integrations() {
         <p className="mt-6 text-sm text-muted-foreground">{t("integrationsCatalogFooter")}</p>
       </Section>
 
-      <CtaBand />
+      <Section tone="muted">
+        <Badge variant="muted" className="mb-4">{t("integrationsEndpointsBadge")}</Badge>
+        <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
+          {t("integrationsEndpointsTitle")}
+        </h2>
+        <p className="mt-4 max-w-3xl text-pretty text-muted-foreground">{t("integrationsEndpointsBody")}</p>
+        <div className="mt-8 overflow-x-auto rounded-xl border bg-card">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b bg-muted/40">
+              <tr>
+                <th className="px-5 py-3 font-medium">{t("integrationsEndpointsColPath")}</th>
+                <th className="px-5 py-3 font-medium">{t("integrationsEndpointsColPurpose")}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {ENDPOINTS.map(([path, purpose]) => (
+                <tr key={path}>
+                  <td className="whitespace-nowrap px-5 py-3 font-mono text-xs">{path}</td>
+                  <td className="px-5 py-3 text-muted-foreground">{t(purpose)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+
+      <Section>
+        <div className="mx-auto max-w-3xl">
+          <Badge variant="muted" className="mb-4">{t("integrationsPitfallsBadge")}</Badge>
+          <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
+            {t("integrationsPitfallsTitle")}
+          </h2>
+          <p className="mt-4 text-pretty text-muted-foreground">{t("integrationsPitfallsBody")}</p>
+          <ol className="mt-8 space-y-5">
+            {PITFALLS.map(([title, body], i) => (
+              <li key={title} className="flex gap-4">
+                <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border text-xs font-semibold">
+                  {i + 1}
+                </span>
+                <div>
+                  <h3 className="font-semibold">{t(title)}</h3>
+                  <p className="mt-1 text-sm text-pretty text-muted-foreground">{t(body)}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </Section>
+
     </>
   );
 }
@@ -197,6 +245,28 @@ const STEPS: { title: MKey; body: MKey }[] = [
   { title: "integrationsStep1Title", body: "integrationsStep1Body" },
   { title: "integrationsStep2Title", body: "integrationsStep2Body" },
   { title: "integrationsStep3Title", body: "integrationsStep3Body" },
+];
+
+/** Paths are relative to the TENANT's subdomain, which is the issuer — see the section copy. */
+const ENDPOINTS: [string, MKey][] = [
+  ["/.well-known/openid-configuration", "integrationsEndpointDiscovery"],
+  ["/oauth2/authorize", "integrationsEndpointAuthorize"],
+  ["/oauth2/token", "integrationsEndpointToken"],
+  ["/oauth2/jwks", "integrationsEndpointJwks"],
+  ["/userinfo", "integrationsEndpointUserinfo"],
+  ["/saml2/metadata", "integrationsEndpointSamlMetadata"],
+  ["/saml2/authenticate", "integrationsEndpointSamlSso"],
+  ["/saml2/logout", "integrationsEndpointSamlSlo"],
+  ["/scim/v2/Users · /scim/v2/Groups", "integrationsEndpointScim"],
+];
+
+/** Every one of these presents as "the login just fails", which is why they are worth naming. */
+const PITFALLS: [MKey, MKey][] = [
+  ["integrationsPitfall1Title", "integrationsPitfall1Body"],
+  ["integrationsPitfall2Title", "integrationsPitfall2Body"],
+  ["integrationsPitfall3Title", "integrationsPitfall3Body"],
+  ["integrationsPitfall4Title", "integrationsPitfall4Body"],
+  ["integrationsPitfall5Title", "integrationsPitfall5Body"],
 ];
 
 const APPS = [
