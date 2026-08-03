@@ -1,4 +1,4 @@
-# DESIGN.md — Mini SSO admin portal
+# DESIGN.md — Svalinn admin portal
 
 The design system for the IdP's React SPA: login, MFA, admin console, user portal.
 
@@ -509,7 +509,7 @@ The end-user surface, and the only part of this product a person outside the org
 organization → identify → factor(s) → [enroll] → consent → redirect
 ```
 
-A centred `authpanel` on `--bg`, brand above, `Mini SSO가 보호하는 로그인` below. A four-step
+A centred `authpanel` on `--bg`, brand above, `Svalinn이 보호하는 로그인` below. A four-step
 `stepper` names the steps — `조직 · 로그인 · 인증 · 권한`. It is never `01 / 02 / 03`: the labels
 carry information the numbers do not.
 

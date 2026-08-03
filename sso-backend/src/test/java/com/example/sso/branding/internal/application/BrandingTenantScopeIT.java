@@ -72,15 +72,15 @@ class BrandingTenantScopeIT extends AbstractIntegrationTest {
 
         // Resolve directly (the consent page path — org already bound).
         assertThat(orgContext.callInOrg(orgA, () -> branding.resolve(orgA)).productName()).isEqualTo("Acme");
-        assertThat(orgContext.callInOrg(orgB, () -> branding.resolve(orgB)).productName()).isEqualTo("Mini SSO");
+        assertThat(orgContext.callInOrg(orgB, () -> branding.resolve(orgB)).productName()).isEqualTo("Svalinn");
         assertThat(orgContext.callInOrg(orgB, () -> branding.get().configured())).isFalse();
 
         // Resolve via the PUBLIC host path — A's subdomain returns A's branding, B's returns the default, and a
         // bare/unknown host returns the default. A client can only ever read its own subdomain's branding.
         assertThat(resolveForHost(a.slug() + ".localhost").productName()).isEqualTo("Acme");
-        assertThat(resolveForHost(b.slug() + ".localhost").productName()).isEqualTo("Mini SSO");
-        assertThat(resolveForHost("localhost").productName()).isEqualTo("Mini SSO");
-        assertThat(resolveForHost("no-such-tenant.localhost").productName()).isEqualTo("Mini SSO");
+        assertThat(resolveForHost(b.slug() + ".localhost").productName()).isEqualTo("Svalinn");
+        assertThat(resolveForHost("localhost").productName()).isEqualTo("Svalinn");
+        assertThat(resolveForHost("no-such-tenant.localhost").productName()).isEqualTo("Svalinn");
 
         // Now B configures its OWN distinct branding: each host returns strictly its own, never the other's.
         orgContext.runInOrg(orgB, () -> branding.update(spec("Beta")));

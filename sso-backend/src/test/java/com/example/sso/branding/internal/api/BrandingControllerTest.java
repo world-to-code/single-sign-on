@@ -72,7 +72,7 @@ class BrandingControllerTest {
 
         mvc.perform(get("/api/auth/branding"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.productName").value("Mini SSO"))
+                .andExpect(jsonPath("$.productName").value("Svalinn"))
                 .andExpect(jsonPath("$.logoUrl").doesNotExist());
     }
 }

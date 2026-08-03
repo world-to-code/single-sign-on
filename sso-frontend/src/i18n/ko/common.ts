@@ -1,7 +1,7 @@
 import type { common as enCommon } from "../en/common";
 
 export const common: Record<keyof typeof enCommon, string> = {
-  appName: "Mini SSO",
+  appName: "Svalinn",
   brandSubtitle: "아이덴티티 제공자",
 
   // Shared controls --------------------------------------------------------

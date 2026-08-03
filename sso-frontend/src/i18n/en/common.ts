@@ -1,7 +1,7 @@
 // Copy shared by the cross-cutting building blocks (Brand, confirm/toast providers, pagination,
 // copy fields, pickers) — anything with no page of its own. Page copy lives in its own namespace.
 export const common = {
-  appName: "Mini SSO",
+  appName: "Svalinn",
   brandSubtitle: "Identity Provider",
 
   // Shared controls --------------------------------------------------------

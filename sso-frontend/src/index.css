@@ -145,6 +145,14 @@
 
   /* Korean-first vertical rhythm (DESIGN.md §2): Hangul needs looser leading and tighter heading tracking. */
   :root[lang="ko"] body { line-height: 1.65; }
+  /* The Svalinn shield, drawn as a MASK rather than an image so it takes currentColor. One asset serves
+     both themes and any accent, and the mark stays crisp because it is not being recoloured by a filter. */
+  .brand-mark {
+    -webkit-mask: url("./assets/svalinn-mark.png") center / contain no-repeat;
+    mask: url("./assets/svalinn-mark.png") center / contain no-repeat;
+    background-color: currentColor;
+  }
+
   :root[lang="ko"] h1, :root[lang="ko"] h2, :root[lang="ko"] h3 { letter-spacing: -0.03em; }
   /* Korean breaks between 어절, not inside one. Without this a heading splits words down the middle —
      "하나 / 로", "테 / 넌트" — which reads as a typo rather than a line break. break-word is the escape

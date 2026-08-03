@@ -1,12 +1,11 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * The product mark — a tenant's logo image when one is set, else the shield glyph in its ink square. Used
+ * The product mark: a tenant's logo image when one is set, else the Svalinn shield in its ink square. Used
  * ALONE as the shell's sidebar mark, and with the wordmark on the auth/marketing screens. A broken logo URL
- * falls back to the glyph.
+ * falls back to the shield.
  */
 export function BrandMark({ className, title, logoUrl }: {
   className?: string;
@@ -30,12 +29,12 @@ export function BrandMark({ className, title, logoUrl }: {
       title={title}
       className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg bg-ink text-bg shadow-sm", className)}
     >
-      <ShieldCheck className="size-5" />
+      <span className="brand-mark size-5" />
     </span>
   );
 }
 
-/** Product wordmark: the brand mark + product name ("Mini SSO" by default, a tenant's name when branded). */
+/** Product wordmark: the brand mark + product name ("Svalinn" by default, a tenant's name when branded). */
 export function Brand({ className, logoUrl, name }: {
   className?: string;
   logoUrl?: string | null;

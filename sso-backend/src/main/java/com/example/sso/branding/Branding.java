@@ -10,6 +10,6 @@ public record Branding(String logoUrl, String accentColor, String productName) {
 
     /** The platform fallback when neither the tenant nor the platform has configured branding. */
     public static Branding platformDefault() {
-        return new Branding(null, null, "Mini SSO");
+        return new Branding(null, null, "Svalinn");
     }
 }

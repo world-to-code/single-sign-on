@@ -64,14 +64,14 @@ class BrandingServiceTest {
         when(repository.findByOrgIdIsNull()).thenReturn(Optional.of(row(null)), Optional.empty());
 
         assertThat(service().resolve(ORG).productName()).isEqualTo("Acme"); // inherits global
-        assertThat(service().resolve(ORG).productName()).isEqualTo("Mini SSO"); // built-in default
+        assertThat(service().resolve(ORG).productName()).isEqualTo("Svalinn"); // built-in default
     }
 
     @Test
     void resolveWithANullOrgReadsOnlyTheGlobalRow() {
         when(repository.findByOrgIdIsNull()).thenReturn(Optional.empty());
 
-        assertThat(service().resolve(null).productName()).isEqualTo("Mini SSO");
+        assertThat(service().resolve(null).productName()).isEqualTo("Svalinn");
         verify(repository, never()).findByOrgId(any());
     }
 
@@ -95,7 +95,7 @@ class BrandingServiceTest {
         BrandingView view = service().get();
 
         assertThat(view.configured()).isFalse();
-        assertThat(view.productName()).isEqualTo("Mini SSO"); // the built-in default, as a starting point
+        assertThat(view.productName()).isEqualTo("Svalinn"); // the built-in default, as a starting point
     }
 
     @Test

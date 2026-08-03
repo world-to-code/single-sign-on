@@ -18,7 +18,7 @@ const BrandingRefreshContext = createContext<() => Promise<void>>(async () => {}
  *
  * <p>It used to be fetched inside the auth layout, which meant it reached the sign-in screens and nothing
  * else: the console, the user portal and the loading splash all rendered the built-in shield and the word
- * "Mini SSO" no matter what the tenant had configured, and the accent colour reverted to the default the
+ * "Svalinn" no matter what the tenant had configured, and the accent colour reverted to the default the
  * moment a session existed. A tenant that has set their logo has said what this deployment is called, and
  * that answer does not stop being true after sign-in.
  *

@@ -70,7 +70,7 @@ public class SamlCredentialServiceImpl implements SamlCredentialService {
             OrgContext orgContext, SamlCredentialRepository credentialRepository, SecretCipher secretCipher,
             @Value("${sso.saml.keystore-path:data/saml-idp.p12}") String keystorePath,
             @Value("${sso.saml.keystore-password:changeit}") String keystorePassword,
-            @Value("${sso.saml.certificate-dn:CN=Mini SSO SAML IdP}") String distinguishedName,
+            @Value("${sso.saml.certificate-dn:CN=Svalinn SAML IdP}") String distinguishedName,
             @Value("${sso.saml.key-size:2048}") int keySize,
             @Value("${sso.saml.certificate-validity-days:3650}") int certificateValidityDays) {
         this.orgContext = orgContext;

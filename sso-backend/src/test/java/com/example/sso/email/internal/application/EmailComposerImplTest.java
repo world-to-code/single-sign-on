@@ -112,7 +112,7 @@ class EmailComposerImplTest {
         OutboundEmail email = composer().compose(EVENT, "to@x.example", Map.of("code", "1", "ttlMinutes", 10));
 
         verify(repository, never()).findByOrgIdAndEvent(any(), any()); // an org-scoped read is never issued
-        assertThat(email.subject()).isEqualTo("Verify your email for Mini SSO"); // the built-in default
+        assertThat(email.subject()).isEqualTo("Verify your email for Svalinn"); // the built-in default
     }
 
     @Test

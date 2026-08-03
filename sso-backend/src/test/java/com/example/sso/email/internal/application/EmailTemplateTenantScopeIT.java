@@ -69,7 +69,7 @@ class EmailTemplateTenantScopeIT extends AbstractIntegrationTest {
         // Org A composes with ITS template; org B — with no own row — composes with the built-in default.
         assertThat(orgContext.callInOrg(orgA, this::render).subject()).isEqualTo("Acme code 123456");
         assertThat(orgContext.callInOrg(orgB, this::render).subject())
-                .isEqualTo("Verify your email for Mini SSO"); // the built-in default subject
+                .isEqualTo("Verify your email for Svalinn"); // the built-in default subject
         // And B's admin view shows it inherits the default (not configured), never A's row.
         assertThat(orgContext.callInOrg(orgB, this::configured)).isFalse();
     }

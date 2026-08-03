@@ -123,7 +123,7 @@ public class SecurityConfig {
             PublicKeyCredentialCreationOptionsRepository creationOptionsRepository,
             @Value("${sso.issuer}") String issuer,
             @Value("${sso.webauthn.rp-id:localhost}") String rpId,
-            @Value("${sso.webauthn.rp-name:Mini SSO}") String rpName,
+            @Value("${sso.webauthn.rp-name:Svalinn}") String rpName,
             @Qualifier("webAuthnAllowedOrigins") Set<String> allowedOrigins,
             @Value("${sso.plane:all}") String plane)
             throws Exception {

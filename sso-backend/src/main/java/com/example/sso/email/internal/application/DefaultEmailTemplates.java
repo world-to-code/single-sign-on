@@ -18,7 +18,7 @@ class DefaultEmailTemplates {
 
     DefaultEmailTemplates() {
         defaults.put(EmailEvent.EMAIL_VERIFICATION_CODE, new EmailTemplateContent(
-                "Verify your email for Mini SSO",
+                "Verify your email for Svalinn",
                 html("""
                         <h1 style="font-size:20px;margin:0 0 16px;">Verify your email</h1>
                         <p style="margin:0 0 8px;">Your verification code is:</p>
@@ -28,10 +28,10 @@ class DefaultEmailTemplates {
                 null));
 
         defaults.put(EmailEvent.SIGNUP_VERIFICATION, new EmailTemplateContent(
-                "Verify your email to create your Mini SSO workspace",
+                "Verify your email to create your Svalinn workspace",
                 html("""
                         <h1 style="font-size:20px;margin:0 0 16px;">Create your workspace</h1>
-                        <p style="margin:0 0 16px;">A workspace "<strong>{{slug}}</strong>" was requested on Mini SSO
+                        <p style="margin:0 0 16px;">A workspace "<strong>{{slug}}</strong>" was requested on Svalinn
                           with this email address.</p>
                         <p style="margin:0 0 16px;">Verify your email and set your admin password to create it:</p>
                         <p style="margin:0 0 16px;"><a href="{{activateUrl}}"
@@ -39,14 +39,14 @@ class DefaultEmailTemplates {
                           text-decoration:none;display:inline-block;">Verify and create workspace</a></p>
                         <p style="color:#666;margin:0;">If you didn't request this, ignore this email — nothing has
                           been created. This one-time link expires soon.</p>"""),
-                "A workspace \"{{slug}}\" was requested on Mini SSO with this email address."
+                "A workspace \"{{slug}}\" was requested on Svalinn with this email address."
                         + "\n\nVerify your email and set your admin password to create it:\n\n{{activateUrl}}"
                         + "\n\nIf you didn't request this, ignore this email — nothing has been created."
                         + " This one-time link expires soon.",
                 null));
 
         defaults.put(EmailEvent.ONBOARDING_INVITATION, new EmailTemplateContent(
-                "Set up your Mini SSO admin account",
+                "Set up your Svalinn admin account",
                 html("""
                         <h1 style="font-size:20px;margin:0 0 16px;">Your workspace is ready</h1>
                         <p style="margin:0 0 16px;">Your workspace is ready at:<br>

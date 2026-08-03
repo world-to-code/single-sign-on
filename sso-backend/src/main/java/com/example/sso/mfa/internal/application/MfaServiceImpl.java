@@ -28,7 +28,7 @@ public class MfaServiceImpl implements MfaService {
     public MfaServiceImpl(MfaFactorRepository factors,
                           TotpService totpService,
                           SecretCipher secretCipher,
-                          @Value("${sso.totp.issuer-name:MiniSSO}") String issuerName) {
+                          @Value("${sso.totp.issuer-name:Svalinn}") String issuerName) {
         this.factors = factors;
         this.totpService = totpService;
         this.secretCipher = secretCipher;

@@ -138,7 +138,7 @@ export function BrandingEditor() {
 
         <Field label={t("brandingProductName")} hint={t("brandingNameHint")}>
           <Input value={form.productName} onChange={(e) => set({ productName: e.target.value })}
-                 placeholder="Mini SSO" maxLength={64} />
+                 placeholder="Svalinn" maxLength={64} />
         </Field>
 
         <div className="flex items-center justify-between gap-2">

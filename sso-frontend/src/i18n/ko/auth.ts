@@ -60,7 +60,7 @@ export const auth: Record<keyof typeof enAuth, string> = {
 
   // AuthLayout -------------------------------------------------------------
   layoutBack: "뒤로",
-  layoutSecuredBy: "Mini SSO 보안 · 단일 노드 인증 제공자",
+  layoutSecuredBy: "Svalinn이 보호하는 로그인",
 
   // OrgSelect --------------------------------------------------------------
   orgSelectDescription: "계속하려면 조직을 입력하세요.",

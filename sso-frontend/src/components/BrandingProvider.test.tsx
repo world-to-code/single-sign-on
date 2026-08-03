@@ -31,7 +31,7 @@ vi.mock("@/lib/prefs", async (importOriginal) => ({
  * A tenant that sets a logo has said what this deployment is called, and that answer does not stop being true
  * after sign-in. It used to: branding was fetched inside the auth layout, so it reached the sign-in screens
  * and nothing else — the console, the user portal and the splash all drew the built-in shield and the word
- * "Mini SSO", and the accent reverted to the default the moment a session existed.
+ * "Svalinn", and the accent reverted to the default the moment a session existed.
  */
 describe("BrandingProvider", () => {
   const branding = vi.mocked(getBranding);

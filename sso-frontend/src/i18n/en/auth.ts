@@ -58,7 +58,7 @@ export const auth = {
 
   // AuthLayout -------------------------------------------------------------
   layoutBack: "Back",
-  layoutSecuredBy: "Secured by Mini SSO · single-node Identity Provider",
+  layoutSecuredBy: "Sign-in protected by Svalinn",
 
   // OrgSelect --------------------------------------------------------------
   orgSelectDescription: "Enter your organization to continue.",

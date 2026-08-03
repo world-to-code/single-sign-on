@@ -14,7 +14,7 @@ class QrCodeServiceImplTest {
 
     @Test
     void rendersContentAsAPngDataUri() {
-        String dataUri = service.pngDataUri("otpauth://totp/MiniSSO:alice?secret=GEZDGNBVGY3TQOJQ");
+        String dataUri = service.pngDataUri("otpauth://totp/Svalinn:alice?secret=GEZDGNBVGY3TQOJQ");
 
         assertThat(dataUri).startsWith("data:image/png;base64,");
         assertThat(dataUri.length()).isGreaterThan("data:image/png;base64,".length());

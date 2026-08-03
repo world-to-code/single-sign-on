@@ -7,7 +7,7 @@ plugins {
 
 group = 'com.example'
 version = '0.0.1-SNAPSHOT'
-description = 'Mini SSO System — Central Identity Provider (OIDC + SAML2 + SCIM + MFA)'
+description = 'Svalinn — Central Identity Provider (OIDC + SAML2 + SCIM + MFA)'
 
 java {
     toolchain {

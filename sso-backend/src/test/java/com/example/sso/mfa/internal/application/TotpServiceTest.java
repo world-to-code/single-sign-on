@@ -42,9 +42,9 @@ class TotpServiceTest {
     @Test
     void generatesProvisioningUri() {
         String secret = totp.generateSecret();
-        String uri = totp.provisioningUri(secret, "alice@example.com", "MiniSSO");
+        String uri = totp.provisioningUri(secret, "alice@example.com", "Svalinn");
         assertThat(uri).startsWith("otpauth://totp/")
                 .contains("secret=" + secret)
-                .contains("issuer=MiniSSO");
+                .contains("issuer=Svalinn");
     }
 }

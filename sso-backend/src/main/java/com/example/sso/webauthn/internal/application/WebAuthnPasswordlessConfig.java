@@ -43,7 +43,7 @@ public class WebAuthnPasswordlessConfig {
             PublicKeyCredentialUserEntityRepository userEntities,
             UserCredentialRepository userCredentials,
             @Value("${sso.webauthn.rp-id:localhost}") String rpId,
-            @Value("${sso.webauthn.rp-name:Mini SSO}") String rpName,
+            @Value("${sso.webauthn.rp-name:Svalinn}") String rpName,
             @Value("${sso.tenant.base-domains}") List<String> baseDomains,
             @Qualifier("webAuthnAllowedOrigins") Set<String> allowedOrigins) {
         // The RP ID is derived from the ceremony host per request (WebAuthnRpIdResolver): a subdomain of a

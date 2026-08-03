@@ -43,7 +43,7 @@ class MfaServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new MfaServiceImpl(factors, totpService, secretCipher, "MiniSSO");
+        service = new MfaServiceImpl(factors, totpService, secretCipher, "Svalinn");
     }
 
     @Test
