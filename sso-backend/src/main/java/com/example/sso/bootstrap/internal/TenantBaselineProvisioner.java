@@ -4,7 +4,11 @@ import com.example.sso.authpolicy.policy.AuthPolicyAdminService;
 import com.example.sso.metadata.ProfileKind;
 import com.example.sso.metadata.ProfileService;
 import com.example.sso.organization.OrganizationCreatedEvent;
+import com.example.sso.portal.binding.PortalApps;
+import com.example.sso.portal.binding.PortalSessionBinding;
 import com.example.sso.session.policy.SessionPolicyService;
+import com.example.sso.tenancy.OrgContext;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,12 +36,24 @@ public class TenantBaselineProvisioner {
     private final SessionPolicyService sessionPolicies;
     private final AuthPolicyAdminService authPolicies;
     private final ProfileService profiles;
+    private final PortalSessionBinding portalBinding;
+    private final OrgContext orgContext;
+
+    /**
+     * Point BOTH portals at the tenant's own Default. {@code provisionDefault} binds the user portal as part of
+     * the policy's assignment scope, but nothing bound the ADMIN console — so every tenant's console silently
+     * kept governing itself by the PLATFORM Default's step-up posture (a 2-minute sensitive-action window),
+     * however long the tenant set its own. Idempotent: an administrator's later selection simply overwrites it.
+     */
+    private void bindPortalsToOwnDefault(UUID orgId, UUID sessionPolicyId) {
+        orgContext.runInOrg(orgId, () -> portalBinding.setSessionPolicy(PortalApps.ADMIN, sessionPolicyId));
+    }
 
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onOrganizationCreated(OrganizationCreatedEvent event) {
         try {
-            sessionPolicies.provisionDefault(event.orgId());
+            bindPortalsToOwnDefault(event.orgId(), sessionPolicies.provisionDefault(event.orgId()));
             authPolicies.provisionDefault(event.orgId());
             // The tenant's own profile: the unit attribute definitions and directory mappings hang off.
             profiles.provisionDefault(event.orgId());

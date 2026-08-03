@@ -45,8 +45,12 @@ public interface SessionPolicyService {
      * <p>SYSTEM provisioning only: it writes to the given {@code orgId} with NO caller authorization check
      * (the org-created listener supplies a trusted id). Never wire it to a request-facing endpoint without a
      * tier/permission guard — that would be an unscoped cross-org write.
+     *
+     * <p>Returns the tenant's Default policy id — existing or newly created — so the caller can point the
+     * tenant's portals at it. The session module cannot do that itself: the PORTAL bindings live in the portal
+     * module, and a session→portal import would close a dependency cycle.
      */
-    void provisionDefault(UUID orgId);
+    UUID provisionDefault(UUID orgId);
 
     List<SessionPolicyDetails> listAll();
 

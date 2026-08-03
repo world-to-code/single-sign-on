@@ -9,6 +9,7 @@ import com.example.sso.portal.binding.PortalSessionBinding;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -72,13 +73,22 @@ class UserPortalCatalogAndBindingIT extends AbstractIntegrationTest {
     void theUserPortalSessionSelectionIsIsolatedFromTheAdminConsoleBinding() {
         orgA = org();
         UUID policy = defaultPolicyOf(orgA);
+        // Whatever the console is bound to, the USER write must leave it alone — asserted against the value
+        // read BEFORE, so this stays honest regardless of what tenant provisioning binds the console to.
+        Optional<UUID> consoleBefore = awaitConsoleBinding(orgA);
 
         orgContext.runInOrg(orgA, () -> portals.setSessionPolicy(PortalApps.USER, policy));
 
         assertThat(orgContext.callInOrg(orgA, () -> portals.sessionPolicyId(PortalApps.USER))).contains(policy);
         // Setting the USER portal must not touch the ADMIN console binding — they are separate PORTAL app rows.
         assertThat(orgContext.callInOrg(orgA, () -> portals.sessionPolicyId(PortalApps.ADMIN)))
-                .isEqualTo(orgContext.callAsPlatform(() -> portals.sessionPolicyId(PortalApps.ADMIN))); // still the inherited global
+                .isEqualTo(consoleBefore);
+    }
+
+    /** The console binding tenant baseline provisioning creates, once the async listener has landed. */
+    private Optional<UUID> awaitConsoleBinding(UUID orgId) {
+        await().until(() -> orgContext.callInOrg(orgId, () -> portals.ownSessionPolicyId(PortalApps.ADMIN)).isPresent());
+        return orgContext.callInOrg(orgId, () -> portals.sessionPolicyId(PortalApps.ADMIN));
     }
 
     @Test

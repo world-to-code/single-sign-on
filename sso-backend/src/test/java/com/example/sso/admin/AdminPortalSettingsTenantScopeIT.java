@@ -76,22 +76,32 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
         return orgContext.callInOrg(orgId, () -> portals.sessionPolicyId(PortalApps.ADMIN));
     }
 
+    /** The console binding tenant baseline provisioning creates (async), once it has landed. */
+    private UUID provisionedConsolePolicyOf(UUID orgId) {
+        await().until(() -> consolePolicyOf(orgId).isPresent() && bindingRows(orgId) == 1);
+        return consolePolicyOf(orgId).orElseThrow();
+    }
+
     private int bindingRows(UUID orgId) {
         return ownerJdbc().queryForObject(
                 "select count(*) from policy_binding where app_type = 'PORTAL' and app_id = 'admin' and org_id = ?",
                 Integer.class, orgId);
     }
 
+    /**
+     * A fresh tenant's console runs on the tenant's OWN Default. It used to inherit the global one, because
+     * provisioning bound the new policy only to PORTAL/user — so a tenant's console kept the PLATFORM step-up
+     * posture (a 2-minute sensitive window) however long the tenant configured its own policy.
+     */
     @Test
-    void aFreshTenantInheritsTheGlobalConsolePolicy() {
+    void aFreshTenantIsBoundToItsOwnDefaultNotThePlatformDefault() {
         orgA = org();
 
-        // Independent oracle: V84 must migrate the GLOBAL pin (a fresh tenant inheriting nothing would let a
-        // hardened console posture silently fail open). Asserted separately so the inherit check below is not a
-        // vacuous empty==empty if the global row were dropped.
+        // Independent oracle: the GLOBAL pin must still exist — it is the fallback for a context with no org
+        // of its own, and a fresh tenant inheriting nothing would let a hardened console posture fail open.
         assertThat(globalConsolePolicy()).isPresent();
-        assertThat(consolePolicyOf(orgA)).isEqualTo(globalConsolePolicy()); // no own binding → inherits global
-        assertThat(bindingRows(orgA)).isZero();                             // a pure read materializes no row
+        assertThat(provisionedConsolePolicyOf(orgA)).isEqualTo(defaultPolicyOf(orgA));
+        assertThat(consolePolicyOf(orgA)).isNotEqualTo(globalConsolePolicy());
     }
 
     @Test
@@ -103,8 +113,9 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
         orgContext.runInOrg(orgA, () -> portals.setSessionPolicy(PortalApps.ADMIN, policyOfA));
 
         assertThat(consolePolicyOf(orgA)).contains(policyOfA);
-        assertThat(consolePolicyOf(orgB)).isEqualTo(globalConsolePolicy()); // orgB untouched — still inherits global
-        assertThat(bindingRows(orgB)).isZero();
+        // orgB untouched: still its OWN default, not A's and not the global one.
+        assertThat(provisionedConsolePolicyOf(orgB)).isEqualTo(defaultPolicyOf(orgB));
+        assertThat(consolePolicyOf(orgB).orElseThrow()).isNotEqualTo(policyOfA);
     }
 
     @Test
@@ -114,9 +125,14 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
         UUID policyOfB = defaultPolicyOf(orgB);
 
         // Pointing A's console at B's policy would govern A with a posture A neither owns nor can inspect.
+        UUID before = provisionedConsolePolicyOf(orgA);
+
         assertThatThrownBy(() -> orgContext.runInOrg(orgA, () -> portals.setSessionPolicy(PortalApps.ADMIN, policyOfB)))
                 .isInstanceOf(BadRequestException.class);
-        assertThat(bindingRows(orgA)).isZero(); // the rejected write materialized no row
+        // The rejected write changed nothing: A still runs on its own policy, and B's never leaked in.
+        assertThat(consolePolicyOf(orgA)).contains(before);
+        assertThat(consolePolicyOf(orgA).orElseThrow()).isNotEqualTo(policyOfB);
+        assertThat(bindingRows(orgA)).isEqualTo(1);
     }
 
     @Test
@@ -124,15 +140,19 @@ class AdminPortalSettingsTenantScopeIT extends AbstractIntegrationTest {
         orgA = org();
         UUID unknown = UUID.randomUUID();
 
+        UUID before = provisionedConsolePolicyOf(orgA);
+
         assertThatThrownBy(() -> orgContext.runInOrg(orgA, () -> portals.setSessionPolicy(PortalApps.ADMIN, unknown)))
                 .isInstanceOf(BadRequestException.class);
-        assertThat(bindingRows(orgA)).isZero();
+        assertThat(consolePolicyOf(orgA)).contains(before);
+        assertThat(bindingRows(orgA)).isEqualTo(1);
     }
 
     @Test
     void clearingTheSelectionReturnsToTheInheritedGlobal() {
         orgA = org();
         UUID policyOfA = defaultPolicyOf(orgA);
+        provisionedConsolePolicyOf(orgA); // let provisioning land first, or it would re-create the row after
         orgContext.runInOrg(orgA, () -> portals.setSessionPolicy(PortalApps.ADMIN, policyOfA));
 
         orgContext.runInOrg(orgA, () -> portals.setSessionPolicy(PortalApps.ADMIN, null));

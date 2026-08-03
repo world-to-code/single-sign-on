@@ -78,7 +78,19 @@ public class AdminPortalSettingsController {
     private AdminConsoleSettingsView consoleView() {
         Optional<UUID> own = portalBinding.ownSessionPolicyId(PortalApps.ADMIN);
         return AdminConsoleSettingsView.of(own, policyName(own), inheritedName(PortalApps.ADMIN, own),
-                consoleConfig.current());
+                consoleConfig.current(), sensitiveWindow());
+    }
+
+    /**
+     * The sensitive-action re-auth window actually in force, read from the policy GOVERNING the console (the
+     * tenant's own selection, else the inherited global) — not from whichever policy the acting admin happens
+     * to resolve. Null when it cannot be resolved, so the screen omits the line rather than claiming zero.
+     */
+    private Integer sensitiveWindow() {
+        return portalBinding.sessionPolicyId(PortalApps.ADMIN)
+                .flatMap(sessionPolicies::findById)
+                .map(SessionPolicyDetails::getSensitiveReauthWindowMinutes)
+                .orElse(null);
     }
 
     private AdminPortalSettingsView userPortalView() {

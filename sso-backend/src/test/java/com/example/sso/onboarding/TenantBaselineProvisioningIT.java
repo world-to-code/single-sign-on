@@ -9,6 +9,7 @@ import com.example.sso.organization.OrganizationView;
 import com.example.sso.session.policy.SessionAssignment;
 import com.example.sso.session.policy.SessionBindings;
 import com.example.sso.session.policy.SessionPolicyDetails;
+import com.example.sso.session.policy.ConsoleSessionPolicy;
 import com.example.sso.session.policy.SessionPolicyService;
 import com.example.sso.session.policy.SessionPolicyUpdate;
 import com.example.sso.session.policy.UserSessionPolicy;
@@ -42,6 +43,8 @@ class TenantBaselineProvisioningIT extends AbstractIntegrationTest {
     OrganizationService organizations;
     @Autowired
     SessionPolicyService sessionPolicies;
+    @Autowired
+    ConsoleSessionPolicy consolePolicy;
     @Autowired
     UserSessionPolicy userSessionPolicy;
     @Autowired
@@ -80,6 +83,34 @@ class TenantBaselineProvisioningIT extends AbstractIntegrationTest {
             assertThat(authPolicies.listAll())
                     .anyMatch(p -> "Default".equals(p.getName())
                             && p.getPriority() == AuthPolicyAdminService.TENANT_DEFAULT_PRIORITY);
+        }));
+    }
+
+    /**
+     * The ADMIN CONSOLE must run on the tenant's own Default too. It used not to: provisioning bound the new
+     * policy as its assignment scope, and that scope is PORTAL/user only, so no tenant ever got a PORTAL/admin
+     * binding — the console fell back to the GLOBAL one and every tenant's destructive actions were gated by
+     * the PLATFORM Default's 2-minute step-up window however long the tenant configured its own.
+     */
+    @Test
+    void theAdminConsoleAlsoRunsOnTheTenantsOwnPolicyNotThePlatformDefault() {
+        OrganizationView org = organizations.create(
+                new NewOrganization("octatco-console-it", "Octatco Console IT", CompanyProfile.empty()));
+        orgId = org.id();
+        UserAccount admin = users.createUser(
+                new NewUser("admin@octatco-console-it.test", "admin@octatco-console-it.test",
+                        "Admin", "S3cret!pw9", Set.of("ROLE_USER")), orgId);
+        userId = admin.getId();
+
+        await().untilAsserted(() -> orgContext.runInOrg(orgId, () -> {
+            // listAll is tier-scoped, so in this org's scope it yields the tenant's OWN policies only.
+            SessionPolicyDetails ownDefault = sessionPolicies.listAll().stream()
+                    .filter(p -> SessionPolicyService.DEFAULT_NAME.equals(p.getName()))
+                    .findFirst().orElseThrow();
+
+            SessionPolicyDetails governing = consolePolicy.resolveForConsole(admin.getUsername());
+            // The tenant's own row, not the global fallback — the whole point of the binding.
+            assertThat(governing.getId()).isEqualTo(ownDefault.getId());
         }));
     }
 

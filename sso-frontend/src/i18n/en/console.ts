@@ -163,6 +163,7 @@ export const console = {
   applicationsInheritedPolicy: "Inherit the default ({{name}})",
   applicationsElevationTtl: "Elevation token lifetime (min)",
   applicationsElevationTtlHint: "How long a step-up elevation proof is accepted before re-authentication is required. This unlocks the WHOLE admin console; individual sensitive actions such as deletes and grants are governed separately by the session policy's step-up window.",
+  applicationsSensitiveWindowNotice: "Sensitive actions (deletes, grants) currently re-prompt after <0>{{minutes}} min</0> — that comes from the session policy above, not from this field. If the console asks again sooner than you expect, this is the number to change.",
   applicationsAdminCidrs: "Console IP allowlist",
   applicationsAdminCidrsHint: "Comma-separated CIDRs the admin console may be entered from. Empty allows any network.",
   applicationsUserPortalSettingsTitle: "User Portal session",

@@ -60,7 +60,8 @@ class AdminConsoleSettingsServiceIT extends AbstractIntegrationTest {
     }
 
     /**
-     * A tenant that has never picked a policy is INHERITING the global default. Reporting that inherited id as
+     * A tenant that CLEARED its selection is INHERITING the global default. (Provisioning now binds a fresh
+     * tenant to its own Default, so clearing is how this state is reached.) Reporting that inherited id as
      * though it were the tenant's own selection is what broke the console: the id is not in the tenant's
      * own-tier list, so the form echoed it back on save and the write guard refused it — taking the elevation
      * TTL and the IP allowlist down with it, since all three share one transaction.
@@ -69,6 +70,8 @@ class AdminConsoleSettingsServiceIT extends AbstractIntegrationTest {
     void aTenantInheritingTheGlobalPolicyReportsNoOwnSelection() {
         orgA = org();
         defaultPolicyOf(orgA); // wait for baseline provisioning
+        await().until(() -> orgContext.callInOrg(orgA, () -> portals.ownSessionPolicyId(PortalApps.ADMIN)).isPresent());
+        orgContext.runInOrg(orgA, () -> portals.setSessionPolicy(PortalApps.ADMIN, null));
 
         assertThat(orgContext.callInOrg(orgA, () -> portals.ownSessionPolicyId(PortalApps.ADMIN))).isEmpty();
         // ...while resolution still inherits, so the console remains governed.

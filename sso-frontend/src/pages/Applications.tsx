@@ -31,6 +31,10 @@ interface PortalSettings {
   inheritedSessionPolicyName?: string | null;
   elevationTokenTtlMinutes?: number;
   adminAllowedCidrs?: string | null;
+  // Display-only: the sensitive-action window from the policy GOVERNING the console. The elevation TTL keeps
+  // the console unlocked, but every destructive action is gated by this — so a long TTL beside an inherited
+  // short window reads as "my setting is being ignored" unless both are on screen.
+  effectiveSensitiveReauthWindowMinutes?: number | null;
 }
 // Which portal a "Portal settings" dialog governs: the admin console vs the end-user portal (distinct bindings).
 type PortalKind = "admin" | "user";
@@ -287,6 +291,15 @@ export default function Applications() {
                            onChange={(e) => setSettings({ ...settings, elevationTokenTtlMinutes: Number(e.target.value) })} />
                     <p className="text-xs text-muted-foreground">{t("applicationsElevationTtlHint")}</p>
                   </div>
+                  {settings.effectiveSensitiveReauthWindowMinutes != null && (
+                    <Alert>
+                      <AlertDescription className="text-xs">
+                        <Trans t={t} i18nKey="applicationsSensitiveWindowNotice"
+                               values={{ minutes: settings.effectiveSensitiveReauthWindowMinutes }}
+                               components={[<strong key="0" />]} />
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   <div className="space-y-1.5">
                     <Label htmlFor="console-cidrs">{t("applicationsAdminCidrs")}</Label>
                     <Input id="console-cidrs" placeholder="e.g. 203.0.113.0/24, 10.0.0.0/8"

@@ -163,6 +163,7 @@ export const console: Record<keyof typeof enConsole, string> = {
   applicationsInheritedPolicy: "기본값 상속 ({{name}})",
   applicationsElevationTtl: "승격 토큰 수명 (분)",
   applicationsElevationTtlHint: "재인증이 요구되기 전까지 스텝업 승격 증명이 인정되는 시간입니다. 이 값은 관리 콘솔 **전체**의 잠금 해제 시간이며, 개별 삭제·부여 같은 민감한 작업은 세션 정책의 「스텝업 유효 시간」이 따로 관장합니다.",
+  applicationsSensitiveWindowNotice: "민감한 작업(삭제·권한 부여)은 현재 <0>{{minutes}}분</0>마다 다시 인증을 요구합니다. 이 값은 위의 세션 정책에서 오며, 이 필드와는 별개입니다. 예상보다 자주 재인증을 묻는다면 바꿔야 할 값은 이쪽입니다.",
   applicationsAdminCidrs: "콘솔 IP 허용 목록",
   applicationsAdminCidrsHint: "관리 콘솔에 진입할 수 있는 CIDR 목록(쉼표 구분). 비우면 모든 네트워크를 허용합니다.",
   applicationsUserPortalSettingsTitle: "사용자 포털 세션",
