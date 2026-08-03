@@ -187,10 +187,11 @@ public class SecurityConfig {
                         // matchers here. A direct hit to the backend root falls through to authenticated() below.
                         .requestMatchers("/saml2/idp/sso", "/saml2/idp/sso/init")
                         .access(AuthorityAuthorizationManager.hasAuthority(Factors.MFA_COMPLETE))
-                        // The custom OIDC consent page renders account data (the user's prior consent) mid-flow,
+                        // The consent screen's model names the requesting client and the user's prior consent,
                         // so it demands a completed login — the same bar the /oauth2/authorize grant it feeds
                         // enforces (defence in depth: the normal flow always arrives here past that gate).
-                        .requestMatchers(HttpMethod.GET, ConsentPage.URI)
+                        // ConsentPage.URI itself is an SPA route the edge never proxies here.
+                        .requestMatchers(HttpMethod.GET, ConsentPage.API)
                         .access(AuthorityAuthorizationManager.hasAuthority(Factors.MFA_COMPLETE))
                         // Console entry is an APP ASSIGNMENT, not a role: AppAssignmentFilter gates the
                         // admin-console token at /oauth2/authorize, the elevation filter requires that

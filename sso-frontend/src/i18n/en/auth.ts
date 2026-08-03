@@ -325,4 +325,21 @@ export const auth = {
   previewSessionEstablished: "Session established.",
   previewDeadTitle: "Nobody can sign in",
   previewDeadHint: "Step 1 has no factors. Turn at least one on.",
+
+  // OAuth2 consent screen (Consent) ------------------------------------------
+  consentStep: "Authorize access",
+  consentTitle: "Authorize access",
+  consentHeading: "{{client}} wants to access your account",
+  consentLead: "Review what this application is requesting before you approve.",
+  consentDestinationLabel: "After you approve, it sends you to",
+  consentPermissionsLabel: "Permissions requested",
+  consentOpenidTitle: "Identify you at sign-in",
+  consentOpenidDesc: "Needed to identify you at sign-in. It can't be turned off.",
+  consentGrantedLabel: "Already granted",
+  consentReassurePassword: "It never sees your password.",
+  consentReassureUnchecked: "It receives nothing you leave unchecked.",
+  consentReassureRevoke: "You can revoke access any time from your profile.",
+  consentAllow: "Allow access",
+  consentCancel: "Cancel",
+  consentLoadFailed: "We couldn't load this authorization request. Return to the application and try again.",
 } as const;

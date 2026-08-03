@@ -39,15 +39,11 @@ def main() -> int:
         "code_challenge": challenge, "code_challenge_method": "S256",
     }, allow_redirects=False)
 
-    # Grant consent whether served inline (200) or as a redirect to the SPA consent page (302).
-    location = authz.headers.get("Location", "")
-    if authz.status_code == 200 and "consent" in authz.text.lower():
-        state = re.search(r'name="state"[^>]*value="([^"]+)"', authz.text).group(1)
-    elif "/oauth2/consent" in location:
-        state = parse_qs(urlparse(location).query)["state"][0]
-    else:
-        state = None
-    if state is not None:
+    # Consent is a redirect to the SPA route (302 to /consent?...). The page is React, so there is no form
+    # to scrape — take the state off the query and POST the granted scopes, as the browser does on Allow.
+    consent_location = urlparse(authz.headers.get("Location", ""))
+    if consent_location.path == "/consent":
+        state = parse_qs(consent_location.query)["state"][0]
         authz = s.post(f"{BASE}/oauth2/authorize",
                        data={"client_id": CLIENT_ID, "state": state, "scope": ["profile", "email"]},
                        headers=_csrf_headers(s), allow_redirects=False)

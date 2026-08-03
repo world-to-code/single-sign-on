@@ -103,9 +103,18 @@ function statusCopy(status: number): string {
   }
 }
 
-function csrfHeader(): Record<string, string> {
+/**
+ * The CSRF token the backend wrote to a readable cookie. XHR sends it as a header; the consent screen
+ * needs the bare value because it posts a real <form> to `/oauth2/authorize`, which is not CSRF-exempt.
+ */
+export function csrfToken(): string {
   const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
-  return match ? { "X-XSRF-TOKEN": decodeURIComponent(match[1]) } : {};
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
+function csrfHeader(): Record<string, string> {
+  const token = csrfToken();
+  return token ? { "X-XSRF-TOKEN": token } : {};
 }
 
 /** Attach the admin elevation bearer (RFC 9470 proof) to admin API requests. */

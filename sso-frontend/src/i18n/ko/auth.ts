@@ -327,4 +327,21 @@ export const auth: Record<keyof typeof enAuth, string> = {
   previewSessionEstablished: "세션이 생성됩니다.",
   previewDeadTitle: "로그인 불가",
   previewDeadHint: "1단계 수단이 하나도 없어 아무도 로그인할 수 없습니다.",
+
+  // OAuth2 consent screen (Consent) ------------------------------------------
+  consentStep: "권한 승인",
+  consentTitle: "접근 승인",
+  consentHeading: "{{client}}에서 계정 접근을 요청합니다",
+  consentLead: "승인하기 전에 이 애플리케이션이 요청하는 내용을 확인하세요.",
+  consentDestinationLabel: "승인하면 다음 주소로 이동합니다",
+  consentPermissionsLabel: "요청한 권한",
+  consentOpenidTitle: "로그인 시 본인 확인",
+  consentOpenidDesc: "로그인할 때 본인을 확인하는 데 필요하며, 해제할 수 없습니다.",
+  consentGrantedLabel: "이미 허용한 권한",
+  consentReassurePassword: "비밀번호를 볼 수 없습니다.",
+  consentReassureUnchecked: "선택하지 않은 권한은 받지 못합니다.",
+  consentReassureRevoke: "언제든 프로필에서 접근을 취소할 수 있습니다.",
+  consentAllow: "접근 허용",
+  consentCancel: "취소",
+  consentLoadFailed: "이 승인 요청을 불러오지 못했습니다. 애플리케이션으로 돌아가 다시 시도하세요.",
 };

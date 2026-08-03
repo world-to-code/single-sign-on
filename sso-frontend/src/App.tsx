@@ -6,6 +6,7 @@ import Login from "./pages/Login";
 import MfaStep from "./pages/MfaStep";
 import ForcePasswordReset from "./pages/ForcePasswordReset";
 import AppStepUp from "./pages/AppStepUp";
+import Consent from "./pages/Consent";
 import SetPassword from "./pages/SetPassword";
 import MarketingSite, { MARKETING_PATHS } from "./MarketingSite";
 import Signup from "./pages/Signup";
@@ -66,6 +67,12 @@ export default function App() {
   // Per-app step-up: a signed-in user redirected here must clear extra factors, then resume.
   if (session.next === "DONE" && window.location.pathname === "/stepup") {
     return <AppStepUp />;
+  }
+
+  // OAuth2 consent: the authorization endpoint redirects a signed-in resource owner here to approve the
+  // scopes a connected application asked for. Mid-flow like /stepup, so it renders before the console.
+  if (session.next === "DONE" && window.location.pathname === "/consent") {
+    return <Consent />;
   }
 
   // Public marketing site for an organic signed-out visit to a marketing path. RP-initiated OIDC/SAML logins

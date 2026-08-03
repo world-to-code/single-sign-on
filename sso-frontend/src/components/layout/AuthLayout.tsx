@@ -6,13 +6,16 @@ import { LanguageToggle } from "@/components/layout/LanguageToggle";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useBranding } from "@/components/BrandingProvider";
+import { cn } from "@/lib/utils";
 
 /** Centered authentication shell used by the login / MFA screens. */
 export default function AuthLayout({
-  title, description, step, org, children, footer, onBack, backLabel,
+  title, description, step, org, children, footer, onBack, backLabel, wide = false,
 }: {
   title: string; description?: string; step?: string; org?: string | null; children: ReactNode;
   footer?: ReactNode; onBack?: () => void; backLabel?: string;
+  /** A form's width suits a form. A screen that lists things to READ needs the extra measure. */
+  wide?: boolean;
 }) {
   const { t } = useTranslation("auth");
   // Shared with the console, the portal and the splash: one fetch, one answer, everywhere.
@@ -24,7 +27,7 @@ export default function AuthLayout({
         <LanguageToggle iconOnly />
         <ThemeToggle iconOnly />
       </div>
-      <div className="w-full max-w-md">
+      <div className={cn("w-full", wide ? "max-w-lg" : "max-w-md")}>
         <div className="mb-6 flex justify-center">
           <Brand logoUrl={branding.logoUrl} name={branding.productName} />
         </div>
