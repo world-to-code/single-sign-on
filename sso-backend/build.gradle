@@ -211,6 +211,54 @@ def compose = { List<String> args, Logger log ->
     }
 }
 
+/**
+ * How many test forks this machine can actually FEED, from free memory rather than from cores.
+ *
+ * A fork's footprint is its heap plus roughly as much again in metaspace, thread stacks, GC structures and
+ * the JIT's committed code — call it 768m for the 384m floor this file clamps to. On top of that the run
+ * needs the Gradle daemon and the Postgres/Redis containers, which is the reserve subtracted first.
+ *
+ * Returns "no opinion" (Integer.MAX_VALUE) when the budget cannot be read, so an unreadable platform keeps
+ * whatever the core-derived count was rather than being throttled to one by a failed lookup. Reads the
+ * cgroup limit BEFORE /proc/meminfo: inside a container /proc/meminfo reports the HOST's memory, so trusting
+ * it there would size the run against memory this process is not allowed to touch.
+ */
+static int affordableForks(Logger logger) {
+    long reserveMb = 2560
+    long perForkMb = 768
+    Long budgetMb = cgroupLimitMb() ?: availableMemoryMb()
+    if (budgetMb == null) {
+        return Integer.MAX_VALUE
+    }
+    int forks = (int) Math.max(1L, (budgetMb - reserveMb).intdiv(perForkMb))
+    logger.info("test: ${budgetMb}m usable, ${reserveMb}m reserved -> at most ${forks} fork(s)")
+    return forks
+}
+
+/** The cgroup v2 memory ceiling in MB, or null when unlimited / not in a container / unreadable. */
+static Long cgroupLimitMb() {
+    try {
+        File max = new File('/sys/fs/cgroup/memory.max')
+        if (!max.canRead()) {
+            return null
+        }
+        String value = max.text.trim()
+        return value == 'max' ? null : Long.parseLong(value).intdiv(1024 * 1024)
+    } catch (Exception unreadable) {
+        return null
+    }
+}
+
+/** MemAvailable (what can be handed out without swapping) in MB, or null off Linux. */
+static Long availableMemoryMb() {
+    try {
+        String line = new File('/proc/meminfo').readLines().find { it.startsWith('MemAvailable:') }
+        return line == null ? null : Long.parseLong(line.split(/\s+/)[1]).intdiv(1024)
+    } catch (Exception unreadable) {
+        return null
+    }
+}
+
 // Started from the test task's own doFirst rather than a dependsOn task: a dependency runs even when `test`
 // is UP-TO-DATE, so `./gradlew test` with nothing changed used to start and stop two containers to run zero
 // tests. doFirst runs only when the task actually executes, which is exactly the condition the containers are
@@ -264,10 +312,22 @@ tasks.named('test') {
     //
     // Both knobs read the environment first, so CI tunes them without editing this file:
     //   SSO_TEST_FORKS / SSO_TEST_HEAP  (env)   ->  -PtestForks / -PtestHeap  (property)  ->  default
+    //
+    // The fork count is capped by FREE MEMORY as well as by cores, because memory is the binding constraint
+    // and core count says nothing about it. Deriving forks from cores alone assumes the two scale together;
+    // on a developer desktop they do not — a browser and an IDE can hold most of the machine, and the suite
+    // then dies with an OutOfMemoryError INSIDE a test. That failure is the problem this cap exists to stop:
+    // it is indistinguishable from a real regression (it surfaces as `SomeIT > someTest() FAILED`), and it is
+    // nondeterministic, so the same commit passes or fails depending on what else is open. A gate that
+    // answers differently on the same input is not a gate. Better to run fewer forks and take the wall clock.
     int cores = Runtime.runtime.availableProcessors()
-    int defaultForks = System.getenv('CI') ? 1 : Math.max(1, cores.intdiv(3))
+    int coreForks = System.getenv('CI') ? 1 : Math.max(1, cores.intdiv(3))
+    int defaultForks = Math.min(coreForks, affordableForks(logger))
     maxParallelForks = (System.getenv('SSO_TEST_FORKS') ?: project.findProperty('testForks')
             ?: defaultForks) as int
+    if (defaultForks < coreForks) {
+        logger.lifecycle("test: ${defaultForks} forks, not ${coreForks} — free memory, not cores, is the limit here")
+    }
 
     // Heap scales INVERSELY with the fork count, because a fork's peak is set by how many test classes it
     // runs — total/forks. Spring's context cache and Mockito's inline mock maker both retain per class, so

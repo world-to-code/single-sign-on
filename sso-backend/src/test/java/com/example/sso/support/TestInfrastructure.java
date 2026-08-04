@@ -31,11 +31,19 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  *
  * <p>Testcontainers has this feature natively — a reusable container outlives the JVM that started it and the
  * next one attaches by config hash. That is the same idea, and it would keep ONE definition of the containers
- * and leave Ryuk in charge of them. It was not used for one reason: reuse only takes effect when the developer
- * has {@code testcontainers.reuse.enable=true} in {@code ~/.testcontainers.properties}, which a repository
- * cannot set. On a fresh clone it silently does nothing and every fork starts its own pair again — the failure
- * this whole arrangement exists to prevent, in the form where nobody is told. Testcontainers also documents
- * reuse as experimental, and concurrent forks can race to create the same container.
+ * and leave Ryuk in charge of them.
+ *
+ * <p>The reason first written here — that reuse needs {@code testcontainers.reuse.enable=true} in
+ * {@code ~/.testcontainers.properties}, which a repository cannot set — is NO LONGER TRUE and is recorded so
+ * nobody re-derives it. On 2.0.5 {@code TestcontainersConfiguration.environmentSupportsReuse()} resolves
+ * through {@code getEnvVarOrUserProperty}, which uppercases the key to {@code TESTCONTAINERS_REUSE_ENABLE}
+ * and checks the ENVIRONMENT first, so the Gradle test task can switch it on for its forks.
+ *
+ * <p>What still argues against it: Testcontainers documents reuse as experimental; concurrent forks can race
+ * to create the same container, which is precisely the situation here; and a reused container is deliberately
+ * NOT stopped, so it outlives the build rather than being torn down with {@code down -v}. Weigh those against
+ * the duplication this choice costs — the containers are defined twice, here and in the compose file, and the
+ * two have already drifted once (the fsync settings below were missing, so the fallback ran at half speed).
  *
  * <p>The cost of choosing compose instead, stated so it is not rediscovered: these containers are NOT Ryuk's,
  * so an abrupt {@code kill -9} of the build leaves them running where Testcontainers would have reaped them.
