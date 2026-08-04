@@ -1,6 +1,8 @@
 package com.example.sso.branding.internal.api;
 
 import com.example.sso.branding.Branding;
+import com.example.sso.branding.BrandingTheme;
+import com.example.sso.branding.BrandingIdentity;
 import com.example.sso.branding.internal.application.BrandingService;
 import com.example.sso.organization.OrganizationRef;
 import com.example.sso.organization.OrganizationService;
@@ -55,12 +57,13 @@ class BrandingControllerTest {
         when(ref.getId()).thenReturn(ORG);
         when(tenantResolver.tenantSlug(any())).thenReturn(Optional.of("acme"));
         when(organizations.findBySlug("acme")).thenReturn(Optional.of(ref));
-        when(service.resolve(ORG)).thenReturn(new Branding("https://cdn.acme.example/l.png", "#123abc", "Acme"));
+        when(service.resolve(ORG)).thenReturn(new Branding(new BrandingIdentity("https://cdn.acme.example/l.png", null, null, "Acme"),
+                new BrandingTheme("#123abc", null, null, null, null, null)));
 
         mvc.perform(get("/api/auth/branding"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.productName").value("Acme"))
-                .andExpect(jsonPath("$.accentColor").value("#123abc"));
+                .andExpect(jsonPath("$.identity.productName").value("Acme"))
+                .andExpect(jsonPath("$.theme.accentColor").value("#123abc"));
 
         verify(orgContext).callInOrg(eq(ORG), any()); // the read is bound to the HOST-resolved org, not another
     }
@@ -72,7 +75,11 @@ class BrandingControllerTest {
 
         mvc.perform(get("/api/auth/branding"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.productName").value("Svalinn"))
-                .andExpect(jsonPath("$.logoUrl").doesNotExist());
+                .andExpect(jsonPath("$.identity.productName").value("Svalinn"))
+                .andExpect(jsonPath("$.identity.logoUrl").doesNotExist())
+                // The built-in style choices ship even when nobody configured branding, so a screen always
+                // has a complete theme to render rather than half a stylesheet.
+                .andExpect(jsonPath("$.theme.font").value("SANS"))
+                .andExpect(jsonPath("$.theme.layout").value("CENTERED"));
     }
 }

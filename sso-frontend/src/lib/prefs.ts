@@ -4,6 +4,8 @@
  * degrades to "no preference" rather than breaking. The UI locale (`sso.locale`) and colour theme
  * (`sso.theme`).
  */
+import type { BrandingCorner, BrandingFont } from "@/branding";
+
 export type Locale = "ko" | "en";
 export type Theme = "light" | "dark";
 
@@ -102,5 +104,65 @@ export function applyAccent(hex: string | null): void {
   } else {
     root.style.removeProperty("--primary");
     root.style.removeProperty("--ring");
+  }
+}
+
+/** The CSS radius each corner choice maps to. Chosen here, not sent by the server, so the wire stays a name. */
+const CORNER_RADIUS: Record<BrandingCorner, string> = {
+  SHARP: "0rem",
+  SOFT: "0.5rem",
+  ROUND: "1rem",
+};
+
+/**
+ * The font stack each typeface choice maps to. Every stack is system-resident: an external font on the
+ * sign-in page would be a third-party request on the IdP's own origin, which is a tracking vector and a
+ * dependency on someone else's uptime for the screen people sign in on.
+ */
+const FONT_STACK: Record<BrandingFont, string> = {
+  SANS: "'Pretendard Variable', Pretendard, system-ui, -apple-system, 'Segoe UI', sans-serif",
+  SERIF: "'Nanum Myeongjo', Georgia, 'Times New Roman', serif",
+  SYSTEM: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+};
+
+/**
+ * Apply a tenant's theme as CSS custom properties on the root element.
+ *
+ * <p>Only the ACCENT is a colour the caller supplies raw; the typeface and corner radius are looked up from
+ * the closed sets above, so nothing a tenant typed ever reaches a CSS value. The background colour goes
+ * through the same hex parse as the accent, and the background image is written as a `url()` only after the
+ * https shape the server enforced — a null or malformed value clears the override rather than emitting
+ * something the browser will try to interpret.
+ */
+export function applyBrandingTheme(theme: {
+  accentColor: string | null;
+  backgroundColor: string | null;
+  backgroundImageUrl: string | null;
+  font: BrandingFont | null;
+  corner: BrandingCorner | null;
+}): void {
+  const root = document.documentElement;
+  applyAccent(theme.accentColor);
+
+  const background = theme.backgroundColor ? hexToHslTriple(theme.backgroundColor) : null;
+  toggleProperty(root, "--brand-background", background);
+  toggleProperty(root, "--brand-background-image", brandImage(theme.backgroundImageUrl));
+  toggleProperty(root, "--brand-font", theme.font ? FONT_STACK[theme.font] : null);
+  toggleProperty(root, "--brand-radius", theme.corner ? CORNER_RADIUS[theme.corner] : null);
+}
+
+/** https only, and the URL is escaped into the `url()` so a quote in it cannot end the CSS value early. */
+function brandImage(url: string | null): string | null {
+  if (!url || !url.toLowerCase().startsWith("https://")) {
+    return null;
+  }
+  return `url("${encodeURI(url).replace(/"/g, "%22")}")`;
+}
+
+function toggleProperty(root: HTMLElement, name: string, value: string | null): void {
+  if (value) {
+    root.style.setProperty(name, value);
+  } else {
+    root.style.removeProperty(name);
   }
 }

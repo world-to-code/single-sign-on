@@ -3,45 +3,84 @@ import { useTranslation } from "react-i18next";
 import { RotateCcw, Save } from "lucide-react";
 import { errorMessage } from "../../api";
 import {
+  AUTH_LAYOUTS,
+  BRANDING_CORNERS,
+  BRANDING_FONTS,
   deleteBranding,
   getBrandingSettings,
   updateBranding,
+  type AuthScreenLayout,
+  type BrandingCorner,
+  type BrandingFont,
   type BrandingInput,
   type BrandingView,
 } from "../../branding";
 import { hexToHslTriple } from "@/lib/prefs";
 import { Brand } from "../Brand";
 import { useBrandingRefresh } from "../BrandingProvider";
-import { Field } from "../form/fields";
 import { LoadingCard, ErrorCard } from "../states";
 import { useToast } from "../ToastProvider";
 import { useConfirm } from "../ConfirmProvider";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { Field } from "../form/fields";
+import { ChoiceField, ColorField, UrlField } from "./BrandingFields";
 
+/** Every field is a string here — "" is how the form says "inherit", which maps to null on the wire. */
 interface FormState {
   logoUrl: string;
-  accentColor: string;
+  logoUrlDark: string;
+  faviconUrl: string;
   productName: string;
+  accentColor: string;
+  backgroundColor: string;
+  backgroundImageUrl: string;
+  font: BrandingFont | "";
+  corner: BrandingCorner | "";
+  layout: AuthScreenLayout | "";
 }
 
 function toForm(view: BrandingView): FormState {
-  return { logoUrl: view.logoUrl ?? "", accentColor: view.accentColor ?? "", productName: view.productName ?? "" };
+  const { identity, theme } = view;
+  return {
+    logoUrl: identity.logoUrl ?? "",
+    logoUrlDark: identity.logoUrlDark ?? "",
+    faviconUrl: identity.faviconUrl ?? "",
+    productName: identity.productName ?? "",
+    accentColor: theme.accentColor ?? "",
+    backgroundColor: theme.backgroundColor ?? "",
+    backgroundImageUrl: theme.backgroundImageUrl ?? "",
+    font: theme.font ?? "",
+    corner: theme.corner ?? "",
+    layout: theme.layout ?? "",
+  };
 }
 
 function toInput(form: FormState): BrandingInput {
   return {
-    logoUrl: form.logoUrl.trim() || null,
-    accentColor: form.accentColor.trim() || null,
-    productName: form.productName.trim() || null,
+    logoUrl: blankToNull(form.logoUrl),
+    logoUrlDark: blankToNull(form.logoUrlDark),
+    faviconUrl: blankToNull(form.faviconUrl),
+    productName: blankToNull(form.productName),
+    accentColor: blankToNull(form.accentColor),
+    backgroundColor: blankToNull(form.backgroundColor),
+    backgroundImageUrl: blankToNull(form.backgroundImageUrl),
+    font: form.font || null,
+    corner: form.corner || null,
+    layout: form.layout || null,
   };
 }
 
+function blankToNull(value: string): string | null {
+  return value.trim() || null;
+}
+
 /**
- * Edits the tenant's auth-UI branding (logo URL, accent color, product name) with a LIVE preview of how the
- * sign-in header will look. The preview scopes the accent to itself (a local `--primary`) so it never repaints
- * the console. Validation (https logo, #RRGGBB accent) is the backend's; a rejected save surfaces as an error.
+ * Edits the tenant's auth-UI branding — marks, name, colours and the three style choices — with a LIVE preview
+ * of the sign-in screen. The preview scopes the accent to ITSELF (a local `--primary`) so editing never
+ * repaints the console around it. Validation (https URLs, #RRGGBB colours) is the backend's; a rejected save
+ * surfaces as an error rather than being second-guessed here, so the two can never disagree.
  */
 export function BrandingEditor() {
   const { t } = useTranslation("console");
@@ -74,6 +113,7 @@ export function BrandingEditor() {
   async function save(): Promise<void> {
     if (!form) return;
     setBusy(true);
+    setFormError(null);
     try {
       await updateBranding(toInput(form));
       await reload();
@@ -95,6 +135,7 @@ export function BrandingEditor() {
     });
     if (!ok) return;
     setBusy(true);
+    setFormError(null);
     try {
       await deleteBranding();
       await reload();
@@ -110,8 +151,12 @@ export function BrandingEditor() {
   if (loadError) return <ErrorCard message={loadError} />;
   if (!form) return <LoadingCard rows={5} />;
 
-  const triple = form.accentColor.trim() ? hexToHslTriple(form.accentColor.trim()) : null;
-  const previewStyle = triple ? ({ "--primary": triple, "--ring": triple } as CSSProperties) : undefined;
+  const accent = hexToHslTriple(form.accentColor.trim());
+  const background = hexToHslTriple(form.backgroundColor.trim());
+  const previewStyle: CSSProperties = {
+    ...(accent ? { "--primary": accent, "--ring": accent } : {}),
+    ...(background ? { "--background": background } : {}),
+  } as CSSProperties;
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -120,26 +165,50 @@ export function BrandingEditor() {
           {configured ? t("customizeCustomized") : t("customizeInherited")}
         </Badge>
 
-        <Field label={t("brandingLogoUrl")} hint={t("brandingLogoHint")} error={formError ?? undefined}>
-          <Input type="url" value={form.logoUrl} onChange={(e) => set({ logoUrl: e.target.value })}
-                 placeholder="https://cdn.example.com/logo.png" />
-        </Field>
+        {formError && <ErrorCard message={formError} />}
 
-        <Field label={t("brandingAccent")} hint={t("brandingAccentHint")}>
-          <div className="flex items-center gap-2">
-            <input type="color" aria-label={t("brandingAccent")}
-                   value={/^#[0-9a-fA-F]{6}$/.test(form.accentColor) ? form.accentColor : "#0a7a6a"}
-                   onChange={(e) => set({ accentColor: e.target.value })}
-                   className="h-9 w-12 shrink-0 cursor-pointer rounded-md border border-input bg-transparent" />
-            <Input value={form.accentColor} onChange={(e) => set({ accentColor: e.target.value })}
-                   placeholder="#0a7a6a" className="font-mono" />
-          </div>
-        </Field>
+        <UrlField label={t("brandingLogoUrl")} hint={t("brandingLogoHint")} value={form.logoUrl}
+                  placeholder="https://cdn.example.com/logo.png"
+                  onChange={(logoUrl) => set({ logoUrl })} />
+
+        <UrlField label={t("brandingLogoDark")} hint={t("brandingLogoDarkHint")} value={form.logoUrlDark}
+                  placeholder="https://cdn.example.com/logo-dark.png"
+                  onChange={(logoUrlDark) => set({ logoUrlDark })} />
+
+        <UrlField label={t("brandingFavicon")} hint={t("brandingFaviconHint")} value={form.faviconUrl}
+                  placeholder="https://cdn.example.com/favicon.png"
+                  onChange={(faviconUrl) => set({ faviconUrl })} />
 
         <Field label={t("brandingProductName")} hint={t("brandingNameHint")}>
           <Input value={form.productName} onChange={(e) => set({ productName: e.target.value })}
                  placeholder="Svalinn" maxLength={64} />
         </Field>
+
+        <ColorField label={t("brandingAccent")} hint={t("brandingAccentHint")} value={form.accentColor}
+                    fallback="#0a7a6a" onChange={(accentColor) => set({ accentColor })} />
+
+        <ColorField label={t("brandingBackground")} hint={t("brandingBackgroundHint")}
+                    value={form.backgroundColor} fallback="#ffffff"
+                    onChange={(backgroundColor) => set({ backgroundColor })} />
+
+        <UrlField label={t("brandingBackgroundImage")} hint={t("brandingBackgroundImageHint")}
+                  value={form.backgroundImageUrl} placeholder="https://cdn.example.com/cover.jpg"
+                  onChange={(backgroundImageUrl) => set({ backgroundImageUrl })} />
+
+        <ChoiceField label={t("brandingFont")} hint={t("brandingFontHint")} value={form.font}
+                     options={BRANDING_FONTS} inheritLabel={t("brandingInherit")}
+                     labelFor={(font) => t(`brandingFont_${font}`)}
+                     onChange={(font) => set({ font })} />
+
+        <ChoiceField label={t("brandingCorner")} hint={t("brandingCornerHint")} value={form.corner}
+                     options={BRANDING_CORNERS} inheritLabel={t("brandingInherit")}
+                     labelFor={(corner) => t(`brandingCorner_${corner}`)}
+                     onChange={(corner) => set({ corner })} />
+
+        <ChoiceField label={t("brandingLayout")} hint={t("brandingLayoutHint")} value={form.layout}
+                     options={AUTH_LAYOUTS} inheritLabel={t("brandingInherit")}
+                     labelFor={(layout) => t(`brandingLayout_${layout}`)}
+                     onChange={(layout) => set({ layout })} />
 
         <div className="flex items-center justify-between gap-2">
           <Button variant="outline" onClick={resetToDefault} disabled={busy || !configured}>
@@ -151,7 +220,7 @@ export function BrandingEditor() {
         </div>
       </div>
 
-      <div className="grid content-start gap-2">
+      <div className="grid content-start gap-2 lg:sticky lg:top-4">
         <p className="text-sm font-medium">{t("customizePreview")}</p>
         <div style={previewStyle}
              className="flex flex-col items-center gap-5 rounded-md border border-input bg-background p-8">

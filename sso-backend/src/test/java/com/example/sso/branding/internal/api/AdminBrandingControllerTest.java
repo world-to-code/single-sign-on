@@ -1,6 +1,8 @@
 package com.example.sso.branding.internal.api;
 
 import com.example.sso.branding.internal.application.BrandingService;
+import com.example.sso.branding.BrandingIdentity;
+import com.example.sso.branding.BrandingTheme;
 import com.example.sso.branding.internal.application.BrandingView;
 import com.example.sso.shared.security.RequirePermission;
 import com.example.sso.shared.security.RequireStepUp;
@@ -49,7 +51,8 @@ class AdminBrandingControllerTest {
 
     @Test
     void aValidBodyIsAccepted() throws Exception {
-        when(service.get()).thenReturn(new BrandingView(true, "https://cdn.example/l.png", "#123abc", "Acme"));
+        when(service.get()).thenReturn(new BrandingView(true, new BrandingIdentity("https://cdn.example/l.png", null, null, "Acme"),
+                new BrandingTheme("#123abc", null, null, null, null, null)));
         expectPutStatus(body("https://cdn.example/l.png", "#123abc", "Acme"), 200);
     }
 

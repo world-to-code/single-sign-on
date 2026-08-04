@@ -5,8 +5,8 @@ import { BrandingProvider, useBrandingRefresh } from "./BrandingProvider";
 import { Brand } from "./Brand";
 import LoadingScreen from "./LoadingScreen";
 import AppShell from "./layout/AppShell";
-import { getBranding } from "@/branding";
-import { applyAccent } from "@/lib/prefs";
+import { getBranding, type Branding } from "@/branding";
+import { applyBrandingTheme } from "@/lib/prefs";
 
 vi.mock("react-i18next", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react-i18next")>()),
@@ -24,7 +24,7 @@ vi.mock("@/adminPortal", () => ({ clearAdminUnlock: vi.fn(), startAdminOidc: vi.
 vi.mock("@/hooks/useAdminConsoleAccess", () => ({ useAdminConsoleAccess: () => false }));
 vi.mock("@/lib/prefs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/prefs")>()),
-  applyAccent: vi.fn(),
+  applyBrandingTheme: vi.fn(),
 }));
 
 /**
@@ -35,6 +35,18 @@ vi.mock("@/lib/prefs", async (importOriginal) => ({
  */
 describe("BrandingProvider", () => {
   const branding = vi.mocked(getBranding);
+
+  /** A resolved branding with everything inherited except the pieces a test cares about. */
+  function resolved(identity: Partial<Branding["identity"]> = {},
+                    theme: Partial<Branding["theme"]> = {}): Branding {
+    return {
+      identity: { logoUrl: null, logoUrlDark: null, faviconUrl: null, productName: "Acme ID", ...identity },
+      theme: {
+        accentColor: null, backgroundColor: null, backgroundImageUrl: null,
+        font: null, corner: null, layout: null, ...theme,
+      },
+    };
+  }
 
   /** jsdom reports every media query as non-matching, which collapses the shell to its icon rail. */
   function wideViewport(): void {
@@ -47,11 +59,8 @@ describe("BrandingProvider", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    branding.mockResolvedValue({
-      logoUrl: "https://cdn.example.com/logo.png",
-      accentColor: "#123456",
-      productName: "Acme ID",
-    });
+    branding.mockResolvedValue(resolved({ logoUrl: "https://cdn.example.com/logo.png" },
+                                         { accentColor: "#123456" }));
   });
 
   it("brands a surface outside the sign-in screens", async () => {
@@ -83,11 +92,12 @@ describe("BrandingProvider", () => {
       expect(container.querySelector("img")).toHaveAttribute("src", "https://cdn.example.com/logo.png"));
   });
 
-  /** The accent is half the branding, and it was the half that silently reverted once a session existed. */
-  it("applies the tenant accent for the whole app, not only the auth screens", async () => {
+  /** The theme is half the branding, and it was the half that silently reverted once a session existed. */
+  it("applies the tenant theme for the whole app, not only the auth screens", async () => {
     render(<BrandingProvider><LoadingScreen /></BrandingProvider>);
 
-    await waitFor(() => expect(applyAccent).toHaveBeenCalledWith("#123456"));
+    await waitFor(() =>
+      expect(applyBrandingTheme).toHaveBeenCalledWith(expect.objectContaining({ accentColor: "#123456" })));
   });
 
   /** Several surfaces mount and unmount as the session progresses; they must not each re-request it. */
@@ -115,11 +125,11 @@ describe("BrandingProvider", () => {
     render(<BrandingProvider><LoadingScreen /><Refresher /></BrandingProvider>);
     await waitFor(() => expect(screen.getByText("Acme ID")).toBeInTheDocument());
 
-    branding.mockResolvedValue({ logoUrl: null, accentColor: "#654321", productName: "Renamed Co" });
+    branding.mockResolvedValue(resolved({ productName: "Renamed Co" }, { accentColor: "#654321" }));
     fireEvent.click(screen.getByRole("button", { name: "refresh" }));
 
     await waitFor(() => expect(screen.getByText("Renamed Co")).toBeInTheDocument());
-    expect(applyAccent).toHaveBeenCalledWith("#654321");
+    expect(applyBrandingTheme).toHaveBeenCalledWith(expect.objectContaining({ accentColor: "#654321" }));
   });
 
   /** An unbranded tenant and a failed request mean the same thing: the built-in mark, and no error shown. */

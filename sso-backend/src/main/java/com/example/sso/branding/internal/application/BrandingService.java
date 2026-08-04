@@ -1,7 +1,9 @@
 package com.example.sso.branding.internal.application;
 
 import com.example.sso.branding.Branding;
+import com.example.sso.branding.BrandingIdentity;
 import com.example.sso.branding.BrandingResolver;
+import com.example.sso.branding.BrandingTheme;
 import com.example.sso.branding.internal.domain.OrgBranding;
 import com.example.sso.branding.internal.domain.OrgBrandingRepository;
 import com.example.sso.shared.error.BadRequestException;
@@ -18,31 +20,44 @@ import org.springframework.util.StringUtils;
 
 /**
  * Per-tenant auth-UI branding: {@link #resolve} answers the branding to RENDER for an org (own → platform →
- * built-in default); {@code get}/{@code update}/{@code delete} are the admin surface. Writes go only to the
- * acting tier's own row via the fail-closed {@link #writableOrg} (a bound-but-orgless non-platform caller can't
- * edit the global default); the read guard {@link #ownRow} is symmetric. Values are validated for shape (https
- * logo, {@code #RRGGBB} accent, capped name) so a downstream surface can inject them with escaping and no
- * breakout. Nothing here is a secret — branding is shown to every visitor of the tenant's subdomain.
+ * built-in default, per FIELD); {@code get}/{@code update}/{@code delete} are the admin surface. Writes go only
+ * to the acting tier's own row via the fail-closed {@link #writableOrg} (a bound-but-orgless non-platform
+ * caller can't edit the global default); the read guard {@link #ownRow} is symmetric. Free-text values are
+ * validated for shape (https URLs, {@code #RRGGBB} colours, capped name) so a downstream surface can inject
+ * them with escaping and no breakout; the three style choices are enums, so their safety is structural.
+ * Nothing here is a secret — branding is shown to every visitor of the tenant's subdomain.
  */
 @Service
 @RequiredArgsConstructor
 public class BrandingService implements BrandingResolver {
 
-    private static final Pattern ACCENT = Pattern.compile("^#[0-9a-fA-F]{6}$");
+    private static final Pattern COLOR = Pattern.compile("^#[0-9a-fA-F]{6}$");
+    private static final String HTTPS = "https://";
     private static final int MAX_PRODUCT_NAME = 64;
-    private static final int MAX_LOGO_URL = 2048;
+    private static final int MAX_URL = 2048;
 
     private final OrgBrandingRepository repository;
     private final OrgContext orgContext;
 
-    /** The branding to render for {@code orgId}: own row → platform override → built-in default. */
+    /**
+     * The branding to render for {@code orgId}: own row over platform row over built-in default, resolved
+     * field by field. A tenant that has set only its background therefore keeps the platform's accent instead
+     * of dropping the whole platform row on the floor.
+     */
     @Override
     @Transactional(readOnly = true)
     public Branding resolve(UUID orgId) {
-        Optional<OrgBranding> row = orgId != null
-                ? repository.findByOrgId(orgId).or(repository::findByOrgIdIsNull)
-                : repository.findByOrgIdIsNull();
-        return row.map(this::toBranding).orElseGet(Branding::platformDefault);
+        Branding platform = repository.findByOrgIdIsNull()
+                .map(this::toBranding)
+                .map(row -> row.inheriting(Branding.platformDefault()))
+                .orElseGet(Branding::platformDefault);
+        if (orgId == null) {
+            return platform;
+        }
+        return repository.findByOrgId(orgId)
+                .map(this::toBranding)
+                .map(own -> own.inheriting(platform))
+                .orElse(platform);
     }
 
     /** The acting tier's OWN branding for the editor (or the inherited default as a starting point). */
@@ -52,16 +67,15 @@ public class BrandingService implements BrandingResolver {
                 .orElseGet(() -> BrandingView.inherited(inheritedDefault()));
     }
 
-    /** Registers/updates the acting tier's branding (validated: https logo, #RRGGBB accent, capped name). */
+    /** Registers/updates the acting tier's branding (validated: https URLs, #RRGGBB colours, capped name). */
     @Transactional
     public void update(BrandingSpec spec) {
         UUID org = writableOrg();
-        validate(spec);
+        BrandingIdentity identity = validated(spec.identity());
+        BrandingTheme theme = validated(spec.theme());
         ownRow().ifPresentOrElse(
-                row -> row.reconfigure(trimToNull(spec.logoUrl()), trimToNull(spec.accentColor()),
-                        trimToNull(spec.productName())),
-                () -> repository.save(OrgBranding.create(org, trimToNull(spec.logoUrl()),
-                        trimToNull(spec.accentColor()), trimToNull(spec.productName()))));
+                row -> row.reconfigure(identity, theme),
+                () -> repository.save(OrgBranding.create(org, identity, theme)));
     }
 
     /** Drops the acting tier's branding — its screens revert to the platform/built-in default. */
@@ -71,26 +85,56 @@ public class BrandingService implements BrandingResolver {
         ownRow().ifPresent(repository::delete);
     }
 
-    private void validate(BrandingSpec spec) {
-        if (StringUtils.hasText(spec.logoUrl())) {
-            String logo = spec.logoUrl().trim();
-            if (!logo.toLowerCase(Locale.ROOT).startsWith("https://")) {
-                throw BadRequestException.of("branding.logoUrl.notHttps");
-            }
-            if (logo.length() > MAX_LOGO_URL) {
-                throw BadRequestException.of("branding.logoUrl.tooLong");
-            }
+    /** Trimmed and shape-checked; a blank field becomes null, which is how a piece returns to inheriting. */
+    private BrandingIdentity validated(BrandingIdentity identity) {
+        return new BrandingIdentity(
+                url(identity.logoUrl(), "branding.logoUrl"),
+                url(identity.logoUrlDark(), "branding.logoUrlDark"),
+                url(identity.faviconUrl(), "branding.faviconUrl"),
+                productName(identity.productName()));
+    }
+
+    private BrandingTheme validated(BrandingTheme theme) {
+        return new BrandingTheme(
+                color(theme.accentColor(), "branding.accentColor.invalid"),
+                color(theme.backgroundColor(), "branding.backgroundColor.invalid"),
+                url(theme.backgroundImageUrl(), "branding.backgroundImageUrl"),
+                theme.font(), theme.corner(), theme.layout());
+    }
+
+    /** https only: an http asset on the sign-in page is a mixed-content block at best and a downgrade at worst. */
+    private String url(String value, String keyPrefix) {
+        String trimmed = trimToNull(value);
+        if (trimmed == null) {
+            return null;
         }
-        if (StringUtils.hasText(spec.accentColor()) && !ACCENT.matcher(spec.accentColor().trim()).matches()) {
-            throw BadRequestException.of("branding.accentColor.invalid");
+        if (!trimmed.toLowerCase(Locale.ROOT).startsWith(HTTPS)) {
+            throw BadRequestException.of(keyPrefix + ".notHttps");
         }
-        if (StringUtils.hasText(spec.productName()) && spec.productName().trim().length() > MAX_PRODUCT_NAME) {
+        if (trimmed.length() > MAX_URL) {
+            throw BadRequestException.of(keyPrefix + ".tooLong");
+        }
+        return trimmed;
+    }
+
+    private String color(String value, String messageKey) {
+        String trimmed = trimToNull(value);
+        if (trimmed != null && !COLOR.matcher(trimmed).matches()) {
+            throw BadRequestException.of(messageKey);
+        }
+        return trimmed;
+    }
+
+    private String productName(String value) {
+        String trimmed = trimToNull(value);
+        if (trimmed != null && trimmed.length() > MAX_PRODUCT_NAME) {
             throw BadRequestException.of("branding.productName.tooLong");
         }
+        return trimmed;
     }
 
     private Branding inheritedDefault() {
-        return repository.findByOrgIdIsNull().map(this::toBranding).orElseGet(Branding::platformDefault);
+        return resolve(null);
     }
 
     /** The acting tier's OWN row — the platform tier owns the global (org_id NULL) row, a bound-orgless tenant none. */
@@ -112,7 +156,7 @@ public class BrandingService implements BrandingResolver {
     }
 
     private Branding toBranding(OrgBranding branding) {
-        return new Branding(branding.getLogoUrl(), branding.getAccentColor(), branding.getProductName());
+        return new Branding(branding.identity(), branding.theme());
     }
 
     private String trimToNull(String value) {

@@ -10,7 +10,7 @@ import { setDrillIn, useDrillIn } from "@/drillIn";
 import { clearAdminUnlock, startAdminOidc } from "@/adminPortal";
 import { triggerStepUp } from "@/api";
 import { Brand, BrandMark } from "@/components/Brand";
-import { useBranding } from "@/components/BrandingProvider";
+import { useBrandMark } from "@/components/BrandingProvider";
 import { NAV, crumbsFor, isNavActive } from "@/components/layout/nav";
 import type { NavItem } from "@/components/layout/nav";
 import { LanguageToggle } from "@/components/layout/LanguageToggle";
@@ -24,7 +24,7 @@ export default function AppShell(
   { session: SessionView; variant?: "user" | "admin"; children: React.ReactNode },
 ) {
   const { t } = useTranslation("nav");
-  const branding = useBranding();
+  const brand = useBrandMark();
   // Console ENTRY is an app assignment (Model B), not a role; undefined while the check loads.
   const canEnterAdmin = useAdminConsoleAccess();
   // Within a shell, a nav item shows when the user holds its fine-grained permission (if it declares
@@ -194,17 +194,17 @@ export default function AppShell(
         {/* One mark for both portals — the user portal and the admin console show the SAME glyph; only the
             label beside it names the context (product wordmark vs. the org being administered). */}
         {rail ? (
-          <BrandMark title={orgSlug ?? undefined} logoUrl={branding.logoUrl} />
+          <BrandMark title={orgSlug ?? undefined} logoUrl={brand.logoUrl} />
         ) : orgSlug ? (
           <div className="flex min-w-0 items-center gap-2.5">
-            <BrandMark logoUrl={branding.logoUrl} />
+            <BrandMark logoUrl={brand.logoUrl} />
             <span className="min-w-0 leading-tight">
               <span className="block truncate text-sm font-bold text-ink">{orgSlug}</span>
               <span className="block truncate text-[11px] text-faint">{t("groupAdministration")}</span>
             </span>
           </div>
         ) : (
-          <Brand logoUrl={branding.logoUrl} name={branding.productName} />
+          <Brand logoUrl={brand.logoUrl} name={brand.name} />
         )}
         {mobile && (
           <button className="ml-auto text-muted-foreground hover:text-ink" aria-label={t("closeNavigation")} onClick={() => setOpen(false)}>

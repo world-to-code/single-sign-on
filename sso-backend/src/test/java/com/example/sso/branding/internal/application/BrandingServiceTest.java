@@ -1,6 +1,11 @@
 package com.example.sso.branding.internal.application;
 
+import com.example.sso.branding.AuthScreenLayout;
 import com.example.sso.branding.Branding;
+import com.example.sso.branding.BrandingCorner;
+import com.example.sso.branding.BrandingFont;
+import com.example.sso.branding.BrandingIdentity;
+import com.example.sso.branding.BrandingTheme;
 import com.example.sso.branding.internal.domain.OrgBranding;
 import com.example.sso.branding.internal.domain.OrgBrandingRepository;
 import com.example.sso.shared.error.BadRequestException;
@@ -22,9 +27,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for {@link BrandingService}: own→platform→built-in resolution, the fail-closed platform-write
- * guard (symmetric on read and write), delete reverting to the default, and the shape validation (https logo,
- * #RRGGBB accent, capped name) refusing — and not persisting — a bad value.
+ * Unit tests for {@link BrandingService}: own→platform→built-in resolution PER FIELD, the fail-closed
+ * platform-write guard (symmetric on read and write), delete reverting to the default, and shape validation
+ * (https URLs, #RRGGBB colours, capped name) refusing — and not persisting — a bad value.
  */
 @ExtendWith(MockitoExtension.class)
 class BrandingServiceTest {
@@ -40,22 +45,35 @@ class BrandingServiceTest {
         return new BrandingService(repository, orgContext);
     }
 
+    /** A fully-populated row, so a test can assert a field is INHERITED rather than merely absent everywhere. */
+    private OrgBranding row(UUID orgId, String productName, String accent) {
+        return OrgBranding.create(orgId,
+                new BrandingIdentity("https://cdn.acme.example/logo.png", null, null, productName),
+                new BrandingTheme(accent, null, null, null, null, null));
+    }
+
     private OrgBranding row(UUID orgId) {
-        return OrgBranding.create(orgId, "https://cdn.acme.example/logo.png", "#123abc", "Acme");
+        return row(orgId, "Acme", "#123abc");
+    }
+
+    private BrandingSpec spec(BrandingIdentity identity, BrandingTheme theme) {
+        return new BrandingSpec(identity, theme);
     }
 
     private BrandingSpec spec(String logoUrl, String accent, String name) {
-        return new BrandingSpec(logoUrl, accent, name);
+        return spec(new BrandingIdentity(logoUrl, null, null, name),
+                new BrandingTheme(accent, null, null, null, null, null));
     }
 
     @Test
     void resolveReturnsTheOrgsOwnBranding() {
         when(repository.findByOrgId(ORG)).thenReturn(Optional.of(row(ORG)));
+        when(repository.findByOrgIdIsNull()).thenReturn(Optional.empty());
 
         Branding branding = service().resolve(ORG);
 
         assertThat(branding.productName()).isEqualTo("Acme");
-        assertThat(branding.accentColor()).isEqualTo("#123abc");
+        assertThat(branding.theme().accentColor()).isEqualTo("#123abc");
     }
 
     @Test
@@ -65,6 +83,36 @@ class BrandingServiceTest {
 
         assertThat(service().resolve(ORG).productName()).isEqualTo("Acme"); // inherits global
         assertThat(service().resolve(ORG).productName()).isEqualTo("Svalinn"); // built-in default
+    }
+
+    /**
+     * The point of per-FIELD resolution: an own row that sets only its name must not discard the platform's
+     * accent. Under the previous per-ROW rule the own row won wholesale and this accent came back null.
+     */
+    @Test
+    void resolveTakesEachFieldFromTheNearestTierThatSetsIt() {
+        when(repository.findByOrgId(ORG)).thenReturn(Optional.of(
+                OrgBranding.create(ORG, new BrandingIdentity(null, null, null, "Acme"), BrandingTheme.none())));
+        when(repository.findByOrgIdIsNull()).thenReturn(Optional.of(row(null, "Platform", "#abcdef")));
+
+        Branding branding = service().resolve(ORG);
+
+        assertThat(branding.productName()).isEqualTo("Acme");                          // own wins
+        assertThat(branding.theme().accentColor()).isEqualTo("#abcdef");               // inherited from platform
+        assertThat(branding.identity().logoUrl()).isEqualTo("https://cdn.acme.example/logo.png");
+    }
+
+    /** A tier that sets nothing still renders: the built-in default supplies the three style choices. */
+    @Test
+    void resolveSuppliesTheBuiltInStyleDefaultsWhenNobodyHasChosen() {
+        when(repository.findByOrgId(ORG)).thenReturn(Optional.empty());
+        when(repository.findByOrgIdIsNull()).thenReturn(Optional.empty());
+
+        BrandingTheme theme = service().resolve(ORG).theme();
+
+        assertThat(theme.font()).isEqualTo(BrandingFont.SANS);
+        assertThat(theme.corner()).isEqualTo(BrandingCorner.SOFT);
+        assertThat(theme.layout()).isEqualTo(AuthScreenLayout.CENTERED);
     }
 
     @Test
@@ -83,7 +131,7 @@ class BrandingServiceTest {
         BrandingView view = service().get();
 
         assertThat(view.configured()).isTrue();
-        assertThat(view.productName()).isEqualTo("Acme");
+        assertThat(view.identity().productName()).isEqualTo("Acme");
     }
 
     @Test
@@ -95,7 +143,7 @@ class BrandingServiceTest {
         BrandingView view = service().get();
 
         assertThat(view.configured()).isFalse();
-        assertThat(view.productName()).isEqualTo("Svalinn"); // the built-in default, as a starting point
+        assertThat(view.identity().productName()).isEqualTo("Svalinn"); // built-in, as a starting point
     }
 
     @Test
@@ -119,7 +167,7 @@ class BrandingServiceTest {
         BrandingView view = service().get();
 
         assertThat(view.configured()).isTrue();
-        assertThat(view.productName()).isEqualTo("Acme");
+        assertThat(view.identity().productName()).isEqualTo("Acme");
     }
 
     @Test
@@ -132,7 +180,27 @@ class BrandingServiceTest {
         ArgumentCaptor<OrgBranding> saved = ArgumentCaptor.captor();
         verify(repository).save(saved.capture());
         assertThat(saved.getValue().getOrgId()).isEqualTo(ORG);
-        assertThat(saved.getValue().getAccentColor()).isEqualTo("#abcdef");
+        assertThat(saved.getValue().theme().accentColor()).isEqualTo("#abcdef");
+    }
+
+    /** The style choices are enums by the time they arrive, so update persists them without re-deciding. */
+    @Test
+    void updatePersistsTheStyleChoices() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgId(ORG)).thenReturn(Optional.empty());
+
+        service().update(spec(BrandingIdentity.none(),
+                new BrandingTheme(null, "#101010", "https://cdn.acme.example/bg.jpg",
+                        BrandingFont.SERIF, BrandingCorner.ROUND, AuthScreenLayout.SPLIT)));
+
+        ArgumentCaptor<OrgBranding> saved = ArgumentCaptor.captor();
+        verify(repository).save(saved.capture());
+        BrandingTheme theme = saved.getValue().theme();
+        assertThat(theme.font()).isEqualTo(BrandingFont.SERIF);
+        assertThat(theme.corner()).isEqualTo(BrandingCorner.ROUND);
+        assertThat(theme.layout()).isEqualTo(AuthScreenLayout.SPLIT);
+        assertThat(theme.backgroundColor()).isEqualTo("#101010");
+        assertThat(theme.backgroundImageUrl()).isEqualTo("https://cdn.acme.example/bg.jpg");
     }
 
     @Test
@@ -144,8 +212,8 @@ class BrandingServiceTest {
         service().update(spec(null, "#000000", "Rebrand"));
 
         verify(repository, never()).save(any());
-        assertThat(existing.getProductName()).isEqualTo("Rebrand");
-        assertThat(existing.getLogoUrl()).isNull(); // blank logo cleared
+        assertThat(existing.identity().productName()).isEqualTo("Rebrand");
+        assertThat(existing.identity().logoUrl()).isNull(); // blank logo cleared
     }
 
     @Test
@@ -169,6 +237,36 @@ class BrandingServiceTest {
         assertThatThrownBy(() -> service().update(spec(null, "#GGGGGG", "X")))
                 .isInstanceOf(BadRequestException.class);
         assertThatThrownBy(() -> service().update(spec(null, "#123456", "x".repeat(65))))
+                .isInstanceOf(BadRequestException.class);
+        verify(repository, never()).save(any());
+    }
+
+    /**
+     * Each new URL is checked on its OWN dimension. A single "rejects a bad URL" test would pass while two of
+     * the three fields went unvalidated, which is exactly the shape this asserts against.
+     */
+    @Test
+    void updateRejectsANonHttpsUrlInEveryUrlField() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        assertThatThrownBy(() -> service().update(spec(
+                new BrandingIdentity(null, "http://cdn/dark.png", null, null), BrandingTheme.none())))
+                .isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service().update(spec(
+                new BrandingIdentity(null, null, "http://cdn/fav.ico", null), BrandingTheme.none())))
+                .isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service().update(spec(BrandingIdentity.none(),
+                new BrandingTheme(null, null, "http://cdn/bg.jpg", null, null, null))))
+                .isInstanceOf(BadRequestException.class);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void updateRejectsABadBackgroundColour() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        assertThatThrownBy(() -> service().update(spec(BrandingIdentity.none(),
+                new BrandingTheme(null, "rgb(0,0,0)", null, null, null, null))))
                 .isInstanceOf(BadRequestException.class);
         verify(repository, never()).save(any());
     }

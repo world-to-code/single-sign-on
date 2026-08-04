@@ -1,6 +1,8 @@
 package com.example.sso.branding.internal.application;
 
 import com.example.sso.branding.Branding;
+import com.example.sso.branding.BrandingTheme;
+import com.example.sso.branding.BrandingIdentity;
 import com.example.sso.organization.NewOrganization;
 import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationView;
@@ -53,7 +55,8 @@ class BrandingTenantScopeIT extends AbstractIntegrationTest {
     }
 
     private BrandingSpec spec(String productName) {
-        return new BrandingSpec("https://cdn.example/l.png", "#123abc", productName);
+        return new BrandingSpec(new BrandingIdentity("https://cdn.example/l.png", null, null, productName),
+                new BrandingTheme("#123abc", null, null, null, null, null));
     }
 
     /** Simulates the public endpoint: host → org → read under that org's context. */

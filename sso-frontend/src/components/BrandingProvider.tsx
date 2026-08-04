@@ -1,9 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { getBranding, type Branding } from "@/branding";
-import { applyAccent } from "@/lib/prefs";
+import { applyBrandingTheme, resolvedTheme } from "@/lib/prefs";
 
-/** Unbranded: the built-in mark, the product name, and the default accent. What every surface starts from. */
-const DEFAULT: Branding = { logoUrl: null, accentColor: null, productName: null };
+/** Unbranded: the built-in mark, the product name, and the default theme. What every surface starts from. */
+const DEFAULT: Branding = {
+  identity: { logoUrl: null, logoUrlDark: null, faviconUrl: null, productName: null },
+  theme: { accentColor: null, backgroundColor: null, backgroundImageUrl: null, font: null, corner: null, layout: null },
+};
 
 const BrandingContext = createContext<Branding>(DEFAULT);
 
@@ -33,7 +36,10 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
   const load = useCallback(async (): Promise<void> => {
     const resolved = await getBranding().catch(() => DEFAULT);
     setBranding(resolved);
-    applyAccent(resolved.accentColor); // overrides --primary for every screen, not just the auth ones
+    // Overrides the design tokens for every screen, not just the auth ones — a tenant that has set an accent
+    // has said what this deployment looks like, and that does not stop being true after sign-in.
+    applyBrandingTheme(resolved.theme);
+    applyFavicon(resolved.identity.faviconUrl);
   }, []);
 
   // Once, for the page. The provider is mounted at the root, so every surface below it shares this one
@@ -55,6 +61,36 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
 /** The resolved branding. Defaults until the fetch lands, so a consumer never has to handle "not yet". */
 export function useBranding(): Branding {
   return useContext(BrandingContext);
+}
+
+/**
+ * The mark and name to draw, with the dark-mode logo picked when the viewer is in dark mode. Every surface
+ * that renders the brand wants exactly this pair, and the light/dark choice is one decision that belongs in
+ * one place rather than repeated at each of them.
+ *
+ * <p>A tenant that supplies only a light logo keeps it in dark mode: a mark that is merely low-contrast is a
+ * better outcome than no mark at all, and it is the tenant's own asset either way.
+ */
+export function useBrandMark(): { logoUrl: string | null; name: string | null } {
+  const { identity } = useContext(BrandingContext);
+  const dark = resolvedTheme() === "dark";
+  return {
+    logoUrl: (dark ? identity.logoUrlDark : identity.logoUrl) ?? identity.logoUrl,
+    name: identity.productName,
+  };
+}
+
+/**
+ * Point the browser tab at the tenant's favicon. Rewrites the existing <link rel="icon"> rather than adding
+ * one, so a re-fetch after an edit replaces the icon instead of stacking links the browser resolves by luck.
+ */
+function applyFavicon(url: string | null): void {
+  if (!url) {
+    return;
+  }
+  const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+    ?? document.head.appendChild(Object.assign(document.createElement("link"), { rel: "icon" }));
+  link.href = url;
 }
 
 /**

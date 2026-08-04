@@ -145,6 +145,24 @@
 
   /* Korean-first vertical rhythm (DESIGN.md §2): Hangul needs looser leading and tighter heading tracking. */
   :root[lang="ko"] body { line-height: 1.65; }
+  /* Per-tenant theme. Each property is written by applyBrandingTheme from a CLOSED set (or a parsed hex), so
+     nothing a tenant typed lands in a CSS value. Unset means the built-in token wins, which is why every rule
+     below falls back rather than assuming the variable exists. */
+  body { font-family: var(--brand-font, inherit); }
+  :root { --radius: var(--brand-radius, 0.5rem); }
+
+  /* The page behind the sign-in card: the tenant's colour when set, else the theme background. */
+  .brand-surface { background-color: hsl(var(--brand-background, var(--background))); }
+
+  /* The SPLIT layout's second panel. Only rendered when a background image exists, so the fallback here is
+     just belt-and-braces for a paint that happens before the variable lands. */
+  .brand-panel {
+    background-color: hsl(var(--primary));
+    background-image: var(--brand-background-image, none);
+    background-size: cover;
+    background-position: center;
+  }
+
   /* The Svalinn shield, drawn as a MASK rather than an image so it takes currentColor. One asset serves
      both themes and any accent, and the mark stays crisp because it is not being recoloured by a filter. */
   .brand-mark {

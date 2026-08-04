@@ -5,10 +5,16 @@ import { Brand } from "@/components/Brand";
 import { LanguageToggle } from "@/components/layout/LanguageToggle";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useBranding } from "@/components/BrandingProvider";
+import { useBranding, useBrandMark } from "@/components/BrandingProvider";
 import { cn } from "@/lib/utils";
 
-/** Centered authentication shell used by the login / MFA screens. */
+/**
+ * Authentication shell used by the login / MFA / step-up / consent screens.
+ *
+ * <p>The tenant chooses the arrangement. `CENTERED` is one card on the page background; `SPLIT` puts the form
+ * beside a panel carrying the tenant's background image. SPLIT collapses back to centered below `lg` and when
+ * no background image is set — a second panel with nothing in it is worse than not having one.
+ */
 export default function AuthLayout({
   title, description, step, org, children, footer, onBack, backLabel, wide = false,
 }: {
@@ -20,16 +26,26 @@ export default function AuthLayout({
   const { t } = useTranslation("auth");
   // Shared with the console, the portal and the splash: one fetch, one answer, everywhere.
   const branding = useBranding();
+  const brand = useBrandMark();
+  const split = branding.theme.layout === "SPLIT" && Boolean(branding.theme.backgroundImageUrl);
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-background px-4 py-10">
+    <div className={cn("brand-surface relative min-h-screen", split ? "lg:grid lg:grid-cols-2" : "")}>
       {/* Pre-login language/theme switch — a signed-out visitor still needs to pick their language. */}
-      <div className="absolute right-4 top-4 flex items-center gap-1">
+      <div className="absolute right-4 top-4 z-10 flex items-center gap-1">
         <LanguageToggle iconOnly />
         <ThemeToggle iconOnly />
       </div>
+      {split && (
+        <aside className="brand-panel relative hidden lg:flex lg:flex-col lg:justify-end lg:p-12"
+               aria-hidden="true">
+          <Brand logoUrl={brand.logoUrl} name={brand.name} className="text-white drop-shadow" />
+        </aside>
+      )}
+      <div className={cn("flex min-h-screen items-center justify-center px-4 py-10",
+                         split ? "lg:min-h-0" : "")}>
       <div className={cn("w-full", wide ? "max-w-lg" : "max-w-md")}>
-        <div className="mb-6 flex justify-center">
-          <Brand logoUrl={branding.logoUrl} name={branding.productName} />
+        <div className={cn("mb-6 flex justify-center", split ? "lg:hidden" : "")}>
+          <Brand logoUrl={brand.logoUrl} name={brand.name} />
         </div>
         <Card>
           <CardHeader className="space-y-1">
@@ -56,6 +72,7 @@ export default function AuthLayout({
         </Card>
         {footer && <div className="mt-4 text-center text-sm text-muted-foreground">{footer}</div>}
         <p className="mt-6 text-center text-xs text-muted-foreground">{t("layoutSecuredBy")}</p>
+      </div>
       </div>
     </div>
   );
