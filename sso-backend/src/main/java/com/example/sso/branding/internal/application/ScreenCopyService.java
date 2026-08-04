@@ -53,7 +53,7 @@ public class ScreenCopyService {
             byScreen(repository.findByOrgId(orgId)).forEach((screen, own) ->
                     resolved.merge(screen, own, (platform, tenant) -> tenant.inheriting(platform)));
         }
-        resolved.values().removeIf(ScreenCopy::isEmpty);
+        resolved.values().removeIf(ScreenCopy::saysNothing);
         return resolved;
     }
 

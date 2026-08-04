@@ -1,6 +1,8 @@
 package com.example.sso.branding.internal.api;
 
 import com.example.sso.branding.Branding;
+import com.example.sso.branding.ScreenCopy;
+import com.example.sso.branding.AuthScreen;
 import java.util.Map;
 import com.example.sso.branding.BrandingTheme;
 import com.example.sso.branding.BrandingIdentity;
@@ -82,5 +84,30 @@ class BrandingControllerTest {
                 // has a complete theme to render rather than half a stylesheet.
                 .andExpect(jsonPath("$.theme.font").value("SANS"))
                 .andExpect(jsonPath("$.theme.layout").value("CENTERED"));
+    }
+
+    /**
+     * The public payload carries the record's COMPONENTS and nothing else.
+     *
+     * <p>This is a regression guard with a scar behind it: {@code ScreenCopy} had an {@code isEmpty()} helper,
+     * which Jackson picked up as a bean property, so every screen shipped {@code "empty": false} to every
+     * unauthenticated visitor and then could not be read back. No test asserted the exact shape, so nothing
+     * caught it — asserting a field is PRESENT never says the payload has no others.
+     */
+    @Test
+    void theScreenWordingCarriesNoFieldBeyondItsComponents() throws Exception {
+        OrganizationRef ref = mock(OrganizationRef.class);
+        when(ref.getStatus()).thenReturn(OrganizationStatus.ACTIVE);
+        when(ref.getId()).thenReturn(ORG);
+        when(tenantResolver.tenantSlug(any())).thenReturn(Optional.of("acme"));
+        when(organizations.findBySlug("acme")).thenReturn(Optional.of(ref));
+        when(service.resolve(ORG)).thenReturn(new Branding(BrandingIdentity.none(), BrandingTheme.none(),
+                Map.of(AuthScreen.LOGIN, new ScreenCopy("Sign in to Acme", null, null, null))));
+
+        mvc.perform(get("/api/auth/branding"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.copy.LOGIN.headline").value("Sign in to Acme"))
+                .andExpect(jsonPath("$.copy.LOGIN.length()").value(4))
+                .andExpect(jsonPath("$.copy.LOGIN.empty").doesNotExist());
     }
 }

@@ -21,8 +21,15 @@ public record ScreenCopy(String headline, String subtext, String footer, String 
         return new ScreenCopy(null, null, null, null);
     }
 
-    /** True when this carries nothing, so a resolver can drop it rather than ship an all-null object. */
-    public boolean isEmpty() {
+    /**
+     * True when this carries nothing, so a resolver can drop it rather than ship an all-null object.
+     *
+     * <p>Named as a claim rather than {@code isEmpty()} on purpose: a record is serialized by its components,
+     * but a bean-style {@code isX()} accessor is picked up as an EXTRA property. As {@code isEmpty} it shipped
+     * {@code "empty": false} on every screen in the public payload and then failed to read back, because the
+     * canonical constructor has no such component.
+     */
+    public boolean saysNothing() {
         return headline == null && subtext == null && footer == null && helpUrl == null;
     }
 
