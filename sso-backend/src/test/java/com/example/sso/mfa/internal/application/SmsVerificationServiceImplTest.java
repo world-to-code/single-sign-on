@@ -18,6 +18,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import com.example.sso.branding.Branding;
+import java.util.Map;
 import com.example.sso.branding.BrandingTheme;
 import com.example.sso.branding.BrandingIdentity;
 import com.example.sso.branding.BrandingResolver;
@@ -67,7 +68,7 @@ class SmsVerificationServiceImplTest {
 
     @Test
     void sendCodeTextsTheCodeAndTtlToTheGivenTenantAndNumber() {
-        when(orgContext.callInOrg(eq(ORG), any())).thenReturn(new Branding(new BrandingIdentity(null, null, null, "Acme ID"), BrandingTheme.none()));
+        when(orgContext.callInOrg(eq(ORG), any())).thenReturn(new Branding(new BrandingIdentity(null, null, null, "Acme ID"), BrandingTheme.none(), Map.of()));
 
         service().sendCode(ORG, PHONE, "123456", "delivery-key");
 
@@ -80,7 +81,7 @@ class SmsVerificationServiceImplTest {
     /** A tenant that has set no name still gets a message, under the deployment's own. */
     @Test
     void aTenantWithNoNameOfItsOwnFallsBackToTheDeploymentName() {
-        when(orgContext.callInOrg(eq(ORG), any())).thenReturn(new Branding(BrandingIdentity.none(), BrandingTheme.none()));
+        when(orgContext.callInOrg(eq(ORG), any())).thenReturn(new Branding(BrandingIdentity.none(), BrandingTheme.none(), Map.of()));
 
         service().sendCode(ORG, PHONE, "123456", "delivery-key");
 

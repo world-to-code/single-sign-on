@@ -1,5 +1,7 @@
 package com.example.sso.branding;
 
+import java.util.Map;
+
 /**
  * The resolved auth-UI branding for a tenant — its marks and name ({@link BrandingIdentity}) and how its
  * screens look ({@link BrandingTheme}) — ready to render on its login / MFA / step-up / consent screens.
@@ -13,19 +15,25 @@ package com.example.sso.branding;
  * <p>Everything here is PUBLIC: it is shown to every visitor of the tenant's subdomain. Every value is
  * shape-validated on write, so a surface can inject it into HTML/CSS with escaping and no breakout.
  */
-public record Branding(BrandingIdentity identity, BrandingTheme theme) {
+public record Branding(BrandingIdentity identity, BrandingTheme theme, Map<AuthScreen, ScreenCopy> copy) {
 
     /** The platform fallback when neither the tenant nor the platform has configured branding. */
     public static Branding platformDefault() {
         return new Branding(
                 new BrandingIdentity(null, null, null, "Svalinn"),
                 new BrandingTheme(null, null, null, BrandingFont.SANS, BrandingCorner.SOFT,
-                        AuthScreenLayout.CENTERED));
+                        AuthScreenLayout.CENTERED),
+                Map.of());
     }
 
-    /** This branding's fields, falling back to {@code fallback} field by field. */
+    /** This branding with {@code copy} attached — the wording is resolved by its own service, not here. */
+    public Branding withCopy(Map<AuthScreen, ScreenCopy> copy) {
+        return new Branding(identity, theme, copy);
+    }
+
+    /** This branding's identity and theme, falling back to {@code fallback} field by field. Copy is kept. */
     public Branding inheriting(Branding fallback) {
-        return new Branding(identity.inheriting(fallback.identity()), theme.inheriting(fallback.theme()));
+        return new Branding(identity.inheriting(fallback.identity()), theme.inheriting(fallback.theme()), copy);
     }
 
     /**

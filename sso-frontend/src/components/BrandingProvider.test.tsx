@@ -45,6 +45,7 @@ describe("BrandingProvider", () => {
         accentColor: null, backgroundColor: null, backgroundImageUrl: null,
         font: null, corner: null, layout: null, ...theme,
       },
+      copy: {},
     };
   }
 

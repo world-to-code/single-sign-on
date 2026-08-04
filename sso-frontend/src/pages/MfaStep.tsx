@@ -71,7 +71,7 @@ export default function MfaStep({ session, onDone }: { session: SessionView; onD
   const Icon = factorMeta(factor).icon;
 
   return (
-    <AuthLayout
+    <AuthLayout screen="MFA"
       onBack={useDifferentEmail}
       backLabel={t("mfaBackToSignIn")}
       org={session.org}

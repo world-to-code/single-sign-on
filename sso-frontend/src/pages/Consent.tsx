@@ -43,7 +43,7 @@ export default function Consent() {
 
   if (error) {
     return (
-      <AuthLayout step={t("consentStep")} title={t("consentTitle")}>
+      <AuthLayout screen="CONSENT" step={t("consentStep")} title={t("consentTitle")}>
         <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>
       </AuthLayout>
     );

@@ -106,7 +106,7 @@ export default function Login({ session, onDone }: { session: SessionView; onDon
   }
 
   return (
-    <AuthLayout
+    <AuthLayout screen="LOGIN"
       title={t("loginTitle")}
       description={t("loginDescription")}
       org={org}

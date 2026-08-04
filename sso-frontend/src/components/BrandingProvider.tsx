@@ -6,9 +6,15 @@ import { applyBrandingTheme, resolvedTheme } from "@/lib/prefs";
 const DEFAULT: Branding = {
   identity: { logoUrl: null, logoUrlDark: null, faviconUrl: null, productName: null },
   theme: { accentColor: null, backgroundColor: null, backgroundImageUrl: null, font: null, corner: null, layout: null },
+  copy: {},
 };
 
-const BrandingContext = createContext<Branding>(DEFAULT);
+/**
+ * Exported so a screen can be rendered against a chosen branding in a test without standing up the fetch.
+ * Consumers still go through {@link useBranding}; this is the seam, not a second way to read it.
+ */
+export const BrandingContextValue = createContext<Branding>(DEFAULT);
+const BrandingContext = BrandingContextValue;
 
 /**
  * Separate from the value so that consumers of the branding do not re-render when only this function's

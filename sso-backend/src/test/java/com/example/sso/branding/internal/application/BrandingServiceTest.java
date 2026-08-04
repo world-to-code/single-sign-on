@@ -2,6 +2,9 @@ package com.example.sso.branding.internal.application;
 
 import com.example.sso.branding.AuthScreenLayout;
 import com.example.sso.branding.Branding;
+import java.util.Map;
+import com.example.sso.branding.ScreenCopy;
+import com.example.sso.branding.AuthScreen;
 import com.example.sso.branding.BrandingCorner;
 import com.example.sso.branding.BrandingFont;
 import com.example.sso.branding.BrandingIdentity;
@@ -40,9 +43,11 @@ class BrandingServiceTest {
     OrgBrandingRepository repository;
     @Mock
     OrgContext orgContext;
+    @Mock
+    ScreenCopyService screenCopy;
 
     private BrandingService service() {
-        return new BrandingService(repository, orgContext);
+        return new BrandingService(repository, new ActingTier(orgContext), screenCopy);
     }
 
     /** A fully-populated row, so a test can assert a field is INHERITED rather than merely absent everywhere. */
@@ -299,5 +304,39 @@ class BrandingServiceTest {
 
         assertThatThrownBy(() -> service().delete()).isInstanceOf(ForbiddenException.class);
         verify(repository, never()).delete(any());
+    }
+
+    /**
+     * The screen wording rides along on the SAME resolve, because the SPA fetches branding once at the root
+     * and every auth screen reads from that one answer. A second endpoint would mean a second round trip
+     * before the login screen could draw its own heading.
+     */
+    @Test
+    void resolveCarriesTheScreenWording() {
+        when(repository.findByOrgId(ORG)).thenReturn(Optional.empty());
+        when(repository.findByOrgIdIsNull()).thenReturn(Optional.empty());
+        when(screenCopy.resolve(ORG)).thenReturn(Map.of(AuthScreen.LOGIN,
+                new ScreenCopy("Sign in to Acme", null, null, null)));
+
+        Branding branding = service().resolve(ORG);
+
+        assertThat(branding.copy()).containsOnlyKeys(AuthScreen.LOGIN);
+        assertThat(branding.copy().get(AuthScreen.LOGIN).headline()).isEqualTo("Sign in to Acme");
+    }
+
+    /** A tier that has written no wording still resolves — an empty map, never a null the client must guard. */
+    @Test
+    void resolveCarriesAnEmptyMapWhenNobodyHasWrittenAnyWording() {
+        when(repository.findByOrgId(ORG)).thenReturn(Optional.empty());
+        when(repository.findByOrgIdIsNull()).thenReturn(Optional.empty());
+        when(screenCopy.resolve(ORG)).thenReturn(Map.of());
+
+        assertThat(service().resolve(ORG).copy()).isEmpty();
+    }
+
+    /** The built-in default has no wording of its own: the screens carry their own translated strings. */
+    @Test
+    void thePlatformDefaultCarriesNoScreenWording() {
+        assertThat(Branding.platformDefault().copy()).isEmpty();
     }
 }

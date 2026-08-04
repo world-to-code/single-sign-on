@@ -4,6 +4,7 @@ import { errorMessage } from "../api";
 import { listEmailTemplates, type EmailEvent, type EmailTemplate } from "../emailTemplates";
 import { EmailTemplateEditor } from "../components/customize/EmailTemplateEditor";
 import { BrandingEditor } from "../components/customize/BrandingEditor";
+import { ScreenCopyEditor } from "../components/customize/ScreenCopyEditor";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingCard, ErrorCard } from "@/components/states";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,12 +17,19 @@ const EVENT_LABEL = {
   SIGNUP_VERIFICATION: "customizeEventSignup",
 } as const satisfies Record<EmailEvent, string>;
 
-type Section = "email" | "branding";
+type Section = "email" | "branding" | "screens";
 
 /**
  * The Customize admin tab. Two sections — per-tenant email templates and auth-UI branding — each edits its
  * own per-tenant surface. Both are per-tenant, so the tab lives under org scope in the console.
  */
+/** Tab label per section — a map, so a fourth section is one entry and not a longer ternary. */
+const SECTION_LABEL = {
+  email: "customizeEmailSection",
+  branding: "customizeBrandingSection",
+  screens: "customizeScreensSection",
+} as const;
+
 export default function Customize() {
   const { t } = useTranslation("console");
 
@@ -46,7 +54,7 @@ export default function Customize() {
       <PageHeader title={t("customizeTitle")} description={t("customizeDescription")} />
 
       <div className="flex gap-1 border-b border-border">
-        {(["email", "branding"] as const).map((key) => (
+        {(["email", "branding", "screens"] as const).map((key) => (
           <button
             key={key}
             type="button"
@@ -58,7 +66,7 @@ export default function Customize() {
                 : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
-            {t(key === "email" ? "customizeEmailSection" : "customizeBrandingSection")}
+            {t(SECTION_LABEL[key])}
           </button>
         ))}
       </div>
@@ -68,6 +76,13 @@ export default function Customize() {
           <CardContent className="pt-6">
             <p className="mb-3 text-xs text-muted-foreground">{t("customizeBrandingSectionHint")}</p>
             <BrandingEditor />
+          </CardContent>
+        </Card>
+      ) : section === "screens" ? (
+        <Card>
+          <CardContent className="pt-6">
+            <p className="mb-3 text-xs text-muted-foreground">{t("customizeScreensSectionHint")}</p>
+            <ScreenCopyEditor />
           </CardContent>
         </Card>
       ) : loadError ? (

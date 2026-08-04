@@ -7,9 +7,8 @@ import com.example.sso.branding.BrandingTheme;
 import com.example.sso.branding.internal.domain.OrgBranding;
 import com.example.sso.branding.internal.domain.OrgBrandingRepository;
 import com.example.sso.shared.error.BadRequestException;
-import com.example.sso.shared.error.ForbiddenException;
-import com.example.sso.tenancy.OrgContext;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -21,8 +20,8 @@ import org.springframework.util.StringUtils;
 /**
  * Per-tenant auth-UI branding: {@link #resolve} answers the branding to RENDER for an org (own → platform →
  * built-in default, per FIELD); {@code get}/{@code update}/{@code delete} are the admin surface. Writes go only
- * to the acting tier's own row via the fail-closed {@link #writableOrg} (a bound-but-orgless non-platform
- * caller can't edit the global default); the read guard {@link #ownRow} is symmetric. Free-text values are
+ * to the acting tier's own row via {@link ActingTier}'s fail-closed write guard (a bound-but-orgless
+ * non-platform caller can't edit the global default); the read guard {@link #ownRow} is symmetric. Free-text values are
  * validated for shape (https URLs, {@code #RRGGBB} colours, capped name) so a downstream surface can inject
  * them with escaping and no breakout; the three style choices are enums, so their safety is structural.
  * Nothing here is a secret — branding is shown to every visitor of the tenant's subdomain.
@@ -37,7 +36,8 @@ public class BrandingService implements BrandingResolver {
     private static final int MAX_URL = 2048;
 
     private final OrgBrandingRepository repository;
-    private final OrgContext orgContext;
+    private final ActingTier tier;
+    private final ScreenCopyService screenCopy;
 
     /**
      * The branding to render for {@code orgId}: own row over platform row over built-in default, resolved
@@ -51,13 +51,11 @@ public class BrandingService implements BrandingResolver {
                 .map(this::toBranding)
                 .map(row -> row.inheriting(Branding.platformDefault()))
                 .orElseGet(Branding::platformDefault);
-        if (orgId == null) {
-            return platform;
-        }
-        return repository.findByOrgId(orgId)
+        Branding resolved = orgId == null ? platform : repository.findByOrgId(orgId)
                 .map(this::toBranding)
                 .map(own -> own.inheriting(platform))
                 .orElse(platform);
+        return resolved.withCopy(screenCopy.resolve(orgId));
     }
 
     /** The acting tier's OWN branding for the editor (or the inherited default as a starting point). */
@@ -70,7 +68,7 @@ public class BrandingService implements BrandingResolver {
     /** Registers/updates the acting tier's branding (validated: https URLs, #RRGGBB colours, capped name). */
     @Transactional
     public void update(BrandingSpec spec) {
-        UUID org = writableOrg();
+        UUID org = tier.writableOrg();
         BrandingIdentity identity = validated(spec.identity());
         BrandingTheme theme = validated(spec.theme());
         ownRow().ifPresentOrElse(
@@ -81,7 +79,7 @@ public class BrandingService implements BrandingResolver {
     /** Drops the acting tier's branding — its screens revert to the platform/built-in default. */
     @Transactional
     public void delete() {
-        writableOrg();
+        tier.writableOrg();
         ownRow().ifPresent(repository::delete);
     }
 
@@ -139,24 +137,16 @@ public class BrandingService implements BrandingResolver {
 
     /** The acting tier's OWN row — the platform tier owns the global (org_id NULL) row, a bound-orgless tenant none. */
     private Optional<OrgBranding> ownRow() {
-        UUID org = orgContext.currentOrg().orElse(null);
+        UUID org = tier.org().orElse(null);
         if (org != null) {
             return repository.findByOrgId(org);
         }
-        return orgContext.isPlatform() ? repository.findByOrgIdIsNull() : Optional.empty();
+        return tier.ownsGlobalRow() ? repository.findByOrgIdIsNull() : Optional.empty();
     }
 
-    /** The acting org for a WRITE. Deny-by-default: a bound-but-orgless non-platform caller can't write global. */
-    private UUID writableOrg() {
-        UUID org = orgContext.currentOrg().orElse(null);
-        if (org == null && !orgContext.isPlatform()) {
-            throw ForbiddenException.of("branding.global.platformOnly");
-        }
-        return org;
-    }
-
+    /** A row carries no wording — that lives in its own table — so this stage resolves without it. */
     private Branding toBranding(OrgBranding branding) {
-        return new Branding(branding.identity(), branding.theme());
+        return new Branding(branding.identity(), branding.theme(), Map.of());
     }
 
     private String trimToNull(String value) {

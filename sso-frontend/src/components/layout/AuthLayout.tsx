@@ -6,6 +6,7 @@ import { LanguageToggle } from "@/components/layout/LanguageToggle";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useBranding, useBrandMark } from "@/components/BrandingProvider";
+import type { AuthScreen } from "@/branding";
 import { cn } from "@/lib/utils";
 
 /**
@@ -16,18 +17,29 @@ import { cn } from "@/lib/utils";
  * no background image is set — a second panel with nothing in it is worse than not having one.
  */
 export default function AuthLayout({
-  title, description, step, org, children, footer, onBack, backLabel, wide = false,
+  title, description, step, org, children, footer, onBack, backLabel, wide = false, screen,
 }: {
   title: string; description?: string; step?: string; org?: string | null; children: ReactNode;
   footer?: ReactNode; onBack?: () => void; backLabel?: string;
   /** A form's width suits a form. A screen that lists things to READ needs the extra measure. */
   wide?: boolean;
+  /**
+   * Which screen this is, so a tenant's own wording for it can replace the built-in strings. Omitted by the
+   * screens a tenant cannot word (signup, org select, activation), which therefore always read as the
+   * product's own — deliberate: those run on the platform host, where there is no tenant to speak for.
+   */
+  screen?: AuthScreen;
 }) {
   const { t } = useTranslation("auth");
   // Shared with the console, the portal and the splash: one fetch, one answer, everywhere.
   const branding = useBranding();
   const brand = useBrandMark();
   const split = branding.theme.layout === "SPLIT" && Boolean(branding.theme.backgroundImageUrl);
+  // Per FIELD, matching how the server resolves: a tenant that wrote only a headline keeps this screen's own
+  // description rather than losing it to an empty string.
+  const copy = screen ? branding.copy[screen] : undefined;
+  const shownTitle = copy?.headline ?? title;
+  const shownDescription = copy?.subtext ?? description;
   return (
     <div className={cn("brand-surface relative min-h-screen", split ? "lg:grid lg:grid-cols-2" : "")}>
       {/* Pre-login language/theme switch — a signed-out visitor still needs to pick their language. */}
@@ -65,12 +77,23 @@ export default function AuthLayout({
                 <Lock className="size-3" /> {step}
               </div>
             )}
-            <CardTitle className="text-xl">{title}</CardTitle>
-            {description && <CardDescription>{description}</CardDescription>}
+            <CardTitle className="text-xl">{shownTitle}</CardTitle>
+            {shownDescription && <CardDescription>{shownDescription}</CardDescription>}
           </CardHeader>
           <CardContent>{children}</CardContent>
         </Card>
         {footer && <div className="mt-4 text-center text-sm text-muted-foreground">{footer}</div>}
+        {(copy?.footer || copy?.helpUrl) && (
+          <div className="mt-4 text-center text-sm text-muted-foreground">
+            {copy.footer}
+            {copy.helpUrl && (
+              <a href={copy.helpUrl} className="ml-1 underline underline-offset-2 hover:text-foreground"
+                 target="_blank" rel="noreferrer noopener">
+                {t("layoutHelp")}
+              </a>
+            )}
+          </div>
+        )}
         <p className="mt-6 text-center text-xs text-muted-foreground">{t("layoutSecuredBy")}</p>
       </div>
       </div>

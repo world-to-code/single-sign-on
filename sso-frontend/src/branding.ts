@@ -31,13 +31,31 @@ export interface BrandingTheme {
   layout: AuthScreenLayout | null;
 }
 
+/** A sign-in screen a tenant can word for itself. Mirrors the backend enum; the SPA implements each one. */
+export type AuthScreen = "LOGIN" | "MFA" | "STEPUP" | "CONSENT" | "RESET";
+
+export const AUTH_SCREENS: readonly AuthScreen[] = ["LOGIN", "MFA", "STEPUP", "CONSENT", "RESET"];
+
+/**
+ * What one screen says in the tenant's own words. A null field keeps the screen's built-in wording, and all
+ * four are rendered as TEXT — never as markup, which is why nothing here is escaped or sanitized on the way in.
+ */
+export interface ScreenCopy {
+  headline: string | null;
+  subtext: string | null;
+  footer: string | null;
+  helpUrl: string | null;
+}
+
 /**
  * The resolved auth-UI branding for the current tenant (public — shown before sign-in). The server resolves
- * own → platform → built-in default per FIELD, so every field here is already the one to render.
+ * own → platform → built-in default per FIELD, so every field here is already the one to render. A screen
+ * absent from `copy` has nothing tenant-written to say, so the screen keeps all of its own strings.
  */
 export interface Branding {
   identity: BrandingIdentity;
   theme: BrandingTheme;
+  copy: Partial<Record<AuthScreen, ScreenCopy>>;
 }
 
 /** The acting tier's OWN branding for the admin editor. `configured` false = inherits the default. */
@@ -63,3 +81,15 @@ export const updateBranding = (body: BrandingInput): Promise<BrandingView> =>
   apiPut<BrandingView>("/api/admin/branding", body);
 
 export const deleteBranding = (): Promise<void> => apiDelete("/api/admin/branding");
+
+export const getScreenCopy = (): Promise<Partial<Record<AuthScreen, ScreenCopy>>> =>
+  apiGet<Partial<Record<AuthScreen, ScreenCopy>>>("/api/admin/branding/screens");
+
+export const updateScreenCopy = (
+  screen: AuthScreen,
+  body: ScreenCopy,
+): Promise<Partial<Record<AuthScreen, ScreenCopy>>> =>
+  apiPut<Partial<Record<AuthScreen, ScreenCopy>>>(`/api/admin/branding/screens/${screen}`, body);
+
+export const deleteScreenCopy = (screen: AuthScreen): Promise<void> =>
+  apiDelete(`/api/admin/branding/screens/${screen}`);

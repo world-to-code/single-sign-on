@@ -51,7 +51,7 @@ export default function ForcePasswordReset({ session, onDone }:
   }
 
   return (
-    <AuthLayout
+    <AuthLayout screen="RESET"
       title={t("forceResetTitle")}
       description={t("forceResetDescription")}
       org={session.org}

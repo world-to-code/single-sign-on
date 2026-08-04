@@ -59,6 +59,7 @@ export const auth = {
   // AuthLayout -------------------------------------------------------------
   layoutBack: "Back",
   layoutSecuredBy: "Sign-in protected by Svalinn",
+  layoutHelp: "Get help",
 
   // OrgSelect --------------------------------------------------------------
   orgSelectDescription: "Enter your organization to continue.",

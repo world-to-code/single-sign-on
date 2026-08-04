@@ -1,6 +1,7 @@
 package com.example.sso.branding.internal.api;
 
 import com.example.sso.branding.Branding;
+import java.util.Map;
 import com.example.sso.branding.BrandingTheme;
 import com.example.sso.branding.BrandingIdentity;
 import com.example.sso.branding.internal.application.BrandingService;
@@ -58,7 +59,7 @@ class BrandingControllerTest {
         when(tenantResolver.tenantSlug(any())).thenReturn(Optional.of("acme"));
         when(organizations.findBySlug("acme")).thenReturn(Optional.of(ref));
         when(service.resolve(ORG)).thenReturn(new Branding(new BrandingIdentity("https://cdn.acme.example/l.png", null, null, "Acme"),
-                new BrandingTheme("#123abc", null, null, null, null, null)));
+                new BrandingTheme("#123abc", null, null, null, null, null), Map.of()));
 
         mvc.perform(get("/api/auth/branding"))
                 .andExpect(status().isOk())

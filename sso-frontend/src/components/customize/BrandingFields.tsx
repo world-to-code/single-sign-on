@@ -52,22 +52,28 @@ export function ColorField({ label, hint, value, fallback, onChange }: {
 }
 
 /**
- * A pick from a closed set, rendered as a segmented control. `null` is a real option — "inherit" — and it is
- * listed first so a tenant can always get back to it without knowing which value they started from.
+ * A pick from a closed set, rendered as a segmented control.
+ *
+ * <p>`inheritLabel` adds a leading "inherit" option, listed first so a tenant can always get back to it
+ * without knowing which value they started from. It is OPTIONAL because not every closed set has an inherit
+ * state — a picker that chooses which screen you are editing is a selector, not a setting, and giving it a
+ * blank option would offer a choice that means nothing.
  */
 export function ChoiceField<T extends string>({ label, hint, value, options, inheritLabel, labelFor, onChange }: {
   label: string;
   hint?: string;
   value: T | "";
   options: readonly T[];
-  inheritLabel: string;
+  inheritLabel?: string;
   labelFor: (option: T) => string;
   onChange: (value: T | "") => void;
 }) {
   return (
     <Field label={label} hint={hint}>
       <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1.5">
-        <ChoiceOption selected={value === ""} label={inheritLabel} onSelect={() => onChange("")} />
+        {inheritLabel !== undefined && (
+          <ChoiceOption selected={value === ""} label={inheritLabel} onSelect={() => onChange("")} />
+        )}
         {options.map((option) => (
           <ChoiceOption key={option} selected={value === option} label={labelFor(option)}
                         onSelect={() => onChange(option)} />

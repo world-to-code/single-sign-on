@@ -47,7 +47,7 @@ export default function SetPassword() {
 
   if (done) {
     return (
-      <AuthLayout title={t("setPasswordDoneTitle")} description={t("setPasswordDoneDesc")}>
+      <AuthLayout screen="RESET" title={t("setPasswordDoneTitle")} description={t("setPasswordDoneDesc")}>
         <div className="space-y-4 text-center">
           <CheckCircle2 className="mx-auto size-10 text-primary" />
           <p className="text-sm text-muted-foreground">
