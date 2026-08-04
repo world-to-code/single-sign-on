@@ -1,4 +1,4 @@
-# Mini SSO System — Multi-Tenant Identity Provider
+# Svalinn — Multi-Tenant Identity Provider
 
 *🌏 [한국어 README](README_KR.md)*
 
@@ -6,9 +6,11 @@ A from-scratch, production-leaning **multi-tenant Single Sign-On Identity Provid
 Each **organization is a tenant** with its own subdomain, users, policies, apps, and signing
 keys; other applications delegate authentication to it over **OIDC**, **SAML 2.0**, or
 **SCIM 2.0**, and every human sign-in is protected by **policy-driven multi-factor
-authentication**. Built as a **Spring Modulith modular monolith** on **Spring Boot 4 /
-Spring Security 7**, with a **React** admin + login console served from the same origin as a
-single deployable, and **PostgreSQL Row-Level Security** as the hard boundary between tenants.
+authentication**. It also works in the other direction — a tenant can federate its own login
+out to an upstream OIDC or SAML provider. Built as a **Spring Modulith modular monolith** on
+**Spring Boot 4 / Spring Security 7**, with a **React** admin + login SPA served by an nginx
+edge in front of the API-only backend (one origin to the browser), and **PostgreSQL Row-Level
+Security** as the hard boundary between tenants.
 
 > **In one sentence:** each company gets its own isolated IdP at `its-slug.example.com` — its
 > own users, MFA, policies, apps and audit trail — while a thin platform layer owns the tenant
@@ -48,21 +50,28 @@ single deployable, and **PostgreSQL Row-Level Security** as the hard boundary be
 | **OIDC Provider** | OAuth 2.1 + OpenID Connect 1.0 — discovery, JWKS (rotatable RS256), authorization-code + PKCE, client-credentials, refresh tokens, consent, UserInfo. **Per-tenant issuer** derived from the subdomain. |
 | **SAML 2.0 IdP** | OpenSAML 5 — metadata, `AuthnRequest` over HTTP-Redirect/POST, **signed assertions**; per-tenant relying-party registry. |
 | **SCIM 2.0 server** | Inbound provisioning of Users/Groups (`/scim/v2`, bearer auth); per-tenant tokens provision **into their own org**. |
-| **Multi-factor auth** | **Tenant-first**, identifier-first login with **password, TOTP, email OTP, and FIDO2 passkeys** (incl. per-org passwordless passkey first-factor), ordered by a per-user **authentication policy**. |
+| **Multi-factor auth** | **Tenant-first**, identifier-first login with **password, TOTP, email OTP, SMS OTP, and FIDO2 passkeys** (incl. per-org passwordless passkey first-factor), ordered by a per-user **authentication policy**. |
+| **Inbound federation** | The IdP as **relying party**: a tenant registers upstream **OIDC** or **SAML** providers, and a login there becomes a login here. Links are `(org, issuer, subject)`; unknown users can be **JIT-provisioned**; upstream claims can drive profile attributes. |
+| **Single logout** | **OIDC Back-Channel Logout** (RFC-conformant logout tokens, `sid`-keyed) and **SAML SLO**, so ending a session here ends the sessions downstream applications already hold. |
 | **Step-up / elevation** | RFC 9470 fresh re-authentication for sensitive actions; **token-based privilege elevation** to enter the admin console, bounded by the acting tenant's session policy. |
-| **RBAC + PBAC** | Roles gate URLs; fine-grained permissions gate operations (`@PreAuthorize`); instance-level (ABAC) checks scope every object to the acting tenant. |
+| **RBAC + PBAC + DENY** | Roles gate URLs; fine-grained permissions gate operations (`@PreAuthorize`); **wildcard grants** (`user:*`) and explicit **denies** that override any grant, authored per user/role/group/org; instance-level (ABAC) checks scope every object to the acting tenant. |
+| **Attribute-based targeting** | Tenant-defined **attributes** on users and groups, with policies and mapping rules targeted by attribute predicates (`EQUALS`, `EXISTS`, `IN`, `CONTAINS`, …, combined with AND). |
+| **Per-tenant messaging** | Each tenant can send mail over **its own SMTP relay or an HTTP provider**, from **its own templates** (logic-less rendering, so a template cannot execute anything), and send SMS through a configurable gateway. |
+| **Per-tenant branding** | A tenant's login / MFA / consent screens carry its own logo, accent color and product name, resolved own → platform → built-in default. |
 | **Self-service** | "My Profile": registered factors/passkeys, email-verification status, active-session list with per-device revoke. |
-| **Admin console** | Same SPA — user lifecycle, OIDC clients, SAML relying parties, groups, roles, resources, session/auth policies, network zones, audit log, SCIM tokens, key rotation — all tier-scoped to the acting tenant. |
+| **Admin console** | Same SPA — user lifecycle, OIDC clients, SAML relying parties, upstream identity providers, groups, roles, denies, resources, session/auth policies, attributes and mapping rules, network zones, branding, email/SMS settings and templates, audit log, SCIM tokens, key rotation — all tier-scoped to the acting tenant. |
 
 ---
 
 ## Architecture
 
-A single deployable, structured internally as a **Spring Modulith modular monolith**: each
-domain (`user`, `organization`, `authpolicy`, `session`, `oidc`, `saml`, `scim`, `admin`,
-`onboarding`, `resource`, …) is an enforced module exposing only a root API (interfaces + record
-DTOs); entities and repositories never cross a module boundary, and `ModularityTests` keeps the
-boundaries honest. The React SPA is a **standalone static bundle** served by an **nginx edge** that
+The backend is one deployable, structured internally as a **Spring Modulith modular monolith**:
+each domain (`user`, `organization`, `authpolicy`, `session`, `oidc`, `saml`, `scim`, `admin`,
+`onboarding`, `federation`, `mfa`, `email`, `metadata`, `mapping`, `directory`, `portal`,
+`branding`, `resource`, `tenancy`, `audit`, …) is an enforced module exposing only a root API
+(interfaces + record DTOs); entities and repositories never cross a module boundary, and
+`ModularityTests` keeps the boundaries honest. Modules that must not call each other directly
+communicate by **domain event** instead. The React SPA is a **standalone static bundle** served by an **nginx edge** that
 reverse-proxies the API/OIDC/SAML paths to the **API-only backend**, so the browser sees ONE origin
 and the SPA shares the IdP's **session cookie** (no cross-origin token juggling for the first-party
 UI). Isolated `SecurityFilterChain`s separate concerns: the OAuth2 Authorization
@@ -169,8 +178,10 @@ from the tenant's session policy.
 |---|---|---|
 | **Password** | Spring Security form/JSON login. | Hashes via a delegating encoder (bcrypt by default), upgrade-in-place ready. |
 | **TOTP** | Self-contained **RFC 6238** (HMAC-SHA1, 6 digits, 30 s step, ±1 skew). Enrollment yields an `otpauth://` URI rendered as a **scannable QR** (ZXing). | Secret stored Base32, **encrypted at rest**; **replay-protected** (last-used time-step is burned). |
-| **Email OTP** | 6-digit code mailed to the user (RFC 4648-style). | Configurable TTL + **attempt cap** (code burned after too many guesses); used for first-login email verification. |
+| **Email OTP** | 6-digit code mailed to the user (RFC 4648-style). | Configurable TTL + **attempt cap** (code burned after too many guesses); used for first-login email verification. Delivered over the tenant's own relay/provider and template when set. |
+| **SMS OTP** | 6-digit code sent to the user's enrolled phone number through a configurable gateway. | Numbers are validated and normalized (libphonenumber) at enrollment; the same TTL/attempt-cap rules as email. An undelivered code is reported as a delivery failure rather than a wrong code. |
 | **FIDO2 / Passkeys** | **Spring Security 7 WebAuthn** module — passwordless/possession factor. | Register at login (enroll-at-login) or self-service; counts as a strong/hardware factor. |
+| **Federated login** | A completed sign-in at a tenant's upstream OIDC/SAML provider. | Satisfies the **first** factor only — a policy that also requires a second factor still enforces it. |
 
 ### Onboarding (first login)
 
@@ -189,7 +200,9 @@ login. `POST /api/auth/reauth/{factor}/verify` re-checks a strong factor and sta
 OIDC ID **and** access tokens carry how the user authenticated, so relying parties and the
 admin gate can reason about strength and freshness:
 
-- **`amr`** — methods used: `pwd`, `otp`, `hwk` (passkey), `mfa`.
+- **`amr`** — methods used: `fed` (upstream federated login), `pwd`, `otp`, `hwk` (passkey), `mfa`.
+  A federated session reports `fed` and never `pwd`: the upstream verified the credential, and
+  claiming otherwise would tell a relying party this IdP checked a password it never saw.
 - **`acr`** — `mfa` (two or more factors) or `sfa`.
 - **`auth_time`** — when the login completed.
 - **`stepup_time`** — when a deliberate step-up last occurred (present only after `/reauth`).
@@ -207,7 +220,15 @@ admin gate can reason about strength and freshness:
   individual operations via method-level `@PreAuthorize`. `Permissions.PLATFORM` (the tenant
   registry) is super-admin-only and un-grantable to tenants; everything else is
   **tenant-grantable** and org-isolated, so a tenant admin manages its own org fully but nothing
-  beyond it.
+  beyond it. A grant may be a **wildcard** (`user:*`, and `*:*` for the platform super-admin).
+- **Role inheritance** — roles form a **DAG**: a role inherits the permissions of the roles below
+  it, and an admin can only assign a role their own grants dominate. Inheritance is resolved to
+  permission names, never to a role name, so a renamed or re-scoped role cannot smuggle authority.
+- **DENY** — an explicit deny overrides any grant, wildcard included, and can be authored against
+  a **user, role, group or organization**. Denies are how access is narrowed without dismantling
+  a role, and they are subject to the same tier rules: a tenant cannot author or delete a
+  platform-level veto, and a deny that would remove the last usable admin is refused (with the
+  refusal itself audited).
 - **ABAC (instance-level)** — every object referenced by a client-supplied id gets an
   ownership/scope check that composes with `and`: a tenant admin reaches only rows in its own org
   (`AdminAccessPolicy` + RLS + the org-tier guard), so there is no IDOR across tenants. Admin list
@@ -250,16 +271,27 @@ admin gate can reason about strength and freshness:
   MFA factors, OAuth2 clients/authorizations/consents, SAML relying parties, SCIM tokens,
   groups, auth/session policies, signing keys, audit) is managed by **Flyway** migrations.
 - **Sessions** — server-side HTTP session keyed by a `JSESSIONID` cookie (HttpOnly, SameSite,
-  **Secure in production**). Session state is **single-node in-memory**:
-  - a **`SessionRegistry`** tracks live sessions per user for **max-concurrent-session** control
-    (oldest evicted when the per-policy cap is exceeded, enforced on every request);
-  - a **`SessionMetadataStore`** keeps per-session device info (parsed User-Agent, IP, timestamps)
-    behind an **opaque handle** — the real session id is never exposed — powering the
-    self-service session list and per-device revoke.
+  **Secure in production**), stored in **Redis** via Spring Session
+  (`@EnableRedisIndexedHttpSession`). Every node sees every session, so the backend scales
+  horizontally with no sticky sessions:
+  - the **principal-name index** backs **max-concurrent-session** control (oldest evicted when
+    the per-policy cap is exceeded, enforced on every request);
+  - per-session device info (parsed User-Agent, IP, timestamps) is a **session attribute** rather
+    than a node-local map, exposed behind an **opaque handle** — the real session id never leaves
+    the server — powering the self-service session list and per-device revoke. Holding it
+    node-locally is what once made "revoke this device" 404 behind a load balancer.
+  - a session's Redis key expiring publishes a **`SessionExpiredEvent` with no request attached**,
+    which is what lets expiry propagate downstream (requires `notify-keyspace-events Egx`).
 - **Session id rotation** — the id is rotated on authentication and on every step-up
-  (`changeSessionId`), and the registry + metadata are re-keyed in lock-step.
-- **Audit** — authentication and authorization events (success/failure, identify, admin
-  actions, denials) are written to an audit table for observability.
+  (`changeSessionId`), and the indexes are re-keyed in lock-step.
+- **Termination propagates** — disabling, locking or revoking a user's access terminates the live
+  sessions rather than waiting for them to expire, and the termination fans out to **OIDC
+  back-channel logout** and **SAML SLO**. A **durable retry sweep** backstops deliveries that
+  fail, and it audits independently of the store that failed.
+- **Audit** — authentication and authorization events (success/failure, identify, admin actions,
+  denials, refusals) are written to an audit table, enriched with the acting actor, the client,
+  a severity and a reason. A coverage test requires every `/api/admin` write to prove it is
+  audited, so a new endpoint cannot quietly land unaudited.
 
 ---
 
@@ -286,11 +318,40 @@ admin gate can reason about strength and freshness:
 
 ## Federation protocols
 
+### Outbound — this system as the identity provider
+
 | Protocol | Endpoints | Highlights |
 |---|---|---|
 | **OIDC** | `/.well-known/openid-configuration`, `/oauth2/{authorize,token,jwks}`, `/userinfo` | auth-code + PKCE, client-credentials, refresh, consent, custom claims (profile/email/roles/`org`/`amr`/`acr`/`auth_time`/`stepup_time`/`azp`). **Per-tenant issuer** — discovery/JWKS resolve from the request subdomain. |
-| **SAML 2.0** | `/saml2/idp/{metadata,sso}` | `AuthnRequest` over Redirect/POST, MFA-gated, signed `Response`/`Assertion`, per-tenant relying-party registry. |
+| **SAML 2.0** | `/saml2/idp/{metadata,sso,slo}` | `AuthnRequest` over Redirect/POST, MFA-gated, signed `Response`/`Assertion`, per-tenant relying-party registry, **Single Logout**. |
 | **SCIM 2.0** | `/scim/v2/{ServiceProviderConfig,Users,Groups}` | bearer auth, configurable list/filter/bulk limits; a tenant token provisions **into its own org** and sees only its members. |
+
+### Inbound — this system as the relying party
+
+A tenant registers upstream providers under an **alias** and its users sign in there instead of
+(or as well as) here. Both protocols share one registry, one link model and one JIT path.
+
+| Direction | Endpoints | Highlights |
+|---|---|---|
+| **Inbound OIDC** | `/api/auth/federation/{alias}/{start,callback}` | Discovery-driven; the upstream `(issuer, sub)` is the identity, never the email. |
+| **Inbound SAML** | `/api/auth/federation/{alias}/acs`, SP metadata under `/api/admin/identity-providers/{alias}/saml/metadata` | The ACS POST arrives **without the session cookie** (`SameSite=Lax`), so the login org is an explicit input and a separate `SameSite=None` cookie binds the browser. |
+
+- **Linking** — a link is `(org, upstream issuer, upstream subject)` in a qualified namespace, so
+  a SAML `acme` and an OIDC `acme` can never collide. Links are revocable credentials: removing
+  one ends the sessions it authenticated.
+- **JIT provisioning** — an unknown user can be created on first federated login. Matching an
+  **existing** account by email requires the upstream to prove the address is verified;
+  provisioning a new one needs only a name, which is the asymmetry that keeps an unverified
+  upstream from taking over an existing account.
+- **Attribute sourcing** — upstream claims can populate profile attributes, configured per
+  provider and per protocol.
+
+### Logout
+
+**OIDC Back-Channel Logout** delivers `sid`-keyed logout tokens to participating clients, and
+**SAML SLO** covers SAML SPs. Both are driven from session termination, so an administrator
+disabling an account ends the downstream sessions too — a revoked credential that leaves live
+sessions behind has not actually revoked anything.
 
 ---
 
@@ -308,9 +369,14 @@ admin gate can reason about strength and freshness:
 | TOTP / QR | self-contained RFC 6238 + **ZXing** QR rendering |
 | Crypto | Spring Security `Encryptors` (AES-256-GCM), JCA RSA, **BouncyCastle** (self-signed X.509) |
 | Persistence | **PostgreSQL 17**, JPA/Hibernate, **Flyway** migrations |
+| Sessions / cache | **Redis** + **Spring Session** (indexed, keyspace-notified), **Caffeine** in-process cache |
+| Rate limiting / resilience | **Bucket4j** (Redis-backed token buckets), **resilience4j** |
+| Templating | **jmustache** — logic-less, so a tenant-authored email template cannot execute anything |
+| Directory / import | **UnboundID LDAP SDK**, **commons-csv**, **libphonenumber** (phone normalization) |
+| Observability | **Micrometer** + **Prometheus** registry, **OpenTelemetry** tracing bridge |
 | Build | **Gradle** (toolchain-pinned), version catalog |
-| Frontend | **React + Vite + TypeScript**, shadcn/ui |
-| Dev infra | Docker Compose (PostgreSQL + MailHog), Testcontainers |
+| Frontend | **React + Vite + TypeScript**, shadcn/ui, **vitest** |
+| Dev infra | Docker Compose (PostgreSQL + Redis + MailHog), Testcontainers |
 
 ---
 
@@ -325,9 +391,12 @@ mini-sso-system/
 ├── sso-frontend/       React admin + login SPA (Vite). Builds a standalone dist/ bundle;
 │   ├── src/            Dockerfile = the nginx EDGE (serves dist/ + reverse-proxies the API).
 │   └── nginx/          edge config (SPA fallback + backend proxy; mirrors the vite dev proxy)
-├── docker-compose.yml       dev infra: PostgreSQL + Redis + MailHog
-├── docker-compose.prod.yml  full split stack (edge + API backend + datastores) for local prod-topology
-├── scripts/            Python end-to-end flow checks (OIDC/SAML/admin)
+├── docker-compose.yml           dev infra: PostgreSQL + Redis + MailHog
+├── docker-compose.testinfra.yml ONE PostgreSQL + Redis for the whole test suite (non-dev ports)
+├── docker-compose.prod.yml      full split stack (edge + API backend + datastores) for local prod-topology
+├── .github/workflows/  CI: an orchestrator fanning out to one reusable workflow per role
+├── docs/               project docs (commit convention, design notes)
+├── scripts/            Python end-to-end flow checks (OIDC/SAML/SCIM/admin/logout)
 └── test-client/        sample OIDC RP for manual testing
 ```
 
@@ -386,6 +455,8 @@ All operational knobs live under `sso.*` (see `application.yml`; prod overrides 
 | Onboarding | `sso.onboarding.{verification-ttl,resend-cooldown,min-password-length,set-password-url,activate-url,workspace-url-template}` |
 | Crypto | `sso.crypto.{master-password,salt,rsa-key-size}` |
 | Email OTP | `sso.email-otp.{ttl-minutes,max-attempts}` |
+| SMS | `sso.sms.*` — outbound gateways; per-tenant credentials live in `sms_settings`, not here |
+| Deployment plane | `sso.plane` (`all` in dev; the API-only backend behind the edge in the split topology) |
 | Admin console / elevation | `sso.admin-console.{redirect-uris,access-token-ttl-minutes,refresh-token-ttl-minutes,elevation-freshness-minutes}` |
 | Demo client | `sso.demo-client.{enabled,access-token-ttl-minutes,refresh-token-ttl-days}` (disabled in prod) |
 | SAML | `sso.saml.{entity-id,keystore-*,certificate-dn,key-size,certificate-validity-days,assertion-validity-seconds}` |
@@ -400,24 +471,44 @@ All operational knobs live under `sso.*` (see `application.yml`; prod overrides 
 
 | Area | Endpoint |
 |---|---|
-| Auth (SPA, session) | `/api/auth/{session,organization,identify,login,logout,factors/*,reauth/*,profile,sessions}` |
+| Auth (SPA, session) | `/api/auth/{session,organization,identify,login,logout,factors/*,reauth/*,profile,sessions,branding}` |
+| Inbound federation | `/api/auth/federation/{alias}/{start,callback,acs}` |
+| Consent (SPA) | `/consent` renders it; `/api/oauth2/consent` serves the model, and approval posts back to `/oauth2/authorize` |
 | Onboarding (public) | `/api/onboarding/{apply,activate,set-password}` (self-service signup → email verification → activation; invitation redemption) |
+| User portal | `/api/portal/*` (assigned applications, self-service) |
 | OIDC | `/.well-known/openid-configuration`, `/oauth2/{authorize,token,jwks}`, `/userinfo` (per-tenant issuer by host) |
-| SAML | `/saml2/idp/{metadata,sso}` |
+| SAML | `/saml2/idp/{metadata,sso,slo}` |
 | SCIM | `/scim/v2/{ServiceProviderConfig,Users,Groups}` (Bearer) |
-| Admin (role + permission + elevation, tier-scoped) | `/api/admin/{organizations,users,roles,groups,resources,applications,clients,relying-parties,auth-policies,session-policy,network-zones,portal-settings,audit,scim-tokens,metrics,keys}` — a super-admin adds `X-Org-Context` to drill into a tenant |
+| Admin (role + permission + elevation, tier-scoped) | `/api/admin/{organizations,users,groups,denies,applications,clients,saml/relying-parties,identity-providers,session-policies,network-zones,portal-settings,audit,scim/tokens,metrics,branding,email-templates,smtp-settings,sms-settings,attribute-definitions,profiles,mapping-rules,metadata}` — a super-admin adds `X-Org-Context` to drill into a tenant |
 
 ---
 
 ## Verifying the flows
 
 ```bash
-cd sso-backend && ./gradlew test        # Testcontainers integration tests (incl. ModularityTests + RLS)
-python3 scripts/oidc_authcode_flow.py   # OIDC: MFA session -> PKCE -> ID token
-python3 scripts/saml_sso_flow.py        # SAML: MFA-gated SSO -> signed assertion
-python3 scripts/admin_api_flow.py       # Admin API: RBAC/PBAC + user lifecycle (session)
-python3 scripts/tenant_login_flow.py    # Multi-tenancy: per-tenant login + isolation on a subdomain
-python3 scripts/scim_provision_flow.py  # SCIM: provision a user into an org, then log in as them
+docker compose -f docker-compose.testinfra.yml up -d   # optional but preferred — see below
+cd sso-backend && ./gradlew test        # integration tests (incl. ModularityTests + RLS)
+cd sso-frontend && npm test             # vitest (jsdom) — and npm run build for the type check
+```
+
+The suite forks across JVMs and a Testcontainers singleton is per-JVM, so without the shared
+test infra every fork starts its own PostgreSQL, Redis and reaper. Each fork still gets its own
+database inside that shared server, so isolation is unchanged. Falling back to Testcontainers is
+what CI does.
+
+Protocol flows are exercised against a running server, because MockMvc cannot carry a real
+OIDC/SAML round trip:
+
+```bash
+python3 scripts/oidc_authcode_flow.py      # OIDC: MFA session -> PKCE -> ID token
+python3 scripts/saml_sso_flow.py           # SAML: MFA-gated SSO -> signed assertion
+python3 scripts/saml_slo_flow.py           # SAML: Single Logout
+python3 scripts/saml_inbound_flow.py       # Inbound SAML: upstream login -> local session
+python3 scripts/backchannel_logout_flow.py # OIDC: termination -> logout token delivery
+python3 scripts/admin_api_flow.py          # Admin API: RBAC/PBAC + user lifecycle (session)
+python3 scripts/tenant_login_flow.py       # Multi-tenancy: per-tenant login + isolation on a subdomain
+python3 scripts/scim_provision_flow.py     # SCIM: provision a user into an org, then log in as them
+python3 scripts/network_zone_flow.py       # Network zones: IP-conditioned policy
 ```
 
 ---
@@ -463,11 +554,20 @@ decrypt per context — the private key lives outside git in all three:
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every push/PR — independent checks in parallel, and the container images
-built **only after** their code passes (a container is never produced from unverified code): `backend-test`
-(Gradle + Testcontainers — the Docker daemon the tests need is why they run in CI, not in the image build),
-`frontend-build` (tsc + vite), `config-validate` (compose + `nginx -t`), `secrets` (SOPS), `hygiene`
-(no inline FQNs), then `backend-image` / `frontend-image` (build only, no registry push — this is CI, not CD).
+`.github/workflows/ci.yml` runs on every push/PR as an **orchestrator**: it fans out to one reusable
+workflow per role, each in its own file, with `contents: read` as the ceiling (a reusable workflow cannot
+exceed its caller's grants) and one in-flight run per ref.
+
+| Workflow | Checks |
+|---|---|
+| `backend.yml` | Gradle + Testcontainers, then the API image — built only after the tests pass |
+| `frontend.yml` | vitest, `tsc` + vite build, then the nginx edge image |
+| `config.yml` | compose files + `nginx -t` |
+| `security.yml` | SOPS verification (no plaintext secret committed, the example holds only placeholders, the `.sops.yaml` rules round-trip), **Trivy** secret scan, and `npm audit --audit-level=high` |
+| `hygiene.yml` | the mechanical house rules, chiefly no inline fully-qualified Java names |
+
+Images are **built, never pushed** — this is CI, not CD, and a container is never produced from code that
+has not passed its own tests.
 
 **Tenant isolation requires a non-superuser DB role.** PostgreSQL Row-Level Security — the hard
 boundary between tenants — is *bypassed by a superuser*, so the application must connect as a

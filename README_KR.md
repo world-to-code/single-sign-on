@@ -1,12 +1,14 @@
-# Mini SSO System — 멀티테넌트 Identity Provider
+# Svalinn — 멀티테넌트 Identity Provider
 
 *🌏 [English README](README.md)*
 
 직접 구현한 멀티테넌트 SSO Identity Provider(IdP)입니다. 조직(organization) 하나가 곧 하나의 테넌트이고,
 테넌트마다 자기 서브도메인, 사용자, 정책, 앱, 서명 키를 따로 갖습니다. 다른 애플리케이션은 OIDC,
-SAML 2.0, SCIM 2.0으로 인증을 위임하고, 사람이 로그인할 때는 정책 기반 MFA로 보호합니다. Spring Boot 4
-와 Spring Security 7 위에 Spring Modulith 모듈러 모놀리스로 만들었고, React 관리자·로그인 콘솔을 같은
-오리진에서 서빙하는 단일 배포물입니다. 테넌트 사이의 경계는 PostgreSQL Row-Level Security(RLS)로 막습니다.
+SAML 2.0, SCIM 2.0으로 인증을 위임하고, 사람이 로그인할 때는 정책 기반 MFA로 보호합니다. 반대 방향도
+됩니다 — 테넌트는 자기 로그인을 상위 OIDC·SAML 제공자로 연합할 수 있습니다. Spring Boot 4와 Spring
+Security 7 위에 Spring Modulith 모듈러 모놀리스로 만들었고, React 관리자·로그인 SPA는 nginx 엣지가
+API 전용 백엔드 앞에서 서빙합니다(브라우저에는 하나의 오리진으로 보입니다). 테넌트 사이의 경계는
+PostgreSQL Row-Level Security(RLS)로 막습니다.
 
 한 줄로 요약하면, 각 회사는 `자기slug.example.com`에서 자기만의 격리된 IdP(사용자·MFA·정책·앱·감사 로그)를
 갖고, 얇은 플랫폼 계층은 테넌트 레지스트리만 관리하며, RLS와 호스트 기반 issuer가 테넌트별 데이터와 토큰을
@@ -46,11 +48,16 @@ SAML 2.0, SCIM 2.0으로 인증을 위임하고, 사람이 로그인할 때는 �
 | OIDC Provider | OAuth 2.1 + OpenID Connect 1.0. discovery, JWKS(회전 가능한 RS256), authorization-code + PKCE, client-credentials, refresh, consent, UserInfo를 지원한다. issuer는 서브도메인에서 유도되어 테넌트마다 다르다. |
 | SAML 2.0 IdP | OpenSAML 5 기반. metadata, `AuthnRequest`(HTTP-Redirect/POST), 서명된 assertion, 테넌트별 relying-party 레지스트리. |
 | SCIM 2.0 서버 | Users/Groups 인바운드 provisioning(`/scim/v2`, bearer 인증). 테넌트 토큰은 자기 org에만 provision 한다. |
-| MFA | 테넌트를 먼저 정하고 이메일로 사용자를 식별한 뒤, password·TOTP·email OTP·FIDO2 passkey를 사용자별 인증 정책 순서대로 요구한다. org 설정에 따라 passkey를 첫 factor로 쓰는 passwordless 로그인도 가능하다. |
+| MFA | 테넌트를 먼저 정하고 이메일로 사용자를 식별한 뒤, password·TOTP·email OTP·SMS OTP·FIDO2 passkey를 사용자별 인증 정책 순서대로 요구한다. org 설정에 따라 passkey를 첫 factor로 쓰는 passwordless 로그인도 가능하다. |
+| 인바운드 연합 | 이 IdP가 relying party가 된다. 테넌트가 상위 OIDC·SAML 제공자를 등록하면 거기서의 로그인이 여기서의 로그인이 된다. 링크는 `(org, issuer, subject)`이고, 모르는 사용자는 JIT로 만들 수 있으며, 상위 클레임으로 프로필 속성을 채울 수 있다. |
+| 싱글 로그아웃 | OIDC Back-Channel Logout(`sid` 기준 로그아웃 토큰)과 SAML SLO를 지원한다. 여기서 세션을 끊으면 하위 애플리케이션이 이미 들고 있는 세션도 함께 끝난다. |
 | Step-up / 승격 | 민감한 작업에는 RFC 9470 방식의 신선한 재인증을 요구한다. 관리자 콘솔 진입은 토큰 기반 권한 승격이며, 그 범위는 현재 테넌트의 세션 정책이 정한다. |
-| RBAC + PBAC | 역할이 URL을, 세분화된 권한이 개별 작업(`@PreAuthorize`)을 통제하고, 인스턴스 단위(ABAC) 검사가 모든 객체를 현재 테넌트 범위로 좁힌다. |
+| RBAC + PBAC + DENY | 역할이 URL을, 세분화된 권한이 개별 작업(`@PreAuthorize`)을 통제한다. 와일드카드 부여(`user:*`)와, 어떤 부여보다 우선하는 명시적 거부(deny)를 사용자·역할·그룹·조직 단위로 쓸 수 있고, 인스턴스 단위(ABAC) 검사가 모든 객체를 현재 테넌트 범위로 좁힌다. |
+| 속성 기반 타게팅 | 테넌트가 정의한 속성을 사용자·그룹에 붙이고, 정책과 매핑 규칙을 속성 조건(`EQUALS`, `EXISTS`, `IN`, `CONTAINS` 등, AND 결합)으로 겨냥한다. |
+| 테넌트별 발송 | 테넌트마다 자기 SMTP 릴레이나 HTTP 제공자로, 자기 템플릿(로직 없는 렌더링이라 템플릿이 무언가를 실행할 수 없다)으로 메일을 보낸다. SMS도 게이트웨이를 골라 보낼 수 있다. |
+| 테넌트별 브랜딩 | 테넌트의 로그인·MFA·consent 화면이 자기 로고·강조색·제품명을 쓴다. 자기 설정 → 플랫폼 → 내장 기본값 순으로 해석한다. |
 | 셀프서비스 | "My Profile"에서 등록한 factor·passkey, 이메일 검증 상태, 기기별로 끊을 수 있는 활성 세션 목록을 관리한다. |
-| 관리자 콘솔 | 같은 SPA에서 사용자 생애주기, OIDC 클라이언트, SAML relying party, 그룹·역할·리소스, 세션/인증 정책, 네트워크 존, 감사 로그, SCIM 토큰, 키 회전을 다룬다. 모든 화면이 현재 테넌트 범위로 스코프된다. |
+| 관리자 콘솔 | 같은 SPA에서 사용자 생애주기, OIDC 클라이언트, SAML relying party, 상위 identity provider, 그룹·역할·deny·리소스, 세션/인증 정책, 속성과 매핑 규칙, 네트워크 존, 브랜딩, 이메일·SMS 설정과 템플릿, 감사 로그, SCIM 토큰, 키 회전을 다룬다. 모든 화면이 현재 테넌트 범위로 스코프된다. |
 
 ---
 
@@ -110,10 +117,11 @@ Default 정책은 잠긴 fallback이다. 배정·우선순위·활성 상태가 
 
 ## 아키텍처
 
-단일 배포물이지만 내부는 Spring Modulith 모듈러 모놀리스로 짜여 있다. `user`, `organization`,
-`authpolicy`, `session`, `oidc`, `saml`, `scim`, `admin`, `onboarding`, `resource` 같은 각 도메인이
+백엔드는 배포물 하나지만 내부는 Spring Modulith 모듈러 모놀리스로 짜여 있다. `user`, `organization`,
+`authpolicy`, `session`, `oidc`, `saml`, `scim`, `admin`, `onboarding`, `federation`, `mfa`, `email`,
+`metadata`, `mapping`, `directory`, `portal`, `branding`, `resource`, `tenancy`, `audit` 같은 각 도메인이
 루트 API(인터페이스와 record DTO)만 노출하는 모듈이고, 엔티티나 리포지토리는 모듈 경계를 넘지 못한다.
-`ModularityTests`가 이 경계를 계속 검증한다. React SPA는 **독립 정적 번들**로, **nginx 에지**가 이를 서빙하면서
+`ModularityTests`가 이 경계를 계속 검증한다. 서로 직접 부르면 안 되는 모듈은 도메인 이벤트로 통신한다. React SPA는 **독립 정적 번들**로, **nginx 에지**가 이를 서빙하면서
 API/OIDC/SAML 경로를 **API 전용 백엔드**로 리버스 프록시한다. 그래서 브라우저는 하나의 오리진만 보고, SPA는
 IdP 세션 쿠키를 그대로 공유한다(1st-party UI라 교차 오리진 토큰을 주고받을 필요가 없다).
 `SecurityFilterChain`을 관심사별로 나눴다. OAuth2 Authorization Server(프로토콜 엔드포인트, 테넌트 호스트
@@ -161,8 +169,10 @@ IdP 세션 쿠키를 그대로 공유한다(1st-party UI라 교차 오리진 토
 |---|---|---|
 | Password | Spring Security form/JSON 로그인. | delegating encoder로 해시한다(기본 bcrypt). 알고리즘을 마이그레이션 없이 올릴 수 있다. |
 | TOTP | 직접 구현한 RFC 6238(HMAC-SHA1, 6자리, 30초 스텝, ±1 skew). 등록하면 `otpauth://` URI를 스캔용 QR(ZXing)로 그린다. | 시크릿은 Base32로 저장하되 암호화한다. 마지막에 쓴 타임스텝을 소각해 재생 공격을 막는다. |
-| Email OTP | 사용자에게 6자리 코드를 메일로 보낸다. | TTL과 시도 횟수 상한을 둔다(너무 틀리면 코드 소각). 최초 로그인 이메일 검증에도 쓴다. |
+| Email OTP | 사용자에게 6자리 코드를 메일로 보낸다. | TTL과 시도 횟수 상한을 둔다(너무 틀리면 코드 소각). 최초 로그인 이메일 검증에도 쓴다. 테넌트가 자기 릴레이·템플릿을 설정했다면 그것으로 나간다. |
+| SMS OTP | 등록한 전화번호로 6자리 코드를 게이트웨이를 통해 보낸다. | 번호는 등록 시점에 검증·정규화한다(libphonenumber). TTL과 시도 상한은 이메일과 같다. 발송이 실패하면 "코드가 틀렸다"가 아니라 발송 실패로 알린다. |
 | FIDO2 / Passkey | Spring Security 7 WebAuthn 모듈을 쓴 passwordless·소유 factor. | 로그인 중에(enroll-at-login) 또는 셀프서비스로 등록한다. 강한·하드웨어 factor로 친다. |
+| 연합 로그인 | 테넌트가 등록한 상위 OIDC·SAML 제공자에서 로그인을 마친 것. | 첫 번째 factor만 충족한다. 정책이 두 번째 factor를 요구하면 그것은 그대로 요구한다. |
 
 ### 온보딩 (최초 로그인)
 
@@ -180,7 +190,9 @@ IdP 세션 쿠키를 그대로 공유한다(1st-party UI라 교차 오리진 토
 OIDC ID 토큰과 access 토큰에는 사용자가 어떻게 인증했는지가 실려 있어서, relying party와 관리자 게이트가
 인증 강도와 신선도를 판단할 수 있다.
 
-- `amr`: 사용한 방법(`pwd`, `otp`, `hwk`(passkey), `mfa`).
+- `amr`: 사용한 방법(`fed`(상위 제공자 연합 로그인), `pwd`, `otp`, `hwk`(passkey), `mfa`). 연합 세션은
+  `fed`를 싣고 `pwd`는 절대 싣지 않는다. 자격증명을 검증한 것은 상위 제공자이고, `pwd`를 실으면 이 IdP가
+  본 적도 없는 비밀번호를 확인했다고 relying party에 말하는 셈이기 때문이다.
 - `acr`: `mfa`(factor 2개 이상) 또는 `sfa`.
 - `auth_time`: 로그인 완료 시각.
 - `stepup_time`: 마지막으로 의도적 step-up 한 시각(`/reauth` 뒤에만 있다).
@@ -198,7 +210,13 @@ details 객체와 달리 이렇게 하면 직렬화가 깨지지 않는다.
 - PBAC. 세분화된 권한(`user:update`, `key:rotate`, `audit:read` 등)이 메서드 단위 `@PreAuthorize`로 개별
   작업을 통제한다. `Permissions.PLATFORM`(테넌트 레지스트리)은 super-admin 전용이라 테넌트에 줄 수 없고,
   나머지는 모두 tenant-grantable이며 org로 격리돼 있다. 그래서 테넌트 관리자는 자기 org는 온전히
-  관리하지만 그 밖으로는 손대지 못한다.
+  관리하지만 그 밖으로는 손대지 못한다. 부여는 와일드카드(`user:*`, 플랫폼 super-admin은 `*:*`)일 수 있다.
+- 역할 상속. 역할은 DAG를 이룬다. 상위 역할은 아래 역할의 권한을 물려받고, 관리자는 자기 권한이 덮는
+  역할만 부여할 수 있다. 상속은 역할 이름이 아니라 권한 이름으로 해석되므로, 역할의 이름이나 범위가
+  바뀌어도 권한이 몰래 따라오지 않는다.
+- DENY. 명시적 거부는 와일드카드를 포함한 어떤 부여보다 우선하며 사용자·역할·그룹·조직에 걸 수 있다.
+  역할을 해체하지 않고 접근을 좁히는 수단이다. tier 규칙은 동일하게 적용돼서 테넌트는 플랫폼 거부를
+  만들거나 지울 수 없고, 마지막 관리자를 못 쓰게 만드는 거부는 거절된다(거절 자체도 감사에 남는다).
 - ABAC(인스턴스 단위). 클라이언트가 넘긴 id로 참조하는 객체마다 소유·범위 검사가 `and`로 붙는다. 테넌트
   관리자는 자기 org의 행에만 닿으므로(`AdminAccessPolicy` + RLS + org-tier 가드) 테넌트를 넘는 IDOR이
   생기지 않는다. 관리자 목록 화면은 tier로 좁혀서, drill-in 안 한 super-admin은 전역 행만, 테넌트 관리자는
@@ -240,14 +258,23 @@ details 객체와 달리 이렇게 하면 직렬화가 깨지지 않는다.
   relying party·SCIM 토큰·그룹·인증/세션 정책·서명 키·감사까지 전체 스키마를 Flyway 마이그레이션으로
   관리한다.
 - 세션은 `JSESSIONID` 쿠키(HttpOnly, SameSite, 프로덕션에서는 Secure)로 키잉하는 서버측 HTTP 세션이고,
-  상태는 **Redis**에 있어 백엔드가 에지 뒤에서 수평 확장된다(sticky 세션 불필요).
-  - `SessionRegistry`가 사용자별 활성 세션을 추적해 최대 동시 세션을 통제한다(정책 상한을 넘으면 가장
-    오래된 세션을 끊고, 매 요청마다 확인한다).
-  - `SessionMetadataStore`가 세션별 기기 정보(파싱한 User-Agent, IP, 타임스탬프)를 불투명 핸들 뒤에
-    보관한다. 실제 세션 id는 노출하지 않으며, 이 정보로 셀프서비스 세션 목록과 기기별 끊기를 제공한다.
-- 세션 id는 인증할 때와 step-up 할 때마다 회전하고(`changeSessionId`), 레지스트리와 메타데이터도 같이
-  다시 키잉한다.
-- 인증·인가 이벤트(성공/실패, 식별, 관리자 작업, 거부)는 감사 테이블에 기록한다.
+  상태는 Spring Session(`@EnableRedisIndexedHttpSession`)으로 **Redis**에 있다. 모든 노드가 모든 세션을
+  보므로 백엔드가 에지 뒤에서 수평 확장된다(sticky 세션 불필요).
+  - principal-name 인덱스가 최대 동시 세션을 통제한다(정책 상한을 넘으면 가장 오래된 세션을 끊고, 매
+    요청마다 확인한다).
+  - 세션별 기기 정보(파싱한 User-Agent, IP, 타임스탬프)는 노드 로컬 맵이 아니라 **세션 속성**으로
+    보관하고, 불투명 핸들 뒤에 두어 실제 세션 id는 서버 밖으로 나가지 않는다. 이 정보로 셀프서비스 세션
+    목록과 기기별 끊기를 제공한다. 예전에 이것을 노드 로컬에 두었을 때, 로드밸런서 뒤에서 "이 기기 끊기"가
+    404가 났다.
+  - 세션의 Redis 키가 만료되면 **요청 없이** `SessionExpiredEvent`가 발행된다. 만료를 하위로 전파할 수
+    있는 것이 이 덕분이다(`notify-keyspace-events Egx` 필요).
+- 세션 id는 인증할 때와 step-up 할 때마다 회전하고(`changeSessionId`), 인덱스도 같이 다시 키잉한다.
+- 종료는 전파된다. 사용자를 비활성화·잠금하거나 권한을 회수하면 만료를 기다리지 않고 살아 있는 세션을
+  끊고, 그 종료가 **OIDC back-channel logout**과 **SAML SLO**로 퍼진다. 전달에 실패한 건은 내구성 있는
+  재시도 스윕이 받아내며, 실패한 저장소와 무관하게 감사를 남긴다.
+- 인증·인가 이벤트(성공/실패, 식별, 관리자 작업, 거부, 거절)는 감사 테이블에 기록하고, 행위자·클라이언트·
+  심각도·사유를 함께 남긴다. 커버리지 테스트가 `/api/admin`의 모든 쓰기에 대해 감사됨을 증명하게 하므로,
+  새 엔드포인트가 감사 없이 조용히 들어올 수 없다.
 
 ---
 
@@ -272,11 +299,36 @@ details 객체와 달리 이렇게 하면 직렬화가 깨지지 않는다.
 
 ## 연합 프로토콜
 
+### 아웃바운드 — 이 시스템이 identity provider일 때
+
 | 프로토콜 | 엔드포인트 | 특징 |
 |---|---|---|
 | OIDC | `/.well-known/openid-configuration`, `/oauth2/{authorize,token,jwks}`, `/userinfo` | auth-code + PKCE, client-credentials, refresh, consent, 커스텀 클레임(profile/email/roles/`org`/`amr`/`acr`/`auth_time`/`stepup_time`/`azp`). issuer가 테넌트별이라 discovery/JWKS도 요청 서브도메인에서 해석된다. |
-| SAML 2.0 | `/saml2/idp/{metadata,sso}` | `AuthnRequest`(Redirect/POST), MFA 게이트, 서명된 `Response`/`Assertion`, 테넌트별 relying-party 레지스트리. |
+| SAML 2.0 | `/saml2/idp/{metadata,sso,slo}` | `AuthnRequest`(Redirect/POST), MFA 게이트, 서명된 `Response`/`Assertion`, 테넌트별 relying-party 레지스트리, Single Logout. |
 | SCIM 2.0 | `/scim/v2/{ServiceProviderConfig,Users,Groups}` | bearer 인증, list/filter/bulk 한도 설정. 테넌트 토큰은 자기 org로만 provision 하고 자기 멤버만 본다. |
+
+### 인바운드 — 이 시스템이 relying party일 때
+
+테넌트가 상위 제공자를 alias로 등록하면, 사용자는 여기 대신(또는 여기와 함께) 거기서 로그인한다. 두
+프로토콜이 하나의 레지스트리, 하나의 링크 모델, 하나의 JIT 경로를 공유한다.
+
+| 방향 | 엔드포인트 | 특징 |
+|---|---|---|
+| 인바운드 OIDC | `/api/auth/federation/{alias}/{start,callback}` | discovery 기반. 신원은 상위의 `(issuer, sub)`이지 이메일이 아니다. |
+| 인바운드 SAML | `/api/auth/federation/{alias}/acs`, SP 메타데이터는 `/api/admin/identity-providers/{alias}/saml/metadata` | ACS POST는 세션 쿠키 없이 도착한다(`SameSite=Lax`). 그래서 로그인 org를 명시적 입력으로 받고, 별도의 `SameSite=None` 쿠키가 브라우저를 묶는다. |
+
+- 링크. 링크는 `(org, 상위 issuer, 상위 subject)`이고 네임스페이스가 한정돼 있어서 SAML `acme`와 OIDC
+  `acme`가 절대 충돌하지 않는다. 링크는 회수 가능한 자격증명이라, 지우면 그것으로 인증된 세션도 끝난다.
+- JIT provisioning. 처음 연합 로그인 하는 모르는 사용자를 만들 수 있다. **기존** 계정을 이메일로 매칭하려면
+  상위가 그 주소를 검증했음을 증명해야 하지만, 새로 만들 때는 이름만 있으면 된다. 이 비대칭이 검증되지 않은
+  상위가 기존 계정을 탈취하는 것을 막는다.
+- 속성 소싱. 상위 클레임으로 프로필 속성을 채울 수 있고, 제공자별·프로토콜별로 설정한다.
+
+### 로그아웃
+
+**OIDC Back-Channel Logout**이 `sid` 기준 로그아웃 토큰을 참여 클라이언트에 전달하고, **SAML SLO**가 SAML
+SP를 담당한다. 둘 다 세션 종료에서 출발하므로, 관리자가 계정을 비활성화하면 하위 세션도 함께 끝난다. 살아
+있는 세션을 남겨두는 자격증명 회수는 사실 아무것도 회수하지 않은 것이다.
 
 ---
 
@@ -294,9 +346,14 @@ details 객체와 달리 이렇게 하면 직렬화가 깨지지 않는다.
 | TOTP / QR | 직접 구현한 RFC 6238 + ZXing QR 렌더 |
 | 암호화 | Spring Security `Encryptors`(AES-256-GCM), JCA RSA, BouncyCastle(self-signed X.509) |
 | 영속성 | PostgreSQL 17, JPA/Hibernate, Flyway 마이그레이션 |
+| 세션 / 캐시 | Redis + Spring Session(인덱스, keyspace 알림), Caffeine 인프로세스 캐시 |
+| Rate limit / 복원력 | Bucket4j(Redis 기반 token bucket), resilience4j |
+| 템플릿 | jmustache. 로직이 없어서 테넌트가 작성한 이메일 템플릿이 무언가를 실행할 수 없다 |
+| 디렉터리 / 임포트 | UnboundID LDAP SDK, commons-csv, libphonenumber(전화번호 정규화) |
+| 관측 | Micrometer + Prometheus 레지스트리, OpenTelemetry 트레이싱 브리지 |
 | 빌드 | Gradle(toolchain 고정), 버전 카탈로그 |
-| 프론트엔드 | React + Vite + TypeScript, shadcn/ui |
-| Dev 인프라 | Docker Compose(PostgreSQL + MailHog), Testcontainers |
+| 프론트엔드 | React + Vite + TypeScript, shadcn/ui, vitest |
+| Dev 인프라 | Docker Compose(PostgreSQL + Redis + MailHog), Testcontainers |
 
 ---
 
@@ -311,9 +368,12 @@ mini-sso-system/
 ├── sso-frontend/       React 관리자 + 로그인 SPA(Vite). 독립 dist/ 번들로 빌드하고,
 │   ├── src/            Dockerfile = nginx 에지(dist/ 서빙 + API 리버스 프록시).
 │   └── nginx/          에지 설정(SPA fallback + 백엔드 프록시; vite dev 프록시와 동일)
-├── docker-compose.yml       dev 인프라: PostgreSQL + Redis + MailHog
-├── docker-compose.prod.yml  전체 분리 스택(에지 + API 백엔드 + 데이터스토어) 로컬 prod-토폴로지
-├── scripts/            Python end-to-end 흐름 검증(OIDC/SAML/SCIM/admin/tenant)
+├── docker-compose.yml           dev 인프라: PostgreSQL + Redis + MailHog
+├── docker-compose.testinfra.yml 테스트 스위트 전체가 공유하는 PostgreSQL + Redis(dev와 다른 포트)
+├── docker-compose.prod.yml      전체 분리 스택(에지 + API 백엔드 + 데이터스토어) 로컬 prod-토폴로지
+├── .github/workflows/  CI. 오케스트레이터가 역할별 재사용 워크플로로 팬아웃한다
+├── docs/               프로젝트 문서(커밋 컨벤션, 설계 노트)
+├── scripts/            Python end-to-end 흐름 검증(OIDC/SAML/SCIM/admin/logout)
 └── test-client/        수동 테스트용 샘플 OIDC RP
 ```
 
@@ -370,7 +430,9 @@ env로). 주요 항목은 다음과 같다.
 | 온보딩 | `sso.onboarding.{verification-ttl,resend-cooldown,min-password-length,set-password-url,activate-url,workspace-url-template}` |
 | Crypto | `sso.crypto.{master-password,salt,rsa-key-size}` |
 | Email OTP | `sso.email-otp.{ttl-minutes,max-attempts}` |
-| 관리자 콘솔 / 승격 | `sso.admin-console.{redirect-uris,access-token-ttl-minutes,refresh-token-ttl-minutes}` |
+| SMS | `sso.sms.*`. 아웃바운드 게이트웨이. 테넌트별 자격증명은 여기가 아니라 `sms_settings`에 있다 |
+| 배포 plane | `sso.plane`(dev는 `all`. 분리 토폴로지에서는 에지 뒤의 API 전용 백엔드) |
+| 관리자 콘솔 / 승격 | `sso.admin-console.{redirect-uris,access-token-ttl-minutes,refresh-token-ttl-minutes,elevation-freshness-minutes}` |
 | 데모 클라이언트 | `sso.demo-client.{enabled,access-token-ttl-minutes,refresh-token-ttl-days}`(prod 비활성) |
 | SAML | `sso.saml.{entity-id,keystore-*,certificate-dn,key-size,certificate-validity-days,assertion-validity-seconds}` |
 | SCIM | `sso.scim.{max-results,max-filter-depth,max-bulk-operations}` |
@@ -384,24 +446,42 @@ env로). 주요 항목은 다음과 같다.
 
 | 영역 | 엔드포인트 |
 |---|---|
-| Auth(SPA, 세션) | `/api/auth/{session,organization,identify,login,logout,factors/*,reauth/*,profile,sessions}` |
+| Auth(SPA, 세션) | `/api/auth/{session,organization,identify,login,logout,factors/*,reauth/*,profile,sessions,branding}` |
+| 인바운드 연합 | `/api/auth/federation/{alias}/{start,callback,acs}` |
+| Consent(SPA) | 화면은 `/consent`, 모델은 `/api/oauth2/consent`, 승인은 `/oauth2/authorize`로 되돌려 POST |
 | 온보딩(공개) | `/api/onboarding/{apply,activate,set-password}`(셀프서비스 가입 → 이메일 검증 → 활성화, 초대 redeem) |
+| 사용자 포털 | `/api/portal/*`(배정된 애플리케이션, 셀프서비스) |
 | OIDC | `/.well-known/openid-configuration`, `/oauth2/{authorize,token,jwks}`, `/userinfo`(호스트별 테넌트 issuer) |
-| SAML | `/saml2/idp/{metadata,sso}` |
+| SAML | `/saml2/idp/{metadata,sso,slo}` |
 | SCIM | `/scim/v2/{ServiceProviderConfig,Users,Groups}`(Bearer) |
-| Admin(역할 + 권한 + 승격, tier 스코프) | `/api/admin/{organizations,users,roles,groups,resources,applications,clients,relying-parties,auth-policies,session-policy,network-zones,portal-settings,audit,scim-tokens,metrics,keys}`. super-admin은 `X-Org-Context`를 붙여 테넌트로 drill-in |
+| Admin(역할 + 권한 + 승격, tier 스코프) | `/api/admin/{organizations,users,groups,denies,applications,clients,saml/relying-parties,identity-providers,session-policies,network-zones,portal-settings,audit,scim/tokens,metrics,branding,email-templates,smtp-settings,sms-settings,attribute-definitions,profiles,mapping-rules,metadata}`. super-admin은 `X-Org-Context`를 붙여 테넌트로 drill-in |
 
 ---
 
 ## 흐름 검증
 
 ```bash
-cd sso-backend && ./gradlew test        # Testcontainers 통합 테스트(ModularityTests + RLS 포함)
-python3 scripts/oidc_authcode_flow.py   # OIDC: MFA 세션 -> PKCE -> ID 토큰
-python3 scripts/saml_sso_flow.py        # SAML: MFA 게이트 SSO -> 서명 assertion
-python3 scripts/admin_api_flow.py       # Admin API: RBAC/PBAC + 사용자 생애주기(세션)
-python3 scripts/tenant_login_flow.py    # 멀티테넌시: 서브도메인에서 테넌트별 로그인 + 격리
-python3 scripts/scim_provision_flow.py  # SCIM: org에 사용자 provision 후 그 사용자로 로그인
+docker compose -f docker-compose.testinfra.yml up -d   # 선택이지만 권장 — 아래 참고
+cd sso-backend && ./gradlew test        # 통합 테스트(ModularityTests + RLS 포함)
+cd sso-frontend && npm test             # vitest(jsdom). 타입 체크는 npm run build
+```
+
+테스트는 여러 JVM으로 fork 되고 Testcontainers 싱글턴은 JVM마다 하나라, 공유 테스트 인프라가 없으면 fork
+마다 PostgreSQL·Redis·reaper를 따로 띄운다. 공유해도 fork마다 그 서버 안에서 자기 데이터베이스를 받으므로
+격리는 그대로다. 인프라가 없으면 Testcontainers로 떨어지는데, CI가 그렇게 돈다.
+
+프로토콜 흐름은 실제로 뜬 서버를 상대로 검증한다. MockMvc로는 진짜 OIDC/SAML 왕복을 태울 수 없기 때문이다.
+
+```bash
+python3 scripts/oidc_authcode_flow.py      # OIDC: MFA 세션 -> PKCE -> ID 토큰
+python3 scripts/saml_sso_flow.py           # SAML: MFA 게이트 SSO -> 서명 assertion
+python3 scripts/saml_slo_flow.py           # SAML: Single Logout
+python3 scripts/saml_inbound_flow.py       # 인바운드 SAML: 상위 로그인 -> 로컬 세션
+python3 scripts/backchannel_logout_flow.py # OIDC: 세션 종료 -> 로그아웃 토큰 전달
+python3 scripts/admin_api_flow.py          # Admin API: RBAC/PBAC + 사용자 생애주기(세션)
+python3 scripts/tenant_login_flow.py       # 멀티테넌시: 서브도메인에서 테넌트별 로그인 + 격리
+python3 scripts/scim_provision_flow.py     # SCIM: org에 사용자 provision 후 그 사용자로 로그인
+python3 scripts/network_zone_flow.py       # 네트워크 존: IP 조건부 정책
 ```
 
 ---
@@ -430,11 +510,20 @@ python3 scripts/scim_provision_flow.py  # SCIM: org에 사용자 provision 후 �
 **복호화**는 컨텍스트별로 — 로컬은 개인키(`~/.config/sops/age/keys.txt`), k8s는 클러스터 내 컨트롤러
 (Flux SOPS / sops-secrets-operator), CI는 키 불필요(암호화 여부 검사 + 임시키 라운드트립).
 
-**CI.** `.github/workflows/ci.yml`이 매 push/PR에 독립 잡을 병렬로 돌리고, 컨테이너 이미지는 코드가 통과한
-**뒤에만** 빌드된다(미검증 코드로 컨테이너를 만들지 않음): `backend-test`(Gradle + Testcontainers — 테스트가
-요구하는 Docker 데몬이 있어 CI에서 돌리고 이미지 빌드 안에서 안 돌림), `frontend-build`, `config-validate`
-(compose + `nginx -t`), `secrets`(SOPS), `hygiene`(inline FQN 금지), 그다음 `backend-image`/`frontend-image`
-(빌드만, 레지스트리 push 없음 — CD 아님).
+**CI.** `.github/workflows/ci.yml`은 매 push/PR에 도는 **오케스트레이터**다. 역할별로 하나씩 있는 재사용
+워크플로로 팬아웃하며, 권한 상한은 `contents: read`이고(재사용 워크플로는 호출자의 권한을 넘을 수 없다),
+ref마다 실행은 하나만 유지한다.
+
+| 워크플로 | 검사 |
+|---|---|
+| `backend.yml` | Gradle + Testcontainers, 통과한 뒤에만 API 이미지 빌드 |
+| `frontend.yml` | vitest, `tsc` + vite 빌드, 그다음 nginx 에지 이미지 |
+| `config.yml` | compose 파일과 `nginx -t` |
+| `security.yml` | SOPS 검증(평문 시크릿 커밋 금지, 예시 파일은 placeholder만, `.sops.yaml` 규칙 라운드트립), Trivy 시크릿 스캔, `npm audit --audit-level=high` |
+| `hygiene.yml` | 기계적으로 판정 가능한 하우스 룰, 특히 Java 완전한정명 인라인 금지 |
+
+이미지는 **빌드만 하고 push 하지 않는다**. 여기는 CI이지 CD가 아니고, 자기 테스트를 통과하지 못한 코드로는
+컨테이너를 만들지 않는다.
 
 테넌트 격리에는 non-superuser DB 역할이 반드시 필요하다. 테넌트 사이의 경계인 PostgreSQL Row-Level
 Security를 superuser는 그냥 통과하므로, 애플리케이션은 non-superuser 역할로 접속해야 한다. 아무것도 소유하지
