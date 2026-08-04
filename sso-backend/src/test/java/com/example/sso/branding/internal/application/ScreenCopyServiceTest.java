@@ -16,6 +16,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -42,9 +43,11 @@ class ScreenCopyServiceTest {
     AuthScreenCopyRepository repository;
     @Mock
     OrgContext orgContext;
+    @Mock
+    ApplicationEventPublisher events;
 
     private ScreenCopyService service() {
-        return new ScreenCopyService(repository, new ActingTier(orgContext));
+        return new ScreenCopyService(repository, new ActingTier(orgContext), events);
     }
 
     private AuthScreenCopy row(UUID orgId, AuthScreen screen, ScreenCopy copy) {

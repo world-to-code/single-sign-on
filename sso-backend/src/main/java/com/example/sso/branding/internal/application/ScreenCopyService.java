@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -40,6 +41,7 @@ public class ScreenCopyService {
 
     private final AuthScreenCopyRepository repository;
     private final ActingTier tier;
+    private final ApplicationEventPublisher events;
 
     /**
      * The wording to render for {@code orgId}: the tenant's own over the platform's, screen by screen and
@@ -71,13 +73,15 @@ public class ScreenCopyService {
         ownRow(screen).ifPresentOrElse(
                 row -> row.reconfigure(validated),
                 () -> repository.save(AuthScreenCopy.create(org, screen, validated)));
+        events.publishEvent(new BrandingChanged(org));
     }
 
     /** Drops the acting tier's wording for one screen — it reverts to the platform/built-in text. */
     @Transactional
     public void delete(AuthScreen screen) {
-        tier.writableOrg();
+        UUID org = tier.writableOrg();
         ownRow(screen).ifPresent(repository::delete);
+        events.publishEvent(new BrandingChanged(org));
     }
 
     /** Trimmed and capped; a blank or whitespace-only field becomes null, which is how a piece re-inherits. */

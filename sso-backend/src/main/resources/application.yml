@@ -275,6 +275,10 @@ sso:
       endpoint: https://api.solapi.com/messages/v4/send
     twilio:
       endpoint: https://api.twilio.com/2010-04-01/Accounts/{accountSid}/Messages.json
+  branding:
+    # Backstop only: the cache is evicted explicitly after a branding write commits, so this bounds how long
+    # a MISSED eviction (a node that could not reach Redis) could keep serving a stale sign-in screen.
+    cache-ttl-minutes: 30
   crypto:
     master-password: dev-master-password-change-me  # dev only — override in prod
     salt: 5c0744940b5c369b

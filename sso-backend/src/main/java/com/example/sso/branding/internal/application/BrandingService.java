@@ -13,6 +13,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -38,6 +39,8 @@ public class BrandingService implements BrandingResolver {
     private final OrgBrandingRepository repository;
     private final ActingTier tier;
     private final ScreenCopyService screenCopy;
+    private final BrandingCache cache;
+    private final ApplicationEventPublisher events;
 
     /**
      * The branding to render for {@code orgId}: own row over platform row over built-in default, resolved
@@ -47,6 +50,10 @@ public class BrandingService implements BrandingResolver {
     @Override
     @Transactional(readOnly = true)
     public Branding resolve(UUID orgId) {
+        Optional<Branding> cached = cache.find(orgId);
+        if (cached.isPresent()) {
+            return cached.get();
+        }
         Branding platform = repository.findByOrgIdIsNull()
                 .map(this::toBranding)
                 .map(row -> row.inheriting(Branding.platformDefault()))
@@ -55,7 +62,9 @@ public class BrandingService implements BrandingResolver {
                 .map(this::toBranding)
                 .map(own -> own.inheriting(platform))
                 .orElse(platform);
-        return resolved.withCopy(screenCopy.resolve(orgId));
+        Branding answer = resolved.withCopy(screenCopy.resolve(orgId));
+        cache.put(orgId, answer);
+        return answer;
     }
 
     /** The acting tier's OWN branding for the editor (or the inherited default as a starting point). */
@@ -74,13 +83,15 @@ public class BrandingService implements BrandingResolver {
         ownRow().ifPresentOrElse(
                 row -> row.reconfigure(identity, theme),
                 () -> repository.save(OrgBranding.create(org, identity, theme)));
+        events.publishEvent(new BrandingChanged(org));
     }
 
     /** Drops the acting tier's branding — its screens revert to the platform/built-in default. */
     @Transactional
     public void delete() {
-        tier.writableOrg();
+        UUID org = tier.writableOrg();
         ownRow().ifPresent(repository::delete);
+        events.publishEvent(new BrandingChanged(org));
     }
 
     /** Trimmed and shape-checked; a blank field becomes null, which is how a piece returns to inheriting. */
@@ -131,8 +142,16 @@ public class BrandingService implements BrandingResolver {
         return trimmed;
     }
 
+    /**
+     * Deliberately NOT {@link #resolve}: the editor's starting point is read right after a save, and the
+     * cache entry is only evicted once that transaction commits. Reading through the cache here would show an
+     * administrator the value they just replaced.
+     */
     private Branding inheritedDefault() {
-        return resolve(null);
+        return repository.findByOrgIdIsNull()
+                .map(this::toBranding)
+                .map(row -> row.inheriting(Branding.platformDefault()))
+                .orElseGet(Branding::platformDefault);
     }
 
     /** The acting tier's OWN row — the platform tier owns the global (org_id NULL) row, a bound-orgless tenant none. */

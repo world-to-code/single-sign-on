@@ -21,10 +21,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -45,9 +47,13 @@ class BrandingServiceTest {
     OrgContext orgContext;
     @Mock
     ScreenCopyService screenCopy;
+    @Mock
+    BrandingCache cache;
+    @Mock
+    ApplicationEventPublisher events;
 
     private BrandingService service() {
-        return new BrandingService(repository, new ActingTier(orgContext), screenCopy);
+        return new BrandingService(repository, new ActingTier(orgContext), screenCopy, cache, events);
     }
 
     /** A fully-populated row, so a test can assert a field is INHERITED rather than merely absent everywhere. */
@@ -338,5 +344,70 @@ class BrandingServiceTest {
     @Test
     void thePlatformDefaultCarriesNoScreenWording() {
         assertThat(Branding.platformDefault().copy()).isEmpty();
+    }
+
+    // ------------------------------------------------------------------ cache
+
+    /** A cache HIT must answer without touching the database at all — otherwise it is not saving anything. */
+    @Test
+    void resolveServesACachedBrandingWithoutQueryingTheDatabase() {
+        when(cache.find(ORG)).thenReturn(Optional.of(Branding.platformDefault()));
+
+        assertThat(service().resolve(ORG).productName()).isEqualTo("Svalinn");
+
+        verify(repository, never()).findByOrgId(any());
+        verify(repository, never()).findByOrgIdIsNull();
+        verify(screenCopy, never()).resolve(any());
+    }
+
+    @Test
+    void resolveStoresWhatItResolvedOnAMiss() {
+        when(cache.find(ORG)).thenReturn(Optional.empty());
+        when(repository.findByOrgId(ORG)).thenReturn(Optional.of(row(ORG)));
+        when(repository.findByOrgIdIsNull()).thenReturn(Optional.empty());
+        when(screenCopy.resolve(ORG)).thenReturn(Map.of());
+
+        service().resolve(ORG);
+
+        ArgumentCaptor<Branding> stored = ArgumentCaptor.captor();
+        verify(cache).put(eq(ORG), stored.capture());
+        assertThat(stored.getValue().productName()).isEqualTo("Acme");
+    }
+
+    /**
+     * The eviction is announced, not performed: an AFTER_COMMIT listener does it, because evicting inside the
+     * transaction lets a concurrent read re-cache the row as it stands before the commit.
+     */
+    @Test
+    void updateAnnouncesTheChangeRatherThanEvictingInline() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgId(ORG)).thenReturn(Optional.empty());
+
+        service().update(spec("https://cdn.acme.example/l.png", "#abcdef", "Acme"));
+
+        verify(events).publishEvent(new BrandingChanged(ORG));
+        verify(cache, never()).evictWrittenBy(any());
+    }
+
+    @Test
+    void deleteAnnouncesTheChange() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgId(ORG)).thenReturn(Optional.of(row(ORG)));
+
+        service().delete();
+
+        verify(events).publishEvent(new BrandingChanged(ORG));
+    }
+
+    /** A PLATFORM write announces a null org, which is what tells the evictor to drop every tenant. */
+    @Test
+    void aPlatformWriteAnnouncesTheWholeTier() {
+        when(orgContext.currentOrg()).thenReturn(Optional.empty());
+        when(orgContext.isPlatform()).thenReturn(true);
+        when(repository.findByOrgIdIsNull()).thenReturn(Optional.empty());
+
+        service().update(spec("https://cdn.example/l.png", "#abcdef", "Platform"));
+
+        verify(events).publishEvent(new BrandingChanged(null));
     }
 }
