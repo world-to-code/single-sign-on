@@ -190,7 +190,8 @@ IdP 세션 쿠키를 그대로 공유한다(1st-party UI라 교차 오리진 토
 OIDC ID 토큰과 access 토큰에는 사용자가 어떻게 인증했는지가 실려 있어서, relying party와 관리자 게이트가
 인증 강도와 신선도를 판단할 수 있다.
 
-- `amr`: 사용한 방법(`fed`(상위 제공자 연합 로그인), `pwd`, `otp`, `hwk`(passkey), `mfa`). 연합 세션은
+- `amr`: 사용한 방법(`fed`(상위 제공자 연합 로그인), `pwd`, `otp`(인증 앱 또는 이메일 코드), `sms`,
+  `hwk`(passkey), `mfa`). 연합 세션은
   `fed`를 싣고 `pwd`는 절대 싣지 않는다. 자격증명을 검증한 것은 상위 제공자이고, `pwd`를 실으면 이 IdP가
   본 적도 없는 비밀번호를 확인했다고 relying party에 말하는 셈이기 때문이다.
 - `acr`: `mfa`(factor 2개 이상) 또는 `sfa`.

@@ -1,5 +1,6 @@
 package com.example.sso.config.internal;
 
+import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.authpolicy.factor.Factors;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -63,5 +64,67 @@ class AuthenticationMethodReferencesTest {
     void aSessionWithNoRecognisedMethodReportsNothing() {
         assertThat(AuthenticationMethodReferences.of(Set.of(Factors.FEDERATED), 0)).containsExactly("fed");
         assertThat(AuthenticationMethodReferences.of(Set.of(), 0)).isEmpty();
+    }
+
+    /**
+     * RFC 8176 registers {@code sms} for "confirmation using SMS text message to the user at a registered
+     * number", so a code texted to a phone has a value of its own and does not belong under {@code otp} —
+     * whose registered definition names the HOTP/TOTP specifications specifically.
+     */
+    @Test
+    void anSmsCodeReportsSms() {
+        assertThat(AuthenticationMethodReferences.of(Set.of(Factors.SMS), 1)).containsExactly("sms");
+    }
+
+    /**
+     * The defect this closes. factorCount already counted SMS, so the session claimed {@code mfa} while
+     * naming a single method — a relying party that counts the methods it was given reached a different
+     * answer than the one the claim asserted.
+     */
+    @Test
+    void passwordAndSmsReportBothMethodsAndMfa() {
+        assertThat(AuthenticationMethodReferences.of(Set.of(Factors.PASSWORD, Factors.SMS), 2))
+                .containsExactlyInAnyOrder("pwd", "sms", "mfa");
+    }
+
+    /** SMS is its own axis: it neither absorbs nor is absorbed by the authenticator-app factor. */
+    @Test
+    void totpAndSmsReportBothSeparately() {
+        assertThat(AuthenticationMethodReferences.of(Set.of(Factors.TOTP, Factors.SMS), 2))
+                .containsExactlyInAnyOrder("otp", "sms", "mfa");
+    }
+
+    /** Email keeps folding into otp — RFC 8176 registers no email value — but that must not swallow sms. */
+    @Test
+    void emailAndSmsReportOtpAndSmsSeparately() {
+        assertThat(AuthenticationMethodReferences.of(Set.of(Factors.EMAIL, Factors.SMS), 2))
+                .containsExactlyInAnyOrder("otp", "sms", "mfa");
+    }
+
+    @Test
+    void aFederatedLoginWithAnSmsSecondFactorReportsFedAndSmsButNeverPwd() {
+        Set<String> authorities = Set.of(Factors.PASSWORD, Factors.FEDERATED, Factors.SMS);
+
+        assertThat(AuthenticationMethodReferences.of(authorities, 2))
+                .containsExactlyInAnyOrder("fed", "sms", "mfa")
+                .doesNotContain("pwd");
+    }
+
+    /**
+     * Every factor this IdP can clear names itself, which is what lets the token customizer keep tying
+     * {@code acr} to a non-empty {@code amr}: the only session that reports no method is one that cleared no
+     * factor, and asserting a strength level for that would claim a check nobody performed.
+     *
+     * <p>It iterates {@link AuthFactor#values()} rather than a literal list ON PURPOSE. With a hardcoded set,
+     * adding a sixth constant leaves this green while re-creating the exact defect the SMS arm closed — the
+     * new factor counted toward {@code factorCount} and named by nothing. A SPNEGO factor is already planned.
+     */
+    @Test
+    void everyFactorReportsSomeMethod() {
+        for (AuthFactor factor : AuthFactor.values()) {
+            assertThat(AuthenticationMethodReferences.of(Set.of(factor.authority()), 1))
+                    .as("factor %s must name itself in amr", factor)
+                    .isNotEmpty();
+        }
     }
 }

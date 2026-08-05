@@ -36,8 +36,15 @@ final class AuthenticationMethodReferences {
         if (authorities.contains(Factors.TOTP)) {
             amr.add("otp");
         }
+        // Email keeps folding into `otp`: RFC 8176 registers no value for an emailed code, and `otp` is the
+        // closest honest one. SMS is NOT folded in with it — the RFC registers `sms` specifically, and `otp`'s
+        // own definition names the HOTP/TOTP specifications, so reporting a texted code as `otp` would tell a
+        // relying party an authenticator app was used.
         if (authorities.contains(Factors.EMAIL) && !amr.contains("otp")) {
             amr.add("otp");
+        }
+        if (authorities.contains(Factors.SMS)) {
+            amr.add("sms");
         }
         if (authorities.contains(Factors.FIDO2)) {
             amr.add("hwk"); // hardware-backed / passkey

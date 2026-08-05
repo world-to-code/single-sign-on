@@ -200,7 +200,8 @@ login. `POST /api/auth/reauth/{factor}/verify` re-checks a strong factor and sta
 OIDC ID **and** access tokens carry how the user authenticated, so relying parties and the
 admin gate can reason about strength and freshness:
 
-- **`amr`** — methods used: `fed` (upstream federated login), `pwd`, `otp`, `hwk` (passkey), `mfa`.
+- **`amr`** — methods used: `fed` (upstream federated login), `pwd`, `otp` (authenticator app or emailed
+  code), `sms`, `hwk` (passkey), `mfa`.
   A federated session reports `fed` and never `pwd`: the upstream verified the credential, and
   claiming otherwise would tell a relying party this IdP checked a password it never saw.
 - **`acr`** — `mfa` (two or more factors) or `sfa`.

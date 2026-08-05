@@ -1,6 +1,7 @@
 package com.example.sso.config.internal;
 
 import com.example.sso.audit.AuditService;
+import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.crypto.RsaKeyService;
 import com.example.sso.oidc.BackChannelLogout;
@@ -238,8 +239,18 @@ public class AuthorizationServerConfig {
                 if (idToken || accessToken) {
                     Set<String> auth = context.getPrincipal().getAuthorities().stream()
                             .map(GrantedAuthority::getAuthority).collect(Collectors.toSet());
-                    long factorCount = auth.stream().filter(a -> a.startsWith("FACTOR_")).count();
+                    // Counted from THIS IdP's own vocabulary, not by the "FACTOR_" prefix. Spring Security
+                    // co-owns that namespace (FACTOR_AUTHORIZATION_CODE, FACTOR_SAML_RESPONSE, FACTOR_BEARER,
+                    // …) and mints those authorities from configurers this deployment does not currently wire.
+                    // Counting by prefix would let a future switch to Spring's own federation push a
+                    // single-factor login to acr=mfa and past the admin elevation gate — while naming nothing
+                    // in amr. Counting the known set keeps "empty amr <=> no factor" true by construction.
+                    long factorCount = auth.stream().filter(AuthFactor::isKnownAuthority).count();
                     List<String> amr = AuthenticationMethodReferences.of(auth, factorCount);
+                    // acr rides on amr being non-empty, deliberately. Every factor this IdP can clear now
+                    // names itself in amr, so the only session that reports no method is one that cleared no
+                    // factor — and emitting `sfa` there would assert a strength level for a check nobody
+                    // performed. Do not "fix" this by emitting acr unconditionally.
                     if (!amr.isEmpty()) {
                         context.getClaims().claim("amr", amr);
                         context.getClaims().claim("acr", factorCount >= 2 ? "mfa" : "sfa");
