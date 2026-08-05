@@ -95,4 +95,24 @@ describe("AuthLayout tenant wording", () => {
     expect(screen.getByText("<img src=x onerror=alert(1)>")).toBeInTheDocument();
     expect(document.querySelector("img")).toBeNull();
   });
+  /**
+   * The consent title names the client asking for access — the one thing telling a user WHICH application
+   * they are authorizing. A tenant admin who could replace it would put a chosen heading above a genuine
+   * scope list on the IdP's real origin. The rest of their wording still applies.
+   */
+  it("keeps the IdP's title on the consent screen but takes the tenant's other wording", () => {
+    renderWith(branding({ CONSENT: { headline: "Approve to continue", subtext: "Acme uses this to sync", footer: "Questions?", helpUrl: null } }), "CONSENT");
+
+    expect(screen.getByText("Built-in title")).toBeInTheDocument();
+    expect(screen.queryByText("Approve to continue")).not.toBeInTheDocument();
+    expect(screen.getByText("Acme uses this to sync")).toBeInTheDocument();
+    expect(screen.getByText("Questions?")).toBeInTheDocument();
+  });
+
+  /** The lock is per screen, not global — every other screen still takes the tenant's heading. */
+  it("still takes the tenant's heading on the other screens", () => {
+    renderWith(branding({ STEPUP: { headline: "Confirm it is you", subtext: null, footer: null, helpUrl: null } }), "STEPUP");
+
+    expect(screen.getByText("Confirm it is you")).toBeInTheDocument();
+  });
 });

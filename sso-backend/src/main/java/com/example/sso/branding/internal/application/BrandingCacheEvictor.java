@@ -13,7 +13,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * the write was replacing — a cache that is wrong until its TTL, which is worse than one that was never
  * evicted at all.
  *
- * <p>A failure here cannot roll the write back: the eviction itself swallows Redis errors, and an exception
+ * <p>A failure here cannot roll the write back: the invalidation itself swallows Redis errors, and an exception
  * thrown from an AFTER_COMMIT listener is swallowed by the publisher anyway. The write is already durable;
  * the worst case is a stale entry until the TTL.
  */
@@ -25,6 +25,6 @@ class BrandingCacheEvictor {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     void onBrandingChanged(BrandingChanged event) {
-        cache.evictWrittenBy(event.writtenOrg());
+        cache.invalidate();
     }
 }

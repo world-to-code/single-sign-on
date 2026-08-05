@@ -73,15 +73,15 @@ public class ScreenCopyService {
         ownRow(screen).ifPresentOrElse(
                 row -> row.reconfigure(validated),
                 () -> repository.save(AuthScreenCopy.create(org, screen, validated)));
-        events.publishEvent(new BrandingChanged(org));
+        events.publishEvent(new BrandingChanged());
     }
 
     /** Drops the acting tier's wording for one screen — it reverts to the platform/built-in text. */
     @Transactional
     public void delete(AuthScreen screen) {
-        UUID org = tier.writableOrg();
+        tier.writableOrg();
         ownRow(screen).ifPresent(repository::delete);
-        events.publishEvent(new BrandingChanged(org));
+        events.publishEvent(new BrandingChanged());
     }
 
     /** Trimmed and capped; a blank or whitespace-only field becomes null, which is how a piece re-inherits. */

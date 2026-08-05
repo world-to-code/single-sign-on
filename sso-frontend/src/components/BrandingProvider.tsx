@@ -91,12 +91,15 @@ export function useBrandMark(): { logoUrl: string | null; name: string | null } 
  * one, so a re-fetch after an edit replaces the icon instead of stacking links the browser resolves by luck.
  */
 function applyFavicon(url: string | null): void {
-  if (!url) {
+  const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  // Re-checked here rather than trusted from the server, like the accent hex and the background url() are.
+  // Not exploitable through <link rel=icon> today, but the asymmetry is what breaks the moment the element
+  // or its rel changes, and this is the one client sink that had no check of its own.
+  if (!url || !url.toLowerCase().startsWith("https://")) {
+    link?.removeAttribute("href"); // clearing must restore the built-in icon, not strand the previous one
     return;
   }
-  const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
-    ?? document.head.appendChild(Object.assign(document.createElement("link"), { rel: "icon" }));
-  link.href = url;
+  (link ?? document.head.appendChild(Object.assign(document.createElement("link"), { rel: "icon" }))).href = url;
 }
 
 /**

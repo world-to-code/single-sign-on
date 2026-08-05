@@ -50,7 +50,10 @@ public class BrandingService implements BrandingResolver {
     @Override
     @Transactional(readOnly = true)
     public Branding resolve(UUID orgId) {
-        Optional<Branding> cached = cache.find(orgId);
+        // Captured BEFORE the database read, and reused for the store below: a write that commits in between
+        // bumps the generation, so what this stores lands under a number nothing will ask for again.
+        long generation = cache.generation();
+        Optional<Branding> cached = cache.find(generation, orgId);
         if (cached.isPresent()) {
             return cached.get();
         }
@@ -63,7 +66,7 @@ public class BrandingService implements BrandingResolver {
                 .map(own -> own.inheriting(platform))
                 .orElse(platform);
         Branding answer = resolved.withCopy(screenCopy.resolve(orgId));
-        cache.put(orgId, answer);
+        cache.put(generation, orgId, answer);
         return answer;
     }
 
@@ -83,15 +86,15 @@ public class BrandingService implements BrandingResolver {
         ownRow().ifPresentOrElse(
                 row -> row.reconfigure(identity, theme),
                 () -> repository.save(OrgBranding.create(org, identity, theme)));
-        events.publishEvent(new BrandingChanged(org));
+        events.publishEvent(new BrandingChanged());
     }
 
     /** Drops the acting tier's branding — its screens revert to the platform/built-in default. */
     @Transactional
     public void delete() {
-        UUID org = tier.writableOrg();
+        tier.writableOrg();
         ownRow().ifPresent(repository::delete);
-        events.publishEvent(new BrandingChanged(org));
+        events.publishEvent(new BrandingChanged());
     }
 
     /** Trimmed and shape-checked; a blank field becomes null, which is how a piece returns to inheriting. */

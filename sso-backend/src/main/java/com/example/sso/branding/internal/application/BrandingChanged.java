@@ -1,15 +1,15 @@
 package com.example.sso.branding.internal.application;
 
-import java.util.UUID;
-
 /**
  * A tier's branding or screen wording was written.
  *
- * <p>An event rather than a direct cache call, so the eviction can be bound to COMMIT. Evicting inside the
- * transaction opens a window where another node reads, misses, loads the not-yet-committed old row and caches
- * it again — leaving the cache wrong until the TTL, which is worse than never having evicted.
+ * <p>An event rather than a direct cache call, so the invalidation can be bound to COMMIT. Invalidating
+ * inside the transaction opens a window where another node reads, misses, loads the not-yet-committed row and
+ * caches it again.
  *
- * @param writtenOrg the tier written, or {@code null} for the platform tier
+ * <p>It deliberately carries NO tier. Every tenant inherits the platform row field by field, so a platform
+ * write changes what every tenant resolves — and the cache retires every entry on any write rather than
+ * reasoning about which tiers a given write reached.
  */
-record BrandingChanged(UUID writtenOrg) {
+record BrandingChanged() {
 }

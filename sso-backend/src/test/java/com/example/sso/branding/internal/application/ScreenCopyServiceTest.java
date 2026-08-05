@@ -297,4 +297,54 @@ class ScreenCopyServiceTest {
         assertThatThrownBy(() -> service().delete(AuthScreen.LOGIN)).isInstanceOf(ForbiddenException.class);
         verify(repository, never()).delete(any());
     }
+
+    // ------------------------------------------------- cache invalidation
+
+    /**
+     * This service is a SECOND writer whose output is baked into the cached Branding, so its announcements
+     * matter exactly as much as BrandingService's — and nothing pinned them until a review noticed that
+     * deleting either publish left the suite green and the fleet serving stale sign-in wording.
+     */
+    @Test
+    void updateAnnouncesTheChange() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgIdAndScreen(ORG, AuthScreen.LOGIN)).thenReturn(Optional.empty());
+
+        service().update(AuthScreen.LOGIN, copy("Sign in to Acme", null, null, null));
+
+        verify(events).publishEvent(new BrandingChanged());
+    }
+
+    @Test
+    void deleteAnnouncesTheChange() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgIdAndScreen(ORG, AuthScreen.LOGIN)).thenReturn(Optional.empty());
+
+        service().delete(AuthScreen.LOGIN);
+
+        verify(events).publishEvent(new BrandingChanged());
+    }
+
+    /** A PLATFORM write announces too: every tenant inherits its wording, so every entry must retire. */
+    @Test
+    void aPlatformWriteAnnouncesTheChange() {
+        when(orgContext.currentOrg()).thenReturn(Optional.empty());
+        when(orgContext.isPlatform()).thenReturn(true);
+        when(repository.findByOrgIdIsNullAndScreen(AuthScreen.LOGIN)).thenReturn(Optional.empty());
+
+        service().update(AuthScreen.LOGIN, copy("Platform heading", null, null, null));
+
+        verify(events).publishEvent(new BrandingChanged());
+    }
+
+    /** A refused write must announce NOTHING — retiring the cache on a rejected edit is a free cold start. */
+    @Test
+    void aRefusedWriteAnnouncesNothing() {
+        when(orgContext.currentOrg()).thenReturn(Optional.empty());
+        when(orgContext.isPlatform()).thenReturn(false);
+
+        assertThatThrownBy(() -> service().update(AuthScreen.LOGIN, copy("X", null, null, null)))
+                .isInstanceOf(ForbiddenException.class);
+        verify(events, never()).publishEvent(any(BrandingChanged.class));
+    }
 }

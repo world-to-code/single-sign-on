@@ -43,7 +43,7 @@ export default function Consent() {
 
   if (error) {
     return (
-      <AuthLayout screen="CONSENT" step={t("consentStep")} title={t("consentTitle")}>
+      <AuthLayout step={t("consentStep")} title={t("consentTitle")}>
         <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>
       </AuthLayout>
     );
@@ -68,7 +68,7 @@ export default function Consent() {
   );
 
   return (
-    <AuthLayout
+    <AuthLayout screen="CONSENT"
       wide
       step={t("consentStep")}
       title={t("consentHeading", { client: model.clientName })}

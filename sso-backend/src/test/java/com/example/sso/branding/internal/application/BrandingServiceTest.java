@@ -351,7 +351,7 @@ class BrandingServiceTest {
     /** A cache HIT must answer without touching the database at all — otherwise it is not saving anything. */
     @Test
     void resolveServesACachedBrandingWithoutQueryingTheDatabase() {
-        when(cache.find(ORG)).thenReturn(Optional.of(Branding.platformDefault()));
+        when(cache.find(0, ORG)).thenReturn(Optional.of(Branding.platformDefault()));
 
         assertThat(service().resolve(ORG).productName()).isEqualTo("Svalinn");
 
@@ -362,7 +362,7 @@ class BrandingServiceTest {
 
     @Test
     void resolveStoresWhatItResolvedOnAMiss() {
-        when(cache.find(ORG)).thenReturn(Optional.empty());
+        when(cache.find(0, ORG)).thenReturn(Optional.empty());
         when(repository.findByOrgId(ORG)).thenReturn(Optional.of(row(ORG)));
         when(repository.findByOrgIdIsNull()).thenReturn(Optional.empty());
         when(screenCopy.resolve(ORG)).thenReturn(Map.of());
@@ -370,7 +370,7 @@ class BrandingServiceTest {
         service().resolve(ORG);
 
         ArgumentCaptor<Branding> stored = ArgumentCaptor.captor();
-        verify(cache).put(eq(ORG), stored.capture());
+        verify(cache).put(eq(0L), eq(ORG), stored.capture());
         assertThat(stored.getValue().productName()).isEqualTo("Acme");
     }
 
@@ -385,8 +385,8 @@ class BrandingServiceTest {
 
         service().update(spec("https://cdn.acme.example/l.png", "#abcdef", "Acme"));
 
-        verify(events).publishEvent(new BrandingChanged(ORG));
-        verify(cache, never()).evictWrittenBy(any());
+        verify(events).publishEvent(new BrandingChanged());
+        verify(cache, never()).invalidate();
     }
 
     @Test
@@ -396,10 +396,10 @@ class BrandingServiceTest {
 
         service().delete();
 
-        verify(events).publishEvent(new BrandingChanged(ORG));
+        verify(events).publishEvent(new BrandingChanged());
     }
 
-    /** A PLATFORM write announces a null org, which is what tells the evictor to drop every tenant. */
+    /** A PLATFORM write announces too — every tenant inherits its row, so every entry must retire. */
     @Test
     void aPlatformWriteAnnouncesTheWholeTier() {
         when(orgContext.currentOrg()).thenReturn(Optional.empty());
@@ -408,6 +408,6 @@ class BrandingServiceTest {
 
         service().update(spec("https://cdn.example/l.png", "#abcdef", "Platform"));
 
-        verify(events).publishEvent(new BrandingChanged(null));
+        verify(events).publishEvent(new BrandingChanged());
     }
 }

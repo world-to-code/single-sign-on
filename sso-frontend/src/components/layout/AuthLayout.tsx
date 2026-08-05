@@ -10,6 +10,17 @@ import type { AuthScreen } from "@/branding";
 import { cn } from "@/lib/utils";
 
 /**
+ * Screens whose TITLE a tenant may not replace, because the title is the security answer.
+ *
+ * <p>On the consent screen the title names the client asking for access — the one thing that tells a user
+ * WHICH application they are authorizing. A tenant admin who could overwrite it would put an attacker-chosen
+ * heading above a genuine scope list and redirect host, on the IdP's real origin and certificate. That is a
+ * phishing primitive, so the heading stays the IdP's; the tenant still speaks through the description, the
+ * footer note and the help link.
+ */
+const TITLE_IS_THE_IDP_S_TO_SAY: ReadonlySet<AuthScreen> = new Set<AuthScreen>(["CONSENT"]);
+
+/**
  * Authentication shell used by the login / MFA / step-up / consent screens.
  *
  * <p>The tenant chooses the arrangement. `CENTERED` is one card on the page background; `SPLIT` puts the form
@@ -38,7 +49,7 @@ export default function AuthLayout({
   // Per FIELD, matching how the server resolves: a tenant that wrote only a headline keeps this screen's own
   // description rather than losing it to an empty string.
   const copy = screen ? branding.copy[screen] : undefined;
-  const shownTitle = copy?.headline ?? title;
+  const shownTitle = screen && TITLE_IS_THE_IDP_S_TO_SAY.has(screen) ? title : copy?.headline ?? title;
   const shownDescription = copy?.subtext ?? description;
   return (
     <div className={cn("brand-surface relative min-h-screen", split ? "lg:grid lg:grid-cols-2" : "")}>

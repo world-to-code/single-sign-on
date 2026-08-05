@@ -37,12 +37,12 @@ export default function AppStepUp() {
   useEffect(() => { refresh().catch(() => setError(t("stepUpLoadFailed"))); }, [refresh, setError, t]);
 
   if (!info) {
-    return <AuthLayout screen="STEPUP" step={t("stepUpStep")} title={t("stepUpChecking")}><div className="flex justify-center py-4"><Loader2 className="animate-spin" /></div></AuthLayout>;
+    return <AuthLayout step={t("stepUpStep")} title={t("stepUpChecking")}><div className="flex justify-center py-4"><Loader2 className="animate-spin" /></div></AuthLayout>;
   }
 
   const Icon = factorMeta(factor).icon;
   return (
-    <AuthLayout step={t("stepUpStep")} title={t("stepUpTitle")}
+    <AuthLayout screen="STEPUP" step={t("stepUpStep")} title={t("stepUpTitle")}
                 description={t("stepUpDescription")}>
       <FactorChooser factors={info.pendingFactors} value={factor} onSelect={setFactor} />
 
