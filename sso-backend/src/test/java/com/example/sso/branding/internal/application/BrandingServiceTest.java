@@ -476,4 +476,27 @@ class BrandingServiceTest {
 
         verify(cache).put(anyLong(), eq(ORG), any());
     }
+
+    // ------------------------------------------------- the productName contract
+
+    @Test
+    void productNameBindsTheOrgItselfRatherThanTrustingTheCaller() {
+        when(orgContext.callInOrg(eq(ORG), any())).thenReturn(Branding.platformDefault());
+
+        assertThat(service().productName(ORG)).isEqualTo("Svalinn");
+
+        verify(orgContext).callInOrg(eq(ORG), any());
+    }
+
+    /**
+     * The guarantee moved here from the SMS caller, which used to carry its own try/catch and fallback. It
+     * exists because of a real incident: a one-time code must go out even when branding cannot be read, and a
+     * lookup failure is not a reason to withhold it. Stated in the interface, so no caller re-invents it.
+     */
+    @Test
+    void productNameDegradesToTheBuiltInDefaultInsteadOfThrowing() {
+        when(orgContext.callInOrg(eq(ORG), any())).thenThrow(new IllegalStateException("no context"));
+
+        assertThat(service().productName(ORG)).isEqualTo("Svalinn");
+    }
 }

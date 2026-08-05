@@ -4,6 +4,7 @@ import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.tenancy.OrgContext;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -42,5 +43,14 @@ class ActingTier {
             throw ForbiddenException.of("branding.global.platformOnly");
         }
         return org;
+    }
+
+    /**
+     * Runs {@code work} bound to {@code orgId}, so a caller that names an org also gets the row-level scoping
+     * that answer depends on. Here rather than on the service because this class already owns "which tier is
+     * acting", and handing a second collaborator the same OrgContext is how the two drift.
+     */
+    <T> T callInOrg(UUID orgId, Supplier<T> work) {
+        return orgContext.callInOrg(orgId, work);
     }
 }

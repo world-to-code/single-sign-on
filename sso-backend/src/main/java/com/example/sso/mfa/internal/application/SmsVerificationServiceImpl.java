@@ -4,7 +4,6 @@ import com.example.sso.branding.Branding;
 import com.example.sso.branding.BrandingResolver;
 import com.example.sso.mfa.SmsSender;
 import com.example.sso.mfa.SmsVerificationService;
-import com.example.sso.tenancy.OrgContext;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -30,17 +29,15 @@ public class SmsVerificationServiceImpl implements SmsVerificationService {
     private final SmsSender sms;
     private final CodeDeliveryStatus deliveryStatus;
     private final BrandingResolver branding;
-    private final OrgContext orgContext;
     private final MessageSource messages;
     private final long ttlMinutes; // single source of truth with the SMS factor's TTL, for the message text
 
     public SmsVerificationServiceImpl(SmsSender sms, CodeDeliveryStatus deliveryStatus,
-            BrandingResolver branding, OrgContext orgContext, MessageSource messages,
+            BrandingResolver branding, MessageSource messages,
             @Value("${sso.sms-otp.ttl-minutes}") long ttlMinutes) {
         this.sms = sms;
         this.deliveryStatus = deliveryStatus;
         this.branding = branding;
-        this.orgContext = orgContext;
         this.messages = messages;
         this.ttlMinutes = ttlMinutes;
     }
@@ -80,21 +77,14 @@ public class SmsVerificationServiceImpl implements SmsVerificationService {
     }
 
     /**
-     * Resolved inside the tenant's own context, because branding is read under row-level security — the same
-     * trap that made a configured gateway look unconfigured. A tenant that has set no name gets the
-     * deployment's, and a lookup that fails must not stop a one-time code going out.
+     * The name that leads the message. A code from an unknown number naming nobody is a phishing text, so a
+     * tenant that has set no name still gets the deployment's — and a lookup that fails must not stop the code
+     * going out. All three of those are the resolver's contract now: non-blank, org-bound, and non-throwing.
+     * This method used to bind the org context and carry a fallback ladder itself, and that was the trap the
+     * contract exists to remove.
      */
     private String productName(UUID orgId) {
-        if (orgId == null) {
-            return Branding.platformDefault().productName();
-        }
-        try {
-            // No null/blank ladder: BrandingResolver.resolve contracts a non-blank product name, because
-            // every resolution bottoms out in the built-in default. The catch below is for a real failure.
-            return orgContext.callInOrg(orgId, () -> branding.resolve(orgId)).productName();
-        } catch (RuntimeException unavailable) {
-            return Branding.platformDefault().productName();
-        }
+        return branding.productName(orgId);
     }
 
     @Override

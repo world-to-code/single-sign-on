@@ -12,6 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
  * Nothing here is a secret — branding is shown to every visitor of the tenant's subdomain.
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class BrandingService implements BrandingResolver {
 
@@ -43,7 +45,21 @@ public class BrandingService implements BrandingResolver {
      * field by field. A tenant that has set only its background therefore keeps the platform's accent instead
      * of dropping the whole platform row on the floor.
      */
+    /**
+     * Binds the org itself rather than trusting the caller to have done it. That is the whole difference
+     * between this and {@link #resolve}: the interface promises an answer for an org, so it owes the RLS
+     * scoping that answer depends on.
+     */
     @Override
+    public String productName(UUID orgId) {
+        try {
+            return tier.callInOrg(orgId, () -> resolve(orgId)).productName();
+        } catch (RuntimeException unavailable) {
+            log.warn("Branding lookup failed; naming the deployment by its built-in default", unavailable);
+            return Branding.platformDefault().productName();
+        }
+    }
+
     @Transactional(readOnly = true)
     public Branding resolve(UUID orgId) {
         // Captured BEFORE the database read, and reused for the store below: a write that commits in between

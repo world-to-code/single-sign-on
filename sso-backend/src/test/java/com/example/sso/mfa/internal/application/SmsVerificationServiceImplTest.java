@@ -19,8 +19,6 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import com.example.sso.branding.Branding;
 import java.util.Map;
-import com.example.sso.branding.BrandingTheme;
-import com.example.sso.branding.BrandingIdentity;
 import com.example.sso.branding.BrandingResolver;
 import java.util.Locale;
 import org.junit.jupiter.api.BeforeEach;
@@ -56,7 +54,7 @@ class SmsVerificationServiceImplTest {
     }
 
     private SmsVerificationServiceImpl service() {
-        return new SmsVerificationServiceImpl(sms, deliveryStatus, branding, orgContext, messages, 10);
+        return new SmsVerificationServiceImpl(sms, deliveryStatus, branding, messages, 10);
     }
 
     @Test
@@ -68,8 +66,7 @@ class SmsVerificationServiceImplTest {
 
     @Test
     void sendCodeTextsTheCodeAndTtlToTheGivenTenantAndNumber() {
-        when(orgContext.callInOrg(eq(ORG), any())).thenReturn(new Branding(
-                new BrandingIdentity(null, null, null, "Acme ID"), BrandingTheme.none(), Map.of()));
+        when(branding.productName(ORG)).thenReturn("Acme ID");
 
         service().sendCode(ORG, PHONE, "123456", "delivery-key");
 
@@ -80,33 +77,21 @@ class SmsVerificationServiceImplTest {
     }
 
     /**
-     * A tenant that has set no name still gets a message, under the deployment's own.
-     *
-     * <p>The resolver is stubbed with what an unbranded tenant ACTUALLY resolves to. It used to be stubbed
-     * with an all-null Branding, which the resolver cannot return — every resolution bottoms out in the
-     * built-in default — so the test was pinning a defensive branch that could never run, and the caller kept
-     * a fallback for a contract the module already guarantees.
+     * Whatever the resolver answers is what leads the message. The unbranded-tenant fallback and the
+     * degrade-on-failure guarantee both moved INTO that contract, and are tested where they now live
+     * (BrandingServiceTest) — keeping a copy here would test a branch this class no longer has.
      */
     @Test
-    void aTenantWithNoNameOfItsOwnFallsBackToTheDeploymentName() {
-        when(orgContext.callInOrg(eq(ORG), any())).thenReturn(Branding.platformDefault());
+    void theNameLeadingTheMessageIsWhateverTheResolverAnswers() {
+        when(branding.productName(ORG)).thenReturn("Svalinn");
 
         service().sendCode(ORG, PHONE, "123456", "delivery-key");
 
         ArgumentCaptor<String> message = ArgumentCaptor.captor();
         verify(sms).send(eq(ORG), eq(PHONE), message.capture());
-        assertThat(message.getValue()).contains(Branding.platformDefault().productName());
+        assertThat(message.getValue()).contains("Svalinn");
     }
 
-    /** Branding is read under RLS and can fail; a one-time code must go out regardless. */
-    @Test
-    void aBrandingLookupThatFailsDoesNotStopTheCode() {
-        when(orgContext.callInOrg(eq(ORG), any())).thenThrow(new IllegalStateException("no context"));
-
-        service().sendCode(ORG, PHONE, "123456", "delivery-key");
-
-        verify(sms).send(eq(ORG), eq(PHONE), anyString());
-    }
 
     /**
      * The caller here is the async exception handler, which logs and stops. Recording the failure is what lets
