@@ -10,12 +10,14 @@ import com.example.sso.security.HostOrgResolver;
 import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
+import java.time.Duration;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -49,9 +51,19 @@ class BrandingTenantScopeIT extends AbstractIntegrationTest {
         }
     }
 
+    /**
+     * Creates an org AND waits for its baseline provisioning to finish — the same fix its sibling
+     * ScreenCopyTenantScopeIT got in c75219fc, which touched only that one file. Deleting the org while the
+     * AFTER_COMMIT @Async provisioner is still writing puts a cascading DELETE against concurrent INSERTs
+     * that take their locks in the opposite order.
+     */
     private OrganizationView org(String prefix) {
         String slug = prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
-        return organizations.create(new NewOrganization(slug, slug));
+        OrganizationView created = organizations.create(new NewOrganization(slug, slug));
+        await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                assertThat(ownerJdbc().queryForObject("select count(*) from profile where org_id = ?",
+                        Integer.class, created.id())).isPositive());
+        return created;
     }
 
     private BrandingSpec spec(String productName) {

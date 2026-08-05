@@ -21,7 +21,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -115,5 +117,28 @@ class BrandingControllerTest {
                 .andExpect(jsonPath("$.length()").value(3))
                 .andExpect(jsonPath("$.identity.length()").value(4))
                 .andExpect(jsonPath("$.theme.length()").value(6));
+    }
+
+    /**
+     * A SUSPENDED tenant must not keep serving its branding on its subdomain. Untested until a review said so:
+     * the two cases covered were "resolvable and ACTIVE" and "slug does not resolve", and dropping the status
+     * filter passes both.
+     */
+    @Test
+    void aSuspendedTenantFallsBackToTheBuiltInDefault() throws Exception {
+        OrganizationRef ref = mock(OrganizationRef.class);
+        when(ref.getStatus()).thenReturn(OrganizationStatus.SUSPENDED);
+        // Stubbed on purpose: without a real id the org resolves to null anyway, and dropping the status
+        // filter would change nothing observable — the test would pass while proving nothing.
+        lenient().when(ref.getId()).thenReturn(ORG);
+        when(tenantResolver.tenantSlug(any())).thenReturn(Optional.of("acme"));
+        when(organizations.findBySlug("acme")).thenReturn(Optional.of(ref));
+        when(service.resolve(null)).thenReturn(Branding.platformDefault());
+
+        mvc.perform(get("/api/auth/branding"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.identity.productName").value("Svalinn"));
+
+        verify(orgContext).callInOrg(isNull(), any());
     }
 }
