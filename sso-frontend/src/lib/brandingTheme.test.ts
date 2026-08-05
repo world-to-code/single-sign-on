@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { BrandingCorner, BrandingFont } from "@/branding";
-import { applyAccent, applyBrandingTheme, hexToHslTriple } from "./prefs";
+import { applyAccent, applyBrandingTheme, hexToHslTriple } from "./brandingTheme";
 
 /**
  * This module is where every tenant-supplied value becomes a CSS custom property, and it had no tests at all

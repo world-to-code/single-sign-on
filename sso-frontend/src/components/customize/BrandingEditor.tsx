@@ -15,7 +15,7 @@ import {
   type BrandingInput,
   type BrandingView,
 } from "../../branding";
-import { hexToHslTriple } from "@/lib/prefs";
+import { hexToHslTriple } from "@/lib/brandingTheme";
 import { Brand } from "../Brand";
 import { useBrandingRefresh } from "../BrandingProvider";
 import { LoadingCard, ErrorCard } from "../states";
@@ -25,7 +25,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Field } from "../form/fields";
-import { ChoiceField, ColorField, UrlField } from "./BrandingFields";
+import { InheritableChoiceField, ColorField, UrlField } from "./BrandingFields";
 
 /** Every field is a string here — "" is how the form says "inherit", which maps to null on the wire. */
 interface FormState {
@@ -195,17 +195,17 @@ export function BrandingEditor() {
                   value={form.backgroundImageUrl} placeholder="https://cdn.example.com/cover.jpg"
                   onChange={(backgroundImageUrl) => set({ backgroundImageUrl })} />
 
-        <ChoiceField label={t("brandingFont")} hint={t("brandingFontHint")} value={form.font}
+        <InheritableChoiceField label={t("brandingFont")} hint={t("brandingFontHint")} value={form.font}
                      options={BRANDING_FONTS} inheritLabel={t("brandingInherit")}
                      labelFor={(font) => t(`brandingFont_${font}`)}
                      onChange={(font) => set({ font })} />
 
-        <ChoiceField label={t("brandingCorner")} hint={t("brandingCornerHint")} value={form.corner}
+        <InheritableChoiceField label={t("brandingCorner")} hint={t("brandingCornerHint")} value={form.corner}
                      options={BRANDING_CORNERS} inheritLabel={t("brandingInherit")}
                      labelFor={(corner) => t(`brandingCorner_${corner}`)}
                      onChange={(corner) => set({ corner })} />
 
-        <ChoiceField label={t("brandingLayout")} hint={t("brandingLayoutHint")} value={form.layout}
+        <InheritableChoiceField label={t("brandingLayout")} hint={t("brandingLayoutHint")} value={form.layout}
                      options={AUTH_LAYOUTS} inheritLabel={t("brandingInherit")}
                      labelFor={(layout) => t(`brandingLayout_${layout}`)}
                      onChange={(layout) => set({ layout })} />

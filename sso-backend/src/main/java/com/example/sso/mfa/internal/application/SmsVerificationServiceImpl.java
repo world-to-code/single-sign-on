@@ -89,10 +89,9 @@ public class SmsVerificationServiceImpl implements SmsVerificationService {
             return Branding.platformDefault().productName();
         }
         try {
-            Branding resolved = orgContext.callInOrg(orgId, () -> branding.resolve(orgId));
-            return resolved.productName() == null || resolved.productName().isBlank()
-                    ? Branding.platformDefault().productName()
-                    : resolved.productName();
+            // No null/blank ladder: BrandingResolver.resolve contracts a non-blank product name, because
+            // every resolution bottoms out in the built-in default. The catch below is for a real failure.
+            return orgContext.callInOrg(orgId, () -> branding.resolve(orgId)).productName();
         } catch (RuntimeException unavailable) {
             return Branding.platformDefault().productName();
         }

@@ -6,7 +6,7 @@ import { Brand } from "./Brand";
 import LoadingScreen from "./LoadingScreen";
 import AppShell from "./layout/AppShell";
 import { getBranding, type Branding } from "@/branding";
-import { applyBrandingTheme } from "@/lib/prefs";
+import { applyBrandingTheme } from "@/lib/brandingTheme";
 
 vi.mock("react-i18next", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react-i18next")>()),
@@ -22,8 +22,8 @@ vi.mock("@/auth", () => ({ isPlatformAdmin: () => false, logout: vi.fn() }));
 vi.mock("@/drillIn", () => ({ setDrillIn: vi.fn(), useDrillIn: () => null }));
 vi.mock("@/adminPortal", () => ({ clearAdminUnlock: vi.fn(), startAdminOidc: vi.fn(), getAdminToken: () => null }));
 vi.mock("@/hooks/useAdminConsoleAccess", () => ({ useAdminConsoleAccess: () => false }));
-vi.mock("@/lib/prefs", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/prefs")>()),
+vi.mock("@/lib/brandingTheme", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/brandingTheme")>()),
   applyBrandingTheme: vi.fn(),
 }));
 

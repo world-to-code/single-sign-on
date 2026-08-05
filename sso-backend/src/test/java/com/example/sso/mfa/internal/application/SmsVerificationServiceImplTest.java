@@ -78,10 +78,17 @@ class SmsVerificationServiceImplTest {
         assertThat(message.getValue()).contains("Acme ID").contains("123456").contains("10 minutes");
     }
 
-    /** A tenant that has set no name still gets a message, under the deployment's own. */
+    /**
+     * A tenant that has set no name still gets a message, under the deployment's own.
+     *
+     * <p>The resolver is stubbed with what an unbranded tenant ACTUALLY resolves to. It used to be stubbed
+     * with an all-null Branding, which the resolver cannot return — every resolution bottoms out in the
+     * built-in default — so the test was pinning a defensive branch that could never run, and the caller kept
+     * a fallback for a contract the module already guarantees.
+     */
     @Test
     void aTenantWithNoNameOfItsOwnFallsBackToTheDeploymentName() {
-        when(orgContext.callInOrg(eq(ORG), any())).thenReturn(new Branding(BrandingIdentity.none(), BrandingTheme.none(), Map.of()));
+        when(orgContext.callInOrg(eq(ORG), any())).thenReturn(Branding.platformDefault());
 
         service().sendCode(ORG, PHONE, "123456", "delivery-key");
 

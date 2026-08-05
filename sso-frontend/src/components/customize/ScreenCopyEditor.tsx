@@ -19,6 +19,19 @@ import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { ChoiceField } from "./BrandingFields";
 
+/**
+ * The console label for each screen. `satisfies Record<AuthScreen, string>` is what makes adding a sixth
+ * screen a COMPILE error here rather than a button rendering the raw key `brandingScreen_DEVICE` — the enum,
+ * the migration CHECK and the union all fail loudly, and this was the one place that did not.
+ */
+const SCREEN_LABEL = {
+  LOGIN: "brandingScreen_LOGIN",
+  MFA: "brandingScreen_MFA",
+  STEPUP: "brandingScreen_STEPUP",
+  CONSENT: "brandingScreen_CONSENT",
+  RESET: "brandingScreen_RESET",
+} as const satisfies Record<AuthScreen, string>;
+
 /** Every field is a string in the form; "" is how it says "inherit", which maps to null on the wire. */
 interface FormState {
   headline: string;
@@ -130,8 +143,8 @@ export function ScreenCopyEditor() {
     <div className="grid gap-5">
       <ChoiceField label={t("brandingScreen")} hint={t("brandingScreenHint")} value={screen}
                    options={AUTH_SCREENS}
-                   labelFor={(option) => t(`brandingScreen_${option}`)}
-                   onChange={(next) => select((next || "LOGIN") as AuthScreen)} />
+                   labelFor={(option) => t(SCREEN_LABEL[option])}
+                   onChange={select} />
 
       {formError && <ErrorCard message={formError} />}
 

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { getBranding, type Branding } from "@/branding";
-import { applyBrandingTheme, resolvedTheme } from "@/lib/prefs";
+import { applyBrandingTheme } from "@/lib/brandingTheme";
+import { resolvedTheme } from "@/lib/prefs";
 
 /** Unbranded: the built-in mark, the product name, and the default theme. What every surface starts from. */
 const DEFAULT: Branding = {

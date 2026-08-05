@@ -7,7 +7,6 @@ import com.example.sso.branding.BrandingTheme;
 import com.example.sso.branding.internal.domain.OrgBranding;
 import com.example.sso.branding.internal.domain.OrgBrandingRepository;
 import com.example.sso.shared.error.BadRequestException;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -16,7 +15,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
 /**
  * Per-tenant auth-UI branding: {@link #resolve} answers the branding to RENDER for an org (own → platform →
@@ -32,9 +30,7 @@ import org.springframework.util.StringUtils;
 public class BrandingService implements BrandingResolver {
 
     private static final Pattern COLOR = Pattern.compile("^#[0-9a-fA-F]{6}$");
-    private static final String HTTPS = "https://";
     private static final int MAX_PRODUCT_NAME = 64;
-    private static final int MAX_URL = 2048;
 
     private final OrgBrandingRepository repository;
     private final ActingTier tier;
@@ -57,10 +53,7 @@ public class BrandingService implements BrandingResolver {
         if (cached.isPresent()) {
             return cached.get();
         }
-        Branding platform = repository.findByOrgIdIsNull()
-                .map(this::toBranding)
-                .map(row -> row.inheriting(Branding.platformDefault()))
-                .orElseGet(Branding::platformDefault);
+        Branding platform = platformBranding();
         Branding resolved = orgId == null ? platform : repository.findByOrgId(orgId)
                 .map(this::toBranding)
                 .map(own -> own.inheriting(platform))
@@ -100,9 +93,9 @@ public class BrandingService implements BrandingResolver {
     /** Trimmed and shape-checked; a blank field becomes null, which is how a piece returns to inheriting. */
     private BrandingIdentity validated(BrandingIdentity identity) {
         return new BrandingIdentity(
-                url(identity.logoUrl(), "branding.logoUrl"),
-                url(identity.logoUrlDark(), "branding.logoUrlDark"),
-                url(identity.faviconUrl(), "branding.faviconUrl"),
+                BrandingValues.httpsUrl(identity.logoUrl(), "branding.logoUrl"),
+                BrandingValues.httpsUrl(identity.logoUrlDark(), "branding.logoUrlDark"),
+                BrandingValues.httpsUrl(identity.faviconUrl(), "branding.faviconUrl"),
                 productName(identity.productName()));
     }
 
@@ -110,27 +103,12 @@ public class BrandingService implements BrandingResolver {
         return new BrandingTheme(
                 color(theme.accentColor(), "branding.accentColor.invalid"),
                 color(theme.backgroundColor(), "branding.backgroundColor.invalid"),
-                url(theme.backgroundImageUrl(), "branding.backgroundImageUrl"),
+                BrandingValues.httpsUrl(theme.backgroundImageUrl(), "branding.backgroundImageUrl"),
                 theme.font(), theme.corner(), theme.layout());
     }
 
-    /** https only: an http asset on the sign-in page is a mixed-content block at best and a downgrade at worst. */
-    private String url(String value, String keyPrefix) {
-        String trimmed = trimToNull(value);
-        if (trimmed == null) {
-            return null;
-        }
-        if (!trimmed.toLowerCase(Locale.ROOT).startsWith(HTTPS)) {
-            throw BadRequestException.of(keyPrefix + ".notHttps");
-        }
-        if (trimmed.length() > MAX_URL) {
-            throw BadRequestException.of(keyPrefix + ".tooLong");
-        }
-        return trimmed;
-    }
-
     private String color(String value, String messageKey) {
-        String trimmed = trimToNull(value);
+        String trimmed = BrandingValues.trimToNull(value);
         if (trimmed != null && !COLOR.matcher(trimmed).matches()) {
             throw BadRequestException.of(messageKey);
         }
@@ -138,11 +116,7 @@ public class BrandingService implements BrandingResolver {
     }
 
     private String productName(String value) {
-        String trimmed = trimToNull(value);
-        if (trimmed != null && trimmed.length() > MAX_PRODUCT_NAME) {
-            throw BadRequestException.of("branding.productName.tooLong");
-        }
-        return trimmed;
+        return BrandingValues.capped(value, MAX_PRODUCT_NAME, "branding.productName.tooLong");
     }
 
     /**
@@ -151,6 +125,12 @@ public class BrandingService implements BrandingResolver {
      * administrator the value they just replaced.
      */
     private Branding inheritedDefault() {
+        return platformBranding();
+    }
+
+    /** The platform row over the built-in default. One definition: the editor's starting point and what the
+     * sign-in screen actually renders must not be able to diverge when the fallback rule changes. */
+    private Branding platformBranding() {
         return repository.findByOrgIdIsNull()
                 .map(this::toBranding)
                 .map(row -> row.inheriting(Branding.platformDefault()))
@@ -171,7 +151,4 @@ public class BrandingService implements BrandingResolver {
         return new Branding(branding.identity(), branding.theme(), Map.of());
     }
 
-    private String trimToNull(String value) {
-        return StringUtils.hasText(value) ? value.trim() : null;
-    }
 }

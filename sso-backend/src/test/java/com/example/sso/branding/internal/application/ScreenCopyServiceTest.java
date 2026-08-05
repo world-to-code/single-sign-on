@@ -347,4 +347,48 @@ class ScreenCopyServiceTest {
                 .isInstanceOf(ForbiddenException.class);
         verify(events, never()).publishEvent(any(BrandingChanged.class));
     }
+
+    // ------------------------------------------- screens that own their title
+
+    /**
+     * The consent title names the client asking for access, so a tenant may not replace it. Enforced HERE and
+     * not only in the renderer: the server otherwise accepts, stores and publishes the value on the public
+     * endpoint, leaving one component's constant as the only thing between it and a phishing screen on the
+     * IdP's own origin.
+     */
+    @Test
+    void aHeadlineForAScreenThatOwnsItsTitleIsRefused() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        assertThatThrownBy(() -> service().update(AuthScreen.CONSENT,
+                copy("Approve to continue", null, null, null)))
+                .isInstanceOf(BadRequestException.class);
+        verify(repository, never()).save(any());
+    }
+
+    /** The tenant still speaks on that screen — only the title is the IdP's. */
+    @Test
+    void theOtherFieldsOfThatScreenAreStillAccepted() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        when(repository.findByOrgIdAndScreen(ORG, AuthScreen.CONSENT)).thenReturn(Optional.empty());
+
+        service().update(AuthScreen.CONSENT, copy(null, "Acme uses this to sync", "Questions?", null));
+
+        ArgumentCaptor<AuthScreenCopy> saved = ArgumentCaptor.captor();
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().copy().subtext()).isEqualTo("Acme uses this to sync");
+    }
+
+    /** Every other screen keeps taking a headline — the rule is per screen, not a global ban. */
+    @Test
+    void aHeadlineIsAcceptedForEveryScreenThatAllowsOne() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+        for (AuthScreen screen : AuthScreen.values()) {
+            if (!screen.allowsTenantHeadline()) {
+                continue;
+            }
+            when(repository.findByOrgIdAndScreen(ORG, screen)).thenReturn(Optional.empty());
+            service().update(screen, copy("Our own heading", null, null, null));
+        }
+    }
 }

@@ -10,5 +10,9 @@ import java.util.UUID;
  */
 public interface BrandingResolver {
 
+    /**
+     * The branding to render for {@code orgId}. Its {@code productName} is NEVER null and never blank: every
+     * resolution bottoms out in the built-in default, so a caller does not need a fallback of its own.
+     */
     Branding resolve(UUID orgId);
 }

@@ -7,7 +7,6 @@ import com.example.sso.branding.internal.domain.AuthScreenCopyRepository;
 import com.example.sso.shared.error.BadRequestException;
 import java.util.EnumMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -33,11 +32,9 @@ import org.springframework.util.StringUtils;
 @RequiredArgsConstructor
 public class ScreenCopyService {
 
-    private static final String HTTPS = "https://";
     private static final int MAX_HEADLINE = 120;
     private static final int MAX_SUBTEXT = 300;
     private static final int MAX_FOOTER = 200;
-    private static final int MAX_URL = 2048;
 
     private final AuthScreenCopyRepository repository;
     private final ActingTier tier;
@@ -69,6 +66,11 @@ public class ScreenCopyService {
     @Transactional
     public void update(AuthScreen screen, ScreenCopy copy) {
         UUID org = tier.writableOrg();
+        // Refused rather than silently dropped: an administrator who typed a consent heading should be told
+        // the IdP owns that line, not left believing it saved.
+        if (!screen.allowsTenantHeadline() && StringUtils.hasText(copy.headline())) {
+            throw BadRequestException.of("branding.screenCopy.headline.notYours");
+        }
         ScreenCopy validated = validated(copy);
         ownRow(screen).ifPresentOrElse(
                 row -> row.reconfigure(validated),
@@ -87,33 +89,13 @@ public class ScreenCopyService {
     /** Trimmed and capped; a blank or whitespace-only field becomes null, which is how a piece re-inherits. */
     private ScreenCopy validated(ScreenCopy copy) {
         return new ScreenCopy(
-                capped(copy.headline(), MAX_HEADLINE, "branding.screenCopy.headline.tooLong"),
-                capped(copy.subtext(), MAX_SUBTEXT, "branding.screenCopy.subtext.tooLong"),
-                capped(copy.footer(), MAX_FOOTER, "branding.screenCopy.footer.tooLong"),
-                helpUrl(copy.helpUrl()));
+                BrandingValues.capped(copy.headline(), MAX_HEADLINE, "branding.screenCopy.headline.tooLong"),
+                BrandingValues.capped(copy.subtext(), MAX_SUBTEXT, "branding.screenCopy.subtext.tooLong"),
+                BrandingValues.capped(copy.footer(), MAX_FOOTER, "branding.screenCopy.footer.tooLong"),
+                BrandingValues.httpsUrl(copy.helpUrl(), "branding.screenCopy.helpUrl"));
     }
 
-    private String capped(String value, int max, String messageKey) {
-        String trimmed = trimToNull(value);
-        if (trimmed != null && trimmed.length() > max) {
-            throw BadRequestException.of(messageKey);
-        }
-        return trimmed;
-    }
 
-    private String helpUrl(String value) {
-        String trimmed = trimToNull(value);
-        if (trimmed == null) {
-            return null;
-        }
-        if (!trimmed.toLowerCase(Locale.ROOT).startsWith(HTTPS)) {
-            throw BadRequestException.of("branding.screenCopy.helpUrl.notHttps");
-        }
-        if (trimmed.length() > MAX_URL) {
-            throw BadRequestException.of("branding.screenCopy.helpUrl.tooLong");
-        }
-        return trimmed;
-    }
 
     /** A mutable EnumMap, because {@link #resolve} merges the tenant's rows into the platform's in place. */
     private Map<AuthScreen, ScreenCopy> byScreen(List<AuthScreenCopy> rows) {
@@ -141,7 +123,4 @@ public class ScreenCopyService {
         return tier.ownsGlobalRow() ? repository.findByOrgIdIsNullAndScreen(screen) : Optional.empty();
     }
 
-    private String trimToNull(String value) {
-        return StringUtils.hasText(value) ? value.trim() : null;
-    }
 }

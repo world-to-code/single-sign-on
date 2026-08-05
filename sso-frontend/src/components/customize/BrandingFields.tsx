@@ -59,21 +59,49 @@ export function ColorField({ label, hint, value, fallback, onChange }: {
  * state — a picker that chooses which screen you are editing is a selector, not a setting, and giving it a
  * blank option would offer a choice that means nothing.
  */
-export function ChoiceField<T extends string>({ label, hint, value, options, inheritLabel, labelFor, onChange }: {
+export function ChoiceField<T extends string>({ label, hint, value, options, labelFor, onChange }: {
+  label: string;
+  hint?: string;
+  value: T;
+  options: readonly T[];
+  labelFor: (option: T) => string;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <Field label={label} hint={hint}>
+      <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1.5">
+        {options.map((option) => (
+          <ChoiceOption key={option} selected={value === option} label={labelFor(option)}
+                        onSelect={() => onChange(option)} />
+        ))}
+      </div>
+    </Field>
+  );
+}
+
+/**
+ * The same control for a SETTING, where "inherit" is a real answer and is listed first.
+ *
+ * <p>Split from {@link ChoiceField} rather than made optional on it: a selector that merely picks which thing
+ * you are editing has no inherit state, and folding both into one type forced its callers to accept `T | ""`
+ * and cast the empty case back. The cast was the evidence — and it silently resolved a blank to a default, so
+ * adding an inherit option to a selector by copy-paste would have compiled.
+ */
+export function InheritableChoiceField<T extends string>({
+  label, hint, value, options, inheritLabel, labelFor, onChange,
+}: {
   label: string;
   hint?: string;
   value: T | "";
   options: readonly T[];
-  inheritLabel?: string;
+  inheritLabel: string;
   labelFor: (option: T) => string;
   onChange: (value: T | "") => void;
 }) {
   return (
     <Field label={label} hint={hint}>
       <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1.5">
-        {inheritLabel !== undefined && (
-          <ChoiceOption selected={value === ""} label={inheritLabel} onSelect={() => onChange("")} />
-        )}
+        <ChoiceOption selected={value === ""} label={inheritLabel} onSelect={() => onChange("")} />
         {options.map((option) => (
           <ChoiceOption key={option} selected={value === option} label={labelFor(option)}
                         onSelect={() => onChange(option)} />
