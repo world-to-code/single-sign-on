@@ -17,7 +17,8 @@ vi.mock("@/branding", () => ({
   AUTH_SCREENS: ["LOGIN", "MFA", "STEPUP", "CONSENT", "RESET"],
 }));
 vi.mock("../ToastProvider", () => ({ useToast: () => vi.fn() }));
-vi.mock("../ConfirmProvider", () => ({ useConfirm: () => vi.fn().mockResolvedValue(true) }));
+const confirmed = vi.fn().mockResolvedValue(true);
+vi.mock("../ConfirmProvider", () => ({ useConfirm: () => confirmed }));
 
 /**
  * The editor writes ONE screen at a time, so the case that matters most is that switching screens does not
@@ -31,6 +32,7 @@ describe("ScreenCopyEditor", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    confirmed.mockResolvedValue(true);
     load.mockResolvedValue({
       LOGIN: { headline: "Sign in to Acme", subtext: null, footer: null, helpUrl: null },
       MFA: { headline: "Verify it is you", subtext: null, footer: null, helpUrl: null },
@@ -65,8 +67,23 @@ describe("ScreenCopyEditor", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: "brandingScreen_CONSENT" }));
 
+    // Every field, not just the one: carrying any of them across is the defect.
     await waitFor(() =>
       expect(screen.getByLabelText("brandingScreenHeadline")).toHaveValue(""));
+    expect(screen.getByLabelText("brandingScreenSubtext")).toHaveValue("");
+    expect(screen.getByLabelText("brandingScreenFooter")).toHaveValue("");
+    expect(screen.getByLabelText("brandingScreenHelpUrl")).toHaveValue("");
+  });
+
+  /** A cancelled confirm must not destroy the tenant's wording. */
+  it("does not revert when the confirmation is declined", async () => {
+    confirmed.mockResolvedValueOnce(false);
+    await renderEditor();
+
+    fireEvent.click(screen.getByRole("button", { name: /reset/i }));
+
+    await waitFor(() => expect(confirmed).toHaveBeenCalled());
+    expect(drop).not.toHaveBeenCalled();
   });
 
   it("saves only the screen currently selected", async () => {
@@ -78,7 +95,10 @@ describe("ScreenCopyEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
 
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-    expect(save).toHaveBeenCalledWith("MFA", expect.objectContaining({ headline: "Confirm" }));
+    // The WHOLE object, not objectContaining: the bug this file's docblock names — a form that keeps the
+    // previous screen's fields — changes the three the loose matcher ignores.
+    expect(save).toHaveBeenCalledWith("MFA",
+      { headline: "Confirm", subtext: null, footer: null, helpUrl: null });
   });
 
   /** A blank field must go over the wire as null — that is how the server returns a piece to inheriting. */

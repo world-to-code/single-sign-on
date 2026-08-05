@@ -151,12 +151,18 @@ export function applyBrandingTheme(theme: {
   toggleProperty(root, "--brand-radius", theme.corner ? CORNER_RADIUS[theme.corner] : null);
 }
 
-/** https only, and the URL is escaped into the `url()` so a quote in it cannot end the CSS value early. */
+/**
+ * https only, and percent-encoded into the `url()` so nothing in it can end the CSS value early.
+ *
+ * `encodeURI` already escapes the quote (to %22) along with spaces, backslashes and angle brackets, so there
+ * is no second escaping step here on purpose: two mechanisms enforcing one rule means a test cannot fail when
+ * either is deleted, and the one left standing is the one nobody checked.
+ */
 function brandImage(url: string | null): string | null {
   if (!url || !url.toLowerCase().startsWith("https://")) {
     return null;
   }
-  return `url("${encodeURI(url).replace(/"/g, "%22")}")`;
+  return `url("${encodeURI(url)}")`;
 }
 
 function toggleProperty(root: HTMLElement, name: string, value: string | null): void {

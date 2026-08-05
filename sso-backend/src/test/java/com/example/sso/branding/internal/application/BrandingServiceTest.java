@@ -26,6 +26,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -145,6 +146,11 @@ class BrandingServiceTest {
         assertThat(view.identity().productName()).isEqualTo("Acme");
     }
 
+    /**
+     * The editor's starting point is read right after a save, and the cache is only retired once that
+     * transaction commits — so this path must go to the database. A cached entry is stubbed here precisely so
+     * that routing it through {@code resolve} would show the administrator the value they just replaced.
+     */
     @Test
     void getIsNotConfiguredAndShowsTheInheritedDefaultAsAStartingPoint() {
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
@@ -155,6 +161,7 @@ class BrandingServiceTest {
 
         assertThat(view.configured()).isFalse();
         assertThat(view.identity().productName()).isEqualTo("Svalinn"); // built-in, as a starting point
+        verify(cache, never()).find(anyLong(), any());
     }
 
     @Test
@@ -225,6 +232,9 @@ class BrandingServiceTest {
         verify(repository, never()).save(any());
         assertThat(existing.identity().productName()).isEqualTo("Rebrand");
         assertThat(existing.identity().logoUrl()).isNull(); // blank logo cleared
+        // The THEME half too: applying only the identity would silently discard every theme edit made by a
+        // tenant that already has a row — a success toast and nothing changed.
+        assertThat(existing.theme().accentColor()).isEqualTo("#000000");
     }
 
     @Test
@@ -358,6 +368,26 @@ class BrandingServiceTest {
         verify(repository, never()).findByOrgId(any());
         verify(repository, never()).findByOrgIdIsNull();
         verify(screenCopy, never()).resolve(any());
+    }
+
+    /**
+     * The generation must be captured ONCE, before the database read, and reused for the store. Reading it
+     * again afterwards would reopen the very race it exists to close: a write committing in between would
+     * bump it, and the store would land under the NEW number — resurrecting the value the write replaced.
+     * The stub returns a different value on a second call so that mistake cannot pass.
+     */
+    @Test
+    void resolveCapturesTheGenerationOnceAndStoresUnderIt() {
+        when(cache.generation()).thenReturn(11L, 99L);
+        when(cache.find(11L, ORG)).thenReturn(Optional.empty());
+        when(repository.findByOrgId(ORG)).thenReturn(Optional.of(row(ORG)));
+        when(repository.findByOrgIdIsNull()).thenReturn(Optional.empty());
+        when(screenCopy.resolve(ORG)).thenReturn(Map.of());
+
+        service().resolve(ORG);
+
+        verify(cache).generation();
+        verify(cache).put(eq(11L), eq(ORG), any());
     }
 
     @Test

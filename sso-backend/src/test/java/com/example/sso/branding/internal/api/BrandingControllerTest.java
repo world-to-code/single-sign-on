@@ -108,6 +108,11 @@ class BrandingControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.copy.LOGIN.headline").value("Sign in to Acme"))
                 .andExpect(jsonPath("$.copy.LOGIN.length()").value(4))
-                .andExpect(jsonPath("$.copy.LOGIN.empty").doesNotExist());
+                .andExpect(jsonPath("$.copy.LOGIN.empty").doesNotExist())
+                // Every record, not just the one that was caught: an accessor added to Branding, identity or
+                // theme ships the identical defect on the identical unauthenticated endpoint.
+                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$.identity.length()").value(4))
+                .andExpect(jsonPath("$.theme.length()").value(6));
     }
 }
