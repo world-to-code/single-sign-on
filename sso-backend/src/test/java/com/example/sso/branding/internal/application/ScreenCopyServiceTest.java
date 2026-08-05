@@ -123,7 +123,7 @@ class ScreenCopyServiceTest {
     @Test
     void resolveWithANullOrgReadsOnlyThePlatformWording() {
         when(repository.findByOrgIdIsNull()).thenReturn(List.of(
-                row(null, AuthScreen.CONSENT, copy("Authorize", null, null, null))));
+                row(null, AuthScreen.CONSENT, copy(null, "Review what this application is requesting", null, null))));
 
         assertThat(service().resolve(null)).containsOnlyKeys(AuthScreen.CONSENT);
         verify(repository, never()).findByOrgId(any());
@@ -228,6 +228,21 @@ class ScreenCopyServiceTest {
         assertThatThrownBy(() -> service().update(AuthScreen.LOGIN, copy(null, "x".repeat(301), null, null)))
                 .isInstanceOf(BadRequestException.class);
         assertThatThrownBy(() -> service().update(AuthScreen.LOGIN, copy(null, null, "x".repeat(201), null)))
+                .isInstanceOf(BadRequestException.class);
+        verify(repository, never()).save(any());
+    }
+
+    /**
+     * The three layers — @Pattern, this service, the V146 column CHECK — must agree on CASE. The service used
+     * to compare case-insensitively and store the original casing, so an uppercase scheme passed here and was
+     * refused by the column at commit-flush: a 500 on a value this layer had just called valid.
+     */
+    @Test
+    void updateRejectsAnUppercaseSchemeJustAsTheColumnDoes() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
+
+        assertThatThrownBy(() -> service().update(AuthScreen.LOGIN,
+                copy(null, null, null, "HTTPS://help.acme")))
                 .isInstanceOf(BadRequestException.class);
         verify(repository, never()).save(any());
     }
@@ -384,11 +399,38 @@ class ScreenCopyServiceTest {
     void aHeadlineIsAcceptedForEveryScreenThatAllowsOne() {
         when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         for (AuthScreen screen : AuthScreen.values()) {
-            if (!screen.allowsTenantHeadline()) {
+            if (!screen.allowsCustomHeadline()) {
                 continue;
             }
             when(repository.findByOrgIdAndScreen(ORG, screen)).thenReturn(Optional.empty());
             service().update(screen, copy("Our own heading", null, null, null));
         }
+    }
+
+    /**
+     * The read side must not serve a consent headline either, whatever put it in the table. V146 states that
+     * threat model for the URL columns — a migration, a manual fix-up, a writer that skips this service — and
+     * the headline rule deserves the same treatment on the path that renders it.
+     */
+    @Test
+    void aStoredConsentHeadlineIsNotServed() {
+        when(repository.findByOrgIdIsNull()).thenReturn(List.of());
+        when(repository.findByOrgId(ORG)).thenReturn(List.of(
+                row(ORG, AuthScreen.CONSENT, copy("Approve to continue", "Acme syncs your profile", null, null))));
+
+        ScreenCopy consent = service().resolve(ORG).get(AuthScreen.CONSENT);
+
+        assertThat(consent.headline()).isNull();
+        assertThat(consent.subtext()).isEqualTo("Acme syncs your profile"); // the rest still speaks
+    }
+
+    /** A row carrying ONLY a forbidden headline says nothing once stripped, so the screen drops entirely. */
+    @Test
+    void aRowCarryingOnlyAForbiddenHeadlineDisappears() {
+        when(repository.findByOrgIdIsNull()).thenReturn(List.of());
+        when(repository.findByOrgId(ORG)).thenReturn(List.of(
+                row(ORG, AuthScreen.CONSENT, copy("Approve to continue", null, null, null))));
+
+        assertThat(service().resolve(ORG)).isEmpty();
     }
 }

@@ -52,6 +52,11 @@ public class ScreenCopyService {
             byScreen(repository.findByOrgId(orgId)).forEach((screen, own) ->
                     resolved.merge(screen, own, (platform, tenant) -> tenant.inheriting(platform)));
         }
+        // Backstop on the READ side, for the same threat V146 names on the write side: a row that never
+        // passed this service. A stored consent headline is dropped rather than served, so the screen that
+        // names the requesting client cannot be relabelled by a row nobody checked.
+        resolved.replaceAll((screen, copy) ->
+                screen.allowsCustomHeadline() ? copy : copy.withoutHeadline());
         resolved.values().removeIf(ScreenCopy::saysNothing);
         return resolved;
     }
@@ -68,7 +73,7 @@ public class ScreenCopyService {
         UUID org = tier.writableOrg();
         // Refused rather than silently dropped: an administrator who typed a consent heading should be told
         // the IdP owns that line, not left believing it saved.
-        if (!screen.allowsTenantHeadline() && StringUtils.hasText(copy.headline())) {
+        if (!screen.allowsCustomHeadline() && StringUtils.hasText(copy.headline())) {
             throw BadRequestException.of("branding.screenCopy.headline.notYours");
         }
         ScreenCopy validated = validated(copy);

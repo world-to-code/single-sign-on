@@ -51,7 +51,8 @@ class AdminBrandingControllerTest {
 
     @Test
     void aValidBodyIsAccepted() throws Exception {
-        when(service.get()).thenReturn(new BrandingView(true, new BrandingIdentity("https://cdn.example/l.png", null, null, "Acme"),
+        when(service.get()).thenReturn(new BrandingView(true,
+                new BrandingIdentity("https://cdn.example/l.png", null, null, "Acme"),
                 new BrandingTheme("#123abc", null, null, null, null, null)));
         expectPutStatus(body("https://cdn.example/l.png", "#123abc", "Acme"), 200);
     }

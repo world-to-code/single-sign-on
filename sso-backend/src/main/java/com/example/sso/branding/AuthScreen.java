@@ -22,9 +22,10 @@ public enum AuthScreen {
     RESET;
 
     /**
-     * Whether a tenant may replace this screen's TITLE.
+     * Whether ANY tier may replace this screen's TITLE.
      *
-     * <p>Only the consent screen says no, and the reason is not cosmetic: its title names the client asking
+     * <p>Only the consent screen says no, and it says no to the platform tier too — the title names a client
+     * chosen per REQUEST, so no tier can speak for it. The reason is not cosmetic: the title names the client asking
      * for access — the one thing telling a user WHICH application they are authorizing. A tenant admin able to
      * replace it would put a chosen heading above a genuine scope list and redirect host, on the IdP's real
      * origin and certificate.
@@ -34,7 +35,7 @@ public enum AuthScreen {
      * be replaced, duplicated, or joined by a second one, and a rule enforced only there is a rule the write
      * path never applies. A sixth screen has to state its own answer instead of inheriting a permissive one.
      */
-    public boolean allowsTenantHeadline() {
+    public boolean allowsCustomHeadline() {
         return this != CONSENT;
     }
 }

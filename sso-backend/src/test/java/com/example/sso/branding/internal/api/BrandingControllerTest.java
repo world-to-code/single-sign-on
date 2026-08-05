@@ -60,7 +60,8 @@ class BrandingControllerTest {
         when(ref.getId()).thenReturn(ORG);
         when(tenantResolver.tenantSlug(any())).thenReturn(Optional.of("acme"));
         when(organizations.findBySlug("acme")).thenReturn(Optional.of(ref));
-        when(service.resolve(ORG)).thenReturn(new Branding(new BrandingIdentity("https://cdn.acme.example/l.png", null, null, "Acme"),
+        when(service.resolve(ORG)).thenReturn(new Branding(
+                new BrandingIdentity("https://cdn.acme.example/l.png", null, null, "Acme"),
                 new BrandingTheme("#123abc", null, null, null, null, null), Map.of()));
 
         mvc.perform(get("/api/auth/branding"))

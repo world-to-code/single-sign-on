@@ -12,8 +12,10 @@
 -- These values render on the IdP's OWN origin, on the page where every user of every downstream application
 -- signs in, so the scheme is worth stating in the one place no writer can bypass.
 --
--- The predicates are NULLable-tolerant (absent means "inherit") and case-sensitive on purpose: the service
--- normalizes nothing but the surrounding whitespace, and a scheme is lowercase by RFC 3986 convention. An
+-- The predicates are NULLable-tolerant (absent means "inherit") and case-sensitive on purpose: a scheme is
+-- lowercase by RFC 3986 convention, and all three layers now agree on that. They did not at first — the
+-- service compared case-insensitively and stored the original casing, so an uppercase scheme passed it and
+-- was refused HERE at commit-flush, turning a validation into a 500. An
 -- existing row that violates this would fail the migration rather than be silently rewritten — deliberate,
 -- since a non-https URL already in the table is a finding, not a formatting problem.
 

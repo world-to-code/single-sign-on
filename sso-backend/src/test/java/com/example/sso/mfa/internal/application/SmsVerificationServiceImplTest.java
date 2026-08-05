@@ -68,7 +68,8 @@ class SmsVerificationServiceImplTest {
 
     @Test
     void sendCodeTextsTheCodeAndTtlToTheGivenTenantAndNumber() {
-        when(orgContext.callInOrg(eq(ORG), any())).thenReturn(new Branding(new BrandingIdentity(null, null, null, "Acme ID"), BrandingTheme.none(), Map.of()));
+        when(orgContext.callInOrg(eq(ORG), any())).thenReturn(new Branding(
+                new BrandingIdentity(null, null, null, "Acme ID"), BrandingTheme.none(), Map.of()));
 
         service().sendCode(ORG, PHONE, "123456", "delivery-key");
 

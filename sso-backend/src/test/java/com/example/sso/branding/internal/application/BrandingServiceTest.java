@@ -378,6 +378,7 @@ class BrandingServiceTest {
      */
     @Test
     void resolveCapturesTheGenerationOnceAndStoresUnderIt() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(cache.generation()).thenReturn(11L, 99L);
         when(cache.find(11L, ORG)).thenReturn(Optional.empty());
         when(repository.findByOrgId(ORG)).thenReturn(Optional.of(row(ORG)));
@@ -392,6 +393,7 @@ class BrandingServiceTest {
 
     @Test
     void resolveStoresWhatItResolvedOnAMiss() {
+        when(orgContext.currentOrg()).thenReturn(Optional.of(ORG));
         when(cache.find(0, ORG)).thenReturn(Optional.empty());
         when(repository.findByOrgId(ORG)).thenReturn(Optional.of(row(ORG)));
         when(repository.findByOrgIdIsNull()).thenReturn(Optional.empty());
@@ -439,5 +441,39 @@ class BrandingServiceTest {
         service().update(spec("https://cdn.example/l.png", "#abcdef", "Platform"));
 
         verify(events).publishEvent(new BrandingChanged());
+    }
+
+    /**
+     * A caller bound to ANOTHER org must not populate this org's cache key. RLS filters its rows away, so the
+     * resolution falls back to the platform default — correct as an answer, catastrophic as a cached one: it
+     * would be served to the other tenant's real visitors until the TTL. The read still answers; only the
+     * write is refused.
+     */
+    @Test
+    void resolveDoesNotCacheForAnOrgTheRequestIsNotBoundTo() {
+        UUID other = UUID.randomUUID();
+        when(orgContext.currentOrg()).thenReturn(Optional.of(other));
+        when(cache.find(0, ORG)).thenReturn(Optional.empty());
+        when(repository.findByOrgId(ORG)).thenReturn(Optional.empty());
+        when(repository.findByOrgIdIsNull()).thenReturn(Optional.empty());
+        when(screenCopy.resolve(ORG)).thenReturn(Map.of());
+
+        assertThat(service().resolve(ORG).productName()).isEqualTo("Svalinn");
+
+        verify(cache, never()).put(anyLong(), any(), any());
+    }
+
+    /** The platform tier legitimately resolves any org (the SMS sender name path), so it still caches. */
+    @Test
+    void thePlatformTierMayCacheForAnyOrg() {
+        when(orgContext.isPlatform()).thenReturn(true);
+        when(cache.find(0, ORG)).thenReturn(Optional.empty());
+        when(repository.findByOrgId(ORG)).thenReturn(Optional.of(row(ORG)));
+        when(repository.findByOrgIdIsNull()).thenReturn(Optional.empty());
+        when(screenCopy.resolve(ORG)).thenReturn(Map.of());
+
+        service().resolve(ORG);
+
+        verify(cache).put(anyLong(), eq(ORG), any());
     }
 }

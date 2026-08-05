@@ -41,4 +41,9 @@ public record ScreenCopy(String headline, String subtext, String footer, String 
                 footer != null ? footer : fallback.footer(),
                 helpUrl != null ? helpUrl : fallback.helpUrl());
     }
+
+    /** This copy with no headline — for a screen whose title is not any tier's to set. */
+    public ScreenCopy withoutHeadline() {
+        return headline == null ? this : new ScreenCopy(null, subtext, footer, helpUrl);
+    }
 }

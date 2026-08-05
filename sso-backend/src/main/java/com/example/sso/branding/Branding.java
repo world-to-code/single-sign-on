@@ -17,6 +17,15 @@ import java.util.Map;
  */
 public record Branding(BrandingIdentity identity, BrandingTheme theme, Map<AuthScreen, ScreenCopy> copy) {
 
+    /**
+     * Copied defensively, so the guarantee holds on EVERY construction path. The resolver builds a mutable
+     * EnumMap to merge tiers into, and Jackson hands back a mutable LinkedHashMap on a cache hit — this record
+     * presents itself as a value, and it was one on some paths and not others.
+     */
+    public Branding {
+        copy = copy == null ? Map.of() : Map.copyOf(copy);
+    }
+
     /** The platform fallback when neither the tenant nor the platform has configured branding. */
     public static Branding platformDefault() {
         return new Branding(

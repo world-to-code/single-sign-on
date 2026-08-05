@@ -107,7 +107,13 @@ describe("prefs — the CSS sink layer", () => {
       }
     });
 
-    it("accepts an uppercase scheme, matching the service's case-insensitive check", () => {
+    /**
+     * Deliberately MORE tolerant than the server, which is case-sensitive across all three of its layers
+     * (@Pattern, the service, the V146 column CHECK). This is a defensive re-check of a value that has
+     * already passed those, so being lenient here cannot admit anything they refused — and being stricter
+     * would only break rendering for a value the server had accepted.
+     */
+    it("accepts an uppercase scheme, being the lenient side of a value the server already checked", () => {
       applyBrandingTheme(theme({ backgroundImageUrl: "HTTPS://cdn.example/x.jpg" }));
 
       expect(root.style.getPropertyValue("--brand-background-image")).toContain("cdn.example");

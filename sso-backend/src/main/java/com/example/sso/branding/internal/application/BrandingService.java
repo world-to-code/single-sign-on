@@ -59,7 +59,14 @@ public class BrandingService implements BrandingResolver {
                 .map(own -> own.inheriting(platform))
                 .orElse(platform);
         Branding answer = resolved.withCopy(screenCopy.resolve(orgId));
-        cache.put(generation, orgId, answer);
+        // Only cache what this request was actually SCOPED to read. The precondition — be inside the target
+        // org's context — used to be Javadoc alone, and a caller that got it wrong would not fail: RLS would
+        // filter its rows away, resolution would fall back to the platform default, and THAT would be stored
+        // under the other tenant's key and served to their visitors until the TTL. Structural now: a mismatch
+        // still answers correctly for this call, it just refuses to speak for a tenant it was not bound to.
+        if (boundTo(orgId)) {
+            cache.put(generation, orgId, answer);
+        }
         return answer;
     }
 
@@ -147,6 +154,11 @@ public class BrandingService implements BrandingResolver {
     }
 
     /** A row carries no wording — that lives in its own table — so this stage resolves without it. */
+    /** Whether the caller's bound context is the org being resolved — the platform tier may resolve any. */
+    private boolean boundTo(UUID orgId) {
+        return tier.ownsGlobalRow() || tier.org().map(bound -> bound.equals(orgId)).orElse(orgId == null);
+    }
+
     private Branding toBranding(OrgBranding branding) {
         return new Branding(branding.identity(), branding.theme(), Map.of());
     }

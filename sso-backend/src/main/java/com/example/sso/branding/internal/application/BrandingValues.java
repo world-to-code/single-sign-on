@@ -1,7 +1,6 @@
 package com.example.sso.branding.internal.application;
 
 import com.example.sso.shared.error.BadRequestException;
-import java.util.Locale;
 import org.springframework.util.StringUtils;
 
 /**
@@ -35,7 +34,11 @@ final class BrandingValues {
         if (trimmed == null) {
             return null;
         }
-        if (!trimmed.toLowerCase(Locale.ROOT).startsWith(HTTPS)) {
+        // Case-SENSITIVE, matching the @Pattern at the request boundary and the LIKE in V146. It used to
+        // lowercase for the comparison and store the original casing, so HTTPS:// passed here and was refused
+        // by the column at commit-flush — a 500 on a value this layer had just called valid. Three layers are
+        // only defence in depth while they agree; a wider inner layer is a trap, not a backstop.
+        if (!trimmed.startsWith(HTTPS)) {
             throw BadRequestException.of(keyPrefix + ".notHttps");
         }
         if (trimmed.length() > MAX_URL) {
