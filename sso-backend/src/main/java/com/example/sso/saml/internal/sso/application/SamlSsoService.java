@@ -88,7 +88,7 @@ public class SamlSsoService {
         // The IdP entityID follows the host the SP reached, matching the tenant's own signing credential.
         Response response = responseBuilder.issueResponse(relyingParty, inResponseTo,
                 new AssertionSubject(user.getEmail(), user.getDisplayName(), org), sid,
-                samlEntityId.resolve(httpRequest));
+                samlEntityId.resolve(httpRequest), granted);
         String encoded = codec.encode(response);
         if (sid != null) {
             sloIndex.record(sid, relyingParty.getEntityId(), user.getEmail());

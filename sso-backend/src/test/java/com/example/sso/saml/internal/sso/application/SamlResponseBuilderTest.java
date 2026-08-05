@@ -5,6 +5,9 @@ import com.example.sso.saml.internal.relyingparty.domain.SamlRelyingParty;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import com.example.sso.authpolicy.factor.Factors;
+import java.util.Set;
+import org.opensaml.saml.saml2.core.AuthnContext;
 import org.junit.jupiter.api.Test;
 import org.opensaml.core.config.InitializationService;
 import org.opensaml.saml.saml2.core.Assertion;
@@ -60,7 +63,8 @@ class SamlResponseBuilderTest {
     void issueResponseEmitsTheOrgAttributeSymmetricWithOidc() {
         AssertionSubject subject = new AssertionSubject("u@x.io", "User", "11111111-1111-1111-1111-111111111111");
 
-        Response response = builder.issueResponse(plainSp(), "req-1", subject, "sid-1", "https://idp.example");
+        Response response = builder.issueResponse(plainSp(), "req-1", subject, "sid-1", "https://idp.example",
+                Set.of(Factors.PASSWORD));
 
         assertThat(attributeNames(response)).contains("email", "displayName", "org");
     }
@@ -69,7 +73,8 @@ class SamlResponseBuilderTest {
     void issueResponseOmitsTheOrgAttributeForAGlobalSession() {
         AssertionSubject subject = new AssertionSubject("root@x.io", "Root", null); // a global (org-less) session
 
-        Response response = builder.issueResponse(plainSp(), "req-2", subject, "sid-2", "https://idp.example");
+        Response response = builder.issueResponse(plainSp(), "req-2", subject, "sid-2", "https://idp.example",
+                Set.of(Factors.PASSWORD));
 
         assertThat(attributeNames(response)).contains("email", "displayName").doesNotContain("org");
     }
@@ -133,5 +138,27 @@ class SamlResponseBuilderTest {
     void keyTransportFallsThroughToRsaOaepForAnyOtherName() throws Exception {
         assertThat(invoke("keyTransportUri", "SOMETHING_ELSE"))
                 .isEqualTo(EncryptionConstants.ALGO_ID_KEYTRANSPORT_RSAOAEP);
+    }
+
+    /**
+     * The mapping has its own unit test; this proves it actually reaches the ASSERTION. Without it the class
+     * ref could be resolved correctly and then written from the old constant, and only a live flow would say.
+     */
+    @Test
+    void theAssertionCarriesTheContextClassForTheFactorsThatWereSatisfied() {
+        AssertionSubject subject = new AssertionSubject("u@x.io", "User", null);
+
+        Response password = builder.issueResponse(plainSp(), "req-3", subject, "sid-3", "https://idp.example",
+                Set.of(Factors.PASSWORD));
+        Response passkey = builder.issueResponse(plainSp(), "req-4", subject, "sid-4", "https://idp.example",
+                Set.of(Factors.FIDO2));
+
+        assertThat(contextClassOf(password)).isEqualTo(AuthnContext.PPT_AUTHN_CTX);
+        assertThat(contextClassOf(passkey)).isEqualTo(AuthnContext.UNSPECIFIED_AUTHN_CTX);
+    }
+
+    private String contextClassOf(Response response) {
+        return response.getAssertions().get(0).getAuthnStatements().get(0)
+                .getAuthnContext().getAuthnContextClassRef().getURI();
     }
 }

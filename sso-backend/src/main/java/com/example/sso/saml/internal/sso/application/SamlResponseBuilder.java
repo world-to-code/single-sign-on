@@ -23,6 +23,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.Set;
 
 import static com.example.sso.saml.internal.core.application.SamlObjects.build;
 import static com.example.sso.saml.internal.core.application.SamlObjects.stringAttribute;
@@ -51,10 +52,15 @@ public class SamlResponseBuilder {
      * assertion to the SP's certificate (modern or legacy algorithms). Order matters: sign the
      * assertion first, then encrypt it, then sign the response.
      */
+    /**
+     * @param factors the session's satisfied factors, already filtered to this IdP's own vocabulary. Taken as
+     *                a SET rather than a resolved URI string because the signature already carries three
+     *                adjacent Strings, and a fourth is a swap no compiler catches.
+     */
     public Response issueResponse(SamlRelyingParty sp, String inResponseTo, AssertionSubject subject,
-                                  String sessionIndex, String idpEntityId) {
+                                  String sessionIndex, String idpEntityId, Set<String> factors) {
         try {
-            Response response = buildResponse(sp, inResponseTo, subject, sessionIndex, idpEntityId);
+            Response response = buildResponse(sp, inResponseTo, subject, sessionIndex, idpEntityId, factors);
             Assertion assertion = response.getAssertions().get(0);
 
             if (sp.isSignAssertion()) {
@@ -77,7 +83,8 @@ public class SamlResponseBuilder {
     }
 
     private Response buildResponse(SamlRelyingParty sp, String inResponseTo,
-                                   AssertionSubject assertionSubject, String sessionIndex, String idpEntityId) {
+                                   AssertionSubject assertionSubject, String sessionIndex, String idpEntityId,
+                                   Set<String> factors) {
         Instant now = Instant.now();
         Instant expiry = now.plusSeconds(validitySeconds);
 
@@ -108,7 +115,9 @@ public class SamlResponseBuilder {
         conditions.getAudienceRestrictions().add(audienceRestriction);
 
         AuthnContextClassRef classRef = build(AuthnContextClassRef.DEFAULT_ELEMENT_NAME);
-        classRef.setURI(AuthnContext.PPT_AUTHN_CTX);
+        // Derived from what was actually satisfied. This used to be PasswordProtectedTransport
+        // unconditionally, which told every SP a password had been typed on a passwordless passkey login.
+        classRef.setURI(SamlAuthnContextClass.of(factors));
         AuthnContext authnContext = build(AuthnContext.DEFAULT_ELEMENT_NAME);
         authnContext.setAuthnContextClassRef(classRef);
         AuthnStatement authnStatement = build(AuthnStatement.DEFAULT_ELEMENT_NAME);
