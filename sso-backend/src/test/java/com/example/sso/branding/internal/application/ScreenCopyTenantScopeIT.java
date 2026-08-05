@@ -7,6 +7,7 @@ import com.example.sso.organization.OrganizationService;
 import com.example.sso.organization.OrganizationView;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
+import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 /**
  * Screen wording on real Postgres, because the guarantees this table leans on are the DATABASE's and a mock
@@ -47,9 +49,23 @@ class ScreenCopyTenantScopeIT extends AbstractIntegrationTest {
         }
     }
 
+    /**
+     * Creates an org AND waits for its baseline provisioning to finish.
+     *
+     * <p>Creating an organization fires TenantBaselineProvisioner on an AFTER_COMMIT @Async listener, which
+     * then writes the org's default policies and profile. Deleting the org while those writes are in flight
+     * puts a cascading DELETE against concurrent INSERTs on the same rows, and the two take their locks in
+     * opposite orders — which surfaced exactly once in a full parallel run as a CannotAcquireLockException,
+     * and never when this class ran alone. Waiting for the LAST thing the provisioner writes (the profile)
+     * removes the race instead of retrying through it, so a genuine deadlock would still fail the build.
+     */
     private OrganizationView org(String prefix) {
         String slug = prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
-        return organizations.create(new NewOrganization(slug, slug));
+        OrganizationView created = organizations.create(new NewOrganization(slug, slug));
+        await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                assertThat(ownerJdbc().queryForObject("select count(*) from profile where org_id = ?",
+                        Integer.class, created.id())).isPositive());
+        return created;
     }
 
     private ScreenCopy copy(String headline, String subtext, String footer) {
