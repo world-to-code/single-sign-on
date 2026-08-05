@@ -4,6 +4,7 @@ import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
 import com.example.sso.shared.error.UnauthorizedException;
+import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.mfa.FactorAuthorizationService;
 import com.example.sso.session.lifecycle.SessionLifecycle;
@@ -98,7 +99,7 @@ public class AuthenticationCompletionService {
             // established has to be copied across explicitly: the satisfied factors, and whether an upstream
             // provider — not this IdP — is what actually authenticated the user.
             authentication.getAuthorities().stream()
-                    .filter(a -> a.getAuthority().startsWith(Factors.FACTOR_PREFIX)
+                    .filter(a -> AuthFactor.isKnownAuthority(a.getAuthority())
                             || Factors.FEDERATED.equals(a.getAuthority()))
                     .forEach(authorities::add);
             authorities.add(new SimpleGrantedAuthority(Factors.MFA_COMPLETE));
@@ -153,7 +154,7 @@ public class AuthenticationCompletionService {
 
     private String anyFactorAuthority(Set<GrantedAuthority> authorities) {
         return authorities.stream().map(GrantedAuthority::getAuthority)
-                .filter(a -> a.startsWith(Factors.FACTOR_PREFIX))
+                .filter(AuthFactor::isKnownAuthority)
                 .findFirst().orElse(Factors.PASSWORD);
     }
 }

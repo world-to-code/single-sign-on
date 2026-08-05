@@ -141,7 +141,7 @@ public class FactorStepService {
     /** Whether the pre-auth principal has proven NO factor yet — its identity is therefore unproven. */
     private boolean noFactorProven() {
         return currentUser.authentication().getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority).noneMatch(a -> a.startsWith(Factors.FACTOR_PREFIX));
+                .map(GrantedAuthority::getAuthority).noneMatch(AuthFactor::isKnownAuthority);
     }
 
     /**

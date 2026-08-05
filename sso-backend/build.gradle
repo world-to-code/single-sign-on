@@ -226,13 +226,26 @@ def compose = { List<String> args, Logger log ->
 static int affordableForks(Logger logger) {
     long reserveMb = 2560
     long perForkMb = 768
-    Long budgetMb = cgroupLimitMb() ?: availableMemoryMb()
-    if (budgetMb == null) {
+    Long budgetMb = usableMemoryMb(logger)
+    if (budgetMb == Long.MAX_VALUE) {
         return Integer.MAX_VALUE
     }
     int forks = (int) Math.max(1L, (budgetMb - reserveMb).intdiv(perForkMb))
     logger.info("test: ${budgetMb}m usable, ${reserveMb}m reserved -> at most ${forks} fork(s)")
     return forks
+}
+
+/**
+ * The memory this process may actually use, in MB, or {@code Long.MAX_VALUE} when it cannot be determined —
+ * which callers must read as "no opinion" and fall back to their fixed defaults rather than to zero.
+ */
+static long usableMemoryMb(Logger logger) {
+    Long budget = cgroupLimitMb() ?: availableMemoryMb()
+    if (budget == null) {
+        logger.info('test: memory budget unreadable; using the fixed defaults')
+        return Long.MAX_VALUE
+    }
+    return budget
 }
 
 /** The cgroup v2 memory ceiling in MB, or null when unlimited / not in a container / unreadable. */
@@ -340,7 +353,21 @@ tasks.named('test') {
     // on a 15g machine, and the pressure broke MethodHandle bootstrap rather than showing up as OOM. The
     // budget is what stays constant, so derive the per-fork share from it and clamp the ends. One fork gets
     // the ceiling, because it carries every class.
-    int heapMb = Math.min(1024, Math.max(384, (int) (1536 / maxParallelForks)))
+    // The BUDGET this is divided by is derived from free memory, not a fixed 1536m.
+    //
+    // The fixed number was the other half of the OOM this file already caps forks for. Capping the fork COUNT
+    // stopped the machine being oversubscribed; it did nothing about the fork's own -Xmx, and the failures
+    // that kept appearing were `OutOfMemoryError` raised INSIDE a fork during Spring bean creation — a fork
+    // that had plenty of machine memory around it and 384m of heap to load a dozen distinct application
+    // contexts into. A fork's peak is set by how many DISTINCT contexts land in it, which varies by which
+    // classes the scheduler gave it, so a constant total was always going to be right only on average.
+    //
+    // Half of what is affordable goes to heap, clamped to the measured floor (1536m total, the value that was
+    // tuned here) and a ceiling that leaves room for metaspace, the 256m code cache below, thread stacks and
+    // the containers. On a machine with memory to spare this simply gives each fork more room than the fixed
+    // budget did; on a constrained one it cannot drop below what was already measured to work.
+    long affordableHeapMb = Math.max(1536L, Math.min(4096L, (usableMemoryMb(logger) - 2560L).intdiv(2)))
+    int heapMb = Math.min(1024, Math.max(384, (int) (affordableHeapMb / maxParallelForks)))
     maxHeapSize = (System.getenv('SSO_TEST_HEAP') ?: project.findProperty('testHeap') ?: "${heapMb}m") as String
     // C1-only JIT for fast fork startup, a predictable parallel GC — and an EXPLICIT code cache, which is the
     // part that bites. -XX:TieredStopAtLevel=1 silently drops the default ReservedCodeCacheSize from 240m to

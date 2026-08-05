@@ -237,6 +237,28 @@ class FactorStepServiceTest {
         verify(factorAuth).grantFactor(request, response, AuthFactor.FIDO2.authority());
     }
 
+    /**
+     * "No factor proven" must mean no factor THIS IdP recognizes. Spring Security owns the same `FACTOR_`
+     * namespace and mints eight authorities of its own (FACTOR_AUTHORIZATION_CODE, FACTOR_SAML_RESPONSE,
+     * FACTOR_BEARER, …) from configurers this deployment does not currently wire but a refactor could. Asked
+     * by prefix, one of those makes a passkey-FIRST sign-in look like a second factor — and the org's
+     * passwordless toggle, the whole point of the gate, is skipped.
+     */
+    @Test
+    void aForeignFactorAuthorityDoesNotDisguiseAPasskeyFirstSignIn() {
+        UUID loginOrg = UUID.randomUUID();
+        when(authState.describe(any(), any(), any())).thenReturn(AuthSessionView.pending(
+                "alice", false, true, List.of(), List.of(), List.of(), List.of("FIDO2"), true, null, true));
+        when(currentUser.authentication()).thenReturn(UsernamePasswordAuthenticationToken.authenticated(
+                "alice", null, List.of(new SimpleGrantedAuthority("FACTOR_AUTHORIZATION_CODE"))));
+        when(preAuthOrg.orgId(request)).thenReturn(Optional.of(loginOrg));
+        when(organizations.isPasswordlessLoginEnabled(loginOrg)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.verify(AuthFactor.FIDO2, code(null), request, response))
+                .isInstanceOf(ForbiddenException.class);
+        verify(factorAuth, never()).grantFactor(any(), any(), any());
+    }
+
     @Test
     void verifyAllowsFido2AsASecondFactorEvenWhenPasswordlessIsDisabled() {
         // FIDO2 AFTER another factor is step-up MFA, not passwordless-first — the org toggle must not block it.

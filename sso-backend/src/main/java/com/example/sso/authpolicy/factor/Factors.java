@@ -6,8 +6,15 @@ package com.example.sso.authpolicy.factor;
  */
 public final class Factors {
 
-    /** Common prefix of every {@link AuthFactor} authority; used to select the granted-factor markers. */
-    public static final String FACTOR_PREFIX = "FACTOR_";
+    /**
+     * Common prefix of every {@link AuthFactor} authority.
+     *
+     * <p>NOT public, and not the way to ask "is this a factor". Spring Security owns this namespace too and
+     * mints eight authorities of its own in it, so a prefix test answers a question nobody asked: it says
+     * "something wrote FACTOR_ here", not "this IdP proved a factor". Asking it by prefix let a foreign
+     * authority skip the passwordless gate and inflate the acr level. Use {@link AuthFactor#isKnownAuthority}.
+     */
+    static final String FACTOR_PREFIX = "FACTOR_";
 
     public static final String PASSWORD = AuthFactor.PASSWORD.authority();
     public static final String TOTP = AuthFactor.TOTP.authority();

@@ -6,6 +6,7 @@ import com.example.sso.saml.internal.core.application.SamlEntityId;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
+import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.portal.access.AppAccess;
 import com.example.sso.portal.access.AppAccessQuery;
@@ -53,7 +54,7 @@ public class SamlSsoService {
 
         // Per-app step-up: this app may require extra factors beyond the base login.
         Set<String> granted = authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority).filter(a -> a.startsWith(Factors.FACTOR_PREFIX))
+                .map(GrantedAuthority::getAuthority).filter(AuthFactor::isKnownAuthority)
                 .collect(Collectors.toSet());
         AppAccess access = applications.appAccess(new AppAccessQuery(user, AppType.SAML, rpId, granted,
                 AppStepUpFilter.lastAppStepUp(httpRequest.getSession(false), AppType.SAML, rpId)));

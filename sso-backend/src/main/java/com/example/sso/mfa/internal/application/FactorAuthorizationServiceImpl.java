@@ -1,5 +1,6 @@
 package com.example.sso.mfa.internal.application;
 
+import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.mfa.FactorAuthorizationService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -84,7 +85,7 @@ public class FactorAuthorizationServiceImpl implements FactorAuthorizationServic
                     // its issuedAt) is fresh — an admin elevation token minted right after this step-up
                     // needs it, and its absence 500s the token endpoint. Reuse an existing factor label.
                     String factor = authorities.stream().map(GrantedAuthority::getAuthority)
-                            .filter(a -> a.startsWith(Factors.FACTOR_PREFIX)).findFirst().orElse(Factors.PASSWORD);
+                            .filter(AuthFactor::isKnownAuthority).findFirst().orElse(Factors.PASSWORD);
                     authorities.removeIf(FactorGrantedAuthority.class::isInstance);
                     authorities.add(FactorGrantedAuthority.withAuthority(factor).issuedAt(Instant.ofEpochSecond(now)).build());
                 })

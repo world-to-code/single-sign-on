@@ -65,7 +65,7 @@ public class AuthStateService {
 
         Set<String> granted = authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority).collect(Collectors.toSet());
-        List<String> factors = granted.stream().filter(a -> a.startsWith(Factors.FACTOR_PREFIX)).sorted().toList();
+        List<String> factors = granted.stream().filter(AuthFactor::isKnownAuthority).sorted().toList();
         List<String> roles = granted.stream().filter(a -> a.startsWith(Roles.ROLE_PREFIX)).sorted().toList();
         // Fine-grained permissions (resource:action) let the SPA gate admin nav by capability.
         List<String> permissions = granted.stream().filter(a -> a.contains(":")).sorted().toList();

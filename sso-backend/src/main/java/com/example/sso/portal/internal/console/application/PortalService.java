@@ -2,6 +2,7 @@ package com.example.sso.portal.internal.console.application;
 
 import com.example.sso.portal.access.AppAssignmentFilter;
 
+import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.portal.access.AppAccess;
@@ -83,7 +84,7 @@ public class PortalService {
         }
 
         Set<String> granted = authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority).filter(a -> a.startsWith(Factors.FACTOR_PREFIX))
+                .map(GrantedAuthority::getAuthority).filter(AuthFactor::isKnownAuthority)
                 .collect(Collectors.toSet());
         AppType appType = AppType.valueOf(type);
         AppAccess access = applications.appAccess(new AppAccessQuery(requireUser(authentication.getName()), appType,
