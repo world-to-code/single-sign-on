@@ -113,6 +113,21 @@ class AuthRateLimitFilterTest {
         }
     }
 
+    /**
+     * Tenant selection spends no secret, which is why it was missed — but it is unauthenticated and every call
+     * STASHES the chosen org, creating a session (a Redis entry) and writing an audit row. Unmetered, one client
+     * can sweep the slug namespace to enumerate which tenants exist, mint sessions in the store, and bury the
+     * real security feed under rows nobody asked for. Cost, not credentials, is what earns a limit here.
+     */
+    @Test
+    void throttlesTenantSelectionEvenThoughItSpendsNoSecret() throws Exception {
+        when(rateLimiter.tryAcquire(any())).thenReturn(true);
+
+        filter.doFilter(request("POST", "/api/auth/organization"), new MockHttpServletResponse(), chain);
+
+        verify(rateLimiter).tryAcquire("/api/auth/organization:" + IP);
+    }
+
     @Test
     void anUnlistedPathAndANonPostAreNotLimited() throws Exception {
         pass("POST", "/api/auth/session");

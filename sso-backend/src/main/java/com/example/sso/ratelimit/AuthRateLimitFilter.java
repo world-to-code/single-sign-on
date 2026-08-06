@@ -38,6 +38,11 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
 
     private static final Set<String> LIMITED_PATHS =
             Set.of("/api/auth/identify", "/api/auth/login",
+                    // Spends no secret, and was missed for exactly that reason. It is unauthenticated and every
+                    // call stashes the chosen tenant — creating a session in Redis and an audit row — so an
+                    // unmetered client can sweep the slug namespace for which tenants exist while burying the
+                    // security feed. What earns a limit here is the COST, not a credential.
+                    "/api/auth/organization",
                     // Mails a one-time code: unlimited requests would let a signed-in user mail-bomb their
                     // own address (and burn the mail quota).
                     "/api/auth/email-verification", "/api/auth/email-verification/confirm",
@@ -150,9 +155,22 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
                 + "\"instance\":\"" + path.replace("\"", "") + "\"}");
     }
 
+    /**
+     * Whether this request spends a budget.
+     *
+     * <p>The {@code POST} gate below is not a proxy for "dangerous" — the rule is to limit by what a route DOES
+     * ({@code owasp.md} A04), and a route that only exists as a POST answers 405 to anything else, so gating it
+     * buys nothing either way. What the gate is actually load-bearing for is
+     * {@code GET /api/auth/factors/{factor}/delivery}: the client polls it five times per send to learn that no
+     * code is coming, and metering it would 429 the user whose message already failed to arrive.
+     *
+     * <p>So the gate protects a known-safe GET rather than classifying the POSTs, which means a NEW route that
+     * costs something on a GET gets nothing by default. Such a route belongs above this line, method-agnostic
+     * and with the cost stated — as the federation endpoints are.
+     */
     private boolean isLimited(String method, String path) {
         if (path.startsWith(FEDERATION_PREFIX)) {
-            return true; // method-agnostic: these are GETs by design
+            return true;
         }
         return "POST".equalsIgnoreCase(method)
                 && (LIMITED_PATHS.contains(path)
