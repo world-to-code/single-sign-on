@@ -7,11 +7,8 @@ import java.util.Map;
 import com.example.sso.branding.BrandingTheme;
 import com.example.sso.branding.BrandingIdentity;
 import com.example.sso.branding.internal.application.BrandingService;
-import com.example.sso.organization.OrganizationRef;
-import com.example.sso.organization.OrganizationService;
-import com.example.sso.organization.OrganizationStatus;
+import com.example.sso.organization.HostOrganizations;
 import com.example.sso.tenancy.OrgContext;
-import com.example.sso.tenancy.SubdomainTenantResolver;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -33,16 +30,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * HTTP contract of the PUBLIC branding endpoint: the tenant is selected by the request host, and the read runs
- * inside that org's context. A resolvable (ACTIVE) host returns that org's branding; an unresolvable host
- * returns the built-in default. The host→org primitives are mocked to pin the controller wiring.
+ * inside that org's context. A resolvable host returns that org's branding; a host that names no servable
+ * tenant returns the built-in default.
+ *
+ * <p>WHICH hosts resolve is not asked here — that rule belongs to {@link HostOrganizations} and is covered by
+ * its own matrix (active, suspended, unknown, not a tenant address). This mocks it to pin the wiring: that the
+ * request host is what selects the org, and that the read runs inside it.
  */
 class BrandingControllerTest {
 
     private static final UUID ORG = UUID.randomUUID();
 
     private final BrandingService service = mock(BrandingService.class);
-    private final SubdomainTenantResolver tenantResolver = mock(SubdomainTenantResolver.class);
-    private final OrganizationService organizations = mock(OrganizationService.class);
+    private final HostOrganizations hostOrganizations = mock(HostOrganizations.class);
     private final OrgContext orgContext = mock(OrgContext.class);
     private MockMvc mvc;
 
@@ -50,18 +50,14 @@ class BrandingControllerTest {
     @SuppressWarnings("unchecked")
     void setUp() {
         mvc = MockMvcBuilders.standaloneSetup(
-                new BrandingController(service, tenantResolver, organizations, orgContext)).build();
+                new BrandingController(service, hostOrganizations, orgContext)).build();
         // Execute the supplier callInOrg wraps, so the resolve actually runs.
         when(orgContext.callInOrg(any(), any())).thenAnswer(inv -> ((Supplier<Object>) inv.getArgument(1)).get());
     }
 
     @Test
     void aResolvableActiveHostReturnsThatTenantsBranding() throws Exception {
-        OrganizationRef ref = mock(OrganizationRef.class);
-        when(ref.getStatus()).thenReturn(OrganizationStatus.ACTIVE);
-        when(ref.getId()).thenReturn(ORG);
-        when(tenantResolver.tenantSlug(any())).thenReturn(Optional.of("acme"));
-        when(organizations.findBySlug("acme")).thenReturn(Optional.of(ref));
+        when(hostOrganizations.activeOrgForHost(any())).thenReturn(Optional.of(ORG));
         when(service.resolve(ORG)).thenReturn(new Branding(
                 new BrandingIdentity("https://cdn.acme.example/l.png", null, null, "Acme"),
                 new BrandingTheme("#123abc", null, null, null, null, null), Map.of()));
@@ -76,7 +72,7 @@ class BrandingControllerTest {
 
     @Test
     void anUnresolvableHostReturnsTheBuiltInDefault() throws Exception {
-        when(tenantResolver.tenantSlug(any())).thenReturn(Optional.empty());
+        when(hostOrganizations.activeOrgForHost(any())).thenReturn(Optional.empty());
         when(service.resolve(any())).thenReturn(Branding.platformDefault());
 
         mvc.perform(get("/api/auth/branding"))
@@ -99,11 +95,7 @@ class BrandingControllerTest {
      */
     @Test
     void theScreenWordingCarriesNoFieldBeyondItsComponents() throws Exception {
-        OrganizationRef ref = mock(OrganizationRef.class);
-        when(ref.getStatus()).thenReturn(OrganizationStatus.ACTIVE);
-        when(ref.getId()).thenReturn(ORG);
-        when(tenantResolver.tenantSlug(any())).thenReturn(Optional.of("acme"));
-        when(organizations.findBySlug("acme")).thenReturn(Optional.of(ref));
+        when(hostOrganizations.activeOrgForHost(any())).thenReturn(Optional.of(ORG));
         when(service.resolve(ORG)).thenReturn(new Branding(BrandingIdentity.none(), BrandingTheme.none(),
                 Map.of(AuthScreen.LOGIN, new ScreenCopy("Sign in to Acme", null, null, null))));
 
@@ -117,28 +109,5 @@ class BrandingControllerTest {
                 .andExpect(jsonPath("$.length()").value(3))
                 .andExpect(jsonPath("$.identity.length()").value(4))
                 .andExpect(jsonPath("$.theme.length()").value(6));
-    }
-
-    /**
-     * A SUSPENDED tenant must not keep serving its branding on its subdomain. Untested until a review said so:
-     * the two cases covered were "resolvable and ACTIVE" and "slug does not resolve", and dropping the status
-     * filter passes both.
-     */
-    @Test
-    void aSuspendedTenantFallsBackToTheBuiltInDefault() throws Exception {
-        OrganizationRef ref = mock(OrganizationRef.class);
-        when(ref.getStatus()).thenReturn(OrganizationStatus.SUSPENDED);
-        // Stubbed on purpose: without a real id the org resolves to null anyway, and dropping the status
-        // filter would change nothing observable — the test would pass while proving nothing.
-        lenient().when(ref.getId()).thenReturn(ORG);
-        when(tenantResolver.tenantSlug(any())).thenReturn(Optional.of("acme"));
-        when(organizations.findBySlug("acme")).thenReturn(Optional.of(ref));
-        when(service.resolve(null)).thenReturn(Branding.platformDefault());
-
-        mvc.perform(get("/api/auth/branding"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.identity.productName").value("Svalinn"));
-
-        verify(orgContext).callInOrg(isNull(), any());
     }
 }
