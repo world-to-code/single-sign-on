@@ -3,6 +3,7 @@ package com.example.sso.mfa.internal.application;
 import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.authpolicy.factor.Factors;
 import com.example.sso.mfa.FactorAuthorizationService;
+import com.example.sso.webauthn.PasskeyAssurance;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.core.Authentication;
@@ -19,6 +20,8 @@ import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
 
 /**
  * Default {@link FactorAuthorizationService}. Establishes and upgrades the session
@@ -29,9 +32,15 @@ import java.time.Instant;
 @Service
 public class FactorAuthorizationServiceImpl implements FactorAuthorizationService {
 
+    private final PasskeyAssurance passkeyAssurance;
+
     private final SecurityContextHolderStrategy contextHolder = SecurityContextHolder.getContextHolderStrategy();
     private final SecurityContextRepository contextRepository = new HttpSessionSecurityContextRepository();
     private final SessionAuthenticationStrategy sessionStrategy = new ChangeSessionIdAuthenticationStrategy();
+
+    public FactorAuthorizationServiceImpl(PasskeyAssurance passkeyAssurance) {
+        this.passkeyAssurance = passkeyAssurance;
+    }
 
     @Override
     public void establish(HttpServletRequest request, HttpServletResponse response, Authentication authentication) {
@@ -50,14 +59,16 @@ public class FactorAuthorizationServiceImpl implements FactorAuthorizationServic
             return false;
         }
 
+        // A passkey comes in two kinds and the id_token has to say which, so the marker is attached where the
+        // factor is — both ways of using a passkey (passwordless login, FIDO2 step-up) pass through here, and a
+        // rule copied into each caller is one a later third caller will not know about.
+        List<String> granted = Factors.FIDO2.equals(factorAuthority)
+                        && passkeyAssurance.lastAssertionWasSoftwareBacked(request)
+                ? List.of(factorAuthority, Factors.SOFTWARE_BACKED_PASSKEY)
+                : List.of(factorAuthority);
+
         Authentication upgraded = current.toBuilder()
-                .authorities(authorities -> {
-                    boolean alreadyPresent = authorities.stream()
-                            .anyMatch(a -> factorAuthority.equals(a.getAuthority()));
-                    if (!alreadyPresent) {
-                        authorities.add(new SimpleGrantedAuthority(factorAuthority));
-                    }
-                })
+                .authorities(authorities -> granted.forEach(authority -> addIfAbsent(authorities, authority)))
                 .build();
 
         SecurityContext context = contextHolder.createEmptyContext();
@@ -96,5 +107,12 @@ public class FactorAuthorizationServiceImpl implements FactorAuthorizationServic
         contextHolder.setContext(context);
         contextRepository.saveContext(context, request, response);
         return true;
+    }
+
+    private void addIfAbsent(Collection<GrantedAuthority> authorities, String authority) {
+        boolean alreadyPresent = authorities.stream().anyMatch(a -> authority.equals(a.getAuthority()));
+        if (!alreadyPresent) {
+            authorities.add(new SimpleGrantedAuthority(authority));
+        }
     }
 }

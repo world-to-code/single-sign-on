@@ -47,9 +47,33 @@ class AuthenticationMethodReferencesTest {
                 .containsExactlyInAnyOrder("otp", "mfa");
     }
 
+    /**
+     * RFC 8176 splits proof-of-possession by where the key lives: {@code hwk} is a HARDWARE-secured key,
+     * {@code swk} a software-secured one. A device-bound passkey — a security key, or one in a TPM/secure
+     * enclave that cannot leave it — is the first.
+     */
     @Test
-    void aPasskeyReportsHardwareBacked() {
+    void aDeviceBoundPasskeyReportsHardwareBacked() {
         assertThat(AuthenticationMethodReferences.of(Set.of(Factors.FIDO2), 1)).containsExactly("hwk");
+    }
+
+    /**
+     * A SYNCED passkey is copied into the platform's account keychain by design, so the private key is not
+     * bound to any one piece of hardware. Reporting it as {@code hwk} tells a relying party that gates a
+     * high-assurance action on a physical key that it got one — this class's own reason for existing, and the
+     * same overclaim already corrected for `pwd` on a federated login.
+     */
+    @Test
+    void aSyncedPasskeyReportsSoftwareBackedInstead() {
+        assertThat(AuthenticationMethodReferences.of(Set.of(Factors.FIDO2, Factors.SOFTWARE_BACKED_PASSKEY), 1))
+                .containsExactly("swk");
+    }
+
+    /** The marker is not a factor: counting it would let one passkey claim two-factor authentication. */
+    @Test
+    void theSoftwareBackedMarkerNeverCountsTowardsMfa() {
+        assertThat(AuthenticationMethodReferences.of(Set.of(Factors.FIDO2, Factors.SOFTWARE_BACKED_PASSKEY), 1))
+                .doesNotContain("mfa");
     }
 
     /** `mfa` asserts two INDEPENDENT factors; one factor must never claim it. */

@@ -46,6 +46,18 @@ public final class Factors {
      */
     public static final String FEDERATED = "AUTH_FEDERATED";
 
+    /**
+     * Marks a session whose passkey was a SYNCED one — the credential reported itself backup-eligible, so the
+     * platform copies the private key into the user's account keychain and it is not bound to any one device.
+     * Not {@code FACTOR_}-prefixed for the same reason as {@link #FEDERATED}: it is not a factor, and counting
+     * it would let a single passkey claim two-factor authentication.
+     *
+     * <p>It exists because RFC 8176 distinguishes a hardware-secured key ({@code hwk}) from a software-secured
+     * one ({@code swk}), and a relying party gating a high-assurance action on a physical key acts on the
+     * difference. Absent this marker the passkey was device-bound, which is what {@code hwk} claims.
+     */
+    public static final String SOFTWARE_BACKED_PASSKEY = "PASSKEY_SOFTWARE_BACKED";
+
     public static final String SID_PREFIX = "SID_";
 
     /** Marker-authority prefix carrying the id of the organization (tenant) the session logged into,

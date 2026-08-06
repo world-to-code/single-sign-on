@@ -46,8 +46,12 @@ final class AuthenticationMethodReferences {
         if (authorities.contains(Factors.SMS)) {
             amr.add("sms");
         }
+        // RFC 8176 splits proof-of-possession by where the key lives, and a relying party gating a
+        // high-assurance action on a physical key acts on the difference. A SYNCED passkey is copied into the
+        // platform's account keychain by design, so calling it hardware-secured is the same overclaim as
+        // reporting `pwd` for a login this IdP never verified.
         if (authorities.contains(Factors.FIDO2)) {
-            amr.add("hwk"); // hardware-backed / passkey
+            amr.add(authorities.contains(Factors.SOFTWARE_BACKED_PASSKEY) ? "swk" : "hwk");
         }
         if (factorCount >= MFA_THRESHOLD) {
             amr.add("mfa");

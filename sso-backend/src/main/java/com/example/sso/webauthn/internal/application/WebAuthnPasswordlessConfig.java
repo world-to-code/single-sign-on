@@ -45,16 +45,20 @@ public class WebAuthnPasswordlessConfig {
             @Value("${sso.webauthn.rp-id:localhost}") String rpId,
             @Value("${sso.webauthn.rp-name:Svalinn}") String rpName,
             @Value("${sso.tenant.base-domains}") List<String> baseDomains,
-            @Qualifier("webAuthnAllowedOrigins") Set<String> allowedOrigins) {
+            @Qualifier("webAuthnAllowedOrigins") Set<String> allowedOrigins,
+            SessionPasskeyAssurance assurance) {
         // The RP ID is derived from the ceremony host per request (WebAuthnRpIdResolver): a subdomain of a
         // single-label base like *.localhost must use the full host, since the browser refuses the base itself as
         // its RP ID. allowedOrigins is likewise the TENANT-AWARE set, so the single bean validates passkey
         // ceremonies at every tenant host, not only the platform, for BOTH registration and assertion.
         WebAuthnRpIdResolver rpIds = new WebAuthnRpIdResolver(baseDomains, rpId);
-        return new TenantAwareRelyingPartyOperations(rpIds, id -> {
+        WebAuthnRelyingPartyOperations perTenant = new TenantAwareRelyingPartyOperations(rpIds, id -> {
             PublicKeyCredentialRpEntity rp = PublicKeyCredentialRpEntity.builder().id(id).name(rpName).build();
             return new Webauthn4JRelyingPartyOperations(userEntities, userCredentials, rp, allowedOrigins);
         });
+        // Outermost, so it sees only ceremonies the tenant-aware operations accepted: what an assertion PROVED
+        // (a device-bound key, or a synced one) is recorded for the session that later has to claim it.
+        return new AssuranceRecordingRelyingPartyOperations(perTenant, userCredentials, assurance);
     }
 
     @Bean
