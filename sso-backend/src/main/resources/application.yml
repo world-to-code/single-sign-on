@@ -165,6 +165,12 @@ sso:
     max-bulk-operations: 10              # max operations in a single SCIM bulk request
   totp:
     qr-size: 220                         # enrollment QR code size (px)
+  audit:
+    chain:
+      # Sealing is asynchronous so audit writes stay off the login path; this interval IS the window in which a
+      # deleted row leaves no trace, so it is a security parameter, not a performance knob.
+      seal-interval: 30s
+      seal-batch-size: 500
   ratelimit:
     attempts: 10
     window-seconds: 60

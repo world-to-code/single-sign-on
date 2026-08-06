@@ -5,8 +5,10 @@ import java.time.Instant;
 import java.util.Collection;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -52,4 +54,14 @@ public interface AuditEventRepository extends JpaRepository<AuditEvent, Long> {
 
         long getCnt();
     }
+
+    /** The next batch to seal. Ordered by id, the only column that reflects the order rows became visible. */
+    @Query("select e from AuditEvent e where e.seq is null order by e.id")
+    List<AuditEvent> findUnsealedOldestFirst(Limit limit);
+
+    @Query("select max(e.seq) from AuditEvent e")
+    Optional<Long> highestSealedSeq();
+
+    @Query("select e from AuditEvent e where e.seq is not null order by e.seq")
+    List<AuditEvent> findSealedInChainOrder();
 }

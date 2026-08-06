@@ -99,6 +99,27 @@ public class AuditEvent {
     @Column(nullable = false, length = 16)
     private AuditSeverity severity;
 
+
+    // --- Hash chain. Null until the sealer runs: audit writes stay off the critical path, so "unsealed" is a
+    // --- normal state. Written once and never again; see V147 and AuditRowDigest.
+    @Column(name = "seq")
+    private Long seq;
+
+    @Column(name = "row_salt")
+    private byte[] rowSalt;
+
+    @Column(name = "row_hash")
+    private byte[] rowHash;
+
+    @Column(name = "prev_hash")
+    private byte[] prevHash;
+
+    @Column(name = "chain_hash")
+    private byte[] chainHash;
+
+    @Column(name = "chain_version")
+    private Short chainVersion;
+
     @Builder(access = AccessLevel.PRIVATE)
     private AuditEvent(String type, String principal, boolean success, String detail, String remoteIp,
                        AuditCategory category, AuditSubjectType subjectType, String subjectId, UUID orgId,
@@ -150,5 +171,22 @@ public class AuditEvent {
                 .reason(record.reason())
                 .severity(severity)
                 .build();
+    }
+
+    /**
+     * Fixes this row's place in the chain. Called once, by the sealer, and never again — a row that could be
+     * re-sealed is a row whose digest can be made to match after an edit, which is the whole thing this
+     * prevents.
+     */
+    public void seal(long seq, byte[] rowSalt, byte[] rowHash, byte[] prevHash, byte[] chainHash, short version) {
+        if (this.seq != null) {
+            throw new IllegalStateException("audit row " + id + " is already sealed at " + this.seq);
+        }
+        this.seq = seq;
+        this.rowSalt = rowSalt;
+        this.rowHash = rowHash;
+        this.prevHash = prevHash;
+        this.chainHash = chainHash;
+        this.chainVersion = version;
     }
 }
