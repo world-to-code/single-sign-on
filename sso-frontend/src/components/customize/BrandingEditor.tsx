@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
+import { useSubmit } from "@/hooks/useSubmit";
 import { RotateCcw, Save } from "lucide-react";
 import { errorMessage } from "../../api";
 import {
@@ -87,12 +88,11 @@ export function BrandingEditor() {
   const toast = useToast();
   const refreshBranding = useBrandingRefresh();
   const confirm = useConfirm();
+  const { busy, error: formError, run } = useSubmit();
 
   const [configured, setConfigured] = useState(false);
   const [form, setForm] = useState<FormState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     getBrandingSettings()
@@ -112,18 +112,12 @@ export function BrandingEditor() {
 
   async function save(): Promise<void> {
     if (!form) return;
-    setBusy(true);
-    setFormError(null);
-    try {
-      await updateBranding(toInput(form));
-      await reload();
-      await refreshBranding(); // the shell reads the resolved branding, not this form
-      toast({ tone: "success", title: t("brandingSaved") });
-    } catch (e) {
-      setFormError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
+    await run(async () => {
+        await updateBranding(toInput(form));
+        await reload();
+        await refreshBranding(); // the shell reads the resolved branding, not this form
+        toast({ tone: "success", title: t("brandingSaved") });
+    });
   }
 
   async function resetToDefault(): Promise<void> {
@@ -134,18 +128,12 @@ export function BrandingEditor() {
       variant: "destructive",
     });
     if (!ok) return;
-    setBusy(true);
-    setFormError(null);
-    try {
-      await deleteBranding();
-      await reload();
-      await refreshBranding();
-      toast({ tone: "success", title: t("brandingResetDone") });
-    } catch (e) {
-      setFormError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
+    await run(async () => {
+        await deleteBranding();
+        await reload();
+        await refreshBranding();
+        toast({ tone: "success", title: t("brandingResetDone") });
+    });
   }
 
   if (loadError) return <ErrorCard message={loadError} />;

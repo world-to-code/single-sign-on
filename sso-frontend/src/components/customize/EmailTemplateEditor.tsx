@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSubmit } from "@/hooks/useSubmit";
 import { RotateCcw, Save } from "lucide-react";
 import { errorMessage } from "../../api";
 import {
@@ -61,6 +62,7 @@ export function EmailTemplateEditor({ template, onSaved }: {
   const { t } = useTranslation("console");
   const toast = useToast();
   const confirm = useConfirm();
+  const { busy, error: formError, run } = useSubmit();
 
   const [form, setForm] = useState<FormState>(() => toForm(template));
   const [preview, setPreview] = useState<EmailTemplatePreview | null>(null);
@@ -68,10 +70,8 @@ export function EmailTemplateEditor({ template, onSaved }: {
   // Two different failures, deliberately kept apart: a SAVE that was refused belongs beside the button that
   // asked for it, a RENDER that was refused belongs beside the preview it invalidates. They shared one field
   // before, under the Subject input, which is where neither of them is about.
-  const [formError, setFormError] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
-  const [busy, setBusy] = useState(false);
 
   // Re-seed the form when the selected event changes or the server state is refreshed (save/reset).
   useEffect(() => setForm(toForm(template)), [template]);
@@ -118,15 +118,10 @@ export function EmailTemplateEditor({ template, onSaved }: {
   }
 
   async function save(): Promise<void> {
-    setBusy(true);
-    try {
-      onSaved(await updateEmailTemplate(template.event, toInput(form)));
-      toast({ tone: "success", title: t("customizeSaved") });
-    } catch (e) {
-      setFormError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
+    await run(async () => {
+        onSaved(await updateEmailTemplate(template.event, toInput(form)));
+        toast({ tone: "success", title: t("customizeSaved") });
+    });
   }
 
   async function resetToDefault(): Promise<void> {
@@ -137,15 +132,10 @@ export function EmailTemplateEditor({ template, onSaved }: {
       variant: "destructive",
     });
     if (!ok) return;
-    setBusy(true);
-    try {
-      onSaved(await deleteEmailTemplate(template.event));
-      toast({ tone: "success", title: t("customizeResetDone") });
-    } catch (e) {
-      setFormError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
+    await run(async () => {
+        onSaved(await deleteEmailTemplate(template.event));
+        toast({ tone: "success", title: t("customizeResetDone") });
+    });
   }
 
   return (

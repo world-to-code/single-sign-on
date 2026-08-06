@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSubmit } from "@/hooks/useSubmit";
 import { RotateCcw, Save } from "lucide-react";
 import { errorMessage } from "../../api";
 import {
@@ -76,13 +77,15 @@ export function ScreenCopyEditor() {
   const { t } = useTranslation("console");
   const toast = useToast();
   const confirm = useConfirm();
+  const { busy, error: formError, setError: setFormError, run } = useSubmit();
+  // No useBrandingRefresh() here, unlike BrandingEditor — a decision, not an omission. That hook exists so the
+  // console repaints its own logo, name and accent after a save; the console renders no screen WORDING, so
+  // there is nothing on this page for a refresh to change. Add it the day the console previews these screens.
 
   const [screen, setScreen] = useState<AuthScreen>("LOGIN");
   const [saved, setSaved] = useState<Partial<Record<AuthScreen, ScreenCopy>> | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     getScreenCopy()
@@ -101,16 +104,10 @@ export function ScreenCopyEditor() {
   }
 
   async function save(): Promise<void> {
-    setBusy(true);
-    setFormError(null);
-    try {
-      setSaved(await updateScreenCopy(screen, toCopy(form)));
-      toast({ tone: "success", title: t("brandingSaved") });
-    } catch (e) {
-      setFormError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
+    await run(async () => {
+        setSaved(await updateScreenCopy(screen, toCopy(form)));
+        toast({ tone: "success", title: t("brandingSaved") });
+    });
   }
 
   async function revert(): Promise<void> {
@@ -121,19 +118,13 @@ export function ScreenCopyEditor() {
       variant: "destructive",
     });
     if (!ok) return;
-    setBusy(true);
-    setFormError(null);
-    try {
-      await deleteScreenCopy(screen);
-      const all = await getScreenCopy();
-      setSaved(all);
-      setForm(toForm(all[screen]));
-      toast({ tone: "success", title: t("brandingResetDone") });
-    } catch (e) {
-      setFormError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
+    await run(async () => {
+        await deleteScreenCopy(screen);
+        const all = await getScreenCopy();
+        setSaved(all);
+        setForm(toForm(all[screen]));
+        toast({ tone: "success", title: t("brandingResetDone") });
+    });
   }
 
   if (loadError) return <ErrorCard message={loadError} />;
