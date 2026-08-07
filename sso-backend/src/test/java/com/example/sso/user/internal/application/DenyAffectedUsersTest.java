@@ -62,7 +62,7 @@ class DenyAffectedUsersTest {
         UUID orgAHolder = UUID.randomUUID();
         UUID orgBHolder = UUID.randomUUID(); // holds the same GLOBAL role in another tenant
         runPlatformSupplierInline();
-        when(userRoles.findUserIdsByRoleId(roleId)).thenReturn(List.of(orgAHolder));
+        when(userRoles.findAllAssignedUserIds(roleId)).thenReturn(List.of(orgAHolder));
         when(groups.findMemberIdsByRoleId(roleId)).thenReturn(List.of(orgBHolder));
         when(appUsers.findIdsByOrgId(orgA)).thenReturn(Set.of(orgAHolder)); // only org-A members survive
 
@@ -77,7 +77,7 @@ class DenyAffectedUsersTest {
         UUID orgAHolder = UUID.randomUUID();
         UUID orgBHolder = UUID.randomUUID();
         runPlatformSupplierInline();
-        when(userRoles.findUserIdsByRoleId(roleId)).thenReturn(List.of(orgAHolder));
+        when(userRoles.findAllAssignedUserIds(roleId)).thenReturn(List.of(orgAHolder));
         when(groups.findMemberIdsByRoleId(roleId)).thenReturn(List.of(orgBHolder));
 
         Set<UUID> affected = affectedUsers.forSubject(DenySubjectKind.ROLE, roleId, null);

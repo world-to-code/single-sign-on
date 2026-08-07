@@ -4,6 +4,7 @@ import com.example.sso.user.role.RoleHierarchyService;
 import com.example.sso.user.internal.group.domain.UserGroupRepository;
 import com.example.sso.user.internal.role.domain.RoleRepository;
 import com.example.sso.user.internal.role.domain.UserRoleRepository;
+import java.time.Clock;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -23,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 class RoleHierarchyServiceImpl implements RoleHierarchyService {
 
+    private final Clock clock;
     private final UserRoleRepository userRoles;
     private final UserGroupRepository userGroups;
     private final RoleClosure roleClosure;
@@ -87,7 +89,8 @@ class RoleHierarchyServiceImpl implements RoleHierarchyService {
     }
 
     private Set<UUID> heldRoleIds(UUID actorUserId) {
-        Set<UUID> held = new HashSet<>(userRoles.findRoleIdsByUserId(actorUserId));
+        // What the actor HOLDS, not what they were ever given: a lapsed role must not authorize granting it.
+        Set<UUID> held = new HashSet<>(userRoles.findRoleIdsHeldAt(actorUserId, clock.instant()));
         held.addAll(userGroups.findDelegatedRoleIdsForMember(actorUserId));
         return held;
     }

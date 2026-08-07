@@ -75,7 +75,10 @@ class DenyAffectedUsers {
     }
 
     private Set<UUID> roleHolders(UUID roleId, UUID denyOrgId) {
-        Set<UUID> ids = new HashSet<>(userRoles.findUserIdsByRoleId(roleId));
+        // Fan-out for session termination, so this one is deliberately over-inclusive: a lapsed holder's
+        // session should already be gone, and re-terminating it is a harmless re-login while MISSING a
+        // holder is a session that keeps a privilege the deny just removed.
+        Set<UUID> ids = new HashSet<>(userRoles.findAllAssignedUserIds(roleId));
         ids.addAll(orgContext.callAsPlatform(() -> groups.findMemberIdsByRoleId(roleId)));
         if (denyOrgId != null) {
             ids.retainAll(appUsers.findIdsByOrgId(denyOrgId)); // a tenant's role deny reaches only its own holders

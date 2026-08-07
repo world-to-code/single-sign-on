@@ -38,6 +38,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.Set;
+import java.time.Clock;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,6 +48,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 /**
@@ -62,6 +64,7 @@ class UserServiceImplTest {
     @Mock private RoleRepository roles;
     @Mock private PermissionRepository permissions;
     @Mock private UserRoleRepository userRoles;
+    @Mock private Clock clock;
     @Mock private UserDirectPermissionRepository userDirectPermissions;
     @Mock private UserGroupRepository groups;
     @Mock private UserGroupMemberRepository userGroupMembers;
@@ -197,8 +200,9 @@ class UserServiceImplTest {
     @Test
     void hasRoleTrueWhenTheUserHoldsIt() {
         UUID id = UUID.randomUUID();
-        when(userRoles.existsByUserIdAndRoleName(id, "ROLE_ADMIN")).thenReturn(true);
-        when(userRoles.existsByUserIdAndRoleName(id, "ROLE_USER")).thenReturn(false);
+        // The instant is the service's clock, not this test's subject — the role name is.
+        when(userRoles.holdsRoleNamedAt(eq(id), eq("ROLE_ADMIN"), any())).thenReturn(true);
+        when(userRoles.holdsRoleNamedAt(eq(id), eq("ROLE_USER"), any())).thenReturn(false);
 
         assertThat(service.hasRole(id, "ROLE_ADMIN")).isTrue();
         assertThat(service.hasRole(id, "ROLE_USER")).isFalse();

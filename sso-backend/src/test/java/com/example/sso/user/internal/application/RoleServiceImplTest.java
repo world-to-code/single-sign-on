@@ -234,7 +234,7 @@ class RoleServiceImplTest {
         UUID groupHolder = UUID.randomUUID();
         Role role = new Role("ROLE_EDITOR");
         when(roles.findById(roleId)).thenReturn(Optional.of(role));
-        when(userRoles.findUserIdsByRoleId(roleId)).thenReturn(List.of(directHolder));
+        when(userRoles.findAllAssignedUserIds(roleId)).thenReturn(List.of(directHolder));
         when(groups.findMemberIdsByRoleId(roleId)).thenReturn(List.of(groupHolder));
 
         service.deleteRole(roleId);

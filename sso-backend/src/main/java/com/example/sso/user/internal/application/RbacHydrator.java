@@ -15,6 +15,7 @@ import com.example.sso.user.internal.rbac.domain.UserDirectPermission;
 import com.example.sso.user.internal.rbac.domain.UserDirectPermissionRepository;
 import com.example.sso.user.internal.role.domain.UserRole;
 import com.example.sso.user.internal.role.domain.UserRoleRepository;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -40,6 +41,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 class RbacHydrator {
 
+    private final Clock clock;
     private final UserRoleRepository userRoles;
     private final UserDirectPermissionRepository userDirectPermissions;
     private final RolePermissionRepository rolePermissions;
@@ -81,7 +83,8 @@ class RbacHydrator {
 
         List<UUID> userIds = users.stream().map(AppUser::getId).toList();
 
-        List<UserRole> roleRows = userRoles.findByUserIdIn(userIds);
+        // The enforcement point: a lapsed grant never becomes an authority.
+        List<UserRole> roleRows = userRoles.findHeldByUserIdIn(userIds, clock.instant());
         Map<UUID, Role> roleById = roles.findAllById(
                         roleRows.stream().map(UserRole::getRoleId).collect(Collectors.toSet()))
                 .stream().collect(Collectors.toMap(Role::getId, role -> role));

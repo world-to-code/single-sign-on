@@ -171,6 +171,11 @@ sso:
       # deleted row leaves no trace, so it is a security parameter, not a performance knob.
       seal-interval: 30s
       seal-batch-size: 500
+  rbac:
+    grant-expiry:
+      # A lapsed grant stops counting the moment anything asks, but the session that already holds it only ends
+      # when this runs — so the interval is how long a revoked privilege can outlive its expiry.
+      sweep-interval: 60s
   ratelimit:
     attempts: 10
     window-seconds: 60

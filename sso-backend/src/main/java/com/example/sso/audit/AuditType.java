@@ -55,6 +55,8 @@ public enum AuditType {
     // Access-control decisions and administration
     AUTHORIZATION_DENIED(AuditCategory.AUTHORIZATION),
     USER_PERMISSIONS_UPDATED(AuditCategory.AUTHORIZATION),
+    /** A time-bounded role grant reached its expiry and was swept away — nobody decided this today. */
+    ROLE_GRANT_EXPIRED(AuditCategory.AUTHORIZATION),
     PERMISSION_DENY_CREATED(AuditCategory.AUTHORIZATION),
     PERMISSION_DENY_LIFTED(AuditCategory.AUTHORIZATION),
     // A membership drop removed the subject a deny resolved against, so the withheld permission came back

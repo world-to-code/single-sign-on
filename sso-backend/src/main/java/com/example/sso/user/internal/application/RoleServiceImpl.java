@@ -32,6 +32,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -67,6 +68,7 @@ public class RoleServiceImpl implements RoleService {
             Roles.ADMIN, Roles.USER, Roles.GROUP_ADMIN, Roles.ORG_ADMIN);
     private static final Set<String> RESERVED_AUTHORITY_PREFIXES = Set.of("FACTOR_", "AUTH_TIME_", "STEPUP_TIME_");
 
+    private final Clock clock;
     private final RoleRepository roles;
     private final AppUserRepository users;
     private final PermissionRepository permissions;
@@ -405,14 +407,14 @@ public class RoleServiceImpl implements RoleService {
     @Transactional(readOnly = true)
     public List<UserAccount> members(UUID roleId) {
         // Member views expose only scalar identity (id/username/…), so no role/permission hydration is needed.
-        return users.findAllById(userRoles.findUserIdsByRoleId(roleId)).stream()
+        return users.findAllById(userRoles.findUserIdsHoldingAt(roleId, clock.instant())).stream()
                 .map(UserAccount.class::cast).toList();
     }
 
     @Override
     @Transactional(readOnly = true)
     public Set<UUID> memberIds(UUID roleId) {
-        return Set.copyOf(userRoles.findUserIdsByRoleId(roleId));
+        return Set.copyOf(userRoles.findUserIdsHoldingAt(roleId, clock.instant()));
     }
 
     @Override
@@ -430,7 +432,7 @@ public class RoleServiceImpl implements RoleService {
             return Map.of();
         }
 
-        List<UserRole> rows = userRoles.findByRoleIdIn(roleIds);
+        List<UserRole> rows = userRoles.findHeldByRoleIdIn(roleIds, clock.instant());
         Map<UUID, AppUser> byId = users.findAllById(rows.stream().map(UserRole::getUserId).collect(Collectors.toSet()))
                 .stream().collect(Collectors.toMap(AppUser::getId, user -> user));
 
@@ -444,7 +446,8 @@ public class RoleServiceImpl implements RoleService {
     @Transactional
     public void setMembers(UUID roleId, Set<UUID> userIds) {
         roles.findById(roleId).orElseThrow(() -> NotFoundException.of("user.role.notFound"));
-        Set<UUID> currentIds = new HashSet<>(userRoles.findUserIdsByRoleId(roleId));
+        // Administering the rows, so lapsed ones count: they still hold the primary key.
+        Set<UUID> currentIds = new HashSet<>(userRoles.findAllAssignedUserIds(roleId));
 
         // Explicitly delete the assignments of members no longer wanted...
         Set<UUID> removed = currentIds.stream().filter(id -> !userIds.contains(id)).collect(Collectors.toSet());
@@ -452,7 +455,7 @@ public class RoleServiceImpl implements RoleService {
 
         // ...and insert one for each newly-selected user that actually exists (unknown ids are dropped).
         Set<UUID> toAdd = userIds.stream().filter(id -> !currentIds.contains(id)).collect(Collectors.toSet());
-        users.findAllById(toAdd).forEach(user -> userRoles.save(new UserRole(user.getId(), roleId)));
+        users.findAllById(toAdd).forEach(user -> userRoles.save(UserRole.permanent(user.getId(), roleId)));
 
         // End sessions of everyone whose membership changed (gained or lost the role) to refresh authorities.
         Set<UUID> affected = new HashSet<>(removed);
@@ -465,7 +468,7 @@ public class RoleServiceImpl implements RoleService {
     public void addMember(UUID roleId, UUID userId) {
         roles.findById(roleId).orElseThrow(() -> NotFoundException.of("user.role.notFound"));
         AppUser user = users.findById(userId).orElseThrow(() -> NotFoundException.of("user.notFound"));
-        userRoles.save(new UserRole(user.getId(), roleId)); // idempotent (composite PK)
+        userRoles.save(UserRole.permanent(user.getId(), roleId)); // idempotent (composite PK)
         accessChanges.forUserIds(Set.of(userId));
     }
 
@@ -485,7 +488,8 @@ public class RoleServiceImpl implements RoleService {
      * to terminate their members' sessions. Session revocation on a role change must span every affected org.
      */
     private Set<UUID> holdersOf(UUID roleId) {
-        Set<UUID> ids = new HashSet<>(userRoles.findUserIdsByRoleId(roleId));
+        // Over-inclusive on purpose — see the note on session-termination fan-out in DenyAffectedUsers.
+        Set<UUID> ids = new HashSet<>(userRoles.findAllAssignedUserIds(roleId));
         ids.addAll(orgContext.callAsPlatform(() -> groups.findMemberIdsByRoleId(roleId)));
         return ids;
     }

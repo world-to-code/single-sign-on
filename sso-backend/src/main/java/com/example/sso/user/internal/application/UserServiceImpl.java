@@ -47,6 +47,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.Clock;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -67,6 +68,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
+    private final Clock clock;
     private final AppUserRepository users;
     private final RoleRepository roles;
     private final PermissionRepository permissions;
@@ -291,7 +293,7 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public boolean hasRole(UUID userId, String roleName) {
-        return userRoles.existsByUserIdAndRoleName(userId, roleName);
+        return userRoles.holdsRoleNamedAt(userId, roleName, clock.instant());
     }
 
     @Override
@@ -362,7 +364,7 @@ public class UserServiceImpl implements UserService {
         // callers (bulk import, the global handler's duplicate-key mapping) are written to catch.
         AppUser saved = users.saveAndFlush(
                 new AppUser(username, email, newUser.displayName(), encodedPassword, orgId));
-        assignedRoles.forEach(role -> userRoles.save(new UserRole(saved.getId(), role.getId())));
+        assignedRoles.forEach(role -> userRoles.save(UserRole.permanent(saved.getId(), role.getId())));
         addToDefaultGroup(saved.getId(), orgId);
         // An administrator asserting an address is not the owner proving it, so the account starts unverified.
         // Ask for the proof now rather than leaving the EMAIL factor silently unusable forever — unless this is
@@ -454,11 +456,13 @@ public class UserServiceImpl implements UserService {
 
     /** Replaces a user's role assignments: explicitly delete the removed rows and insert the added ones. */
     private void replaceUserRoles(UUID userId, Set<UUID> desiredRoleIds) {
-        Set<UUID> current = new HashSet<>(userRoles.findRoleIdsByUserId(userId));
+        // Every row on record, lapsed included: a lapsed row still occupies the primary key, so replacing
+        // against only the held ones would try to insert a duplicate.
+        Set<UUID> current = new HashSet<>(userRoles.findAllAssignedRoleIds(userId));
         current.stream().filter(roleId -> !desiredRoleIds.contains(roleId))
                 .forEach(roleId -> userRoles.deleteByUserIdAndRoleId(userId, roleId));
         desiredRoleIds.stream().filter(roleId -> !current.contains(roleId))
-                .forEach(roleId -> userRoles.save(new UserRole(userId, roleId)));
+                .forEach(roleId -> userRoles.save(UserRole.permanent(userId, roleId)));
     }
 
     @Override
