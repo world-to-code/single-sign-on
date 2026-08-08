@@ -19,6 +19,13 @@ export interface RoleAssignment {
   viaGroups: string[];
 }
 
+/** A permission the user holds, and the roles that actually confer it. */
+export interface HeldPermission {
+  permission: string;
+  /** May name a role the user does NOT hold — one they do hold inherits it down the DAG. */
+  conferredBy: string[];
+}
+
 /** A permission the user does not hold, and the level that withheld it. */
 export interface WithheldPermission {
   permission: string;
@@ -41,7 +48,7 @@ export interface UserDetail {
   updatedAt: string;
   roleAssignments: RoleAssignment[];
   directPermissions: string[];
-  effectivePermissions: string[];
+  effectivePermissions: HeldPermission[];
   deniedPermissions: WithheldPermission[];
   userDenies: DenyRow[];
 }

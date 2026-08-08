@@ -597,6 +597,7 @@ export const console: Record<keyof typeof enConsole, string> = {
   decisionReason_DENIED_AT_GROUP_LEVEL: "소속 그룹에 걸린 거부로 보류됨",
   decisionReason_DENIED_AT_ORG_LEVEL: "조직 전체 거부로 보류됨",
   decisionReason_PLATFORM_VETO: "플랫폼 거부권으로 보류됨 — 테넌트가 해제할 수 없음",
+  userDetailConferredBy: "{{roles}} 이(가) 부여 — 다른 역할을 회수해도 그대로 남습니다",
   userDetailDeniedPermsHint: "역할·그룹·직접 부여로 받았으나 부정 권한(deny)으로 보류된 권한.",
   userDetailDenyManage: "권한 거부",
   userDetailDenyPick: "권한 선택…",

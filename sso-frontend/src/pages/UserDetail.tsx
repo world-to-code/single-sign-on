@@ -311,7 +311,10 @@ export default function UserDetail({ session }: { session: SessionView }) {
             </CardHeader>
             <CardContent>
               <EffectivePermissionList effective={user.effectivePermissions} denied={user.deniedPermissions} />
-              <DenyControls kind="USER" subjectId={id} candidates={user.effectivePermissions} denies={user.userDenies} onChanged={load} />
+              {/* Deny candidates are names only — the provenance is for reading, not for choosing what to cut. */}
+              <DenyControls kind="USER" subjectId={id}
+                            candidates={user.effectivePermissions.map((held) => held.permission)}
+                            denies={user.userDenies} onChanged={load} />
             </CardContent>
           </Card>
 

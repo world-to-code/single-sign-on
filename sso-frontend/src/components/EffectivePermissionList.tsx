@@ -1,9 +1,9 @@
 import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
-import type { WithheldPermission } from "@/users";
+import type { HeldPermission, WithheldPermission } from "@/users";
 
 type Props = {
-  effective: string[];
+  effective: HeldPermission[];
   denied: WithheldPermission[];
 };
 
@@ -21,8 +21,13 @@ export function EffectivePermissionList({ effective, denied }: Props) {
         <p className="text-sm text-muted-foreground">{t("none")}</p>
       ) : (
         <div className="flex flex-wrap gap-1">
-          {effective.map((p) => (
-            <Badge key={p} variant="muted" className="font-mono text-xs">{p}</Badge>
+          {effective.map((held) => (
+            <Badge key={held.permission} variant="muted" className="font-mono text-xs"
+                   title={held.conferredBy.length > 0
+                     ? t("userDetailConferredBy", { roles: held.conferredBy.join(", ") })
+                     : undefined}>
+              {held.permission}
+            </Badge>
           ))}
         </div>
       )}

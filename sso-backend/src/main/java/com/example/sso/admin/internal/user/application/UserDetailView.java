@@ -22,14 +22,15 @@ public record UserDetailView(String id, String username, String email, String di
                              boolean accountNonLocked, String externalId, UUID profileId,
                              Instant createdAt, Instant updatedAt,
                              List<RoleAssignmentView> roleAssignments, List<String> directPermissions,
-                             List<String> effectivePermissions,
+                             List<HeldPermissionView> effectivePermissions,
                              List<WithheldPermissionView> deniedPermissions,
                              List<DenyRow> userDenies) {
 
     /** Projects the user plus its pre-computed role/permission roll-ups to the detail view. {@code userDenies}
      *  are the USER-level deny rows the console can lift (a subset of what {@code deniedPermissions} explains). */
     public static UserDetailView of(UserAccount user, List<RoleAssignmentView> roleAssignments,
-                                    List<String> directPermissions, List<String> effectivePermissions,
+                                    List<String> directPermissions,
+                                    List<HeldPermissionView> effectivePermissions,
                                     List<WithheldPermissionView> deniedPermissions,
                                     List<DenyRow> userDenies) {
         return new UserDetailView(user.getId().toString(), user.getUsername(), user.getEmail(),

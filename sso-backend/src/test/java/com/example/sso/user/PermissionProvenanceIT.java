@@ -1,5 +1,6 @@
 package com.example.sso.user;
 
+import com.example.sso.admin.internal.user.application.UserDetailAdminService;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.account.UserAccount;
@@ -32,6 +33,8 @@ class PermissionProvenanceIT extends AbstractIntegrationTest {
 
     @Autowired
     UserService userService;
+    @Autowired
+    UserDetailAdminService userDetail;
 
     private final List<Runnable> cleanups = new ArrayList<>();
 
@@ -108,6 +111,22 @@ class PermissionProvenanceIT extends AbstractIntegrationTest {
 
         assertThat(explanationOf(user.getId(), Permissions.USER_DELETE))
                 .hasValueSatisfying(explanation -> assertThat(explanation.conferredBy()).isEmpty());
+    }
+
+    /**
+     * The provenance has to survive the trip to the console, not merely exist in the resolver. A view that
+     * dropped it would leave every test above green while the screen still said only "you have it".
+     */
+    @Test
+    void theConsoleDetailCarriesTheConferringRole() {
+        UUID role = role("ROLE_PROV_VIEW", Permissions.USER_READ);
+        UserAccount user = user();
+        assign(user.getId(), role);
+
+        assertThat(userDetail.getUser(user.getId()).effectivePermissions())
+                .filteredOn(held -> held.permission().equals(Permissions.USER_READ))
+                .singleElement()
+                .satisfies(held -> assertThat(held.conferredBy()).containsExactly("ROLE_PROV_VIEW"));
     }
 
     private UUID role(String name, String... permissions) {

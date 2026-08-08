@@ -597,6 +597,7 @@ export const console = {
   decisionReason_DENIED_AT_GROUP_LEVEL: "Withheld by a deny on one of their groups",
   decisionReason_DENIED_AT_ORG_LEVEL: "Withheld by an organization-wide deny",
   decisionReason_PLATFORM_VETO: "Withheld by a platform veto — no tenant can lift this",
+  userDetailConferredBy: "Conferred by {{roles}} — revoking any other role leaves it in place",
   userDetailDeniedPermsHint: "Granted by a role, group or direct grant, but withheld by a negative permission (deny).",
   userDetailDenyManage: "Deny a permission",
   userDetailDenyPick: "Choose a permission…",

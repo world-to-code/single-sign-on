@@ -3,6 +3,8 @@ import { render, screen } from "@testing-library/react";
 import { EffectivePermissionList } from "./EffectivePermissionList";
 
 /** The console bundle really does carry these; anything else falls back. */
+const held = (permission: string, ...conferredBy: string[]) => ({ permission, conferredBy });
+
 const KNOWN_KEYS = new Set([
   "none",
   "userDetailDeniedPerms",
@@ -28,7 +30,7 @@ vi.mock("react-i18next", async (importOriginal) => ({
 
 describe("EffectivePermissionList", () => {
   it("shows the effective permissions", () => {
-    render(<EffectivePermissionList effective={["user:read", "user:update"]} denied={[]} />);
+    render(<EffectivePermissionList effective={[held("user:read"), held("user:update")]} denied={[]} />);
 
     expect(screen.getByText("user:read")).toBeInTheDocument();
     expect(screen.getByText("user:update")).toBeInTheDocument();
@@ -36,7 +38,7 @@ describe("EffectivePermissionList", () => {
   });
 
   it("surfaces a withheld grant separately from the effective set", () => {
-    render(<EffectivePermissionList effective={["user:update"]}
+    render(<EffectivePermissionList effective={[held("user:update")]}
                                     denied={[{ permission: "user:read", withheldBy: "DENIED_AT_USER_LEVEL" }]} />);
 
     expect(screen.getByText("userDetailDeniedPerms")).toBeInTheDocument();
@@ -53,6 +55,24 @@ describe("EffectivePermissionList", () => {
                                     denied={[{ permission: "user:read", withheldBy: "DENIED_AT_ROLE_LEVEL" }]} />);
 
     expect(screen.getByText("user:read")).toHaveAttribute("title", "decisionReason_DENIED_AT_ROLE_LEVEL");
+  });
+
+  /**
+   * The conferring role is what an administrator acts on, and it may be a role the user does not hold — one
+   * they do hold inherits it. A badge that showed only the permission would send them to revoke the wrong
+   * thing.
+   */
+  it("names the role that confers a held permission", () => {
+    render(<EffectivePermissionList effective={[held("user:read", "ROLE_SUPPORT")]} denied={[]} />);
+
+    expect(screen.getByText("user:read")).toHaveAttribute("title", "userDetailConferredBy");
+  });
+
+  /** A direct grant is conferred by no role, so there is nothing to point at. */
+  it("says nothing about roles for a permission no role confers", () => {
+    render(<EffectivePermissionList effective={[held("user:read")]} denied={[]} />);
+
+    expect(screen.getByText("user:read")).not.toHaveAttribute("title");
   });
 
   /** A level the console has no wording for must still say something rather than render a raw enum name. */

@@ -186,7 +186,7 @@ class UserDetailAdminServiceTest {
 
         // Exactly, not contains: this list answers "is this person over-privileged", so the failure direction
         // that matters is it being too LARGE — a subset assertion is blind to exactly that. The ROLE_ name drops.
-        assertThat(detail.effectivePermissions()).containsExactlyInAnyOrder(
+        assertThat(detail.effectivePermissions()).extracting(HeldPermissionView::permission).containsExactlyInAnyOrder(
                 Permissions.USER_READ, Permissions.GROUP_UPDATE, Permissions.GROUP_READ);
     }
 
@@ -208,7 +208,7 @@ class UserDetailAdminServiceTest {
         UserDetailView detail = detailOf(
                 account(Set.of(role("ROLE_X", Permissions.USER_UPDATE)), Set.of()), List.of());
 
-        assertThat(detail.effectivePermissions()).containsExactly(Permissions.USER_UPDATE);
+        assertThat(detail.effectivePermissions()).extracting(HeldPermissionView::permission).containsExactly(Permissions.USER_UPDATE);
         assertThat(detail.deniedPermissions()).singleElement().satisfies(withheld -> {
             assertThat(withheld.permission()).isEqualTo(Permissions.USER_READ);
             assertThat(withheld.withheldBy()).isEqualTo(DecisionReason.DENIED_AT_USER_LEVEL);
@@ -255,7 +255,7 @@ class UserDetailAdminServiceTest {
         UserDetailView detail = detailOf(
                 account(Set.of(role("ROLE_ORG_ADMIN", "user:*")), Set.of()), List.of());
 
-        assertThat(detail.effectivePermissions()).containsExactlyInAnyOrder("user:*",
+        assertThat(detail.effectivePermissions()).extracting(HeldPermissionView::permission).containsExactlyInAnyOrder("user:*",
                 Permissions.USER_READ, Permissions.USER_CREATE, Permissions.USER_UPDATE, Permissions.USER_DELETE);
     }
 
