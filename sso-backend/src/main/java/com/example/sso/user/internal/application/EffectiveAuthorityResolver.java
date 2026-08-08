@@ -57,48 +57,47 @@ class EffectiveAuthorityResolver {
         return denyResolver.verdicts(inputsFor(user));
     }
 
-    /** Which groups delegate each permission's conferring roles, by permission. */
-    Map<String, Set<String>> conferringGroups(AppUser user) {
-        Map<UUID, Set<String>> groupsByRole = new HashMap<>();
-        for (DelegatedRoleSource source : groups.findDelegatedRoleSourcesForMember(user.getId())) {
-            groupsByRole.computeIfAbsent(source.getRoleId(), key -> new HashSet<>()).add(source.getGroupName());
-        }
-        if (groupsByRole.isEmpty()) {
-            return Map.of();
-        }
-
+    /**
+     * Where each of this user's permissions comes from — the conferring roles and the groups delegating them.
+     *
+     * <p>ONE walk. Asking the two questions separately re-resolved the inheritance closure per request and,
+     * more importantly, computed them from two independently assembled held-role sets — which is how two
+     * answers about the same user start disagreeing.
+     */
+    PermissionProvenance provenanceOf(AppUser user) {
         hydrator.hydrateUser(user);
         Set<UUID> heldRoleIds = Stream.concat(user.getRoles().stream(),
                         groupDelegatedRoles(user.getId()).stream()).map(Role::getId).collect(Collectors.toSet());
 
-        Map<String, Set<String>> byPermission = new HashMap<>();
-        inheritanceResolver.conferringRoleIds(heldRoleIds).forEach((permission, roleIds) -> {
-            Set<String> names = roleIds.stream().map(groupsByRole::get)
-                    .filter(group -> group != null).flatMap(Set::stream).collect(Collectors.toSet());
-            if (!names.isEmpty()) {
-                byPermission.put(permission, names);
-            }
-        });
-        return byPermission;
-    }
+        Map<String, Set<UUID>> roleIdsByPermission = inheritanceResolver.conferringRoleIds(heldRoleIds);
+        if (roleIdsByPermission.isEmpty()) {
+            return PermissionProvenance.none();
+        }
 
-    /** Which roles carry each permission this user's roles reach, by role NAME. */
-    Map<String, Set<String>> conferringRoles(AppUser user) {
-        hydrator.hydrateUser(user);
-        List<Role> groupRoles = groupDelegatedRoles(user.getId());
-        Set<UUID> heldRoleIds = Stream.concat(user.getRoles().stream(), groupRoles.stream())
-                .map(Role::getId).collect(Collectors.toSet());
-
-        Map<String, Set<UUID>> idsByPermission = inheritanceResolver.conferringRoleIds(heldRoleIds);
-        Map<UUID, String> nameById = roles.findAllById(idsByPermission.values().stream()
+        Map<UUID, String> roleNameById = roles.findAllById(roleIdsByPermission.values().stream()
                         .flatMap(Set::stream).collect(Collectors.toSet())).stream()
                 .collect(Collectors.toMap(Role::getId, Role::getName));
+        Map<UUID, Set<String>> groupNamesByRole = new HashMap<>();
+        for (DelegatedRoleSource source : groups.findDelegatedRoleSourcesForMember(user.getId())) {
+            groupNamesByRole.computeIfAbsent(source.getRoleId(), key -> new HashSet<>())
+                    .add(source.getGroupName());
+        }
 
-        Map<String, Set<String>> byPermission = new HashMap<>();
-        idsByPermission.forEach((permission, roleIds) ->
-                byPermission.put(permission, roleIds.stream().map(nameById::get)
-                        .filter(name -> name != null).collect(Collectors.toSet())));
-        return byPermission;
+        Map<String, Set<String>> rolesByPermission = new HashMap<>();
+        Map<String, Set<String>> groupsByPermission = new HashMap<>();
+        roleIdsByPermission.forEach((permission, roleIds) -> {
+            rolesByPermission.put(permission, namesOf(roleIds, roleNameById));
+            Set<String> delegating = roleIds.stream().map(groupNamesByRole::get)
+                    .filter(names -> names != null).flatMap(Set::stream).collect(Collectors.toSet());
+            if (!delegating.isEmpty()) {
+                groupsByPermission.put(permission, delegating);
+            }
+        });
+        return new PermissionProvenance(rolesByPermission, groupsByPermission);
+    }
+
+    private Set<String> namesOf(Set<UUID> roleIds, Map<UUID, String> nameById) {
+        return roleIds.stream().map(nameById::get).filter(name -> name != null).collect(Collectors.toSet());
     }
 
     /** The per-level allow/deny sets for this user — one assembly, two readers. */

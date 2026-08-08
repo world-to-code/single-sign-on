@@ -157,6 +157,26 @@ class PermissionProvenanceIT extends AbstractIntegrationTest {
                         .containsExactlyInAnyOrder("platform", "compilers"));
     }
 
+    /**
+     * Roles and groups come from ONE walk, so they cannot disagree about the same user. Answering them
+     * separately re-resolved the closure per request and — the part that actually bites — computed each from
+     * its own held-role set, leaving room for the screen to name a role no group appeared to delegate.
+     */
+    @Test
+    void theRoleAndTheGroupDescribeTheSameGrant() {
+        UUID role = role("ROLE_PROV_ONEWALK", Permissions.USER_READ);
+        UUID group = group("engineering", role);
+        UserAccount user = user();
+        addToGroup(group, user.getId());
+
+        assertThat(explanationOf(user.getId(), Permissions.USER_READ))
+                .hasValueSatisfying(explanation -> {
+                    // A named group with no named role would be an answer about a grant nobody can point at.
+                    assertThat(explanation.viaGroups()).isNotEmpty();
+                    assertThat(explanation.conferredBy()).isNotEmpty();
+                });
+    }
+
     private UUID group(String name, UUID roleId) {
         UUID id = UUID.randomUUID();
         ownerJdbc().update("insert into user_group (id, name, org_id) values (?, ?, null)", id, name);
