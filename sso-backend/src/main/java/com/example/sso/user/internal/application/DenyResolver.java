@@ -3,7 +3,10 @@ package com.example.sso.user.internal.application;
 import com.example.sso.user.internal.rbac.PermissionPattern;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.Roles;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.Set;
 import org.springframework.stereotype.Component;
 
@@ -24,12 +27,20 @@ import org.springframework.stereotype.Component;
 @Component
 class DenyResolver {
 
-    /** The effective authority strings (permissions + wildcard tokens + role names) for the packed inputs. */
-    Set<String> effectiveAuthorities(DenyInputs in) {
-        // Super is exempt from every deny — a platform ROLE_ADMIN cannot be vetoed. Its authorities are the
-        // plain grant expansion (tokens + members + implied reads), exactly the no-deny path.
+
+    /**
+     * Every catalog permission's verdict for these inputs — the ladder's own answer, before the wildcard and
+     * implication folding that turns it into an authority set.
+     *
+     * <p>This is the SAME computation {@link #effectiveAuthorities} folds over, not a parallel one. An
+     * explanation produced beside the decision rather than by it would be free to disagree with what the
+     * system actually did, which is the failure this method's existence prevents.
+     */
+    Map<String, PermissionVerdict> verdicts(DenyInputs in) {
         if (in.roleNames().contains(Roles.ADMIN)) {
-            return union(Permissions.expandGrantedAuthorities(union(in.userAllow(), in.roleAllow())), in.roleNames());
+            return Permissions.ALL.stream().collect(Collectors.toMap(permission -> permission,
+                    permission -> PermissionVerdict.of(PermissionDecision.ALLOW,
+                            DecisionReason.SUPER_ADMIN_EXEMPT)));
         }
 
         DenyRows denies = in.denies();
@@ -41,22 +52,40 @@ class DenyResolver {
         Set<String> orgDeny = Permissions.expandWildcardMembers(denies.org());
         Set<String> platformDeny = Permissions.expandWildcardMembers(denies.platform());
 
+        Map<String, PermissionVerdict> verdicts = new HashMap<>();
+        for (String permission : Permissions.ALL) {
+            // The veto is absolute and sits OUTSIDE the ladder, so it is applied here rather than inside
+            // decide(): otherwise a vetoed permission would be credited to whichever grant appeared to win.
+            verdicts.put(permission, platformDeny.contains(permission)
+                    ? PermissionVerdict.of(PermissionDecision.DENY, DecisionReason.PLATFORM_VETO)
+                    : decide(permission, userAllow, roleAllow, userDeny, roleDeny, groupDeny, orgDeny));
+        }
+        return verdicts;
+    }
+
+    /** The effective authority strings (permissions + wildcard tokens + role names) for the packed inputs. */
+    Set<String> effectiveAuthorities(DenyInputs in) {
+        // Super is exempt from every deny — a platform ROLE_ADMIN cannot be vetoed. Its authorities are the
+        // plain grant expansion (tokens + members + implied reads), exactly the no-deny path.
+        if (in.roleNames().contains(Roles.ADMIN)) {
+            return union(Permissions.expandGrantedAuthorities(union(in.userAllow(), in.roleAllow())), in.roleNames());
+        }
+
+        // Folded from the SAME verdicts an explanation reads, so the two can never describe different
+        // decisions. The veto is already inside them, hence no separate platform subtraction below.
         Set<String> allowed = new HashSet<>();
         Set<String> denied = new HashSet<>();
-        for (String permission : Permissions.ALL) {
-            PermissionDecision decision =
-                    decide(permission, userAllow, roleAllow, userDeny, roleDeny, groupDeny, orgDeny);
-            if (decision == PermissionDecision.ALLOW) {
+        verdicts(in).forEach((permission, verdict) -> {
+            if (verdict.decision() == PermissionDecision.ALLOW) {
                 allowed.add(permission);
-            } else if (decision == PermissionDecision.DENY) {
+            } else if (verdict.decision() == PermissionDecision.DENY) {
                 denied.add(permission);
             }
-        }
+        });
 
         // Implication BEFORE subtraction: a macro may re-add finer scopes, then the deny removes the ones denied.
         Set<String> effective = new HashSet<>(Permissions.expandImplied(allowed));
-        effective.removeAll(denied);
-        effective.removeAll(platformDeny); // the platform veto beats even a USER allow
+        effective.removeAll(denied); // the veto is already among these — verdicts() applies it above
 
         // Re-add a granted wildcard TOKEN only when EVERY member survived: the grant ceiling checks the token,
         // and you must not hand out a wildcard whose actions were, in part, denied to you.
@@ -64,28 +93,37 @@ class DenyResolver {
                 in.roleNames());
     }
 
-    /** One permission's decision, most-specific level first, deny before allow at each level. */
-    private PermissionDecision decide(String permission, Set<String> userAllow, Set<String> roleAllow,
+    /**
+     * One permission's verdict, most-specific level first, deny before allow at each level.
+     *
+     * <p>The reason is set by the branch that decides, never inferred from the decision afterwards — several
+     * rungs reach the same outcome for opposite causes, so an inferred reason would be a guess dressed as a
+     * fact.
+     */
+    private PermissionVerdict decide(String permission, Set<String> userAllow, Set<String> roleAllow,
             Set<String> userDeny, Set<String> roleDeny, Set<String> groupDeny, Set<String> orgDeny) {
         if (userDeny.contains(permission)) {
-            return PermissionDecision.DENY; // USER level — most specific
+            return PermissionVerdict.of(PermissionDecision.DENY, DecisionReason.DENIED_AT_USER_LEVEL);
         }
         if (userAllow.contains(permission)) {
-            return PermissionDecision.ALLOW;
+            return PermissionVerdict.of(PermissionDecision.ALLOW, DecisionReason.ALLOWED_AT_USER_LEVEL);
         }
         // ROLE/GROUP level. The apex carve-out is applied UPSTREAM (roleDeny carries only denies on the user's
         // APEX roles — a deny on a role dominated by another held role never reaches here), so a subordinate's
         // deny cannot cut a superior who holds a higher role, while a base holder's own role deny does bite.
-        if (roleDeny.contains(permission) || groupDeny.contains(permission)) {
-            return PermissionDecision.DENY;
+        if (roleDeny.contains(permission)) {
+            return PermissionVerdict.of(PermissionDecision.DENY, DecisionReason.DENIED_AT_ROLE_LEVEL);
+        }
+        if (groupDeny.contains(permission)) {
+            return PermissionVerdict.of(PermissionDecision.DENY, DecisionReason.DENIED_AT_GROUP_LEVEL);
         }
         if (roleAllow.contains(permission)) {
-            return PermissionDecision.ALLOW;
+            return PermissionVerdict.of(PermissionDecision.ALLOW, DecisionReason.ALLOWED_AT_ROLE_LEVEL);
         }
         if (orgDeny.contains(permission)) {
-            return PermissionDecision.DENY; // ORG level — there is no org-level allow
+            return PermissionVerdict.of(PermissionDecision.DENY, DecisionReason.DENIED_AT_ORG_LEVEL);
         }
-        return PermissionDecision.SILENT;
+        return PermissionVerdict.of(PermissionDecision.SILENT, DecisionReason.NO_LEVEL_SPOKE);
     }
 
     private Set<String> survivingWildcardTokens(Set<String> grantedRaw, Set<String> effective) {
