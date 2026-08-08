@@ -29,11 +29,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -123,10 +125,24 @@ class RoleAdminServiceTest {
         UUID roleId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
 
-        service.addRoleMember(roleId, userId);
+        service.addRoleMember(roleId, userId, null);
 
-        verify(roleService).addMember(roleId, userId);
+        verify(roleService).addMemberUntil(roleId, userId, null);
         verify(auditLogger).log(eq(AuditType.USER_UPDATED), eq(AuditSubjectType.USER), eq(userId.toString()), any());
+    }
+
+    /** The expiry has to reach the audit line: "granted" and "granted until Friday" are different decisions. */
+    @Test
+    void aTimeBoundedGrantSaysSoInTheAuditRecord() {
+        UUID roleId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Instant until = Instant.parse("2026-09-01T00:00:00Z");
+
+        service.addRoleMember(roleId, userId, until);
+
+        verify(roleService).addMemberUntil(roleId, userId, until);
+        verify(auditLogger).log(eq(AuditType.USER_UPDATED), eq(AuditSubjectType.USER), eq(userId.toString()),
+                contains("until=" + until));
     }
 
     @Test

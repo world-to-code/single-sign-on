@@ -1,5 +1,6 @@
 package com.example.sso.user;
 
+import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.account.NewUser;
 import com.example.sso.user.account.UserAccount;
@@ -21,6 +22,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Time-bounded role grants: a role handed out until a moment stops counting after it.
@@ -146,5 +148,64 @@ class RoleGrantExpiryIT extends AbstractIntegrationTest {
                 "select id from permission where name = ?", UUID.class, permissionName);
         ownerJdbc().update("insert into role_permission (role_id, permission_id) values (?, ?)", id, permissionId);
         return id;
+    }
+
+    /** The grant path an administrator actually uses, rather than a row written by the test. */
+    @Test
+    void grantingUntilAFutureMomentProducesALiveGrantThatReportsItsExpiry() {
+        UUID role = seedGlobalRole(Permissions.USER_READ);
+        UserAccount user = plainUser();
+        Instant until = Instant.now().plusSeconds(3600);
+
+        roleService.addMemberUntil(role, user.getId(), until);
+
+        assertThat(authoritiesOf(user.getUsername())).contains(Permissions.USER_READ);
+        assertThat(roleService.memberExpiries(role)).containsKey(user.getId());
+    }
+
+    /** A permanent grant reports NO expiry, so a caller cannot mistake "never" for "unknown". */
+    @Test
+    void aPermanentGrantReportsNoExpiryAtAll() {
+        UUID role = seedGlobalRole(Permissions.USER_READ);
+        UserAccount user = plainUser();
+
+        roleService.addMember(role, user.getId());
+
+        assertThat(roleService.memberExpiries(role)).doesNotContainKey(user.getId());
+    }
+
+    /**
+     * Refused rather than accepted. A grant expiring in the past would exist for one sweep interval and then
+     * vanish, which reads as the system losing it instead of declining to make it.
+     */
+    @Test
+    void grantingWithAnExpiryAlreadyPastIsRefused() {
+        UUID role = seedGlobalRole(Permissions.USER_READ);
+        UserAccount user = plainUser();
+
+        assertThatThrownBy(() -> roleService.addMemberUntil(role, user.getId(), Instant.now().minusSeconds(1)))
+                .isInstanceOf(BadRequestException.class);
+        assertThat(authoritiesOf(user.getUsername())).doesNotContain(Permissions.USER_READ);
+    }
+
+    /** Re-granting REPLACES the expiry, so extending one is the same call rather than a delete and an insert. */
+    @Test
+    void reGrantingReplacesTheExpiryInsteadOfAddingASecondRow() {
+        UUID role = seedGlobalRole(Permissions.USER_READ);
+        UserAccount user = plainUser();
+        roleService.addMemberUntil(role, user.getId(), Instant.now().plusSeconds(60));
+
+        roleService.addMember(role, user.getId());
+
+        assertThat(roleService.memberExpiries(role)).doesNotContainKey(user.getId());
+        assertThat(authoritiesOf(user.getUsername())).contains(Permissions.USER_READ);
+    }
+
+    private UserAccount plainUser() {
+        String username = "grant-" + UUID.randomUUID().toString().substring(0, 8);
+        UserAccount account = userService.createUser(
+                new NewUser(username, username + "@example.com", "Gr", "S3cret!pw", Set.of()));
+        cleanups.add(() -> userService.delete(account.getId()));
+        return account;
     }
 }

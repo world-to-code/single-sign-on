@@ -35,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.util.Collection;
 import java.util.HashMap;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -413,6 +414,14 @@ public class RoleServiceImpl implements RoleService {
 
     @Override
     @Transactional(readOnly = true)
+    public Map<UUID, Instant> memberExpiries(UUID roleId) {
+        return userRoles.findHeldByRoleIdIn(Set.of(roleId), clock.instant()).stream()
+                .filter(grant -> grant.getExpiresAt() != null)
+                .collect(Collectors.toMap(UserRole::getUserId, UserRole::getExpiresAt));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Set<UUID> memberIds(UUID roleId) {
         return Set.copyOf(userRoles.findUserIdsHoldingAt(roleId, clock.instant()));
     }
@@ -466,9 +475,24 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional
     public void addMember(UUID roleId, UUID userId) {
+        addMemberUntil(roleId, userId, null);
+    }
+
+    @Override
+    @Transactional
+    public void addMemberUntil(UUID roleId, UUID userId, Instant expiresAt) {
+        // Refused, not silently reaped: a grant that expired before it was made would exist for one sweep
+        // interval and then vanish, which reads as the system losing it rather than refusing it.
+        if (expiresAt != null && !expiresAt.isAfter(clock.instant())) {
+            throw BadRequestException.of("user.role.expiryInPast");
+        }
         roles.findById(roleId).orElseThrow(() -> NotFoundException.of("user.role.notFound"));
         AppUser user = users.findById(userId).orElseThrow(() -> NotFoundException.of("user.notFound"));
-        userRoles.save(UserRole.permanent(user.getId(), roleId)); // idempotent (composite PK)
+        // Idempotent on the composite PK — and a re-grant REPLACES the expiry, so extending or making a
+        // temporary grant permanent is the same call rather than a delete followed by an insert.
+        userRoles.save(expiresAt == null
+                ? UserRole.permanent(user.getId(), roleId)
+                : UserRole.until(user.getId(), roleId, expiresAt));
         accessChanges.forUserIds(Set.of(userId));
     }
 

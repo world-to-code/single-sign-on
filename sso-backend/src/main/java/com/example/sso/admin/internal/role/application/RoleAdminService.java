@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.time.Instant;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -260,15 +261,23 @@ public class RoleAdminService {
             Set<UUID> managed = accessPolicy.currentManagedUserIds();     // resource delegate: subtree
             members = members.stream().filter(user -> managed.contains(user.getId())).toList();
         }
-        return members.stream().map(RoleMemberView::of).toList();
+        Map<UUID, Instant> expiries = roleService.memberExpiries(roleId);
+        return members.stream().map(user -> RoleMemberView.of(user, expiries.get(user.getId()))).toList();
     }
 
-    /** Grants a role to a user from the role's member list (privilege/scope enforced by {@code @CanGrantRole}). */
+    /**
+     * Grants a role to a user from the role's member list (privilege/scope enforced by {@code @CanGrantRole}).
+     *
+     * <p>A null expiry grants it permanently, which is what every grant was before this was optional. The
+     * expiry is part of the audit line because "granted" and "granted until Friday" are different decisions
+     * and the record has to be able to tell them apart.
+     */
     @Transactional
-    public void addRoleMember(UUID roleId, UUID userId) {
-        roleService.addMember(roleId, userId);
+    public void addRoleMember(UUID roleId, UUID userId, Instant expiresAt) {
+        roleService.addMemberUntil(roleId, userId, expiresAt);
         auditLogger.log(AuditType.USER_UPDATED, AuditSubjectType.USER, userId.toString(),
-                "grant role=" + roleId + " to user=" + userId);
+                "grant role=" + roleId + " to user=" + userId
+                        + (expiresAt == null ? " (permanent)" : " until=" + expiresAt));
     }
 
     /**

@@ -84,8 +84,10 @@ public class AdminRoleController {
     @PostMapping("/roles/{id}/members/{userId}")
     @CanGrantRole
     @RequireStepUp
-    public ResponseEntity<Void> addRoleMember(@PathVariable UUID id, @PathVariable UUID userId) {
-        roleAdminService.addRoleMember(id, userId);
+    public ResponseEntity<Void> addRoleMember(@PathVariable UUID id, @PathVariable UUID userId,
+                                              @RequestBody(required = false) GrantRoleRequest request) {
+        GrantRoleRequest grant = request == null ? GrantRoleRequest.permanent() : request;
+        roleAdminService.addRoleMember(id, userId, grant.expiresAt());
         return ResponseEntity.noContent().build();
     }
 

@@ -4,6 +4,7 @@ import com.example.sso.user.account.UserAccount;
 
 import com.example.sso.shared.IdName;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -117,6 +118,14 @@ public interface RoleService {
     /** Just who holds the role, without materializing an account each — for a caller that only needs the ids. */
     Set<UUID> memberIds(UUID roleId);
 
+    /**
+     * When each holder's grant runs out, for the holders whose grant is time-bounded.
+     *
+     * <p>Keyed by user id and SPARSE: a permanent grant has no entry, because absent and "expires at null"
+     * would otherwise be the same thing to a caller reading a map.
+     */
+    Map<UUID, Instant> memberExpiries(UUID roleId);
+
     /** Every user this role EFFECTIVELY reaches — assigned directly OR via a GROUP that delegates it. The true
      *  holder set, unlike {@link #members} (direct grants only); use this wherever group-delegated holders count. */
     List<UserAccount> effectiveHolders(UUID roleId);
@@ -127,8 +136,17 @@ public interface RoleService {
     /** Reconciles the role's membership to exactly {@code userIds} (adds/removes user-role links). */
     void setMembers(UUID roleId, Set<UUID> userIds);
 
-    /** Grants the role to a single user (idempotent). 404s if either the role or the user is missing. */
+    /** Grants the role to a single user, permanently (idempotent). 404s if the role or the user is missing. */
     void addMember(UUID roleId, UUID userId);
+
+    /**
+     * Grants the role until {@code expiresAt}, after which it stops counting and is swept away.
+     *
+     * <p>A null expiry is the permanent grant above. An expiry already in the past is REFUSED rather than
+     * accepted and immediately reaped: it would create a privilege that exists for the length of one sweep
+     * interval, which is a worse answer than saying no.
+     */
+    void addMemberUntil(UUID roleId, UUID userId, Instant expiresAt);
 
     /** Revokes the role from a single user (idempotent). 404s if either the role or the user is missing. */
     void removeMember(UUID roleId, UUID userId);
