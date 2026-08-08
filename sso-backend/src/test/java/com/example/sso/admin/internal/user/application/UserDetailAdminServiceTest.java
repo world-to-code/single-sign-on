@@ -209,7 +209,10 @@ class UserDetailAdminServiceTest {
                 account(Set.of(role("ROLE_X", Permissions.USER_UPDATE)), Set.of()), List.of());
 
         assertThat(detail.effectivePermissions()).containsExactly(Permissions.USER_UPDATE);
-        assertThat(detail.deniedPermissions()).containsExactly(Permissions.USER_READ);
+        assertThat(detail.deniedPermissions()).singleElement().satisfies(withheld -> {
+            assertThat(withheld.permission()).isEqualTo(Permissions.USER_READ);
+            assertThat(withheld.withheldBy()).isEqualTo(DecisionReason.DENIED_AT_USER_LEVEL);
+        });
     }
 
     /**

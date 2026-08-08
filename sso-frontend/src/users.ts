@@ -19,6 +19,13 @@ export interface RoleAssignment {
   viaGroups: string[];
 }
 
+/** A permission the user does not hold, and the level that withheld it. */
+export interface WithheldPermission {
+  permission: string;
+  /** The rung of the specificity ladder that refused — matches the backend DecisionReason. */
+  withheldBy: string;
+}
+
 export interface UserDetail {
   id: string;
   username: string;
@@ -35,7 +42,7 @@ export interface UserDetail {
   roleAssignments: RoleAssignment[];
   directPermissions: string[];
   effectivePermissions: string[];
-  deniedPermissions: string[];
+  deniedPermissions: WithheldPermission[];
   userDenies: DenyRow[];
 }
 

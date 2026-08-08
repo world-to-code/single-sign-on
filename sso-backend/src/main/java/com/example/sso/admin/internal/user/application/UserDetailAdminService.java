@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -76,11 +77,11 @@ public class UserDetailAdminService {
         // permission outside the catalog, a wildcard token withheld — as a refusal nobody had made.
         Set<String> effective = effectivePermissions(id);
         List<PermissionExplanation> explanations = userService.explainPermissions(id);
-        List<String> denied = explanations.stream()
+        List<WithheldPermissionView> denied = explanations.stream()
                 .filter(explanation -> explanation.decidedBy() != DecisionReason.NO_LEVEL_SPOKE)
                 .filter(explanation -> !explanation.held())
-                .map(PermissionExplanation::permission)
-                .sorted()
+                .map(WithheldPermissionView::of)
+                .sorted(Comparator.comparing(WithheldPermissionView::permission))
                 .toList();
 
         return UserDetailView.of(user, roleAssignments(user, memberships),

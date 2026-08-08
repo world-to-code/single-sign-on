@@ -1,14 +1,17 @@
 import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
+import type { WithheldPermission } from "@/users";
 
 type Props = {
   effective: string[];
-  denied: string[];
+  denied: WithheldPermission[];
 };
 
 /**
- * The permissions a user actually holds (deny-applied) plus, when any exist, the ones a grant hands out but a
- * deny removed — the "why is this permission absent" answer. Presentational: the caller wraps it in a card.
+ * The permissions a user actually holds (deny-applied) plus, when any exist, the ones that were withheld and
+ * the LEVEL that withheld each. The level is the actionable half: "you do not have user:delete" is not
+ * something an administrator can act on, "a deny on one of their roles removed it" is. Presentational: the
+ * caller wraps it in a card.
  */
 export function EffectivePermissionList({ effective, denied }: Props) {
   const { t } = useTranslation("console");
@@ -27,9 +30,14 @@ export function EffectivePermissionList({ effective, denied }: Props) {
         <div className="mt-4 border-t border-border pt-3">
           <p className="mb-1.5 text-xs font-medium text-muted-foreground">{t("userDetailDeniedPerms")}</p>
           <div className="flex flex-wrap gap-1">
-            {denied.map((p) => (
-              <Badge key={p} variant="destructive" className="font-mono text-xs line-through"
-                     title={t("userDetailDeniedPermsHint")}>{p}</Badge>
+            {denied.map((withheld) => (
+              <Badge key={withheld.permission} variant="destructive"
+                     className="font-mono text-xs line-through"
+                     title={t(`decisionReason_${withheld.withheldBy}`, {
+                       defaultValue: t("userDetailDeniedPermsHint"),
+                     })}>
+                {withheld.permission}
+              </Badge>
             ))}
           </div>
         </div>

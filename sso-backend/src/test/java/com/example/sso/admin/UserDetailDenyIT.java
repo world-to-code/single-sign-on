@@ -4,6 +4,7 @@ import com.example.sso.admin.internal.user.application.UserDetailAdminService;
 import com.example.sso.admin.internal.user.application.UserDetailView;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.user.deny.DenyRow;
+import com.example.sso.user.rbac.DecisionReason;
 import com.example.sso.user.rbac.Permissions;
 import java.util.ArrayList;
 import java.util.List;
@@ -42,7 +43,13 @@ class UserDetailDenyIT extends AbstractIntegrationTest {
 
         UserDetailView detail = userDetail.getUser(userId);
 
-        assertThat(detail.deniedPermissions()).contains(Permissions.USER_READ);
+        // The tier matters as much as the fact: a USER-level deny is one this console can lift, and a
+        // role- or org-level one is not — an administrator needs to know which they are looking at.
+        assertThat(detail.deniedPermissions())
+                .anySatisfy(withheld -> {
+                    assertThat(withheld.permission()).isEqualTo(Permissions.USER_READ);
+                    assertThat(withheld.withheldBy()).isEqualTo(DecisionReason.DENIED_AT_USER_LEVEL);
+                });
         assertThat(detail.effectivePermissions()).doesNotContain(Permissions.USER_READ);
         assertThat(detail.directPermissions()).contains(Permissions.USER_READ); // still granted, just denied
         // the USER-level deny is listed with an id so the console can lift it

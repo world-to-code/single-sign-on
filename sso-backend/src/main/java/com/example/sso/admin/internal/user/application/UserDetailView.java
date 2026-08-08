@@ -10,7 +10,8 @@ import java.util.UUID;
  * Full admin detail for a single user: profile/state, role assignments annotated with their source
  * (direct vs. group-delegated), the directly-granted permissions, the EFFECTIVE permission set (deny-applied —
  * what the user's resolved authorities actually carry) and the permissions {@code deniedPermissions} the user
- * WOULD hold from a grant but a negative permission (deny) removed — the "why is this permission absent" answer.
+ * the user does not hold, each carrying the LEVEL that withheld it — the actionable half of "why is this
+ * permission absent", and the reason the list is no longer a set subtraction that could name no level.
  *
  * <p>{@code profileId} names the profile whose columns describe this person, so the console can render THEM
  * rather than a generic key/value list. It is nullable: an account created before profiles, or one whose
@@ -21,14 +22,16 @@ public record UserDetailView(String id, String username, String email, String di
                              boolean accountNonLocked, String externalId, UUID profileId,
                              Instant createdAt, Instant updatedAt,
                              List<RoleAssignmentView> roleAssignments, List<String> directPermissions,
-                             List<String> effectivePermissions, List<String> deniedPermissions,
+                             List<String> effectivePermissions,
+                             List<WithheldPermissionView> deniedPermissions,
                              List<DenyRow> userDenies) {
 
     /** Projects the user plus its pre-computed role/permission roll-ups to the detail view. {@code userDenies}
      *  are the USER-level deny rows the console can lift (a subset of what {@code deniedPermissions} explains). */
     public static UserDetailView of(UserAccount user, List<RoleAssignmentView> roleAssignments,
                                     List<String> directPermissions, List<String> effectivePermissions,
-                                    List<String> deniedPermissions, List<DenyRow> userDenies) {
+                                    List<WithheldPermissionView> deniedPermissions,
+                                    List<DenyRow> userDenies) {
         return new UserDetailView(user.getId().toString(), user.getUsername(), user.getEmail(),
                 user.getDisplayName(), user.isEnabled(), user.isEmailVerified(), user.getPhoneNumber(),
                 user.isPhoneVerified(), user.isAccountNonLocked(), user.getExternalId(), user.getProfileId(),
