@@ -1249,6 +1249,84 @@ class AdminAccessPolicyTest {
     }
 
     /** Makes the target an EFFECTIVE administrator (isAdmin resolves ROLE_ADMIN direct OR group-delegated). */
+
+    // --- why a destructive action was refused, not merely that it was ---
+
+    /**
+     * The self-protection guards answer "no" for two different reasons and a bare boolean says neither. An
+     * operator reading the refusal needs them apart: aiming at your own account is a mistake the UI should
+     * have prevented, aiming at another administrator is the invariant that stops one admin dismantling
+     * another.
+     */
+    @Test
+    void deletingYourOwnAccountIsRefusedForBeingYours() {
+        signIn();
+
+        AdminDecision decision = policy.explainDeleteUser(ACTOR_ID);
+
+        assertThat(decision.permitted()).isFalse();
+        assertThat(decision.refusal()).isEqualTo(AdminRefusal.SELF_TARGET);
+    }
+
+    @Test
+    void deletingAnotherAdministratorIsRefusedForBeingAnAdministrator() {
+        signIn();
+        UUID target = UUID.randomUUID();
+        makeAdmin(target);
+
+        AdminDecision decision = policy.explainDeleteUser(target);
+
+        assertThat(decision.permitted()).isFalse();
+        assertThat(decision.refusal()).isEqualTo(AdminRefusal.TARGET_IS_ADMIN);
+    }
+
+    /**
+     * An administrator acting on themselves satisfies BOTH conditions, and the order decides which is
+     * reported. They are told what they did, not something that merely also happens to be true.
+     */
+    @Test
+    void anAdministratorTargetingThemselvesIsToldItIsThemselves() {
+        signIn();
+        makeAdmin(ACTOR_ID);
+
+        assertThat(policy.explainDeleteUser(ACTOR_ID).refusal()).isEqualTo(AdminRefusal.SELF_TARGET);
+    }
+
+    @Test
+    void deletingAnOrdinaryUserIsPermittedWithNoRefusal() {
+        signIn();
+
+        AdminDecision decision = policy.explainDeleteUser(UUID.randomUUID());
+
+        assertThat(decision.permitted()).isTrue();
+        assertThat(decision.refusal()).isEqualTo(AdminRefusal.NONE);
+    }
+
+    /** Enabling is unguarded, so the same target that cannot be disabled can always be switched back on. */
+    @Test
+    void enablingIsNeverRefusedEvenForAnAdministrator() {
+        signIn();
+        UUID target = UUID.randomUUID();
+        makeAdmin(target);
+
+        assertThat(policy.explainSetEnabled(target, true).permitted()).isTrue();
+        assertThat(policy.explainSetEnabled(target, false).refusal()).isEqualTo(AdminRefusal.TARGET_IS_ADMIN);
+    }
+
+    /** The boolean callers keep must be the explanation folded, never a second rule that could disagree. */
+    @Test
+    void theBooleanAgreesWithTheExplanationItFolds() {
+        signIn();
+        UUID admin = UUID.randomUUID();
+        makeAdmin(admin);
+
+        for (UUID target : List.of(ACTOR_ID, admin, UUID.randomUUID())) {
+            assertThat(policy.canDeleteUser(target)).isEqualTo(policy.explainDeleteUser(target).permitted());
+            assertThat(policy.canSetEnabled(target, false))
+                    .isEqualTo(policy.explainSetEnabled(target, false).permitted());
+        }
+    }
+
     private void makeAdmin(UUID userId) {
         when(userService.effectiveAuthorities(userId)).thenReturn(Set.of(Roles.ADMIN));
     }

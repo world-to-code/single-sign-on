@@ -276,12 +276,35 @@ public class AdminAccessPolicy {
 
     /** Blocks disabling one's own account or any administrator's account; enabling is always allowed. */
     public boolean canSetEnabled(UUID targetId, boolean enabled) {
-        return enabled || (!isSelf(targetId) && !isAdmin(targetId));
+        return explainSetEnabled(targetId, enabled).permitted();
+    }
+
+    /** The same rule, with the reason — enabling is unguarded, so only disabling can refuse. */
+    public AdminDecision explainSetEnabled(UUID targetId, boolean enabled) {
+        return enabled ? AdminDecision.allow() : selfProtection(targetId);
     }
 
     /** Blocks deleting one's own account or any administrator's account. */
     public boolean canDeleteUser(UUID targetId) {
-        return !isSelf(targetId) && !isAdmin(targetId);
+        return explainDeleteUser(targetId).permitted();
+    }
+
+    public AdminDecision explainDeleteUser(UUID targetId) {
+        return selfProtection(targetId);
+    }
+
+    /**
+     * The guard three destructive actions share: not yourself, and not another administrator.
+     *
+     * <p>Order matters for the REASON, not the outcome. An administrator acting on their own account is told
+     * they cannot target themselves rather than that they are an administrator — the first is what they did,
+     * the second is merely also true.
+     */
+    private AdminDecision selfProtection(UUID targetId) {
+        if (isSelf(targetId)) {
+            return AdminDecision.refused(AdminRefusal.SELF_TARGET);
+        }
+        return isAdmin(targetId) ? AdminDecision.refused(AdminRefusal.TARGET_IS_ADMIN) : AdminDecision.allow();
     }
 
     /**
