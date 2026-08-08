@@ -49,6 +49,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.Clock;
 import java.util.Collection;
+import com.example.sso.user.rbac.PermissionExplanation;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -302,6 +304,19 @@ public class UserServiceImpl implements UserService {
         // Same assembly as the login principal (EffectiveAuthorityResolver), so login and any by-id re-check
         // never drift. Empty for an unknown/deleted user — the async author re-validation then fails closed.
         return users.findById(userId).map(authorityResolver::authoritiesOf).orElse(Set.of());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PermissionExplanation> explainPermissions(UUID userId) {
+        return users.findById(userId)
+                .map(user -> authorityResolver.explain(user).entrySet().stream()
+                        .map(entry -> new PermissionExplanation(entry.getKey(),
+                                entry.getValue().decision() == PermissionDecision.ALLOW,
+                                entry.getValue().reason()))
+                        .sorted(Comparator.comparing(PermissionExplanation::permission))
+                        .toList())
+                .orElse(List.of());
     }
 
     @Override

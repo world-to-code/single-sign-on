@@ -16,6 +16,8 @@ import com.example.sso.user.account.UserService;
 import com.example.sso.user.deny.DenyService;
 import com.example.sso.user.group.GroupMembership;
 import com.example.sso.user.group.UserGroupService;
+import com.example.sso.user.rbac.DecisionReason;
+import com.example.sso.user.rbac.PermissionExplanation;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.RoleRef;
 import java.util.List;
@@ -197,18 +199,43 @@ class UserDetailAdminServiceTest {
     @Test
     void aGrantRemovedByADenyIsReportedAsDenied() {
         when(userService.effectiveAuthorities(USER)).thenReturn(Set.of(Permissions.USER_UPDATE));
+        // The resolver's own verdicts, which is the change: the view used to infer "denied" by subtracting
+        // one set from another and could name no tier for the refusal.
+        when(userService.explainPermissions(USER)).thenReturn(List.of(
+                new PermissionExplanation(Permissions.USER_UPDATE, true, DecisionReason.ALLOWED_AT_ROLE_LEVEL),
+                new PermissionExplanation(Permissions.USER_READ, false, DecisionReason.DENIED_AT_USER_LEVEL)));
 
         UserDetailView detail = detailOf(
                 account(Set.of(role("ROLE_X", Permissions.USER_UPDATE)), Set.of()), List.of());
 
         assertThat(detail.effectivePermissions()).containsExactly(Permissions.USER_UPDATE);
-        assertThat(detail.deniedPermissions()).containsExactly(Permissions.USER_READ); // granted-then-denied
+        assertThat(detail.deniedPermissions()).containsExactly(Permissions.USER_READ);
+    }
+
+    /**
+     * The half the subtraction got wrong. A permission nobody ever granted is absent for a reason that was
+     * never a refusal, and reporting it as one sends an administrator hunting a deny that does not exist.
+     */
+    @Test
+    void aPermissionNobodyGrantedIsNotReportedAsDenied() {
+        when(userService.effectiveAuthorities(USER)).thenReturn(Set.of(Permissions.USER_UPDATE));
+        when(userService.explainPermissions(USER)).thenReturn(List.of(
+                new PermissionExplanation(Permissions.USER_UPDATE, true, DecisionReason.ALLOWED_AT_ROLE_LEVEL),
+                new PermissionExplanation(Permissions.USER_DELETE, false, DecisionReason.NO_LEVEL_SPOKE)));
+
+        UserDetailView detail = detailOf(
+                account(Set.of(role("ROLE_X", Permissions.USER_UPDATE)), Set.of()), List.of());
+
+        assertThat(detail.deniedPermissions()).isEmpty();
     }
 
     /** With no deny the effective set carries every grant, so nothing is reported as denied. */
     @Test
     void withNoDenyNothingIsReportedAsDenied() {
         when(userService.effectiveAuthorities(USER)).thenReturn(Set.of(Permissions.USER_READ, Permissions.USER_UPDATE));
+        when(userService.explainPermissions(USER)).thenReturn(List.of(
+                new PermissionExplanation(Permissions.USER_READ, true, DecisionReason.ALLOWED_AT_ROLE_LEVEL),
+                new PermissionExplanation(Permissions.USER_UPDATE, true, DecisionReason.ALLOWED_AT_ROLE_LEVEL)));
 
         UserDetailView detail = detailOf(
                 account(Set.of(role("ROLE_X", Permissions.USER_UPDATE)), Set.of()), List.of());

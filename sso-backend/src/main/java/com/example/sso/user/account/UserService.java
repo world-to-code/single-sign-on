@@ -8,6 +8,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import com.example.sso.user.rbac.PermissionExplanation;
 import java.util.Set;
 import java.util.UUID;
 
@@ -130,6 +131,15 @@ public interface UserService {
      * in the caller's RLS scope; EMPTY for an unknown/deleted user (fail-closed).
      */
     Set<String> effectiveAuthorities(UUID userId);
+
+    /**
+     * The same resolution, with the level of the specificity ladder that settled each permission.
+     *
+     * <p>Exists because "held" and "not held" cannot tell a deliberate refusal from silence, and the console
+     * was inferring the difference by subtracting one set from another — which names no tier and reports
+     * anything absent for a non-deny reason as a refusal. Empty for an unknown user, like the set above.
+     */
+    List<PermissionExplanation> explainPermissions(UUID userId);
 
     /** Typeahead (id, username) suggestions for assignment pickers. */
     List<Suggestion> searchUsers(String q, int limit);

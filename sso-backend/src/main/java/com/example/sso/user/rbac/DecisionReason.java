@@ -1,4 +1,4 @@
-package com.example.sso.user.internal.application;
+package com.example.sso.user.rbac;
 
 /**
  * Why a permission ended up where it did — the rung of the specificity ladder that spoke.
@@ -7,10 +7,13 @@ package com.example.sso.user.internal.application;
  * causes: a permission absent because a role deny cut it and one absent because nobody ever granted it are
  * both "not held", and only the reason distinguishes a deliberate refusal from silence.
  *
+ * <p>Public because an administrator is the reader: the console has to distinguish a deliberate
+ * refusal from silence, and a set-subtraction guess cannot.
+ *
  * <p>Each value must be produced by the branch that decided, never inferred afterwards from the outcome. An
  * inferred reason is a plausible answer rather than a true one, and the reader cannot tell which they have.
  */
-enum DecisionReason {
+public enum DecisionReason {
 
     /** A platform {@code ROLE_ADMIN} holder is exempt from every deny; no rung was consulted at all. */
     SUPER_ADMIN_EXEMPT,

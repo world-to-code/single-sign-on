@@ -1,5 +1,6 @@
 package com.example.sso.user.internal.application;
 
+import com.example.sso.user.rbac.DecisionReason;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.Roles;
 import java.util.Set;

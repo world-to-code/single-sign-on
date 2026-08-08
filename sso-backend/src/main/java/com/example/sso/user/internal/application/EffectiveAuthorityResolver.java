@@ -8,6 +8,7 @@ import com.example.sso.user.role.RoleHierarchyService;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -40,6 +41,22 @@ class EffectiveAuthorityResolver {
 
     /** The effective authority strings for {@code user} (hydrated in place). Must run inside a transaction. */
     Set<String> authoritiesOf(AppUser user) {
+        return denyResolver.effectiveAuthorities(inputsFor(user));
+    }
+
+    /**
+     * Every catalog permission's verdict for {@code user}, with the level that settled each.
+     *
+     * <p>Built from the SAME inputs {@link #authoritiesOf} resolves, so an explanation cannot describe a
+     * decision the login path did not make. Assembling the inputs a second way is exactly how the two would
+     * drift, and a drifted explanation is worse than none — it is confidently wrong.
+     */
+    Map<String, PermissionVerdict> explain(AppUser user) {
+        return denyResolver.verdicts(inputsFor(user));
+    }
+
+    /** The per-level allow/deny sets for this user — one assembly, two readers. */
+    private DenyInputs inputsFor(AppUser user) {
         hydrator.hydrateUser(user);
         List<Role> groupRoles = groupDelegatedRoles(user.getId());
         Set<UUID> heldRoleIds = Stream.concat(user.getRoles().stream(), groupRoles.stream())
@@ -63,7 +80,7 @@ class EffectiveAuthorityResolver {
         Set<UUID> groupIds = new HashSet<>(groups.findGroupIdsByMember(user.getId()));
         DenyRows denies = denyReader.read(user.getId(), roleDenySubjects, groupIds, user.getOrgId());
 
-        return denyResolver.effectiveAuthorities(new DenyInputs(userAllow, roleAllow, roleNames, denies));
+        return new DenyInputs(userAllow, roleAllow, roleNames, denies);
     }
 
     /** Roles delegated to the user via any (RLS-visible) group they belong to, with permission names hydrated. */

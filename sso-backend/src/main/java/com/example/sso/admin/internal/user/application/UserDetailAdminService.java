@@ -17,6 +17,8 @@ import com.example.sso.user.account.UserService;
 import com.example.sso.user.deny.DenyService;
 import com.example.sso.user.group.GroupMembership;
 import com.example.sso.user.group.UserGroupService;
+import com.example.sso.user.rbac.DecisionReason;
+import com.example.sso.user.rbac.PermissionExplanation;
 import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.RoleRef;
 import com.example.sso.webauthn.PasskeyService;
@@ -69,11 +71,17 @@ public class UserDetailAdminService {
         UserAccount user = userService.findById(id).orElseThrow(() -> NotFoundException.of("user.notFound"));
         List<GroupMembership> memberships = userGroups.membershipsForUser(id);
 
-        // GRANTED = what role+group+direct hand out; EFFECTIVE = the deny-applied resolved authorities. A
-        // permission granted but missing from effective was removed by a deny — the "why absent" answer.
-        Set<String> granted = grantedPermissions(user, memberships);
+        // The resolver's own verdicts, not a subtraction of one set from another. "Granted minus effective"
+        // could not name the tier that refused, and counted anything absent for a non-deny reason — a
+        // permission outside the catalog, a wildcard token withheld — as a refusal nobody had made.
         Set<String> effective = effectivePermissions(id);
-        List<String> denied = granted.stream().filter(permission -> !effective.contains(permission)).sorted().toList();
+        List<PermissionExplanation> explanations = userService.explainPermissions(id);
+        List<String> denied = explanations.stream()
+                .filter(explanation -> explanation.decidedBy() != DecisionReason.NO_LEVEL_SPOKE)
+                .filter(explanation -> !explanation.held())
+                .map(PermissionExplanation::permission)
+                .sorted()
+                .toList();
 
         return UserDetailView.of(user, roleAssignments(user, memberships),
                 user.getDirectPermissionNames().stream().sorted().toList(),
@@ -110,16 +118,6 @@ public class UserDetailAdminService {
      * members and each mutating perm implying its read. This is the pre-deny set; the caller subtracts the
      * deny-applied effective set from it to surface which grants a deny removed.
      */
-    private Set<String> grantedPermissions(UserAccount user, List<GroupMembership> memberships) {
-        Set<String> permissions = new HashSet<>();
-        addPermissionsOf(user.getRoles(), permissions);
-        for (GroupMembership membership : memberships) {
-            addPermissionsOf(membership.roles(), permissions);
-        }
-        permissions.addAll(user.getDirectPermissionNames());
-
-        return Permissions.expandGrantedAuthorities(permissions);
-    }
 
     /**
      * The user's EFFECTIVE permissions: the resolved login authorities (deny already applied, wildcards
@@ -132,11 +130,6 @@ public class UserDetailAdminService {
                 .collect(Collectors.toSet());
     }
 
-    private void addPermissionsOf(Collection<? extends RoleRef> roles, Set<String> permissions) {
-        for (RoleRef role : roles) {
-            permissions.addAll(role.getPermissionNames());
-        }
-    }
 
     @Transactional(readOnly = true)
     public List<ApplicationView> applications(UUID userId) {

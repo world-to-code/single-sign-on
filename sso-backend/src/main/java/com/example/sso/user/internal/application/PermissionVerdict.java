@@ -1,5 +1,7 @@
 package com.example.sso.user.internal.application;
 
+import com.example.sso.user.rbac.DecisionReason;
+
 /**
  * One permission's outcome together with the rung that produced it.
  *
