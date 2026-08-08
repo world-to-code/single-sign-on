@@ -5,6 +5,10 @@ import com.example.sso.user.internal.rbac.domain.PermissionRepository;
 import com.example.sso.user.internal.rbac.domain.RolePermission;
 import com.example.sso.user.internal.rbac.domain.RolePermissionRepository;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -30,6 +34,33 @@ class RoleInheritanceResolver {
     private final RoleClosure roleClosure;
     private final RolePermissionRepository rolePermissions;
     private final PermissionRepository permissions;
+
+    /**
+     * Which role carries each effective permission, by role id.
+     *
+     * <p>Costs no extra query: the {@code role_permission} rows this class already reads carry BOTH ids, and
+     * {@link #effectivePermissionNames} was discarding the role half. Keeping it is what lets an
+     * administrator be told the role to actually revoke rather than the one they happen to see.
+     */
+    Map<String, Set<UUID>> conferringRoleIds(Collection<UUID> heldRoleIds) {
+        Set<UUID> closure = roleClosure.descendantsAndSelf(heldRoleIds);
+        if (closure.isEmpty()) {
+            return Map.of();
+        }
+        List<RolePermission> grants = rolePermissions.findByRoleIdIn(closure);
+        Map<UUID, String> nameById = permissions.findAllById(
+                        grants.stream().map(RolePermission::getPermissionId).collect(Collectors.toSet()))
+                .stream().collect(Collectors.toMap(Permission::getId, Permission::getName));
+
+        Map<String, Set<UUID>> byPermission = new HashMap<>();
+        for (RolePermission grant : grants) {
+            String name = nameById.get(grant.getPermissionId());
+            if (name != null) {
+                byPermission.computeIfAbsent(name, key -> new HashSet<>()).add(grant.getRoleId());
+            }
+        }
+        return byPermission;
+    }
 
     Set<String> effectivePermissionNames(Collection<UUID> heldRoleIds) {
         Set<UUID> closure = roleClosure.descendantsAndSelf(heldRoleIds);

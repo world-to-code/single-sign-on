@@ -6,6 +6,7 @@ import com.example.sso.user.internal.role.domain.Role;
 import com.example.sso.user.internal.role.domain.RoleRepository;
 import com.example.sso.user.role.RoleHierarchyService;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +54,25 @@ class EffectiveAuthorityResolver {
      */
     Map<String, PermissionVerdict> explain(AppUser user) {
         return denyResolver.verdicts(inputsFor(user));
+    }
+
+    /** Which roles carry each permission this user's roles reach, by role NAME. */
+    Map<String, Set<String>> conferringRoles(AppUser user) {
+        hydrator.hydrateUser(user);
+        List<Role> groupRoles = groupDelegatedRoles(user.getId());
+        Set<UUID> heldRoleIds = Stream.concat(user.getRoles().stream(), groupRoles.stream())
+                .map(Role::getId).collect(Collectors.toSet());
+
+        Map<String, Set<UUID>> idsByPermission = inheritanceResolver.conferringRoleIds(heldRoleIds);
+        Map<UUID, String> nameById = roles.findAllById(idsByPermission.values().stream()
+                        .flatMap(Set::stream).collect(Collectors.toSet())).stream()
+                .collect(Collectors.toMap(Role::getId, Role::getName));
+
+        Map<String, Set<String>> byPermission = new HashMap<>();
+        idsByPermission.forEach((permission, roleIds) ->
+                byPermission.put(permission, roleIds.stream().map(nameById::get)
+                        .filter(name -> name != null).collect(Collectors.toSet())));
+        return byPermission;
     }
 
     /** The per-level allow/deny sets for this user — one assembly, two readers. */

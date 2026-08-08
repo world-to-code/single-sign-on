@@ -310,13 +310,19 @@ public class UserServiceImpl implements UserService {
     @Transactional(readOnly = true)
     public List<PermissionExplanation> explainPermissions(UUID userId) {
         return users.findById(userId)
-                .map(user -> authorityResolver.explain(user).entrySet().stream()
-                        .map(entry -> new PermissionExplanation(entry.getKey(),
-                                entry.getValue().decision() == PermissionDecision.ALLOW,
-                                entry.getValue().reason()))
-                        .sorted(Comparator.comparing(PermissionExplanation::permission))
-                        .toList())
+                .map(this::explanationsFor)
                 .orElse(List.of());
+    }
+
+    private List<PermissionExplanation> explanationsFor(AppUser user) {
+        Map<String, Set<String>> conferringRoles = authorityResolver.conferringRoles(user);
+        return authorityResolver.explain(user).entrySet().stream()
+                .map(entry -> new PermissionExplanation(entry.getKey(),
+                        entry.getValue().decision() == PermissionDecision.ALLOW,
+                        entry.getValue().reason(),
+                        List.copyOf(conferringRoles.getOrDefault(entry.getKey(), Set.of()))))
+                .sorted(Comparator.comparing(PermissionExplanation::permission))
+                .toList();
     }
 
     @Override

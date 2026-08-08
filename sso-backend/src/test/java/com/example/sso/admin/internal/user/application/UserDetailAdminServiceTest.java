@@ -202,8 +202,8 @@ class UserDetailAdminServiceTest {
         // The resolver's own verdicts, which is the change: the view used to infer "denied" by subtracting
         // one set from another and could name no tier for the refusal.
         when(userService.explainPermissions(USER)).thenReturn(List.of(
-                new PermissionExplanation(Permissions.USER_UPDATE, true, DecisionReason.ALLOWED_AT_ROLE_LEVEL),
-                new PermissionExplanation(Permissions.USER_READ, false, DecisionReason.DENIED_AT_USER_LEVEL)));
+                new PermissionExplanation(Permissions.USER_UPDATE, true, DecisionReason.ALLOWED_AT_ROLE_LEVEL, List.of()),
+                new PermissionExplanation(Permissions.USER_READ, false, DecisionReason.DENIED_AT_USER_LEVEL, List.of())));
 
         UserDetailView detail = detailOf(
                 account(Set.of(role("ROLE_X", Permissions.USER_UPDATE)), Set.of()), List.of());
@@ -223,8 +223,8 @@ class UserDetailAdminServiceTest {
     void aPermissionNobodyGrantedIsNotReportedAsDenied() {
         when(userService.effectiveAuthorities(USER)).thenReturn(Set.of(Permissions.USER_UPDATE));
         when(userService.explainPermissions(USER)).thenReturn(List.of(
-                new PermissionExplanation(Permissions.USER_UPDATE, true, DecisionReason.ALLOWED_AT_ROLE_LEVEL),
-                new PermissionExplanation(Permissions.USER_DELETE, false, DecisionReason.NO_LEVEL_SPOKE)));
+                new PermissionExplanation(Permissions.USER_UPDATE, true, DecisionReason.ALLOWED_AT_ROLE_LEVEL, List.of()),
+                new PermissionExplanation(Permissions.USER_DELETE, false, DecisionReason.NO_LEVEL_SPOKE, List.of())));
 
         UserDetailView detail = detailOf(
                 account(Set.of(role("ROLE_X", Permissions.USER_UPDATE)), Set.of()), List.of());
@@ -237,8 +237,8 @@ class UserDetailAdminServiceTest {
     void withNoDenyNothingIsReportedAsDenied() {
         when(userService.effectiveAuthorities(USER)).thenReturn(Set.of(Permissions.USER_READ, Permissions.USER_UPDATE));
         when(userService.explainPermissions(USER)).thenReturn(List.of(
-                new PermissionExplanation(Permissions.USER_READ, true, DecisionReason.ALLOWED_AT_ROLE_LEVEL),
-                new PermissionExplanation(Permissions.USER_UPDATE, true, DecisionReason.ALLOWED_AT_ROLE_LEVEL)));
+                new PermissionExplanation(Permissions.USER_READ, true, DecisionReason.ALLOWED_AT_ROLE_LEVEL, List.of()),
+                new PermissionExplanation(Permissions.USER_UPDATE, true, DecisionReason.ALLOWED_AT_ROLE_LEVEL, List.of())));
 
         UserDetailView detail = detailOf(
                 account(Set.of(role("ROLE_X", Permissions.USER_UPDATE)), Set.of()), List.of());
