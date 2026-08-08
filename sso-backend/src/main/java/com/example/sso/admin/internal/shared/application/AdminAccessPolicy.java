@@ -1,5 +1,7 @@
 package com.example.sso.admin.internal.shared.application;
 
+import com.example.sso.admin.AdminRefusal;
+
 import com.example.sso.admin.internal.audit.application.AuditScope;
 import com.example.sso.mapping.MappingTargetKind;
 import com.example.sso.user.deny.DenyAuthor;
@@ -43,6 +45,7 @@ public class AdminAccessPolicy {
     private final AdminScope scope;
     private final RoleGrantCeiling ceiling;
     private final DenyAuthorityPolicy denyPolicy;
+    private final RequestScopedAdminRefusalTrail refusalTrail;
 
     /**
      * User scope: whether the acting admin may act on {@code targetId} at all. A super admin
@@ -302,9 +305,22 @@ public class AdminAccessPolicy {
      */
     private AdminDecision selfProtection(UUID targetId) {
         if (isSelf(targetId)) {
-            return AdminDecision.refused(AdminRefusal.SELF_TARGET);
+            return refuse(AdminRefusal.SELF_TARGET);
         }
-        return isAdmin(targetId) ? AdminDecision.refused(AdminRefusal.TARGET_IS_ADMIN) : AdminDecision.allow();
+        return isAdmin(targetId) ? refuse(AdminRefusal.TARGET_IS_ADMIN) : AdminDecision.allow();
+    }
+
+    /**
+     * Leaves the reason on the request on the way out.
+     *
+     * <p>These guards are invoked from {@code @PreAuthorize} SpEL, which can only hand back a boolean, so the
+     * reason has nowhere else to go. Recording unconditionally is safe because only an actual denial reads it
+     * — a clause that refuses inside an {@code or} publishes no denial event, and the value is never
+     * consulted.
+     */
+    private AdminDecision refuse(AdminRefusal refusal) {
+        refusalTrail.record(refusal);
+        return AdminDecision.refused(refusal);
     }
 
     /**

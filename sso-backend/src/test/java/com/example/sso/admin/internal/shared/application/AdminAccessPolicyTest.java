@@ -1,5 +1,7 @@
 package com.example.sso.admin.internal.shared.application;
 
+import com.example.sso.admin.AdminRefusal;
+
 import com.example.sso.admin.internal.audit.application.AuditScope;
 import com.example.sso.resource.authorization.ApplicationAuthorization;
 import com.example.sso.resource.authorization.GroupAuthorization;
@@ -27,6 +29,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.util.Map;
 import java.util.Arrays;
@@ -69,6 +74,7 @@ class AdminAccessPolicyTest {
     private ApplicationService applications;
     private OrgContext orgContext;
     private AdminAccessPolicy policy;
+    private RequestScopedAdminRefusalTrail refusalTrail;
 
     @BeforeEach
     void setUp() {
@@ -93,7 +99,8 @@ class AdminAccessPolicyTest {
         RoleGrantCeiling ceiling = new RoleGrantCeiling(actingAdmin, scope, roleService, roleHierarchy, userGroups);
         DenyAuthorityPolicy denyPolicy =
                 new DenyAuthorityPolicy(actingAdmin, scope, ceiling, userService, roleHierarchy);
-        policy = new AdminAccessPolicy(actingAdmin, scope, ceiling, denyPolicy);
+        refusalTrail = new RequestScopedAdminRefusalTrail();
+        policy = new AdminAccessPolicy(actingAdmin, scope, ceiling, denyPolicy, refusalTrail);
 
         UserAccount actor = mock(UserAccount.class);
         when(actor.getId()).thenReturn(ACTOR_ID);
@@ -1324,6 +1331,45 @@ class AdminAccessPolicyTest {
             assertThat(policy.canDeleteUser(target)).isEqualTo(policy.explainDeleteUser(target).permitted());
             assertThat(policy.canSetEnabled(target, false))
                     .isEqualTo(policy.explainSetEnabled(target, false).permitted());
+        }
+    }
+
+
+    /**
+     * The write half of the bridge to the audit trail, and the half nothing was checking. The listener's own
+     * test mocks the trail, so both sides could pass while the policy left nothing where the listener looks —
+     * a denial would go on being recorded with the expression alone and nobody would notice.
+     */
+    @Test
+    void aRefusalIsLeftOnTheRequestForWhoeverRecordsTheDenial() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+        try {
+            signIn();
+            UUID target = UUID.randomUUID();
+            makeAdmin(target);
+
+            policy.canDeleteUser(target);
+
+            assertThat(refusalTrail.lastRefusal()).contains(AdminRefusal.TARGET_IS_ADMIN);
+        } finally {
+            RequestContextHolder.resetRequestAttributes();
+        }
+    }
+
+    /** Permitted leaves nothing behind, so a later denial cannot inherit a refusal that never happened. */
+    @Test
+    void apermittedCheckLeavesNoRefusalBehind() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+        try {
+            signIn();
+
+            policy.canDeleteUser(UUID.randomUUID());
+
+            assertThat(refusalTrail.lastRefusal()).isEmpty();
+        } finally {
+            RequestContextHolder.resetRequestAttributes();
         }
     }
 

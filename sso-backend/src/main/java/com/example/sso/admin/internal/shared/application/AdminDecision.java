@@ -1,5 +1,7 @@
 package com.example.sso.admin.internal.shared.application;
 
+import com.example.sso.admin.AdminRefusal;
+
 /**
  * An administrative check's answer together with the reason for it.
  *

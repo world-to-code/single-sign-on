@@ -1,5 +1,6 @@
 package com.example.sso.security.internal;
 
+import com.example.sso.admin.AdminRefusalTrail;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditType;
 import com.example.sso.audit.AuditService;
@@ -25,7 +26,22 @@ import org.springframework.stereotype.Component;
 public class AuthorizationAuditListener {
 
     private final AuditService audit;
+    private final AdminRefusalTrail refusalTrail;
     private final DeniedAuthorizationDescriber describer = new DeniedAuthorizationDescriber();
+
+    /**
+     * The expression names the rule; the trail names the clause inside it that objected.
+     *
+     * <p>A composed {@code @PreAuthorize} denies as one word — "has the permission AND may reach the target
+     * AND may disable them" — so without this an operator learns which rule fired and not why. The trail is
+     * consulted ONLY here, on an actual denial, which is what makes recording it unconditionally safe.
+     */
+    private String reasonFor(DeniedAuthorization denied) {
+        return refusalTrail.lastRefusal()
+                .map(refusal -> denied.failedCheck() == null ? refusal.name()
+                        : denied.failedCheck() + " (" + refusal.name() + ")")
+                .orElse(denied.failedCheck());
+    }
 
     @EventListener
     public void onDenied(AuthorizationDeniedEvent<?> event) {
@@ -35,6 +51,6 @@ public class AuthorizationAuditListener {
 
         DeniedAuthorization denied = describer.describe(event.getObject(), event.getAuthorizationResult());
         audit.record(new AuditRecord(AuditType.AUTHORIZATION_DENIED, principal, false, denied.target(), null)
-                .withReason(denied.failedCheck()));
+                .withReason(reasonFor(denied)));
     }
 }
