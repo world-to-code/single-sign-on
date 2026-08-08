@@ -13,7 +13,9 @@ import { PageHeader } from "@/components/PageHeader";
 import { PermissionPicker } from "@/components/PermissionPicker";
 import { SearchSelect } from "@/components/SearchSelect";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { expiryOf, GRANT_DURATIONS, type GrantDuration } from "@/lib/grantDuration";
 import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/select";
 import { DenyControls } from "@/components/DenyControls";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -23,6 +25,9 @@ export default function RoleDetail() {
   const { id = "" } = useParams();
   const [role, setRole] = useState<RoleDetail | null>(null);
   const [members, setMembers] = useState<RoleMember[] | null>(null);
+  // Chosen BEFORE picking the user, because selecting one grants immediately — a duration asked for
+  // afterwards would arrive too late to be part of the same decision.
+  const [duration, setDuration] = useState<GrantDuration>("PERMANENT");
   const [allRoles, setAllRoles] = useState<Role[]>([]);
   const [catalog, setCatalog] = useState<Permission[]>([]);
   const [addKey, setAddKey] = useState(0);
@@ -211,10 +216,19 @@ export default function RoleDetail() {
             placeholder={t("roleDetailSearchPlaceholder")}
             fetcher={searchUsers}
             onSelect={(s) => {
-              if (s) void run(() => addRoleMember(id, s.id)).then((ok) => { if (ok) setAddKey((k) => k + 1); });
+              if (s) {
+                void run(() => addRoleMember(id, s.id, expiryOf(duration, new Date())))
+                  .then((ok) => { if (ok) setAddKey((k) => k + 1); });
+              }
             }}
           />
         </div>
+        <Select aria-label={t("roleDetailGrantDuration")} className="w-44"
+                value={duration} onChange={(e) => setDuration(e.target.value as GrantDuration)}>
+          {GRANT_DURATIONS.map((d) => (
+            <option key={d} value={d}>{t(`roleDetailDuration_${d}`)}</option>
+          ))}
+        </Select>
       </div>
 
       <Table>
@@ -222,14 +236,15 @@ export default function RoleDetail() {
           <TableRow>
             <TableHead>{t("roleDetailColUser")}</TableHead>
             <TableHead>{t("roleDetailColStatus")}</TableHead>
+            <TableHead>{t("roleDetailColExpires")}</TableHead>
             <TableHead className="text-right">{t("roleDetailColActions")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {members === null ? (
-            <TableRow><TableCell colSpan={3} className="text-muted-foreground">{t("loading")}</TableCell></TableRow>
+            <TableRow><TableCell colSpan={4} className="text-muted-foreground">{t("loading")}</TableCell></TableRow>
           ) : members.length === 0 ? (
-            <TableRow><TableCell colSpan={3} className="text-muted-foreground">{t("roleDetailNoMembers")}</TableCell></TableRow>
+            <TableRow><TableCell colSpan={4} className="text-muted-foreground">{t("roleDetailNoMembers")}</TableCell></TableRow>
           ) : members.map((m) => (
             <TableRow key={m.id}>
               <TableCell className="font-medium">
@@ -238,6 +253,12 @@ export default function RoleDetail() {
               </TableCell>
               <TableCell>
                 {m.enabled ? <Badge variant="muted">{t("badgeEnabled")}</Badge> : <Badge variant="secondary">{t("badgeDisabled")}</Badge>}
+              </TableCell>
+              <TableCell>
+                {/* A standing grant says so rather than showing a blank, which reads as missing data. */}
+                {m.expiresAt
+                  ? <Badge variant="secondary">{new Date(m.expiresAt).toLocaleString()}</Badge>
+                  : <span className="text-muted-foreground">{t("roleDetailDuration_PERMANENT")}</span>}
               </TableCell>
               <TableCell className="text-right">
                 <Button

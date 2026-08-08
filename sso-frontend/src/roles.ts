@@ -70,6 +70,8 @@ export interface RoleMember {
   username: string;
   displayName: string;
   enabled: boolean;
+  /** When this grant runs out; null when it is permanent. */
+  expiresAt: string | null;
 }
 
 export const listRoles = () => apiGet<Role[]>("/api/admin/roles");
@@ -82,7 +84,8 @@ export const updateRole = (id: string, body: RoleRequest) => apiPut<Role>(`/api/
 export const deleteRole = (id: string) => apiDelete(`/api/admin/roles/${id}`);
 
 export const listRoleMembers = (id: string) => apiGet<RoleMember[]>(`/api/admin/roles/${id}/members`);
-export const addRoleMember = (id: string, userId: string) =>
-  apiPost<void>(`/api/admin/roles/${id}/members/${encodeURIComponent(userId)}`);
+/** `expiresAt` null grants the role permanently, which is what this endpoint has always done. */
+export const addRoleMember = (id: string, userId: string, expiresAt: string | null = null) =>
+  apiPost<void>(`/api/admin/roles/${id}/members/${encodeURIComponent(userId)}`, { expiresAt });
 export const removeRoleMember = (id: string, userId: string) =>
   apiDelete(`/api/admin/roles/${id}/members/${encodeURIComponent(userId)}`);
