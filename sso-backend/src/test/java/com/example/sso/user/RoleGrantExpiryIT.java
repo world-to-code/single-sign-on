@@ -201,6 +201,40 @@ class RoleGrantExpiryIT extends AbstractIntegrationTest {
         assertThat(authoritiesOf(user.getUsername())).contains(Permissions.USER_READ);
     }
 
+
+    /**
+     * Re-running "set the members of this role" over a list that still contains a time-boxed holder must not
+     * quietly make their grant permanent. It would be a silent privilege escalation performed by an
+     * administrator who thought they were changing nothing about that person — and the expiry would simply
+     * stop arriving, with no event anywhere saying so.
+     */
+    @Test
+    void reSettingTheMembershipDoesNotEraseAnExistingExpiry() {
+        UUID role = seedGlobalRole(Permissions.USER_READ);
+        UserAccount timeBoxed = plainUser();
+        UserAccount other = plainUser();
+        Instant until = Instant.now().plusSeconds(3600);
+        roleService.addMemberUntil(role, timeBoxed.getId(), until);
+
+        roleService.setMembers(role, Set.of(timeBoxed.getId(), other.getId()));
+
+        assertThat(roleService.memberExpiries(role))
+                .as("the time-boxed holder keeps their expiry; the newly added one has none")
+                .containsOnlyKeys(timeBoxed.getId());
+    }
+
+    /** Dropping a time-boxed holder still removes them — the expiry is not a shield against revocation. */
+    @Test
+    void reSettingTheMembershipStillRemovesATimeBoxedHolderLeftOut() {
+        UUID role = seedGlobalRole(Permissions.USER_READ);
+        UserAccount timeBoxed = plainUser();
+        roleService.addMemberUntil(role, timeBoxed.getId(), Instant.now().plusSeconds(3600));
+
+        roleService.setMembers(role, Set.of());
+
+        assertThat(roleService.memberIds(role)).doesNotContain(timeBoxed.getId());
+    }
+
     private UserAccount plainUser() {
         String username = "grant-" + UUID.randomUUID().toString().substring(0, 8);
         UserAccount account = userService.createUser(
