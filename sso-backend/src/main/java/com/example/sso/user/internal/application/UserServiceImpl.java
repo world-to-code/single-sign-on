@@ -316,11 +316,13 @@ public class UserServiceImpl implements UserService {
 
     private List<PermissionExplanation> explanationsFor(AppUser user) {
         Map<String, Set<String>> conferringRoles = authorityResolver.conferringRoles(user);
+        Map<String, Set<String>> conferringGroups = authorityResolver.conferringGroups(user);
         return authorityResolver.explain(user).entrySet().stream()
                 .map(entry -> new PermissionExplanation(entry.getKey(),
                         entry.getValue().decision() == PermissionDecision.ALLOW,
                         entry.getValue().reason(),
-                        List.copyOf(conferringRoles.getOrDefault(entry.getKey(), Set.of()))))
+                        List.copyOf(conferringRoles.getOrDefault(entry.getKey(), Set.of())),
+                        List.copyOf(conferringGroups.getOrDefault(entry.getKey(), Set.of()))))
                 .sorted(Comparator.comparing(PermissionExplanation::permission))
                 .toList();
     }

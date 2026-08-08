@@ -114,6 +114,62 @@ class PermissionProvenanceIT extends AbstractIntegrationTest {
     }
 
     /**
+     * A role that arrives through a group is removed FROM THE GROUP. Taking it off the user does nothing at
+     * all, so naming the role without naming the group still sends an administrator to the wrong screen.
+     */
+    @Test
+    void aPermissionDelegatedByAGroupNamesThatGroup() {
+        UUID role = role("ROLE_PROV_GROUPED", Permissions.USER_READ);
+        UUID group = group("platform", role);
+        UserAccount user = user();
+        addToGroup(group, user.getId());
+
+        assertThat(explanationOf(user.getId(), Permissions.USER_READ))
+                .hasValueSatisfying(explanation -> {
+                    assertThat(explanation.conferredBy()).containsExactly("ROLE_PROV_GROUPED");
+                    assertThat(explanation.viaGroups()).containsExactly("platform");
+                });
+    }
+
+    /** Held directly, the group list stays empty — the user's own assignment is where to remove it. */
+    @Test
+    void aDirectlyHeldRoleNamesNoGroup() {
+        UUID role = role("ROLE_PROV_NOGROUP", Permissions.USER_READ);
+        UserAccount user = user();
+        assign(user.getId(), role);
+
+        assertThat(explanationOf(user.getId(), Permissions.USER_READ))
+                .hasValueSatisfying(explanation -> assertThat(explanation.viaGroups()).isEmpty());
+    }
+
+    /** Two groups delegating the same role list both: removing one member row leaves the permission behind. */
+    @Test
+    void everyGroupDelegatingAConferringRoleIsNamed() {
+        UUID role = role("ROLE_PROV_SHARED", Permissions.USER_READ);
+        UUID first = group("platform", role);
+        UUID second = group("compilers", role);
+        UserAccount user = user();
+        addToGroup(first, user.getId());
+        addToGroup(second, user.getId());
+
+        assertThat(explanationOf(user.getId(), Permissions.USER_READ))
+                .hasValueSatisfying(explanation -> assertThat(explanation.viaGroups())
+                        .containsExactlyInAnyOrder("platform", "compilers"));
+    }
+
+    private UUID group(String name, UUID roleId) {
+        UUID id = UUID.randomUUID();
+        ownerJdbc().update("insert into user_group (id, name, org_id) values (?, ?, null)", id, name);
+        cleanups.add(() -> ownerJdbc().update("delete from user_group where id = ?", id));
+        ownerJdbc().update("insert into group_role (group_id, role_id) values (?, ?)", id, roleId);
+        return id;
+    }
+
+    private void addToGroup(UUID groupId, UUID userId) {
+        ownerJdbc().update("insert into user_group_member (group_id, user_id) values (?, ?)", groupId, userId);
+    }
+
+    /**
      * The provenance has to survive the trip to the console, not merely exist in the resolver. A view that
      * dropped it would leave every test above green while the screen still said only "you have it".
      */

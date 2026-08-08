@@ -15,6 +15,15 @@ type Props = {
  */
 export function EffectivePermissionList({ effective, denied }: Props) {
   const { t } = useTranslation("console");
+
+  /** Where the permission came from, and — when a group delegates it — where it has to be removed. */
+  const provenanceOf = (held: HeldPermission) => {
+    if (held.conferredBy.length === 0) return undefined;
+    const roles = t("userDetailConferredBy", { roles: held.conferredBy.join(", ") });
+    return held.viaGroups.length === 0
+      ? roles
+      : `${roles} · ${t("userDetailDelegatedByGroup", { groups: held.viaGroups.join(", ") })}`;
+  };
   return (
     <>
       {effective.length === 0 ? (
@@ -23,9 +32,7 @@ export function EffectivePermissionList({ effective, denied }: Props) {
         <div className="flex flex-wrap gap-1">
           {effective.map((held) => (
             <Badge key={held.permission} variant="muted" className="font-mono text-xs"
-                   title={held.conferredBy.length > 0
-                     ? t("userDetailConferredBy", { roles: held.conferredBy.join(", ") })
-                     : undefined}>
+                   title={provenanceOf(held)}>
               {held.permission}
             </Badge>
           ))}

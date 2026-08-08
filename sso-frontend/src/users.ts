@@ -24,6 +24,8 @@ export interface HeldPermission {
   permission: string;
   /** May name a role the user does NOT hold — one they do hold inherits it down the DAG. */
   conferredBy: string[];
+  /** Groups delegating a conferring role; such a role is removed from the GROUP, not from the user. */
+  viaGroups: string[];
 }
 
 /** A permission the user does not hold, and the level that withheld it. */

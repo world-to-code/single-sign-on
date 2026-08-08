@@ -87,11 +87,16 @@ public class UserDetailAdminService {
         // The held set stays the source of truth for WHICH permissions are held — it carries granted wildcard
         // tokens that the per-permission explanations do not enumerate. Provenance is attached by lookup, so
         // a token simply has none rather than silently dropping out of the list.
-        Map<String, List<String>> conferredBy = explanations.stream()
-                .collect(Collectors.toMap(PermissionExplanation::permission, PermissionExplanation::conferredBy));
+        Map<String, PermissionExplanation> byPermission = explanations.stream()
+                .collect(Collectors.toMap(PermissionExplanation::permission, explanation -> explanation));
         List<HeldPermissionView> held = effective.stream().sorted()
-                .map(permission -> new HeldPermissionView(permission,
-                        conferredBy.getOrDefault(permission, List.of())))
+                .map(permission -> {
+                    PermissionExplanation explanation = byPermission.get(permission);
+                    return explanation == null
+                            ? new HeldPermissionView(permission, List.of(), List.of())
+                            : new HeldPermissionView(permission, explanation.conferredBy(),
+                                    explanation.viaGroups());
+                })
                 .toList();
 
         return UserDetailView.of(user, roleAssignments(user, memberships),

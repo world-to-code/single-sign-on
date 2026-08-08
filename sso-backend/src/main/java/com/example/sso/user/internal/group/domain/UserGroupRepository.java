@@ -94,6 +94,17 @@ public interface UserGroupRepository extends JpaRepository<UserGroup, UUID> {
             + "(select m.id.groupId from UserGroupMember m where m.id.userId = :userId)")
     List<UUID> findDelegatedRoleIdsForMember(@Param("userId") UUID userId);
 
+    /**
+     * The same delegation, keeping the GROUP the login path throws away.
+     *
+     * <p>A separate query rather than widening the one above: that one runs on every login and has no use for
+     * the name, and making it carry one would put a join on the hot path to serve a screen.
+     */
+    @Query("select distinct g.id as groupId, g.name as groupName, gr.id.roleId as roleId from UserGroup g "
+            + "join UserGroupRole gr on gr.id.groupId = g.id where g.id in "
+            + "(select m.id.groupId from UserGroupMember m where m.id.userId = :userId)")
+    List<DelegatedRoleSource> findDelegatedRoleSourcesForMember(@Param("userId") UUID userId);
+
     /** (id, name) for the given groups — batch name lookup without loading membership. */
     @Query("select g.id as id, g.name as name from UserGroup g where g.id in :ids")
     List<IdName> findIdNames(Collection<UUID> ids);

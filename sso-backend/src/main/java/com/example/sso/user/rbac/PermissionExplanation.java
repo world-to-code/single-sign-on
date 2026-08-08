@@ -14,11 +14,15 @@ import java.util.List;
  * @param conferredBy the names of the roles that actually carry it, empty when no role does (a direct grant,
  *                    or nothing granted it at all). A role here may be one the user does NOT hold: the DAG
  *                    lets a held role inherit it, and revoking the held one leaves the permission in place.
+ * @param viaGroups   the groups that delegate a conferring role, empty when every conferring role is held
+ *                    directly. A role arriving this way is removed from the GROUP — taking it off the user
+ *                    does nothing, which is the mistake naming the group prevents.
  */
 public record PermissionExplanation(String permission, boolean held, DecisionReason decidedBy,
-                                    List<String> conferredBy) {
+                                    List<String> conferredBy, List<String> viaGroups) {
 
     public PermissionExplanation {
         conferredBy = List.copyOf(conferredBy);
+        viaGroups = List.copyOf(viaGroups);
     }
 }

@@ -3,7 +3,11 @@ import { render, screen } from "@testing-library/react";
 import { EffectivePermissionList } from "./EffectivePermissionList";
 
 /** The console bundle really does carry these; anything else falls back. */
-const held = (permission: string, ...conferredBy: string[]) => ({ permission, conferredBy });
+const held = (permission: string, ...conferredBy: string[]) =>
+  ({ permission, conferredBy, viaGroups: [] as string[] });
+
+const heldViaGroup = (permission: string, role: string, group: string) =>
+  ({ permission, conferredBy: [role], viaGroups: [group] });
 
 const KNOWN_KEYS = new Set([
   "none",
@@ -66,6 +70,18 @@ describe("EffectivePermissionList", () => {
     render(<EffectivePermissionList effective={[held("user:read", "ROLE_SUPPORT")]} denied={[]} />);
 
     expect(screen.getByText("user:read")).toHaveAttribute("title", "userDetailConferredBy");
+  });
+
+  /**
+   * The group is where the role actually has to be removed. Naming only the role sends an administrator to
+   * the user's own assignments, where there is nothing to take away.
+   */
+  it("says the group when a delegated role is what confers it", () => {
+    render(<EffectivePermissionList effective={[heldViaGroup("user:read", "ROLE_SUPPORT", "platform")]}
+                                    denied={[]} />);
+
+    expect(screen.getByText("user:read"))
+      .toHaveAttribute("title", "userDetailConferredBy · userDetailDelegatedByGroup");
   });
 
   /** A direct grant is conferred by no role, so there is nothing to point at. */

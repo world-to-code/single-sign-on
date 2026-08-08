@@ -1,6 +1,7 @@
 package com.example.sso.user.internal.application;
 
 import com.example.sso.user.internal.account.domain.AppUser;
+import com.example.sso.user.internal.group.domain.DelegatedRoleSource;
 import com.example.sso.user.internal.group.domain.UserGroupRepository;
 import com.example.sso.user.internal.role.domain.Role;
 import com.example.sso.user.internal.role.domain.RoleRepository;
@@ -54,6 +55,31 @@ class EffectiveAuthorityResolver {
      */
     Map<String, PermissionVerdict> explain(AppUser user) {
         return denyResolver.verdicts(inputsFor(user));
+    }
+
+    /** Which groups delegate each permission's conferring roles, by permission. */
+    Map<String, Set<String>> conferringGroups(AppUser user) {
+        Map<UUID, Set<String>> groupsByRole = new HashMap<>();
+        for (DelegatedRoleSource source : groups.findDelegatedRoleSourcesForMember(user.getId())) {
+            groupsByRole.computeIfAbsent(source.getRoleId(), key -> new HashSet<>()).add(source.getGroupName());
+        }
+        if (groupsByRole.isEmpty()) {
+            return Map.of();
+        }
+
+        hydrator.hydrateUser(user);
+        Set<UUID> heldRoleIds = Stream.concat(user.getRoles().stream(),
+                        groupDelegatedRoles(user.getId()).stream()).map(Role::getId).collect(Collectors.toSet());
+
+        Map<String, Set<String>> byPermission = new HashMap<>();
+        inheritanceResolver.conferringRoleIds(heldRoleIds).forEach((permission, roleIds) -> {
+            Set<String> names = roleIds.stream().map(groupsByRole::get)
+                    .filter(group -> group != null).flatMap(Set::stream).collect(Collectors.toSet());
+            if (!names.isEmpty()) {
+                byPermission.put(permission, names);
+            }
+        });
+        return byPermission;
     }
 
     /** Which roles carry each permission this user's roles reach, by role NAME. */
