@@ -146,28 +146,33 @@ public class GroupAdminService {
         requireAccess(id);
         int users = 0;
         int sessions = 0;
-        int skipped = 0;
+        // Counted apart because they mean opposite things to whoever reads the row. A REFUSED member is the
+        // guard working — a scoped delegate cannot reach outside its subtree. A FAILED one is a stale
+        // membership row or a member that vanished mid-batch, which is an operational problem somebody should
+        // look at. Summed into one "skipped" they were indistinguishable, and the second hid behind the first.
+        int refused = 0;
+        int failed = 0;
         for (UUID memberId : userGroups.memberIdsOf(List.of(id))) {
             // Apply the SAME per-member reach the single-user force-expiry composes (canAccessUser AND
             // canRevokeSessions): a scoped delegate must not reach a same-org member OUTSIDE its subtree, nor
             // force-logout an administrator, merely by virtue of shared group membership.
             if (!accessPolicy.canAccessUser(memberId) || !accessPolicy.canRevokeSessions(memberId)) {
-                skipped++;
+                refused++;
                 continue;
             }
             try {
                 sessions += userDetail.terminateSessions(memberId);
                 users++;
             } catch (RuntimeException e) {
-                // A member vanished mid-batch (stale membership row): isolate it so one bad member never aborts
-                // the whole off-boarding, leaving the rest still logged in.
-                skipped++;
+                // Isolated so one bad member never aborts the whole off-boarding, leaving the rest logged in.
+                failed++;
                 log.warn("skipping group member {} during bulk session termination", memberId, e);
             }
         }
         auditLogger.log(AuditType.SESSION_ADMIN_REVOKED, AuditSubjectType.GROUP, id.toString(),
-                "group members signed out: users=" + users + " sessions=" + sessions + " skipped=" + skipped);
-        return new GroupSessionTermination(users, sessions, skipped);
+                "group members signed out: users=" + users + " sessions=" + sessions
+                        + " refused=" + refused + " failed=" + failed);
+        return new GroupSessionTermination(users, sessions, refused + failed);
     }
 
     public List<ApplicationView> applications(UUID id) {

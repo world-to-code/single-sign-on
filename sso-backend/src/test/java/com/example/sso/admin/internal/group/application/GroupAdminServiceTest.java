@@ -260,10 +260,13 @@ class GroupAdminServiceTest {
 
         assertThat(result).isEqualTo(new GroupSessionTermination(2, 5, 2)); // skipped = admin + out-of-scope
         verify(userDetail, never()).terminateSessions(admin);      // never escalate to an admin
-        verify(userDetail, never()).terminateSessions(outOfScope); // never reach outside the subtree
+        // Both were REFUSED by the guard, and neither FAILED. Summed into one "skipped" the audit row could
+        // not tell a working guard from a stale membership row nobody had noticed.
         verify(auditLogger).log(eq(AuditType.SESSION_ADMIN_REVOKED), eq(AuditSubjectType.GROUP),
-                eq(GROUP_ID.toString()),
-                argThat(d -> d.contains("users=2") && d.contains("sessions=5") && d.contains("skipped=2")));
+                eq(GROUP_ID.toString()), argThat(detail -> detail.contains("users=2")
+                        && detail.contains("sessions=5")
+                        && detail.contains("refused=2") && detail.contains("failed=0")));
+        verify(userDetail, never()).terminateSessions(outOfScope); // never reach outside the subtree
     }
 
     @Test
@@ -286,6 +289,10 @@ class GroupAdminServiceTest {
         assertThat(result).isEqualTo(new GroupSessionTermination(2, 2, 1)); // a+b done, gone skipped, not aborted
         verify(userDetail).terminateSessions(b); // the member AFTER the failure is still processed
         verify(auditLogger).log(eq(AuditType.SESSION_ADMIN_REVOKED), any(), any(), any()); // trail still written
+        // The other cause, and the one that needs a human: a stale membership row is not the guard working.
+        verify(auditLogger).log(eq(AuditType.SESSION_ADMIN_REVOKED), eq(AuditSubjectType.GROUP),
+                eq(GROUP_ID.toString()),
+                argThat(detail -> detail.contains("refused=0") && detail.contains("failed=1")));
     }
 
     @Test
