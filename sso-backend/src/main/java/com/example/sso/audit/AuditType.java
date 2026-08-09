@@ -45,6 +45,12 @@ public enum AuditType {
     IP_BLOCKED(AuditCategory.ACCESS),
     ADMIN_IP_BLOCKED(AuditCategory.ACCESS),
     ADMIN_ELEVATION_DENIED(AuditCategory.ACCESS),
+    /**
+     * A call to the machine response API was turned away — a credential this IdP did not issue for this host,
+     * or a well-formed one with no correlation id. Recorded because an API that can end any session being
+     * probed is itself the signal, and the reason code tells a rejected token apart from a caller's bug.
+     */
+    RESPONSE_ACTION_REFUSED(AuditCategory.ACCESS),
     RATE_LIMITED(AuditCategory.ACCESS),
 
     // Application sign-on

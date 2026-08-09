@@ -51,7 +51,8 @@ class AdminAuditCoverageTest {
             "AdminMappingRuleController", "com.example.sso.mapping.internal.application.MappingRuleServiceImpl",
             "AdminDenyController", "com.example.sso.admin.internal.deny.application.DenyAdminService",
             "AdminFederatedIdentityController",
-            "com.example.sso.federation.internal.application.FederatedIdentityAdminServiceImpl");
+            "com.example.sso.federation.internal.application.FederatedIdentityAdminServiceImpl",
+            "ResponseController", "com.example.sso.response.internal.application.ResponseActions");
 
     /** Individual handlers that change nothing, or whose effect is audited at a finer grain than the request. */
     private static final Map<String, String> EXEMPT = Map.of(
@@ -140,13 +141,24 @@ class AdminAuditCoverageTest {
         for (BeanDefinition definition : scanner.findCandidateComponents("com.example.sso")) {
             Class<?> type = resolve(definition.getBeanClassName());
             RequestMapping mapping = AnnotatedElementUtils.findMergedAnnotation(type, RequestMapping.class);
-            if (mapping != null && mapping.value().length > 0 && mapping.value()[0].startsWith("/api/admin")) {
+            if (mapping != null && mapping.value().length > 0 && isPrivilegedWriteSurface(mapping.value()[0])) {
                 controllers.add(type);
             }
         }
         // A scan that silently matched nothing would make every assertion here pass vacuously.
-        assertThat(controllers).as("admin controllers found by the scan").isNotEmpty();
+        assertThat(controllers).as("privileged-write controllers found by the scan").isNotEmpty();
         return controllers;
+    }
+
+    /**
+     * The surfaces whose writes must all be audited: the admin console's, and the machine response API's.
+     *
+     * <p>The second was added with the response API and is not a courtesy. A machine can end sessions and
+     * constrain accounts without a person in the loop, so an unaudited verb there is an action nobody was
+     * ever in a position to notice — strictly worse than the same gap on a screen somebody was looking at.
+     */
+    private boolean isPrivilegedWriteSurface(String path) {
+        return path.startsWith("/api/admin") || path.startsWith("/api/response");
     }
 
     private Class<?> resolve(String className) {
