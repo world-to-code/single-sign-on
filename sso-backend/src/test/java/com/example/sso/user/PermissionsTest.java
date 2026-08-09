@@ -32,11 +32,28 @@ class PermissionsTest {
             if (granted.indexOf(':', sep + 1) != -1) {
                 continue; // a sub-scoped perm (e.g. audit:read:<category>) is a read, not a resource:action
             }
+            if (Permissions.AUDIT_EXPORT.equals(granted)) {
+                continue; // see below: exporting is not a flavour of reading
+            }
             String read = granted.substring(0, sep) + ":read";
             if (Permissions.ALL.contains(read) && !granted.endsWith(":read")) {
                 assertThat(Permissions.expandImplied(Set.of(granted))).contains(read);
             }
         }
+    }
+
+    /**
+     * The one exception to the rule above, and why it is not an oversight.
+     *
+     * <p>{@code audit:read} is not an ordinary read: it is a MACRO that opens every category plus actor PII,
+     * and it is TENANT-SCOPED, while {@code audit:export} is platform-wide because a SIEM ingests the whole
+     * deployment. Letting the implication fire would turn "may ship logs to the collector" into the entire
+     * audit console — granting a tenant-scoped console read as a side effect of a cross-tenant capability.
+     */
+    @Test
+    void exportingTheAuditTrailIsNotAFlavourOfReadingIt() {
+        assertThat(Permissions.expandImplied(Set.of(Permissions.AUDIT_EXPORT)))
+                .containsExactly(Permissions.AUDIT_EXPORT);
     }
 
     @Test
@@ -213,7 +230,8 @@ class PermissionsTest {
         assertThat(Permissions.actionsOf("user")).containsExactlyInAnyOrder(
                 Permissions.USER_READ, Permissions.USER_CREATE, Permissions.USER_UPDATE, Permissions.USER_DELETE);
         // A finer three-segment sub-scope (audit:read:pii) is NOT a two-segment action of audit.
-        assertThat(Permissions.actionsOf("audit")).containsExactly(Permissions.AUDIT_READ);
+        assertThat(Permissions.actionsOf("audit"))
+                .containsExactlyInAnyOrder(Permissions.AUDIT_READ, Permissions.AUDIT_EXPORT);
         assertThat(Permissions.actionsOf("nonesuch")).isEmpty();
     }
 

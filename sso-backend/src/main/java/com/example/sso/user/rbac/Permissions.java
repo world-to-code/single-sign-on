@@ -131,6 +131,13 @@ public final class Permissions {
     public static final String AUDIT_READ_SYSTEM = "audit:read:system";
     /** Unlocks the actor PII (email/display name) on audit rows; withheld from a plain category grant. */
     public static final String AUDIT_READ_PII = "audit:read:pii";
+    /**
+     * Ship the audit trail to an external collector (SIEM). PLATFORM-only and deliberately NOT a flavour of
+     * {@code audit:read}: the exporter reads across EVERY tenant, while {@code audit:read} resolves the acting
+     * tenant and shows an administrator only their own org. One permission for both would make a
+     * tenant-grantable one imply cross-tenant reach.
+     */
+    public static final String AUDIT_EXPORT = "audit:export";
     public static final String SCIM_MANAGE = "scim:manage";
     public static final String KEY_ROTATE = "key:rotate";
 
@@ -164,7 +171,7 @@ public final class Permissions {
             ORG_READ, ORG_CREATE, ORG_UPDATE, ORG_DELETE, ORG_MEMBER_MANAGE,
             AUDIT_READ, AUDIT_READ_AUTHENTICATION, AUDIT_READ_AUTHORIZATION, AUDIT_READ_SESSION,
             AUDIT_READ_ACCESS, AUDIT_READ_APP_ACCESS, AUDIT_READ_USER_ACTION, AUDIT_READ_ADMIN,
-            AUDIT_READ_SYSTEM, AUDIT_READ_PII, SCIM_MANAGE, KEY_ROTATE);
+            AUDIT_READ_SYSTEM, AUDIT_READ_PII, AUDIT_EXPORT, SCIM_MANAGE, KEY_ROTATE);
 
     private static final Set<String> CATALOG = Set.copyOf(ALL);
 
@@ -195,7 +202,9 @@ public final class Permissions {
      * super-admin only the global ones) — cross-tenant audit is reached by deliberate drill-in, not this perm.
      */
     public static final Set<String> PLATFORM = Set.of(
-            ORG_CREATE, ORG_UPDATE, ORG_DELETE);
+            ORG_CREATE, ORG_UPDATE, ORG_DELETE,
+            // Reads across every tenant, unlike the org-scoped audit:read above.
+            AUDIT_EXPORT);
 
     /**
      * Expands a set of granted permissions with the implied {@code <resource>:read}: any mutating
@@ -213,6 +222,12 @@ public final class Permissions {
             // audit:read, which the macro below would then widen to every category and defeat category scoping.
             if (sep <= 0 || perm.indexOf(':', sep + 1) != -1 || "read".equals(perm.substring(sep + 1))) {
                 continue; // no resource, a sub-scoped perm, or already a read permission
+            }
+            // Exporting is not reading. audit:read is a MACRO over every category plus actor PII, so the
+            // ordinary "a mutating action implies its read" rule would turn "may ship logs to the collector"
+            // into the whole audit console — for a permission whose point is that it is not the console's.
+            if (AUDIT_EXPORT.equals(perm)) {
+                continue;
             }
 
             String read = perm.substring(0, sep) + ":read";
