@@ -32,6 +32,17 @@ public class EmailFactorHandler implements FactorHandler {
         return AuthFactor.EMAIL;
     }
 
+    /**
+     * Enrolment for this factor IS a verified address, because that is exactly what {@code prepare} and
+     * {@code verify} both insist on below. Left at the interface default this method answered "yes" for an
+     * account that would then be refused its challenge — harmless while nobody asked, and wrong the moment
+     * something has to decide whether a second factor is actually available to this person.
+     */
+    @Override
+    public boolean isEnrolled(UserAccount user) {
+        return user.isEmailVerified();
+    }
+
     @Override
     public FactorChallenge prepare(UserAccount user, HttpServletRequest request) {
         requireVerifiedAddress(user);

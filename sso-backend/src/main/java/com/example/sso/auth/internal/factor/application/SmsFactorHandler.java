@@ -32,6 +32,13 @@ public class SmsFactorHandler implements FactorHandler {
         return AuthFactor.SMS;
     }
 
+    /** Enrolment for this factor is a verified number — the same condition {@code prepare} and {@code verify}
+     *  both re-check. The interface default answered "yes" for an account that has never proven one. */
+    @Override
+    public boolean isEnrolled(UserAccount user) {
+        return user.isPhoneVerified();
+    }
+
     @Override
     public FactorChallenge prepare(UserAccount user, HttpServletRequest request) {
         requireVerifiedPhone(user);
