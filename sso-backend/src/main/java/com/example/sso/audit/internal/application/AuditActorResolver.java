@@ -23,6 +23,10 @@ public class AuditActorResolver {
     // Deliberately a literal, not scim.ScimBearerTokenFilter.SCIM_PRINCIPAL: scim already depends on
     // audit, so importing it back would close a module cycle for one string.
     private static final String SCIM_CLIENT = "scim-client";
+    // Same reason as above, and the same literal: response already depends on audit. Reserved because it is
+    // otherwise a NAME, and a tenant that creates a user called "response-client" would then have every
+    // machine action in that tenant enriched to — and recorded against — an account of its choosing.
+    private static final String RESPONSE_CLIENT = "response-client";
     private static final String SYSTEM_PREFIX = "system:";      // e.g. "system:mapping-rule"
     private static final String UNKNOWN = "unknown";
     private static final String ANONYMOUS = "anonymous";
@@ -38,7 +42,7 @@ public class AuditActorResolver {
         if (principal == null || principal.isBlank() || UNKNOWN.equals(principal) || ANONYMOUS.equals(principal)) {
             return AuditActorInfo.of(AuditActorType.ANONYMOUS, principal == null ? UNKNOWN : principal);
         }
-        if (SCIM_CLIENT.equals(principal)) {
+        if (SCIM_CLIENT.equals(principal) || RESPONSE_CLIENT.equals(principal)) {
             return AuditActorInfo.of(AuditActorType.SERVICE, principal);
         }
         if (principal.startsWith(SYSTEM_PREFIX)) {
