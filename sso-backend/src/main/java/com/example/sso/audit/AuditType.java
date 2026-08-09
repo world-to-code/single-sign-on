@@ -40,6 +40,13 @@ public enum AuditType {
     SESSION_ADMIN_REVOKED(AuditCategory.SESSION),
     SESSION_TERMINATION_DEFERRED(AuditCategory.SESSION), // in-thread termination retries exhausted; handed to the durable sweep to re-drive
     SESSION_TERMINATION_FAILED(AuditCategory.SESSION), // durable retries exhausted too — the session may outlive the access change until its TTL
+    /**
+     * The OAuth2 grants a revoked account had handed to applications were taken back — the half of revocation
+     * that session termination does not reach, because a relying party refreshes without passing through
+     * {@code /oauth2/authorize}. Recorded as a FAILURE when it could not be done: the account is then signed
+     * out everywhere while its applications keep minting tokens, which is the state nobody would notice.
+     */
+    OIDC_AUTHORIZATION_REVOKED(AuditCategory.SESSION),
 
     // Network / rate access
     IP_BLOCKED(AuditCategory.ACCESS),

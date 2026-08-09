@@ -30,6 +30,10 @@ public class AuditSeverityPolicy {
             // compromised or broken response client puts the estate in, and it is over as far as it got.
             AuditType.RESPONSE_BUDGET_EXHAUSTED);
 
+    // NB: OIDC_AUTHORIZATION_REVOKED is not listed. Its SUCCESS is routine bookkeeping, and its failure is
+    // escalated to WARNING by the outcome rule below like any other — the same treatment its session-side
+    // twin gets.
+
     /** Events that are noteworthy even when recorded as a success (a denial IS the event). */
     private static final Set<AuditType> WARNING = EnumSet.of(
             AuditType.AUTHORIZATION_DENIED,
