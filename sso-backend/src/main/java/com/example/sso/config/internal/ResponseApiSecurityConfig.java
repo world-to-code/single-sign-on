@@ -4,7 +4,7 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.response.ResponseApiTokenFilter;
 import com.example.sso.ratelimit.RateLimit;
 import com.example.sso.ratelimit.RateLimits;
-import com.example.sso.response.ResponseCorrelation;
+import com.example.sso.response.ResponseCaller;
 import com.example.sso.security.HostOrgResolver;
 import com.example.sso.security.TenantHostFilter;
 import com.example.sso.tenancy.OrgContext;
@@ -45,7 +45,7 @@ public class ResponseApiSecurityConfig {
     @Bean
     @Order(2)
     SecurityFilterChain responseApiSecurityFilterChain(HttpSecurity http, JwtDecoder jwtDecoder,
-            RegisteredClientRepository clients, ResponseCorrelation correlation, AuditService audit,
+            RegisteredClientRepository clients, ResponseCaller caller, AuditService audit,
             HostOrgResolver hostOrgResolver, OrgContext orgContext, RateLimits rateLimits,
             @Value("${sso.issuer}") String issuer,
             @Value("${sso.response.budget.actions}") long budgetActions,
@@ -53,7 +53,7 @@ public class ResponseApiSecurityConfig {
         // Keyed per client inside the limiter, so one tenant's runaway detector cannot exhaust another's.
         RateLimit budget = rateLimits.named(RESPONSE_BUDGET_NAMESPACE, budgetActions, budgetWindow);
         ResponseApiTokenFilter tokenFilter =
-                new ResponseApiTokenFilter(jwtDecoder, clients, correlation, audit, budget, issuer);
+                new ResponseApiTokenFilter(jwtDecoder, clients, caller, audit, budget, issuer);
 
         http
                 .securityMatcher("/api/response/v1/**")

@@ -48,6 +48,8 @@ class ResponseApiTokenFilterTest {
     private static final String HOST = "acme.example.com";
     private static final String ISSUER = "http://" + HOST;
     private static final String CLIENT_ID = "acme-xdr";
+    /** The registration's internal id — globally unique, unlike the per-tenant client_id. */
+    private static final String CLIENT_ROW_ID = "id-client_credentials";
     private static final String TOKEN = "a.b.c";
 
     private JwtDecoder jwtDecoder;
@@ -65,7 +67,7 @@ class ResponseApiTokenFilterTest {
         chain = mock(FilterChain.class);
         budget = mock(RateLimit.class);
         when(budget.tryAcquire(anyString())).thenReturn(true);
-        filter = new ResponseApiTokenFilter(jwtDecoder, clients, new ResponseCorrelation(), audit, budget,
+        filter = new ResponseApiTokenFilter(jwtDecoder, clients, new ResponseCaller(), audit, budget,
                 "http://fallback.example.com");
         when(clients.findByClientId(CLIENT_ID)).thenReturn(machineClient());
     }
@@ -139,6 +141,45 @@ class ResponseApiTokenFilterTest {
         assertThat(run(request(TOKEN, "xdr-42")).getStatus()).isEqualTo(401);
     }
 
+    /**
+     * A USER's token must not drive this API even when its subject happens to name a machine client.
+     *
+     * <p>{@code client_id} and {@code username} are two namespaces an administrator controls, so "the subject
+     * names a machine client" was never the claim that mattered. What this authorization server actually
+     * mints for a {@code client_credentials} token is {@code sub == aud} — the principal IS the client — and
+     * a user's token carries their username in {@code sub} and the client in {@code aud}.
+     */
+    @Test
+    void aUserTokenWhoseSubjectCollidesWithAClientIdIsRefused() throws Exception {
+        Jwt userToken = Jwt.withTokenValue(TOKEN)
+                .header("alg", "RS256")
+                .claim("iss", ISSUER)
+                .claim("sub", CLIENT_ID)                 // a person who happens to be named like the client
+                .claim("aud", List.of("some-web-app"))   // …but the token was minted FOR an app
+                .claim("scope", List.of(ResponseScopes.HOLD))
+                .issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(300))
+                .build();
+        when(jwtDecoder.decode(TOKEN)).thenReturn(userToken);
+
+        assertThat(run(action(TOKEN, "xdr-42")).getStatus()).isEqualTo(401);
+        verify(chain, never()).doFilter(any(), any());
+    }
+
+    /**
+     * Narrowing a client's scopes takes effect NOW, not when its longest-lived token expires. Otherwise
+     * taking a verb away from a misbehaving detector would be a revocation that does not revoke.
+     */
+    @Test
+    void aScopeTheClientNoLongerHoldsIsNotGrantedEvenIfTheTokenCarriesIt() throws Exception {
+        when(jwtDecoder.decode(TOKEN)).thenReturn(
+                token(ISSUER, CLIENT_ID, ResponseScopes.HOLD_LIFT));   // the token still says hold-lift
+        // …but the registration only holds response:hold (see client()).
+
+        run(action(TOKEN, "xdr-42"));
+
+        assertThat(authorities()).doesNotContain("SCOPE_" + ResponseScopes.HOLD_LIFT);
+    }
+
     @Test
     void aCallWithNoBearerTokenIsRefused() throws Exception {
         assertThat(run(request(null, "xdr-42")).getStatus()).isEqualTo(401);
@@ -164,14 +205,15 @@ class ResponseApiTokenFilterTest {
     }
 
     @Test
-    void theCorrelationIdIsAvailableToWhateverRecordsTheAction() throws Exception {
-        ResponseCorrelation correlation = new ResponseCorrelation();
-        filter = new ResponseApiTokenFilter(jwtDecoder, clients, correlation, audit, budget, ISSUER);
+    void theCallerAndItsCorrelationAreAvailableToWhateverRecordsTheAction() throws Exception {
+        ResponseCaller caller = new ResponseCaller();
+        filter = new ResponseApiTokenFilter(jwtDecoder, clients, caller, audit, budget, ISSUER);
         when(jwtDecoder.decode(TOKEN)).thenReturn(token(ISSUER, CLIENT_ID, ResponseScopes.HOLD));
 
         run(request(TOKEN, "xdr-42"));
 
-        assertThat(correlation.current()).contains("xdr-42");
+        assertThat(caller.correlationId()).contains("xdr-42");
+        assertThat(caller.clientId()).as("which credential acted").contains(CLIENT_ID);
     }
 
     /**
@@ -182,20 +224,27 @@ class ResponseApiTokenFilterTest {
     @Test
     void aClientOutOfBudgetIsRefusedWithTooManyRequests() throws Exception {
         when(jwtDecoder.decode(TOKEN)).thenReturn(token(ISSUER, CLIENT_ID, ResponseScopes.HOLD));
-        when(budget.tryAcquire(CLIENT_ID)).thenReturn(false);
+        when(budget.tryAcquire(CLIENT_ROW_ID)).thenReturn(false);
 
         assertThat(run(action(TOKEN, "xdr-42")).getStatus()).isEqualTo(429);
         verify(chain, never()).doFilter(any(), any());
     }
 
-    /** The budget is the CLIENT's, so a client that has burned it cannot borrow another's by asking again. */
+    /**
+     * The budget is keyed on the registration's INTERNAL id, not the client_id.
+     *
+     * <p>A client_id is unique only per tenant (V109), so two tenants that both call their detector "xdr"
+     * would share one bucket — and one tenant's runaway would 429 the other's response API in the middle of
+     * an incident. The same reasoning already moved the back-channel-logout participant index off client_id.
+     */
     @Test
-    void theBudgetIsSpentAgainstTheCallingClient() throws Exception {
+    void theBudgetIsSpentAgainstTheClientsGloballyUniqueId() throws Exception {
         when(jwtDecoder.decode(TOKEN)).thenReturn(token(ISSUER, CLIENT_ID, ResponseScopes.HOLD));
 
         run(action(TOKEN, "xdr-42"));
 
-        verify(budget).tryAcquire(CLIENT_ID);
+        verify(budget).tryAcquire(CLIENT_ROW_ID);
+        verify(budget, never()).tryAcquire(CLIENT_ID);
     }
 
     /** Reading a hold costs nothing. The danger this bounds is acting, and a read changes nothing to act on. */
@@ -256,6 +305,7 @@ class ResponseApiTokenFilterTest {
                 .header("alg", "RS256")
                 .claim("iss", issuer)
                 .claim("sub", subject)
+                .claim("aud", List.of(subject))   // as SAS mints it: the principal IS the client
                 .claim("scope", List.of(scope))
                 .issuedAt(Instant.now())
                 .expiresAt(Instant.now().plusSeconds(300))

@@ -191,18 +191,20 @@ class ResponseActionsIT extends AbstractIntegrationTest {
 
     /** Every response action is on the trail, attributed to the machine and joined to its detection. */
     @Test
-    void endingSessionsIsRecordedAgainstTheServicePrincipalWithTheCorrelationId() {
+    void endingSessionsIsRecordedAgainstTheTargetNamingTheMachineAndItsDetection() {
         UUID org = tenant();
         UserAccount target = userIn(org);
         asResponseClient(org, ResponseScopes.SESSION_TERMINATE);
 
         controller.terminateSessions(target.getId());
 
+        // Principal is the TARGET (so it shows on their activity page, like the console's termination);
+        // WHICH machine did it is in the detail, alongside the detection it belongs to.
         String detail = ownerJdbc().queryForObject(
                 "select detail from audit_event where type = 'SESSION_ADMIN_REVOKED' and principal = ? "
                         + "and subject_id = ?",
-                String.class, ResponseApiTokenFilter.RESPONSE_PRINCIPAL, target.getId().toString());
-        assertThat(detail).contains("correlation=xdr-42");
+                String.class, target.getUsername(), target.getId().toString());
+        assertThat(detail).contains("correlation=xdr-42").contains("client=acme-xdr");
     }
 
     /**
@@ -213,7 +215,7 @@ class ResponseActionsIT extends AbstractIntegrationTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader(ResponseApiTokenFilter.CORRELATION_HEADER, "xdr-42");
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
-        new ResponseCorrelation().bind("xdr-42"); // package-private, same package — the filter's job
+        new ResponseCaller().bind("acme-xdr", "xdr-42"); // package-private, same package — the filter's job
         orgContext.bindOrg(org);
         List<SimpleGrantedAuthority> authorities = new ArrayList<>();
         for (String scope : scopes) {

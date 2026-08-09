@@ -41,9 +41,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * belt and braces on the same property, deliberately: a signing key is a longer-lived secret than a client
  * registration, and neither alone should be the only thing between two tenants.
  *
- * <p><b>A machine.</b> The client must actually allow {@code client_credentials}. Without it, an interactive
- * client configured with a response scope would let a USER's token drive the response API — a person acting
- * with a machine's authority, recorded as a machine.
+ * <p><b>A machine.</b> Proven by {@code sub == aud}, which is what this authorization server mints for a
+ * {@code client_credentials} token and only for one — a user's token carries a username in {@code sub} and
+ * the client in {@code aud}. Checking that {@code sub} merely NAMES a machine client was not the same claim:
+ * {@code client_id} and {@code username} live in two namespaces an administrator controls, so a client
+ * registered under an existing username would have let that person's ordinary token drive this API. The same
+ * comparison satisfies RFC 9068 §4's audience requirement, which nothing else here was doing.
  *
  * <p>A correlation id is mandatory on every call. It is what lets an investigator join a hold here to the
  * detection that caused it over there; a response nobody can trace back to a reason is one nobody can
@@ -70,7 +73,7 @@ public class ResponseApiTokenFilter extends OncePerRequestFilter {
 
     private final JwtDecoder jwtDecoder;
     private final RegisteredClientRepository clients;
-    private final ResponseCorrelation correlation;
+    private final ResponseCaller caller;
     private final AuditService audit;
     /** Per-client, so one tenant's runaway detector cannot spend another tenant's allowance. */
     private final RateLimit budget;
@@ -80,8 +83,8 @@ public class ResponseApiTokenFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        Jwt jwt = machineToken(request);
-        if (jwt == null) {
+        RegisteredClient client = callingClient(request);
+        if (client == null) {
             unauthorized(request, response);
             return;
         }
@@ -90,19 +93,23 @@ public class ResponseApiTokenFilter extends OncePerRequestFilter {
             // A 400, not a 401: the credential was fine and the CALL was not. Told apart because a response
             // system retrying a 401 re-authenticates forever against a request that will never be accepted.
             audit.record(new AuditRecord(AuditType.RESPONSE_ACTION_REFUSED, RESPONSE_PRINCIPAL, false,
-                    "uri=" + request.getRequestURI(), request.getRemoteAddr()).withReason("correlation.missing"));
+                    "client=" + client.getClientId() + " uri=" + request.getRequestURI(),
+                    request.getRemoteAddr()).withReason("correlation.missing"));
             response.sendError(HttpServletResponse.SC_BAD_REQUEST);
             return;
         }
 
-        if (isAction(request) && !budget.tryAcquire(jwt.getSubject())) {
-            budgetExhausted(request, response, jwt.getSubject());
+        // Keyed on the client's INTERNAL id, which is globally unique. A client_id is unique only per tenant
+        // (V109), so keying on it would put two tenants that both call their detector "xdr" in one bucket —
+        // one tenant's runaway would then 429 the other's response API mid-incident.
+        if (isAction(request) && !budget.tryAcquire(client.getId())) {
+            budgetExhausted(request, response, client.getClientId());
             return;
         }
 
-        correlation.bind(correlationId);
-        SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(RESPONSE_PRINCIPAL, null, scopeAuthorities(jwt)));
+        caller.bind(client.getClientId(), correlationId);
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                RESPONSE_PRINCIPAL, null, grantedScopes(request, client)));
         chain.doFilter(request, response);
     }
 
@@ -123,8 +130,8 @@ public class ResponseApiTokenFilter extends OncePerRequestFilter {
         response.sendError(HttpStatus.TOO_MANY_REQUESTS.value());
     }
 
-    /** The decoded token, if it is one this host issued to a machine client of this host's tenant. */
-    private Jwt machineToken(HttpServletRequest request) {
+    /** The client behind this call, if the token is one this host issued to a machine client of its tenant. */
+    private RegisteredClient callingClient(HttpServletRequest request) {
         String header = request.getHeader(HttpHeaders.AUTHORIZATION);
         if (header == null || !header.regionMatches(true, 0, BEARER_PREFIX, 0, BEARER_PREFIX.length())) {
             return null;
@@ -138,20 +145,32 @@ public class ResponseApiTokenFilter extends OncePerRequestFilter {
         if (jwt.getIssuer() == null || !expectedIssuer(request).equals(jwt.getIssuer().toString())) {
             return null;
         }
-        return isMachineClientOfThisTenant(jwt.getSubject()) ? jwt : null;
+        return issuedToItsOwnClient(jwt) ? clientOfThisTenant(jwt.getSubject()) : null;
     }
 
     /**
-     * For a {@code client_credentials} token the subject IS the client. The repository is org-scoped, so a
-     * client belonging to another tenant resolves to nothing here rather than to somebody else's client.
+     * The token's audience is the token's subject — the shape this authorization server gives a
+     * {@code client_credentials} token, where the principal IS the client. Also the RFC 9068 §4 audience
+     * check: a token minted for some other audience is not spendable here.
      */
-    private boolean isMachineClientOfThisTenant(String clientId) {
+    private boolean issuedToItsOwnClient(Jwt jwt) {
+        List<String> audience = jwt.getAudience();
+        return audience != null && audience.size() == 1 && audience.get(0).equals(jwt.getSubject());
+    }
+
+    /**
+     * The client this token was minted for, if this tenant owns it and it is a machine client. The repository
+     * is org-scoped, so a client belonging to another tenant resolves to nothing rather than to somebody
+     * else's client of the same name.
+     */
+    private RegisteredClient clientOfThisTenant(String clientId) {
         if (clientId == null) {
-            return false;
+            return null;
         }
         RegisteredClient client = clients.findByClientId(clientId);
         return client != null
-                && client.getAuthorizationGrantTypes().contains(AuthorizationGrantType.CLIENT_CREDENTIALS);
+                && client.getAuthorizationGrantTypes().contains(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                ? client : null;
     }
 
     private String correlationId(HttpServletRequest request) {
@@ -163,26 +182,43 @@ public class ResponseApiTokenFilter extends OncePerRequestFilter {
         return trimmed.isEmpty() || trimmed.length() > MAX_CORRELATION_LENGTH ? null : trimmed;
     }
 
-    /** The token's scopes as authorities, matching what {@code @PreAuthorize("hasAuthority('SCOPE_…')")} reads. */
-    private List<SimpleGrantedAuthority> scopeAuthorities(Jwt jwt) {
+    /**
+     * The scopes this call may act on: the token's, INTERSECTED with the ones the client still holds.
+     *
+     * <p>Narrowing a client's scopes has to take effect now, not when its longest-lived token runs out.
+     * Without the intersection, taking {@code response:session-terminate} away from a misbehaving detector
+     * would leave every token it already minted able to end sessions for the rest of its lifetime — a
+     * revocation that does not revoke, which is the shape the zero-trust rules name explicitly.
+     */
+    private List<SimpleGrantedAuthority> grantedScopes(HttpServletRequest request, RegisteredClient client) {
         List<SimpleGrantedAuthority> authorities = new ArrayList<>();
-        for (String scope : scopes(jwt)) {
-            authorities.add(new SimpleGrantedAuthority("SCOPE_" + scope));
+        for (String scope : tokenScopes(request)) {
+            if (client.getScopes().contains(scope)) {
+                authorities.add(new SimpleGrantedAuthority("SCOPE_" + scope));
+            }
         }
         return authorities;
     }
 
-    private List<String> scopes(Jwt jwt) {
-        Object scope = jwt.getClaim("scope");
+    /** Re-decodes the bearer this request already proved; the alternative is threading the Jwt everywhere. */
+    private List<String> tokenScopes(HttpServletRequest request) {
+        String header = request.getHeader(HttpHeaders.AUTHORIZATION);
+        Object scope = jwtDecoder.decode(header.substring(BEARER_PREFIX.length()).trim()).getClaim("scope");
         if (scope instanceof List<?> list) {
             return list.stream().map(String::valueOf).toList();
         }
         return scope instanceof String single ? List.of(single.split(" ")) : List.of();
     }
 
-    /** The issuer this host mints under — the per-tenant issuer, read the way the elevation filter reads it. */
+    /**
+     * The issuer this host mints under.
+     *
+     * <p>Built from {@code getServerName()}, the SAME value {@code TenantHostFilter} binds the tenant from.
+     * Reading the raw {@code Host} header instead would let the two disagree behind a proxy that rewrites
+     * one and not the other — and this chain's whole tenant argument is that they cannot.
+     */
     private String expectedIssuer(HttpServletRequest request) {
-        String host = request.getHeader(HttpHeaders.HOST);
+        String host = request.getServerName();
         return host == null || host.isBlank() ? fallbackIssuer : request.getScheme() + "://" + host;
     }
 

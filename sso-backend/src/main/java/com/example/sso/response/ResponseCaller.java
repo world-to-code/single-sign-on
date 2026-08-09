@@ -6,32 +6,44 @@ import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 
 /**
- * The caller's correlation id for the response action being performed on this request.
+ * Who is calling the response API on this request, and under which detection.
  *
  * <p>Request-scoped rather than a field, for the reason the admin refusal trail is: these run on the request
- * thread, and a shared field would let one detection's id be recorded against another's action — a wrong
- * correlation is worse than none, because it points an investigation at the wrong event.
+ * thread, and a shared field would let one caller's identity be recorded against another's action — a
+ * wrong attribution is worse than none, because it points an investigation at the wrong system.
  *
- * <p>Public because the record it ends up in is written elsewhere: the hold's audit row comes from a domain
- * event in {@code user}, and the id has to reach it without every layer in between passing it along.
+ * <p>Two facts that travel together into the trail: the correlation id points OUT at the detection that
+ * decided this, the client id points IN at the credential that acted. After a leak, "which detection" without
+ * "which system" cannot answer the only question that matters — which credential to revoke.
  */
 @Component
-public class ResponseCorrelation {
+public class ResponseCaller {
 
-    private static final String ATTRIBUTE = ResponseCorrelation.class.getName() + ".correlationId";
+    private static final String CORRELATION = ResponseCaller.class.getName() + ".correlationId";
+    private static final String CLIENT = ResponseCaller.class.getName() + ".clientId";
 
-    void bind(String correlationId) {
+    void bind(String clientId, String correlationId) {
         RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
         if (attributes != null) {
-            attributes.setAttribute(ATTRIBUTE, correlationId, RequestAttributes.SCOPE_REQUEST);
+            attributes.setAttribute(CLIENT, clientId, RequestAttributes.SCOPE_REQUEST);
+            attributes.setAttribute(CORRELATION, correlationId, RequestAttributes.SCOPE_REQUEST);
         }
     }
 
-    /** The id the caller supplied, or empty off a response request — where nothing will ask. */
-    public Optional<String> current() {
+    /** The detection this action belongs to, or empty off a response request — where nothing will ask. */
+    public Optional<String> correlationId() {
+        return attribute(CORRELATION);
+    }
+
+    /** The credential that acted. An investigation that cannot name it cannot decide what to revoke. */
+    public Optional<String> clientId() {
+        return attribute(CLIENT);
+    }
+
+    private Optional<String> attribute(String name) {
         RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
         return attributes == null ? Optional.empty()
-                : Optional.ofNullable(attributes.getAttribute(ATTRIBUTE, RequestAttributes.SCOPE_REQUEST))
+                : Optional.ofNullable(attributes.getAttribute(name, RequestAttributes.SCOPE_REQUEST))
                         .map(String::valueOf);
     }
 }
