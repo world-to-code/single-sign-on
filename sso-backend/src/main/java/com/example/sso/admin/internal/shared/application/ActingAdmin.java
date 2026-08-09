@@ -46,7 +46,7 @@ public class ActingAdmin {
     }
 
     /** The authority strings the acting admin currently holds (role names, permissions, session markers). */
-    Set<String> authorities() {
+    public Set<String> authorities() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         return authentication == null ? Set.of() : authorityNames(authentication);
     }

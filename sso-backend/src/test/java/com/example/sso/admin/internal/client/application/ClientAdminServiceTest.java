@@ -8,6 +8,7 @@ import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import java.util.Set;
+import com.example.sso.admin.internal.shared.application.ActingAdmin;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.tenancy.OrgTierGuard;
 import java.util.UUID;
@@ -49,8 +50,11 @@ class ClientAdminServiceTest {
         events = mock(ApplicationEventPublisher.class);
         OrgContext orgContext = mock(OrgContext.class);
         when(orgContext.currentOrg()).thenReturn(Optional.<UUID>empty()); // platform tier — the test clients are global
+        // A mocked ActingAdmin holds no authorities, so nothing here may grant a response scope — right for
+        // these cases, none of which asks for one. That guard is covered against a real DB in
+        // ResponseScopeGrantIT, where a mock could not tell a refusal from an absent check.
         service = new ClientAdminService(registeredClients, passwordEncoder, clientRows,
-                new OrgTierGuard(orgContext), events);
+                new OrgTierGuard(orgContext), events, mock(ActingAdmin.class));
     }
 
     @Test

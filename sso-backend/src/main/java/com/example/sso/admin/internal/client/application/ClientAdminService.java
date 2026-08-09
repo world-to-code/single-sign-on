@@ -12,15 +12,19 @@ import static org.springframework.security.oauth2.core.oidc.OidcScopes.PROFILE;
 import static org.springframework.security.oauth2.jose.jws.SignatureAlgorithm.RS256;
 
 import com.example.sso.admin.internal.client.domain.OAuth2RegisteredClientEntity;
+import com.example.sso.admin.internal.shared.application.ActingAdmin;
 import com.example.sso.admin.internal.client.domain.OAuth2RegisteredClientRepository;
 import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.oidc.BackChannelLogout;
 import com.example.sso.portal.application.ApplicationDeletedEvent;
+import com.example.sso.response.ResponseScopes;
 import com.example.sso.shared.Page;
 import com.example.sso.shared.error.BadRequestException;
 import com.example.sso.shared.error.ConflictException;
+import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.shared.error.NotFoundException;
+import com.example.sso.user.rbac.Permissions;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
@@ -29,7 +33,9 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.NonNull;
 import org.springframework.context.ApplicationEventPublisher;
@@ -80,6 +86,7 @@ public class ClientAdminService {
     private final OAuth2RegisteredClientRepository clientRows;
     private final OrgTierGuard tierGuard;
     private final ApplicationEventPublisher events;
+    private final ActingAdmin actingAdmin;
 
     @Transactional(readOnly = true)
     public List<ClientView> listClients() {
@@ -202,7 +209,28 @@ public class ClientAdminService {
         if (scopes.contains(AdminPortalSeeder.ADMIN_SCOPE)) {
             throw BadRequestException.of("admin.client.adminScopeReserved");
         }
+        requireAuthorityToGrantResponseScopes(scopes);
         return scopes;
+    }
+
+    /**
+     * A response scope hands the client a capability over ACCOUNTS — ending sessions, holding people out —
+     * so registering a client is not enough authority to grant one.
+     *
+     * <p>Without this, {@code oidc-client:create} would be a strictly larger permission than it looks: an
+     * administrator who may not hold a single user from the console could mint a credential that holds any of
+     * them, with none of the console's self-protection guards in the way. The bar is the permission the
+     * console demands for the same acts, {@code user:update}, so the capability a client is given can never
+     * exceed the one the person granting it holds.
+     */
+    private void requireAuthorityToGrantResponseScopes(Set<String> scopes) {
+        Set<String> responseScopes = scopes.stream()
+                .filter(ResponseScopes::isResponseScope)
+                .collect(Collectors.toCollection(TreeSet::new));
+        if (!responseScopes.isEmpty() && !actingAdmin.authorities().contains(Permissions.USER_UPDATE)) {
+            throw ForbiddenException.of("admin.client.responseScopeNotGrantable",
+                    String.join(", ", responseScopes));
+        }
     }
 
     private ClientSettings clientSettings(CreateClientRequest request) {
