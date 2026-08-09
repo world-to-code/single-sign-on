@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPut } from "@/api";
+import { apiDelete, apiGet, apiPost, apiPut } from "@/api";
 import type { DenyRow } from "@/denies";
 
 export interface AdminUser {
@@ -109,6 +109,29 @@ export interface ActivityEntry {
   success: boolean;
   detail: string | null;
 }
+
+/**
+ * Whether a reversible hold is in force. `held` is carried explicitly rather than inferred from a null
+ * field, so "not held" can never render the same as "we could not tell".
+ *
+ * Exactly one of `placedBy` and `correlationId` is present: a person, or the detection that raised it.
+ */
+export type AccountHoldStatus =
+  | { held: false; reason: null; placedAt: null; expiresAt: null; placedBy: null; correlationId: null }
+  | {
+      held: true;
+      reason: string;
+      placedAt: string;
+      expiresAt: string;
+      /** The administrator who placed it, or null when a detection did — then `correlationId` names it. */
+      placedBy: string | null;
+      correlationId: string | null;
+    };
+
+export const getUserHold = (id: string) => apiGet<AccountHoldStatus>(`/api/admin/users/${id}/hold`);
+export const holdUser = (id: string, reason: string, durationMinutes: number) =>
+  apiPut<AccountHoldStatus>(`/api/admin/users/${id}/hold`, { reason, durationMinutes });
+export const liftUserHold = (id: string) => apiDelete(`/api/admin/users/${id}/hold`);
 
 export const getUserApplications = (id: string) => apiGet<UserApplication[]>(`/api/admin/users/${id}/applications`);
 export const getUserDevices = (id: string) => apiGet<UserDevices>(`/api/admin/users/${id}/devices`);

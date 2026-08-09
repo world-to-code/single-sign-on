@@ -16,6 +16,7 @@ import { errorMessage } from "@/api";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { ADMIN_ROLE, listPermissions, listRoles, togglePermission, type Permission, type Role } from "@/roles";
 import { usePaginated } from "@/usePaginated";
+import { AccountHoldCard } from "@/components/AccountHoldCard";
 import { Pagination } from "@/components/Pagination";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -343,6 +344,8 @@ export default function UserDetail({ session }: { session: SessionView }) {
 
       {user && tab === "security" && (
         <div className="space-y-6">
+          <AccountHoldCard userId={id} />
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><Fingerprint className="size-4" /> {t("userDetailAuthDevices")}</CardTitle>
