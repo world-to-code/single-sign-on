@@ -6,6 +6,7 @@ import com.example.sso.response.internal.api.ResponseController;
 import com.example.sso.response.internal.api.ResponseHoldRequest;
 import com.example.sso.response.internal.application.ResponseHoldView;
 import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
@@ -177,6 +178,38 @@ class ResponseActionsIT extends AbstractIntegrationTest {
                 .isInstanceOf(NotFoundException.class);
     }
 
+    /**
+     * A machine may not hold an account that cannot PAY the hold.
+     *
+     * <p>With no second factor there is nothing to challenge, so the hold is not a reversible middle state —
+     * the account simply cannot sign in until it expires. That is a disable, placed by a machine, on a
+     * suspicion, with nobody watching. A freshly invited administrator is exactly this shape: onboarding does
+     * not verify their address and they have enrolled nothing yet.
+     */
+    @Test
+    void aMachineMayNotHoldAnAccountWithNoSecondFactorToProve() {
+        UUID org = tenant();
+        UserAccount target = unpayableUserIn(org);
+        asResponseClient(org, ResponseScopes.HOLD);
+
+        assertThatThrownBy(() -> controller.placeHold(target.getId(), new ResponseHoldRequest("x", 60)))
+                .isInstanceOf(ConflictException.class);
+        assertThat(holds.holdInEffect(target.getId())).isEmpty();
+    }
+
+    /** The same account, once it can prove something, is holdable — the refusal is about payability only. */
+    @Test
+    void anAccountThatCanProveAFactorIsHoldable() {
+        UUID org = tenant();
+        UserAccount target = unpayableUserIn(org);
+        users.markEmailVerified(target.getId());
+        asResponseClient(org, ResponseScopes.HOLD);
+
+        controller.placeHold(target.getId(), new ResponseHoldRequest("impossible travel", 60));
+
+        assertThat(holds.holdInEffect(target.getId())).isPresent();
+    }
+
     /** The ceiling holds for a machine exactly as it does for a person — a hold is never a disable. */
     @Test
     void aHoldBeyondTheCeilingIsRefused() {
@@ -232,10 +265,21 @@ class ResponseActionsIT extends AbstractIntegrationTest {
         return org;
     }
 
+    /**
+     * A user who can PAY a hold. Verified address, because a machine may not hold an account with nothing to
+     * prove — every case here is about a verb's authority, not about that refusal.
+     */
     private UserAccount userIn(UUID org) {
-        String username = "resp-" + suffix();
+        UserAccount account = unpayableUserIn(org);
+        users.markEmailVerified(account.getId());
+        return account;
+    }
+
+    /** No factor at all besides the password — the shape a freshly invited administrator has. */
+    private UserAccount unpayableUserIn(UUID org) {
+        String username = "resp-" + suffix() + "@example.com";
         UserAccount account = orgContext.callInOrg(org, () -> users.createUser(
-                new NewUser(username, username + "@example.com", "Resp", "S3cret!pw", Set.of()), org));
+                new NewUser(username, username, "Resp", "S3cret!pw", Set.of()), org));
         cleanups.add(() -> orgContext.runAsPlatform(() -> users.delete(account.getId())));
         return account;
     }

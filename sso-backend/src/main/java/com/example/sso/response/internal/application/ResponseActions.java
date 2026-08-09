@@ -4,8 +4,11 @@ import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
+import com.example.sso.auth.factor.SecondFactors;
 import com.example.sso.response.ResponseCaller;
 import com.example.sso.session.lifecycle.UserSessions;
+import com.example.sso.response.ResponseApiTokenFilter;
+import com.example.sso.shared.error.ConflictException;
 import com.example.sso.shared.error.NotFoundException;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.AccountHoldService;
@@ -38,6 +41,7 @@ import org.springframework.stereotype.Service;
 public class ResponseActions {
 
     private final UserService users;
+    private final SecondFactors secondFactors;
     private final AccountHoldService holds;
     private final UserSessions sessions;
     private final OrgContext orgContext;
@@ -65,8 +69,29 @@ public class ResponseActions {
      */
     public AccountHoldView hold(UUID userId, String reason, Duration duration) {
         requireInCallersTenant(userId);
+        requirePayable(userId);
         return holds.place(HoldSpec.byService(userId, reason, clock.instant().plus(duration),
                 caller.correlationId().orElse(null)));
+    }
+
+    /**
+     * A machine may only hold an account that can actually PAY the hold.
+     *
+     * <p>With no second factor there is nothing for the hold to challenge, so it is not a reversible middle
+     * state at all — the account simply cannot sign in until it expires, which is a disable placed by a
+     * machine on a suspicion. A freshly invited administrator is exactly this shape: onboarding does not mark
+     * their address verified and they have enrolled nothing yet.
+     *
+     * <p>The console is deliberately NOT held to this. An administrator doing it knows what it costs and can
+     * undo it in the same breath; a detection system cannot, and nobody is watching when it happens.
+     */
+    private void requirePayable(UUID userId) {
+        if (!secondFactors.available(userId)) {
+            audit.record(new AuditRecord(AuditType.RESPONSE_ACTION_REFUSED, ResponseApiTokenFilter.RESPONSE_PRINCIPAL,
+                    false, "hold refused: no second factor " + callerDetail(), null)
+                    .withReason("hold.noSecondFactor"));
+            throw ConflictException.of("response.hold.noSecondFactor");
+        }
     }
 
     /** Lifts the hold early; false when there was none, so a caller's retry is not reported as a failure. */
