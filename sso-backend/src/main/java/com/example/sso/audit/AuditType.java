@@ -84,6 +84,11 @@ public enum AuditType {
     USER_DISABLED(AuditCategory.ADMIN),
     USER_DELETED(AuditCategory.ADMIN),
     USER_MFA_RESET(AuditCategory.ADMIN),
+    /** A reversible hold was placed: sessions ended, and every sign-in must prove a second factor until it ends. */
+    ACCOUNT_HELD(AuditCategory.ADMIN),
+    /** Somebody ended the hold early. Distinct from the expiry below — one is a decision, the other is the clock. */
+    ACCOUNT_HOLD_LIFTED(AuditCategory.ADMIN),
+    ACCOUNT_HOLD_EXPIRED(AuditCategory.ADMIN),
 
     // Administrative operations on organizations (tenants)
     ORGANIZATION_CREATED(AuditCategory.ADMIN),

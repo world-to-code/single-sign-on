@@ -176,6 +176,16 @@ sso:
       # A lapsed grant stops counting the moment anything asks, but the session that already holds it only ends
       # when this runs — so the interval is how long a revoked privilege can outlive its expiry.
       sweep-interval: 60s
+  account-hold:
+    # The ceiling on a reversible hold. A response system may act on suspicion because a false positive costs a
+    # second factor and a wait; past this point the cost is somebody's account, and that decision belongs to a
+    # person placing a disable. Raising it does not make holds stronger — it makes them harder to distinguish
+    # from a disable nobody signed off.
+    max-duration: 24h
+    # Only tidies the table and records that a hold ended by itself: a lapsed hold has ALREADY stopped
+    # constraining sign-in, because the read asks whether one is in force now. This interval is therefore not
+    # part of how long a hold lasts.
+    sweep-interval: 60s
   ratelimit:
     attempts: 10
     window-seconds: 60
