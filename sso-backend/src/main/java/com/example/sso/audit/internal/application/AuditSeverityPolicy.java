@@ -25,7 +25,10 @@ public class AuditSeverityPolicy {
             AuditType.ADMIN_ELEVATION_DENIED,
             AuditType.SESSION_CONTEXT_MISMATCH,
             AuditType.SESSION_TERMINATION_FAILED,
-            AuditType.MAPPING_RULE_AUTHOR_UNAUTHORIZED);
+            AuditType.MAPPING_RULE_AUTHOR_UNAUTHORIZED,
+            // The blast-radius breaker tripping is not a throttle worth a metric — it is the state a
+            // compromised or broken response client puts the estate in, and it is over as far as it got.
+            AuditType.RESPONSE_BUDGET_EXHAUSTED);
 
     /** Events that are noteworthy even when recorded as a success (a denial IS the event). */
     private static final Set<AuditType> WARNING = EnumSet.of(

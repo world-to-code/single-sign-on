@@ -2,10 +2,13 @@ package com.example.sso.config.internal;
 
 import com.example.sso.audit.AuditService;
 import com.example.sso.response.ResponseApiTokenFilter;
+import com.example.sso.ratelimit.RateLimit;
+import com.example.sso.ratelimit.RateLimits;
 import com.example.sso.response.ResponseCorrelation;
 import com.example.sso.security.HostOrgResolver;
 import com.example.sso.security.TenantHostFilter;
 import com.example.sso.tenancy.OrgContext;
+import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -37,14 +40,20 @@ import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 @Configuration
 public class ResponseApiSecurityConfig {
 
+    private static final String RESPONSE_BUDGET_NAMESPACE = "response";
+
     @Bean
     @Order(2)
     SecurityFilterChain responseApiSecurityFilterChain(HttpSecurity http, JwtDecoder jwtDecoder,
             RegisteredClientRepository clients, ResponseCorrelation correlation, AuditService audit,
-            HostOrgResolver hostOrgResolver, OrgContext orgContext,
-            @Value("${sso.issuer}") String issuer) throws Exception {
+            HostOrgResolver hostOrgResolver, OrgContext orgContext, RateLimits rateLimits,
+            @Value("${sso.issuer}") String issuer,
+            @Value("${sso.response.budget.actions}") long budgetActions,
+            @Value("${sso.response.budget.window}") Duration budgetWindow) throws Exception {
+        // Keyed per client inside the limiter, so one tenant's runaway detector cannot exhaust another's.
+        RateLimit budget = rateLimits.named(RESPONSE_BUDGET_NAMESPACE, budgetActions, budgetWindow);
         ResponseApiTokenFilter tokenFilter =
-                new ResponseApiTokenFilter(jwtDecoder, clients, correlation, audit, issuer);
+                new ResponseApiTokenFilter(jwtDecoder, clients, correlation, audit, budget, issuer);
 
         http
                 .securityMatcher("/api/response/v1/**")

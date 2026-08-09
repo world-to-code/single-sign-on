@@ -1,6 +1,7 @@
 package com.example.sso.response;
 
 import com.example.sso.audit.AuditService;
+import com.example.sso.ratelimit.RateLimit;
 import jakarta.servlet.FilterChain;
 import java.time.Instant;
 import java.util.List;
@@ -52,6 +53,7 @@ class ResponseApiTokenFilterTest {
     private JwtDecoder jwtDecoder;
     private RegisteredClientRepository clients;
     private AuditService audit;
+    private RateLimit budget;
     private ResponseApiTokenFilter filter;
     private FilterChain chain;
 
@@ -61,7 +63,9 @@ class ResponseApiTokenFilterTest {
         clients = mock(RegisteredClientRepository.class);
         audit = mock(AuditService.class);
         chain = mock(FilterChain.class);
-        filter = new ResponseApiTokenFilter(jwtDecoder, clients, new ResponseCorrelation(), audit,
+        budget = mock(RateLimit.class);
+        when(budget.tryAcquire(anyString())).thenReturn(true);
+        filter = new ResponseApiTokenFilter(jwtDecoder, clients, new ResponseCorrelation(), audit, budget,
                 "http://fallback.example.com");
         when(clients.findByClientId(CLIENT_ID)).thenReturn(machineClient());
     }
@@ -162,12 +166,49 @@ class ResponseApiTokenFilterTest {
     @Test
     void theCorrelationIdIsAvailableToWhateverRecordsTheAction() throws Exception {
         ResponseCorrelation correlation = new ResponseCorrelation();
-        filter = new ResponseApiTokenFilter(jwtDecoder, clients, correlation, audit, ISSUER);
+        filter = new ResponseApiTokenFilter(jwtDecoder, clients, correlation, audit, budget, ISSUER);
         when(jwtDecoder.decode(TOKEN)).thenReturn(token(ISSUER, CLIENT_ID, ResponseScopes.HOLD));
 
         run(request(TOKEN, "xdr-42"));
 
         assertThat(correlation.current()).contains("xdr-42");
+    }
+
+    /**
+     * The blast-radius breaker. One XDR acting on a bad signal must run out of allowance long before it has
+     * worked through a directory, and the refusal is a 429 so the caller can tell "slow down" from "you are
+     * not allowed" — one is worth retrying later and the other never is.
+     */
+    @Test
+    void aClientOutOfBudgetIsRefusedWithTooManyRequests() throws Exception {
+        when(jwtDecoder.decode(TOKEN)).thenReturn(token(ISSUER, CLIENT_ID, ResponseScopes.HOLD));
+        when(budget.tryAcquire(CLIENT_ID)).thenReturn(false);
+
+        assertThat(run(action(TOKEN, "xdr-42")).getStatus()).isEqualTo(429);
+        verify(chain, never()).doFilter(any(), any());
+    }
+
+    /** The budget is the CLIENT's, so a client that has burned it cannot borrow another's by asking again. */
+    @Test
+    void theBudgetIsSpentAgainstTheCallingClient() throws Exception {
+        when(jwtDecoder.decode(TOKEN)).thenReturn(token(ISSUER, CLIENT_ID, ResponseScopes.HOLD));
+
+        run(action(TOKEN, "xdr-42"));
+
+        verify(budget).tryAcquire(CLIENT_ID);
+    }
+
+    /** Reading a hold costs nothing. The danger this bounds is acting, and a read changes nothing to act on. */
+    @Test
+    void readingIsNotChargedAgainstTheBudget() throws Exception {
+        when(jwtDecoder.decode(TOKEN)).thenReturn(token(ISSUER, CLIENT_ID, ResponseScopes.HOLD));
+        when(budget.tryAcquire(anyString())).thenReturn(false);
+
+        MockHttpServletRequest read = request(TOKEN, "xdr-42");
+        read.setMethod("GET");
+
+        assertThat(run(read).getStatus()).isEqualTo(200);
+        verify(chain).doFilter(any(), any());
     }
 
     /** A rejected credential on an API this powerful is itself the signal, so it does not pass unrecorded. */
@@ -185,6 +226,11 @@ class ResponseApiTokenFilterTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
         filter.doFilter(request, response, chain);
         return response;
+    }
+
+    /** A mutating call — the kind the budget bounds. */
+    private MockHttpServletRequest action(String token, String correlationId) {
+        return request(token, correlationId);
     }
 
     private MockHttpServletRequest request(String token, String correlationId) {

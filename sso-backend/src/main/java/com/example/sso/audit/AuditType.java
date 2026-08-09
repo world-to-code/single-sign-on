@@ -51,6 +51,8 @@ public enum AuditType {
      * probed is itself the signal, and the reason code tells a rejected token apart from a caller's bug.
      */
     RESPONSE_ACTION_REFUSED(AuditCategory.ACCESS),
+    /** A response client burned its whole action budget — a runaway detector, or one acting on a bad signal. */
+    RESPONSE_BUDGET_EXHAUSTED(AuditCategory.ACCESS),
     RATE_LIMITED(AuditCategory.ACCESS),
 
     // Application sign-on

@@ -176,6 +176,13 @@ sso:
       # A lapsed grant stops counting the moment anything asks, but the session that already holds it only ends
       # when this runs — so the interval is how long a revoked privilege can outlive its expiry.
       sweep-interval: 60s
+  response:
+    budget:
+      # The blast-radius breaker. A detection system acting on suspicion is welcome to be wrong a few times;
+      # it is not welcome to sign out an estate because one signal went bad. Reads are not charged — only
+      # actions — and the bucket is per CLIENT, so one tenant's runaway detector cannot spend another's.
+      actions: 50
+      window: 1h
   account-hold:
     # The ceiling on a reversible hold. A response system may act on suspicion because a false positive costs a
     # second factor and a wait; past this point the cost is somebody's account, and that decision belongs to a

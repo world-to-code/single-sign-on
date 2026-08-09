@@ -3,6 +3,7 @@ package com.example.sso.response;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
+import com.example.sso.ratelimit.RateLimit;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,6 +13,8 @@ import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -46,6 +49,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * detection that caused it over there; a response nobody can trace back to a reason is one nobody can
  * evaluate, and by the time somebody asks, the answer has to already be in the row.
  *
+ * <p>Every ACTION also spends from the calling client's budget. One XDR false positive must not be able to
+ * sign out an estate, and the API has no bulk verb precisely so that a runaway can only ever be a loop — a
+ * loop is what a budget stops. Reads are not charged: the danger is in acting, not in looking.
+ *
  * <p>Instantiated by its security config, never a {@code @Component} — an auto-registered filter would also
  * run on the main application chain, where a response token would become a session credential.
  */
@@ -65,6 +72,8 @@ public class ResponseApiTokenFilter extends OncePerRequestFilter {
     private final RegisteredClientRepository clients;
     private final ResponseCorrelation correlation;
     private final AuditService audit;
+    /** Per-client, so one tenant's runaway detector cannot spend another tenant's allowance. */
+    private final RateLimit budget;
     /** The issuer to fall back on when a request carries no Host header (never, in practice, over HTTP/1.1). */
     private final String fallbackIssuer;
 
@@ -86,10 +95,32 @@ public class ResponseApiTokenFilter extends OncePerRequestFilter {
             return;
         }
 
+        if (isAction(request) && !budget.tryAcquire(jwt.getSubject())) {
+            budgetExhausted(request, response, jwt.getSubject());
+            return;
+        }
+
         correlation.bind(correlationId);
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(RESPONSE_PRINCIPAL, null, scopeAuthorities(jwt)));
         chain.doFilter(request, response);
+    }
+
+    /** Anything that is not a read. Looking at a hold costs nothing; ending sessions is what has a bound. */
+    private boolean isAction(HttpServletRequest request) {
+        return !HttpMethod.GET.matches(request.getMethod());
+    }
+
+    /**
+     * The breaker, tripped. Recorded CRITICAL and refused with 429 rather than quietly throttled: a response
+     * system that has burned its whole allowance is either broken or acting on a detection that has gone
+     * wrong, and both are things somebody has to look at now rather than in the morning.
+     */
+    private void budgetExhausted(HttpServletRequest request, HttpServletResponse response, String clientId)
+            throws IOException {
+        audit.record(new AuditRecord(AuditType.RESPONSE_BUDGET_EXHAUSTED, RESPONSE_PRINCIPAL, false,
+                "client=" + clientId + " uri=" + request.getRequestURI(), request.getRemoteAddr()));
+        response.sendError(HttpStatus.TOO_MANY_REQUESTS.value());
     }
 
     /** The decoded token, if it is one this host issued to a machine client of this host's tenant. */
