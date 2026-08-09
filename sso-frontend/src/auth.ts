@@ -8,7 +8,7 @@ export interface SessionView {
   factors: string[];
   roles: string[];
   permissions: string[];
-  next: "ORGANIZATION" | "IDENTIFY" | "FACTOR" | "MUST_RESET_PASSWORD" | "DONE";
+  next: "ORGANIZATION" | "IDENTIFY" | "FACTOR" | "MUST_RESET_PASSWORD" | "ACCOUNT_HELD" | "DONE";
   pendingFactors: string[];
   mfaEnrollmentAllowed: boolean;
   /** The active organization (tenant) slug once resolved via the tenant-first entry step, else null. */

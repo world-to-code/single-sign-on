@@ -161,6 +161,12 @@ export const auth: Record<keyof typeof enAuth, string> = {
   setPasswordSubmit: "비밀번호 설정",
   setPasswordHint: "8자 이상 사용하세요. 이 일회용 링크는 곧 만료됩니다.",
 
+  // AccountHeld ------------------------------------------------------------
+  accountHeldTitle: "로그인 보류 중",
+  accountHeldDescription: "이 계정은 일시적으로 보류 상태이며, 로그인하려면 2차 인증이 필요합니다.",
+  accountHeldGuidance: "이 계정에는 등록된 2차 인증 수단이 없어 지금은 본인 확인을 할 수 없습니다. 보류는 시간이 지나면 자동으로 해제되며, 관리자가 먼저 해제할 수도 있습니다.",
+  accountHeldBack: "로그인 화면으로",
+
   // ForcePasswordReset -----------------------------------------------------
   forceResetTitle: "새 비밀번호 설정",
   forceResetDescription: "임시 비밀번호로 생성된 계정입니다. 로그인을 완료하려면 직접 비밀번호를 설정하세요.",

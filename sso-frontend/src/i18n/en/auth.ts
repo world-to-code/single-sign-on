@@ -159,6 +159,12 @@ export const auth = {
   setPasswordSubmit: "Set password",
   setPasswordHint: "Use at least 8 characters. This is a one-time link and expires soon.",
 
+  // AccountHeld ------------------------------------------------------------
+  accountHeldTitle: "Sign-in on hold",
+  accountHeldDescription: "This account is temporarily on hold and needs a second factor to sign in.",
+  accountHeldGuidance: "No second sign-in method is set up on this account, so it cannot be verified right now. The hold lifts on its own, or your administrator can lift it sooner.",
+  accountHeldBack: "Back to sign in",
+
   // ForcePasswordReset -----------------------------------------------------
   forceResetTitle: "Set a new password",
   forceResetDescription: "Your account was created with a temporary password. Choose your own to finish signing in.",

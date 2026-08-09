@@ -5,6 +5,7 @@ import OrgSelect from "./pages/OrgSelect";
 import Login from "./pages/Login";
 import MfaStep from "./pages/MfaStep";
 import ForcePasswordReset from "./pages/ForcePasswordReset";
+import AccountHeld from "./pages/AccountHeld";
 import AppStepUp from "./pages/AppStepUp";
 import Consent from "./pages/Consent";
 import SetPassword from "./pages/SetPassword";
@@ -95,6 +96,12 @@ export default function App() {
       // Signed in with an admin-issued temporary password — force a reset before the session finalizes.
       return session.username
         ? <ForcePasswordReset session={session} onDone={apply} />
+        : <Login session={session} onDone={apply} />;
+    case "ACCOUNT_HELD":
+      // A hold is in force and the account has no second factor to satisfy it — refused, with no way
+      // forward on this screen by design.
+      return session.username
+        ? <AccountHeld session={session} onDone={apply} />
         : <Login session={session} onDone={apply} />;
     case "DONE":
       return <Console session={session} />;
