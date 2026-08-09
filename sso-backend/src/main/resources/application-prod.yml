@@ -71,12 +71,29 @@ sso:
     username: ${SSO_ADMIN_USERNAME:admin}
     email: ${SSO_ADMIN_EMAIL:admin@example.com}
     password: ${SSO_ADMIN_PASSWORD}
+  tenant:
+    # The domains under which a subdomain identifies a tenant. NO DEFAULT on purpose: application.yml's is
+    # localhost, so a prod deployment that forgets this resolves no tenant subdomain at all — the per-tenant
+    # issuer, the host-bound session and passwordless RP-ID all quietly fall back to a dev host.
+    base-domains: ${SSO_TENANT_BASE_DOMAINS}
+  onboarding:
+    # Links inside onboarding e-mails, which must be the PUBLIC edge origin — nobody can open a link to the
+    # Vite dev server. application.yml defaults these to localhost:5173 and a comment there claimed prod
+    # overrode them; it did not, so a real deployment mailed verification links nobody could use. Found by
+    # reading the mail an actual deployment sent, which is the only place this was visible.
+    # The activation link lands on the PLATFORM host deliberately: the tenant subdomain does not exist until
+    # activation creates the organization, so a {slug} link would 404.
+    activate-url: ${SSO_ONBOARDING_ACTIVATE_URL}
+    set-password-url: ${SSO_ONBOARDING_SET_PASSWORD_URL}
+    workspace-url-template: ${SSO_ONBOARDING_WORKSPACE_URL_TEMPLATE}
   saml:
     entity-id: ${SSO_SAML_ENTITY_ID}
     keystore-path: ${SSO_SAML_KEYSTORE_PATH:/data/saml-idp.p12}
     keystore-password: ${SSO_SAML_KEYSTORE_PASSWORD}
   cors:
-    allowed-origins: ${SSO_CORS_ORIGINS:http://localhost:5173}
+    # No default: falling back to the Vite dev origin in production would both fail to allow the real
+    # SPA origin and leave a developer's machine on the allowlist of a live IdP.
+    allowed-origins: ${SSO_CORS_ORIGINS}
   scim:
     dev-token: ${SSO_SCIM_DEV_TOKEN:}   # blank -> no seeded token; issue via the admin API
   ratelimit:

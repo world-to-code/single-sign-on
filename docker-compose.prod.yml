@@ -77,6 +77,13 @@ services:
       SSO_CORS_ORIGINS: http://localhost
       SSO_ADMIN_CONSOLE_REDIRECT_URIS: http://localhost/admin/callback
       SSO_SAML_ENTITY_ID: http://localhost/saml2/idp/metadata
+      # Tenants live on subdomains of this; the prod profile requires it rather than defaulting to a dev host.
+      SSO_TENANT_BASE_DOMAINS: localhost
+      # Links inside onboarding e-mails. The activation link lands on the PLATFORM host: the tenant subdomain
+      # does not exist until activation creates the organization.
+      SSO_ONBOARDING_ACTIVATE_URL: http://localhost/activate
+      SSO_ONBOARDING_SET_PASSWORD_URL: http://{slug}.localhost/set-password
+      SSO_ONBOARDING_WORKSPACE_URL_TEMPLATE: http://{slug}.localhost
       # Trust X-Forwarded-* from the nginx edge (docker private ranges + loopback). In real prod pin the LB CIDR.
       SSO_TRUSTED_PROXIES: "127\\.0\\.0\\.1|10\\..*|192\\.168\\..*|172\\.(1[6-9]|2[0-9]|3[01])\\..*"
       # --- secrets: REQUIRED — supplied by decrypting secrets/prod.sops.yaml (sops exec-env …); no default ---
