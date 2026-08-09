@@ -54,6 +54,8 @@ class AccountHoldLoginGateIT extends AbstractIntegrationTest {
     AuthPolicyAdminService authPolicies;
     @Autowired
     OrgContext orgContext;
+    @Autowired
+    LoginPolicyResolver loginPolicy;
 
     private final List<Runnable> cleanups = new ArrayList<>();
     private UUID org;
@@ -179,12 +181,30 @@ class AccountHoldLoginGateIT extends AbstractIntegrationTest {
         UserAccount user = passwordOnlyUser(true);
         withVerifiedPhone(user);
 
-        assertThat(describe(user, AuthFactor.PASSWORD).mfaEnrollmentAllowed())
+        assertThat(loginPolicy.resolve(user, org).isAllowEnrollmentAtLogin())
                 .as("the tenant does allow enrolment at login").isTrue();
 
         hold(user);
 
+        assertThat(loginPolicy.resolve(user, org).isAllowEnrollmentAtLogin())
+                .as("the policy the ENROLMENT GATE reads, not the flag the SPA renders").isFalse();
         assertThat(describe(user, AuthFactor.PASSWORD).mfaEnrollmentAllowed()).isFalse();
+    }
+
+    /**
+     * The configuration the bypass actually lived in: a tenant whose policy demands a factor the account has
+     * never enrolled. The base step is offered FIRST — the hold appends its own at the end — so a held
+     * account REACHES the enrolment gate, which the password-only fixture above never does.
+     */
+    @Test
+    void aHeldAccountOnAPolicyDemandingAnUnEnrolledFactorStillMayNotEnrolIt() {
+        UserAccount user = userOnPolicy(List.of(Set.of(AuthFactor.PASSWORD), Set.of(AuthFactor.TOTP)), true);
+
+        assertThat(loginPolicy.resolve(user, org).isAllowEnrollmentAtLogin()).isTrue();
+
+        hold(user);
+
+        assertThat(loginPolicy.resolve(user, org).isAllowEnrollmentAtLogin()).isFalse();
     }
 
     private AuthSessionView describe(UserAccount user, AuthFactor... satisfied) {
@@ -215,6 +235,11 @@ class AccountHoldLoginGateIT extends AbstractIntegrationTest {
 
     /** A tenant whose login policy is one step: the password. The hold is then the only second factor. */
     private UserAccount passwordOnlyUser(boolean allowEnrollmentAtLogin) {
+        return userOnPolicy(List.of(Set.of(AuthFactor.PASSWORD)), allowEnrollmentAtLogin);
+    }
+
+    /** A user in this test's tenant, governed by exactly the given steps. */
+    private UserAccount userOnPolicy(List<Set<AuthFactor>> steps, boolean allowEnrollmentAtLogin) {
         if (org == null) {
             org = organizations.create(new NewOrganization("held-" + suffix(), "held")).id();
             cleanups.add(() -> orgContext.runAsPlatform(() -> {
@@ -228,8 +253,8 @@ class AccountHoldLoginGateIT extends AbstractIntegrationTest {
                 new NewUser(username, username + "@example.com", "Held", "S3cret!pw", Set.of()), org));
         cleanups.add(() -> orgContext.runAsPlatform(() -> users.delete(user.getId())));
         orgContext.runInOrg(org, () -> authPolicies.create(new AuthPolicySpec(
-                "password-only-" + suffix(), nextPriority++, true, true, allowEnrollmentAtLogin,
-                List.of(Set.of(AuthFactor.PASSWORD)), Set.of(user.getId()), Set.of(), 5)));
+                "held-fixture-" + suffix(), nextPriority++, true, true, allowEnrollmentAtLogin,
+                steps, Set.of(user.getId()), Set.of(), 5)));
         return user;
     }
 

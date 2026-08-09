@@ -73,14 +73,11 @@ public class AuthStateService {
         boolean totpEnrolled = factorHandlers.isEnrolled(AuthFactor.TOTP, user);
         boolean fido2Enrolled = factorHandlers.isEnrolled(AuthFactor.FIDO2, user);
 
-        // A hold tightens the policy this sign-in must satisfy: one more factor, and no enrolling a fresh one
-        // to satisfy it with. Asked once and carried, because the two questions below must agree — a hold that
-        // lapsed between them would demand a factor and then refuse the account that never proved it.
+        // The resolved policy ALREADY carries the hold's extra step — LoginPolicyResolver applies it, so every
+        // login surface reads the same tightened policy. What is still this service's to decide is the refusal
+        // below, for an account that had no second factor to be asked for at all.
         boolean held = holdGate.inEffect(user.getId());
         AuthPolicyView policy = resolvePolicy(user, loginOrgId);
-        if (held) {
-            policy = holdGate.tighten(policy, user);
-        }
         boolean enrollAllowed = policy.isAllowEnrollmentAtLogin(); // per the user's winning login policy
         Optional<AuthPolicyStepView> step = evaluator.currentStep(policy, granted);
         if (step.isEmpty()) {

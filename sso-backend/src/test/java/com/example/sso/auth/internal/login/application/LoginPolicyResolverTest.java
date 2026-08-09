@@ -36,12 +36,14 @@ class LoginPolicyResolverTest {
     @Mock private PolicyBindingResolver bindings;
     @Mock private AuthPolicyResolver authPolicies;
     @Mock private OrgContext orgContext;
+    // No hold in these cases; what a hold does to the resolved policy is AccountHoldLoginGateIT's subject.
+    @Mock private AccountHoldLoginGate holdGate;
     @Mock private UserAccount user;
     @Mock private AuthPolicyView bound;
     @Mock private AuthPolicyView fallback;
 
     private LoginPolicyResolver resolver() {
-        return new LoginPolicyResolver(bindings, authPolicies, orgContext);
+        return new LoginPolicyResolver(holdGate, bindings, authPolicies, orgContext);
     }
 
     private void runInOrg() {

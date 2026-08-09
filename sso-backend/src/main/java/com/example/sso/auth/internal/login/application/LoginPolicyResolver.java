@@ -17,11 +17,18 @@ import org.springframework.stereotype.Service;
  * LOGIN org so the tenant's own bindings/policies (RLS-scoped) participate; with no org bound (pre-org steps
  * / step-up) only global/default bindings resolve. Shared by the login-state and factor-step services so
  * every login step agrees on the same winning policy.
+ *
+ * <p>A live account hold is applied HERE, so "the winning policy" already includes it. It was tightened in
+ * the state service instead, and that was a hole: the enrolment gate resolves its policy through this class,
+ * so it kept reading the untightened one and let a held account enrol a brand-new factor with nothing but
+ * the password — paying the hold with a credential the hold exists to distrust. One producer per answer is
+ * what this class is FOR; a second one is how the two disagreed.
  */
 @Service
 @RequiredArgsConstructor
 public class LoginPolicyResolver {
 
+    private final AccountHoldLoginGate holdGate;
     private final PolicyBindingResolver bindings;
     private final AuthPolicyResolver authPolicies;
     private final OrgContext orgContext;
@@ -30,7 +37,8 @@ public class LoginPolicyResolver {
         // Scope every binding read explicitly — NEVER inherit an ambient platform context (a super-admin's
         // post-login step-up), which RLS would widen to every tenant's bindings. A known login org scopes to
         // that tenant plus globals; a null org (pre-org login / step-up) scopes to GLOBAL-only (org_id IS NULL).
-        return orgContext.callInOrg(loginOrgId, () -> resolveInScope(user));
+        AuthPolicyView policy = orgContext.callInOrg(loginOrgId, () -> resolveInScope(user));
+        return holdGate.inEffect(user.getId()) ? holdGate.tighten(policy, user) : policy;
     }
 
     private AuthPolicyView resolveInScope(UserAccount user) {
