@@ -29,6 +29,14 @@ import org.springframework.stereotype.Service;
  * Step-up re-authentication for sensitive operations: verifies a fresh, policy-allowed factor and
  * refreshes the deliberate-step-up clock (rotating the session id first when the policy demands it),
  * so a subsequent sensitive action or admin elevation carries a fresh {@code auth_time}.
+ *
+ * <p><b>Both entry points demand a COMPLETE session.</b> Re-authentication is by definition something an
+ * already-signed-in session does, and accepting a merely IDENTIFIED one made this a second, ungated route to
+ * factor ENROLMENT: a handler asked to prepare a factor the user has never set up issues a fresh enrolment
+ * secret (TOTP) or registration options (a passkey). A session holding nothing but a password could therefore
+ * mint itself a second factor here — satisfying the very policy step meant to test whether it was the
+ * account's owner, and, for a passkey, planting a durable credential that enables passwordless sign-in.
+ * {@code /api/auth/factors/**} guards that with the enrol-at-login policy; this path guarded it with nothing.
  */
 @Service
 @RequiredArgsConstructor
@@ -47,7 +55,7 @@ public class ReauthService {
 
     /** Pre-step data for a re-auth factor (e.g. WebAuthn options); must be allowed for the pending step-up. */
     public FactorChallenge prepare(AuthFactor factor, HttpServletRequest request) {
-        UserAccount user = currentUser.require();
+        UserAccount user = currentUser.requireMfaComplete();
         requireAllowedFactor(request, sessionPolicy.effectiveForUser(user), factor);
         return factorHandlers.get(factor).prepare(user, request);
     }
@@ -55,7 +63,7 @@ public class ReauthService {
     /** Verifies a fresh factor and refreshes the step-up clock; incorrect response → 400. */
     public void verify(AuthFactor factor, FactorVerificationRequest verification,
                        HttpServletRequest request, HttpServletResponse response) {
-        UserAccount user = currentUser.require();
+        UserAccount user = currentUser.requireMfaComplete();
         EffectiveSessionPolicy effective = sessionPolicy.effectiveForUser(user);
         requireAllowedFactor(request, effective, factor);
 

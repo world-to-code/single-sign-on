@@ -10,6 +10,7 @@ import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
 import com.example.sso.authpolicy.factor.AuthFactor;
+import com.example.sso.shared.error.ForbiddenException;
 import com.example.sso.session.lifecycle.SessionLifecycle;
 import com.example.sso.session.policy.EffectiveSessionPolicy;
 import com.example.sso.session.policy.UserSessionPolicy;
@@ -31,6 +32,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -75,7 +77,7 @@ class ReauthServiceTest {
         user = mock(UserAccount.class);
         ReflectionTestUtils.setField(service, "challengeValidityMinutes", 15L); // @Value not injected by @InjectMocks
         lenient().when(user.getUsername()).thenReturn("alice");
-        lenient().when(currentUser.require()).thenReturn(user);
+        lenient().when(currentUser.requireMfaComplete()).thenReturn(user);
         // The effective policy carries the winner's re-auth factors and the rotate-on-reauth preference directly
         // (no raw winner policy is exposed).
         lenient().when(sessionPolicy.effectiveForUser(user)).thenReturn(effectiveWith("TOTP,FIDO2", false));
@@ -215,6 +217,31 @@ class ReauthServiceTest {
         inOrder.verify(sessions).rotateSessionId(request, "alice");
         inOrder.verify(factorAuth).restampAuthTime(eq(request), any());
         assertThat(((MockHttpSession) request.getSession()).getAttribute(StepUpInterceptor.STEPUP_FACTOR)).isEqualTo("FIDO2");
+    }
+
+    /**
+     * Re-auth is something a SIGNED-IN session does. Accepting a merely identified one made this a second,
+     * ungated route to factor ENROLMENT — a handler asked to prepare a factor the user has never set up
+     * issues a fresh secret — so a session holding only a password could mint the second factor that the
+     * policy step (or an account hold) exists to demand of it.
+     */
+    @Test
+    void prepareRefusesASessionThatHasNotCompletedItsSignIn() {
+        when(currentUser.requireMfaComplete()).thenThrow(ForbiddenException.of("auth.signIn.incomplete"));
+
+        assertThatThrownBy(() -> service.prepare(AuthFactor.TOTP, requestWithPending(null)))
+                .isInstanceOf(ForbiddenException.class);
+        verifyNoInteractions(factorHandlers);
+    }
+
+    @Test
+    void verifyRefusesASessionThatHasNotCompletedItsSignIn() {
+        when(currentUser.requireMfaComplete()).thenThrow(ForbiddenException.of("auth.signIn.incomplete"));
+
+        assertThatThrownBy(() -> service.verify(AuthFactor.TOTP, response("123456"),
+                requestWithPending(null), new MockHttpServletResponse()))
+                .isInstanceOf(ForbiddenException.class);
+        verifyNoInteractions(factorAuth);
     }
 
     @Test
