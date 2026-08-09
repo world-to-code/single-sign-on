@@ -1042,6 +1042,43 @@ class AdminAccessPolicyTest {
         assertThat(policy.canResetMfa(OTHER_ID)).isFalse();
     }
 
+    /**
+     * The hold clause, isolated from user scope on purpose.
+     *
+     * <p>Through the endpoint these outcomes are ALSO produced by {@code canAccessUser} — a tenant
+     * administrator cannot reach a platform account at all — so an end-to-end refusal test passes whether or
+     * not this clause exists. Two mechanisms, neither individually load-bearing, is exactly the shape that
+     * leaves a mutant alive; asking the policy directly is what makes this one carry its own weight.
+     */
+    @Test
+    void aScopedDelegateMayNotHoldAnAdministratorTheyCanOtherwiseReach() {
+        makeAdmin(OTHER_ID); // effective admin, whether direct or group-delegated
+
+        assertThat(policy.canHoldUser(OTHER_ID)).isFalse();
+    }
+
+    @Test
+    void aSuperAdminMayHoldAnAdministrator() {
+        makeActorSuper();
+        makeAdmin(OTHER_ID);
+
+        assertThat(policy.canHoldUser(OTHER_ID)).isTrue();
+    }
+
+    @Test
+    void holdingAnOrdinaryUserIsAllowed() {
+        assertThat(policy.canHoldUser(OTHER_ID)).isTrue();
+    }
+
+    /** Both directions, and for a super admin too: placing one is a self-lockout, lifting one is the bypass. */
+    @Test
+    void holdingYourOwnAccountIsRefusedEvenAsASuperAdmin() {
+        makeActorSuper();
+
+        assertThat(policy.canHoldUser(ACTOR_ID)).isFalse();
+        assertThat(policy.explainHoldUser(ACTOR_ID).refusal()).isEqualTo(AdminRefusal.SELF_TARGET);
+    }
+
     @Test
     void aSuperAdminMayStillForceExpireAGroupDelegatedAdmin() {
         // The counterpart: a super admin CAN revoke a (group-delegated) administrator's sessions — force-expiring

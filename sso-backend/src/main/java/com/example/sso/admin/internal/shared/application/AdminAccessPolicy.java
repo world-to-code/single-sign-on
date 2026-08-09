@@ -333,6 +333,30 @@ public class AdminAccessPolicy {
     }
 
     /**
+     * Placing or lifting an account hold — ONE rule for both, because the two are the same authority pointed
+     * in opposite directions. Placing constrains an account; lifting undoes a detection's response, which is
+     * the more valuable of the two to whoever caused the detection.
+     *
+     * <p>Not yourself, in either direction: placing is a self-lockout for as long as the ceiling allows, and
+     * lifting your own hold is simply the bypass. Not another administrator either, unless you are a super
+     * admin — holding a compromised administrator is exactly the case this exists for, while letting a tenant
+     * admin suspend the platform's is exactly the case it must not become.
+     */
+    public boolean canHoldUser(UUID targetId) {
+        return explainHoldUser(targetId).permitted();
+    }
+
+    public AdminDecision explainHoldUser(UUID targetId) {
+        if (isSelf(targetId)) {
+            return refuse(AdminRefusal.SELF_TARGET);
+        }
+        if (currentIsSuperAdmin() || !isAdmin(targetId)) {
+            return AdminDecision.allow();
+        }
+        return refuse(AdminRefusal.TARGET_IS_ADMIN);
+    }
+
+    /**
      * Who may rewrite a user's profile — the columns they hold, or the profile that declares them.
      *
      * <p>The same rule as {@link #canRevokeSessions}, and for the same reason rather than by coincidence: a

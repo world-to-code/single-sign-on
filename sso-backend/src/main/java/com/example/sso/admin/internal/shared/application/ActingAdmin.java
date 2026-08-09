@@ -28,12 +28,12 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @RequiredArgsConstructor
-class ActingAdmin {
+public class ActingAdmin {
 
     private final UserService userService;
 
     /** The acting administrator's account id, or empty when nobody is authenticated. */
-    Optional<UUID> id() {
+    public Optional<UUID> id() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {
             return Optional.empty();

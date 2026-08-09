@@ -2,17 +2,20 @@ package com.example.sso.admin.internal.user.api;
 
 import com.example.sso.admin.internal.shared.security.CanCreateUser;
 import com.example.sso.admin.internal.shared.security.CanDeleteUser;
+import com.example.sso.admin.internal.shared.security.CanHoldUser;
 import com.example.sso.admin.internal.shared.security.CanManageUserPermissions;
 import com.example.sso.admin.internal.shared.security.CanResetUserMfa;
 import com.example.sso.admin.internal.shared.security.CanRevokeUserSessions;
 import com.example.sso.admin.internal.shared.security.CanSetUserEnabled;
 import com.example.sso.admin.internal.shared.security.CanUpdateUser;
 import com.example.sso.admin.internal.shared.security.CanViewUser;
+import com.example.sso.admin.internal.user.application.AccountHoldStatusView;
 import com.example.sso.admin.internal.user.application.AdminUserView;
 import com.example.sso.admin.internal.user.application.NewUserCommand;
 import com.example.sso.admin.internal.user.application.UserAdminService;
 import com.example.sso.admin.internal.user.application.UserProvisioningService;
 import com.example.sso.admin.internal.user.application.UserDetailAdminService;
+import com.example.sso.admin.internal.user.application.UserHoldAdminService;
 import com.example.sso.admin.internal.user.application.UserRecoveryAdminService;
 import com.example.sso.admin.internal.user.application.UserDetailView;
 import com.example.sso.admin.internal.user.application.UserDevicesView;
@@ -57,6 +60,7 @@ public class AdminUserController {
     private final UserProvisioningService provisioning;
     private final UserDetailAdminService userDetailAdminService;
     private final UserRecoveryAdminService recovery;
+    private final UserHoldAdminService userHoldAdminService;
 
     @GetMapping
     @RequirePermission(Permissions.USER_READ)
@@ -108,6 +112,33 @@ public class AdminUserController {
     @RequireStepUp
     public ResponseEntity<Void> revokeUserSessions(@PathVariable UUID id) {
         userDetailAdminService.terminateSessions(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Whether a reversible hold is in force on this account, and by whose decision. */
+    @GetMapping("/{id}/hold")
+    @CanViewUser
+    public AccountHoldStatusView userHold(@PathVariable UUID id) {
+        return userHoldAdminService.status(id);
+    }
+
+    /**
+     * Place a hold: end the account's sessions and make every sign-in prove a second factor until it expires.
+     * Re-placing replaces the existing one, so extending or shortening a hold is this same call.
+     */
+    @PutMapping("/{id}/hold")
+    @CanHoldUser
+    @RequireStepUp
+    public AccountHoldStatusView holdUser(@PathVariable UUID id, @Valid @RequestBody AccountHoldRequest request) {
+        return userHoldAdminService.place(id, request.reason(), request.duration());
+    }
+
+    /** Lift a hold early. Guarded exactly as placing one is — undoing a response is the weightier direction. */
+    @DeleteMapping("/{id}/hold")
+    @CanHoldUser
+    @RequireStepUp
+    public ResponseEntity<Void> liftUserHold(@PathVariable UUID id) {
+        userHoldAdminService.lift(id);
         return ResponseEntity.noContent().build();
     }
 
