@@ -120,6 +120,12 @@ public enum AuditType {
     // ATTRIBUTE_CHANGED, which is a VALUE written onto one entity; this is the catalog every entity's values
     // are shaped by, so an unlogged change to it is an unlogged change to what the directory may carry.
     ATTRIBUTE_DEFINITION_CHANGED(AuditCategory.ADMIN),
+    /**
+     * The audit export's destination was set or re-pointed. Recorded because it decides where every tenant's
+     * security history goes — redirecting it is how somebody would arrange for their own actions to be
+     * reviewed by nobody.
+     */
+    AUDIT_EXPORT_CONFIGURED(AuditCategory.ADMIN),
     AUTH_POLICY_CREATED(AuditCategory.AUTHORIZATION),
     AUTH_POLICY_UPDATED(AuditCategory.AUTHORIZATION),
     AUTH_POLICY_DELETED(AuditCategory.AUTHORIZATION),
