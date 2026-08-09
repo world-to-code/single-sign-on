@@ -1,9 +1,11 @@
 package com.example.sso.admin.internal.user.application;
 
 import com.example.sso.admin.internal.audit.application.AuditAccessPolicy;
+import com.example.sso.audit.AuditActor;
 import com.example.sso.audit.AuditEntry;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
+import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.mfa.MfaService;
 import com.example.sso.portal.application.ApplicationService;
@@ -173,7 +175,9 @@ public class UserDetailAdminService {
         // Scope to the target's OWN org: usernames are unique only within an org (V68), so an org-less lookup
         // could surface a same-named principal's activity from another tenant.
         UserAccount user = require(userId);
-        List<AuditEntry> recent = audit.recentForPrincipal(user.getOrgId(), user.getUsername());
+        // Both keys: this screen answers "what happened to this person", which includes actions somebody
+        // ELSE performed on them (a hold, a forced sign-out) — those name the actor, not the target.
+        List<AuditEntry> recent = audit.recentAbout(user.getOrgId(), user.getUsername(), user.getId());
         // Gate the actor PII exactly as the main audit console does: a viewer with user:read but without
         // audit:read:pii sees the activity without actor email/display/IP/device (the principal name remains).
         if (!auditAccessPolicy.canReadPii()) {
@@ -187,8 +191,12 @@ public class UserDetailAdminService {
     public int terminateSessions(UUID userId) {
         UserAccount user = require(userId);
         int count = userSessions.terminateForUser(user.getUsername(), user.getOrgId());
-        audit.record(new AuditRecord(AuditType.SESSION_ADMIN_REVOKED, user.getUsername(), true,
-                "count=" + count, null));
+        // The ACTOR is the administrator who did it; the target is the SUBJECT. Putting the target in the
+        // actor field would make every "who signed these people out" question unanswerable, and it is the
+        // field a SIEM correlates on.
+        audit.record(new AuditRecord(AuditType.SESSION_ADMIN_REVOKED, AuditActor.of(), true,
+                "user=" + user.getUsername() + " count=" + count, null,
+                AuditSubjectType.USER, userId.toString(), user.getOrgId()));
         return count;
     }
 

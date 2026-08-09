@@ -23,7 +23,15 @@ public interface AuditService {
     List<AuditEntry> recent(UUID orgId);
 
     /** The most recent events for a single principal within one tenant (or the global scope), newest first. */
-    List<AuditEntry> recentForPrincipal(UUID orgId, String principal);
+    /**
+     * Everything about one person — what they DID and what was done TO them.
+     *
+     * <p>Renamed from {@code recentForPrincipal}, which asked only the first question while its one caller
+     * (the user-detail activity tab) meant the second. The two are different facts, and the audit row keeps
+     * them in different fields: the actor is who performed the action, the subject is who it was performed on.
+     * A screen titled "activity" for a person needs both, so it must pass both keys.
+     */
+    List<AuditEntry> recentAbout(UUID orgId, String username, UUID userId);
 
     /** The most recent events in a single category within one tenant (or the global scope), newest first. */
     List<AuditEntry> recentByCategory(UUID orgId, AuditCategory category);

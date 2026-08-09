@@ -4,12 +4,14 @@ import com.example.sso.audit.AuditCategory;
 import com.example.sso.audit.AuditEntry;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
+import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditSeverity;
 import com.example.sso.audit.AuditSignInDay;
 import com.example.sso.audit.AuditType;
 import com.example.sso.audit.internal.domain.AuditActorInfo;
 import com.example.sso.audit.internal.domain.AuditClientInfo;
 import com.example.sso.audit.internal.domain.AuditEvent;
+import org.springframework.data.domain.Limit;
 import com.example.sso.audit.internal.domain.AuditEventRepository;
 import com.example.sso.tenancy.OrgContext;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +37,9 @@ public class AuditServiceImpl implements AuditService {
     private final AuditEventRepository repository;
     private final AuditEventWriter writer;
     private final OrgContext orgContext;
+    /** How far back one person's activity view reaches; the derived queries it replaced were Top50. */
+    private static final Limit ACTIVITY_LIMIT = Limit.of(50);
+
     private final AuditActorResolver actorResolver;
     private final AuditClientResolver clientResolver;
     private final AuditSeverityPolicy severityPolicy;
@@ -70,10 +75,11 @@ public class AuditServiceImpl implements AuditService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<AuditEntry> recentForPrincipal(UUID orgId, String principal) {
+    public List<AuditEntry> recentAbout(UUID orgId, String username, UUID userId) {
+        String subjectId = userId == null ? null : userId.toString();
         List<AuditEvent> events = orgId == null
-                ? repository.findTop50ByOrgIdIsNullAndPrincipalOrderByOccurredAtDesc(principal)
-                : repository.findTop50ByOrgIdAndPrincipalOrderByOccurredAtDesc(orgId, principal);
+                ? repository.findRecentAboutGlobal(username, AuditSubjectType.USER, subjectId, ACTIVITY_LIMIT)
+                : repository.findRecentAbout(orgId, username, AuditSubjectType.USER, subjectId, ACTIVITY_LIMIT);
         return events.stream().map(this::toEntry).toList();
     }
 

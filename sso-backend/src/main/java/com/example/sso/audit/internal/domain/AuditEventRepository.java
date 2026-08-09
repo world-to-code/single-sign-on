@@ -1,13 +1,16 @@
 package com.example.sso.audit.internal.domain;
 
 import com.example.sso.audit.AuditCategory;
+import com.example.sso.audit.AuditSubjectType;
 import java.time.Instant;
 import java.util.Collection;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -20,9 +23,32 @@ public interface AuditEventRepository extends JpaRepository<AuditEvent, Long> {
     /** Recent global (org-less) events — the platform tier: an un-drilled super-admin, never all tenants merged. */
     List<AuditEvent> findTop100ByOrgIdIsNullOrderByOccurredAtDesc();
 
-    List<AuditEvent> findTop50ByOrgIdAndPrincipalOrderByOccurredAtDesc(UUID orgId, String principal);
+    /**
+     * Everything about one person: what they DID (they are the actor) and what was done TO them (they are the
+     * subject). Two different facts that a single field cannot hold — which is why the audit row keeps the
+     * actor and the subject apart, and why this query has to ask for both.
+     */
+    @Query("""
+            select e from AuditEvent e
+             where e.orgId = :orgId
+               and (e.principal = :username
+                    or (e.subjectType = :subjectType and e.subjectId = :userId))
+             order by e.occurredAt desc
+            """)
+    List<AuditEvent> findRecentAbout(UUID orgId, String username, AuditSubjectType subjectType,
+            String userId, Limit limit);
 
-    List<AuditEvent> findTop50ByOrgIdIsNullAndPrincipalOrderByOccurredAtDesc(String principal);
+    /** The same, for a GLOBAL/platform account (no owning organization). */
+    @Query("""
+            select e from AuditEvent e
+             where e.orgId is null
+               and (e.principal = :username
+                    or (e.subjectType = :subjectType and e.subjectId = :userId))
+             order by e.occurredAt desc
+            """)
+    List<AuditEvent> findRecentAboutGlobal(String username, AuditSubjectType subjectType,
+            String userId, Limit limit);
+
 
     List<AuditEvent> findTop100ByOrgIdAndCategoryOrderByOccurredAtDesc(UUID orgId, AuditCategory category);
 

@@ -4,6 +4,8 @@ import com.example.sso.admin.internal.user.api.AccountHoldRequest;
 import com.example.sso.admin.internal.user.api.AdminUserController;
 import com.example.sso.admin.internal.user.application.AccountHoldStatusView;
 import com.example.sso.shared.error.BadRequestException;
+import com.example.sso.audit.AuditEntry;
+import com.example.sso.audit.AuditType;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.tenancy.OrgContext;
 import com.example.sso.user.account.AccountHoldService;
@@ -14,6 +16,7 @@ import com.example.sso.user.rbac.Permissions;
 import com.example.sso.user.role.Roles;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -157,18 +160,41 @@ class AccountHoldAdminIT extends AbstractIntegrationTest {
         assertThat(holds.holdInEffect(target.getId())).isEmpty();
     }
 
-    /** The hold's record is written whichever surface asked, so the console's own action is on the trail. */
+    /**
+     * The trail names WHO held the account, not who was held.
+     *
+     * <p>The actor field is what answers "who has been holding people" and what a SIEM correlates on; the
+     * held account is the SUBJECT. These rows named the victim as the actor, which collapsed the two.
+     */
     @Test
-    void aHoldPlacedFromTheConsoleLeavesAnAuditRow() {
+    void aHoldFromTheConsoleIsRecordedAgainstTheAdministratorWithTheUserAsSubject() {
         UserAccount target = plainUser();
         asSuperAdmin();
 
         controller.holdUser(target.getId(), new AccountHoldRequest("suspected credential theft", 60));
 
-        Integer rows = ownerJdbc().queryForObject(
-                "select count(*) from audit_event where type = 'ACCOUNT_HELD' and principal = ?",
-                Integer.class, target.getUsername());
-        assertThat(rows).isEqualTo(1);
+        Map<String, Object> row = ownerJdbc().queryForMap(
+                "select principal, subject_type, subject_id, detail from audit_event"
+                        + " where type = 'ACCOUNT_HELD' and subject_id = ?", target.getId().toString());
+        assertThat(row.get("principal")).as("the acting administrator").isEqualTo("admin");
+        assertThat(row.get("subject_type")).isEqualTo("USER");
+        assertThat(String.valueOf(row.get("detail"))).contains("user=" + target.getUsername());
+    }
+
+    /**
+     * The activity view answers "what happened to this person", so it must show actions somebody ELSE
+     * performed on them. Moving the actor into the actor field would otherwise have made a hold vanish from
+     * the one screen an operator opens to ask why an account is behaving strangely.
+     */
+    @Test
+    void aHoldShowsOnTheHeldUsersActivityEvenThoughSomebodyElseIsTheActor() {
+        UserAccount target = plainUser();
+        asSuperAdmin();
+        controller.holdUser(target.getId(), new AccountHoldRequest("suspected credential theft", 60));
+
+        assertThat(controller.userActivity(target.getId(), 0, 20).items())
+                .extracting(AuditEntry::type)
+                .contains(AuditType.ACCOUNT_HELD.name());
     }
 
     private void asSuperAdmin() {

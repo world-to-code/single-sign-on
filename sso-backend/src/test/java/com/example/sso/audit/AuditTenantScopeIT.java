@@ -96,7 +96,7 @@ class AuditTenantScopeIT extends AbstractIntegrationTest {
         record(AuditType.AUTH_SUCCESS, "shared", orgA);
         record(AuditType.SESSION_ADMIN_REVOKED, "shared", orgB);
 
-        List<String> typesForA = audit.recentForPrincipal(orgA, "shared").stream()
+        List<String> typesForA = audit.recentAbout(orgA, "shared", UUID.randomUUID()).stream()
                 .map(AuditEntry::type).toList();
 
         assertThat(typesForA).contains(AuditType.AUTH_SUCCESS.name());
@@ -111,7 +111,8 @@ class AuditTenantScopeIT extends AbstractIntegrationTest {
         record(AuditType.AUTH_SUCCESS, "shared", orgA);       // tenant, same username (for the principal read)
         record(AuditType.AUTH_SUCCESS, "tenant-only", orgA);  // tenant, distinct (for the category read)
 
-        assertThat(audit.recentForPrincipal(null, "shared")).hasSize(1); // only the global "shared", not orgA's
+        // A user id that matches no subject, so this still exercises the PRINCIPAL half of the read.
+        assertThat(audit.recentAbout(null, "shared", UUID.randomUUID())).hasSize(1); // global only, not orgA's
         assertThat(principalsOf(audit.recentByCategory(null, AuditCategory.AUTHENTICATION)))
                 .contains("shared")
                 .doesNotContain("tenant-only"); // global-only; the orgA rows are absent

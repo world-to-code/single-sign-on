@@ -5,6 +5,7 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.auth.factor.SecondFactors;
+import com.example.sso.response.ResponseApiTokenFilter;
 import com.example.sso.response.ResponseCaller;
 import com.example.sso.session.lifecycle.UserSessions;
 import com.example.sso.response.ResponseApiTokenFilter;
@@ -53,11 +54,10 @@ public class ResponseActions {
     public int terminateSessions(UUID userId) {
         UserAccount user = requireInCallersTenant(userId);
         int ended = sessions.terminateForUser(user.getUsername(), user.getOrgId());
-        // The principal is the TARGET, matching the console's termination — the user-activity view queries by
-        // principal, so naming the machine here would hide the machine's own sign-outs from the page an
-        // operator opens to ask why somebody was signed out. Which machine acted is in the detail.
-        audit.record(new AuditRecord(AuditType.SESSION_ADMIN_REVOKED, user.getUsername(),
-                true, "sessions=" + ended + " " + callerDetail(), null,
+        // Actor = the machine, subject = the account it acted on. The user-detail activity view asks about
+        // both, so naming the machine here no longer hides the sign-out from the page an operator opens.
+        audit.record(new AuditRecord(AuditType.SESSION_ADMIN_REVOKED, ResponseApiTokenFilter.RESPONSE_PRINCIPAL,
+                true, "user=" + user.getUsername() + " sessions=" + ended + " " + callerDetail(), null,
                 AuditSubjectType.USER, userId.toString(), user.getOrgId()));
         return ended;
     }

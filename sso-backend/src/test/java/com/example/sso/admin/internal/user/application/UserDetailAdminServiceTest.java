@@ -34,6 +34,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -301,7 +302,7 @@ class UserDetailAdminServiceTest {
     @Test
     void activityIsRedactedForAViewerWithoutThePiiGrant() {
         targetUser();
-        when(audit.recentForPrincipal(ORG, USERNAME)).thenReturn(List.of(entryWithPii()));
+        when(audit.recentAbout(eq(ORG), eq(USERNAME), any())).thenReturn(List.of(entryWithPii()));
         when(auditAccessPolicy.canReadPii()).thenReturn(false);
 
         AuditEntry shown = service.activity(USER, 0, 20).items().getFirst();
@@ -318,7 +319,7 @@ class UserDetailAdminServiceTest {
     @Test
     void activityKeepsThePiiForAViewerHoldingTheGrant() {
         targetUser();
-        when(audit.recentForPrincipal(ORG, USERNAME)).thenReturn(List.of(entryWithPii()));
+        when(audit.recentAbout(eq(ORG), eq(USERNAME), any())).thenReturn(List.of(entryWithPii()));
         when(auditAccessPolicy.canReadPii()).thenReturn(true);
 
         AuditEntry shown = service.activity(USER, 0, 20).items().getFirst();
@@ -331,12 +332,12 @@ class UserDetailAdminServiceTest {
     @Test
     void activityIsReadForTheTargetsOwnOrganization() {
         targetUser();
-        when(audit.recentForPrincipal(ORG, USERNAME)).thenReturn(List.of());
+        when(audit.recentAbout(eq(ORG), eq(USERNAME), any())).thenReturn(List.of());
         when(auditAccessPolicy.canReadPii()).thenReturn(true);
 
         service.activity(USER, 0, 20);
 
-        verify(audit).recentForPrincipal(ORG, USERNAME);
+        verify(audit).recentAbout(eq(ORG), eq(USERNAME), any());
     }
 
     /** Force-expiry is org-scoped too, and leaves a trail — it is a privilege action on someone else. */

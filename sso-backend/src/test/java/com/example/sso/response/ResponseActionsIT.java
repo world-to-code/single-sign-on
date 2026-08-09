@@ -224,19 +224,19 @@ class ResponseActionsIT extends AbstractIntegrationTest {
 
     /** Every response action is on the trail, attributed to the machine and joined to its detection. */
     @Test
-    void endingSessionsIsRecordedAgainstTheTargetNamingTheMachineAndItsDetection() {
+    void endingSessionsIsRecordedAgainstTheMachineWithTheAccountAsSubject() {
         UUID org = tenant();
         UserAccount target = userIn(org);
         asResponseClient(org, ResponseScopes.SESSION_TERMINATE);
 
         controller.terminateSessions(target.getId());
 
-        // Principal is the TARGET (so it shows on their activity page, like the console's termination);
-        // WHICH machine did it is in the detail, alongside the detection it belongs to.
+        // Actor = the machine principal, subject = the account. Which credential and which detection are in
+        // the detail, so an investigation can get from the row to the system that asked for it.
         String detail = ownerJdbc().queryForObject(
                 "select detail from audit_event where type = 'SESSION_ADMIN_REVOKED' and principal = ? "
                         + "and subject_id = ?",
-                String.class, target.getUsername(), target.getId().toString());
+                String.class, "response-client", target.getId().toString());
         assertThat(detail).contains("correlation=xdr-42").contains("client=acme-xdr");
     }
 
