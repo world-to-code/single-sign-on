@@ -202,6 +202,40 @@ class AuthRateLimitFilterTest {
         assertThat(response.getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
     }
 
+    /**
+     * The machine response API, on every verb it uses.
+     *
+     * <p>Unmetered, an unauthenticated caller writes one audit row per rejected credential — and this trail
+     * is hash-chained, so those writes are dearer than a log line. It is also the feed an operator watches
+     * for exactly this API being probed, which a flood buries. The verbs are PUT/DELETE/GET, so the limit
+     * cannot hang off the POST gate: what earns it is the COST, the same reasoning the federation routes and
+     * the tenant picker already carry.
+     */
+    @Test
+    void throttlesTheMachineResponseApiOnEveryVerbItUses() throws Exception {
+        when(rateLimiter.tryAcquire(any())).thenReturn(false);
+
+        for (String[] call : new String[][] {
+                {"PUT", "/api/response/v1/users/2b0f/hold"},
+                {"DELETE", "/api/response/v1/users/2b0f/hold"},
+                {"DELETE", "/api/response/v1/users/2b0f/sessions"},
+                {"GET", "/api/response/v1/users/2b0f/hold"}}) {
+            assertThat(pass(call[0], call[1]).getStatus())
+                    .as(call[0] + " " + call[1])
+                    .isEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+        }
+        verify(chain, never()).doFilter(any(), any());
+    }
+
+    /** Within its allowance the caller passes — a limit that refused a legitimate detector would be an outage. */
+    @Test
+    void aResponseCallWithinItsAllowanceReachesTheChain() throws Exception {
+        when(rateLimiter.tryAcquire(any())).thenReturn(true);
+
+        assertThat(pass("PUT", "/api/response/v1/users/2b0f/hold").getStatus()).isEqualTo(200);
+        verify(chain).doFilter(any(), any());
+    }
+
     @Test
     void leavesAnUnrelatedGetAlone() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/auth/session");

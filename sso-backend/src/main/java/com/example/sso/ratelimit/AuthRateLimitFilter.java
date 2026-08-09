@@ -57,6 +57,12 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     // for the whole timeout), and each callback can create an account and a session. Throttled on what they
     // DO, not on their verb.
     private static final String FEDERATION_PREFIX = "/api/auth/federation/";
+    // The machine response API. Unauthenticated here — its own chain authenticates it later — and every call
+    // it turns away writes an audit row, into a HASH-CHAINED trail where a write costs more than a log line.
+    // That trail is also where an operator would notice this API being probed, which a flood buries. Its verbs
+    // are PUT/DELETE/GET, so this cannot hang off the POST gate below: what earns the limit is the COST.
+    // Generous against real use — a detection system's own action budget (50/hour per client) is far tighter.
+    private static final String RESPONSE_PREFIX = "/api/response/";
     // One accepted file becomes hundreds of accounts, so this is throttled on what it DOES, not on being an
     // authenticated admin route. Keyed on the principal rather than the IP below: the callers are signed-in
     // administrators, often behind one office address, and an IP key would let one of them exhaust the budget
@@ -169,7 +175,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
      * and with the cost stated — as the federation endpoints are.
      */
     private boolean isLimited(String method, String path) {
-        if (path.startsWith(FEDERATION_PREFIX)) {
+        if (path.startsWith(FEDERATION_PREFIX) || path.startsWith(RESPONSE_PREFIX)) {
             return true;
         }
         return "POST".equalsIgnoreCase(method)
