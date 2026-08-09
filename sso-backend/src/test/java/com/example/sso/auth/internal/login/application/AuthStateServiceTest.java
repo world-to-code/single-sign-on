@@ -52,6 +52,10 @@ class AuthStateServiceTest {
     @Mock private LoginPolicyResolver loginPolicy;
     @Mock private OrganizationService organizations;
     @Mock private FederationLoginService federation;
+    // Stubbed to "no hold" by Mockito's default, which is what every case here is about. What a hold costs a
+    // sign-in cannot be tested through a mocked gate at all — that lives in AccountHoldLoginGateIT, against a
+    // real policy and a real account.
+    @Mock private AccountHoldLoginGate holdGate;
 
     @InjectMocks private AuthStateService service;
 

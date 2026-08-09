@@ -25,6 +25,8 @@ public record AuthSessionView(boolean authenticated, String username, boolean to
     public static final String NEXT_FACTOR = "FACTOR";
     /** {@code next}: the user authenticated with a temporary password and must set their own before finishing. */
     public static final String NEXT_MUST_RESET_PASSWORD = "MUST_RESET_PASSWORD";
+    /** {@code next}: a hold is in force and this account has no second factor with which to satisfy it. */
+    public static final String NEXT_ACCOUNT_HELD = "ACCOUNT_HELD";
     /** {@code next}: the authentication policy is fully satisfied. */
     public static final String NEXT_DONE = "DONE";
 
@@ -49,6 +51,16 @@ public record AuthSessionView(boolean authenticated, String username, boolean to
     public static AuthSessionView mustResetPassword(String username, String org) {
         return new AuthSessionView(false, username, false, false, List.of(), List.of(), List.of(),
                 NEXT_MUST_RESET_PASSWORD, List.of(), false, org, false, List.of());
+    }
+
+    /**
+     * A hold is in force and the account has no second factor to satisfy it with, so the sign-in stops here.
+     * Reported only once the first factor is proven: telling an unauthenticated visitor that an account is
+     * under suspicion would turn a detection into an oracle for whoever triggered it.
+     */
+    public static AuthSessionView accountHeld(String username, String org) {
+        return new AuthSessionView(false, username, false, false, List.of(), List.of(), List.of(),
+                NEXT_ACCOUNT_HELD, List.of(), false, org, false, List.of());
     }
 
     /** The policy is fully satisfied — the session is complete. */

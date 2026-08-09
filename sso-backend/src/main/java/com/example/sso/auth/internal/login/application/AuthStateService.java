@@ -42,6 +42,7 @@ public class AuthStateService {
     private final LoginPolicyResolver loginPolicy;
     private final OrganizationService organizations;
     private final FederationLoginService federation;
+    private final AccountHoldLoginGate holdGate;
 
     /**
      * @param loginOrgId the tenant-first login org (null before it is resolved, or for post-login
@@ -72,10 +73,23 @@ public class AuthStateService {
         boolean totpEnrolled = factorHandlers.isEnrolled(AuthFactor.TOTP, user);
         boolean fido2Enrolled = factorHandlers.isEnrolled(AuthFactor.FIDO2, user);
 
+        // A hold tightens the policy this sign-in must satisfy: one more factor, and no enrolling a fresh one
+        // to satisfy it with. Asked once and carried, because the two questions below must agree — a hold that
+        // lapsed between them would demand a factor and then refuse the account that never proved it.
+        boolean held = holdGate.inEffect(user.getId());
         AuthPolicyView policy = resolvePolicy(user, loginOrgId);
+        if (held) {
+            policy = holdGate.tighten(policy, user);
+        }
         boolean enrollAllowed = policy.isAllowEnrollmentAtLogin(); // per the user's winning login policy
         Optional<AuthPolicyStepView> step = evaluator.currentStep(policy, granted);
         if (step.isEmpty()) {
+            // Complete on paper while a hold is unpaid means the account had no second factor to be asked
+            // for. Refused, not completed: the password is the credential the hold exists to distrust, so
+            // proving it again proves nothing. Ahead of the reset gate — a held account is the stronger fact.
+            if (held && !holdGate.paidBy(granted)) {
+                return AuthSessionView.accountHeld(user.getUsername(), activeOrgSlug);
+            }
             // First-login password reset is the LAST gate: an admin-created user given a TEMPORARY password
             // must set their own before the session is DONE. Reported here (the single source of session
             // state) so every surface — login completion AND the /api/auth/session re-poll — agrees, and
