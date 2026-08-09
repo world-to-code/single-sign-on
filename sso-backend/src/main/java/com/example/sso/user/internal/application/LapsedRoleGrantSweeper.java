@@ -18,7 +18,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Takes away role grants whose time is up, and ENDS THE SESSIONS THEY AUTHORIZED.
@@ -56,7 +55,9 @@ class LapsedRoleGrantSweeper {
         }
     }
 
-    @Transactional
+    // Not transactional, and no longer claiming to be: the scheduled method calls this one on `this`, which
+    // the proxy does not advise, so the annotation it carried never applied. Each grant's removal is
+    // independent, and one that fails leaves its row for the next pass.
     void removeLapsedGrants() {
         List<UserRole> lapsed = userRoles.findLapsedBy(clock.instant());
         if (lapsed.isEmpty()) {

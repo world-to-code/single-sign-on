@@ -18,7 +18,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Takes lapsed holds off the table and records that they ended by themselves.
@@ -56,8 +55,16 @@ class LapsedAccountHoldSweeper {
         }
     }
 
-    /** Cross-tenant by design: the clock is not a tenant's, and a scheduled thread is bound to nobody. */
-    @Transactional
+    /**
+     * Cross-tenant by design: the clock is not a tenant's, and a scheduled thread is bound to nobody.
+     *
+     * <p>Deliberately NOT one transaction. It carried {@code @Transactional} and never got one — the scheduled
+     * method calls this one on {@code this}, which the proxy does not advise — so the annotation described an
+     * atomicity production never had, while the test called this method through the proxy and therefore ran
+     * under different rules than the code it was checking. Per-row is also the right shape here: each removal
+     * is independent and idempotent, and a batch that fails halfway leaves the rest for the next pass, which is
+     * exactly what this class already promises.
+     */
     void removeLapsedHolds() {
         orgContext.runAsPlatform(this::removeLapsedHoldsInEveryTier);
     }

@@ -24,6 +24,4 @@ public interface AccountHoldRepository extends JpaRepository<AccountHold, UUID> 
 
     /** Holds whose time is up, for the sweep that takes them off the table. */
     List<AccountHold> findByExpiresAtLessThanEqual(Instant moment);
-
-    void deleteByUserId(UUID userId);
 }
