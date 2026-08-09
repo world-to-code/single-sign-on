@@ -1,40 +1,34 @@
 package com.example.sso.ratelimit.internal;
 
-import io.github.bucket4j.Bandwidth;
-import io.github.bucket4j.BucketConfiguration;
-import io.github.bucket4j.distributed.proxy.ProxyManager;
+import com.example.sso.ratelimit.RateLimit;
+import com.example.sso.ratelimit.RateLimits;
 import java.time.Duration;
-import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * {@link RateLimiter} backed by Bucket4j over Redis. The bucket state lives in Redis (compare-and-swap, so
- * two concurrent requests can never both take the last token), which is what makes the limit hold across
- * nodes and survive a restart — in-process state silently hands a client a fresh allowance on each.
+ * {@link RateLimiter} for the authentication endpoints: a bucket of {@code sso.ratelimit.attempts} tokens
+ * refilling over {@code sso.ratelimit.window-seconds}.
  *
- * <p>The refill-and-spend algorithm belongs to the library; this class only names the policy: a bucket of
- * {@code sso.ratelimit.attempts} tokens (the bounded burst) refilling greedily over
- * {@code sso.ratelimit.window-seconds}.
+ * <p>This class only names the policy. The bucket itself comes from {@link RateLimits}, so the login limit
+ * and the response API's budget are the same mechanism with different numbers rather than two configurations
+ * of the same library that can drift apart.
  */
 @Component
 public class Bucket4jRateLimiter implements RateLimiter {
 
-    private final ProxyManager<String> buckets;
-    private final Supplier<BucketConfiguration> configuration;
+    private static final String NAMESPACE = "auth";
 
-    public Bucket4jRateLimiter(ProxyManager<String> buckets,
+    private final RateLimit limit;
+
+    public Bucket4jRateLimiter(RateLimits rateLimits,
             @Value("${sso.ratelimit.attempts}") long attempts,
             @Value("${sso.ratelimit.window-seconds}") long windowSeconds) {
-        this.buckets = buckets;
-        Duration window = Duration.ofSeconds(windowSeconds);
-        this.configuration = () -> BucketConfiguration.builder()
-                .addLimit(Bandwidth.builder().capacity(attempts).refillGreedy(attempts, window).build())
-                .build();
+        this.limit = rateLimits.named(NAMESPACE, attempts, Duration.ofSeconds(windowSeconds));
     }
 
     @Override
     public boolean tryAcquire(String key) {
-        return buckets.getProxy(key, configuration).tryConsume(1);
+        return limit.tryAcquire(key);
     }
 }

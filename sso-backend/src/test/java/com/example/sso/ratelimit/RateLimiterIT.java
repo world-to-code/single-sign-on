@@ -3,6 +3,8 @@ package com.example.sso.ratelimit;
 import com.example.sso.support.AbstractIntegrationTest;
 import com.example.sso.ratelimit.internal.Bucket4jRateLimiter;
 import com.example.sso.ratelimit.internal.RateLimiter;
+import com.example.sso.ratelimit.RateLimit;
+import com.example.sso.ratelimit.RateLimits;
 import io.github.bucket4j.distributed.proxy.ProxyManager;
 import java.time.Duration;
 import java.util.UUID;
@@ -31,8 +33,12 @@ class RateLimiterIT extends AbstractIntegrationTest {
     RateLimiter limiter;
     @Autowired
     ProxyManager<String> buckets;
+    @Autowired
+    RateLimits rateLimits;
     @Value("${sso.ratelimit.attempts}")
     int capacity;
+    @Value("${sso.ratelimit.window-seconds}")
+    int windowSeconds;
 
     private String key() {
         return "it:" + UUID.randomUUID();
@@ -69,12 +75,27 @@ class RateLimiterIT extends AbstractIntegrationTest {
             limiter.tryAcquire(key);
         }
 
-        // Reach the SAME Redis bucket through a fresh proxy, as another node would.
-        boolean allowedOnOtherNode = buckets
-                .getProxy(key, () -> buckets.getProxyConfiguration(key).orElseThrow())
-                .tryConsume(1);
+        // A second limiter over the same Redis, built exactly as another node builds its own.
+        RateLimiter otherNode = new Bucket4jRateLimiter(rateLimits, capacity, windowSeconds);
+        boolean allowedOnOtherNode = otherNode.tryAcquire(key);
 
         assertThat(allowedOnOtherNode).isFalse();
+    }
+
+    /**
+     * Keys are caller-supplied and two consumers pick them independently — a login limiter keys on a
+     * username, the response API keys on a client id. Without the namespace they would land in the same
+     * Redis bucket on a collision, and one consumer would silently spend the other's allowance.
+     */
+    @Test
+    void oneConsumersKeysDoNotSpendAnothersTokens() {
+        String shared = key();
+        RateLimit first = rateLimits.named("consumer-a", 1, Duration.ofMinutes(1));
+        RateLimit second = rateLimits.named("consumer-b", 1, Duration.ofMinutes(1));
+
+        assertThat(first.tryAcquire(shared)).isTrue();
+        assertThat(first.tryAcquire(shared)).as("its own bucket is now empty").isFalse();
+        assertThat(second.tryAcquire(shared)).as("the other consumer's is untouched").isTrue();
     }
 
     @Test
@@ -82,7 +103,7 @@ class RateLimiterIT extends AbstractIntegrationTest {
         // The production window is a minute, so refilling one token would cost this test six seconds. Drive a
         // limiter with the same code and a short window instead: the property is "an empty bucket recovers",
         // not the configured rate.
-        RateLimiter fast = new Bucket4jRateLimiter(buckets, 2, 1);
+        RateLimiter fast = new Bucket4jRateLimiter(rateLimits, 2, 1);
         String key = key();
         assertThat(fast.tryAcquire(key)).isTrue();
         assertThat(fast.tryAcquire(key)).isTrue();
