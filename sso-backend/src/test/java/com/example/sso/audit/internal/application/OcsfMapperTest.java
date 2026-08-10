@@ -175,7 +175,7 @@ class OcsfMapperTest {
         AuditExportRecord row = new AuditExportRecord(9L, Instant.now(), AuditType.SERVER_ERROR.name(), "SYSTEM",
                 "anonymous", false,
                 "POST /api/users [ref-1] org.postgresql.util.PSQLException: Key (email)=(victim@example.com)"
-                        + " already exists\n  at com.example.sso.user.UserService.create(UserService.java:42)",
+                        + " already exists\n  at UserService.create(UserService.java:42)",
                 "PSQLException", "CRITICAL", "ANONYMOUS", null, null, null, "NONE", null,
                 "203.0.113.7", null, null, "ref-1", null);
 
