@@ -3,6 +3,7 @@ package com.example.sso.audit.internal.application;
 import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditType;
+import com.example.sso.audit.export.AuditExportRecord;
 import com.example.sso.audit.export.AuditExportSettingsService;
 import com.example.sso.audit.export.AuditExportTarget;
 import com.example.sso.shared.retry.RetrySchedule;
@@ -143,10 +144,23 @@ class AuditExportSweeper {
         if (batch.isEmpty()) {
             return false;
         }
-        List<Map<String, Object>> events = batch.events().stream().map(mapper::toOcsf).toList();
-        delivery.send(target, events);
+        delivery.send(target, ocsf(batch, target.includePii()));
         reader.commitCursor(batch);   // ONLY now: an unacknowledged batch must be re-offered
         return batch.events().size() == batchSize;
+    }
+
+    /**
+     * The batch as OCSF, redacted unless this deployment is configured — and permitted — to send identifiers.
+     *
+     * <p>Redaction happens HERE rather than in the mapper because it is a policy question, not a question of
+     * OCSF shape: the same event has two legitimate renderings and which one leaves the building is decided by
+     * a permission somebody held at configuration time.
+     */
+    private List<Map<String, Object>> ocsf(AuditExportBatch batch, boolean includePii) {
+        List<AuditExportRecord> events = includePii
+                ? batch.events()
+                : batch.events().stream().map(AuditExportRecord::withoutPii).toList();
+        return events.stream().map(mapper::toOcsf).toList();
     }
 
     /**

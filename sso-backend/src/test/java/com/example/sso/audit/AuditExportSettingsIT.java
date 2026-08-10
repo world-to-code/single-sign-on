@@ -41,7 +41,7 @@ class AuditExportSettingsIT extends AbstractIntegrationTest {
 
     @Test
     void savingAnHttpsCollectorMakesItTheTarget() {
-        settings.save(new AuditExportSettings("https://one.one.one.one/ingest", CREDENTIAL, true));
+        settings.save(new AuditExportSettings("https://one.one.one.one/ingest", CREDENTIAL, true, false));
 
         AuditExportTarget target = settings.target().orElseThrow();
         assertThat(target.endpointUrl()).isEqualTo("https://one.one.one.one/ingest");
@@ -55,7 +55,7 @@ class AuditExportSettingsIT extends AbstractIntegrationTest {
     @Test
     void aPlaintextCollectorIsRefused() {
         assertThatThrownBy(() -> settings.save(
-                new AuditExportSettings("http://one.one.one.one/ingest", CREDENTIAL, true)))
+                new AuditExportSettings("http://one.one.one.one/ingest", CREDENTIAL, true, false)))
                 .isInstanceOf(BadRequestException.class);
         assertThat(settings.target()).isEmpty();
     }
@@ -63,7 +63,7 @@ class AuditExportSettingsIT extends AbstractIntegrationTest {
     @Test
     void aNonHttpSchemeIsRefused() {
         for (String url : new String[] {"file:///etc/passwd", "gopher://one.one.one.one/ingest", "ftp://one.one.one.one/x"}) {
-            assertThatThrownBy(() -> settings.save(new AuditExportSettings(url, CREDENTIAL, true)))
+            assertThatThrownBy(() -> settings.save(new AuditExportSettings(url, CREDENTIAL, true, false)))
                     .as(url).isInstanceOf(BadRequestException.class);
         }
     }
@@ -77,7 +77,7 @@ class AuditExportSettingsIT extends AbstractIntegrationTest {
     void aCollectorPointedAtTheInternalNetworkIsRefused() {
         for (String host : new String[] {"127.0.0.1", "localhost", "169.254.169.254", "10.0.0.5"}) {
             assertThatThrownBy(() -> settings.save(
-                    new AuditExportSettings("https://" + host + "/ingest", CREDENTIAL, true)))
+                    new AuditExportSettings("https://" + host + "/ingest", CREDENTIAL, true, false)))
                     .as(host).isInstanceOf(BadRequestException.class);
         }
     }
@@ -85,7 +85,7 @@ class AuditExportSettingsIT extends AbstractIntegrationTest {
     /** The credential is a secret: the row must not carry it in the clear, whatever the service returns. */
     @Test
     void theCredentialIsEncryptedAtRest() {
-        settings.save(new AuditExportSettings("https://one.one.one.one/ingest", CREDENTIAL, true));
+        settings.save(new AuditExportSettings("https://one.one.one.one/ingest", CREDENTIAL, true, false));
 
         String stored = ownerJdbc().queryForObject(
                 "select credential_encrypted from audit_export_settings", String.class);
@@ -97,7 +97,7 @@ class AuditExportSettingsIT extends AbstractIntegrationTest {
     /** Configured is not switched on. A disabled collector must not be handed to the exporter as a target. */
     @Test
     void aDisabledCollectorIsNotATarget() {
-        settings.save(new AuditExportSettings("https://one.one.one.one/ingest", CREDENTIAL, false));
+        settings.save(new AuditExportSettings("https://one.one.one.one/ingest", CREDENTIAL, false, false));
 
         assertThat(settings.target()).isEmpty();
     }
@@ -110,8 +110,8 @@ class AuditExportSettingsIT extends AbstractIntegrationTest {
     /** One collector for the deployment: saving again REPLACES it rather than leaving two destinations. */
     @Test
     void savingASecondTimeReplacesTheFirst() {
-        settings.save(new AuditExportSettings("https://one.one.one.one/first", CREDENTIAL, true));
-        settings.save(new AuditExportSettings("https://one.one.one.one/second", "other", true));
+        settings.save(new AuditExportSettings("https://one.one.one.one/first", CREDENTIAL, true, false));
+        settings.save(new AuditExportSettings("https://one.one.one.one/second", "other", true, false));
 
         assertThat(ownerJdbc().queryForObject("select count(*) from audit_export_settings", Integer.class))
                 .isEqualTo(1);
@@ -130,7 +130,7 @@ class AuditExportSettingsIT extends AbstractIntegrationTest {
      */
     @Test
     void aTargetThatHasBecomeUnsafeSinceItWasSavedIsRefusedLoudly() {
-        settings.save(new AuditExportSettings("https://one.one.one.one/ingest", CREDENTIAL, true));
+        settings.save(new AuditExportSettings("https://one.one.one.one/ingest", CREDENTIAL, true, false));
         ownerJdbc().update("update audit_export_settings set endpoint_url = ?", "http://127.0.0.1/ingest");
 
         assertThatThrownBy(() -> settings.target())
@@ -141,7 +141,7 @@ class AuditExportSettingsIT extends AbstractIntegrationTest {
     /** Switched off is not broken: the one state that must stay quiet, so the alarm above means something. */
     @Test
     void aDisabledExportIsSimplyAbsent() {
-        settings.save(new AuditExportSettings("https://one.one.one.one/ingest", CREDENTIAL, false));
+        settings.save(new AuditExportSettings("https://one.one.one.one/ingest", CREDENTIAL, false, false));
 
         assertThat(settings.target()).isEmpty();
     }
@@ -149,7 +149,7 @@ class AuditExportSettingsIT extends AbstractIntegrationTest {
     @Test
     void aBlankCredentialIsRefused() {
         assertThatThrownBy(() -> settings.save(
-                new AuditExportSettings("https://one.one.one.one/ingest", "  ", true)))
+                new AuditExportSettings("https://one.one.one.one/ingest", "  ", true, false)))
                 .isInstanceOf(BadRequestException.class);
     }
 
@@ -157,7 +157,7 @@ class AuditExportSettingsIT extends AbstractIntegrationTest {
     @Test
     void anOrdinaryPublicCollectorIsAccepted() {
         assertThatCode(() -> settings.save(
-                new AuditExportSettings("https://one.one.one.one:8443/api/ingest", CREDENTIAL, true)))
+                new AuditExportSettings("https://one.one.one.one:8443/api/ingest", CREDENTIAL, true, false)))
                 .doesNotThrowAnyException();
     }
 }

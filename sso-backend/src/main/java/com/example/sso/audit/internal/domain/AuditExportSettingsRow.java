@@ -40,22 +40,29 @@ public class AuditExportSettingsRow {
     @Column(nullable = false)
     private boolean enabled;
 
+    /** Whether the actor's and client's personal identifiers travel with the export. */
+    @Column(name = "include_pii", nullable = false)
+    private boolean includePii;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
     @Column(name = "updated_by")
     private UUID updatedBy;
 
-    public AuditExportSettingsRow(String endpointUrl, String credentialEncrypted, boolean enabled, UUID updatedBy) {
+    public AuditExportSettingsRow(String endpointUrl, String credentialEncrypted, boolean enabled,
+            boolean includePii, UUID updatedBy) {
         this.id = ONLY;
-        replaceWith(endpointUrl, credentialEncrypted, enabled, updatedBy);
+        replaceWith(endpointUrl, credentialEncrypted, enabled, includePii, updatedBy);
     }
 
     /** Re-points the collector. One row means saving again REPLACES rather than adding a second destination. */
-    public final void replaceWith(String endpointUrl, String credentialEncrypted, boolean enabled, UUID updatedBy) {
+    public final void replaceWith(String endpointUrl, String credentialEncrypted, boolean enabled,
+            boolean includePii, UUID updatedBy) {
         this.endpointUrl = endpointUrl;
         this.credentialEncrypted = credentialEncrypted;
         this.enabled = enabled;
+        this.includePii = includePii;
         this.updatedBy = updatedBy;
         this.updatedAt = Instant.now();
     }

@@ -13,9 +13,10 @@ import jakarta.validation.constraints.Size;
  */
 public record AuditExportRequest(@NotBlank @Size(max = 2048) String endpointUrl,
                                  @NotBlank @Size(max = 512) String credential,
-                                 boolean enabled) {
+                                 boolean enabled,
+                                 boolean includePii) {
 
     public AuditExportSettings toSettings() {
-        return new AuditExportSettings(endpointUrl, credential, enabled);
+        return new AuditExportSettings(endpointUrl, credential, enabled, includePii);
     }
 }

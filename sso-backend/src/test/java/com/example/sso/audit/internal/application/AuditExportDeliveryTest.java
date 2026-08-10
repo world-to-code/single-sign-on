@@ -34,7 +34,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 class AuditExportDeliveryTest {
 
     private static final AuditExportTarget TARGET =
-            new AuditExportTarget("https://collector.example.com/ingest", "bearer-value");
+            new AuditExportTarget("https://collector.example.com/ingest", "bearer-value", false);
 
     private final RestClient.Builder builder = RestClient.builder();
     private final MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();

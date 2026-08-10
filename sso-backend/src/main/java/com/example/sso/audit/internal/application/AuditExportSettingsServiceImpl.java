@@ -54,9 +54,10 @@ public class AuditExportSettingsServiceImpl implements AuditExportSettingsServic
         // One row: saving again re-points the same collector rather than adding a second destination.
         AuditExportSettingsRow row = rows.findById(AuditExportSettingsRow.ONLY).orElse(null);
         if (row == null) {
-            rows.save(new AuditExportSettingsRow(settings.endpointUrl(), encrypted, settings.enabled(), actor()));
+            rows.save(new AuditExportSettingsRow(settings.endpointUrl(), encrypted, settings.enabled(),
+                    settings.includePii(), actor()));
         } else {
-            row.replaceWith(settings.endpointUrl(), encrypted, settings.enabled(), actor());
+            row.replaceWith(settings.endpointUrl(), encrypted, settings.enabled(), settings.includePii(), actor());
         }
     }
 
@@ -64,7 +65,7 @@ public class AuditExportSettingsServiceImpl implements AuditExportSettingsServic
     @Transactional(readOnly = true)
     public Optional<AuditExportView> current() {
         return rows.findById(AuditExportSettingsRow.ONLY).map(row -> new AuditExportView(
-                row.getEndpointUrl(), row.isEnabled(), row.getUpdatedAt(), updatedByName(row)));
+                row.getEndpointUrl(), row.isEnabled(), row.isIncludePii(), row.getUpdatedAt(), updatedByName(row)));
     }
 
     /**
@@ -93,7 +94,8 @@ public class AuditExportSettingsServiceImpl implements AuditExportSettingsServic
      */
     private AuditExportTarget toTarget(AuditExportSettingsRow row) {
         requireUsableTarget(row.getEndpointUrl());
-        return new AuditExportTarget(row.getEndpointUrl(), cipher.decrypt(row.getCredentialEncrypted()));
+        return new AuditExportTarget(row.getEndpointUrl(), cipher.decrypt(row.getCredentialEncrypted()),
+                row.isIncludePii());
     }
 
     /** https, a parseable authority, and a host outside the internal network — each asked separately. */

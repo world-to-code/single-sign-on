@@ -57,6 +57,22 @@ public class AuditAccessPolicy {
         return currentAuthorities().contains(Permissions.AUDIT_READ_PII);
     }
 
+    /**
+     * Whether this caller may configure an export that SHIPS those identifiers.
+     *
+     * <p>Deliberately not a second permission: it is the same question the console already answers, asked
+     * about a different exit. {@code audit:export} is excluded from the implied {@code audit:read} expansion,
+     * so its holder need not hold {@code audit:read:pii} — and without this, pointing the collector at a URL
+     * they control would read at full fidelity, across every tenant, what the screen redacts for them.
+     *
+     * <p>It only ever ADDS a requirement. Configuring an export that does not carry identifiers, or turning
+     * that off, stays available to anyone who may configure the export at all — a guard whose refusal made the
+     * posture LOOSER would be a downgrade primitive rather than a control.
+     */
+    public boolean mayExportWithPii(boolean includePii) {
+        return !includePii || canReadPii();
+    }
+
     private Set<String> currentAuthorities() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null) {

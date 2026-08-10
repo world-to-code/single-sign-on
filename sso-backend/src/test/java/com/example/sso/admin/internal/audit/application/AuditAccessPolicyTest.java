@@ -84,4 +84,34 @@ class AuditAccessPolicyTest {
         assertThat(policy.canRead(null)).isFalse();
         assertThat(policy.canReadPii()).isFalse();
     }
+
+    /**
+     * The export was a way around the screen. {@code audit:export} is deliberately excluded from the implied
+     * {@code audit:read} expansion, so its holder can have neither {@code audit:read} nor
+     * {@code audit:read:pii} — and the collector's contents are theirs to choose.
+     */
+    @Test
+    void exportingIdentifiersNeedsThePiiGrantTheConsoleAlreadyEnforces() {
+        actingWith(Permissions.AUDIT_EXPORT);
+
+        assertThat(policy.mayExportWithPii(true)).isFalse();
+    }
+
+    @Test
+    void anAdminWhoMaySeeIdentifiersMayAlsoExportThem() {
+        actingWith(Permissions.AUDIT_EXPORT, Permissions.AUDIT_READ_PII);
+
+        assertThat(policy.mayExportWithPii(true)).isTrue();
+    }
+
+    /**
+     * The other direction, and it has to hold: a guard that also refused the REDACTED export would push an
+     * operator towards leaving the trail unexported, which is the looser posture.
+     */
+    @Test
+    void aRedactedExportNeedsNoPiiGrant() {
+        actingWith(Permissions.AUDIT_EXPORT);
+
+        assertThat(policy.mayExportWithPii(false)).isTrue();
+    }
 }

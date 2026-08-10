@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
@@ -44,7 +45,7 @@ import static org.mockito.Mockito.when;
 class AuditExportSweeperTest {
 
     private static final AuditExportTarget TARGET =
-            new AuditExportTarget("https://collector.example.com/ingest", "bearer");
+            new AuditExportTarget("https://collector.example.com/ingest", "bearer", false);
     private static final int MAX_ATTEMPTS = 3;
     private static final int BATCH_SIZE = 500;
 
@@ -300,6 +301,46 @@ class AuditExportSweeperTest {
                 return start.plus(step.multipliedBy(reads.getAndIncrement()));
             }
         };
+    }
+
+    /**
+     * The redaction is applied on the way out, not left to the collector. A deployment whose configuring
+     * admin does not hold audit:read:pii must not be able to obtain those fields by pointing the export
+     * somewhere they can read.
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    void anExportWithoutThePiiGrantShipsNoIdentifiers() {
+        when(reader.nextBatch(any(), anyBatchSize())).thenReturn(batchOfOne());
+
+        sweeper.export();
+
+        Map<String, Object> actor = (Map<String, Object>) sentEvent().get("actor");
+        assertThat((Map<String, Object>) actor.get("user")).containsEntry("email_addr", null);
+        assertThat((Map<String, Object>) sentEvent().get("src_endpoint")).containsEntry("ip", "");
+    }
+
+    /** And the permitted deployment still gets the correlation axis, or the export is useless for XDR. */
+    @SuppressWarnings("unchecked")
+    @Test
+    void anExportPermittedToCarryIdentifiersStillDoes() {
+        settings = mock(AuditExportSettingsService.class);
+        when(settings.target()).thenReturn(Optional.of(
+                new AuditExportTarget("https://collector.example.com/ingest", "bearer", true)));
+        sweeper = sweeperWithClock(Clock.systemUTC());
+        when(reader.nextBatch(any(), anyBatchSize())).thenReturn(batchOfOne());
+
+        sweeper.export();
+
+        Map<String, Object> actor = (Map<String, Object>) sentEvent().get("actor");
+        assertThat((Map<String, Object>) actor.get("user")).containsEntry("email_addr", "a@example.com");
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> sentEvent() {
+        ArgumentCaptor<List<Map<String, Object>>> sent = ArgumentCaptor.forClass(List.class);
+        verify(delivery).send(any(), sent.capture());
+        return sent.getValue().get(0);
     }
 
     private int anyBatchSize() {

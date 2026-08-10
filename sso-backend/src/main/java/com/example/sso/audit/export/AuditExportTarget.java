@@ -7,5 +7,5 @@ package com.example.sso.audit.export;
  * would let a caller send to a destination that was acceptable when it was saved and is not any more —
  * configuration outlives the check that admitted it.
  */
-public record AuditExportTarget(String endpointUrl, String credential) {
+public record AuditExportTarget(String endpointUrl, String credential, boolean includePii) {
 }

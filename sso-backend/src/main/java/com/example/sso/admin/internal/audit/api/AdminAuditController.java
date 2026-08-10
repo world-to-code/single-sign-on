@@ -46,10 +46,19 @@ public class AdminAuditController {
         return exportSettings.current().map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
     }
 
-    /** Configures the collector. Step-up: it decides where every tenant's security history goes. */
+    /**
+     * Configures the collector. Step-up: it decides where every tenant's security history goes.
+     *
+     * <p>Shipping the actor's and client's identifiers needs {@code audit:read:pii} ON TOP of
+     * {@code audit:export}. The console redacts exactly those fields for a reader without that grant, and
+     * {@code audit:export} does not imply it — so without this the export was a way to read, at full fidelity
+     * and across every tenant, what the screen refuses to show. The condition only ever ADDS a requirement:
+     * turning PII off is available to anyone who may configure the export at all.
+     */
     @Audited(AuditType.AUDIT_EXPORT_CONFIGURED)
     @PutMapping("/export")
     @RequirePermission(Permissions.AUDIT_EXPORT)
+    @PreAuthorize("@auditAccessPolicy.mayExportWithPii(#request.includePii())")
     @RequireStepUp
     public ResponseEntity<Void> configureExport(@Valid @RequestBody AuditExportRequest request) {
         exportSettings.save(request.toSettings());
