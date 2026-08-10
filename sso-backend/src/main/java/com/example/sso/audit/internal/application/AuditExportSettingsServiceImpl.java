@@ -47,7 +47,11 @@ public class AuditExportSettingsServiceImpl implements AuditExportSettingsServic
     @Override
     @Transactional
     public void save(AuditExportSettings settings) {
-        requireUsableTarget(settings.endpointUrl());
+        // Store what was VALIDATED, not what was typed. Validating a trimmed copy and persisting the original
+        // is the check-versus-use split this class exists to avoid: a pasted URL with a leading space passed
+        // and then failed on every delivery for ever, and a trailing one sent a different path than the one
+        // that was approved.
+        String endpointUrl = requireUsableTarget(settings.endpointUrl()).toString();
         if (settings.credential() == null || settings.credential().isBlank()) {
             throw BadRequestException.of("audit.export.credentialRequired");
         }
@@ -55,10 +59,10 @@ public class AuditExportSettingsServiceImpl implements AuditExportSettingsServic
         // One row: saving again re-points the same collector rather than adding a second destination.
         AuditExportSettingsRow row = rows.findById(AuditExportSettingsRow.ONLY).orElse(null);
         if (row == null) {
-            rows.save(new AuditExportSettingsRow(settings.endpointUrl(), encrypted, settings.enabled(),
+            rows.save(new AuditExportSettingsRow(endpointUrl, encrypted, settings.enabled(),
                     settings.includePii(), actor()));
         } else {
-            row.replaceWith(settings.endpointUrl(), encrypted, settings.enabled(), settings.includePii(), actor());
+            row.replaceWith(endpointUrl, encrypted, settings.enabled(), settings.includePii(), actor());
         }
     }
 
@@ -100,8 +104,16 @@ public class AuditExportSettingsServiceImpl implements AuditExportSettingsServic
                 row.isIncludePii());
     }
 
-    /** https, a parseable authority, and a host outside the internal network — each asked separately. */
-    private void requireUsableTarget(String endpointUrl) {
+    /**
+     * Every dimension, asked separately, and the normalized URI returned so the caller uses what was checked.
+     *
+     * <p>Userinfo and a query string are refused because this column is deliberately plaintext and is shown
+     * back by the admin API, while several collectors authenticate by exactly those means
+     * ({@code https://user:token@host}, {@code ?api-key=}). A credential arriving that way would sit
+     * unencrypted beside a carefully encrypted one, be returned in an API response, and appear in any log line
+     * that names the destination. There is a field for the secret; it is encrypted, and it is not this one.
+     */
+    private URI requireUsableTarget(String endpointUrl) {
         URI uri = parse(endpointUrl);
         if (!HTTPS.equalsIgnoreCase(uri.getScheme())) {
             // The whole trail plus the collector credential would otherwise cross the network in the clear.
@@ -110,7 +122,11 @@ public class AuditExportSettingsServiceImpl implements AuditExportSettingsServic
         if (uri.getHost() == null) {
             throw BadRequestException.of("audit.export.endpointInvalid");
         }
+        if (uri.getUserInfo() != null || uri.getRawQuery() != null) {
+            throw BadRequestException.of("audit.export.endpointCarriesCredential");
+        }
         hostValidator.validate(uri.getHost());
+        return uri;
     }
 
     private URI parse(String endpointUrl) {

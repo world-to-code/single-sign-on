@@ -160,4 +160,32 @@ class AuditExportSettingsIT extends AbstractIntegrationTest {
                 new AuditExportSettings("https://one.one.one.one:8443/api/ingest", CREDENTIAL, true, false)))
                 .doesNotThrowAnyException();
     }
+
+    /**
+     * The URL column is plaintext by design and the admin API reads it back, while several collectors
+     * authenticate through exactly these two places. A credential arriving that way sits unencrypted beside a
+     * carefully encrypted one and is returned in a response — and the field for the secret is right there.
+     */
+    @Test
+    void aCollectorUrlCarryingItsOwnCredentialIsRefused() {
+        for (String url : new String[] {
+                "https://user:token@one.one.one.one/ingest",
+                "https://one.one.one.one/ingest?api-key=s3cret",
+                "https://one.one.one.one/ingest?dd-api-key=s3cret&sourcetype=json"}) {
+            assertThatThrownBy(() -> settings.save(new AuditExportSettings(url, CREDENTIAL, true, false)))
+                    .as(url).isInstanceOf(BadRequestException.class);
+        }
+    }
+
+    /**
+     * What was validated is what gets stored. Validating a trimmed copy and persisting the original passed at
+     * write time and then failed on every delivery, for ever — an export configured successfully that could
+     * never run.
+     */
+    @Test
+    void aPastedUrlIsStoredAsTheFormThatWasChecked() {
+        settings.save(new AuditExportSettings("  https://one.one.one.one/ingest  ", CREDENTIAL, true, false));
+
+        assertThat(settings.target().orElseThrow().endpointUrl()).isEqualTo("https://one.one.one.one/ingest");
+    }
 }

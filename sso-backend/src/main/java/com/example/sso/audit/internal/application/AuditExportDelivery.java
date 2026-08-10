@@ -1,6 +1,7 @@
 package com.example.sso.audit.internal.application;
 
 import com.example.sso.audit.export.AuditExportTarget;
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpHeaders;
@@ -40,7 +41,9 @@ public class AuditExportDelivery {
             return;
         }
         HttpStatusCode status = http.post()
-                .uri(target.endpointUrl())
+                // The URI overload, not the String one: that expands {placeholders} and re-encodes existing
+                // percent escapes, so a collector path containing either is silently sent somewhere else.
+                .uri(URI.create(target.endpointUrl()))
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + target.credential())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(events)
