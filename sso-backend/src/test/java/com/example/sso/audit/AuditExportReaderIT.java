@@ -6,6 +6,7 @@ import com.example.sso.audit.export.AuditExportRecord;
 import com.example.sso.support.AbstractIntegrationTest;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -40,7 +41,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class AuditExportReaderIT extends AbstractIntegrationTest {
 
-    private static final String CURSOR_KEY = "sso:audit:export:cursor";
     private static final Duration NO_LAG = Duration.ZERO;
     /**
      * A lag that comfortably exceeds how long the fixture below holds its transaction open.
@@ -205,31 +205,39 @@ class AuditExportReaderIT extends AbstractIntegrationTest {
      * The dangerous corruption, because it is the SILENT one. A position later than now cannot have been
      * reached, and left unchecked the range query simply matches nothing — for ever. That is
      * indistinguishable from a healthy idle export, which is how a SIEM goes blind with every light green.
+     *
+     * <p>Neither recovery is code's to choose: rewinding re-ships the whole trail to the collector, and
+     * skipping forward walks past events that were never delivered. So it stops and waits for an operator.
      */
     @Test
     void aCursorInTheFutureIsRefusedRatherThanQuietlyMatchingNothing() {
         write(principal);
-        redis.opsForValue().set(CURSOR_KEY, Long.MAX_VALUE + ":1");
+        setCursor(Instant.now().plus(Duration.ofDays(1)));
 
         assertThatThrownBy(() -> reader.nextBatch(NO_LAG, 100))
                 .hasMessageContaining("cursor is unusable");
     }
 
     /**
-     * Neither recovery is code's to choose: rewinding re-ships the whole trail to the collector, and skipping
-     * forward walks past events that were never delivered. So it stops and waits for an operator.
+     * The position must survive what Redis does not. No compose file mounts a volume for it, so a restart
+     * dropped the key and the reader began at the beginning — re-shipping the whole trail and leaving the
+     * export weeks behind the present, while every indicator reported success.
      */
     @Test
-    void aMalformedCursorStopsTheExportRatherThanGuessing() {
+    void thePositionOutlivesTheCacheItUsedToLiveIn() {
         write(principal);
+        reader.commitCursor(reader.nextBatch(NO_LAG, 100));
+        Instant committed = reader.position().orElseThrow();
 
-        for (String corrupt : List.of("nonsense", "", ":", "abc:1", "1700000000:xyz")) {
-            redis.opsForValue().set(CURSOR_KEY, corrupt);
+        redis.getConnectionFactory().getConnection().serverCommands().flushAll();
 
-            assertThatThrownBy(() -> reader.nextBatch(NO_LAG, 100))
-                    .as("cursor %s", corrupt)
-                    .hasMessageContaining("cursor is unusable");
-        }
+        assertThat(reader.position()).as("a cache flush is not a rewind").contains(committed);
+    }
+
+    private void setCursor(Instant position) {
+        ownerJdbc().update("insert into audit_export_cursor (id, occurred_at, event_id) values (1, ?, 1)"
+                + " on conflict (id) do update set occurred_at = excluded.occurred_at",
+                Timestamp.from(position));
     }
 
     private void write(String principalName) {

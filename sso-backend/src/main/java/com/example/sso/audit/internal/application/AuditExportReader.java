@@ -6,12 +6,10 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -36,21 +34,26 @@ import org.springframework.stereotype.Component;
  * <p>This makes the reader COMPLETE, not exactly-once: a delivery that fails after the collector accepted it
  * is retried, so the collector must tolerate duplicates and deduplicate on the record id.
  *
- * <p>The cursor lives in Redis rather than in a node, for the reason the other sweepers' counters do:
- * consecutive ticks can be driven by different nodes.
+ * <p>The cursor lives in Postgres, not in a node and not in Redis. Consecutive ticks can be driven by
+ * different nodes, so it cannot be local; and Redis here has no volume, so a restart would drop it and the
+ * reader would start at the beginning — re-shipping the whole trail and, far worse, leaving the export weeks
+ * behind the present on a table of any size while every indicator still reported success.
  */
 @Component
 @RequiredArgsConstructor
 public class AuditExportReader {
 
-    /**
-     * Cursor position as {@code <occurred_at epoch MICROS>:<id>}.
-     *
-     * <p>Microseconds, not millis: {@code timestamptz} keeps microsecond precision, so a millisecond cursor
-     * rounds DOWN and re-offers every row inside the same millisecond on the next tick — the batch is
-     * delivered again for ever, and an operator watching duplicates has no way to tell that from a retry.
-     */
-    static final String CURSOR_KEY = "sso:audit:export:cursor";
+    private static final String READ_CURSOR =
+            "SELECT occurred_at, event_id FROM audit_export_cursor WHERE id = 1";
+
+    /** One row, so advancing is an upsert rather than a check-then-write two nodes could interleave. */
+    private static final String WRITE_CURSOR = """
+            INSERT INTO audit_export_cursor (id, occurred_at, event_id, updated_at)
+            VALUES (1, ?, ?, now())
+            ON CONFLICT (id) DO UPDATE SET occurred_at = EXCLUDED.occurred_at,
+                                           event_id = EXCLUDED.event_id,
+                                           updated_at = now()
+            """;
 
     private static final String NEXT_BATCH = """
             SELECT id, occurred_at, type, category, principal, success, detail, reason, severity,
@@ -64,7 +67,6 @@ public class AuditExportReader {
             """;
 
     private final JdbcTemplate jdbc;
-    private final StringRedisTemplate redis;
 
     /**
      * The next events to ship, oldest first, or an empty batch when there are none yet eligible.
@@ -91,7 +93,7 @@ public class AuditExportReader {
      */
     public void commitCursor(AuditExportBatch batch) {
         if (!batch.isEmpty()) {
-            redis.opsForValue().set(CURSOR_KEY, micros(batch.nextTime()) + ":" + batch.nextId());
+            jdbc.update(WRITE_CURSOR, Timestamp.from(batch.nextTime()), batch.nextId());
         }
     }
 
@@ -113,45 +115,27 @@ public class AuditExportReader {
 
     /** Rewinds to the beginning — for tests, and for an operator deliberately re-shipping history. */
     public void resetCursor() {
-        redis.delete(CURSOR_KEY);
+        jdbc.update("DELETE FROM audit_export_cursor");
     }
 
     /**
-     * The stored position, or the beginning when there is none. Every other value is checked rather than
-     * trusted: this is a shared Redis key, and a cursor is the one piece of state that decides which events
-     * are never looked at again.
+     * The stored position, or the beginning when there is none.
+     *
+     * <p>Still checked rather than trusted, even now that the columns are typed. A position later than now
+     * cannot have been reached, and left unchecked it is the silent shape: the range query matches nothing for
+     * ever, and an export shipping nothing looks exactly like one with nothing to ship.
      */
     private Cursor cursor() {
-        String stored = redis.opsForValue().get(CURSOR_KEY);
-        if (stored == null) {
+        List<Cursor> stored = jdbc.query(READ_CURSOR,
+                (row, number) -> new Cursor(row.getTimestamp("occurred_at").toInstant(), row.getLong("event_id")));
+        if (stored.isEmpty()) {
             return new Cursor(Instant.EPOCH, 0L);
         }
-        int separator = stored.lastIndexOf(':');
-        if (separator < 1) {
-            throw new AuditExportCursorException(stored);
-        }
-        Cursor cursor = parse(stored, separator);
-        // A position later than now cannot have been reached. Left unchecked it is silent: the range query
-        // matches nothing for ever, and an export that ships nothing looks exactly like one with nothing to ship.
+        Cursor cursor = stored.get(0);
         if (cursor.occurredAt().isAfter(Instant.now())) {
-            throw new AuditExportCursorException(stored);
+            throw new AuditExportCursorException(cursor.occurredAt() + ":" + cursor.id());
         }
         return cursor;
-    }
-
-    private Cursor parse(String stored, int separator) {
-        try {
-            long storedMicros = Long.parseLong(stored.substring(0, separator));
-            return new Cursor(Instant.EPOCH.plus(storedMicros, ChronoUnit.MICROS),
-                    Long.parseLong(stored.substring(separator + 1)));
-        } catch (RuntimeException malformed) {
-            throw new AuditExportCursorException(stored);
-        }
-    }
-
-    /** The instant as whole microseconds, the resolution {@code timestamptz} actually stores. */
-    private long micros(Instant instant) {
-        return ChronoUnit.MICROS.between(Instant.EPOCH, instant);
     }
 
     private AuditExportRecord toRecord(ResultSet row, int rowNumber) throws SQLException {

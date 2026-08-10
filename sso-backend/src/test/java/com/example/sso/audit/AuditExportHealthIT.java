@@ -4,6 +4,7 @@ import com.example.sso.audit.export.AuditExportHealth;
 import com.example.sso.audit.export.AuditExportSettings;
 import com.example.sso.audit.export.AuditExportSettingsService;
 import com.example.sso.support.AbstractIntegrationTest;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import org.junit.jupiter.api.AfterEach;
@@ -24,7 +25,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class AuditExportHealthIT extends AbstractIntegrationTest {
 
-    private static final String CURSOR_KEY = "sso:audit:export:cursor";
     private static final String FAILURES_KEY = "sso:audit:export:failures";
     private static final String LAST_SUCCESS_KEY = "sso:audit:export:last-success";
 
@@ -48,8 +48,7 @@ class AuditExportHealthIT extends AbstractIntegrationTest {
     /** The headline number: a stale collector is visible as staleness, not merely as an absence of errors. */
     @Test
     void aBacklogIsReportedAsHowFarBehindTheCollectorIs() {
-        Instant twoHoursAgo = Instant.now().minus(2, ChronoUnit.HOURS);
-        redis.opsForValue().set(CURSOR_KEY, ChronoUnit.MICROS.between(Instant.EPOCH, twoHoursAgo) + ":1");
+        setCursor(Instant.now().minus(2, ChronoUnit.HOURS));
 
         AuditExportHealth health = settings.current().orElseThrow().health();
 
@@ -75,18 +74,27 @@ class AuditExportHealthIT extends AbstractIntegrationTest {
         assertThat(health.lastSuccessAt()).isNull();
     }
 
-    /** A corrupt cursor must not take the screen down with it — the streak beside it is the real signal. */
+    /**
+     * A cursor the reader refuses must not take the screen down with it. The refusal is what stops the export
+     * and raises the alarm; the health view's job is to still render, so an operator can see the streak
+     * climbing beside a position it cannot vouch for.
+     */
     @Test
-    void anUnreadableCursorStillRenders() {
-        redis.opsForValue().set(CURSOR_KEY, "nonsense");
+    void aRefusedCursorStillRenders() {
+        setCursor(Instant.now().plus(1, ChronoUnit.DAYS));
 
         AuditExportHealth health = settings.current().orElseThrow().health();
 
         assertThat(health.position()).isNull();
     }
 
+    private void setCursor(Instant position) {
+        ownerJdbc().update("insert into audit_export_cursor (id, occurred_at, event_id) values (1, ?, 1)"
+                + " on conflict (id) do update set occurred_at = excluded.occurred_at", Timestamp.from(position));
+    }
+
     private void clearStatus() {
-        redis.delete(CURSOR_KEY);
+        ownerJdbc().update("delete from audit_export_cursor");
         redis.delete(FAILURES_KEY);
         redis.delete(LAST_SUCCESS_KEY);
     }
