@@ -33,7 +33,7 @@ class AdminOnboardingController {
     @PostMapping
     @RequirePermission(Permissions.ORG_CREATE)
     @RequireStepUp
-    @Audited(AuditType.TENANT_ONBOARDING_STARTED)
+    @Audited(value = AuditType.TENANT_ONBOARDING_STARTED, platform = true)
     public ResponseEntity<OnboardingView> start(@Valid @RequestBody CreateOnboardingRequest request) {
         return ResponseEntity.accepted().body(onboarding.start(request.toSpec()));
     }
@@ -50,7 +50,7 @@ class AdminOnboardingController {
     @PostMapping("/{id}/reinvite")
     @RequirePermission(Permissions.ORG_CREATE)
     @RequireStepUp
-    @Audited(AuditType.TENANT_ADMIN_REINVITED)
+    @Audited(value = AuditType.TENANT_ADMIN_REINVITED, platform = true)
     public OnboardingView reinvite(@PathVariable UUID id) {
         return onboarding.requestReinvite(id);
     }

@@ -32,4 +32,18 @@ public @interface Audited {
 
     /** The name of the {@code @PathVariable} carrying the target's id (e.g. {@code "id"}); empty if none. */
     String subjectParam() default "";
+
+    /**
+     * Whether this action belongs to the PLATFORM tier rather than to whichever tenant the caller is currently
+     * looking at.
+     *
+     * <p>Drill-in applies to the whole request, so a super-admin who is viewing a tenant when they change a
+     * platform-wide setting would otherwise have that change filed in THAT tenant's partition: visible to an
+     * admin who may not read it, and absent from the platform feed where the person reviewing it would look.
+     * Re-pointing the audit collector is the sharpest example — the action whose whole justification is
+     * catching an attempt to arrange that one's own actions are reviewed by nobody.
+     *
+     * <p>Set it wherever the handler's permission is platform-only; the two must not drift apart.
+     */
+    boolean platform() default false;
 }

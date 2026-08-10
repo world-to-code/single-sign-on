@@ -5,10 +5,16 @@ import com.example.sso.audit.AuditService;
 import com.example.sso.audit.AuditSubjectType;
 import com.example.sso.audit.AuditType;
 import com.example.sso.audit.Audited;
+import com.example.sso.tenancy.OrgContext;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.TestingAuthenticationToken;
@@ -17,6 +23,8 @@ import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerMapping;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -29,7 +37,19 @@ import static org.mockito.Mockito.verifyNoInteractions;
 class AdminAuditInterceptorTest {
 
     private final AuditService audit = mock(AuditService.class);
-    private final AdminAuditInterceptor interceptor = new AdminAuditInterceptor(audit);
+    private final OrgContext orgContext = newOrgContext();
+    private final AdminAuditInterceptor interceptor = new AdminAuditInterceptor(audit, orgContext);
+
+    /** What the tenant context looked like AT the moment the record was written, not afterwards. */
+    private final AtomicReference<Optional<UUID>> orgAtRecordTime = new AtomicReference<>(Optional.empty());
+
+    @BeforeEach
+    void captureOrgOnRecord() {
+        doAnswer(invocation -> {
+            orgAtRecordTime.set(orgContext.currentOrg());
+            return null;
+        }).when(audit).record(any(AuditRecord.class));
+    }
 
     @AfterEach
     void clearContext() {
@@ -145,7 +165,55 @@ class AdminAuditInterceptorTest {
         public void auditedNoSubject() {
         }
 
+        @Audited(value = AuditType.AUDIT_EXPORT_CONFIGURED, platform = true)
+        public void platformAudited() {
+        }
+
         public void notAudited() {
         }
+    }
+
+    /**
+     * Drill-in binds the whole request, and the SPA sends the header on every admin call — so a super-admin
+     * who happens to be viewing a tenant when they re-point the audit collector would file that platform-wide
+     * change in THAT tenant's partition: readable by an admin with no permission for it, and missing from the
+     * feed where whoever reviews platform changes actually looks. For this action in particular that defeats
+     * the point of recording it at all.
+     */
+    @Test
+    void aPlatformActionIsNotFiledUnderWhicheverTenantTheCallerWasViewing() throws Exception {
+        actingAs("root");
+        UUID drilledInto = UUID.randomUUID();
+        orgContext.bindOrg(drilledInto);
+
+        interceptor.afterCompletion(adminRequest("PUT", "/api/admin/audit/export", Map.of()),
+                new MockHttpServletResponse(), handler("platformAudited"), null);
+
+        assertThat(orgAtRecordTime.get()).as("stamped as platform, not as the tenant being viewed").isEmpty();
+        assertThat(orgContext.currentOrg())
+                .as("and the caller's own context is restored afterwards")
+                .contains(drilledInto);
+    }
+
+    /** The ordinary case still defers to the acting tenant, or every admin action would land on the platform. */
+    @Test
+    void anOrdinaryActionStillLeavesTheTenantToTheAuditService() throws Exception {
+        actingAs("root");
+        UUID drilledInto = UUID.randomUUID();
+        orgContext.bindOrg(drilledInto);
+
+        interceptor.afterCompletion(adminRequest("PUT", "/api/admin/metadata/users/u1", Map.of("id", "u1")),
+                new MockHttpServletResponse(), handler("audited"), null);
+
+        assertThat(orgAtRecordTime.get()).contains(drilledInto);
+    }
+
+    /**
+     * No RLS connection binding: this test is about which TENANT is stamped, and the binder that pushes that
+     * onto a JDBC connection is the tenancy module's own business.
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static OrgContext newOrgContext() {
+        return new OrgContext(mock(ObjectProvider.class));
     }
 }

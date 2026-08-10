@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import com.example.sso.shared.security.RequirePermission;
+import com.example.sso.user.rbac.Permissions;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -132,6 +134,38 @@ class AdminAuditCoverageTest {
     }
 
     /** Every {@code @RestController} mapped under {@code /api/admin} — the paths the audit interceptor runs on. */
+    /**
+     * A platform-tier action must SAY so, or it is filed under whichever tenant the caller was drilled into —
+     * visible to an admin who may not read it, and absent from the platform feed where it would be reviewed.
+     *
+     * <p>Checked structurally because the two facts live in different annotations on the same method and
+     * nothing otherwise keeps them together: {@code @RequirePermission} decides who may call it, and
+     * {@code @Audited(platform = true)} decides whose trail it lands in. The first platform-only audited
+     * endpoint got this wrong, and it was the audit collector's own configuration.
+     */
+    @Test
+    void anAuditedEndpointGatedByAPlatformOnlyPermissionIsRecordedAtThePlatformTier() {
+        List<String> misfiled = new ArrayList<>();
+        for (Class<?> controller : adminControllers()) {
+            for (Method method : controller.getDeclaredMethods()) {
+                Audited audited = AnnotatedElementUtils.findMergedAnnotation(method, Audited.class);
+                RequirePermission permission =
+                        AnnotatedElementUtils.findMergedAnnotation(method, RequirePermission.class);
+                if (audited == null || permission == null) {
+                    continue;
+                }
+                if (Permissions.PLATFORM.contains(permission.value()) && !audited.platform()) {
+                    misfiled.add(controller.getSimpleName() + "#" + method.getName()
+                            + " (" + permission.value() + ")");
+                }
+            }
+        }
+
+        assertThat(misfiled)
+                .as("platform-only endpoints whose audit row would be stamped with the drilled-in tenant")
+                .isEmpty();
+    }
+
     private List<Class<?>> adminControllers() {
         ClassPathScanningCandidateComponentProvider scanner =
                 new ClassPathScanningCandidateComponentProvider(false);

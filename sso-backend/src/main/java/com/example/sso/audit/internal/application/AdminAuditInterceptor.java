@@ -5,6 +5,7 @@ import com.example.sso.audit.AuditRecord;
 import com.example.sso.audit.AuditService;
 import com.example.sso.audit.Audited;
 import com.example.sso.shared.web.ClientIp;
+import com.example.sso.tenancy.OrgContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
@@ -19,14 +20,17 @@ import org.springframework.web.servlet.HandlerMapping;
  * {@code /api/admin/**}; a non-marked handler (or a non-handler resource) is ignored. The outcome is derived
  * from the response — {@code success} unless the handler threw or the status is 4xx/5xx — so a denied or
  * invalid privileged attempt is recorded too. The org is left null so {@code AuditService} stamps the acting
- * tenant, exactly as the service-layer {@code AdminAuditLogger} path does. The audit write is
- * {@code REQUIRES_NEW} inside the service, so it can never roll back the business transaction.
+ * tenant, exactly as the service-layer {@code AdminAuditLogger} path does — except for a handler marked
+ * {@link Audited#platform()}, whose event belongs to the platform tier no matter which tenant the caller
+ * happens to be drilled into. The audit write is {@code REQUIRES_NEW} inside the service, so it can never
+ * roll back the business transaction.
  */
 @Component
 @RequiredArgsConstructor
 public class AdminAuditInterceptor implements HandlerInterceptor {
 
     private final AuditService audit;
+    private final OrgContext orgContext;
 
     @Override
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler,
@@ -42,7 +46,14 @@ public class AdminAuditInterceptor implements HandlerInterceptor {
         String detail = request.getMethod() + " " + request.getRequestURI();
         AuditRecord record = new AuditRecord(audited.value(), AuditActor.of(), success, detail,
                 ClientIp.of(request), audited.subject(), subjectId(request, audited.subjectParam()), null);
-        audit.record(success ? record : record.withReason(failureReason(response, ex)));
+        AuditRecord outcome = success ? record : record.withReason(failureReason(response, ex));
+        if (audited.platform()) {
+            // Explicitly OUT of the drilled-in tenant: "no org given" must not mean "re-derive from whatever
+            // this thread is currently bound to" for an action that was never about that tenant.
+            orgContext.runAsPlatform(() -> audit.record(outcome));
+        } else {
+            audit.record(outcome);
+        }
     }
 
     /** A structured reason for a blocked/failed privileged attempt (never the exception message — no leakage). */

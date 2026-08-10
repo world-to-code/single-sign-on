@@ -55,7 +55,7 @@ public class AdminAuditController {
      * and across every tenant, what the screen refuses to show. The condition only ever ADDS a requirement:
      * turning PII off is available to anyone who may configure the export at all.
      */
-    @Audited(AuditType.AUDIT_EXPORT_CONFIGURED)
+    @Audited(value = AuditType.AUDIT_EXPORT_CONFIGURED, platform = true)
     @PutMapping("/export")
     @RequirePermission(Permissions.AUDIT_EXPORT)
     @PreAuthorize("@auditAccessPolicy.mayExportWithPii(#request.includePii())")
