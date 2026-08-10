@@ -28,7 +28,9 @@ public class AuditSeverityPolicy {
             AuditType.MAPPING_RULE_AUTHOR_UNAUTHORIZED,
             // The blast-radius breaker tripping is not a throttle worth a metric — it is the state a
             // compromised or broken response client puts the estate in, and it is over as far as it got.
-            AuditType.RESPONSE_BUDGET_EXHAUSTED);
+            AuditType.RESPONSE_BUDGET_EXHAUSTED,
+            // A trail that has stopped leaving the building is the condition an attacker arranges first.
+            AuditType.AUDIT_EXPORT_FAILED);
 
     // NB: OIDC_AUTHORIZATION_REVOKED is not listed. Its SUCCESS is routine bookkeeping, and its failure is
     // escalated to WARNING by the outcome rule below like any other — the same treatment its session-side

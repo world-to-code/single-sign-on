@@ -26,7 +26,8 @@ class AuditSeverityPolicyTest {
             AuditType.SERVER_ERROR, AuditType.SIGNING_KEY_ROTATED, AuditType.MFA_LOCKED,
             AuditType.IP_BLOCKED, AuditType.ADMIN_IP_BLOCKED, AuditType.ADMIN_ELEVATION_DENIED,
             AuditType.SESSION_CONTEXT_MISMATCH, AuditType.SESSION_TERMINATION_FAILED,
-            AuditType.MAPPING_RULE_AUTHOR_UNAUTHORIZED, AuditType.RESPONSE_BUDGET_EXHAUSTED);
+            AuditType.MAPPING_RULE_AUTHOR_UNAUTHORIZED, AuditType.RESPONSE_BUDGET_EXHAUSTED,
+            AuditType.AUDIT_EXPORT_FAILED);
     private static final Set<AuditType> WARNING = EnumSet.of(
             AuditType.AUTHORIZATION_DENIED, AuditType.RATE_LIMITED,
             AuditType.SAML_STEPUP_REQUIRED, AuditType.SESSION_TERMINATION_DEFERRED);

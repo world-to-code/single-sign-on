@@ -170,6 +170,29 @@ sso:
       # The name a collector files these events under. A constant of the deployment, not a tunable to
       # experiment with: changing it re-brands every event a SIEM has already ingested.
       product-name: Mini SSO
+      # How often a node tries to ship, and the lock that keeps the fleet to one shipper per tick.
+      interval: 30s
+      lock-ttl: 2m
+      # Only rows OLDER than this are eligible. It is not a delivery preference: it is what makes the export
+      # complete. A transaction still in flight at time T commits well within it, so by the time T becomes
+      # exportable every row stamped T is visible. Must exceed the longest audit write — which is a single
+      # REQUIRES_NEW INSERT, so this has three orders of magnitude of headroom. Shrinking it below that
+      # trades a few seconds of latency for silently losing rows.
+      lag: 30s
+      # One tick cannot build an unbounded body; the rest waits for the next pass.
+      batch-size: 500
+      # Bounded because this runs on a scheduler thread: one hanging collector must not stop the export
+      # permanently and silently.
+      connect-timeout: 5s
+      read-timeout: 20s
+      retry:
+        initial-backoff: 5s
+        multiplier: 2.0
+        randomization-factor: 0.3
+        # After this many attempts a batch is abandoned and AUDIT_EXPORT_FAILED is recorded LOCALLY — the
+        # trail recording that its own export is broken, because the place that would have been told is the
+        # one not receiving anything.
+        max-attempts: 6
     chain:
       # Sealing is asynchronous so audit writes stay off the login path; this interval IS the window in which a
       # deleted row leaves no trace, so it is a security parameter, not a performance knob.

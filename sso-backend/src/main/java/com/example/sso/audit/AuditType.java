@@ -126,6 +126,13 @@ public enum AuditType {
      * reviewed by nobody.
      */
     AUDIT_EXPORT_CONFIGURED(AuditCategory.ADMIN),
+    /**
+     * The export gave up on a batch after exhausting its retries. Recorded LOCALLY on purpose: the place that
+     * would otherwise be told is the collector that is not receiving anything. An export failing for an hour
+     * is a security incident rather than background noise — it is the state an attacker creates before doing
+     * anything else — so this is CRITICAL and surfaces in the console's own feed.
+     */
+    AUDIT_EXPORT_FAILED(AuditCategory.SYSTEM),
     AUTH_POLICY_CREATED(AuditCategory.AUTHORIZATION),
     AUTH_POLICY_UPDATED(AuditCategory.AUTHORIZATION),
     AUTH_POLICY_DELETED(AuditCategory.AUTHORIZATION),

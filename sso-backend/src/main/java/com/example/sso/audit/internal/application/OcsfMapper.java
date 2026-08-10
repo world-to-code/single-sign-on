@@ -139,6 +139,7 @@ public class OcsfMapper {
         MAPPING.put(AuditType.SMS_SEND_FAILED, OcsfActivity.API_OTHER);
         MAPPING.put(AuditType.NOTIFICATION_DROPPED, OcsfActivity.API_OTHER);
         MAPPING.put(AuditType.SERVER_ERROR, OcsfActivity.API_OTHER);
+        MAPPING.put(AuditType.AUDIT_EXPORT_FAILED, OcsfActivity.API_OTHER);
     }
 
     private final String productName;
