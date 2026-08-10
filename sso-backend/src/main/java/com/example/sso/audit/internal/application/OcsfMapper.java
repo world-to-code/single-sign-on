@@ -6,6 +6,7 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Arrays;
 import java.util.function.Predicate;
 import org.springframework.beans.factory.annotation.Value;
@@ -158,6 +159,12 @@ public class OcsfMapper {
         return Arrays.stream(AuditType.values()).filter(type -> !mapped.test(type)).toList();
     }
 
+    /**
+     * Kinds whose {@code detail} is this system's own internal text — an exception message, a stack frame —
+     * rather than data about the event. Their detail is not published.
+     */
+    private static final Set<String> DETAIL_STAYS_LOCAL = Set.of(AuditType.SERVER_ERROR.name());
+
     /** The kinds with no entry in the table above. */
     static List<AuditType> missingMappings() {
         return missingMappings(MAPPING::containsKey);
@@ -174,7 +181,7 @@ public class OcsfMapper {
         event.put("severity_id", severityId(row.severity()));
         event.put("status_id", row.success() ? 1 : 2);          // Success / Failure
         event.put("status_detail", row.reason());               // a structured code, already non-revealing
-        event.put("message", row.detail());
+        event.put("message", exportableDetail(row));
         event.put("metadata", metadata(row));
         event.put("actor", actor(row));
         event.put("src_endpoint", Map.of("ip", nullToEmpty(row.remoteIp())));
@@ -203,6 +210,19 @@ public class OcsfMapper {
         } catch (IllegalArgumentException notInThisBuild) {
             return OcsfActivity.API_OTHER;
         }
+    }
+
+    /**
+     * Free-form detail, unless this kind's detail is INTERNAL text rather than domain data.
+     *
+     * <p>A server error's detail is an exception message and our own stack frames. The message is uncontrolled
+     * — a Postgres unique violation quotes the value that collided, which is routinely somebody's address —
+     * and the frames hand a third party a map of this system's internals. The exception type travels as the
+     * structured status detail and the reference as the correlation id, which is what a collector correlates
+     * on; the rest belongs to the operators of this system and stays with them.
+     */
+    private String exportableDetail(AuditExportRecord row) {
+        return DETAIL_STAYS_LOCAL.contains(row.type()) ? null : row.detail();
     }
 
     private Map<String, Object> metadata(AuditExportRecord row) {

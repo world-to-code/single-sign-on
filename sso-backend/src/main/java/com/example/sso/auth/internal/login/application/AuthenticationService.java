@@ -182,8 +182,11 @@ public class AuthenticationService {
             return completionService.completeIfSatisfied(httpRequest, httpResponse);
         } catch (AuthenticationException e) {
             loginAttempts.onFailure(username);
-            audit.record(new AuditRecord(AuditType.AUTH_FAILURE, username, false, e.getMessage(), null, orgId)
-                    .unverifiedActor());
+            // The exception TYPE, not the library's message: it keeps the distinction that matters (bad
+            // credentials versus a locked account) as a stable token a SIEM rule can match, instead of English
+            // prose that changes with a dependency and is published outside this system once the trail is.
+            audit.record(new AuditRecord(AuditType.AUTH_FAILURE, username, false,
+                    e.getClass().getSimpleName(), null, orgId).unverifiedActor());
             throw new UnauthorizedException();
         }
     }

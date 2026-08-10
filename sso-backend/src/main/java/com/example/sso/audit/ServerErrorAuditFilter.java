@@ -19,13 +19,20 @@ import java.io.IOException;
 /**
  * Outermost filter that turns an otherwise-opaque server error into something operable:
  * <ul>
- *   <li>writes a {@code SERVER_ERROR} entry to the audit log (visible ONLY to admins via
- *       {@code GET /api/admin/audit}) with a short reference id, the request, and the root cause, and</li>
+ *   <li>writes a {@code SERVER_ERROR} entry to the audit log with a short reference id, the request, and the
+ *       root cause, and</li>
  *   <li>returns a clean JSON body carrying that reference id — no stack trace is leaked to the client,
  *       and the user can quote the reference to an administrator who looks it up in the audit log.</li>
  * </ul>
  * Only triggers on exceptions that escape the entire chain (i.e. would have been a raw 500); normal
  * OAuth2/validation error responses are produced inside the chain and pass through untouched.
+ *
+ * <p><b>The detail is for THIS system's operators and does not leave it.</b> A root cause message is
+ * uncontrolled text — a unique-violation quotes the value that collided, which is routinely somebody's email
+ * address — and the frames describe our own internals. That was acceptable while the trail was only readable
+ * through the admin API; it stopped being so when the trail gained an exit to a third party, so the exporter
+ * drops this detail and ships the exception TYPE and the reference instead. Both are enough to correlate; the
+ * operator who needs the rest reads it here.
  */
 @RequiredArgsConstructor
 public class ServerErrorAuditFilter extends OncePerRequestFilter {
@@ -63,7 +70,11 @@ public class ServerErrorAuditFilter extends OncePerRequestFilter {
                     + root.getClass().getName() + ": " + (root.getMessage() == null ? "" : root.getMessage())
                     + topFrames(root));
 
-            audit.record(new AuditRecord(AuditType.SERVER_ERROR, currentPrincipal(), false, detail, request.getRemoteAddr()));
+            // The exception TYPE goes in the structured reason, not only inside the free-form detail: it is the
+            // part that is ours to publish, and keeping it separate is what lets the exporter ship one and not
+            // the other without parsing a string this class happens to format.
+            audit.record(new AuditRecord(AuditType.SERVER_ERROR, currentPrincipal(), false, detail,
+                    request.getRemoteAddr()).withReason(root.getClass().getSimpleName()));
         } catch (RuntimeException auditFailure) {
             log.error("Failed to audit server error ref={}", ref, auditFailure);
         }

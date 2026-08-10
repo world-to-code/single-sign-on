@@ -164,6 +164,35 @@ class OcsfMapperTest {
         assertThat(mapper.toOcsf(withSeverity("CRITICAL")).get("severity_id")).isEqualTo(5);
     }
 
+    /**
+     * A server error's detail is an exception message plus our own stack frames. The message is uncontrolled —
+     * a unique-violation quotes the value that collided, routinely somebody's address — and the frames map
+     * this system's internals for a third party. It was written to be read through the admin API; the export
+     * is a different audience.
+     */
+    @Test
+    void aServerErrorsInternalDetailDoesNotLeaveTheSystem() {
+        AuditExportRecord row = new AuditExportRecord(9L, Instant.now(), AuditType.SERVER_ERROR.name(), "SYSTEM",
+                "anonymous", false,
+                "POST /api/users [ref-1] org.postgresql.util.PSQLException: Key (email)=(victim@example.com)"
+                        + " already exists\n  at com.example.sso.user.UserService.create(UserService.java:42)",
+                "PSQLException", "CRITICAL", "ANONYMOUS", null, null, null, "NONE", null,
+                "203.0.113.7", null, null, "ref-1", null);
+
+        Map<String, Object> event = mapper.toOcsf(row);
+
+        assertThat(event.get("message")).isNull();
+        assertThat(event.get("status_detail"))
+                .as("the exception TYPE is ours to publish, and is what a collector correlates on")
+                .isEqualTo("PSQLException");
+    }
+
+    /** And every other kind still carries its detail, or the export loses the thing it exists to ship. */
+    @Test
+    void anOrdinaryEventStillCarriesItsDetail() {
+        assertThat(mapper.toOcsf(record(AuditType.USER_CREATED)).get("message")).isEqualTo("detail");
+    }
+
     private AuditExportRecord record(AuditType type) {
         return recordInOrg(type, UUID.randomUUID());
     }

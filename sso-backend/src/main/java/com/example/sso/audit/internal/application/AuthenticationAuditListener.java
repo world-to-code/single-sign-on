@@ -30,6 +30,6 @@ public class AuthenticationAuditListener {
         // tenant login scope is still bound and would resolve a guessed victim username to a real account,
         // reopening the failed-login enumeration/framing oracle the AuthenticationService path already closes.
         audit.record(new AuditRecord(AuditType.AUTH_FAILURE, event.getAuthentication().getName(), false,
-                event.getException().getMessage(), null).unverifiedActor());
+                event.getException().getClass().getSimpleName(), null).unverifiedActor());
     }
 }
