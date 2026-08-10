@@ -166,6 +166,10 @@ sso:
   totp:
     qr-size: 220                         # enrollment QR code size (px)
   audit:
+    export:
+      # The name a collector files these events under. A constant of the deployment, not a tunable to
+      # experiment with: changing it re-brands every event a SIEM has already ingested.
+      product-name: Mini SSO
     chain:
       # Sealing is asynchronous so audit writes stay off the login path; this interval IS the window in which a
       # deleted row leaves no trace, so it is a security parameter, not a performance knob.
