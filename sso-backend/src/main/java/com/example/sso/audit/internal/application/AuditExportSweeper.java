@@ -53,6 +53,7 @@ class AuditExportSweeper {
     private final OcsfMapper mapper;
     private final AuditExportDelivery delivery;
     private final AuditService audit;
+    private final AuditExportStatus status;
     private final RetrySchedule retries;
     private final Clock clock;
     private final Duration lag;
@@ -61,11 +62,9 @@ class AuditExportSweeper {
     private final Duration lockTtl;
     private final String nodeToken = UUID.randomUUID().toString();
 
-    /** Consecutive failures against the current batch; reset by any success. */
-    private int consecutiveFailures;
-
     AuditExportSweeper(StringRedisTemplate redis, AuditExportSettingsService settings, AuditExportReader reader,
-            OcsfMapper mapper, AuditExportDelivery delivery, AuditService audit, Clock clock,
+            OcsfMapper mapper, AuditExportDelivery delivery, AuditService audit, AuditExportStatus status,
+            Clock clock,
             @Value("${sso.audit.export.lag}") Duration lag,
             @Value("${sso.audit.export.run-budget}") Duration runBudget,
             @Value("${sso.audit.export.batch-size}") int batchSize,
@@ -80,6 +79,7 @@ class AuditExportSweeper {
         this.mapper = mapper;
         this.delivery = delivery;
         this.audit = audit;
+        this.status = status;
         this.clock = clock;
         this.lag = lag;
         this.runBudget = runBudget;
@@ -114,7 +114,6 @@ class AuditExportSweeper {
                 return;
             }
             drainWithin(target, clock.instant().plus(runBudget));
-            consecutiveFailures = 0;
         } catch (RuntimeException failed) {
             onFailure(failed);
         }
@@ -146,6 +145,7 @@ class AuditExportSweeper {
         }
         delivery.send(target, ocsf(batch, target.includePii()));
         reader.commitCursor(batch);   // ONLY now: an unacknowledged batch must be re-offered
+        status.recordSuccess();
         return batch.events().size() == batchSize;
     }
 
@@ -168,7 +168,7 @@ class AuditExportSweeper {
      * default and needs no queue of its own. What is recorded is the moment retrying stops being plausible.
      */
     private void onFailure(RuntimeException failure) {
-        consecutiveFailures++;
+        long consecutiveFailures = status.recordFailure();
         log.error("Audit export failed ({} consecutive)", consecutiveFailures, failure);
         if (consecutiveFailures >= retries.maxAttempts()) {
             // The exception TYPE, never its message: a collector's rejection body would otherwise be copied
@@ -178,7 +178,7 @@ class AuditExportSweeper {
                     null).withReason("export.giveUp"));
             // Reset so the next tick starts a fresh count rather than recording this every tick from now on —
             // the incident is the transition, and one row per tick would bury it in its own alarm.
-            consecutiveFailures = 0;
+            status.clearFailures();
         }
     }
 }

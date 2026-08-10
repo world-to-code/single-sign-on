@@ -7,5 +7,5 @@ import java.time.Instant;
  * a secret back, and a view that could would be one more place it can leak from.
  */
 public record AuditExportView(String endpointUrl, boolean enabled, boolean includePii, Instant updatedAt,
-                              String updatedBy) {
+                              String updatedBy, AuditExportHealth health) {
 }

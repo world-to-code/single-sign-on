@@ -8,6 +8,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -91,6 +92,22 @@ public class AuditExportReader {
     public void commitCursor(AuditExportBatch batch) {
         if (!batch.isEmpty()) {
             redis.opsForValue().set(CURSOR_KEY, micros(batch.nextTime()) + ":" + batch.nextId());
+        }
+    }
+
+    /**
+     * The timestamp of the newest event the collector has, or empty before the first batch.
+     *
+     * <p>Answers empty rather than throwing on a corrupt cursor: this feeds a health view, and a screen that
+     * fails to render is a worse answer than one reporting an unknown position beside a failure streak that
+     * is already climbing.
+     */
+    public Optional<Instant> position() {
+        try {
+            Cursor cursor = cursor();
+            return cursor.occurredAt().equals(Instant.EPOCH) ? Optional.empty() : Optional.of(cursor.occurredAt());
+        } catch (AuditExportCursorException unreadable) {
+            return Optional.empty();
         }
     }
 

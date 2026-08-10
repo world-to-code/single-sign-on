@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
+
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,6 +27,7 @@ import org.springframework.web.client.RestClientException;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -54,6 +56,9 @@ class AuditExportSweeperTest {
     private AuditExportDelivery delivery;
     private AuditService audit;
     private AuditExportSweeper sweeper;
+    /** The streak lives in Redis now, so the test stands in for it — and counts the same way the fleet does. */
+    private final AtomicLong streak = new AtomicLong();
+    private AuditExportStatus status;
 
     @BeforeEach
     void setUp() {
@@ -62,12 +67,16 @@ class AuditExportSweeperTest {
         audit = mock(AuditService.class);
         settings = mock(AuditExportSettingsService.class);
         when(settings.target()).thenReturn(Optional.of(TARGET));
+        status = mock(AuditExportStatus.class);
+        when(status.recordFailure()).thenAnswer(invocation -> streak.incrementAndGet());
+        doAnswer(invocation -> streak.getAndSet(0)).when(status).clearFailures();
+        doAnswer(invocation -> streak.getAndSet(0)).when(status).recordSuccess();
         sweeper = sweeperWithClock(Clock.systemUTC());
     }
 
     private AuditExportSweeper sweeperWithClock(Clock clock) {
         return new AuditExportSweeper(mock(StringRedisTemplate.class), settings, reader,
-                new OcsfMapper("Mini SSO"), delivery, audit, clock,
+                new OcsfMapper("Mini SSO"), delivery, audit, status, clock,
                 Duration.ofSeconds(30), Duration.ofSeconds(15), BATCH_SIZE, Duration.ofSeconds(25),
                 Duration.ofSeconds(5), 2.0, 0.3, MAX_ATTEMPTS);
     }
@@ -341,6 +350,31 @@ class AuditExportSweeperTest {
         ArgumentCaptor<List<Map<String, Object>>> sent = ArgumentCaptor.forClass(List.class);
         verify(delivery).send(any(), sent.capture());
         return sent.getValue().get(0);
+    }
+
+    /**
+     * The streak must not be node-local. Only the lock winner attempts a delivery, so on a fleet each node
+     * saw a fraction of the failures and the give-up alarm took proportionally longer to fire; a rolling
+     * restart reset every count to zero, which a deployment does exactly when somebody is watching.
+     */
+    @Test
+    void theFailureStreakIsKeptWhereTheWholeFleetSharesIt() {
+        when(reader.nextBatch(any(), anyBatchSize())).thenReturn(batchOfOne());
+        doThrow(new RestClientException("collector down")).when(delivery).send(any(), any());
+
+        sweeper.export();
+
+        verify(status).recordFailure();
+    }
+
+    /** A delivery landing is the moment staleness is measured from, so it has to be stamped when it happens. */
+    @Test
+    void anAcknowledgedBatchStampsTheSuccess() {
+        when(reader.nextBatch(any(), anyBatchSize())).thenReturn(batchOfOne());
+
+        sweeper.export();
+
+        verify(status).recordSuccess();
     }
 
     private int anyBatchSize() {

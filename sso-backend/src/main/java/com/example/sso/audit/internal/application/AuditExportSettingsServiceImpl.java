@@ -42,6 +42,7 @@ public class AuditExportSettingsServiceImpl implements AuditExportSettingsServic
     private final SecretCipher cipher;
     private final OutboundHostValidator hostValidator;
     private final UserService users;
+    private final AuditExportStatus status;
 
     @Override
     @Transactional
@@ -65,7 +66,8 @@ public class AuditExportSettingsServiceImpl implements AuditExportSettingsServic
     @Transactional(readOnly = true)
     public Optional<AuditExportView> current() {
         return rows.findById(AuditExportSettingsRow.ONLY).map(row -> new AuditExportView(
-                row.getEndpointUrl(), row.isEnabled(), row.isIncludePii(), row.getUpdatedAt(), updatedByName(row)));
+                row.getEndpointUrl(), row.isEnabled(), row.isIncludePii(), row.getUpdatedAt(), updatedByName(row),
+                status.health()));
     }
 
     /**
