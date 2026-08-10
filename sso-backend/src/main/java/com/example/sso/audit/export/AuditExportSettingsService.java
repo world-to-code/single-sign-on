@@ -12,14 +12,23 @@ import java.util.Optional;
 public interface AuditExportSettingsService {
 
     /**
-     * Stores the collector, replacing any existing one. Refuses a destination that is not https, or whose
-     * host resolves into the internal network — the payload is every tenant's security history and the
-     * collector credential travels with it.
+     * Stores the collector, replacing any existing one. A blank credential on an UPDATE keeps the stored one —
+     * it is write-only and never read back, so editing the URL must not wipe it. Refuses a destination that is
+     * not https, or whose host resolves into the internal network — the payload is every tenant's security
+     * history and the collector credential travels with it.
      */
     void save(AuditExportSettings settings);
 
     /** The configuration as stored, for the console to render; the credential is never included. */
     Optional<AuditExportView> current();
+
+    /**
+     * Removes the collector, stopping the export.
+     *
+     * <p>Exists so switching an export off never depends on holding the credential that authenticates it: an
+     * operator who has lost the bearer must still be able to stop shipping to a destination they distrust.
+     */
+    void delete();
 
     /**
      * The collector to send to right now, or empty when none is configured, it is switched off, or it no

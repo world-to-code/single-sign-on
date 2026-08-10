@@ -15,6 +15,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -62,6 +63,22 @@ public class AdminAuditController {
     @RequireStepUp
     public ResponseEntity<Void> configureExport(@Valid @RequestBody AuditExportRequest request) {
         exportSettings.save(request.toSettings());
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Stops the export and forgets the destination.
+     *
+     * <p>Deliberately does not need the collector credential: an operator who has lost it must still be able
+     * to stop shipping to a destination they have come to distrust, or the control is hostage to the secret
+     * it protects.
+     */
+    @Audited(value = AuditType.AUDIT_EXPORT_CONFIGURED, platform = true)
+    @DeleteMapping("/export")
+    @RequirePermission(Permissions.AUDIT_EXPORT)
+    @RequireStepUp
+    public ResponseEntity<Void> removeExport() {
+        exportSettings.delete();
         return ResponseEntity.noContent().build();
     }
 

@@ -188,4 +188,40 @@ class AuditExportSettingsIT extends AbstractIntegrationTest {
 
         assertThat(settings.target().orElseThrow().endpointUrl()).isEqualTo("https://one.one.one.one/ingest");
     }
+
+    /**
+     * The credential is write-only and never read back, so a save that only edits the URL — or switches the
+     * export OFF — must not require re-entering it. More than convenience: requiring the bearer to change
+     * anything meant an operator who had lost it could not stop an export they had come to distrust, which
+     * makes the control hostage to the secret it protects.
+     */
+    @Test
+    void aBlankCredentialOnAnUpdateKeepsTheStoredOne() {
+        settings.save(new AuditExportSettings("https://one.one.one.one/ingest", CREDENTIAL, true, false));
+
+        settings.save(new AuditExportSettings("https://one.one.one.one/moved", "", true, false));
+
+        AuditExportTarget target = settings.target().orElseThrow();
+        assertThat(target.endpointUrl()).isEqualTo("https://one.one.one.one/moved");
+        assertThat(target.credential()).isEqualTo(CREDENTIAL);
+    }
+
+    /** But there must BE one to keep: a first save with no credential cannot authenticate to anything. */
+    @Test
+    void aFirstSaveStillRequiresACredential() {
+        assertThatThrownBy(() -> settings.save(
+                new AuditExportSettings("https://one.one.one.one/ingest", "", true, false)))
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    /** Stopping the export must not depend on the credential either — hence a delete, not only a disable. */
+    @Test
+    void theCollectorCanBeRemovedOutright() {
+        settings.save(new AuditExportSettings("https://one.one.one.one/ingest", CREDENTIAL, true, false));
+
+        settings.delete();
+
+        assertThat(settings.current()).isEmpty();
+        assertThat(settings.target()).isEmpty();
+    }
 }

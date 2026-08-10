@@ -16,6 +16,7 @@ import java.net.URISyntaxException;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.util.StringUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -52,18 +53,42 @@ public class AuditExportSettingsServiceImpl implements AuditExportSettingsServic
         // and then failed on every delivery for ever, and a trailing one sent a different path than the one
         // that was approved.
         String endpointUrl = requireUsableTarget(settings.endpointUrl()).toString();
-        if (settings.credential() == null || settings.credential().isBlank()) {
-            throw BadRequestException.of("audit.export.credentialRequired");
-        }
-        String encrypted = cipher.encrypt(settings.credential());
         // One row: saving again re-points the same collector rather than adding a second destination.
         AuditExportSettingsRow row = rows.findById(AuditExportSettingsRow.ONLY).orElse(null);
+        String encrypted = resolveCredential(settings, row);
         if (row == null) {
             rows.save(new AuditExportSettingsRow(endpointUrl, encrypted, settings.enabled(),
                     settings.includePii(), actor()));
         } else {
             row.replaceWith(endpointUrl, encrypted, settings.enabled(), settings.includePii(), actor());
         }
+    }
+
+    /** Removes the collector entirely, stopping the export. The cursor is left alone: a destination that is
+     * restored later resumes rather than replaying everything. */
+    @Override
+    @Transactional
+    public void delete() {
+        rows.deleteById(AuditExportSettingsRow.ONLY);
+    }
+
+    /**
+     * The ciphertext to persist. A BLANK credential on an UPDATE keeps the stored one, matching how every
+     * other write-only secret here behaves: it is never echoed back, so a save that only switches the export
+     * off, or fixes a typo in the URL, must not require re-entering it.
+     *
+     * <p>That is not merely convenience. Requiring the bearer to change anything meant an operator who no
+     * longer had it could not turn OFF an export they had come to distrust — the control was hostage to the
+     * secret it protects, which is the wrong way round.
+     */
+    private String resolveCredential(AuditExportSettings settings, AuditExportSettingsRow existing) {
+        if (StringUtils.hasText(settings.credential())) {
+            return cipher.encrypt(settings.credential());
+        }
+        if (existing != null) {
+            return existing.getCredentialEncrypted();
+        }
+        throw BadRequestException.of("audit.export.credentialRequired");
     }
 
     @Override
