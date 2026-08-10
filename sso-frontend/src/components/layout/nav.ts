@@ -1,4 +1,5 @@
 import {
+  Share2,
   RefreshCw,
   Tags,
   LayoutDashboard, KeyRound, Users, ShieldCheck, AppWindow, Network, Coins, ScrollText,
@@ -56,6 +57,7 @@ export const NAV: NavGroup[] = [
         items: [
           { to: "/admin/dashboard", label: "dashboard", icon: LayoutDashboard, permission: "organization:read", superAdmin: true },
           { to: "/admin/organizations", label: "organizations", icon: Building2, permission: "organization:read", superAdmin: true },
+          { to: "/admin/audit-export", label: "auditExport", icon: Share2, permission: "audit:export", superAdmin: true },
         ],
       },
       {

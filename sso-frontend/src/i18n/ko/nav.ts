@@ -16,6 +16,7 @@ export const nav: Record<keyof typeof enNav, string> = {
   myApplications: "내 애플리케이션",
   myPasskeys: "내 패스키",
   organizations: "조직",
+  auditExport: "감사 로그 내보내기",
   users: "사용자",
   groups: "그룹",
   resources: "리소스",

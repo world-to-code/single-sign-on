@@ -14,6 +14,7 @@ export const nav = {
   myApplications: "My Applications",
   myPasskeys: "My Passkeys",
   organizations: "Organizations",
+  auditExport: "Audit Export",
   users: "Users",
   groups: "Groups",
   resources: "Resources",

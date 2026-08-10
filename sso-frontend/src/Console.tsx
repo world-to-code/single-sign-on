@@ -11,6 +11,7 @@ import Users from "./pages/Users";
 import UserCreate from "./pages/UserCreate";
 import UserDetail from "./pages/UserDetail";
 import Organizations from "./pages/Organizations";
+import AuditExport from "./pages/AuditExport";
 import Onboarding from "./pages/Onboarding";
 import PlatformDashboard from "./pages/PlatformDashboard";
 import OrgDashboard from "./pages/OrgDashboard";
@@ -69,6 +70,7 @@ export default function Console({ session }: { session: SessionView }) {
                   {/* Platform scope: reachable by an un-drilled super-admin (the platform's own view). */}
                   <Route path="dashboard" element={<PlatformDashboard />} />
                   <Route path="organizations" element={<Organizations />} />
+          <Route path="audit-export" element={<AuditExport session={session} />} />
                   <Route path="onboarding" element={<Onboarding />} />
                   <Route path="organizations/:id" element={<OrgDashboard />} />
                   {/* Org scope: a super-admin must drill into a tenant first (see RequireOrgContext). */}
