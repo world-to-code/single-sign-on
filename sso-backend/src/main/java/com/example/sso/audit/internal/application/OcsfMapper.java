@@ -165,7 +165,7 @@ public class OcsfMapper {
 
     /** One audit row as an OCSF event, ready to serialise. */
     public Map<String, Object> toOcsf(AuditExportRecord row) {
-        OcsfActivity activity = MAPPING.get(AuditType.valueOf(row.type()));
+        OcsfActivity activity = activityOf(row.type());
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("class_uid", activity.classUid());
         event.put("activity_id", activity.activityId());
@@ -186,6 +186,23 @@ public class OcsfMapper {
         }
         event.put("unmapped", unmapped(row));
         return event;
+    }
+
+    /**
+     * The classification for a stored type string.
+     *
+     * <p>The startup check proves every type THIS BUILD knows is mapped. A stored string it does not know is a
+     * different situation — a rollback, or a row written by a newer node during a rolling deploy — and it must
+     * not stop the export: one unrecognised row would otherwise hold up every other tenant's trail for ever,
+     * since the cursor cannot pass what will not map. The row ships coarsely classified, with the raw type
+     * preserved in {@code unmapped} so the collector can see it was this build that did not recognise it.
+     */
+    private OcsfActivity activityOf(String type) {
+        try {
+            return MAPPING.get(AuditType.valueOf(type));
+        } catch (IllegalArgumentException notInThisBuild) {
+            return OcsfActivity.API_OTHER;
+        }
     }
 
     private Map<String, Object> metadata(AuditExportRecord row) {

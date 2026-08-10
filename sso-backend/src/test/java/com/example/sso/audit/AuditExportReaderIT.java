@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The reader that feeds the collector, and the one property the whole design exists for.
@@ -39,6 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class AuditExportReaderIT extends AbstractIntegrationTest {
 
+    private static final String CURSOR_KEY = "sso:audit:export:cursor";
     private static final Duration NO_LAG = Duration.ZERO;
     /**
      * A lag that comfortably exceeds how long the fixture below holds its transaction open.
@@ -197,6 +199,37 @@ class AuditExportReaderIT extends AbstractIntegrationTest {
         List<String> exported = principalsOf(reader.nextBatch(NO_LAG, 100));
 
         assertThat(exported).containsSubsequence(principal + "-0", principal + "-1", principal + "-2");
+    }
+
+    /**
+     * The dangerous corruption, because it is the SILENT one. A position later than now cannot have been
+     * reached, and left unchecked the range query simply matches nothing — for ever. That is
+     * indistinguishable from a healthy idle export, which is how a SIEM goes blind with every light green.
+     */
+    @Test
+    void aCursorInTheFutureIsRefusedRatherThanQuietlyMatchingNothing() {
+        write(principal);
+        redis.opsForValue().set(CURSOR_KEY, Long.MAX_VALUE + ":1");
+
+        assertThatThrownBy(() -> reader.nextBatch(NO_LAG, 100))
+                .hasMessageContaining("cursor is unusable");
+    }
+
+    /**
+     * Neither recovery is code's to choose: rewinding re-ships the whole trail to the collector, and skipping
+     * forward walks past events that were never delivered. So it stops and waits for an operator.
+     */
+    @Test
+    void aMalformedCursorStopsTheExportRatherThanGuessing() {
+        write(principal);
+
+        for (String corrupt : List.of("nonsense", "", ":", "abc:1", "1700000000:xyz")) {
+            redis.opsForValue().set(CURSOR_KEY, corrupt);
+
+            assertThatThrownBy(() -> reader.nextBatch(NO_LAG, 100))
+                    .as("cursor %s", corrupt)
+                    .hasMessageContaining("cursor is unusable");
+        }
     }
 
     private void write(String principalName) {

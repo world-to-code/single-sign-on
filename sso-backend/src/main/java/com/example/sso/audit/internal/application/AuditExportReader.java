@@ -99,15 +99,37 @@ public class AuditExportReader {
         redis.delete(CURSOR_KEY);
     }
 
+    /**
+     * The stored position, or the beginning when there is none. Every other value is checked rather than
+     * trusted: this is a shared Redis key, and a cursor is the one piece of state that decides which events
+     * are never looked at again.
+     */
     private Cursor cursor() {
         String stored = redis.opsForValue().get(CURSOR_KEY);
         if (stored == null) {
             return new Cursor(Instant.EPOCH, 0L);
         }
         int separator = stored.lastIndexOf(':');
-        long storedMicros = Long.parseLong(stored.substring(0, separator));
-        return new Cursor(Instant.EPOCH.plus(storedMicros, ChronoUnit.MICROS),
-                Long.parseLong(stored.substring(separator + 1)));
+        if (separator < 1) {
+            throw new AuditExportCursorException(stored);
+        }
+        Cursor cursor = parse(stored, separator);
+        // A position later than now cannot have been reached. Left unchecked it is silent: the range query
+        // matches nothing for ever, and an export that ships nothing looks exactly like one with nothing to ship.
+        if (cursor.occurredAt().isAfter(Instant.now())) {
+            throw new AuditExportCursorException(stored);
+        }
+        return cursor;
+    }
+
+    private Cursor parse(String stored, int separator) {
+        try {
+            long storedMicros = Long.parseLong(stored.substring(0, separator));
+            return new Cursor(Instant.EPOCH.plus(storedMicros, ChronoUnit.MICROS),
+                    Long.parseLong(stored.substring(separator + 1)));
+        } catch (RuntimeException malformed) {
+            throw new AuditExportCursorException(stored);
+        }
     }
 
     /** The instant as whole microseconds, the resolution {@code timestamptz} actually stores. */

@@ -172,7 +172,10 @@ sso:
       product-name: Mini SSO
       # How often a node tries to ship, and the lock that keeps the fleet to one shipper per tick.
       interval: 30s
-      lock-ttl: 2m
+      # Shorter than the interval, so the lock frees before the next tick rather than becoming the real
+      # cadence — it used to be 2m, which made the 30s interval decorative and capped the export at one batch
+      # every two minutes no matter what the deployment produced.
+      lock-ttl: 25s
       # Only rows OLDER than this are eligible. It is not a delivery preference: it is what makes the export
       # complete. A transaction still in flight at time T commits well within it, so by the time T becomes
       # exportable every row stamped T is visible. Must exceed the longest audit write — which is a single
@@ -181,6 +184,9 @@ sso:
       lag: 30s
       # One tick cannot build an unbounded body; the rest waits for the next pass.
       batch-size: 500
+      # How long one tick may keep draining. Must expire well before lock-ttl so a long drain never overlaps
+      # the next node's tick.
+      run-budget: 15s
       # Bounded because this runs on a scheduler thread: one hanging collector must not stop the export
       # permanently and silently.
       connect-timeout: 5s

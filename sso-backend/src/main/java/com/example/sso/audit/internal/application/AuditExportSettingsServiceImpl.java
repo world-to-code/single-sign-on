@@ -67,29 +67,33 @@ public class AuditExportSettingsServiceImpl implements AuditExportSettingsServic
                 row.getEndpointUrl(), row.isEnabled(), row.getUpdatedAt(), updatedByName(row)));
     }
 
+    /**
+     * Empty means NOBODY ASKED for an export — no row, or it is switched off. A configured export that cannot
+     * be honoured throws instead, and the difference is the whole point: the two used to collapse into the
+     * same empty Optional, so a collector that had become unreachable was indistinguishable from one that was
+     * never set up, and the export stopped without anything to notice it had.
+     */
     @Override
     @Transactional(readOnly = true)
     public Optional<AuditExportTarget> target() {
         return rows.findById(AuditExportSettingsRow.ONLY)
                 .filter(AuditExportSettingsRow::isEnabled)
-                .filter(this::stillUsable)
-                .map(row -> new AuditExportTarget(row.getEndpointUrl(), cipher.decrypt(row.getCredentialEncrypted())));
+                .map(this::toTarget);
     }
 
     /**
      * Re-validated at USE. A host that resolved publicly when it was admitted can be repointed afterwards, and
      * the row can be edited by anything holding database access — so the check that mattered at write time is
-     * not the one that decides whether to send now. Refusing here means no export rather than an export to
+     * not the one that decides whether to send now. Refusing means no export rather than an export to
      * somewhere new, which is the safe direction: a stalled export is visible, a redirected one is not.
+     *
+     * <p>Decryption is deliberately inside the same refusal. A credential this instance cannot read — the
+     * shape a master-key rotation leaves behind — is a configured export that will never run, which is the
+     * caller's problem to raise, not something to quietly skip.
      */
-    private boolean stillUsable(AuditExportSettingsRow row) {
-        try {
-            requireUsableTarget(row.getEndpointUrl());
-            return true;
-        } catch (RuntimeException unusable) {
-            log.error("The configured audit-export collector is no longer a valid destination; not exporting", unusable);
-            return false;
-        }
+    private AuditExportTarget toTarget(AuditExportSettingsRow row) {
+        requireUsableTarget(row.getEndpointUrl());
+        return new AuditExportTarget(row.getEndpointUrl(), cipher.decrypt(row.getCredentialEncrypted()));
     }
 
     /** https, a parseable authority, and a host outside the internal network — each asked separately. */

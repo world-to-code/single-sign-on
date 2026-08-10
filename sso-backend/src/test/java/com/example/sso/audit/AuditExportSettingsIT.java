@@ -122,15 +122,28 @@ class AuditExportSettingsIT extends AbstractIntegrationTest {
      * Re-validated at USE, not only when written. Configuration outlives the check that admitted it: a host
      * that resolved publicly at write time can be repointed at the internal network afterwards, and the row
      * itself can be edited by anything with database access.
+     *
+     * <p>It THROWS rather than answering empty, and that distinction is the finding this test was rewritten
+     * for. Empty is the answer for an export nobody asked for; a configured collector that cannot be honoured
+     * is a different fact, and collapsing the two let the export stop with nothing able to notice — the caller
+     * cannot raise an alarm about a state it cannot tell apart from "switched off".
      */
     @Test
-    void aTargetThatHasBecomeUnsafeSinceItWasSavedIsNotHandedOut() {
+    void aTargetThatHasBecomeUnsafeSinceItWasSavedIsRefusedLoudly() {
         settings.save(new AuditExportSettings("https://one.one.one.one/ingest", CREDENTIAL, true));
         ownerJdbc().update("update audit_export_settings set endpoint_url = ?", "http://127.0.0.1/ingest");
 
-        Optional<AuditExportTarget> target = settings.target();
+        assertThatThrownBy(() -> settings.target())
+                .as("refused at use, so a rewritten row cannot redirect the trail")
+                .isInstanceOf(BadRequestException.class);
+    }
 
-        assertThat(target).as("refused at use, so a rewritten row cannot redirect the trail").isEmpty();
+    /** Switched off is not broken: the one state that must stay quiet, so the alarm above means something. */
+    @Test
+    void aDisabledExportIsSimplyAbsent() {
+        settings.save(new AuditExportSettings("https://one.one.one.one/ingest", CREDENTIAL, false));
+
+        assertThat(settings.target()).isEmpty();
     }
 
     @Test

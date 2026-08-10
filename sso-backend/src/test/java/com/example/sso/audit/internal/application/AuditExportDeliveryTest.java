@@ -87,6 +87,21 @@ class AuditExportDeliveryTest {
         server.verify();   // no request was expected, and none may have been made
     }
 
+    /**
+     * A 3xx is NOT an ack. Redirects are disabled at the transport, so a redirecting collector returns the 3xx
+     * to us instead of being followed — and the default status handler only refuses 4xx/5xx, so an unasserted
+     * outcome reads as success and the cursor walks past a batch that was never ingested. An ALB canonicalising
+     * a path or an auth proxy bouncing to a login page produces exactly this.
+     */
+    @Test
+    void aRedirectIsNotAnAcknowledgement() {
+        server.expect(requestTo(URI.create("https://collector.example.com/ingest")))
+                .andRespond(withStatus(HttpStatus.FOUND).header(HttpHeaders.LOCATION, "https://elsewhere.example.com/ingest"));
+
+        assertThatThrownBy(() -> delivery.send(TARGET, List.of(Map.of("audit_type", "AUTH_SUCCESS"))))
+                .isInstanceOf(RestClientException.class);
+    }
+
     @Test
     void theBodyIsTheEventsThemselvesSoACollectorCanParseThemDirectly() {
         server.expect(requestTo(URI.create("https://collector.example.com/ingest")))
