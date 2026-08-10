@@ -6,7 +6,6 @@ import com.example.sso.audit.AuditType;
 import com.example.sso.audit.export.AuditExportRecord;
 import com.example.sso.audit.export.AuditExportSettingsService;
 import com.example.sso.audit.export.AuditExportTarget;
-import com.example.sso.shared.retry.RetrySchedule;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -54,7 +53,7 @@ class AuditExportSweeper {
     private final AuditExportDelivery delivery;
     private final AuditService audit;
     private final AuditExportStatus status;
-    private final RetrySchedule retries;
+    private final int maxAttempts;
     private final Clock clock;
     private final Duration lag;
     private final Duration runBudget;
@@ -69,9 +68,6 @@ class AuditExportSweeper {
             @Value("${sso.audit.export.run-budget}") Duration runBudget,
             @Value("${sso.audit.export.batch-size}") int batchSize,
             @Value("${sso.audit.export.lock-ttl}") Duration lockTtl,
-            @Value("${sso.audit.export.retry.initial-backoff}") Duration initialBackoff,
-            @Value("${sso.audit.export.retry.multiplier}") double multiplier,
-            @Value("${sso.audit.export.retry.randomization-factor}") double randomizationFactor,
             @Value("${sso.audit.export.retry.max-attempts}") int maxAttempts) {
         this.redis = redis;
         this.settings = settings;
@@ -85,7 +81,7 @@ class AuditExportSweeper {
         this.runBudget = runBudget;
         this.batchSize = batchSize;
         this.lockTtl = lockTtl;
-        this.retries = RetrySchedule.of(initialBackoff, multiplier, randomizationFactor, maxAttempts);
+        this.maxAttempts = maxAttempts;
     }
 
     @Scheduled(fixedDelayString = "${sso.audit.export.interval}")
@@ -170,7 +166,7 @@ class AuditExportSweeper {
     private void onFailure(RuntimeException failure) {
         long consecutiveFailures = status.recordFailure();
         log.error("Audit export failed ({} consecutive)", consecutiveFailures, failure);
-        if (consecutiveFailures >= retries.maxAttempts()) {
+        if (consecutiveFailures >= maxAttempts) {
             // The exception TYPE, never its message: a collector's rejection body would otherwise be copied
             // into an audit row, and the batch it is rejecting is what that body tends to quote back.
             audit.record(new AuditRecord(AuditType.AUDIT_EXPORT_FAILED, "system:audit-export", false,

@@ -78,7 +78,7 @@ class AuditExportSweeperTest {
         return new AuditExportSweeper(mock(StringRedisTemplate.class), settings, reader,
                 new OcsfMapper("Mini SSO"), delivery, audit, status, clock,
                 Duration.ofSeconds(30), Duration.ofSeconds(15), BATCH_SIZE, Duration.ofSeconds(25),
-                Duration.ofSeconds(5), 2.0, 0.3, MAX_ATTEMPTS);
+                MAX_ATTEMPTS);
     }
 
     @Test

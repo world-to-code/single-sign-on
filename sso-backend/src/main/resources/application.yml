@@ -199,13 +199,13 @@ sso:
       # A deadline for the WHOLE exchange, not for one socket read: the JDK client is used precisely because
       # a per-read timeout never terminates against a collector that dribbles, or that stops reading mid-body.
       request-timeout: 20s
+      # No backoff schedule here, deliberately: the retry cadence IS the interval above. A backoff exists to
+      # stop many retriers hammering a struggling peer, and the single-driver lock means there is only ever
+      # one. Three knobs that looked like they tuned something and tuned nothing were worse than none.
       retry:
-        initial-backoff: 5s
-        multiplier: 2.0
-        randomization-factor: 0.3
-        # After this many attempts a batch is abandoned and AUDIT_EXPORT_FAILED is recorded LOCALLY — the
-        # trail recording that its own export is broken, because the place that would have been told is the
-        # one not receiving anything.
+        # After this many consecutive failures the export is treated as STOPPED and AUDIT_EXPORT_FAILED is
+        # recorded LOCALLY — the trail recording that its own export is broken, because the place that would
+        # have been told is the one not receiving anything. Counted fleet-wide, not per node.
         max-attempts: 6
     chain:
       # Sealing is asynchronous so audit writes stay off the login path; this interval IS the window in which a
