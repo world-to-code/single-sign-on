@@ -1,4 +1,10 @@
 spring:
+  task:
+    scheduling:
+      # Eight @Scheduled sweepers share this pool; Boot's default of ONE means any single slow task delays
+      # every other one, including the audit chain sealer and the sweepers that expire lapsed privilege.
+      pool:
+        size: 4
   servlet:
     multipart:
       # The real defence for an upload: the container refuses anything past this WITHOUT buffering it, so the
@@ -190,7 +196,9 @@ sso:
       # Bounded because this runs on a scheduler thread: one hanging collector must not stop the export
       # permanently and silently.
       connect-timeout: 5s
-      read-timeout: 20s
+      # A deadline for the WHOLE exchange, not for one socket read: the JDK client is used precisely because
+      # a per-read timeout never terminates against a collector that dribbles, or that stops reading mid-body.
+      request-timeout: 20s
       retry:
         initial-backoff: 5s
         multiplier: 2.0
