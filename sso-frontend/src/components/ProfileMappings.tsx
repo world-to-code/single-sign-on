@@ -27,7 +27,7 @@ import { useState } from "react";
 export function ProfileMappings({ source, tenant }: { source: Profile; tenant: Profile }) {
   const { t } = useTranslation(["console", "states"]);
   const mappings = useApiData<ProfileMapping[]>(profileMappingsPath(source.id));
-  const targets = useAttributeTargets(tenant.id);
+  const { targets, error: targetsError } = useAttributeTargets(tenant.id);
   const [sourceKey, setSourceKey] = useState("");
   const [targetKey, setTargetKey] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +101,8 @@ export function ProfileMappings({ source, tenant }: { source: Profile; tenant: P
             <option value="">{t("profileMappingsPickTarget")}</option>
             {targets.map((d) => <option key={d.key} value={d.key}>{d.displayName}</option>)}
           </Select>
+          {/* An empty picker is otherwise indistinguishable from a schema that declares no such attribute. */}
+          {targetsError && <p className="text-xs text-destructive">{targetsError}</p>}
         </div>
         <Button onClick={add} disabled={!sourceKey.trim() || !targetKey}>{t("add")}</Button>
       </div>
