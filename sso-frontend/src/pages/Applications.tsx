@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { AppWindow, Lock, Network, Settings, Trash2, UserPlus, Users as UsersIcon } from "lucide-react";
-import { apiGet, apiPost, apiPut, errorMessage, type Page } from "../api";
+import { apiGet, apiPost, apiPut, errorMessage, type Page } from "@/api";
 import { PageHeader } from "@/components/PageHeader";
 import { usePaginated } from "@/usePaginated";
 import { Pagination } from "@/components/Pagination";

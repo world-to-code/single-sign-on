@@ -3,7 +3,7 @@ import { Trans, useTranslation } from "react-i18next";
 import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { Pencil, Plus, Save, Trash2 } from "lucide-react";
-import { apiGet, apiPut, errorMessage, type Page } from "../api";
+import { apiGet, apiPut, errorMessage, type Page } from "@/api";
 import { PageHeader } from "@/components/PageHeader";
 import { TagList } from "@/components/TagList";
 import { Alert, AlertDescription } from "@/components/ui/alert";

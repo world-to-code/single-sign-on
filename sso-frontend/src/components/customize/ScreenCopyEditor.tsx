@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSubmit } from "@/hooks/useSubmit";
 import { RotateCcw, Save } from "lucide-react";
-import { errorMessage } from "../../api";
+import { errorMessage } from "@/api";
 import {
   AUTH_SCREENS,
   deleteScreenCopy,
@@ -11,13 +11,13 @@ import {
   type AuthScreen,
   type ScreenCopy,
 } from "@/branding";
-import { Field } from "../form/fields";
-import { LoadingCard, ErrorCard } from "../states";
-import { useToast } from "../ToastProvider";
-import { useConfirm } from "../ConfirmProvider";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { Textarea } from "../ui/textarea";
+import { Field } from "@/components/form/fields";
+import { LoadingCard, ErrorCard } from "@/components/states";
+import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { ChoiceField } from "./BrandingFields";
 
 /**

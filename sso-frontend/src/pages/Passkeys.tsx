@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
-import { PageHeader } from "../components/PageHeader";
-import PasskeyManager from "../components/PasskeyManager";
+import { PageHeader } from "@/components/PageHeader";
+import PasskeyManager from "@/components/PasskeyManager";
 
 export default function Passkeys() {
   const { t } = useTranslation("auth");

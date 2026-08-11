@@ -2,22 +2,22 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { KeyRound, Loader2, LogIn } from "lucide-react";
-import { ApiError } from "../api";
-import { getSession, identify, logout, startFederation } from "../auth";
-import type { SessionView } from "../auth";
+import { ApiError } from "@/api";
+import { getSession, identify, logout, startFederation } from "@/auth";
+import type { SessionView } from "@/auth";
 import {
   conditionalMediationAvailable,
   conditionalPasswordlessLogin,
   passwordlessLogin,
   webAuthnSupported,
-} from "../webauthn";
-import { lastEmail, rememberEmail } from "../lib/loginMemory";
-import { organizationPickerTarget } from "../lib/tenantHost";
-import AuthLayout from "../components/layout/AuthLayout";
-import { Alert, AlertDescription } from "../components/ui/alert";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
+} from "@/webauthn";
+import { lastEmail, rememberEmail } from "@/lib/loginMemory";
+import { organizationPickerTarget } from "@/lib/tenantHost";
+import AuthLayout from "@/components/layout/AuthLayout";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 /**
  * Identifier step of the tenant-first flow. The organization is already resolved (shown as context); the

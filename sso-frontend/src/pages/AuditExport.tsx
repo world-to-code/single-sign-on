@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Save, Trash2 } from "lucide-react";
-import { errorMessage } from "../api";
-import { deleteAuditExport, getAuditExport, updateAuditExport, type AuditExportSettings } from "../auditExport";
-import type { SessionView } from "../auth";
+import { errorMessage } from "@/api";
+import { deleteAuditExport, getAuditExport, updateAuditExport, type AuditExportSettings } from "@/auditExport";
+import type { SessionView } from "@/auth";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingCard, ErrorCard } from "@/components/states";
 import { useToast } from "@/components/ToastProvider";

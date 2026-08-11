@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
 import { ChevronRight } from "lucide-react";
-import { apiPost, errorMessage } from "../api";
+import { apiPost, errorMessage } from "@/api";
 import { EditorPage } from "@/components/EditorPage";
 import { SettingsSection } from "@/components/SettingsSection";
 import { Field, Toggle } from "@/components/form/fields";

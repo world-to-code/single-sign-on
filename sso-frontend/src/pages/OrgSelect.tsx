@@ -2,16 +2,16 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Loader2 } from "lucide-react";
-import { ApiError } from "../api";
-import { goHome, organization } from "../auth";
-import { forgetOrg, recentOrgs, rememberOrg } from "../lib/loginMemory";
-import { tenantHost } from "../lib/tenantHost";
-import { OrgCard } from "../components/auth/OrgCard";
-import AuthLayout from "../components/layout/AuthLayout";
-import { Alert, AlertDescription } from "../components/ui/alert";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
+import { ApiError } from "@/api";
+import { goHome, organization } from "@/auth";
+import { forgetOrg, recentOrgs, rememberOrg } from "@/lib/loginMemory";
+import { tenantHost } from "@/lib/tenantHost";
+import { OrgCard } from "@/components/auth/OrgCard";
+import AuthLayout from "@/components/layout/AuthLayout";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 /**
  * Tenant-first entry screen, shown only on the bare platform host (a tenant subdomain auto-resolves its org

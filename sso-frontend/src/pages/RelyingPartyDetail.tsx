@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
-import { apiGet, apiPost, apiPut, errorMessage, type Page } from "../api";
+import { apiGet, apiPost, apiPut, errorMessage, type Page } from "@/api";
 import { EditorPage } from "@/components/EditorPage";
 import { SettingsSection } from "@/components/SettingsSection";
 import { Field, Toggle } from "@/components/form/fields";

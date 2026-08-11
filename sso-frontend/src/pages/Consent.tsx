@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowUpRight, Check, KeyRound, Loader2, Lock, ShieldCheck } from "lucide-react";
-import { getConsent } from "../consent";
-import type { ConsentModel } from "../consent";
-import { csrfToken } from "../api";
-import AuthLayout from "../components/layout/AuthLayout";
-import { Alert, AlertDescription } from "../components/ui/alert";
-import { Button } from "../components/ui/button";
+import { getConsent } from "@/consent";
+import type { ConsentModel } from "@/consent";
+import { csrfToken } from "@/api";
+import AuthLayout from "@/components/layout/AuthLayout";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 
 /**
  * The OAuth2 authorization-consent screen — the one screen in this product an end user of a CONNECTED

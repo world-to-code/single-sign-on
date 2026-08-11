@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { EmailTemplateEditor } from "./EmailTemplateEditor";
-import { previewEmailTemplate } from "../../emailTemplates";
-import type { EmailTemplate, EmailTemplatePreview } from "../../emailTemplates";
+import { previewEmailTemplate } from "@/emailTemplates";
+import type { EmailTemplate, EmailTemplatePreview } from "@/emailTemplates";
 
 vi.mock("react-i18next", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react-i18next")>()),

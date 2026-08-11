@@ -2,7 +2,7 @@ import { Suspense, lazy, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSubmit } from "@/hooks/useSubmit";
 import { RotateCcw, Save } from "lucide-react";
-import { errorMessage } from "../../api";
+import { errorMessage } from "@/api";
 import {
   deleteEmailTemplate,
   previewEmailTemplate,
@@ -10,19 +10,19 @@ import {
   type EmailTemplate,
   type EmailTemplateInput,
   type EmailTemplatePreview,
-} from "../../emailTemplates";
-import { HtmlPreview } from "../HtmlPreview";
+} from "@/emailTemplates";
+import { HtmlPreview } from "@/components/HtmlPreview";
 // Lazy: CodeMirror is large and this is one admin screen, so it must not sit in the bundle every sign-in
 // downloads first. The fallback is the old read-only textarea, so the markup is never invisible.
 const TemplateSourceEditor = lazy(() =>
   import("./TemplateSourceEditor").then((m) => ({ default: m.TemplateSourceEditor })));
-import { Field } from "../form/fields";
-import { useToast } from "../ToastProvider";
-import { useConfirm } from "../ConfirmProvider";
-import { Badge } from "../ui/badge";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { Textarea } from "../ui/textarea";
+import { Field } from "@/components/form/fields";
+import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 interface FormState {
   subject: string;

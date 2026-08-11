@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Coins, KeyRound } from "lucide-react";
-import { apiPost, errorMessage } from "../api";
+import { apiPost, errorMessage } from "@/api";
 import { PageHeader } from "@/components/PageHeader";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";

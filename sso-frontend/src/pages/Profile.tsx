@@ -3,21 +3,21 @@ import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { AppWindow, KeyRound, Loader2, Mail, MessageSquare, MonitorSmartphone, Plus, ShieldCheck, Smartphone, LogOut, Trash2 } from "lucide-react";
-import { ApiError } from "../api";
-import { PageHeader } from "../components/PageHeader";
-import PasskeyManager from "../components/PasskeyManager";
-import { OtpInput } from "../components/auth/OtpInput";
-import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
-import { Card, CardContent } from "../components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import { Input } from "../components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
-import { DataList, EmptyState } from "../components/states";
-import { useApiData } from "../useApiData";
-import { useDeleteConfirm } from "../hooks/useDeleteConfirm";
-import { confirmEmail, confirmPhone, confirmTotp, disableTotp, logoutAppSession, removePhone, requestEmailCode, requestPhoneCode, revokeSession, setupTotp } from "../profile";
-import type { AppSession, Profile as ProfileData, SessionDevice, TotpSetup } from "../profile";
+import { ApiError } from "@/api";
+import { PageHeader } from "@/components/PageHeader";
+import PasskeyManager from "@/components/PasskeyManager";
+import { OtpInput } from "@/components/auth/OtpInput";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DataList, EmptyState } from "@/components/states";
+import { useApiData } from "@/useApiData";
+import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
+import { confirmEmail, confirmPhone, confirmTotp, disableTotp, logoutAppSession, removePhone, requestEmailCode, requestPhoneCode, revokeSession, setupTotp } from "@/profile";
+import type { AppSession, Profile as ProfileData, SessionDevice, TotpSetup } from "@/profile";
 
 /** A single security-factor card: icon + title + status badge + optional detail line + action. */
 function FactorCard({ icon, title, badge, detail, action }: { icon: ReactNode; title: string; badge: ReactNode; detail?: string; action?: ReactNode }) {

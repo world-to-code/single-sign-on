@@ -1,12 +1,12 @@
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { KeyRound, UserCircle } from "lucide-react";
-import type { SessionView } from "../auth";
-import { Metric } from "../components/Metric";
-import { PageHeader } from "../components/PageHeader";
-import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
+import type { SessionView } from "@/auth";
+import { Metric } from "@/components/Metric";
+import { PageHeader } from "@/components/PageHeader";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 /**
  * An enrollment state, not a figure — so it reads as a state chip rather than a Metric. The dot is

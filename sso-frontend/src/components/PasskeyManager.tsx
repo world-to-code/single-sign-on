@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Fingerprint, KeyRound, Plus, Trash2 } from "lucide-react";
-import { deletePasskey, listPasskeys, registerPasskey, webAuthnSupported } from "../webauthn";
-import type { Passkey } from "../webauthn";
+import { deletePasskey, listPasskeys, registerPasskey, webAuthnSupported } from "@/webauthn";
+import type { Passkey } from "@/webauthn";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { DataList, EmptyState } from "./states";
-import { useDeleteConfirm } from "../hooks/useDeleteConfirm";
+import { useDeleteConfirm } from "@/hooks/useDeleteConfirm";
 
 /**
  * Self-service passkey list + register/remove. Shared by the "My Passkeys" page and the unified

@@ -1,5 +1,5 @@
-import { Field } from "../form/fields";
-import { Input } from "../ui/input";
+import { Field } from "@/components/form/fields";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 /**

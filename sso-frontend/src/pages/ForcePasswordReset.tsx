@@ -2,14 +2,14 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Loader2 } from "lucide-react";
-import { ApiError, errorMessage } from "../api";
-import { changePassword, logout, getSession } from "../auth";
-import type { SessionView } from "../auth";
-import AuthLayout from "../components/layout/AuthLayout";
-import { Alert, AlertDescription } from "../components/ui/alert";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
+import { ApiError, errorMessage } from "@/api";
+import { changePassword, logout, getSession } from "@/auth";
+import type { SessionView } from "@/auth";
+import AuthLayout from "@/components/layout/AuthLayout";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 /**
  * First-login forced password reset. The user signed in with an admin-issued TEMPORARY password; the server

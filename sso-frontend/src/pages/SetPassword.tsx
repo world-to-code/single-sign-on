@@ -2,13 +2,13 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { CheckCircle2, Loader2 } from "lucide-react";
-import { ApiError, errorMessage } from "../api";
-import { setInvitationPassword } from "../onboarding";
-import AuthLayout from "../components/layout/AuthLayout";
-import { Alert, AlertDescription } from "../components/ui/alert";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
+import { ApiError, errorMessage } from "@/api";
+import { setInvitationPassword } from "@/onboarding";
+import AuthLayout from "@/components/layout/AuthLayout";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 /**
  * Public landing for an onboarding invitation link ({@code /set-password?token=...}). The invited admin

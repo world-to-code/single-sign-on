@@ -1,10 +1,10 @@
 import { useTranslation } from "react-i18next";
 import { ShieldAlert } from "lucide-react";
-import { getSession, logout } from "../auth";
-import type { SessionView } from "../auth";
-import AuthLayout from "../components/layout/AuthLayout";
-import { Alert, AlertDescription } from "../components/ui/alert";
-import { Button } from "../components/ui/button";
+import { getSession, logout } from "@/auth";
+import type { SessionView } from "@/auth";
+import AuthLayout from "@/components/layout/AuthLayout";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 
 /**
  * Terminal state for a sign-in the server refused: a hold is in force on the account and it has no second

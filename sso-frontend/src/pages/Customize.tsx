@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { errorMessage } from "../api";
-import { listEmailTemplates, type EmailEvent, type EmailTemplate } from "../emailTemplates";
-import { EmailTemplateEditor } from "../components/customize/EmailTemplateEditor";
-import { BrandingEditor } from "../components/customize/BrandingEditor";
-import { ScreenCopyEditor } from "../components/customize/ScreenCopyEditor";
+import { errorMessage } from "@/api";
+import { listEmailTemplates, type EmailEvent, type EmailTemplate } from "@/emailTemplates";
+import { EmailTemplateEditor } from "@/components/customize/EmailTemplateEditor";
+import { BrandingEditor } from "@/components/customize/BrandingEditor";
+import { ScreenCopyEditor } from "@/components/customize/ScreenCopyEditor";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingCard, ErrorCard } from "@/components/states";
 import { Card, CardContent } from "@/components/ui/card";

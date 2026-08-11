@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Fingerprint, Loader2, Lock } from "lucide-react";
-import { getStepUp } from "../portal";
-import type { StepUpInfo } from "../portal";
-import { webAuthnSupported } from "../webauthn";
-import { factorMeta } from "../factors";
-import { useFactorVerification } from "../hooks/useFactorVerification";
-import AuthLayout from "../components/layout/AuthLayout";
-import { FactorChooser } from "../components/auth/FactorChooser";
-import { OtpInput } from "../components/auth/OtpInput";
-import { Alert, AlertDescription } from "../components/ui/alert";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
+import { getStepUp } from "@/portal";
+import type { StepUpInfo } from "@/portal";
+import { webAuthnSupported } from "@/webauthn";
+import { factorMeta } from "@/factors";
+import { useFactorVerification } from "@/hooks/useFactorVerification";
+import AuthLayout from "@/components/layout/AuthLayout";
+import { FactorChooser } from "@/components/auth/FactorChooser";
+import { OtpInput } from "@/components/auth/OtpInput";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 /**
  * Per-app step-up: the app the user is launching requires extra factors. Collect the missing factor

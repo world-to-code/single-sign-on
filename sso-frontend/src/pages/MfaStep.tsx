@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Fingerprint, Loader2, Lock } from "lucide-react";
-import { getSession, logout, prepareFactor } from "../auth";
-import type { FactorChallenge, SessionView } from "../auth";
-import { webAuthnSupported } from "../webauthn";
-import { factorMeta } from "../factors";
-import { useFactorVerification } from "../hooks/useFactorVerification";
-import AuthLayout from "../components/layout/AuthLayout";
-import { FactorChooser } from "../components/auth/FactorChooser";
-import { OtpInput } from "../components/auth/OtpInput";
-import { Alert, AlertDescription } from "../components/ui/alert";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
+import { getSession, logout, prepareFactor } from "@/auth";
+import type { FactorChallenge, SessionView } from "@/auth";
+import { webAuthnSupported } from "@/webauthn";
+import { factorMeta } from "@/factors";
+import { useFactorVerification } from "@/hooks/useFactorVerification";
+import AuthLayout from "@/components/layout/AuthLayout";
+import { FactorChooser } from "@/components/auth/FactorChooser";
+import { OtpInput } from "@/components/auth/OtpInput";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 /** Within a choice step, prefer a factor the user can use right now (no enrollment needed). */
 function preferredFactor(factors: string[], session: SessionView): string {

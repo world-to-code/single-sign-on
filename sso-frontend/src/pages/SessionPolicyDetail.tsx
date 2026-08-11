@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ChevronDown, ChevronUp, Trash2 } from "lucide-react";
-import { apiGet, apiPost, apiPut, errorMessage, type Page } from "../api";
+import { apiGet, apiPost, apiPut, errorMessage, type Page } from "@/api";
 import { listZones, searchZones } from "@/zones";
 import {
   AttributeTargetEditor, attributeTargetsToRequest, parseAttributeTargets,

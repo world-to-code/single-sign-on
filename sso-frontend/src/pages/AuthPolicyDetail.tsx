@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { useNavigate, useParams } from "react-router-dom";
-import { apiGet, apiPost, apiPut, errorMessage, type Page } from "../api";
+import { apiGet, apiPost, apiPut, errorMessage, type Page } from "@/api";
 import {
   AttributeTargetEditor, attributeTargetsToRequest, parseAttributeTargets,
   type AttributeTarget, type AttributeTargetWire,

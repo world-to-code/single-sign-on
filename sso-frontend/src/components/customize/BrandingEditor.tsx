@@ -2,7 +2,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { useSubmit } from "@/hooks/useSubmit";
 import { RotateCcw, Save } from "lucide-react";
-import { errorMessage } from "../../api";
+import { errorMessage } from "@/api";
 import {
   AUTH_LAYOUTS,
   BRANDING_CORNERS,
@@ -15,17 +15,17 @@ import {
   type BrandingFont,
   type BrandingInput,
   type BrandingView,
-} from "../../branding";
+} from "@/branding";
 import { hexToHslTriple } from "@/lib/brandingTheme";
-import { Brand } from "../Brand";
-import { useBrandingRefresh } from "../BrandingProvider";
-import { LoadingCard, ErrorCard } from "../states";
-import { useToast } from "../ToastProvider";
-import { useConfirm } from "../ConfirmProvider";
-import { Badge } from "../ui/badge";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { Field } from "../form/fields";
+import { Brand } from "@/components/Brand";
+import { useBrandingRefresh } from "@/components/BrandingProvider";
+import { LoadingCard, ErrorCard } from "@/components/states";
+import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmProvider";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Field } from "@/components/form/fields";
 import { InheritableChoiceField, ColorField, UrlField } from "./BrandingFields";
 
 /** Every field is a string here — "" is how the form says "inherit", which maps to null on the wire. */

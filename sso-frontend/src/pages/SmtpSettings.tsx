@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { RotateCcw, Save } from "lucide-react";
-import { errorMessage } from "../api";
-import { getSmtpSettings, updateSmtpSettings, deleteSmtpSettings, type EmailProvider, type SmtpSettings } from "../smtp";
+import { errorMessage } from "@/api";
+import { getSmtpSettings, updateSmtpSettings, deleteSmtpSettings, type EmailProvider, type SmtpSettings } from "@/smtp";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingCard, ErrorCard } from "@/components/states";
 import { useToast } from "@/components/ToastProvider";

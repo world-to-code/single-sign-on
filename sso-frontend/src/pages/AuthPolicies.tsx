@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
-import { apiGet, type Page } from "../api";
+import { apiGet, type Page } from "@/api";
 import { PageHeader } from "@/components/PageHeader";
 import { TagList } from "@/components/TagList";
 import { Alert, AlertDescription } from "@/components/ui/alert";

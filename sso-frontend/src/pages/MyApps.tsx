@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ExternalLink, LayoutGrid, ShieldCheck } from "lucide-react";
-import { getMyApps } from "../portal";
-import type { Application } from "../portal";
+import { getMyApps } from "@/portal";
+import type { Application } from "@/portal";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

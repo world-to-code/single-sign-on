@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import AuthLayout from "./AuthLayout";
-import { BrandingContextValue } from "../BrandingProvider";
+import { BrandingContextValue } from "@/components/BrandingProvider";
 import type { Branding, ScreenCopy } from "@/branding";
 
 vi.mock("react-i18next", async (importOriginal) => ({

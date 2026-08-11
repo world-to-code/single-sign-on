@@ -4,8 +4,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import Login from "./Login";
-import type { SessionView } from "../auth";
-import { getSession, logout } from "../auth";
+import type { SessionView } from "@/auth";
+import { getSession, logout } from "@/auth";
 
 vi.mock("react-i18next", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react-i18next")>()),
