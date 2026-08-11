@@ -57,6 +57,8 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
   // True while a proactive step-up is still fetching the policy's allowed factors — the method chooser is
   // withheld until then, so a method the server would reject (e.g. password) is NEVER momentarily offered.
   const [resolvingFactors, setResolvingFactors] = useState(false);
+  // The policy could not be read, so the empty factor set is our ignorance, not the user's enrolment.
+  const [policyUnavailable, setPolicyUnavailable] = useState(false);
   const resolver = useRef<((ok: boolean) => void) | null>(null);
   const pending = useRef<Promise<boolean> | null>(null);
   // The policy's re-auth factors — the set the server's ReauthService allows for a step-up with no explicit
@@ -134,13 +136,29 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
 
   const { capture, restore } = useReturnFocus();
 
+  /**
+   * Ask the policy which factors a re-auth may use, for a step-up the server did not itself constrain.
+   * Also the retry: a modal that offers nothing is a dead end, and for the MANDATORY session re-auth the
+   * only other way out is signing out.
+   */
+  const loadPolicyFactors = useCallback(() => {
+    setAllowed(null); setResolvingFactors(true); setPolicyUnavailable(false);
+    getSessionConfig()
+      .then((cfg) => { policyFactors.current = cfg.reauthFactors; setAllowed(cfg.reauthFactors); })
+      // Config unreachable: offer NOTHING (empty), never leave `allowed` null — a null set makes the chooser
+      // offer every factor, so it would present one the server then rejects (e.g. password on an MFA-only
+      // elevation). The REASON is kept, because an empty set otherwise reads as "you have enrolled nothing".
+      .catch(() => { setAllowed([]); setPolicyUnavailable(true); })
+      .finally(() => setResolvingFactors(false));
+  }, []);
+
   const prompt = useCallback((why: StepUpReason, factors?: string[]) => {
     if (pending.current) {
       return pending.current; // a modal is already open — reuse it instead of clobbering the resolver
     }
     capture();
     setReason(why); setMethod("choose");
-    setCode(""); setPassword(""); setErrorKey(null); setBusy(false); setOpen(true);
+    setCode(""); setPassword(""); setErrorKey(null); setBusy(false); setPolicyUnavailable(false); setOpen(true);
     pending.current = new Promise<boolean>((resolve) => { resolver.current = resolve; });
     if (factors) {
       setAllowed(factors); setResolvingFactors(false); // reactive: the server named the exact allowed factors
@@ -150,17 +168,10 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
       // Proactive step-up (e.g. entering the admin console) before the prefetch resolved: WITHHOLD the method
       // chooser (spinner) until we know the policy's re-auth factors — the SAME set ReauthService accepts —
       // so a method it would reject (e.g. password on a TOTP/FIDO2-only policy) is never even offered.
-      setAllowed(null); setResolvingFactors(true);
-      getSessionConfig()
-        .then((cfg) => { policyFactors.current = cfg.reauthFactors; setAllowed(cfg.reauthFactors); })
-        // Config unreachable: offer NOTHING (empty), never leave `allowed` null — a null set makes the chooser
-        // offer every factor, so it would present one the server then rejects (e.g. password on an MFA-only
-        // elevation), which is exactly the "not allowed" dead-end. The modal can be closed and retried.
-        .catch(() => setAllowed([]))
-        .finally(() => setResolvingFactors(false));
+      loadPolicyFactors();
     }
     return pending.current;
-  }, [capture]);
+  }, [capture, loadPolicyFactors]);
 
   useEffect(() => {
     registerStepUpHandler(prompt);
@@ -369,10 +380,22 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
             </form>
           )}
 
-          {noMethods && (
+          {noMethods && !policyUnavailable && (
             <p className="text-sm text-muted-foreground">
               {needsNewFactor ? t("reauthNoMethodsElevation") : t("reauthNoMethods")}
             </p>
+          )}
+
+          {/* Not the same as having no factor: nothing is wrong with the account, so the enrolment advice
+              above would send the user to fix something that is not broken — and leave them just as stuck. */}
+          {policyUnavailable && (
+            <div className="space-y-2">
+              <p className="text-sm text-destructive">{t("reauthPolicyUnavailable")}</p>
+              <Button type="button" variant="outline" className="w-full" onClick={loadPolicyFactors}
+                      disabled={busy}>
+                {t("reauthRetryPolicy")}
+              </Button>
+            </div>
           )}
 
           {/* Back to the method chooser (only when more than one method exists) */}

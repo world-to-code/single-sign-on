@@ -278,6 +278,8 @@ export const auth = {
   reauthDifferentMethod: "Use a different method",
   reauthNoMethodsElevation: "The admin console requires a second, different factor. Set up an authenticator app or passkey in your profile first.",
   reauthNoMethods: "No allowed re-authentication factor is available. Set up an authenticator or passkey in your profile first.",
+  reauthPolicyUnavailable: "We couldn't load your re-authentication policy, so no method can be offered yet. Nothing is wrong with your account.",
+  reauthRetryPolicy: "Try again",
   reauthInvalidCode: "Invalid code — try again.",
   reauthIncorrectPassword: "Incorrect password — try again.",
   reauthFactorNotAllowed: "That method isn't allowed for this step-up. Choose another.",

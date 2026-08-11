@@ -280,6 +280,8 @@ export const auth: Record<keyof typeof enAuth, string> = {
   reauthDifferentMethod: "다른 방법으로 인증",
   reauthNoMethodsElevation: "관리자 콘솔은 서로 다른 두 번째 인증 수단이 필요합니다. 먼저 프로필에서 인증 앱이나 패스키를 설정하세요.",
   reauthNoMethods: "사용할 수 있는 재인증 수단이 없습니다. 먼저 프로필에서 인증 앱이나 패스키를 설정하세요.",
+  reauthPolicyUnavailable: "재인증 정책을 불러오지 못해 아직 인증 수단을 제시할 수 없습니다. 계정에는 문제가 없습니다.",
+  reauthRetryPolicy: "다시 시도",
   reauthInvalidCode: "코드가 올바르지 않습니다. 다시 시도하세요.",
   reauthIncorrectPassword: "비밀번호가 올바르지 않습니다. 다시 시도하세요.",
   reauthFactorNotAllowed: "이 단계 인증에 허용되지 않는 방법입니다. 다른 방법을 선택하세요.",
