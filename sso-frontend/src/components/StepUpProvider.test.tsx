@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { StepUpProvider } from "./StepUpProvider";
-import { triggerStepUp } from "@/api";
+import { ApiError, triggerStepUp } from "@/api";
 import { getSessionConfig } from "@/portal";
+import { reauthVerify } from "@/auth";
 import type { SessionView } from "@/auth";
 
 vi.mock("react-i18next", async (importOriginal) => ({
@@ -16,6 +17,11 @@ vi.mock("react-i18next", async (importOriginal) => ({
 vi.mock("@/portal", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/portal")>()),
   getSessionConfig: vi.fn(),
+}));
+
+vi.mock("@/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/auth")>()),
+  reauthVerify: vi.fn(),
 }));
 
 const session: SessionView = {
@@ -70,6 +76,39 @@ describe("StepUpProvider", () => {
     await waitFor(() => expect(screen.getByText("reauthPolicyUnavailable")).toBeInTheDocument());
     expect(screen.queryByText("factorPassword")).not.toBeInTheDocument();
     expect(screen.queryByText("factorTotp")).not.toBeInTheDocument();
+  });
+
+  /**
+   * The server distinguishes a spent code from a wrong one; the modal used to map every ApiError onto its
+   * own fixed key ("Invalid code — try again."), so the distinction could not reach the screen at all.
+   */
+  describe("the reason shown for a failed verification", () => {
+    const openTotp = async (): Promise<void> => {
+      await open();
+      await waitFor(() => expect(screen.getByText("factorTotp")).toBeInTheDocument());
+      await act(async () => { screen.getByText("factorTotp").click(); });
+      await act(async () => {
+        const form = document.querySelector("form")!;
+        form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      });
+    };
+
+    it("shows what the server said, not a fixed local string", async () => {
+      vi.mocked(reauthVerify).mockRejectedValue(
+        new ApiError(400, "That code has already been used or has expired."));
+      await openTotp();
+
+      await waitFor(() =>
+        expect(screen.getByText("That code has already been used or has expired.")).toBeInTheDocument());
+    });
+
+    /** A request that never got an answer has no server detail to prefer, so a local key is right there. */
+    it("falls back to a local message when the request never reached the server", async () => {
+      vi.mocked(reauthVerify).mockRejectedValue(new TypeError("network down"));
+      await openTotp();
+
+      await waitFor(() => expect(screen.getByText("reauthFailed")).toBeInTheDocument());
+    });
   });
 
   it("recovers when the policy load is retried", async () => {

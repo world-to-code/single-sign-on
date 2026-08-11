@@ -23,6 +23,12 @@ const DELIVERY_CHECKS_MS = [1500, 2500, 4000, 4000, 4000];
  */
 const RESEND_COOLDOWN_MS = 30_000;
 
+/**
+ * The failures this hook words itself: the ones that never reached the server, so no ProblemDetail exists
+ * to prefer. Everything the server answered is rendered from ITS detail, which is already localized.
+ */
+type FallbackKey = "factorVerifyFailed" | "factorPasskeyCancelled" | "factorPasskeyRegisterCancelled";
+
 export interface FactorVerificationState {
   factor: string;
   setFactor: Dispatch<SetStateAction<string>>;
@@ -79,10 +85,17 @@ export function useFactorVerification(
     setAddressUnverified(false); setAddressVerificationSent(false);
   }, [factor]);
 
+  /**
+   * Runs a verification, showing the SERVER's reason when there is one.
+   *
+   * <p>This used to substitute a per-call-site literal for every {@link ApiError}, which threw away the one
+   * message that knows what actually happened — and did it in English, so a Korean console answered in
+   * English on its most-seen error. `fallbackKey` now covers only what never reached the server: a dropped
+   * connection, or a WebAuthn ceremony the browser abandoned.
+   */
   const run = useCallback(async (
     action: () => Promise<SessionView>,
-    apiMessage: string,
-    genericMessage = "Verification failed.",
+    fallbackKey: FallbackKey,
   ) => {
     setError(null); setBusy(true);
     try {
@@ -90,31 +103,31 @@ export function useFactorVerification(
       await onSuccess(session);
       setBusy(false);
     } catch (e) {
-      setError(e instanceof ApiError ? apiMessage : genericMessage);
+      setError(e instanceof ApiError ? errorMessage(e) : t(fallbackKey));
       setBusy(false);
     }
-  }, [onSuccess]);
+  }, [onSuccess, t]);
 
   const submitCode = useCallback((event: FormEvent) => {
     event.preventDefault();
-    return run(() => verifyFactor(factor, { code }), "Invalid code — try again.");
+    return run(() => verifyFactor(factor, { code }), "factorVerifyFailed");
   }, [run, factor, code]);
 
   const submitPassword = useCallback((event: FormEvent) => {
     event.preventDefault();
-    return run(() => verifyFactor("PASSWORD", { password }), "Incorrect password.");
+    return run(() => verifyFactor("PASSWORD", { password }), "factorVerifyFailed");
   }, [run, password]);
 
   const fido2 = useCallback(() => run(async () => {
     const prepared = await prepareFactor("FIDO2");
     return verifyFactor("FIDO2", { credential: await assertFactorCredential(prepared) });
-  }, "Passkey verification failed.", "Passkey ceremony was cancelled or failed."), [run]);
+  }, "factorPasskeyCancelled"), [run]);
 
   // Enroll-at-login: register a brand-new passkey, then the same prepare/verify grants the factor.
   const fido2Register = useCallback(() => run(async () => {
     const prepared = await prepareFactor("FIDO2");
     return verifyFactor("FIDO2", { credential: await registerFactorCredential(prepared) });
-  }, "Passkey registration failed.", "Passkey registration was cancelled or failed."), [run]);
+  }, "factorPasskeyRegisterCancelled"), [run]);
 
   /**
    * Asks, for a short while, whether the code actually went out.

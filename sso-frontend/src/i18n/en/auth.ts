@@ -100,6 +100,10 @@ export const auth = {
   mfaEnterKeyManually: "Enter key manually",
   mfaEnrollStartFailed: "Could not start enrollment.",
   factorCodeNotDelivered: "We could not send your verification code. Try again, or contact your administrator.",
+  // Shown only when the request never reached the server — otherwise the server's own reason is used.
+  factorVerifyFailed: "We couldn't reach the server to verify that. Check your connection and try again.",
+  factorPasskeyCancelled: "The passkey ceremony was cancelled or did not complete.",
+  factorPasskeyRegisterCancelled: "Passkey registration was cancelled or did not complete.",
   mfaCodeExpiresIn: "Expires in {{time}}",
   mfaCodeExpired: "This code has expired.",
   mfaResend: "Send a new code",
@@ -280,11 +284,7 @@ export const auth = {
   reauthNoMethods: "No allowed re-authentication factor is available. Set up an authenticator or passkey in your profile first.",
   reauthPolicyUnavailable: "We couldn't load your re-authentication policy, so no method can be offered yet. Nothing is wrong with your account.",
   reauthRetryPolicy: "Try again",
-  reauthInvalidCode: "Invalid code — try again.",
-  reauthIncorrectPassword: "Incorrect password — try again.",
-  reauthFactorNotAllowed: "That method isn't allowed for this step-up. Choose another.",
   reauthFailed: "Re-authentication failed.",
-  reauthPasskeyFailed: "Passkey re-authentication failed.",
   reauthPasskeyCancelled: "Passkey ceremony was cancelled.",
 
   // Idle countdown (SessionTimers) ------------------------------------------

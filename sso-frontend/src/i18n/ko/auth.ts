@@ -102,6 +102,10 @@ export const auth: Record<keyof typeof enAuth, string> = {
   mfaEnterKeyManually: "키 직접 입력",
   mfaEnrollStartFailed: "등록을 시작할 수 없습니다.",
   factorCodeNotDelivered: "인증번호를 보내지 못했습니다. 다시 시도하거나 관리자에게 문의하세요.",
+  // 요청이 서버에 닿지 못한 경우에만 사용합니다. 그 외에는 서버가 보낸 사유를 그대로 보여줍니다.
+  factorVerifyFailed: "서버에 연결하지 못해 확인할 수 없습니다. 연결 상태를 확인한 뒤 다시 시도하세요.",
+  factorPasskeyCancelled: "패스키 인증이 취소되었거나 완료되지 않았습니다.",
+  factorPasskeyRegisterCancelled: "패스키 등록이 취소되었거나 완료되지 않았습니다.",
   mfaCodeExpiresIn: "{{time}} 후 만료",
   mfaCodeExpired: "인증번호가 만료되었습니다.",
   mfaResend: "인증번호 다시 받기",
@@ -282,11 +286,7 @@ export const auth: Record<keyof typeof enAuth, string> = {
   reauthNoMethods: "사용할 수 있는 재인증 수단이 없습니다. 먼저 프로필에서 인증 앱이나 패스키를 설정하세요.",
   reauthPolicyUnavailable: "재인증 정책을 불러오지 못해 아직 인증 수단을 제시할 수 없습니다. 계정에는 문제가 없습니다.",
   reauthRetryPolicy: "다시 시도",
-  reauthInvalidCode: "코드가 올바르지 않습니다. 다시 시도하세요.",
-  reauthIncorrectPassword: "비밀번호가 올바르지 않습니다. 다시 시도하세요.",
-  reauthFactorNotAllowed: "이 단계 인증에 허용되지 않는 방법입니다. 다른 방법을 선택하세요.",
   reauthFailed: "재인증에 실패했습니다.",
-  reauthPasskeyFailed: "패스키 재인증에 실패했습니다.",
   reauthPasskeyCancelled: "패스키 인증이 취소되었습니다.",
 
   // Idle countdown (SessionTimers) ------------------------------------------

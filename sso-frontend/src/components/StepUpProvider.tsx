@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft, Fingerprint, KeyRound, Loader2, Lock, Mail, ShieldAlert, Smartphone } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { ApiError, registerStepUpHandler } from "@/api";
+import { ApiError, errorMessage, registerStepUpHandler } from "@/api";
 import type { StepUpReason } from "@/api";
 import { logout, reauthPrepare, reauthVerify } from "@/auth";
 import { getSessionConfig } from "@/portal";
@@ -17,21 +17,21 @@ import { useReturnFocus } from "@/hooks/useReturnFocus";
 
 type Method = "choose" | "totp" | "password" | "email";
 
-/** Failures are held as an i18n KEY, not a resolved string, so a locale switch re-renders them. */
-type ErrorKey =
-  | "reauthInvalidCode" | "reauthIncorrectPassword" | "reauthFailed"
-  | "reauthPasskeyFailed" | "reauthPasskeyCancelled" | "reauthFactorNotAllowed";
+/** The failures the SERVER never saw, held as an i18n key so a locale switch re-renders them. */
+type ErrorKey = "reauthFailed" | "reauthPasskeyCancelled";
 
 /**
- * The i18n key for a failed re-auth verify: the server rejecting the factor as not-allowed for this step-up
- * ({@code auth.reauth.factorNotAllowed}) is a DIFFERENT message from a wrong secret — showing "incorrect
- * password" when the method simply isn't permitted (e.g. password on an MFA-only elevation) misleads the user.
+ * A step-up failure: the server's already-localized reason, or a key for one it never saw.
+ *
+ * <p>Everything used to be a key, which meant mapping the response onto a guess — "incorrect code" for
+ * anything that was not `factorNotAllowed`. The server distinguishes a spent code from a wrong one and a
+ * wrong password from a wrong code, and none of that could reach the screen through a fixed key.
  */
-function reauthErrorKey(e: unknown, wrongSecret: ErrorKey, nonApi: ErrorKey): ErrorKey {
-  if (e instanceof ApiError) {
-    return e.code === "auth.reauth.factorNotAllowed" ? "reauthFactorNotAllowed" : wrongSecret;
-  }
-  return nonApi;
+type StepUpError = { key: ErrorKey } | { text: string };
+
+/** Prefer what the server said; fall back to `cancelledKey` for a request that never got an answer. */
+function reauthError(e: unknown, cancelledKey: ErrorKey): StepUpError {
+  return e instanceof ApiError ? { text: errorMessage(e) } : { key: cancelledKey };
 }
 
 /**
@@ -52,7 +52,7 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
   const [method, setMethod] = useState<Method>("choose");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
-  const [errorKey, setErrorKey] = useState<ErrorKey | null>(null);
+  const [error, setError] = useState<StepUpError | null>(null);
   const [busy, setBusy] = useState(false);
   // True while a proactive step-up is still fetching the policy's allowed factors — the method chooser is
   // withheld until then, so a method the server would reject (e.g. password) is NEVER momentarily offered.
@@ -98,9 +98,9 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
     { key: "FIDO2", label: t("factorPasskey"), explain: t("reauthPasskeyExplain"), keycap: "1",
       Icon: Fingerprint, enrolled: session.fido2Enrolled && webAuthnSupported(), onSelect: () => verifyPasskey() },
     { key: "TOTP", label: t("factorTotp"), explain: t("reauthTotpExplain"), keycap: "2",
-      Icon: Smartphone, enrolled: session.totpEnrolled, onSelect: () => { setErrorKey(null); setMethod("totp"); } },
+      Icon: Smartphone, enrolled: session.totpEnrolled, onSelect: () => { setError(null); setMethod("totp"); } },
     { key: "PASSWORD", label: t("factorPassword"), explain: t("reauthPasswordExplain"), keycap: "3",
-      Icon: KeyRound, enrolled: true, onSelect: () => { setErrorKey(null); setMethod("password"); } },
+      Icon: KeyRound, enrolled: true, onSelect: () => { setError(null); setMethod("password"); } },
     { key: "EMAIL", label: t("factorEmail"), explain: t("reauthEmailExplain"), keycap: "4",
       Icon: Mail, enrolled: true, onSelect: () => void startEmail() },
   ].filter((r) => allow(r.key)); // allow() folds policy allow + the held-factor exclusion (not enrollment)
@@ -158,7 +158,7 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
     }
     capture();
     setReason(why); setMethod("choose");
-    setCode(""); setPassword(""); setErrorKey(null); setBusy(false); setPolicyUnavailable(false); setOpen(true);
+    setCode(""); setPassword(""); setError(null); setBusy(false); setPolicyUnavailable(false); setOpen(true);
     pending.current = new Promise<boolean>((resolve) => { resolver.current = resolve; });
     if (factors) {
       setAllowed(factors); setResolvingFactors(false); // reactive: the server named the exact allowed factors
@@ -190,36 +190,36 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
 
   async function verifyTotp(event: React.FormEvent) {
     event.preventDefault();
-    setErrorKey(null); setBusy(true);
+    setError(null); setBusy(true);
     try {
       await reauthVerify("TOTP", { code });
       finish(true);
     } catch (e) {
-      setErrorKey(reauthErrorKey(e, "reauthInvalidCode", "reauthFailed"));
+      setError(reauthError(e, "reauthFailed"));
       setBusy(false);
     }
   }
 
   async function verifyPassword(event: React.FormEvent) {
     event.preventDefault();
-    setErrorKey(null); setBusy(true);
+    setError(null); setBusy(true);
     try {
       await reauthVerify("PASSWORD", { password });
       finish(true);
     } catch (e) {
-      setErrorKey(reauthErrorKey(e, "reauthIncorrectPassword", "reauthFailed"));
+      setError(reauthError(e, "reauthFailed"));
       setBusy(false);
     }
   }
 
   // Email is a two-step factor: prepare() sends a fresh code, then the user enters it (like the login flow).
   async function startEmail() {
-    setErrorKey(null); setBusy(true);
+    setError(null); setBusy(true);
     try {
       await reauthPrepare("EMAIL");
       setCode(""); setMethod("email");
     } catch (e) {
-      setErrorKey(reauthErrorKey(e, "reauthFailed", "reauthFailed"));
+      setError(reauthError(e, "reauthFailed"));
     } finally {
       setBusy(false);
     }
@@ -227,24 +227,24 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
 
   async function verifyEmail(event: React.FormEvent) {
     event.preventDefault();
-    setErrorKey(null); setBusy(true);
+    setError(null); setBusy(true);
     try {
       await reauthVerify("EMAIL", { code });
       finish(true);
     } catch (e) {
-      setErrorKey(reauthErrorKey(e, "reauthInvalidCode", "reauthFailed"));
+      setError(reauthError(e, "reauthFailed"));
       setBusy(false);
     }
   }
 
   async function verifyPasskey() {
-    setErrorKey(null); setBusy(true);
+    setError(null); setBusy(true);
     try {
       const prepared = await reauthPrepare("FIDO2");
       await reauthVerify("FIDO2", { credential: await assertFactorCredential(prepared) });
       finish(true);
     } catch (e) {
-      setErrorKey(reauthErrorKey(e, "reauthPasskeyFailed", "reauthPasskeyCancelled"));
+      setError(reauthError(e, "reauthPasskeyCancelled"));
       setBusy(false);
     }
   }
@@ -292,7 +292,9 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
             </div>
           </dl>
 
-          {errorKey && <p className="text-sm text-destructive">{t(errorKey)}</p>}
+          {error && (
+            <p className="text-sm text-destructive">{"key" in error ? t(error.key) : error.text}</p>
+          )}
 
           {/* Still resolving which factors the policy allows — withhold the chooser so no rejected method shows */}
           {resolvingFactors && (
@@ -401,7 +403,7 @@ export function StepUpProvider({ session, children }: { session: SessionView; ch
           {/* Back to the method chooser (only when more than one method exists) */}
           {method !== "choose" && [passkeyAvailable, totpAvailable, passwordAvailable, emailAvailable].filter(Boolean).length > 1 && (
             <Button type="button" variant="ghost" className="w-full"
-                    onClick={() => { setErrorKey(null); setCode(""); setPassword(""); setMethod("choose"); }} disabled={busy}>
+                    onClick={() => { setError(null); setCode(""); setPassword(""); setMethod("choose"); }} disabled={busy}>
               <ChevronLeft /> {t("reauthDifferentMethod")}
             </Button>
           )}
