@@ -99,7 +99,8 @@ public class FactorStepService {
             throw LockedException.of("auth.account.locked");
         }
 
-        if (factorHandlers.get(factor).verify(user, verification, request)) {
+        FactorVerificationResult result = factorHandlers.get(factor).verify(user, verification, request);
+        if (result.granted()) {
             loginAttempts.onSuccess(user.getUsername());
             factorAuth.grantFactor(request, response, factor.authority());
             appStepUp.stampIfPending(request.getSession(false)); // refresh app step-up freshness if a launch is pending
@@ -109,8 +110,10 @@ public class FactorStepService {
         }
 
         loginAttempts.onFailure(user.getUsername());
-        audit.record(mfaRecord(AuditType.MFA_FAILURE, user.getUsername(), factor, loginOrgId));
-        throw BadRequestException.of("auth.code.incorrect");
+        // The reason travels into the audit detail too: "this account replayed a spent code eleven times"
+        // is a detection signal, and it was indistinguishable from ordinary mistyping while this was a boolean.
+        audit.record(mfaRecord(AuditType.MFA_FAILURE, user.getUsername(), factor, loginOrgId, result.failure()));
+        throw BadRequestException.of(result.messageKey());
     }
 
     /**
@@ -134,7 +137,15 @@ public class FactorStepService {
      * factor is proven (password-first, or a second factor), the principal is verified and enriches normally.
      */
     private AuditRecord mfaRecord(AuditType type, String username, AuthFactor factor, UUID loginOrgId) {
-        AuditRecord record = new AuditRecord(type, username, false, "factor=" + factor.name(), null, loginOrgId);
+        return mfaRecord(type, username, factor, loginOrgId, null);
+    }
+
+    private AuditRecord mfaRecord(AuditType type, String username, AuthFactor factor, UUID loginOrgId,
+                                  FactorFailure failure) {
+        String detail = failure == null
+                ? "factor=" + factor.name()
+                : "factor=" + factor.name() + " reason=" + failure.name();
+        AuditRecord record = new AuditRecord(type, username, false, detail, null, loginOrgId);
         return noFactorProven() ? record.unverifiedActor() : record;
     }
 

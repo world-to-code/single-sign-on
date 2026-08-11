@@ -26,8 +26,11 @@ public interface MfaService {
      */
     boolean confirmEnrollment(UserAccount user, String secret, String code);
 
-    /** Verifies a TOTP code at challenge time against the user's enabled factor, rejecting replays. */
-    boolean verifyTotp(UUID userId, String code);
+    /**
+     * Verifies a TOTP code at challenge time against the user's enabled factor, rejecting replays.
+     * Answers WHY it failed: a spent code and a wrong one call for different things from the user.
+     */
+    TotpVerification verifyTotp(UUID userId, String code);
 
     boolean hasEnabledTotp(UUID userId);
 

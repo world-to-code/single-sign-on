@@ -63,17 +63,18 @@ public class EmailFactorHandler implements FactorHandler {
     }
 
     @Override
-    public boolean verify(UserAccount user, FactorVerificationRequest verification, HttpServletRequest request) {
+    public FactorVerificationResult verify(UserAccount user, FactorVerificationRequest verification,
+                                           HttpServletRequest request) {
         // Re-checked here too: a code minted before the address changed must not still authenticate.
         if (!user.isEmailVerified()) {
-            return false;
+            return FactorVerificationResult.incorrect();
         }
         // "That code is wrong" is the wrong answer when no code was ever sent — and no attempt is spent for a
         // code that never arrived.
         if (deliveryFailed(request)) {
             throw BadRequestException.of("auth.factor.email.notDelivered");
         }
-        return challenge.matches(request.getSession(false), verification.code());
+        return challenge.verify(request.getSession(false), verification.code());
     }
 
     /**

@@ -36,6 +36,10 @@ public interface FactorHandler {
         return false;
     }
 
-    /** Verifies the user's response for this factor (and completes enrollment where applicable). */
-    boolean verify(UserAccount user, FactorVerificationRequest verification, HttpServletRequest request);
+    /**
+     * Verifies the user's response for this factor (and completes enrollment where applicable), answering
+     * WHY when it does not grant — a boolean here used to erase every handler's reason at once.
+     */
+    FactorVerificationResult verify(UserAccount user, FactorVerificationRequest verification,
+                                    HttpServletRequest request);
 }

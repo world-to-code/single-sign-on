@@ -1,6 +1,7 @@
 package com.example.sso.mfa.internal.application;
 
 import com.example.sso.crypto.SecretCipher;
+import com.example.sso.mfa.TotpVerification;
 import com.example.sso.mfa.internal.domain.MfaFactor;
 import com.example.sso.mfa.internal.domain.MfaFactorRepository;
 import com.example.sso.mfa.internal.domain.MfaType;
@@ -86,25 +87,56 @@ class MfaServiceImplTest {
     void verifyTotpDecryptsTheStoredSecretAndAcceptsAFreshCode() {
         MfaFactor factor = enabledFactor("encg:stored", null);
         when(factors.findByUserIdAndType(userId, MfaType.TOTP)).thenReturn(Optional.of(factor));
+        when(totpService.isWellFormedCode("111111")).thenReturn(true);
         when(secretCipher.decrypt("encg:stored")).thenReturn("PLAIN");
         when(totpService.matchingCounter("PLAIN", "111111")).thenReturn(10L);
 
-        boolean verified = service.verifyTotp(userId, "111111");
+        TotpVerification verified = service.verifyTotp(userId, "111111");
 
-        assertThat(verified).isTrue();
+        assertThat(verified).isEqualTo(TotpVerification.GRANTED);
         verify(secretCipher).decrypt("encg:stored");
         verify(factors).save(factor);
         assertThat(factor.getLastUsedStep()).isEqualTo(10L);
     }
 
+    /**
+     * The reason, not merely the refusal. A spent code told the user "incorrect", so the natural response —
+     * retyping the same six digits — could never work; STALE is what makes "wait for the next one" sayable.
+     */
     @Test
-    void verifyTotpRejectsAReplayedOrOlderStep() {
+    void verifyTotpRejectsAReplayedOrOlderStepAsStaleRatherThanIncorrect() {
         MfaFactor factor = enabledFactor("encg:stored", 20L);
         when(factors.findByUserIdAndType(userId, MfaType.TOTP)).thenReturn(Optional.of(factor));
+        when(totpService.isWellFormedCode("111111")).thenReturn(true);
         when(secretCipher.decrypt("encg:stored")).thenReturn("PLAIN");
         when(totpService.matchingCounter("PLAIN", "111111")).thenReturn(15L);
 
-        assertThat(service.verifyTotp(userId, "111111")).isFalse();
+        assertThat(service.verifyTotp(userId, "111111")).isEqualTo(TotpVerification.STALE);
+        verify(factors, never()).save(any());
+    }
+
+    /** Six digits that match no step is a different answer from one already spent. */
+    @Test
+    void verifyTotpReportsACodeThatMatchesNoStepAsIncorrect() {
+        MfaFactor factor = enabledFactor("encg:stored", 20L);
+        when(factors.findByUserIdAndType(userId, MfaType.TOTP)).thenReturn(Optional.of(factor));
+        when(totpService.isWellFormedCode("111111")).thenReturn(true);
+        when(secretCipher.decrypt("encg:stored")).thenReturn("PLAIN");
+        when(totpService.matchingCounter("PLAIN", "111111")).thenReturn(-1L);
+
+        assertThat(service.verifyTotp(userId, "111111")).isEqualTo(TotpVerification.INCORRECT);
+        verify(factors, never()).save(any());
+    }
+
+    /** A submission that is not six digits is refused without the secret ever being decrypted. */
+    @Test
+    void verifyTotpRejectsAMalformedCodeWithoutTouchingTheSecret() {
+        MfaFactor factor = enabledFactor("encg:stored", null);
+        when(factors.findByUserIdAndType(userId, MfaType.TOTP)).thenReturn(Optional.of(factor));
+        when(totpService.isWellFormedCode("12")).thenReturn(false);
+
+        assertThat(service.verifyTotp(userId, "12")).isEqualTo(TotpVerification.MALFORMED);
+        verifyNoInteractions(secretCipher);
         verify(factors, never()).save(any());
     }
 
@@ -112,7 +144,7 @@ class MfaServiceImplTest {
     void verifyTotpFailsClosedWhenNoFactorIsEnrolled() {
         when(factors.findByUserIdAndType(userId, MfaType.TOTP)).thenReturn(Optional.empty());
 
-        assertThat(service.verifyTotp(userId, "111111")).isFalse();
+        assertThat(service.verifyTotp(userId, "111111")).isEqualTo(TotpVerification.NOT_ENROLLED);
         verifyNoInteractions(secretCipher);
     }
 

@@ -4,6 +4,7 @@ import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.mfa.MfaService;
 import com.example.sso.mfa.QrCodeService;
 import com.example.sso.mfa.TotpEnrollment;
+import com.example.sso.mfa.TotpVerification;
 import com.example.sso.user.account.UserAccount;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -81,9 +82,9 @@ class TotpFactorHandlerTest {
     void verifyForAnEnrolledUserChecksTheTotpCode() {
         when(user.getId()).thenReturn(userId);
         when(mfa.hasEnabledTotp(userId)).thenReturn(true);
-        when(mfa.verifyTotp(userId, "123456")).thenReturn(true);
+        when(mfa.verifyTotp(userId, "123456")).thenReturn(TotpVerification.GRANTED);
 
-        assertThat(handler().verify(user, code("123456"), new MockHttpServletRequest())).isTrue();
+        assertThat(handler().verify(user, code("123456"), new MockHttpServletRequest()).granted()).isTrue();
     }
 
     @Test
@@ -98,11 +99,11 @@ class TotpFactorHandlerTest {
 
         when(mfa.confirmEnrollment(user, "SECRET", "123456")).thenReturn(true);
 
-        assertThat(handler.verify(user, code("123456"), request)).isTrue();
+        assertThat(handler.verify(user, code("123456"), request).granted()).isTrue();
     }
 
     @Test
     void verifyWithANullCodeReturnsFalse() {
-        assertThat(handler().verify(user, code(null), new MockHttpServletRequest())).isFalse();
+        assertThat(handler().verify(user, code(null), new MockHttpServletRequest()).granted()).isFalse();
     }
 }

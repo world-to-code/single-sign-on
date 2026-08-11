@@ -124,7 +124,7 @@ class FactorStepServiceTest {
         when(user.isTemporarilyLocked(any(Instant.class))).thenReturn(false);
         when(user.isAccountNonLocked()).thenReturn(true);
         when(factorHandlers.get(AuthFactor.TOTP)).thenReturn(handler);
-        when(handler.verify(eq(user), any(), eq(request))).thenReturn(false);
+        when(handler.verify(eq(user), any(), eq(request))).thenReturn(FactorVerificationResult.incorrect());
 
         assertThatThrownBy(() -> service.verify(AuthFactor.TOTP, code("000000"), request, response))
                 .isInstanceOf(BadRequestException.class);
@@ -141,7 +141,7 @@ class FactorStepServiceTest {
         when(user.isTemporarilyLocked(any(Instant.class))).thenReturn(false);
         when(user.isAccountNonLocked()).thenReturn(true);
         when(factorHandlers.get(AuthFactor.TOTP)).thenReturn(handler);
-        when(handler.verify(eq(user), any(), eq(request))).thenReturn(false);
+        when(handler.verify(eq(user), any(), eq(request))).thenReturn(FactorVerificationResult.incorrect());
 
         assertThatThrownBy(() -> service.verify(AuthFactor.TOTP, code("000000"), request, response))
                 .isInstanceOf(BadRequestException.class);
@@ -155,7 +155,7 @@ class FactorStepServiceTest {
         when(user.isTemporarilyLocked(any(Instant.class))).thenReturn(false);
         when(user.isAccountNonLocked()).thenReturn(true);
         when(factorHandlers.get(AuthFactor.TOTP)).thenReturn(handler);
-        when(handler.verify(eq(user), any(), eq(request))).thenReturn(true);
+        when(handler.verify(eq(user), any(), eq(request))).thenReturn(FactorVerificationResult.success());
         when(completionService.completeIfSatisfied(request, response))
                 .thenReturn(AuthSessionView.organizationPending(true));
 
@@ -228,7 +228,7 @@ class FactorStepServiceTest {
         when(user.isTemporarilyLocked(any())).thenReturn(false);
         when(user.isAccountNonLocked()).thenReturn(true);
         when(factorHandlers.get(AuthFactor.FIDO2)).thenReturn(handler);
-        when(handler.verify(eq(user), any(), eq(request))).thenReturn(true);
+        when(handler.verify(eq(user), any(), eq(request))).thenReturn(FactorVerificationResult.success());
         when(completionService.completeIfSatisfied(request, response))
                 .thenReturn(AuthSessionView.organizationPending(true));
 
@@ -269,7 +269,7 @@ class FactorStepServiceTest {
         when(user.isTemporarilyLocked(any())).thenReturn(false);
         when(user.isAccountNonLocked()).thenReturn(true);
         when(factorHandlers.get(AuthFactor.FIDO2)).thenReturn(handler);
-        when(handler.verify(eq(user), any(), eq(request))).thenReturn(true);
+        when(handler.verify(eq(user), any(), eq(request))).thenReturn(FactorVerificationResult.success());
         when(completionService.completeIfSatisfied(request, response))
                 .thenReturn(AuthSessionView.organizationPending(true));
 

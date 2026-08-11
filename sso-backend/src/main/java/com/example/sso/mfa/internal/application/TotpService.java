@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * Self-contained RFC 6238 TOTP implementation (HMAC-SHA1, 6 digits, 30s step) plus
@@ -25,6 +26,16 @@ public class TotpService {
     private static final int WINDOW = 1; // accept ±1 step to tolerate clock skew
     private static final String ALGORITHM = "HmacSHA1";
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final Pattern CODE_FORMAT = Pattern.compile("\\d{" + DIGITS + "}");
+
+    /**
+     * Whether the submission is even shaped like a TOTP code. Separated from verification because
+     * "that is not six digits" and "those six digits are wrong" are different things to be told, and
+     * because a malformed submission never needs the secret decrypted to be refused.
+     */
+    public boolean isWellFormedCode(String code) {
+        return code != null && CODE_FORMAT.matcher(code.trim()).matches();
+    }
 
     /** Generates a new random Base32 secret (160 bits). */
     public String generateSecret() {
@@ -68,10 +79,10 @@ public class TotpService {
             return -1;
         }
 
-        String trimmed = code.trim();
-        if (!trimmed.matches("\\d{" + DIGITS + "}")) {
+        if (!isWellFormedCode(code)) {
             return -1;
         }
+        String trimmed = code.trim();
 
         byte[] key = base32Decode(base32Secret);
         long counter = epochMillis / 1000L / PERIOD_SECONDS;

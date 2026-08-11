@@ -97,7 +97,16 @@ public class Fido2FactorHandler implements FactorHandler {
     }
 
     @Override
-    public boolean verify(UserAccount user, FactorVerificationRequest verification, HttpServletRequest request) {
+    public FactorVerificationResult verify(UserAccount user, FactorVerificationRequest verification,
+                                           HttpServletRequest request) {
+        return ceremonyCompleted(user, verification, request)
+                ? FactorVerificationResult.success()
+                : FactorVerificationResult.failed(FactorFailure.PASSKEY);
+    }
+
+    /** Every refusal here answers the same way, so the ceremony itself stays a plain yes/no. */
+    private boolean ceremonyCompleted(UserAccount user, FactorVerificationRequest verification,
+                                      HttpServletRequest request) {
         if (verification.credential() == null) {
             return false;
         }

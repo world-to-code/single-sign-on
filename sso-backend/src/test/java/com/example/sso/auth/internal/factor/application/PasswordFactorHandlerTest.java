@@ -50,9 +50,23 @@ class PasswordFactorHandlerTest {
         when(user.getId()).thenReturn(id);
         when(userService.verifyPassword(id, "secret")).thenReturn(true);
 
-        boolean ok = handler().verify(user, new FactorVerificationRequest(null, "secret", null),
+        FactorVerificationResult result = handler().verify(user, new FactorVerificationRequest(null, "secret", null),
                 new MockHttpServletRequest());
 
-        assertThat(ok).isTrue();
+        assertThat(result.granted()).isTrue();
+    }
+
+    /** "Incorrect code" was the answer to a wrong PASSWORD, on a screen with no code on it. */
+    @Test
+    void verifyReportsAWrongPasswordAsAPasswordFailureNotACodeOne() {
+        UUID id = UUID.randomUUID();
+        when(user.getId()).thenReturn(id);
+        when(userService.verifyPassword(id, "wrong")).thenReturn(false);
+
+        FactorVerificationResult result = handler().verify(user, new FactorVerificationRequest(null, "wrong", null),
+                new MockHttpServletRequest());
+
+        assertThat(result.failure()).isEqualTo(FactorFailure.INCORRECT_PASSWORD);
+        assertThat(result.messageKey()).isEqualTo("auth.password.incorrect");
     }
 }

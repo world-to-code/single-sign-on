@@ -4,6 +4,7 @@ import com.example.sso.authpolicy.factor.AuthFactor;
 import com.example.sso.mfa.MfaService;
 import com.example.sso.mfa.QrCodeService;
 import com.example.sso.mfa.TotpEnrollment;
+import com.example.sso.mfa.TotpVerification;
 import com.example.sso.user.account.UserAccount;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
@@ -52,21 +53,38 @@ public class TotpFactorHandler implements FactorHandler {
     }
 
     @Override
-    public boolean verify(UserAccount user, FactorVerificationRequest verification, HttpServletRequest request) {
+    public FactorVerificationResult verify(UserAccount user, FactorVerificationRequest verification,
+                                           HttpServletRequest request) {
         if (verification.code() == null) {
-            return false;
+            return FactorVerificationResult.failed(FactorFailure.MALFORMED);
         }
 
         if (mfa.hasEnabledTotp(user.getId())) {
-            return mfa.verifyTotp(user.getId(), verification.code());
+            return challengeResult(mfa.verifyTotp(user.getId(), verification.code()));
         }
 
         HttpSession session = request.getSession(false);
         String secret = session == null ? null : (String) session.getAttribute(PENDING_SECRET);
         boolean confirmed = mfa.confirmEnrollment(user, secret, verification.code());
-        if (confirmed && session != null) {
+        if (!confirmed) {
+            return FactorVerificationResult.incorrect();
+        }
+        if (session != null) {
             session.removeAttribute(PENDING_SECRET);
         }
-        return confirmed;
+        return FactorVerificationResult.success();
+    }
+
+    /**
+     * NOT_ENROLLED is deliberately answered as a plain wrong code: reaching it means the policy asked for a
+     * factor this account does not hold, which is our bug to fix, not something to explain to the user.
+     */
+    private FactorVerificationResult challengeResult(TotpVerification verification) {
+        return switch (verification) {
+            case GRANTED -> FactorVerificationResult.success();
+            case MALFORMED -> FactorVerificationResult.failed(FactorFailure.MALFORMED);
+            case STALE -> FactorVerificationResult.failed(FactorFailure.STALE);
+            case INCORRECT, NOT_ENROLLED -> FactorVerificationResult.incorrect();
+        };
     }
 }

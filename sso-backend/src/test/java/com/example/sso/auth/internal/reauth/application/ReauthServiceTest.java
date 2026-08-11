@@ -4,6 +4,7 @@ import com.example.sso.auth.internal.factor.application.FactorChallenge;
 import com.example.sso.auth.internal.factor.application.FactorHandler;
 import com.example.sso.auth.internal.factor.application.FactorHandlers;
 import com.example.sso.auth.internal.factor.application.FactorVerificationRequest;
+import com.example.sso.auth.internal.factor.application.FactorVerificationResult;
 import com.example.sso.auth.internal.login.application.CurrentUserProvider;
 
 import com.example.sso.audit.AuditRecord;
@@ -107,7 +108,7 @@ class ReauthServiceTest {
     void verifyStampsTheDeliberateStepUpAndClearsThePendingSetOnSuccess() {
         MockHttpServletRequest request = requestWithPending("FIDO2");
         when(factorHandlers.get(AuthFactor.FIDO2)).thenReturn(handler);
-        when(handler.verify(eq(user), any(), eq(request))).thenReturn(true);
+        when(handler.verify(eq(user), any(), eq(request))).thenReturn(FactorVerificationResult.success());
 
         service.verify(AuthFactor.FIDO2, response("cred"), request, new MockHttpServletResponse());
 
@@ -132,7 +133,7 @@ class ReauthServiceTest {
     void verifyWithAWrongResponseNeitherStampsNorRotatesAndAuditsFailure() {
         MockHttpServletRequest request = requestWithPending("TOTP,FIDO2");
         when(factorHandlers.get(AuthFactor.TOTP)).thenReturn(handler);
-        when(handler.verify(eq(user), any(), eq(request))).thenReturn(false);
+        when(handler.verify(eq(user), any(), eq(request))).thenReturn(FactorVerificationResult.incorrect());
 
         assertThatThrownBy(() -> service.verify(AuthFactor.TOTP, response("000000"), request, new MockHttpServletResponse()))
                 .isInstanceOf(BadRequestException.class);
@@ -166,7 +167,7 @@ class ReauthServiceTest {
         // A proactive re-auth with no interceptor challenge: allowed factors come from the policy.
         MockHttpServletRequest request = requestWithPending(null);
         when(factorHandlers.get(AuthFactor.TOTP)).thenReturn(handler);
-        when(handler.verify(eq(user), any(), eq(request))).thenReturn(true);
+        when(handler.verify(eq(user), any(), eq(request))).thenReturn(FactorVerificationResult.success());
 
         service.verify(AuthFactor.TOTP, response("123456"), request, new MockHttpServletResponse());
 
@@ -183,7 +184,7 @@ class ReauthServiceTest {
         session.setAttribute(StepUpInterceptor.STEPUP_FACTORS_TIME, System.currentTimeMillis() - 60L * 60_000L); // 1h old
         request.setSession(session);
         when(factorHandlers.get(AuthFactor.TOTP)).thenReturn(handler);
-        when(handler.verify(eq(user), any(), eq(request))).thenReturn(true);
+        when(handler.verify(eq(user), any(), eq(request))).thenReturn(FactorVerificationResult.success());
 
         // TOTP is a policy re-auth factor but NOT in the stale FIDO2-only pending — the stale attr is ignored.
         service.verify(AuthFactor.TOTP, response("123456"), request, new MockHttpServletResponse());
@@ -207,7 +208,7 @@ class ReauthServiceTest {
         when(sessionPolicy.effectiveForUser(user)).thenReturn(effectiveWith("TOTP,FIDO2", true));
         MockHttpServletRequest request = requestWithPending("FIDO2");
         when(factorHandlers.get(AuthFactor.FIDO2)).thenReturn(handler);
-        when(handler.verify(eq(user), any(), eq(request))).thenReturn(true);
+        when(handler.verify(eq(user), any(), eq(request))).thenReturn(FactorVerificationResult.success());
 
         service.verify(AuthFactor.FIDO2, response("cred"), request, new MockHttpServletResponse());
 

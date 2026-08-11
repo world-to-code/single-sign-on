@@ -40,25 +40,28 @@ class SessionOtpChallenge {
     }
 
     /**
-     * True when {@code presented} matches the live code — consuming it on success. A wrong code counts against
-     * the attempt cap and is burned once the cap is reached (forcing a re-send); a missing session, expired or
-     * absent code all return false.
+     * Grants when {@code presented} matches the live code, consuming it. A wrong code counts against the
+     * attempt cap and is burned once the cap is reached (forcing a re-send).
+     *
+     * <p>No live code — never sent, expired, or already burned — answers STALE rather than "incorrect".
+     * The code on the person's screen is genuinely dead in every one of those cases, and the action that
+     * fixes it is to request another one, which "incorrect" actively discourages.
      */
-    boolean matches(HttpSession session, String presented) {
+    FactorVerificationResult verify(HttpSession session, String presented) {
         if (session == null || presented == null) {
-            return false;
+            return FactorVerificationResult.failed(FactorFailure.STALE);
         }
         String expected = (String) session.getAttribute(codeKey);
         Object expiresAt = session.getAttribute(expiresAtKey);
         if (expected == null || !(expiresAt instanceof Long expiry) || System.currentTimeMillis() > expiry) {
-            return false;
+            return FactorVerificationResult.failed(FactorFailure.STALE);
         }
 
         // Constant-time compare so a near-miss code can't be distinguished by response timing.
         if (MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8),
                 presented.trim().getBytes(StandardCharsets.UTF_8))) {
             clear(session);
-            return true;
+            return FactorVerificationResult.success();
         }
 
         int attempts = (session.getAttribute(attemptsKey) instanceof Integer a ? a : 0) + 1;
@@ -67,7 +70,7 @@ class SessionOtpChallenge {
         } else {
             session.setAttribute(attemptsKey, attempts);
         }
-        return false;
+        return FactorVerificationResult.incorrect();
     }
 
     private void clear(HttpSession session) {

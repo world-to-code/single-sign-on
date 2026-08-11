@@ -3,6 +3,7 @@ package com.example.sso.mfa.internal.application;
 import com.example.sso.crypto.SecretCipher;
 import com.example.sso.mfa.MfaService;
 import com.example.sso.mfa.TotpEnrollment;
+import com.example.sso.mfa.TotpVerification;
 import com.example.sso.mfa.internal.domain.MfaFactor;
 import com.example.sso.mfa.internal.domain.MfaFactorRepository;
 import com.example.sso.mfa.internal.domain.MfaType;
@@ -69,25 +70,34 @@ public class MfaServiceImpl implements MfaService {
 
     @Override
     @Transactional
-    public boolean verifyTotp(UUID userId, String code) {
+    public TotpVerification verifyTotp(UUID userId, String code) {
         MfaFactor factor = factors.findByUserIdAndType(userId, MfaType.TOTP)
                 .filter(MfaFactor::isEnabled).orElse(null);
         if (factor == null) {
-            return false;
+            return TotpVerification.NOT_ENROLLED;
+        }
+
+        // Checked before the secret is decrypted: a submission that is not six digits cannot match
+        // anything, so there is no reason to touch key material to refuse it.
+        if (!totpService.isWellFormedCode(code)) {
+            return TotpVerification.MALFORMED;
         }
 
         long step = totpService.matchingCounter(secretCipher.decrypt(factor.getSecret()), code);
         if (step < 0) {
-            return false;
+            return TotpVerification.INCORRECT;
         }
 
+        // The replay guard refuses any counter at or below the last one spent, so this one branch covers
+        // both a code already used and an unused code from an elapsed step. Neither becomes valid by
+        // retyping it, which is why the two are told apart from INCORRECT but not from each other.
         if (factor.getLastUsedStep() != null && step <= factor.getLastUsedStep()) {
-            return false; // already used this (or a later) code — replay
+            return TotpVerification.STALE;
         }
 
         factor.recordUsedStep(step);
         factors.save(factor);
-        return true;
+        return TotpVerification.GRANTED;
     }
 
     @Override

@@ -36,8 +36,9 @@ public class TotpEnrollmentService {
     /** Confirms setup by verifying a code against the freshly scanned secret; persists on success, 400 otherwise. */
     public void confirmSetup(FactorVerificationRequest verification, HttpServletRequest request) {
         UserAccount user = currentUser.requireMfaComplete();
-        if (!factorHandlers.get(AuthFactor.TOTP).verify(user, verification, request)) {
-            throw BadRequestException.of("auth.code.incorrect");
+        FactorVerificationResult result = factorHandlers.get(AuthFactor.TOTP).verify(user, verification, request);
+        if (!result.granted()) {
+            throw BadRequestException.of(result.messageKey());
         }
 
         audit.record(AuditType.TOTP_ENROLLED, user.getUsername(), true);

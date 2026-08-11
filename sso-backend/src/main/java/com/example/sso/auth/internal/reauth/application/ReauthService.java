@@ -3,6 +3,7 @@ package com.example.sso.auth.internal.reauth.application;
 import com.example.sso.auth.internal.factor.application.FactorChallenge;
 import com.example.sso.auth.internal.factor.application.FactorHandlers;
 import com.example.sso.auth.internal.factor.application.FactorVerificationRequest;
+import com.example.sso.auth.internal.factor.application.FactorVerificationResult;
 import com.example.sso.auth.internal.login.application.CurrentUserProvider;
 
 import com.example.sso.audit.AuditRecord;
@@ -67,9 +68,13 @@ public class ReauthService {
         EffectiveSessionPolicy effective = sessionPolicy.effectiveForUser(user);
         requireAllowedFactor(request, effective, factor);
 
-        if (!factorHandlers.get(factor).verify(user, verification, request)) {
-            audit.record(new AuditRecord(AuditType.REAUTH_FAILURE, user.getUsername(), false, "factor=" + factor, null));
-            throw BadRequestException.of("auth.reauth.failed");
+        FactorVerificationResult result = factorHandlers.get(factor).verify(user, verification, request);
+        if (!result.granted()) {
+            audit.record(new AuditRecord(AuditType.REAUTH_FAILURE, user.getUsername(), false,
+                    "factor=" + factor + " reason=" + result.failure().name(), null));
+            // The factor's own reason, not a blanket "re-authentication failed": the step-up modal is where a
+            // replayed code is most likely, since the person is typing under time pressure mid-action.
+            throw BadRequestException.of(result.messageKey());
         }
 
         // Per-policy defence in depth: rotate the session id on a successful re-auth BEFORE the response

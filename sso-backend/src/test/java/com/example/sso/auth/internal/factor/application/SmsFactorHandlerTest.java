@@ -85,7 +85,7 @@ class SmsFactorHandlerTest {
 
         // The code still works once delivery recovers, which it would not if those had counted as tries.
         when(sms.deliveryFailed(request.getSession(true).getId())).thenReturn(false);
-        assertThat(handler.verify(user, code(CODE), request)).isTrue();
+        assertThat(handler.verify(user, code(CODE), request).granted()).isTrue();
     }
 
     /** A delivered code is unaffected — the check must not swallow the ordinary path. */
@@ -96,7 +96,7 @@ class SmsFactorHandlerTest {
         handler.prepare(user, request);
         when(sms.deliveryFailed(request.getSession(true).getId())).thenReturn(false);
 
-        assertThat(handler.verify(user, code(CODE), request)).isTrue();
+        assertThat(handler.verify(user, code(CODE), request).granted()).isTrue();
     }
 
     /** Asking for a fresh code forgets the previous failure, or the resend reports the attempt before it. */
@@ -132,7 +132,7 @@ class SmsFactorHandlerTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         handler.prepare(user, request);
 
-        assertThat(handler.verify(user, code(CODE), request)).isTrue();
+        assertThat(handler.verify(user, code(CODE), request).granted()).isTrue();
     }
 
     @Test
@@ -141,8 +141,8 @@ class SmsFactorHandlerTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         handler.prepare(user, request);
 
-        assertThat(handler.verify(user, code("000000"), request)).isFalse();
-        assertThat(handler.verify(user, code(CODE), request)).isTrue(); // still valid, under the attempt cap
+        assertThat(handler.verify(user, code("000000"), request).granted()).isFalse();
+        assertThat(handler.verify(user, code(CODE), request).granted()).isTrue(); // still valid, under the attempt cap
     }
 
     @Test
@@ -152,9 +152,9 @@ class SmsFactorHandlerTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         strict.prepare(user, request);
 
-        assertThat(strict.verify(user, code("000000"), request)).isFalse();
-        assertThat(strict.verify(user, code("111111"), request)).isFalse(); // reaches the cap -> burned
-        assertThat(strict.verify(user, code(CODE), request)).isFalse();     // correct, but the code is gone
+        assertThat(strict.verify(user, code("000000"), request).granted()).isFalse();
+        assertThat(strict.verify(user, code("111111"), request).granted()).isFalse(); // reaches the cap -> burned
+        assertThat(strict.verify(user, code(CODE), request).granted()).isFalse();     // correct, but the code is gone
     }
 
     @Test
@@ -164,21 +164,21 @@ class SmsFactorHandlerTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         expired.prepare(user, request);
 
-        assertThat(expired.verify(user, code(CODE), request)).isFalse();
+        assertThat(expired.verify(user, code(CODE), request).granted()).isFalse();
     }
 
     @Test
     void verifyWithANullCodeReturnsFalse() {
         MockHttpServletRequest request = new MockHttpServletRequest();
 
-        assertThat(handler.verify(user, code(null), request)).isFalse();
+        assertThat(handler.verify(user, code(null), request).granted()).isFalse();
     }
 
     @Test
     void verifyWithoutAnEstablishedSessionReturnsFalse() {
         MockHttpServletRequest request = new MockHttpServletRequest(); // no session prepared
 
-        assertThat(handler.verify(user, code(CODE), request)).isFalse();
+        assertThat(handler.verify(user, code(CODE), request).granted()).isFalse();
     }
 
     @Test
@@ -211,6 +211,6 @@ class SmsFactorHandlerTest {
         handler.prepare(user, request);
 
         when(user.isPhoneVerified()).thenReturn(false);
-        assertThat(handler.verify(user, code(CODE), request)).isFalse();
+        assertThat(handler.verify(user, code(CODE), request).granted()).isFalse();
     }
 }

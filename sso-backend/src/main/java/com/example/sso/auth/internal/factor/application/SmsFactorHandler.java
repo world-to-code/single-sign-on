@@ -53,13 +53,14 @@ public class SmsFactorHandler implements FactorHandler {
     }
 
     @Override
-    public boolean verify(UserAccount user, FactorVerificationRequest verification, HttpServletRequest request) {
+    public FactorVerificationResult verify(UserAccount user, FactorVerificationRequest verification,
+                                           HttpServletRequest request) {
         // Re-checked here too: a code minted before the number changed must not still authenticate.
         if (!user.isPhoneVerified()) {
-            return false;
+            return FactorVerificationResult.incorrect();
         }
         requireCodeWasDelivered(request);
-        return challenge.matches(request.getSession(false), verification.code());
+        return challenge.verify(request.getSession(false), verification.code());
     }
 
     @Override
