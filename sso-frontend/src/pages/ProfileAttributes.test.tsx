@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ProfileAttributes from "./ProfileAttributes";
 import { ConfirmProvider } from "@/components/ConfirmProvider";
 import { listProfiles, deleteAttributeDefinition, type AttributeDefinition } from "@/attributeDefinitions";
-import { apiGet } from "@/api";
+import { ApiError, apiGet } from "@/api";
 
 vi.mock("react-i18next", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react-i18next")>()),
@@ -117,5 +117,52 @@ describe("ProfileAttributes", () => {
     fireEvent.click(document.querySelector("[data-confirm]") as HTMLElement);
 
     await waitFor(() => expect(deleteAttributeDefinition).toHaveBeenCalledWith("a-9"));
+  });
+
+  /**
+   * A refused profile list is not "this organization has no profiles". Swallowed into an empty array it
+   * dropped the picker — the only control that says which schema is on screen — and left the page asking the
+   * profile-LESS endpoint, which answers a different question and looks perfectly healthy doing it.
+   */
+  describe("when the profile list cannot be loaded", () => {
+    beforeEach(() => {
+      vi.mocked(listProfiles).mockRejectedValue(new ApiError(403, "You may not read profiles"));
+    });
+
+    it("renders the refusal instead of silently dropping the picker", async () => {
+      renderPage();
+
+      await waitFor(() => expect(screen.getByText("You may not read profiles")).toBeInTheDocument());
+      expect(screen.queryByLabelText("profileAttrProfile")).not.toBeInTheDocument();
+    });
+
+    it("does not show USER attributes answered by the profile-less endpoint", async () => {
+      vi.mocked(apiGet).mockResolvedValue([attr({ key: "elsewhere", displayName: "Elsewhere" })] as never);
+      renderPage();
+
+      await waitFor(() => expect(screen.getByText("You may not read profiles")).toBeInTheDocument());
+      expect(screen.queryByText("Elsewhere")).not.toBeInTheDocument();
+    });
+
+    /** Declaring one here would attach it to no profile at all — a write the admin cannot see or undo. */
+    it("refuses to declare a USER attribute while the profile is unknown", async () => {
+      renderPage();
+
+      await waitFor(() => expect(screen.getByText("You may not read profiles")).toBeInTheDocument());
+      expect(screen.getByRole("button", { name: "profileAttrNew" })).toBeDisabled();
+    });
+
+    it("still lists GROUP attributes, which do not live in a profile", async () => {
+      vi.mocked(apiGet).mockResolvedValue([
+        attr({ entityKind: "GROUP", key: "tier", displayName: "Tier" }),
+      ] as never);
+      renderPage();
+      await waitFor(() => expect(screen.getByText("You may not read profiles")).toBeInTheDocument());
+
+      fireEvent.click(screen.getByText("profileAttrKind_GROUP"));
+
+      await waitFor(() => expect(screen.getByText("Tier")).toBeInTheDocument());
+      expect(screen.getByRole("button", { name: "profileAttrNew" })).toBeEnabled();
+    });
   });
 });

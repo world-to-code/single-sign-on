@@ -16,10 +16,11 @@ import {
   type AttributeEntityKind,
   type AttributeSource,
 } from "@/attributeDefinitions";
+import { errorMessage } from "@/api";
 import { PageHeader } from "@/components/PageHeader";
 import { CsvImport } from "@/components/CsvImport";
 import { ProfileMappings } from "@/components/ProfileMappings";
-import { DataList, EmptyState } from "@/components/states";
+import { DataList, EmptyState, ErrorCard } from "@/components/states";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -68,6 +69,7 @@ export default function ProfileAttributes() {
   const [kind, setKind] = useState<AttributeEntityKind>("USER");
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profileId, setProfileId] = useState<string | null>(null);
+  const [profilesError, setProfilesError] = useState<string | null>(null);
 
   // A person's attributes belong to a profile, so which profile is the first question this page asks. Every
   // identity source has one of its own, and seeing them side by side is what makes a mapping legible.
@@ -77,8 +79,16 @@ export default function ProfileAttributes() {
         setProfiles(all);
         setProfileId((current) => current ?? all.find((p) => p.kind === "TENANT")?.id ?? null);
       })
-      .catch(() => setProfiles([]));
+      // Not swallowed into an empty list: the picker only draws when it has profiles, so a refusal dropped
+      // the one control naming the schema on screen and left the page asking the profile-LESS endpoint —
+      // a different set of attributes, rendered as if it were this profile's.
+      .catch((e) => setProfilesError(errorMessage(e)));
   }, []);
+
+  // Why this page cannot say which profile it is showing, or null. A USER attribute is declared INSIDE a
+  // profile, so without the list the page may neither render a set from elsewhere nor let one be declared
+  // outside a profile entirely. GROUP attributes live outside profiles, so that tab is unaffected.
+  const profileFailure = kind === "USER" ? profilesError : null;
 
   const profile = profiles.find((p) => p.id === profileId) ?? null;
   const tenantProfile = profiles.find((p) => p.kind === "TENANT") ?? null;
@@ -129,7 +139,7 @@ export default function ProfileAttributes() {
         title={t("profileAttrTitle")}
         description={t("profileAttrDescription")}
         actions={
-          <Button onClick={editor.openCreate}>
+          <Button onClick={editor.openCreate} disabled={profileFailure !== null}>
             <Plus /> {t("profileAttrNew")}
           </Button>
         }
@@ -168,55 +178,20 @@ export default function ProfileAttributes() {
         ))}
       </div>
 
-      <DataList
-        data={definitions.data}
-        error={definitions.error}
-        cause={definitions.cause}
-        onRetry={definitions.reload}
-        isEmpty={(rows) => rows.length === 0}
-        empty={<EmptyState title={t("states:profileAttrEmptyTitle")} hint={t("states:profileAttrEmptyHint")} />}
-      >
-        {(rows) => (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("profileAttrColName")}</TableHead>
-                <TableHead>{t("profileAttrColKey")}</TableHead>
-                <TableHead>{t("profileAttrColType")}</TableHead>
-                <TableHead>{t("profileAttrColOwner")}</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((d) => (
-                <TableRow key={d.id ?? d.key}>
-                  <TableCell className="font-medium">{d.displayName}</TableCell>
-                  <TableCell><Badge variant="muted" className="font-mono">{d.key}</Badge></TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {t(`profileAttrType_${d.dataType}`)}{d.multiValued ? ` · ${t("profileAttrMulti")}` : ""}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={d.base ? "secondary" : d.source === "DIRECTORY" ? "default" : "muted"}>
-                      {d.base ? t("profileAttrBuiltIn") : t(`profileAttrSource_${d.source}`)}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {/* A built-in is an app_user column shown for context: there is no declaration to edit. */}
-                    {!d.base && (
-                      <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => edit(d)}><Pencil /></Button>
-                        <Button variant="ghost" size="icon"
-                                className="text-muted-foreground hover:text-destructive"
-                                onClick={() => remove(d)}><Trash2 /></Button>
-                      </div>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </DataList>
+      {profileFailure ? (
+        <ErrorCard message={profileFailure} />
+      ) : (
+        <DataList
+          data={definitions.data}
+          error={definitions.error}
+          cause={definitions.cause}
+          onRetry={definitions.reload}
+          isEmpty={(rows) => rows.length === 0}
+          empty={<EmptyState title={t("states:profileAttrEmptyTitle")} hint={t("states:profileAttrEmptyHint")} />}
+        >
+          {(rows) => <AttributeTable rows={rows} onEdit={edit} onRemove={remove} />}
+        </DataList>
+      )}
 
       {/* A source profile only matters through what it feeds; the tenant's own has nothing to map INTO. */}
       {kind === "USER" && profile && profile.kind !== "TENANT" && tenantProfile && (
@@ -314,5 +289,54 @@ export default function ProfileAttributes() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/** The declared attributes of the selected profile, with the built-ins shown for context. */
+function AttributeTable({ rows, onEdit, onRemove }: {
+  rows: AttributeDefinition[];
+  onEdit: (d: AttributeDefinition) => void;
+  onRemove: (d: AttributeDefinition) => void;
+}) {
+  const { t } = useTranslation("console");
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>{t("profileAttrColName")}</TableHead>
+          <TableHead>{t("profileAttrColKey")}</TableHead>
+          <TableHead>{t("profileAttrColType")}</TableHead>
+          <TableHead>{t("profileAttrColOwner")}</TableHead>
+          <TableHead />
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((d) => (
+          <TableRow key={d.id ?? d.key}>
+            <TableCell className="font-medium">{d.displayName}</TableCell>
+            <TableCell><Badge variant="muted" className="font-mono">{d.key}</Badge></TableCell>
+            <TableCell className="text-muted-foreground">
+              {t(`profileAttrType_${d.dataType}`)}{d.multiValued ? ` · ${t("profileAttrMulti")}` : ""}
+            </TableCell>
+            <TableCell>
+              <Badge variant={d.base ? "secondary" : d.source === "DIRECTORY" ? "default" : "muted"}>
+                {d.base ? t("profileAttrBuiltIn") : t(`profileAttrSource_${d.source}`)}
+              </Badge>
+            </TableCell>
+            <TableCell className="text-right">
+              {/* A built-in is an app_user column shown for context: there is no declaration to edit. */}
+              {!d.base && (
+                <div className="flex justify-end gap-1">
+                  <Button variant="ghost" size="icon" onClick={() => onEdit(d)}><Pencil /></Button>
+                  <Button variant="ghost" size="icon"
+                          className="text-muted-foreground hover:text-destructive"
+                          onClick={() => onRemove(d)}><Trash2 /></Button>
+                </div>
+              )}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
