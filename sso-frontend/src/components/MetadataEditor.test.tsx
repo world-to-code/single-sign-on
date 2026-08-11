@@ -78,11 +78,49 @@ describe("MetadataEditor — schema awareness", () => {
     expect(screen.queryByText("metadataDirectoryOwned")).not.toBeInTheDocument();
   });
 
-  /** A schema the caller may not read must not break the editor — it degrades to free-form. */
-  it("degrades to free-form when the schema cannot be loaded", async () => {
-    vi.mocked(listAttributeDefinitions).mockRejectedValue(new Error("forbidden"));
+  /** Declared-but-empty is a real state: an undeclared key is the admin's own and stays removable. */
+  it("keeps an undeclared key removable when the schema declares nothing", async () => {
     render(<MetadataEditor kind="users" entityId={USER} />);
 
-    await waitFor(() => expect(screen.getByPlaceholderText("metadataKey")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "metadataRemove:department" })).toBeInTheDocument());
+  });
+
+  /**
+   * A schema the caller may not read must not break the editor — but it must not quietly LOOSEN it either.
+   * With no definitions every key reads as admin-owned, so the read-only treatment a directory-owned
+   * attribute depends on simply evaporates, and the two states look identical on screen.
+   */
+  describe("when the schema cannot be loaded", () => {
+    beforeEach(() => {
+      vi.mocked(listAttributeDefinitions).mockRejectedValue(new Error("forbidden"));
+    });
+
+    it("degrades to free-form rather than breaking the editor", async () => {
+      render(<MetadataEditor kind="users" entityId={USER} />);
+
+      await waitFor(() => expect(screen.getByPlaceholderText("metadataKey")).toBeInTheDocument());
+    });
+
+    it("says so, instead of looking like a tenant that declares nothing", async () => {
+      render(<MetadataEditor kind="users" entityId={USER} />);
+
+      await waitFor(() => expect(screen.getByText(/metadataSchemaUnavailable/)).toBeInTheDocument());
+    });
+
+    it("does not offer to remove a key whose owner it cannot determine", async () => {
+      render(<MetadataEditor kind="users" entityId={USER} />);
+
+      await waitFor(() => expect(screen.getByText(/metadataSchemaUnavailable/)).toBeInTheDocument());
+      expect(screen.queryByRole("button", { name: "metadataRemove:department" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "metadataRemoveValue:department" })).not.toBeInTheDocument();
+    });
+
+    it("does not claim the attribute is directory-owned either", async () => {
+      render(<MetadataEditor kind="users" entityId={USER} />);
+
+      await waitFor(() => expect(screen.getByText(/metadataSchemaUnavailable/)).toBeInTheDocument());
+      expect(screen.queryByText("metadataDirectoryOwned")).not.toBeInTheDocument();
+    });
   });
 });

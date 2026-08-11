@@ -31,6 +31,7 @@ export function MetadataEditor({ kind, entityId, profileId }:
   const { t } = useTranslation("console");
   const [attrs, setAttrs] = useState<Attribute[] | null>(null);
   const [definitions, setDefinitions] = useState<AttributeDefinition[]>([]);
+  const [schemaError, setSchemaError] = useState<string | null>(null);
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
@@ -48,17 +49,26 @@ export function MetadataEditor({ kind, entityId, profileId }:
   }, [kind, entityId]);
   useEffect(reload, [reload]);
 
-  // A missing or forbidden schema is not an error here — the editor simply falls back to free-form keys.
+  // A missing schema is not an error here — the editor falls back to free-form keys. An UNREADABLE one is
+  // different, and is reported: see `removable` for what an unknown schema must not be allowed to do.
   useEffect(() => {
     const entityKind = kind === "groups" ? "GROUP" : kind === "users" ? "USER" : "RESOURCE";
+    setSchemaError(null);
     listAttributeDefinitions(entityKind, profile?.id).then(setDefinitions)
-      // Deliberate (see the comment above): no schema means free-form keys, which is a working editor.
-      .catch(() => setDefinitions([]));
+      .catch((e) => setSchemaError(errorMessage(e)));
   }, [kind, profile?.id]);
 
   const definitionOf = (attrKey: string) => definitions.find((d) => d.key === attrKey);
   /** Only attributes an administrator owns can be added here; a directory fills the rest. */
   const editable = definitions.filter((d) => d.source === "LOCAL" && !d.base);
+
+  /**
+   * Whether the console may offer to delete this key. With no definitions every key reads as admin-owned, so
+   * an unreadable schema would RESTORE the remove controls on a directory-owned attribute — a load failure
+   * loosening the editor. Declared-but-empty is the opposite case and stays removable: the key really is
+   * the administrator's own.
+   */
+  const removable = (attrKey: string) => schemaError === null && definitionOf(attrKey)?.source !== "DIRECTORY";
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -106,13 +116,18 @@ export function MetadataEditor({ kind, entityId, profileId }:
       </div>
       <p className="text-xs text-muted-foreground">{t("metadataHint")}</p>
       {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
+      {schemaError && (
+        <Alert variant="destructive">
+          <AlertDescription>{schemaError} {t("metadataSchemaUnavailable")}</AlertDescription>
+        </Alert>
+      )}
 
       {attrs && attrs.length === 0 && <p className="text-sm text-muted-foreground">{t("metadataNone")}</p>}
       {groups.length > 0 && (
         <div className="flex flex-col gap-1.5">
           {groups.map(({ key: k, values }) => (
             <div key={k} className="flex flex-wrap items-center gap-1.5">
-              {definitionOf(k)?.source === "DIRECTORY" ? (
+              {!removable(k) ? (
                 <span className="font-mono text-xs text-muted-foreground">{definitionOf(k)?.displayName ?? k}</span>
               ) : (
                 <button
@@ -131,7 +146,7 @@ export function MetadataEditor({ kind, entityId, profileId }:
                   className="inline-flex items-center gap-1 rounded-full bg-muted py-0.5 pl-2.5 pr-1 text-xs"
                 >
                   {v}
-                  {definitionOf(k)?.source !== "DIRECTORY" && (
+                  {removable(k) && (
                     <button
                       type="button"
                       aria-label={t("metadataRemoveValue", { key: k, value: v })}

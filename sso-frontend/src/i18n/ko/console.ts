@@ -1269,6 +1269,7 @@ export const console: Record<keyof typeof enConsole, string> = {
   profileAttrDeleteTitle: "이 속성 정의를 삭제할까요?",
   profileAttrDeleteDescription: "{{name}}이(가) 편집기에서 사라지지만 이미 기록된 값은 남습니다. 이 속성으로 매칭하는 정책과 매핑 규칙도 계속 동작합니다.",
   metadataDirectoryOwned: "디렉터리 관리",
+  metadataSchemaUnavailable: "속성 스키마를 읽지 못해 키를 저장된 그대로 표시하며, 스키마를 불러오기 전까지는 이곳에서 삭제할 수 없습니다.",
 
   // Directory sync
   dirSyncTitle: "디렉터리 동기화",

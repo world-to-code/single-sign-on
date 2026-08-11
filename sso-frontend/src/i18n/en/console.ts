@@ -1269,6 +1269,7 @@ export const console = {
   profileAttrDeleteTitle: "Delete this attribute definition?",
   profileAttrDeleteDescription: "{{name}} disappears from the editor, but values already recorded stay — policies and mapping rules matching on it keep working.",
   metadataDirectoryOwned: "Directory-managed",
+  metadataSchemaUnavailable: "The attribute schema could not be read, so keys are shown as stored and none can be removed here until it loads.",
 
   // Directory sync
   dirSyncTitle: "Directory sync",
