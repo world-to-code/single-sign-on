@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { Dispatch, FormEvent, SetStateAction } from "react";
 import { ApiError, errorMessage } from "@/api";
 import { factorDeliveryFailed, prepareFactor, verifyFactor } from "@/auth";
-import { requestEmailCode } from "@/profile";
+import { confirmEmail, requestEmailCode } from "@/profile";
 import type { SessionView } from "@/auth";
 import { assertFactorCredential, registerFactorCredential } from "@/webauthn";
 
@@ -53,6 +53,8 @@ export interface FactorVerificationState {
   /** Mails a proof-of-ownership code so the owner can unlock the factor without leaving this screen. */
   sendAddressVerification: () => Promise<void>;
   addressVerificationSent: boolean;
+  /** Confirms the proof-of-ownership code; on success the factor unlocks and its sign-in code is sent. */
+  confirmAddressVerification: (proofCode: string) => Promise<void>;
   fido2: () => Promise<void>;
   fido2Register: () => Promise<void>;
 }
@@ -196,10 +198,23 @@ export function useFactorVerification(
     }
   }, []);
 
+  // Proving the mailbox only unlocks the factor; the sign-in code is what the person came for, so send it now.
+  const confirmAddressVerification = useCallback(async (proofCode: string) => {
+    setError(null);
+    try {
+      await confirmEmail(proofCode);
+    } catch (e) {
+      setError(errorMessage(e));
+      return;
+    }
+    setAddressVerificationSent(false);
+    await sendCode();
+  }, [sendCode]);
+
   return {
     factor, setFactor, code, setCode, password, setPassword, codeSent,
     codeSecondsLeft: secondsUntil(codeExpiresAt), resendSecondsLeft: secondsUntil(resendAt),
     error, setError, busy, setBusy, submitCode, submitPassword, sendCode, fido2, fido2Register,
-    addressUnverified, sendAddressVerification, addressVerificationSent,
+    addressUnverified, sendAddressVerification, addressVerificationSent, confirmAddressVerification,
   };
 }

@@ -36,9 +36,10 @@ export default function MfaStep({ session, onDone }: { session: SessionView; onD
     factor, setFactor, code, setCode, password, setPassword, codeSent,
     codeSecondsLeft, resendSecondsLeft,
     error, setError, busy, setBusy, submitCode, submitPassword, sendCode, fido2, fido2Register,
-    addressUnverified, sendAddressVerification, addressVerificationSent,
+    addressUnverified, sendAddressVerification, addressVerificationSent, confirmAddressVerification,
   } = useFactorVerification({ initialFactor: preferredFactor(factors, session), onSuccess: onDone });
   const [challenge, setChallenge] = useState<FactorChallenge | null>(null);
+  const [proofCode, setProofCode] = useState("");
 
   const needEnroll = factor === "TOTP" && !session.totpEnrolled;
   // Enrollment during login is gated by policy: when disabled, an un-enrolled TOTP can't be set up here.
@@ -127,6 +128,18 @@ export default function MfaStep({ session, onDone }: { session: SessionView; onD
               <Button type="button" size="sm" onClick={sendAddressVerification}>
                 {t("mfaEmailVerifySend")}
               </Button>
+            )}
+            {addressVerificationSent && (
+              <form className="space-y-2" onSubmit={async (event) => {
+                event.preventDefault();
+                await confirmAddressVerification(proofCode);
+                setProofCode("");
+              }}>
+                <OtpInput value={proofCode} onChange={(e) => setProofCode(e.target.value)} />
+                <Button type="submit" size="sm" className="w-full" disabled={proofCode.length === 0}>
+                  {t("mfaEmailVerifyConfirm")}
+                </Button>
+              </form>
             )}
           </AlertDescription>
         </Alert>
