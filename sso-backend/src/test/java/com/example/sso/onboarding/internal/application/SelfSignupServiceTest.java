@@ -150,6 +150,34 @@ class SelfSignupServiceTest {
     }
 
     @Test
+    void activateMarksTheAdminEmailVerifiedBecauseRedeemingTheMailedLinkProvedTheMailbox() {
+        UUID orgId = UUID.randomUUID();
+        UUID adminId = UUID.randomUUID();
+        when(signups.findByTokenHash(any())).thenReturn(Optional.of(redeemable()));
+        when(signups.consume(any(), any())).thenReturn(1);
+        when(organizations.create(any())).thenReturn(new OrganizationView(orgId, "acme", "Acme",
+                OrganizationStatus.ACTIVE, Instant.now(), CompanyProfile.empty(), false));
+        UserAccount admin = mock(UserAccount.class);
+        when(admin.getId()).thenReturn(adminId);
+        when(users.createUser(any(), any())).thenReturn(admin);
+
+        service.activate("tok", "password123");
+
+        // Left unverified, the new admin is mailed a second proof code and the EMAIL factor refuses them.
+        verify(users).markEmailVerified(adminId);
+    }
+
+    @Test
+    void activateThatIsRejectedVerifiesNoEmail() {
+        when(signups.findByTokenHash(any())).thenReturn(Optional.of(redeemable()));
+        when(signups.consume(any(), any())).thenReturn(0);
+
+        assertThatThrownBy(() -> service.activate("tok", "password123")).isInstanceOf(BadRequestException.class);
+
+        verify(users, never()).markEmailVerified(any());
+    }
+
+    @Test
     void activateIsSingleUse_aLostConsumeRaceIsRejected() {
         when(signups.findByTokenHash(any())).thenReturn(Optional.of(redeemable()));
         when(signups.consume(any(), any())).thenReturn(0); // another redeem won the race

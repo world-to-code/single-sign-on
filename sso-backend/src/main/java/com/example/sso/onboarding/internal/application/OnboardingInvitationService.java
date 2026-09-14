@@ -79,5 +79,7 @@ public class OnboardingInvitationService {
         }
         users.setPassword(invitation.getUserId(), newPassword);
         users.enable(invitation.getUserId());
+        // The invitation went to this address, so redeeming it proves the mailbox as well as the password choice.
+        users.markEmailVerified(invitation.getUserId());
     }
 }

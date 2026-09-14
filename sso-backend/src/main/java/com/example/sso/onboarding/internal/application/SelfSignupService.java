@@ -108,6 +108,8 @@ public class SelfSignupService {
                         signup.getCompanyIndustry(), signup.getCompanyPhone())));
         UserAccount admin = users.createUser(new NewUser(signup.getAdminEmail(), signup.getAdminEmail(),
                 signup.getAdminName(), password, Set.of(Roles.USER, Roles.ORG_ADMIN)), org.id());
+        // Redeeming the mailed token IS proof of the mailbox; left unverified, the admin is mailed a second code.
+        users.markEmailVerified(admin.getId());
         // The applicant is the org admin and a member, so they sign in to their organization at {slug}.base.
         organizations.addMember(org.id(), admin.getId());
         return new SignupView(org.slug(), org.slug());
