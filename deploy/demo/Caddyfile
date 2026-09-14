@@ -1,0 +1,26 @@
+{
+	email {$ACME_EMAIL}
+	# Certificates for tenant subdomains are obtained on the first TLS handshake, but only for hosts the edge
+	# confirms are real tenants - otherwise anyone could point a name at this IP and burn the issuance limits.
+	on_demand_tls {
+		ask http://frontend:8081/caddy-ask
+	}
+}
+
+# The platform host and the default tenant are known up front, so their certificates are obtained at startup.
+{$DEMO_HOST}, {$DEMO_TENANT}.{$DEMO_HOST} {
+	encode gzip
+	reverse_proxy frontend:80
+}
+
+# Every other tenant subdomain: certificate issued on demand (see the ask endpoint above).
+https:// {
+	tls {
+		on_demand
+	}
+	encode gzip
+	reverse_proxy frontend:80
+}
+
+# Optional extra sites, e.g. the MailHog UI written by ./enable-mailhog-web.sh.
+import /etc/caddy/sites/*.caddy

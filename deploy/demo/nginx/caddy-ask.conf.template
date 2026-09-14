@@ -1,0 +1,32 @@
+# Rendered by the nginx image at startup (envsubst fills in ${DEMO_HOST}; nginx's own $variables are untouched).
+#
+# Caddy's on-demand TLS asks this endpoint before obtaining a certificate for a host it has never seen:
+#   GET /caddy-ask?domain=<host>   ->  200 obtain, anything else refuse
+# It answers 200 only for a single-label subdomain of the demo host that the backend recognises as a tenant
+# (the backend 404s an unknown subdomain). Listens on a port that is not published, so only Caddy reaches it.
+
+map $arg_domain $ask_suffix {
+    "~^[a-z0-9-]+\.(?<rest>.+)$" $rest;
+    default                      "";
+}
+map $ask_suffix $ask_allowed {
+    "${DEMO_HOST}" 1;
+    default        0;
+}
+
+server {
+    listen 8081;
+    server_name _;
+
+    location = /caddy-ask {
+        if ($ask_allowed = 0) {
+            return 404;
+        }
+        proxy_set_header Host $arg_domain;
+        proxy_pass http://backend/.well-known/openid-configuration;
+    }
+
+    location / {
+        return 404;
+    }
+}
