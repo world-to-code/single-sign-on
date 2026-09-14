@@ -92,6 +92,15 @@ class ClientAdminServiceTest {
     }
 
     @Test
+    void createRejectsClientSecretJwtBecauseItsSigningKeyWouldBeTheStoredHash() {
+        // The framework verifies a client_secret_jwt assertion with the stored secret as the HMAC key. Stored as a
+        // hash, the method could never authenticate — and whoever reads the column could sign assertions.
+        assertThatThrownBy(() -> service.createClient(request(Set.of("client_secret_jwt"))))
+                .isInstanceOf(BadRequestException.class);
+        verify(registeredClients, never()).save(any());
+    }
+
+    @Test
     void aConfidentialClientsGeneratedSecretIsStoredAsAKeyedHashAndReturnedOnce() {
         CreateClientRequest confidential = new CreateClientRequest("cid", null, Set.of(), Set.of(), Set.of(),
                 Set.of("client_credentials"), Set.of("client_secret_basic"), false, false, false, null, null, null,

@@ -843,7 +843,7 @@ export const console = {
   clientCreateClientAuthDesc: "How a confidential client proves its identity at the token endpoint (JWT, mTLS).",
   clientCreateAuthMethods: "Client authentication methods",
   clientCreateTokenAuthSig: "Token-endpoint auth signing alg (JWT client auth)",
-  clientCreateTokenAuthSigHint: "For private_key_jwt (RS/ES/PS) or client_secret_jwt (HS). Leave as Default otherwise.",
+  clientCreateTokenAuthSigHint: "For private_key_jwt (RS/ES/PS). Leave as Default otherwise.",
   clientCreateDefault: "Default",
   clientCreateJwkSetUrl: "JWK Set URL (private_key_jwt)",
   clientCreateX509Dn: "X.509 subject DN (tls_client_auth)",

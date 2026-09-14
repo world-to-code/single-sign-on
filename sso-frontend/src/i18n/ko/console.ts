@@ -843,7 +843,7 @@ export const console: Record<keyof typeof enConsole, string> = {
   clientCreateClientAuthDesc: "컨피덴셜 클라이언트가 토큰 엔드포인트에서 자신을 증명하는 방식(JWT, mTLS).",
   clientCreateAuthMethods: "클라이언트 인증 방식",
   clientCreateTokenAuthSig: "토큰 엔드포인트 인증 서명 알고리즘 (JWT 클라이언트 인증)",
-  clientCreateTokenAuthSigHint: "private_key_jwt(RS/ES/PS) 또는 client_secret_jwt(HS)용. 그 외에는 기본값으로 두세요.",
+  clientCreateTokenAuthSigHint: "private_key_jwt(RS/ES/PS)용. 그 외에는 기본값으로 두세요.",
   clientCreateDefault: "기본값",
   clientCreateJwkSetUrl: "JWK Set URL (private_key_jwt)",
   clientCreateX509Dn: "X.509 주체 DN (tls_client_auth)",
