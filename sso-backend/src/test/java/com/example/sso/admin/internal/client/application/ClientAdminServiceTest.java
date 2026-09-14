@@ -2,6 +2,8 @@ package com.example.sso.admin.internal.client.application;
 
 import com.example.sso.admin.internal.client.domain.OAuth2RegisteredClientEntity;
 import com.example.sso.admin.internal.client.domain.OAuth2RegisteredClientRepository;
+import com.example.sso.crypto.ClientSecretHasher;
+import com.example.sso.crypto.internal.application.ClientSecretHasherImpl;
 import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.portal.application.ApplicationDeletedEvent;
 import com.example.sso.shared.error.BadRequestException;
@@ -15,11 +17,13 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import org.mockito.ArgumentCaptor;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -35,9 +39,10 @@ import static org.mockito.Mockito.when;
 class ClientAdminServiceTest {
 
     private static final String CLIENT_ROW_ID = "row-1";
+    private static final String TEST_SALT = "5c0744940b5c369b";
 
     private RegisteredClientRepository registeredClients;
-    private PasswordEncoder passwordEncoder;
+    private final ClientSecretHasher clientSecrets = new ClientSecretHasherImpl("test-master-password", TEST_SALT);
     private OAuth2RegisteredClientRepository clientRows;
     private ApplicationEventPublisher events;
     private ClientAdminService service;
@@ -45,7 +50,6 @@ class ClientAdminServiceTest {
     @BeforeEach
     void setUp() {
         registeredClients = mock(RegisteredClientRepository.class);
-        passwordEncoder = mock(PasswordEncoder.class);
         clientRows = mock(OAuth2RegisteredClientRepository.class);
         events = mock(ApplicationEventPublisher.class);
         OrgContext orgContext = mock(OrgContext.class);
@@ -53,7 +57,7 @@ class ClientAdminServiceTest {
         // A mocked ActingAdmin holds no authorities, so nothing here may grant a response scope — right for
         // these cases, none of which asks for one. That guard is covered against a real DB in
         // ResponseScopeGrantIT, where a mock could not tell a refusal from an absent check.
-        service = new ClientAdminService(registeredClients, passwordEncoder, clientRows,
+        service = new ClientAdminService(registeredClients, clientSecrets, clientRows,
                 new OrgTierGuard(orgContext), events, mock(ActingAdmin.class));
     }
 
@@ -85,6 +89,23 @@ class ClientAdminServiceTest {
         assertThatThrownBy(() -> service.createClient(request(Set.of("tls_client_auth"))))
                 .isInstanceOf(BadRequestException.class);
         verify(registeredClients, never()).save(any());
+    }
+
+    @Test
+    void aConfidentialClientsGeneratedSecretIsStoredAsAKeyedHashAndReturnedOnce() {
+        CreateClientRequest confidential = new CreateClientRequest("cid", null, Set.of(), Set.of(), Set.of(),
+                Set.of("client_credentials"), Set.of("client_secret_basic"), false, false, false, null, null, null,
+                null, false, null, null, null, null, null, false, null, null, null, false);
+
+        ClientCreated created = service.createClient(confidential);
+
+        ArgumentCaptor<RegisteredClient> saved = ArgumentCaptor.forClass(RegisteredClient.class);
+        verify(registeredClients).save(saved.capture());
+        String stored = saved.getValue().getClientSecret();
+        // The server generated this secret, so the fast keyed hash is sound — and the stored form verifies it.
+        assertThat(clientSecrets.handles(stored)).isTrue();
+        assertThat(clientSecrets.matches(created.clientSecret(), stored)).isTrue();
+        assertThat(stored).doesNotContain(created.clientSecret());
     }
 
     @Test

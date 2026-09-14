@@ -14,6 +14,7 @@ import static org.springframework.security.oauth2.jose.jws.SignatureAlgorithm.RS
 import com.example.sso.admin.internal.client.domain.OAuth2RegisteredClientEntity;
 import com.example.sso.admin.internal.shared.application.ActingAdmin;
 import com.example.sso.admin.internal.client.domain.OAuth2RegisteredClientRepository;
+import com.example.sso.crypto.ClientSecretHasher;
 import com.example.sso.tenancy.OrgTierGuard;
 import com.example.sso.oidc.AdminPortalSeeder;
 import com.example.sso.oidc.BackChannelLogout;
@@ -39,7 +40,6 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.NonNull;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.jose.jws.JwsAlgorithm;
@@ -82,7 +82,7 @@ public class ClientAdminService {
     private static final int DEVICE_CODE_TTL_FALLBACK = 5;
 
     private final RegisteredClientRepository registeredClients;
-    private final PasswordEncoder passwordEncoder;
+    private final ClientSecretHasher clientSecrets;
     private final OAuth2RegisteredClientRepository clientRows;
     private final OrgTierGuard tierGuard;
     private final ApplicationEventPublisher events;
@@ -145,7 +145,7 @@ public class ClientAdminService {
 
             if (needsSecret) {
                 secret = generateSecret();
-                clientBuilder.clientSecret(passwordEncoder.encode(secret));
+                clientBuilder.clientSecret(clientSecrets.encode(secret));
                 if (request.clientSecretDays() != null) {
                     clientBuilder.clientSecretExpiresAt(
                             Instant.now()

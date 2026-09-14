@@ -2,6 +2,7 @@ package com.example.sso.config.internal;
 
 import com.example.sso.audit.AuditService;
 import com.example.sso.authpolicy.factor.Factors;
+import com.example.sso.crypto.ClientSecretHasher;
 import com.example.sso.crypto.RsaKeyService;
 import com.example.sso.oidc.BackChannelLogout;
 import com.example.sso.oidc.ConsentPage;
@@ -30,6 +31,7 @@ import org.springframework.security.authorization.AuthorityAuthorizationManager;
 import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.security.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
@@ -37,6 +39,7 @@ import org.springframework.security.config.annotation.web.configurers.oauth2.ser
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.security.oauth2.server.authorization.authentication.ClientSecretAuthenticationProvider;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationProvider;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
@@ -76,7 +79,8 @@ public class AuthorizationServerConfig {
             HttpSecurity http, JWKSource<SecurityContext> jwkSource,
             RegisteredClientRepository registeredClients, UserService users, ApplicationService applications,
             UserSessionPolicy userSessionPolicy, AuditService audit,
-            OrgContext orgContext, HostOrgResolver hostOrgResolver)
+            OrgContext orgContext, HostOrgResolver hostOrgResolver,
+            ClientSecretHasher clientSecretHasher, PasswordEncoder passwordEncoder)
             throws Exception {
 
         OAuth2AuthorizationServerConfigurer authorizationServer = new OAuth2AuthorizationServerConfigurer();
@@ -93,6 +97,10 @@ public class AuthorizationServerConfig {
                 // Enable OIDC and advertise back-channel logout support in the discovery metadata (the
                 // end_session endpoint is already enabled by the OIDC defaults).
                 .with(authorizationServer, as -> as
+                        // Client secrets are verified by their own encoder: server-generated secrets carry a fast
+                        // keyed hash, and confining it here keeps it away from user-password verification.
+                        .clientAuthentication(clientAuthentication -> clientAuthentication
+                                .authenticationProviders(clientSecretEncoder(clientSecretHasher, passwordEncoder)))
                         // Replace the framework whitelabel consent screen with our branded, server-rendered
                         // page (same SPA visual identity); the endpoint still owns the scope/consent contract.
                         // The custom redirect_uri validator lets the first-party admin console be entered from
@@ -215,6 +223,17 @@ public class AuthorizationServerConfig {
         return providers -> providers.forEach(provider -> {
             if (provider instanceof OAuth2AuthorizationCodeRequestAuthenticationProvider codeRequestProvider) {
                 codeRequestProvider.setAuthenticationValidator(new AdminConsoleRedirectUriValidator());
+            }
+        });
+    }
+
+    /** Points client-secret authentication at {@link ClientSecretPasswordEncoder}; see its Javadoc for why. */
+    private Consumer<List<AuthenticationProvider>> clientSecretEncoder(ClientSecretHasher hasher,
+            PasswordEncoder passwords) {
+        ClientSecretPasswordEncoder encoder = new ClientSecretPasswordEncoder(hasher, passwords);
+        return providers -> providers.forEach(provider -> {
+            if (provider instanceof ClientSecretAuthenticationProvider secretProvider) {
+                secretProvider.setPasswordEncoder(encoder);
             }
         });
     }
